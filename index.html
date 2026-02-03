@@ -1165,10 +1165,81 @@
             color: var(--text-secondary);
         }
 
-        .drive-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        .drive-section {
+            margin-bottom: 28px;
+        }
+
+        .drive-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        .drive-section-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .drive-recents {
+            display: flex;
             gap: 16px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+            scroll-snap-type: x mandatory;
+        }
+
+        .drive-recents::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .drive-recents::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.12);
+            border-radius: 999px;
+        }
+
+        .drive-recents .drive-card {
+            min-width: 220px;
+            scroll-snap-align: start;
+        }
+
+        .drive-breadcrumbs {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+        }
+
+        .drive-breadcrumb {
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .drive-breadcrumb.active {
+            color: var(--text-primary);
+            font-weight: 600;
+            cursor: default;
+        }
+
+        .drive-folder-grid,
+        .drive-file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .drive-folder-grid {
+            margin-bottom: 16px;
         }
 
         .drive-card {
@@ -1190,12 +1261,51 @@
             box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
 
-        .drive-card.new {
-            border: 2px dashed rgba(0,0,0,0.12);
+        .drive-card-preview {
+            width: 100%;
+            aspect-ratio: 3 / 4;
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(0,0,0,0.04);
+            display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--text-secondary);
-            font-weight: 600;
+        }
+
+        .drive-card-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .drive-card-icon {
+            width: 40px;
+            height: 40px;
+            color: rgba(0,0,0,0.4);
+        }
+
+        .drive-folder-card {
+            background: white;
+            border-radius: 14px;
+            padding: 14px 16px;
+            border: 1px solid rgba(0,0,0,0.06);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .drive-folder-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+        }
+
+        .drive-folder-icon {
+            width: 36px;
+            height: 28px;
+            color: var(--accent-orange);
         }
 
         .drive-card-title {
@@ -1251,8 +1361,27 @@
                 <input class="drive-search" id="drive-search" type="text" placeholder="Search PDFs..." autocomplete="off">
                 <div class="drive-status" id="drive-status">Sign in to browse your Drive.</div>
             </div>
-            <div class="drive-grid" id="drive-files"></div>
-            <div class="drive-empty hidden" id="drive-empty">No PDFs found yet.</div>
+            <section class="drive-section">
+                <div class="drive-section-header">
+                    <div class="drive-section-title">Recents</div>
+                </div>
+                <div class="drive-recents" id="drive-recents"></div>
+                <div class="drive-empty hidden" id="drive-recents-empty">No recent PDFs yet.</div>
+            </section>
+            <section class="drive-section">
+                <div class="drive-section-header">
+                    <div class="drive-section-title">My Drive</div>
+                    <button class="btn btn-secondary btn-icon-square" id="btn-drive-back" title="Up one folder" aria-label="Up one folder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="drive-breadcrumbs" id="drive-breadcrumbs"></div>
+                <div class="drive-folder-grid" id="drive-folders"></div>
+                <div class="drive-file-grid" id="drive-folder-files"></div>
+                <div class="drive-empty hidden" id="drive-folder-empty">No PDFs found in this folder.</div>
+            </section>
         </div>
     </div>
 
@@ -1617,15 +1746,20 @@
         const loadingText = document.getElementById('loading-text');
         const driveHome = document.getElementById('drive-home');
         const editorView = document.getElementById('editor-view');
-        const driveFilesEl = document.getElementById('drive-files');
         const driveStatusEl = document.getElementById('drive-status');
         const driveSearchInput = document.getElementById('drive-search');
-        const driveEmptyEl = document.getElementById('drive-empty');
+        const driveRecentsEl = document.getElementById('drive-recents');
+        const driveRecentsEmptyEl = document.getElementById('drive-recents-empty');
+        const driveFoldersEl = document.getElementById('drive-folders');
+        const driveFolderFilesEl = document.getElementById('drive-folder-files');
+        const driveFolderEmptyEl = document.getElementById('drive-folder-empty');
+        const driveBreadcrumbsEl = document.getElementById('drive-breadcrumbs');
         const driveLoginBtn = document.getElementById('btn-drive-login');
         const driveLogoutBtn = document.getElementById('btn-drive-logout');
         const driveRefreshBtn = document.getElementById('btn-drive-refresh');
         const driveNewBtn = document.getElementById('btn-drive-new');
         const driveHomeBtn = document.getElementById('btn-drive-home');
+        const driveBackBtn = document.getElementById('btn-drive-back');
         const docTitleEl = document.getElementById('doc-title');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
@@ -1639,7 +1773,12 @@
         let driveSaveTimeout = null;
         let driveSaveInProgress = false;
         let driveSaveQueued = false;
-        let driveFilesCache = [];
+        let driveRecentsCache = [];
+        let driveFolderCache = { folders: [], files: [] };
+        let driveFolderStack = [{ id: 'root', name: 'My Drive' }];
+        let driveCurrentFolderId = 'root';
+        let driveOpenInProgress = false;
+        let driveOpenFileId = null;
         const addPageIndicator = document.createElement('div');
         addPageIndicator.id = 'add-page-indicator';
         addPageIndicator.textContent = '+';
@@ -2698,10 +2837,14 @@
             if (driveSearchInput) driveSearchInput.disabled = !signedIn;
             if (driveRefreshBtn) driveRefreshBtn.disabled = !signedIn;
             if (driveNewBtn) driveNewBtn.disabled = !signedIn;
+            if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
             if (driveStatusEl) {
-                driveStatusEl.textContent = signedIn ? 'Loading your PDFs…' : 'Sign in to browse your Drive.';
+                driveStatusEl.textContent = signedIn ? 'Loading your PDFs...' : 'Sign in to browse your Drive.';
             }
-            if (!signedIn && driveEmptyEl) driveEmptyEl.classList.add('hidden');
+            if (!signedIn) {
+                if (driveRecentsEmptyEl) driveRecentsEmptyEl.classList.add('hidden');
+                if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
+            }
         }
 
         function ensureDriveToken(interactive = false) {
@@ -2744,8 +2887,14 @@
             state.driveFileName = null;
             state.driveFolderId = null;
             state.driveAutosave = false;
-            driveFilesCache = [];
-            if (driveFilesEl) driveFilesEl.innerHTML = '';
+            driveRecentsCache = [];
+            driveFolderCache = { folders: [], files: [] };
+            driveFolderStack = [{ id: 'root', name: 'My Drive' }];
+            driveCurrentFolderId = 'root';
+            if (driveRecentsEl) driveRecentsEl.innerHTML = '';
+            if (driveFoldersEl) driveFoldersEl.innerHTML = '';
+            if (driveFolderFilesEl) driveFolderFilesEl.innerHTML = '';
+            if (driveBreadcrumbsEl) driveBreadcrumbsEl.innerHTML = '';
             if (driveStatusEl) driveStatusEl.textContent = 'Sign in to browse your Drive.';
             updateDriveAuthUI();
         }
@@ -2790,33 +2939,207 @@
             return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
-        function renderDriveFiles(files) {
-            if (!driveFilesEl) return;
-            driveFilesEl.innerHTML = '';
+        function normalizeDriveThumbnail(link) {
+            if (!link) return '';
+            const resized = link.replace(/=s\d+/, '=s480');
+            return resized.includes('=s') ? resized : `${resized}&sz=w480-h640`;
+        }
 
-            const newCard = document.createElement('div');
-            newCard.className = 'drive-card new';
-            newCard.innerHTML = '<span>+ New PDF</span>';
-            newCard.addEventListener('click', () => createNewDriveDocument());
-            driveFilesEl.appendChild(newCard);
+        function createDrivePreview(file) {
+            const preview = document.createElement('div');
+            preview.className = 'drive-card-preview';
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('fill', 'none');
+            icon.setAttribute('stroke', 'currentColor');
+            icon.setAttribute('stroke-width', '1.8');
+            icon.classList.add('drive-card-icon');
+            icon.innerHTML = '<path d="M6 2h8l4 4v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/>';
 
+            const thumb = normalizeDriveThumbnail(file.thumbnailLink || '');
+            if (thumb) {
+                const img = new Image();
+                img.src = thumb;
+                img.alt = `${file.name} preview`;
+                img.loading = 'lazy';
+                img.onerror = () => {
+                    preview.innerHTML = '';
+                    preview.appendChild(icon);
+                };
+                preview.appendChild(img);
+                return preview;
+            }
+            preview.appendChild(icon);
+            return preview;
+        }
+
+        function createDriveFileCard(file) {
+            const card = document.createElement('div');
+            card.className = 'drive-card';
+            card.appendChild(createDrivePreview(file));
+
+            const title = document.createElement('div');
+            title.className = 'drive-card-title';
+            title.textContent = file.name || 'Untitled';
+            card.appendChild(title);
+
+            const meta = document.createElement('div');
+            meta.className = 'drive-card-meta';
+            meta.textContent = `Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}`;
+            card.appendChild(meta);
+
+            card.addEventListener('click', () => openDriveFile(file));
+            return card;
+        }
+
+        function createDriveFolderCard(folder) {
+            const card = document.createElement('div');
+            card.className = 'drive-folder-card';
+
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('fill', 'none');
+            icon.setAttribute('stroke', 'currentColor');
+            icon.setAttribute('stroke-width', '1.8');
+            icon.classList.add('drive-folder-icon');
+            icon.innerHTML = '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>';
+            card.appendChild(icon);
+
+            const name = document.createElement('div');
+            name.className = 'drive-card-title';
+            name.textContent = folder.name || 'Folder';
+            card.appendChild(name);
+
+            card.addEventListener('click', () => enterDriveFolder(folder));
+            return card;
+        }
+
+        function renderDriveBreadcrumbs() {
+            if (!driveBreadcrumbsEl) return;
+            driveBreadcrumbsEl.innerHTML = '';
+            driveFolderStack.forEach((crumb, index) => {
+                const btn = document.createElement('button');
+                btn.className = `drive-breadcrumb${index === driveFolderStack.length - 1 ? ' active' : ''}`;
+                btn.textContent = crumb.name;
+                if (index < driveFolderStack.length - 1) {
+                    btn.addEventListener('click', () => navigateDriveBreadcrumb(index));
+                }
+                driveBreadcrumbsEl.appendChild(btn);
+                if (index < driveFolderStack.length - 1) {
+                    const sep = document.createElement('span');
+                    sep.textContent = '/';
+                    driveBreadcrumbsEl.appendChild(sep);
+                }
+            });
+            if (driveBackBtn) driveBackBtn.disabled = driveFolderStack.length <= 1;
+        }
+
+        function renderDriveRecents(files) {
+            if (!driveRecentsEl) return;
+            driveRecentsEl.innerHTML = '';
             if (!files || files.length === 0) {
-                if (driveEmptyEl) driveEmptyEl.classList.remove('hidden');
+                if (driveRecentsEmptyEl) driveRecentsEmptyEl.classList.remove('hidden');
                 return;
             }
-            if (driveEmptyEl) driveEmptyEl.classList.add('hidden');
+            if (driveRecentsEmptyEl) driveRecentsEmptyEl.classList.add('hidden');
+            files.forEach(file => driveRecentsEl.appendChild(createDriveFileCard(file)));
+        }
 
-            files.forEach(file => {
-                const card = document.createElement('div');
-                card.className = 'drive-card';
-                card.innerHTML = `
-                    <div class="drive-card-title">${file.name}</div>
-                    <div class="drive-card-meta">Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}</div>
-                    <div class="drive-card-meta">${file.owners?.[0]?.displayName || 'My Drive'}</div>
-                `;
-                card.addEventListener('click', () => openDriveFile(file));
-                driveFilesEl.appendChild(card);
-            });
+        function renderDriveFolderContents(folders, files) {
+            if (driveFoldersEl) driveFoldersEl.innerHTML = '';
+            if (driveFolderFilesEl) driveFolderFilesEl.innerHTML = '';
+
+            const hasFolders = Array.isArray(folders) && folders.length > 0;
+            const hasFiles = Array.isArray(files) && files.length > 0;
+
+            if (hasFolders && driveFoldersEl) {
+                folders.forEach(folder => driveFoldersEl.appendChild(createDriveFolderCard(folder)));
+            }
+
+            if (hasFiles && driveFolderFilesEl) {
+                files.forEach(file => driveFolderFilesEl.appendChild(createDriveFileCard(file)));
+            }
+
+            if (driveFolderEmptyEl) {
+                driveFolderEmptyEl.classList.toggle('hidden', hasFolders || hasFiles);
+            }
+        }
+
+        function navigateDriveBreadcrumb(index) {
+            driveFolderStack = driveFolderStack.slice(0, index + 1);
+            driveCurrentFolderId = driveFolderStack[driveFolderStack.length - 1].id;
+            renderDriveBreadcrumbs();
+            if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
+            refreshDriveFolderContents();
+        }
+
+        function enterDriveFolder(folder) {
+            if (!folder || !folder.id) return;
+            driveFolderStack.push({ id: folder.id, name: folder.name || 'Folder' });
+            driveCurrentFolderId = folder.id;
+            renderDriveBreadcrumbs();
+            if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
+            refreshDriveFolderContents();
+        }
+
+        async function refreshDriveRecents() {
+            const search = driveSearchInput ? driveSearchInput.value.trim() : '';
+            const queryParts = [
+                `mimeType='application/pdf'`,
+                'trashed=false'
+            ];
+            if (search) {
+                const safe = search.replace(/'/g, "\\'");
+                queryParts.push(`name contains '${safe}'`);
+            }
+            const q = encodeURIComponent(queryParts.join(' and '));
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink)');
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
+            const data = await res.json();
+            driveRecentsCache = data.files || [];
+            renderDriveRecents(driveRecentsCache);
+        }
+
+        async function refreshDriveFolderContents() {
+            try {
+                const search = driveSearchInput ? driveSearchInput.value.trim() : '';
+                const baseParts = [
+                    `'${driveCurrentFolderId}' in parents`,
+                    'trashed=false'
+                ];
+                if (search) {
+                    const safe = search.replace(/'/g, "\\'");
+                    baseParts.push(`name contains '${safe}'`);
+                }
+
+                const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
+                const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
+                const folderFields = encodeURIComponent('files(id,name)');
+                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink)');
+
+                const [folderRes, fileRes] = await Promise.all([
+                    driveFetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&orderBy=name&pageSize=100&fields=${folderFields}`),
+                    driveFetch(`https://www.googleapis.com/drive/v3/files?q=${fileQuery}&orderBy=modifiedTime desc&pageSize=100&fields=${fileFields}`)
+                ]);
+
+                const foldersData = await folderRes.json();
+                const filesData = await fileRes.json();
+                driveFolderCache = {
+                    folders: foldersData.files || [],
+                    files: filesData.files || []
+                };
+                renderDriveFolderContents(driveFolderCache.folders, driveFolderCache.files);
+                updateDriveStatusCounts();
+            } catch (err) {
+                if (driveStatusEl) driveStatusEl.textContent = 'Unable to load this folder.';
+            }
+        }
+
+        function updateDriveStatusCounts() {
+            if (!driveStatusEl || !driveAccessToken) return;
+            const recentCount = driveRecentsCache.length;
+            const folderCount = driveFolderCache.files.length;
+            driveStatusEl.textContent = `Recents: ${recentCount} - This folder: ${folderCount} PDF${folderCount !== 1 ? 's' : ''}.`;
         }
 
         async function refreshDriveFiles() {
@@ -2825,25 +3148,12 @@
                 updateDriveAuthUI();
                 return;
             }
-            driveStatusEl.textContent = 'Loading your PDFs…';
+            driveStatusEl.textContent = 'Loading your Drive...';
             try {
                 await ensureDriveToken(false);
-                const search = driveSearchInput ? driveSearchInput.value.trim() : '';
-                const queryParts = [
-                    `mimeType='application/pdf'`,
-                    'trashed=false'
-                ];
-                if (search) {
-                    const safe = search.replace(/'/g, "\\'");
-                    queryParts.push(`name contains '${safe}'`);
-                }
-                const q = encodeURIComponent(queryParts.join(' and '));
-                const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,owners(displayName))');
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=50&fields=${fields}`);
-                const data = await res.json();
-                driveFilesCache = data.files || [];
-                renderDriveFiles(driveFilesCache);
-                driveStatusEl.textContent = `Showing ${driveFilesCache.length} PDF${driveFilesCache.length !== 1 ? 's' : ''}.`;
+                renderDriveBreadcrumbs();
+                await Promise.all([refreshDriveRecents(), refreshDriveFolderContents()]);
+                updateDriveStatusCounts();
             } catch (err) {
                 driveStatusEl.textContent = 'Unable to load Drive files.';
             }
@@ -2851,6 +3161,15 @@
 
         async function openDriveFile(file) {
             if (!file || !file.id) return;
+            if (driveOpenInProgress) return;
+            driveOpenInProgress = true;
+            driveOpenFileId = file.id;
+            state.zoom = 1;
+            state.panX = 0;
+            state.panY = 0;
+            state.overscrollY = 0;
+            showEditorView();
+            showLoading('Opening PDF...');
             try {
                 await ensureDriveToken(false);
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
@@ -2862,14 +3181,22 @@
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
                 updateDocTitle();
-                showEditorView();
                 showStatus('PDF loaded', { preserveState: true });
             } catch (err) {
                 showStatus('Failed to load PDF', { preserveState: true });
+            } finally {
+                hideLoading();
+                driveOpenInProgress = false;
+                driveOpenFileId = null;
             }
         }
 
         function createNewDriveDocument() {
+            showEditorView();
+            state.zoom = 1;
+            state.panX = 0;
+            state.panY = 0;
+            state.overscrollY = 0;
             clearSelection();
             state.selectionTransform = null;
             state.pages = [{
@@ -2887,7 +3214,6 @@
             state.driveFileName = 'Untitled';
             state.driveAutosave = true;
             updateDocTitle();
-            showEditorView();
             scheduleSave(true);
         }
 
@@ -3705,9 +4031,23 @@
                     refreshDriveFiles();
                 });
             }
+            if (driveBackBtn) {
+                driveBackBtn.addEventListener('click', () => {
+                    if (driveFolderStack.length <= 1) return;
+                    driveFolderStack.pop();
+                    driveCurrentFolderId = driveFolderStack[driveFolderStack.length - 1].id;
+                    renderDriveBreadcrumbs();
+                    if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
+                    refreshDriveFolderContents();
+                });
+            }
             if (driveSearchInput) {
+                let driveSearchTimeout = null;
                 driveSearchInput.addEventListener('input', () => {
-                    refreshDriveFiles();
+                    clearTimeout(driveSearchTimeout);
+                    driveSearchTimeout = setTimeout(() => {
+                        refreshDriveFiles();
+                    }, 250);
                 });
             }
 
@@ -4610,7 +4950,7 @@
                     </div>
                     <div class="page-info">
                         <h3>Page ${index + 1}</h3>
-                        <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${page.backgroundImage ? ' • PDF' : ''}</p>
+                        <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${page.backgroundImage ? ' - PDF' : ''}</p>
                     </div>
                     <div class="page-actions">
                         <button class="page-action-btn" data-action="goto" data-page="${index}" title="Go to page">
