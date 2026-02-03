@@ -111,6 +111,17 @@
             background: var(--accent-green);
         }
 
+        .save-indicator.error {
+            background: var(--accent-red);
+        }
+
+        .save-timestamp {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            opacity: 0.75;
+            letter-spacing: 0.01em;
+        }
+
         #status-bar {
             display: none;
         }
@@ -289,7 +300,29 @@
             padding: 0;
         }
 
+        .selection-duplicate {
+            position: absolute;
+            top: -42px;
+            right: 4px;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.98);
+            color: var(--accent-blue);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+            padding: 0;
+        }
+
         .selection-box.has-image .selection-trash {
+            display: flex;
+        }
+
+        .selection-box.has-selection .selection-duplicate {
             display: flex;
         }
 
@@ -297,7 +330,16 @@
             background: rgba(232, 16, 16, 0.08);
         }
 
+        .selection-duplicate:hover {
+            background: rgba(0, 47, 217, 0.08);
+        }
+
         .selection-trash svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .selection-duplicate svg {
             width: 16px;
             height: 16px;
         }
@@ -995,6 +1037,7 @@
             </div>
             <div class="header-actions">
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
+                <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
                 <button class="btn btn-warning btn-icon-square" id="btn-reset-document" title="Start new document" aria-label="Start new document">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="1 4 1 10 7 10"/>
@@ -1235,7 +1278,8 @@
         // A4 dimensions - using 2x resolution for crisp drawing
         const A4_WIDTH = 794;
         const A4_HEIGHT = 1123;
-        const CANVAS_SCALE = Math.min(4, Math.max(2, Math.round((window.devicePixelRatio || 2) * 2))); // High DPI
+        const CANVAS_SCALE = Math.min(3, Math.max(2, Math.round((window.devicePixelRatio || 2) * 2))); // High DPI, capped for memory
+        const OVERLAY_SCALE = 1;
         const OVERSCROLL_THRESHOLD = 360;
         const OVERSCROLL_FRICTION = 0.24;
         const OVERSCROLL_MARGIN = 100;
@@ -1243,6 +1287,13 @@
         const LIVE_PREVIEW_POINTS = 6;
         const FINALIZE_STEP_POINTS = 6;
         const MIN_PAGE_VISIBLE = 5;
+        const VIEW_STORAGE_KEY = 'notebook-view-v1';
+        const VIEW_SAVE_DELAY = 250;
+        const MAX_SAVE_INTERVAL = 15000;
+        const DATA_STORAGE_KEY = 'notebook-data-v2';
+        const DB_NAME = 'notebook-data-db-v1';
+        const DB_STORE = 'snapshots';
+        const DB_KEY = 'latest';
 
         const imageCache = new Map();
         const highlighterMaskCanvas = document.createElement('canvas');
@@ -1278,6 +1329,7 @@
             pinchCenterY: 0,
             activePointers: new Map(),
             saveTimeout: null,
+            lastSavedAt: null,
             selection: {
                 pageIndex: null,
                 strokeIndices: [],
@@ -1304,14 +1356,18 @@
         const loadingText = document.getElementById('loading-text');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
+        let viewSaveTimeout = null;
+        let pendingViewState = null;
+        let saveTimestampInterval = null;
         const addPageIndicator = document.createElement('div');
         addPageIndicator.id = 'add-page-indicator';
         addPageIndicator.textContent = '+';
         canvasContainer.appendChild(addPageIndicator);
 
         // Initialize
-        function init() {
-            loadFromStorage();
+        async function init() {
+            pendingViewState = loadViewState();
+            await loadFromStorage();
             bakeLegacyEraserAreaStrokes();
             if (state.pages.length === 0) {
                 addPage();
@@ -1320,10 +1376,15 @@
             }
             setupEventListeners();
             syncEraserMenuState();
+            if (!saveTimestampInterval) {
+                saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
+            }
             
             // Center page after DOM is ready
             setTimeout(() => {
-                centerViewOnTop();
+                if (!applyViewState(pendingViewState)) {
+                    centerViewOnTop();
+                }
             }, 100);
         }
 
@@ -1357,8 +1418,8 @@
             };
             state.pages.push(pageData);
             createPageElement(pageIndex, animate);
-            saveToStorage();
-            showStatus('Page added');
+            scheduleSave(true);
+            showStatus('Page added', { preserveState: true });
         }
 
         // Create page DOM element
@@ -1398,8 +1459,8 @@
             const lassoOverlay = document.createElement('canvas');
             lassoOverlay.className = 'lasso-overlay';
             lassoOverlay.dataset.page = pageIndex;
-            lassoOverlay.width = A4_WIDTH * CANVAS_SCALE;
-            lassoOverlay.height = A4_HEIGHT * CANVAS_SCALE;
+            lassoOverlay.width = A4_WIDTH * OVERLAY_SCALE;
+            lassoOverlay.height = A4_HEIGHT * OVERLAY_SCALE;
             lassoOverlay.style.width = '100%';
             lassoOverlay.style.height = '100%';
             wrapper.appendChild(lassoOverlay);
@@ -1407,8 +1468,8 @@
             const cursorOverlay = document.createElement('canvas');
             cursorOverlay.className = 'cursor-overlay';
             cursorOverlay.dataset.page = pageIndex;
-            cursorOverlay.width = A4_WIDTH * CANVAS_SCALE;
-            cursorOverlay.height = A4_HEIGHT * CANVAS_SCALE;
+            cursorOverlay.width = A4_WIDTH * OVERLAY_SCALE;
+            cursorOverlay.height = A4_HEIGHT * OVERLAY_SCALE;
             cursorOverlay.style.width = '100%';
             cursorOverlay.style.height = '100%';
             wrapper.appendChild(cursorOverlay);
@@ -1419,6 +1480,12 @@
             selectionBox.innerHTML = `
                 <div class="selection-rotate-line"></div>
                 <div class="rotate-handle" data-handle="rotate"></div>
+                <button class="selection-duplicate" type="button" title="Duplicate selection" aria-label="Duplicate selection">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="10" height="10" rx="2"/>
+                        <rect x="5" y="5" width="10" height="10" rx="2"/>
+                    </svg>
+                </button>
                 <button class="selection-trash" type="button" title="Delete image" aria-label="Delete image">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
@@ -1645,7 +1712,7 @@
         function drawLassoPath(lassoCanvas, points) {
             if (!lassoCanvas || points.length === 0) return;
             const ctx = lassoCanvas.getContext('2d');
-            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
             ctx.strokeStyle = '#002FD9';
             ctx.lineWidth = 1.5;
@@ -1792,7 +1859,7 @@
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
             const radius = state.eraserWidth / 2;
             ctx.strokeStyle = 'rgba(0,0,0,0.45)';
@@ -1817,6 +1884,8 @@
                 const box = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
                 if (box) {
                     box.classList.add('hidden');
+                    box.classList.remove('has-selection');
+                    box.classList.remove('has-image');
                 }
             }
             document.querySelectorAll('.lasso-overlay').forEach(canvas => {
@@ -1984,6 +2053,8 @@
             const box = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
             if (!box || !bounds) return;
             box.classList.remove('hidden');
+            const hasSelection = state.selection.strokeIndices.length > 0 || state.selection.imageIndices.length > 0;
+            box.classList.toggle('has-selection', hasSelection);
             box.classList.toggle('has-image', state.selection.imageIndices.length > 0);
             box.style.left = bounds.minX + 'px';
             box.style.top = bounds.minY + 'px';
@@ -2023,7 +2094,85 @@
             redrawPage(pageIndex);
             renderPagesList();
             scheduleSave();
-            showStatus(uniqueIndices.length > 1 ? 'Images deleted' : 'Image deleted');
+            showStatus(uniqueIndices.length > 1 ? 'Images deleted' : 'Image deleted', { preserveState: true });
+        }
+
+        function duplicateSelection(pageIndex) {
+            const page = state.pages[pageIndex];
+            if (!page) return;
+            const strokeIndices = Array.from(new Set(state.selection.strokeIndices || []))
+                .filter(index => index >= 0 && index < page.strokes.length);
+            const imageIndices = Array.from(new Set(state.selection.imageIndices || []))
+                .filter(index => page.images?.[index]);
+            if (strokeIndices.length === 0 && imageIndices.length === 0) return;
+
+            const bounds = getSelectionBounds(pageIndex, strokeIndices, imageIndices);
+            const offset = 18;
+            let dx = offset;
+            let dy = offset;
+            if (bounds) {
+                const margin = 6;
+                const minDx = margin - bounds.minX;
+                const maxDx = (A4_WIDTH - margin) - bounds.maxX;
+                const minDy = margin - bounds.minY;
+                const maxDy = (A4_HEIGHT - margin) - bounds.maxY;
+                dx = minDx > maxDx ? 0 : clamp(dx, minDx, maxDx);
+                dy = minDy > maxDy ? 0 : clamp(dy, minDy, maxDy);
+            }
+
+            const addedStrokes = [];
+            strokeIndices.forEach(index => {
+                const stroke = page.strokes[index];
+                if (!stroke) return;
+                const duplicate = JSON.parse(JSON.stringify(stroke));
+                duplicate.points = stroke.points.map(pt => ({
+                    x: pt.x + dx,
+                    y: pt.y + dy,
+                    p: pt.p
+                }));
+                page.strokes.push(duplicate);
+                addedStrokes.push({
+                    index: page.strokes.length - 1,
+                    stroke: JSON.parse(JSON.stringify(duplicate))
+                });
+            });
+
+            const addedImages = [];
+            if (Array.isArray(page.images)) {
+                imageIndices.forEach(index => {
+                    const image = page.images[index];
+                    if (!image) return;
+                    const duplicate = {
+                        ...image,
+                        x: image.x + dx,
+                        y: image.y + dy
+                    };
+                    page.images.push(duplicate);
+                    addedImages.push({
+                        index: page.images.length - 1,
+                        image: JSON.parse(JSON.stringify(duplicate))
+                    });
+                });
+            }
+
+            if (addedStrokes.length === 0 && addedImages.length === 0) return;
+
+            saveToHistory({
+                type: 'duplicate-selection',
+                pageIndex,
+                strokes: addedStrokes,
+                images: addedImages
+            });
+
+            state.selection.pageIndex = pageIndex;
+            state.selection.strokeIndices = addedStrokes.map(item => item.index);
+            state.selection.imageIndices = addedImages.map(item => item.index);
+            setActiveTool('lasso');
+            updateSelectionBox();
+            redrawPage(pageIndex);
+            renderPagesList();
+            scheduleSave();
+            showStatus('Selection duplicated', { preserveState: true });
         }
 
         function getPagePosFromEvent(pageIndex, e) {
@@ -2126,7 +2275,7 @@
                 redrawPage(pageIndex);
                 renderPagesList();
                 scheduleSave();
-                showStatus('Image added');
+                showStatus('Image added', { preserveState: true });
             };
 
             if (img.complete) {
@@ -2241,6 +2390,12 @@
                 if (state.currentTool !== 'lasso') return;
                 if (state.selection.pageIndex !== pageIndex) return;
                 const target = e.target;
+                if (target.closest && target.closest('.selection-duplicate')) {
+                    duplicateSelection(pageIndex);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
                 if (target.closest && target.closest('.selection-trash')) {
                     deleteSelectedImages(pageIndex);
                     e.preventDefault();
@@ -2780,7 +2935,7 @@
                 });
             });
             if (changed) {
-                saveToStorage();
+                scheduleSave(true);
             }
         }
 
@@ -2901,6 +3056,7 @@
                     positionEraserMenu();
                 }
                 resetResetSlider();
+                preserveViewOnResize();
             });
 
             // Export/Import PDF
@@ -2981,6 +3137,23 @@
             document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
             document.addEventListener('msfullscreenchange', handleFullscreenChange);
             handleFullscreenChange();
+
+            window.addEventListener('beforeunload', () => {
+                saveViewState();
+                scheduleSave(true);
+            });
+
+            window.addEventListener('pagehide', () => {
+                saveViewState();
+                scheduleSave(true);
+            });
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    saveViewState();
+                    scheduleSave(true);
+                }
+            });
         }
 
         function isFullscreenActive() {
@@ -2999,9 +3172,8 @@
 
         function handleFullscreenChange() {
             updateFullscreenButton();
-            // Allow layout to settle before re-centering and clamping toolbar
+            // Allow layout to settle before recalculating layout-dependent positions
             setTimeout(() => {
-                centerViewOnTop();
                 window.dispatchEvent(new Event('resize'));
             }, 50);
         }
@@ -3615,9 +3787,27 @@
             return Math.sqrt(dx * dx + dy * dy);
         }
 
+        function preserveViewOnResize() {
+            const rect = canvasViewport.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const anchorX = (rect.width / 2 - state.panX) / state.zoom;
+            const anchorY = (rect.height / 2 - state.panY) / state.zoom;
+            requestAnimationFrame(() => {
+                const nextRect = canvasViewport.getBoundingClientRect();
+                state.panX = nextRect.width / 2 - anchorX * state.zoom;
+                state.panY = nextRect.height / 2 - anchorY * state.zoom;
+                state.overscrollY = 0;
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                updateAddPageIndicator();
+                updateTransform();
+            });
+        }
+
         function updateTransform() {
             clampPanToVisible();
             canvasContainer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+            scheduleViewSave();
         }
 
         function setZoom(newZoom) {
@@ -3769,10 +3959,10 @@
             if (lastIndex >= 0) {
                 goToPage(lastIndex);
             }
-            saveToStorage();
+            scheduleSave(true);
             renderPagesList();
             closeDeleteModal();
-            showStatus('Page deleted');
+            showStatus('Page deleted', { preserveState: true });
         }
 
         // Reset document
@@ -3799,10 +3989,10 @@
             state.historyIndex = -1;
             updateHistoryButtons();
             renderAllPages();
-            saveToStorage();
+            scheduleSave(true);
             renderPagesList();
             centerViewOnTop();
-            showStatus('New document');
+            showStatus('New document', { preserveState: true });
         }
 
         const resetSliderState = {
@@ -3912,43 +4102,253 @@
             }
         }
 
-        // Storage
-        function saveToStorage() {
+        function saveViewState() {
             try {
                 const data = JSON.stringify({
-                    pages: state.pages,
+                    panX: state.panX,
+                    panY: state.panY,
+                    zoom: state.zoom
+                });
+                localStorage.setItem(VIEW_STORAGE_KEY, data);
+            } catch (e) {
+                console.error('Failed to save view state:', e);
+            }
+        }
+
+        function scheduleViewSave() {
+            clearTimeout(viewSaveTimeout);
+            viewSaveTimeout = setTimeout(() => {
+                saveViewState();
+            }, VIEW_SAVE_DELAY);
+        }
+
+        function loadViewState() {
+            try {
+                const data = localStorage.getItem(VIEW_STORAGE_KEY);
+                if (!data) return null;
+                const parsed = JSON.parse(data);
+                if (!parsed) return null;
+                const hasNumbers = ['panX', 'panY', 'zoom'].every(key => typeof parsed[key] === 'number');
+                if (!hasNumbers) return null;
+                return parsed;
+            } catch (e) {
+                console.error('Failed to load view state:', e);
+                return null;
+            }
+        }
+
+        function applyViewState(viewState) {
+            if (!viewState) return false;
+            state.zoom = Math.max(0.5, Math.min(3, viewState.zoom));
+            state.panX = viewState.panX;
+            state.panY = viewState.panY;
+            state.overscrollY = 0;
+            state.pendingPageCreate = false;
+            state.pageCreateLocked = false;
+            updateAddPageIndicator();
+            updateTransform();
+            return true;
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '--:--';
+            const now = Date.now();
+            const diffMs = Math.max(0, now - timestamp);
+            const diffMin = Math.floor(diffMs / 60000);
+            if (diffMin < 15) {
+                if (diffMin < 1) return 'hace <1 min';
+                return diffMin === 1 ? 'hace 1 min' : `hace ${diffMin} mins`;
+            }
+            return new Date(timestamp).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function updateSaveTimestamp() {
+            const timestampEl = document.getElementById('save-timestamp');
+            if (!timestampEl) return;
+            const label = state.lastSavedAt ? `Último: ${formatTime(state.lastSavedAt)}` : 'Último: --:--';
+            timestampEl.textContent = label;
+        }
+
+        function openNotebookDb() {
+            if (!('indexedDB' in window)) return Promise.resolve(null);
+            return new Promise((resolve) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = () => {
+                    const db = request.result;
+                    if (!db.objectStoreNames.contains(DB_STORE)) {
+                        db.createObjectStore(DB_STORE, { keyPath: 'key' });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => {
+                    console.error('Failed to open IndexedDB:', request.error);
+                    resolve(null);
+                };
+            });
+        }
+
+        async function saveToIndexedDb(data, savedAt) {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(DB_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    console.error('Failed to save to IndexedDB:', tx.error);
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(DB_STORE);
+                store.put({
+                    key: DB_KEY,
+                    data,
+                    savedAt,
                     version: 2
                 });
-                localStorage.setItem('notebook-data-v2', data);
+            });
+        }
+
+        async function loadFromIndexedDb() {
+            const db = await openNotebookDb();
+            if (!db) return null;
+            return new Promise((resolve) => {
+                const tx = db.transaction(DB_STORE, 'readonly');
+                tx.oncomplete = () => db.close();
+                tx.onerror = () => db.close();
+                const store = tx.objectStore(DB_STORE);
+                const request = store.get(DB_KEY);
+                request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => resolve(null);
+            });
+        }
+
+        function serializePayload(payload) {
+            try {
+                return JSON.stringify(payload);
             } catch (e) {
-                console.error('Failed to save:', e);
+                console.error('Failed to serialize payload:', e);
+                return null;
             }
         }
 
-        function loadFromStorage() {
+        function saveToLocalStorage(data) {
             try {
-                const data = localStorage.getItem('notebook-data-v2');
+                localStorage.setItem(DATA_STORAGE_KEY, data);
+                return true;
+            } catch (e) {
+                console.error('Failed to save to localStorage:', e);
+                return false;
+            }
+        }
+
+        async function saveToStorage() {
+            const savedAt = Date.now();
+            const payload = {
+                pages: state.pages,
+                version: 2,
+                savedAt
+            };
+            const data = serializePayload(payload);
+            if (!data) return { ok: false, savedAt: null };
+
+            const localOk = saveToLocalStorage(data);
+            const dbOk = await saveToIndexedDb(data, savedAt);
+            const ok = localOk || dbOk;
+
+            if (ok) {
+                state.lastSavedAt = savedAt;
+                updateSaveTimestamp();
+            }
+
+            return { ok, savedAt };
+        }
+
+        async function loadFromStorage() {
+            let localPayload = null;
+            let idbPayload = null;
+
+            try {
+                const data = localStorage.getItem(DATA_STORAGE_KEY);
                 if (data) {
-                    const parsed = JSON.parse(data);
-                    state.pages = (parsed.pages || []).map(page => ({
-                        strokes: Array.isArray(page?.strokes) ? page.strokes : [],
-                        backgroundImage: page?.backgroundImage || null,
-                        images: Array.isArray(page?.images) ? page.images : []
-                    }));
+                    localPayload = JSON.parse(data);
                 }
             } catch (e) {
-                console.error('Failed to load:', e);
-                state.pages = [];
+                console.error('Failed to load from localStorage:', e);
             }
+
+            try {
+                const record = await loadFromIndexedDb();
+                if (record && record.data) {
+                    idbPayload = JSON.parse(record.data);
+                }
+            } catch (e) {
+                console.error('Failed to load from IndexedDB:', e);
+            }
+
+            const candidates = [localPayload, idbPayload].filter(Boolean);
+            const best = candidates.reduce((acc, item) => {
+                if (!acc) return item;
+                const accTime = typeof acc.savedAt === 'number' ? acc.savedAt : 0;
+                const itemTime = typeof item.savedAt === 'number' ? item.savedAt : 0;
+                return itemTime >= accTime ? item : acc;
+            }, null);
+
+            if (best && Array.isArray(best.pages)) {
+                state.pages = best.pages.map(page => ({
+                    strokes: Array.isArray(page?.strokes) ? page.strokes : [],
+                    backgroundImage: page?.backgroundImage || null,
+                    images: Array.isArray(page?.images) ? page.images : []
+                }));
+                state.lastSavedAt = typeof best.savedAt === 'number' ? best.savedAt : null;
+            } else {
+                state.pages = [];
+                state.lastSavedAt = null;
+            }
+            updateSaveTimestamp();
         }
 
-        function scheduleSave() {
+        let saveInProgress = false;
+        let saveQueued = false;
+
+        function scheduleSave(immediate = false) {
             showStatus('Saving...', true);
             clearTimeout(state.saveTimeout);
+            const now = Date.now();
+            const lastSaved = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : 0;
+            const overdue = !lastSaved || (now - lastSaved >= MAX_SAVE_INTERVAL);
+            if (immediate || overdue) {
+                queueSave();
+                return;
+            }
             state.saveTimeout = setTimeout(() => {
-                saveToStorage();
-                showStatus('Saved');
+                queueSave();
             }, 500);
+        }
+
+        async function queueSave() {
+            if (saveInProgress) {
+                saveQueued = true;
+                return;
+            }
+            saveInProgress = true;
+            const result = await saveToStorage();
+            if (result.ok) {
+                showStatus('Saved', { savedAt: result.savedAt });
+            } else {
+                showStatus('Save failed', { error: true });
+            }
+            saveInProgress = false;
+            if (saveQueued) {
+                saveQueued = false;
+                showStatus('Saving...', true);
+                queueSave();
+            }
         }
 
         // History functions for undo/redo
@@ -4028,6 +4428,29 @@
                     page.images.splice(item.index, 0, JSON.parse(JSON.stringify(item.image)));
                 });
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'duplicate-selection') {
+                const page = state.pages[action.pageIndex];
+                if (!page) return;
+                if (Array.isArray(action.strokes) && action.strokes.length > 0) {
+                    const indices = action.strokes.map(item => item.index).sort((a, b) => b - a);
+                    indices.forEach(index => {
+                        if (index >= 0 && index < page.strokes.length) {
+                            page.strokes.splice(index, 1);
+                        }
+                    });
+                }
+                if (Array.isArray(action.images) && action.images.length > 0) {
+                    if (!Array.isArray(page.images)) page.images = [];
+                    const indices = action.images.map(item => item.index).sort((a, b) => b - a);
+                    indices.forEach(index => {
+                        if (index >= 0 && index < page.images.length) {
+                            page.images.splice(index, 1);
+                        }
+                    });
+                }
+                clearSelection();
+                redrawPage(action.pageIndex);
+                renderPagesList();
             }
 
             updateHistoryButtons();
@@ -4094,6 +4517,27 @@
                     }
                 });
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'duplicate-selection') {
+                const page = state.pages[action.pageIndex];
+                if (!page) return;
+                if (Array.isArray(action.strokes) && action.strokes.length > 0) {
+                    const sorted = [...action.strokes].sort((a, b) => a.index - b.index);
+                    sorted.forEach(item => {
+                        const insertIndex = Math.min(item.index, page.strokes.length);
+                        page.strokes.splice(insertIndex, 0, JSON.parse(JSON.stringify(item.stroke)));
+                    });
+                }
+                if (Array.isArray(action.images) && action.images.length > 0) {
+                    if (!Array.isArray(page.images)) page.images = [];
+                    const sorted = [...action.images].sort((a, b) => a.index - b.index);
+                    sorted.forEach(item => {
+                        const insertIndex = Math.min(item.index, page.images.length);
+                        page.images.splice(insertIndex, 0, JSON.parse(JSON.stringify(item.image)));
+                    });
+                }
+                clearSelection();
+                redrawPage(action.pageIndex);
+                renderPagesList();
             }
 
             updateHistoryButtons();
@@ -4105,13 +4549,36 @@
             document.getElementById('btn-redo').disabled = state.historyIndex >= state.history.length - 1;
         }
 
-        function showStatus(text, saving = false) {
+        function showStatus(text, options = {}) {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
-            indicator.classList.toggle('saving', saving);
-            indicator.classList.toggle('saved', !saving);
+
+            let saving = false;
+            let error = false;
+            let preserveState = false;
+            let savedAt = null;
+
+            if (typeof options === 'boolean') {
+                saving = options;
+            } else {
+                saving = !!options.saving;
+                error = !!options.error;
+                preserveState = !!options.preserveState;
+                savedAt = typeof options.savedAt === 'number' ? options.savedAt : null;
+            }
+
+            if (!preserveState) {
+                indicator.classList.toggle('saving', saving);
+                indicator.classList.toggle('error', error);
+                indicator.classList.toggle('saved', !saving && !error);
+            }
             indicator.title = text;
             indicator.setAttribute('aria-label', text);
+
+            if (savedAt) {
+                state.lastSavedAt = savedAt;
+            }
+            updateSaveTimestamp();
         }
 
         function showLoading(text) {
@@ -4309,21 +4776,21 @@
                 }
 
                 renderAllPages();
-                saveToStorage();
+                scheduleSave(true);
                 hideLoading();
                 centerViewOnTop();
                 
                 if (embeddedStrokes) {
                     const totalStrokes = embeddedStrokes.reduce((sum, p) => sum + (p.strokes?.length || 0), 0);
-                    showStatus(`PDF imported: ${numPages} pages, ${totalStrokes} strokes restored`);
+                    showStatus(`PDF imported: ${numPages} pages, ${totalStrokes} strokes restored`, { preserveState: true });
                 } else {
-                    showStatus(`PDF imported: ${numPages} pages (as background)`);
+                    showStatus(`PDF imported: ${numPages} pages (as background)`, { preserveState: true });
                 }
 
             } catch (err) {
                 console.error('Error importing PDF:', err);
                 hideLoading();
-                showStatus('Error importing PDF');
+                showStatus('Error importing PDF', { preserveState: true });
             }
 
             pdfInput.value = '';
@@ -4416,7 +4883,7 @@
 
             pdf.save(safeName);
             hideLoading();
-            showStatus('PDF exported');
+            showStatus('PDF exported', { preserveState: true });
         }
 
         // Start
