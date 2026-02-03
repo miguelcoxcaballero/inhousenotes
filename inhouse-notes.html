@@ -6,6 +6,7 @@
     <title>inhouse notes</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
 
@@ -151,6 +152,11 @@
             transition: all 0.2s ease;
             touch-action: manipulation;
             flex: 0 0 auto;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .btn-icon {
@@ -433,8 +439,12 @@
             backdrop-filter: blur(8px);
         }
 
-        #toolbar.toolbar-orienting {
-            animation: toolbar-orient 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+        #toolbar.toolbar-tilt-forward {
+            animation: toolbar-tilt-forward 0.52s cubic-bezier(0.2, 0.7, 0.2, 1);
+        }
+
+        #toolbar.toolbar-tilt-back {
+            animation: toolbar-tilt-back 0.52s cubic-bezier(0.2, 0.7, 0.2, 1);
         }
 
         #toolbar.horizontal {
@@ -522,15 +532,24 @@
             height: var(--icon-size);
         }
 
-        @keyframes toolbar-orient {
+        @keyframes toolbar-tilt-forward {
             0% {
                 --toolbar-rotate: 0deg;
             }
-            55% {
-                --toolbar-rotate: 92deg;
+            60% {
+                --toolbar-rotate: 84deg;
             }
-            78% {
-                --toolbar-rotate: 86deg;
+            100% {
+                --toolbar-rotate: 0deg;
+            }
+        }
+
+        @keyframes toolbar-tilt-back {
+            0% {
+                --toolbar-rotate: 0deg;
+            }
+            60% {
+                --toolbar-rotate: -84deg;
             }
             100% {
                 --toolbar-rotate: 0deg;
@@ -1063,9 +1082,181 @@
             margin-top: 16px;
             font-size: 0.875rem;
         }
+
+        /* Drive home */
+        #drive-home {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            z-index: 1200;
+        }
+
+        #drive-home.hidden {
+            display: none;
+        }
+
+        .drive-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+            gap: 16px;
+        }
+
+        .drive-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: 'Comfortaa', cursive;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .drive-brand svg {
+            width: 28px;
+            height: 20px;
+        }
+
+        .drive-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .drive-main {
+            flex: 1;
+            overflow: auto;
+            padding: 24px;
+        }
+
+        .drive-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+        }
+
+        .drive-search {
+            flex: 1;
+            min-width: 240px;
+            max-width: 420px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(0,0,0,0.08);
+            background: white;
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+
+        .drive-search:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .drive-status {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .drive-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .drive-card {
+            background: white;
+            border-radius: 14px;
+            padding: 16px;
+            border: 1px solid rgba(0,0,0,0.06);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 140px;
+        }
+
+        .drive-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+        }
+
+        .drive-card.new {
+            border: 2px dashed rgba(0,0,0,0.12);
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .drive-card-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .drive-card-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .drive-empty {
+            padding: 24px;
+            text-align: center;
+            color: var(--text-secondary);
+            border: 1px dashed rgba(0,0,0,0.12);
+            border-radius: 16px;
+            background: rgba(255,255,255,0.6);
+        }
+
+        #editor-view.hidden {
+            display: none;
+        }
+
+        .doc-title {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-left: 12px;
+        }
     </style>
 </head>
 <body>
+    <div id="drive-home">
+        <div class="drive-topbar">
+            <div class="drive-brand">
+                <svg viewBox="0 0 40 24" fill="none">
+                    <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+                <span>inhouse notes</span>
+            </div>
+            <div class="drive-actions">
+                <button class="btn btn-secondary" id="btn-drive-refresh">Refresh</button>
+                <button class="btn btn-primary" id="btn-drive-new">New PDF</button>
+                <button class="btn btn-primary" id="btn-drive-login">Sign in</button>
+                <button class="btn btn-secondary" id="btn-drive-logout">Sign out</button>
+            </div>
+        </div>
+        <div class="drive-main">
+            <div class="drive-toolbar">
+                <input class="drive-search" id="drive-search" type="text" placeholder="Search PDFs..." autocomplete="off">
+                <div class="drive-status" id="drive-status">Sign in to browse your Drive.</div>
+            </div>
+            <div class="drive-grid" id="drive-files"></div>
+            <div class="drive-empty hidden" id="drive-empty">No PDFs found yet.</div>
+        </div>
+    </div>
+
+    <div id="editor-view" class="hidden">
     <div id="app">
         <header>
             <div class="logo">
@@ -1073,8 +1264,15 @@
                     <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
                 </svg>
                 <span>inhouse notes</span>
+                <span class="doc-title" id="doc-title">Untitled</span>
             </div>
             <div class="header-actions">
+                <button class="btn btn-secondary btn-icon-square" id="btn-drive-home" title="Drive Home" aria-label="Drive Home">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 11l9-8 9 8"/>
+                        <path d="M5 10v10h14V10"/>
+                    </svg>
+                </button>
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
                 <button class="btn btn-warning btn-icon-square" id="btn-reset-document" title="Start new document" aria-label="Start new document">
@@ -1276,6 +1474,8 @@
     </div>
 
     <input type="file" id="pdf-input" accept=".pdf">
+    </div>
+    </div>
 
     <script>
         // Configure PDF.js worker
@@ -1333,6 +1533,10 @@
         const PEN_DOUBLE_TAP_DIST = 42;
         const TOUCH_INERTIA_DECAY = 0.92;
         const TOUCH_INERTIA_STOP = 0.02;
+        const DRIVE_AUTOSAVE_DELAY = 3000;
+        const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
+        const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+        const DRIVE_FOLDER_NAME = 'Inhouse Notes';
         const DATA_STORAGE_KEY = 'notebook-data-v2';
         const DB_NAME = 'notebook-data-db-v1';
         const DB_STORE = 'snapshots';
@@ -1378,6 +1582,10 @@
                 color: '#002FD9',
                 width: 2
             },
+            driveFileId: null,
+            driveFileName: null,
+            driveFolderId: null,
+            driveAutosave: false,
             panVelocityX: 0,
             panVelocityY: 0,
             lastPanTime: 0,
@@ -1407,12 +1615,31 @@
         const pdfInput = document.getElementById('pdf-input');
         const loadingOverlay = document.getElementById('loading-overlay');
         const loadingText = document.getElementById('loading-text');
+        const driveHome = document.getElementById('drive-home');
+        const editorView = document.getElementById('editor-view');
+        const driveFilesEl = document.getElementById('drive-files');
+        const driveStatusEl = document.getElementById('drive-status');
+        const driveSearchInput = document.getElementById('drive-search');
+        const driveEmptyEl = document.getElementById('drive-empty');
+        const driveLoginBtn = document.getElementById('btn-drive-login');
+        const driveLogoutBtn = document.getElementById('btn-drive-logout');
+        const driveRefreshBtn = document.getElementById('btn-drive-refresh');
+        const driveNewBtn = document.getElementById('btn-drive-new');
+        const driveHomeBtn = document.getElementById('btn-drive-home');
+        const docTitleEl = document.getElementById('doc-title');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
         let pendingViewState = null;
         let saveTimestampInterval = null;
         let lastPenBackgroundTap = null;
+        let driveTokenClient = null;
+        let driveAccessToken = null;
+        let driveTokenExpiry = 0;
+        let driveSaveTimeout = null;
+        let driveSaveInProgress = false;
+        let driveSaveQueued = false;
+        let driveFilesCache = [];
         const addPageIndicator = document.createElement('div');
         addPageIndicator.id = 'add-page-indicator';
         addPageIndicator.textContent = '+';
@@ -1430,9 +1657,12 @@
             }
             setupEventListeners();
             syncEraserMenuState();
+            initDriveAuth();
+            updateDocTitle();
             if (!saveTimestampInterval) {
                 saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
             }
+            showDriveHome();
             
             // Center page after DOM is ready
             setTimeout(() => {
@@ -2432,6 +2662,235 @@
             return false;
         }
 
+        function updateDocTitle() {
+            if (!docTitleEl) return;
+            const name = state.driveFileName || (state.exportName ? `${state.exportName}` : 'Untitled');
+            docTitleEl.textContent = name;
+        }
+
+        function showDriveHome() {
+            if (driveHome) driveHome.classList.remove('hidden');
+            if (editorView) editorView.classList.add('hidden');
+        }
+
+        function showEditorView() {
+            if (driveHome) driveHome.classList.add('hidden');
+            if (editorView) editorView.classList.remove('hidden');
+        }
+
+        function initDriveAuth() {
+            if (!window.google || !google.accounts || !google.accounts.oauth2) {
+                setTimeout(initDriveAuth, 200);
+                return;
+            }
+            driveTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: DRIVE_SCOPE,
+                callback: () => {}
+            });
+            updateDriveAuthUI();
+        }
+
+        function updateDriveAuthUI() {
+            const signedIn = !!driveAccessToken;
+            if (driveLoginBtn) driveLoginBtn.style.display = signedIn ? 'none' : 'inline-flex';
+            if (driveLogoutBtn) driveLogoutBtn.style.display = signedIn ? 'inline-flex' : 'none';
+            if (driveSearchInput) driveSearchInput.disabled = !signedIn;
+            if (driveRefreshBtn) driveRefreshBtn.disabled = !signedIn;
+            if (driveNewBtn) driveNewBtn.disabled = !signedIn;
+            if (driveStatusEl) {
+                driveStatusEl.textContent = signedIn ? 'Loading your PDFs…' : 'Sign in to browse your Drive.';
+            }
+            if (!signedIn && driveEmptyEl) driveEmptyEl.classList.add('hidden');
+        }
+
+        function ensureDriveToken(interactive = false) {
+            if (driveAccessToken && Date.now() < driveTokenExpiry - 60000) {
+                return Promise.resolve(driveAccessToken);
+            }
+            if (!driveTokenClient) {
+                return Promise.reject(new Error('Drive auth not ready'));
+            }
+            return new Promise((resolve, reject) => {
+                driveTokenClient.callback = (resp) => {
+                    if (resp.error) {
+                        reject(resp);
+                        return;
+                    }
+                    driveAccessToken = resp.access_token;
+                    driveTokenExpiry = Date.now() + (resp.expires_in || 0) * 1000;
+                    updateDriveAuthUI();
+                    resolve(driveAccessToken);
+                };
+                driveTokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+            });
+        }
+
+        function signInDrive() {
+            ensureDriveToken(true)
+                .then(() => refreshDriveFiles())
+                .catch(() => {
+                    if (driveStatusEl) driveStatusEl.textContent = 'Sign-in failed. Try again.';
+                });
+        }
+
+        function signOutDrive() {
+            if (driveAccessToken && window.google?.accounts?.oauth2?.revoke) {
+                google.accounts.oauth2.revoke(driveAccessToken, () => {});
+            }
+            driveAccessToken = null;
+            driveTokenExpiry = 0;
+            state.driveFileId = null;
+            state.driveFileName = null;
+            state.driveFolderId = null;
+            state.driveAutosave = false;
+            driveFilesCache = [];
+            if (driveFilesEl) driveFilesEl.innerHTML = '';
+            if (driveStatusEl) driveStatusEl.textContent = 'Sign in to browse your Drive.';
+            updateDriveAuthUI();
+        }
+
+        async function driveFetch(url, options = {}) {
+            const token = await ensureDriveToken(false);
+            const headers = new Headers(options.headers || {});
+            headers.set('Authorization', `Bearer ${token}`);
+            const res = await fetch(url, { ...options, headers });
+            if (!res.ok) {
+                const message = await res.text().catch(() => '');
+                throw new Error(`Drive API error ${res.status}: ${message}`);
+            }
+            return res;
+        }
+
+        async function ensureDriveFolder() {
+            if (state.driveFolderId) return state.driveFolderId;
+            const query = encodeURIComponent(`name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`);
+            const data = await res.json();
+            if (data.files && data.files.length > 0) {
+                state.driveFolderId = data.files[0].id;
+                return state.driveFolderId;
+            }
+            const createRes = await driveFetch('https://www.googleapis.com/drive/v3/files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: DRIVE_FOLDER_NAME,
+                    mimeType: 'application/vnd.google-apps.folder'
+                })
+            });
+            const created = await createRes.json();
+            state.driveFolderId = created.id;
+            return state.driveFolderId;
+        }
+
+        function formatDriveDate(value) {
+            if (!value) return '';
+            const date = new Date(value);
+            return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function renderDriveFiles(files) {
+            if (!driveFilesEl) return;
+            driveFilesEl.innerHTML = '';
+
+            const newCard = document.createElement('div');
+            newCard.className = 'drive-card new';
+            newCard.innerHTML = '<span>+ New PDF</span>';
+            newCard.addEventListener('click', () => createNewDriveDocument());
+            driveFilesEl.appendChild(newCard);
+
+            if (!files || files.length === 0) {
+                if (driveEmptyEl) driveEmptyEl.classList.remove('hidden');
+                return;
+            }
+            if (driveEmptyEl) driveEmptyEl.classList.add('hidden');
+
+            files.forEach(file => {
+                const card = document.createElement('div');
+                card.className = 'drive-card';
+                card.innerHTML = `
+                    <div class="drive-card-title">${file.name}</div>
+                    <div class="drive-card-meta">Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}</div>
+                    <div class="drive-card-meta">${file.owners?.[0]?.displayName || 'My Drive'}</div>
+                `;
+                card.addEventListener('click', () => openDriveFile(file));
+                driveFilesEl.appendChild(card);
+            });
+        }
+
+        async function refreshDriveFiles() {
+            if (!driveStatusEl) return;
+            if (!driveAccessToken) {
+                updateDriveAuthUI();
+                return;
+            }
+            driveStatusEl.textContent = 'Loading your PDFs…';
+            try {
+                await ensureDriveToken(false);
+                const search = driveSearchInput ? driveSearchInput.value.trim() : '';
+                const queryParts = [
+                    `mimeType='application/pdf'`,
+                    'trashed=false'
+                ];
+                if (search) {
+                    const safe = search.replace(/'/g, "\\'");
+                    queryParts.push(`name contains '${safe}'`);
+                }
+                const q = encodeURIComponent(queryParts.join(' and '));
+                const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,owners(displayName))');
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=50&fields=${fields}`);
+                const data = await res.json();
+                driveFilesCache = data.files || [];
+                renderDriveFiles(driveFilesCache);
+                driveStatusEl.textContent = `Showing ${driveFilesCache.length} PDF${driveFilesCache.length !== 1 ? 's' : ''}.`;
+            } catch (err) {
+                driveStatusEl.textContent = 'Unable to load Drive files.';
+            }
+        }
+
+        async function openDriveFile(file) {
+            if (!file || !file.id) return;
+            try {
+                await ensureDriveToken(false);
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
+                const arrayBuffer = await res.arrayBuffer();
+                await importPDFArrayBuffer(arrayBuffer);
+                state.driveFileId = file.id;
+                state.driveFileName = file.name || 'Untitled';
+                state.driveAutosave = true;
+                const baseName = state.driveFileName.replace(/\.pdf$/i, '');
+                state.exportName = baseName || state.exportName;
+                updateDocTitle();
+                showEditorView();
+                showStatus('PDF loaded', { preserveState: true });
+            } catch (err) {
+                showStatus('Failed to load PDF', { preserveState: true });
+            }
+        }
+
+        function createNewDriveDocument() {
+            clearSelection();
+            state.selectionTransform = null;
+            state.pages = [{
+                strokes: [],
+                backgroundImage: null,
+                images: []
+            }];
+            state.history = [];
+            state.historyIndex = -1;
+            updateHistoryButtons();
+            renderAllPages();
+            centerViewOnTop();
+            state.exportName = 'Untitled';
+            state.driveFileId = null;
+            state.driveFileName = 'Untitled';
+            state.driveAutosave = true;
+            updateDocTitle();
+            showEditorView();
+            scheduleSave(true);
+        }
+
         function addImageToPage(pageIndex, src, dropPos, offsetIndex = 0) {
             const page = state.pages[pageIndex];
             if (!page) return;
@@ -3228,6 +3687,30 @@
                 });
             });
 
+            if (driveLoginBtn) {
+                driveLoginBtn.addEventListener('click', signInDrive);
+            }
+            if (driveLogoutBtn) {
+                driveLogoutBtn.addEventListener('click', signOutDrive);
+            }
+            if (driveRefreshBtn) {
+                driveRefreshBtn.addEventListener('click', refreshDriveFiles);
+            }
+            if (driveNewBtn) {
+                driveNewBtn.addEventListener('click', createNewDriveDocument);
+            }
+            if (driveHomeBtn) {
+                driveHomeBtn.addEventListener('click', () => {
+                    showDriveHome();
+                    refreshDriveFiles();
+                });
+            }
+            if (driveSearchInput) {
+                driveSearchInput.addEventListener('input', () => {
+                    refreshDriveFiles();
+                });
+            }
+
             document.querySelectorAll('#eraser-menu .size-btn[data-eraser-size]').forEach(btn => {
                 btn.addEventListener('click', () => {
                     document.querySelectorAll('#eraser-menu .size-btn[data-eraser-size]').forEach(b => b.classList.remove('active'));
@@ -3695,12 +4178,13 @@
 
                 const isHorizontal = toolbar.classList.contains('horizontal');
                 if (wasHorizontal !== isHorizontal) {
-                    toolbar.classList.remove('toolbar-orienting');
+                    toolbar.classList.remove('toolbar-tilt-forward', 'toolbar-tilt-back');
                     void toolbar.offsetWidth;
-                    toolbar.classList.add('toolbar-orienting');
+                    const tiltClass = isHorizontal ? 'toolbar-tilt-forward' : 'toolbar-tilt-back';
+                    toolbar.classList.add(tiltClass);
                     setTimeout(() => {
-                        toolbar.classList.remove('toolbar-orienting');
-                    }, 320);
+                        toolbar.classList.remove(tiltClass);
+                    }, 520);
                 }
 
                 if (snapTimeout) {
@@ -4609,11 +5093,13 @@
             const overdue = !lastSaved || (now - lastSaved >= MAX_SAVE_INTERVAL);
             if (immediate || overdue) {
                 queueSave();
+                scheduleDriveSave();
                 return;
             }
             state.saveTimeout = setTimeout(() => {
                 queueSave();
             }, 500);
+            scheduleDriveSave();
         }
 
         async function queueSave() {
@@ -4633,6 +5119,70 @@
                 saveQueued = false;
                 showStatus('Saving...', true);
                 queueSave();
+            }
+        }
+
+        function scheduleDriveSave() {
+            if (!state.driveAutosave) return;
+            clearTimeout(driveSaveTimeout);
+            driveSaveTimeout = setTimeout(() => {
+                queueDriveSave();
+            }, DRIVE_AUTOSAVE_DELAY);
+        }
+
+        async function ensureDriveFile() {
+            if (state.driveFileId) return state.driveFileId;
+            await ensureDriveToken(false);
+            const folderId = await ensureDriveFolder();
+            const fileName = `${sanitizeFilename(state.exportName || 'Untitled')}.pdf`;
+            const pdfBlob = await buildPdfBlob();
+            const metadata = {
+                name: fileName,
+                mimeType: 'application/pdf',
+                parents: folderId ? [folderId] : undefined
+            };
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', pdfBlob);
+            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                body: form
+            });
+            const data = await res.json();
+            state.driveFileId = data.id;
+            state.driveFileName = data.name || fileName;
+            updateDocTitle();
+            return state.driveFileId;
+        }
+
+        async function updateDriveFile(fileId, pdfBlob) {
+            await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/pdf' },
+                body: pdfBlob
+            });
+        }
+
+        async function queueDriveSave() {
+            if (!state.driveAutosave) return;
+            if (driveSaveInProgress) {
+                driveSaveQueued = true;
+                return;
+            }
+            driveSaveInProgress = true;
+            try {
+                showStatus('Saving to Drive...', { saving: true });
+                const fileId = await ensureDriveFile();
+                const pdfBlob = await buildPdfBlob();
+                await updateDriveFile(fileId, pdfBlob);
+                showStatus('Saved', { savedAt: Date.now() });
+            } catch (err) {
+                showStatus('Drive save failed', { error: true });
+            }
+            driveSaveInProgress = false;
+            if (driveSaveQueued) {
+                driveSaveQueued = false;
+                queueDriveSave();
             }
         }
 
@@ -4951,6 +5501,7 @@
             }
             name = sanitizeFilename(name);
             state.exportName = name;
+            updateDocTitle();
             closeExportModal();
             exportPDF(`${name}.pdf`);
         }
@@ -4988,14 +5539,11 @@
         }
 
         // Import PDF - detect embedded strokes or treat as background
-        async function importPDF(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
+        async function importPDFArrayBuffer(arrayBuffer) {
+            if (!arrayBuffer) return;
             showLoading('Analyzing PDF...');
 
             try {
-                const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 const numPages = pdf.numPages;
 
@@ -5121,15 +5669,17 @@
                 hideLoading();
                 showStatus('Error importing PDF', { preserveState: true });
             }
+        }
 
+        async function importPDF(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const arrayBuffer = await file.arrayBuffer();
+            await importPDFArrayBuffer(arrayBuffer);
             pdfInput.value = '';
         }
 
-        // Export PDF with embedded stroke data
-        async function exportPDF(fileName) {
-            const safeName = fileName || 'cuaderno.pdf';
-            showLoading('Generando PDF...');
-
+        async function buildPdfBlob() {
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({
                 orientation: 'portrait',
@@ -5157,8 +5707,6 @@
             });
 
             for (let i = 0; i < state.pages.length; i++) {
-                showLoading(`Exporting page ${i + 1} of ${state.pages.length}...`);
-                
                 if (i > 0) pdf.addPage();
 
                 const page = state.pages[i];
@@ -5210,9 +5758,27 @@
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             }
 
-            pdf.save(safeName);
+            return pdf.output('blob');
+        }
+
+        // Export PDF with embedded stroke data
+        async function exportPDF(fileName) {
+            const safeName = fileName || 'cuaderno.pdf';
+            showLoading('Generando PDF...');
+
+            try {
+                const pdfBlob = await buildPdfBlob();
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(pdfBlob);
+                link.download = safeName;
+                link.click();
+                URL.revokeObjectURL(link.href);
+                showStatus('PDF exported', { preserveState: true });
+            } catch (err) {
+                showStatus('PDF export failed', { preserveState: true });
+            }
+
             hideLoading();
-            showStatus('PDF exported', { preserveState: true });
         }
 
         // Start
