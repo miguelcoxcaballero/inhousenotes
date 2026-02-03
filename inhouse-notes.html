@@ -1209,7 +1209,8 @@
         const OVERSCROLL_FRICTION = 0.24;
         const OVERSCROLL_MARGIN = 100;
         const CREATE_PAGE_MIN_BOTTOM_RATIO = 0.45;
-        const LIVE_PREVIEW_SEGMENTS = 1;
+        const LIVE_PREVIEW_POINTS = 6;
+        const FINALIZE_STEP_POINTS = 6;
         const MIN_PAGE_VISIBLE = 5;
 
         const imageCache = new Map();
@@ -1464,7 +1465,8 @@
                         color: state.currentColor,
                         width: state.currentWidth,
                         points: [{ x: pos.x, y: pos.y, p: pressure }],
-                        lastMid: null
+                        lastMid: null,
+                        finalizedIndex: -1
                     };
                 }
             });
@@ -1481,21 +1483,26 @@
 
                 const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
 
+                if (state.currentTool === 'eraser-stroke' || state.currentTool === 'eraser-area') {
+                    events.forEach(ev => {
+                        const pos = getCanvasPos(canvas, ev);
+                        if (state.currentTool === 'eraser-stroke') {
+                            eraseStrokeAtPoint(pageIndex, pos.x, pos.y, erasedStrokes, state.eraserWidth / 2);
+                            drawEraserPreview(pageIndex, pos);
+                        } else {
+                            areaEraseChanged = eraseAreaAtPoint(pageIndex, pos.x, pos.y, state.eraserWidth / 2) || areaEraseChanged;
+                            drawEraserPreview(pageIndex, pos);
+                        }
+                    });
+                    return;
+                }
+
                 events.forEach(ev => {
                     const pos = getCanvasPos(canvas, ev);
                     const pressure = ev.pressure || 0.5;
-
-                    if (state.currentTool === 'eraser-stroke') {
-                        eraseStrokeAtPoint(pageIndex, pos.x, pos.y, erasedStrokes, state.eraserWidth / 2);
-                        drawEraserPreview(pageIndex, pos);
-                    } else if (state.currentTool === 'eraser-area') {
-                        areaEraseChanged = eraseAreaAtPoint(pageIndex, pos.x, pos.y, state.eraserWidth / 2) || areaEraseChanged;
-                        drawEraserPreview(pageIndex, pos);
-                    } else {
-                        currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
-                        drawLiveStrokeSegment(pageIndex, canvas, currentStroke);
-                    }
+                    currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
                 });
+                updateLiveStroke(pageIndex, canvas, currentStroke);
             });
 
             const endDrawing = (e) => {
@@ -1603,8 +1610,7 @@
 
             if (!stroke || !stroke.points || stroke.points.length < 2) return;
             const points = stroke.points;
-            const startIndex = Math.max(0, points.length - (LIVE_PREVIEW_SEGMENTS + 1));
-            const lastPoint = points[points.length - 1];
+            const startIndex = Math.max(0, points.length - (LIVE_PREVIEW_POINTS + 1));
 
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             ctx.lineCap = 'round';
@@ -1618,35 +1624,57 @@
             ctx.stroke();
         }
 
-        function drawLiveStrokeSegment(pageIndex, canvas, stroke) {
-            if (!stroke || stroke.points.length < 2) return;
-            const ctx = canvas.getContext('2d');
+        function finalizeStrokeSegments(pageIndex, canvas, stroke) {
             const points = stroke.points;
-            const prev = points[points.length - 2];
-            const curr = points[points.length - 1];
-            const mid = {
-                x: (prev.x + curr.x) / 2,
-                y: (prev.y + curr.y) / 2
-            };
+            if (points.length < 2) return;
+            const targetIndex = Math.min(points.length - 2, points.length - LIVE_PREVIEW_POINTS - 1);
+            if (targetIndex <= stroke.finalizedIndex) return;
 
+            const ctx = canvas.getContext('2d');
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.lineWidth = getStrokeWidth(stroke);
 
-            if (!stroke.lastMid) {
+            let startIndex = stroke.finalizedIndex + 1;
+            if (startIndex === 0) {
+                const mid0 = {
+                    x: (points[0].x + points[1].x) / 2,
+                    y: (points[0].y + points[1].y) / 2
+                };
                 ctx.beginPath();
-                ctx.moveTo(prev.x, prev.y);
-                ctx.lineTo(mid.x, mid.y);
+                ctx.moveTo(points[0].x, points[0].y);
+                ctx.lineTo(mid0.x, mid0.y);
                 ctx.stroke();
-            } else {
-                ctx.beginPath();
-                ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
-                ctx.quadraticCurveTo(prev.x, prev.y, mid.x, mid.y);
-                ctx.stroke();
+                stroke.lastMid = mid0;
+                stroke.finalizedIndex = 0;
+                startIndex = 1;
             }
 
-            stroke.lastMid = mid;
+            for (let i = startIndex; i <= targetIndex; i++) {
+                const next = points[i + 1];
+                const mid = {
+                    x: (points[i].x + next.x) / 2,
+                    y: (points[i].y + next.y) / 2
+                };
+                ctx.beginPath();
+                ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
+                ctx.quadraticCurveTo(points[i].x, points[i].y, mid.x, mid.y);
+                ctx.stroke();
+                stroke.lastMid = mid;
+                stroke.finalizedIndex = i;
+            }
+        }
+
+        function updateLiveStroke(pageIndex, canvas, stroke) {
+            if (!stroke || stroke.points.length < 2) {
+                drawStrokePreviewTail(pageIndex, stroke);
+                return;
+            }
+            const pending = stroke.points.length - 1 - stroke.finalizedIndex;
+            if (pending > LIVE_PREVIEW_POINTS + FINALIZE_STEP_POINTS) {
+                finalizeStrokeSegments(pageIndex, canvas, stroke);
+            }
             drawStrokePreviewTail(pageIndex, stroke);
         }
 
