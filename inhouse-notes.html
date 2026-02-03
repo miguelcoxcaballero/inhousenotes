@@ -1039,7 +1039,7 @@
                 </svg>
             </button>
             <div class="tool-divider"></div>
-            <button class="tool-btn" data-tool="highlighter" data-color="#ffde00" data-width="25" title="Highlighter">
+            <button class="tool-btn" data-tool="highlighter" data-color="#ffde00" data-width="16" title="Highlighter">
                 <svg viewBox="0 0 24 24" fill="none">
                     <rect x="6" y="3" width="6" height="14" rx="1" fill="#ffde00" stroke="#1a1a1a" stroke-width="1.2"/>
                     <path d="M6 17l3 4 3-4" fill="#ffde00" stroke="#1a1a1a" stroke-width="1.2" stroke-linejoin="round"/>
@@ -1615,8 +1615,7 @@
                 : 0;
 
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
+            setStrokeCaps(ctx, stroke.tool);
             ctx.lineWidth = getStrokeWidth(stroke);
 
             let localMid = stroke.lastMid;
@@ -1677,8 +1676,7 @@
 
             const ctx = canvas.getContext('2d');
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
+            setStrokeCaps(ctx, stroke.tool);
             ctx.lineWidth = getStrokeWidth(stroke);
 
             let startIndex = stroke.finalizedIndex + 1;
@@ -2405,11 +2403,20 @@
             return stroke.width;
         }
 
+        function setStrokeCaps(ctx, tool) {
+            if (tool === 'highlighter') {
+                ctx.lineCap = 'butt';
+                ctx.lineJoin = 'round';
+            } else {
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+            }
+        }
+
         function drawSmoothStroke(ctx, stroke) {
             if (!stroke || !stroke.points || stroke.points.length < 2) return;
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
+            setStrokeCaps(ctx, stroke.tool);
 
             const points = stroke.points;
             if (points.length === 2) {
