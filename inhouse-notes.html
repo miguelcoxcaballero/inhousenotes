@@ -1214,6 +1214,8 @@
         const MIN_PAGE_VISIBLE = 5;
 
         const imageCache = new Map();
+        const highlighterMaskCanvas = document.createElement('canvas');
+        const highlighterMaskCtx = highlighterMaskCanvas.getContext('2d');
 
         // App State
         const state = {
@@ -1500,6 +1502,17 @@
                 events.forEach(ev => {
                     const pos = getCanvasPos(canvas, ev);
                     const pressure = ev.pressure || 0.5;
+                    if (currentStroke.tool === 'highlighter') {
+                        const lastPoint = currentStroke.points[currentStroke.points.length - 1];
+                        const minDist = Math.max(1.5, currentStroke.width * 0.3);
+                        const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
+                        if (dist < minDist) {
+                            lastPoint.x = pos.x;
+                            lastPoint.y = pos.y;
+                            lastPoint.p = pressure;
+                            return;
+                        }
+                    }
                     currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
                 });
                 updateLiveStroke(pageIndex, canvas, currentStroke);
@@ -1608,16 +1621,12 @@
             ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
 
-            if (!stroke || !stroke.points || stroke.points.length < 2) return;
+            if (!stroke || !stroke.points || stroke.points.length === 0) return;
             if (stroke.tool === 'highlighter') {
-                setupContext(ctx, stroke.tool, stroke.color, stroke.width);
-                setStrokeCaps(ctx, stroke.tool);
-                ctx.lineWidth = getStrokeWidth(stroke);
-                buildSmoothPath(ctx, stroke.points);
-                ctx.stroke();
-                drawHighlighterCaps(ctx, stroke);
+                drawFixedHighlighterStroke(ctx, stroke);
                 return;
             }
+            if (stroke.points.length < 2) return;
             const points = stroke.points;
             const startIndex = stroke.finalizedIndex >= 0
                 ? stroke.finalizedIndex + 1
@@ -2426,6 +2435,83 @@
             }
         }
 
+        function ensureHighlighterMask() {
+            const width = A4_WIDTH * CANVAS_SCALE;
+            const height = A4_HEIGHT * CANVAS_SCALE;
+            if (highlighterMaskCanvas.width !== width || highlighterMaskCanvas.height !== height) {
+                highlighterMaskCanvas.width = width;
+                highlighterMaskCanvas.height = height;
+            }
+        }
+
+        function addRoundedRectPath(ctx, x, y, width, height, radius) {
+            const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + width - r, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+            ctx.lineTo(x + width, y + height - r);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+            ctx.lineTo(x + r, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        function drawFixedHighlighterStroke(ctx, stroke) {
+            if (!stroke || !stroke.points || stroke.points.length === 0) return;
+            ensureHighlighterMask();
+
+            const maskCtx = highlighterMaskCtx;
+            maskCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+            maskCtx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            maskCtx.globalCompositeOperation = 'source-over';
+            maskCtx.globalAlpha = 1;
+            maskCtx.fillStyle = stroke.color || '#ffde00';
+
+            const brushHeight = Math.max(1, stroke.width || 12);
+            const brushWidth = brushHeight * 1.6;
+            const halfW = brushWidth / 2;
+            const halfH = brushHeight / 2;
+            const radius = brushHeight * 0.22;
+            const spacing = Math.max(1, brushHeight * 0.45);
+
+            const points = stroke.points;
+            maskCtx.beginPath();
+
+            const addStamp = (x, y) => {
+                addRoundedRectPath(maskCtx, x - halfW, y - halfH, brushWidth, brushHeight, radius);
+            };
+
+            let prev = points[0];
+            addStamp(prev.x, prev.y);
+
+            for (let i = 1; i < points.length; i++) {
+                const curr = points[i];
+                const dx = curr.x - prev.x;
+                const dy = curr.y - prev.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist === 0) {
+                    prev = curr;
+                    continue;
+                }
+                const steps = Math.max(1, Math.ceil(dist / spacing));
+                for (let s = 1; s <= steps; s++) {
+                    const t = s / steps;
+                    addStamp(prev.x + dx * t, prev.y + dy * t);
+                }
+                prev = curr;
+            }
+
+            maskCtx.fill();
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 0.35;
+            ctx.drawImage(highlighterMaskCanvas, 0, 0, A4_WIDTH, A4_HEIGHT);
+            ctx.restore();
+        }
+
         function buildSmoothPath(ctx, points) {
             if (points.length < 2) return;
             ctx.beginPath();
@@ -2462,17 +2548,15 @@
         }
 
         function drawSmoothStroke(ctx, stroke) {
-            if (!stroke || !stroke.points || stroke.points.length < 2) return;
+            if (!stroke || !stroke.points || stroke.points.length === 0) return;
+            if (stroke.tool === 'highlighter') {
+                drawFixedHighlighterStroke(ctx, stroke);
+                return;
+            }
+            if (stroke.points.length < 2) return;
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             setStrokeCaps(ctx, stroke.tool);
             ctx.lineWidth = getStrokeWidth(stroke);
-
-            if (stroke.tool === 'highlighter') {
-                buildSmoothPath(ctx, stroke.points);
-                ctx.stroke();
-                drawHighlighterCaps(ctx, stroke);
-                return;
-            }
 
             const points = stroke.points;
             if (points.length === 2) {
@@ -4079,6 +4163,9 @@
                     // Check if we have embedded strokes for this page
                     if (embeddedStrokes && embeddedStrokes[i - 1]) {
                         const pageData = embeddedStrokes[i - 1];
+                        const restoredImages = Array.isArray(pageData.images)
+                            ? pageData.images
+                            : [];
                         
                         // If page had custom background, keep PDF as background
                         // If not (was using default SVG), use default SVG background
@@ -4086,7 +4173,7 @@
                             state.pages.push({
                                 strokes: pageData.strokes || [],
                                 backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85),
-                                images: []
+                                images: restoredImages
                             });
                         } else {
                             // Original was default template, don't use PDF as background
@@ -4094,7 +4181,7 @@
                             state.pages.push({
                                 strokes: pageData.strokes || [],
                                 backgroundImage: null, // Will use default SVG
-                                images: []
+                                images: restoredImages
                             });
                         }
                     } else {
@@ -4140,9 +4227,10 @@
                 format: 'a4'
             });
 
-            // Prepare stroke data to embed (without backgroundImage to save space)
+            // Prepare data to embed (without backgroundImage to save space)
             const strokeData = state.pages.map(page => ({
                 strokes: page.strokes,
+                images: Array.isArray(page.images) ? page.images : [],
                 hasCustomBackground: !!page.backgroundImage
             }));
 
