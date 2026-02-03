@@ -37,6 +37,10 @@
             --handle-width: 52px;
             --handle-height: 28px;
             --icon-size: 24px;
+            --header-btn-size: 44px;
+            --selection-handle-size: 14px;
+            --selection-handle-offset: calc(-1px - (var(--selection-handle-size) / 2));
+            --rotate-handle-size: 10px;
         }
 
         html, body {
@@ -138,6 +142,12 @@
             min-height: 44px;
         }
 
+        .btn-icon-square {
+            width: var(--header-btn-size);
+            height: var(--header-btn-size);
+            padding: 0;
+        }
+
         .btn-primary {
             background: var(--text-primary);
             color: white;
@@ -145,6 +155,15 @@
 
         .btn-primary:hover {
             background: #333;
+        }
+
+        .btn-warning {
+            background: var(--accent-orange);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d36f33;
         }
 
         .btn-secondary {
@@ -235,8 +254,6 @@
         .selection-box .selection-handle,
         .selection-box .rotate-handle {
             position: absolute;
-            width: 10px;
-            height: 10px;
             border-radius: 50%;
             background: rgba(255,255,255,0.9);
             border: 1px solid rgba(0, 47, 217, 0.7);
@@ -244,20 +261,28 @@
             opacity: 0.9;
         }
 
+        .selection-box .selection-handle {
+            width: var(--selection-handle-size);
+            height: var(--selection-handle-size);
+        }
+
+        .selection-box .rotate-handle {
+            width: var(--rotate-handle-size);
+            height: var(--rotate-handle-size);
+        }
+
         .selection-box .selection-handle.edge {
-            width: 10px;
-            height: 10px;
             border-radius: 3px;
         }
 
-        .selection-box .handle-n { top: -6px; left: 50%; transform: translate(-50%, -50%); cursor: ns-resize; }
-        .selection-box .handle-s { bottom: -6px; left: 50%; transform: translate(-50%, 50%); cursor: ns-resize; }
-        .selection-box .handle-e { right: -6px; top: 50%; transform: translate(50%, -50%); cursor: ew-resize; }
-        .selection-box .handle-w { left: -6px; top: 50%; transform: translate(-50%, -50%); cursor: ew-resize; }
-        .selection-box .handle-ne { right: -6px; top: -6px; transform: translate(50%, -50%); cursor: nesw-resize; }
-        .selection-box .handle-nw { left: -6px; top: -6px; transform: translate(-50%, -50%); cursor: nwse-resize; }
-        .selection-box .handle-se { right: -6px; bottom: -6px; transform: translate(50%, 50%); cursor: nwse-resize; }
-        .selection-box .handle-sw { left: -6px; bottom: -6px; transform: translate(-50%, 50%); cursor: nesw-resize; }
+        .selection-box .handle-n { top: var(--selection-handle-offset); left: 50%; transform: translate(-50%, -50%); cursor: ns-resize; }
+        .selection-box .handle-s { bottom: var(--selection-handle-offset); left: 50%; transform: translate(-50%, 50%); cursor: ns-resize; }
+        .selection-box .handle-e { right: var(--selection-handle-offset); top: 50%; transform: translate(50%, -50%); cursor: ew-resize; }
+        .selection-box .handle-w { left: var(--selection-handle-offset); top: 50%; transform: translate(-50%, -50%); cursor: ew-resize; }
+        .selection-box .handle-ne { right: var(--selection-handle-offset); top: var(--selection-handle-offset); transform: translate(50%, -50%); cursor: nesw-resize; }
+        .selection-box .handle-nw { left: var(--selection-handle-offset); top: var(--selection-handle-offset); transform: translate(-50%, -50%); cursor: nwse-resize; }
+        .selection-box .handle-se { right: var(--selection-handle-offset); bottom: var(--selection-handle-offset); transform: translate(50%, 50%); cursor: nwse-resize; }
+        .selection-box .handle-sw { left: var(--selection-handle-offset); bottom: var(--selection-handle-offset); transform: translate(-50%, 50%); cursor: nesw-resize; }
 
         .selection-box .selection-rotate-line {
             position: absolute;
@@ -773,6 +798,14 @@
             background: #e6352b;
         }
 
+        .modal-warning .btn-primary {
+            background: var(--accent-orange);
+        }
+
+        .modal-warning .btn-primary:hover {
+            background: #d36f33;
+        }
+
         .saving .status-dot {
             animation: pulse 1s infinite;
             background: var(--accent-yellow);
@@ -844,40 +877,42 @@
             </div>
             <div class="header-actions">
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
-                <button class="btn btn-secondary" id="btn-fullscreen" title="Fullscreen">
+                <button class="btn btn-warning btn-icon-square" id="btn-reset-document" title="Start new document" aria-label="Start new document">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="1 4 1 10 7 10"/>
+                        <path d="M3.51 15a8.5 8.5 0 1 0 2.13-9.36L1 10"/>
+                    </svg>
+                </button>
+                <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="4 9 4 4 9 4"/>
                         <polyline points="15 4 20 4 20 9"/>
                         <polyline points="20 15 20 20 15 20"/>
                         <polyline points="9 20 4 20 4 15"/>
                     </svg>
-                    Fullscreen
                 </button>
-                <button class="btn btn-secondary" id="btn-edit-pages" title="Manage Pages">
+                <button class="btn btn-secondary btn-icon-square" id="btn-edit-pages" title="Manage Pages" aria-label="Manage Pages">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                         <polyline points="14 2 14 8 20 8"/>
                         <line x1="9" y1="15" x2="15" y2="15"/>
                     </svg>
-                    Pages
                 </button>
-                <button class="btn btn-secondary" id="btn-import-pdf" title="Import PDF">
+                <button class="btn btn-secondary btn-icon-square" id="btn-import-pdf" title="Import PDF" aria-label="Import PDF">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                         <polyline points="14 2 14 8 20 8"/>
                         <line x1="12" y1="18" x2="12" y2="12"/>
                         <polyline points="9 15 12 12 15 15"/>
                     </svg>
-                    Import
                 </button>
-                <button class="btn btn-primary" id="btn-export-pdf">
+                <button class="btn btn-primary btn-icon-square" id="btn-export-pdf" title="Export PDF" aria-label="Export PDF">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                         <polyline points="14 2 14 8 20 8"/>
                         <line x1="12" y1="18" x2="12" y2="12"/>
                         <polyline points="9 15 12 18 15 15"/>
                     </svg>
-                    Export
                 </button>
             </div>
         </header>
@@ -985,6 +1020,17 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-delete-cancel">Cancel</button>
                 <button class="btn btn-primary" id="modal-delete-confirm">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-reset-document">
+        <div class="modal modal-warning">
+            <h2>Start new document?</h2>
+            <p>This action will clear all pages and strokes and start a fresh document. This cannot be undone.</p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="modal-reset-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-reset-confirm">Start over</button>
             </div>
         </div>
     </div>
@@ -2059,6 +2105,7 @@
             document.getElementById('btn-import-pdf').addEventListener('click', () => pdfInput.click());
             pdfInput.addEventListener('change', importPDF);
             document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+            document.getElementById('btn-reset-document').addEventListener('click', openResetModal);
 
             // Undo/Redo buttons
             document.getElementById('btn-undo').addEventListener('click', undo);
@@ -2083,6 +2130,8 @@
             // Delete modal
             document.getElementById('modal-delete-cancel').addEventListener('click', closeDeleteModal);
             document.getElementById('modal-delete-confirm').addEventListener('click', confirmDeletePage);
+            document.getElementById('modal-reset-cancel').addEventListener('click', closeResetModal);
+            document.getElementById('modal-reset-confirm').addEventListener('click', confirmResetDocument);
 
             // Viewport pan/zoom with touch and mouse
             canvasViewport.addEventListener('pointerdown', handleViewportPointerDown);
@@ -2113,14 +2162,10 @@
             const fullscreenBtn = document.getElementById('btn-fullscreen');
             if (!fullscreenBtn) return;
             const isActive = !!isFullscreenActive();
-            fullscreenBtn.title = isActive ? 'Exit fullscreen' : 'Fullscreen';
+            const label = isActive ? 'Exit fullscreen' : 'Fullscreen';
+            fullscreenBtn.title = label;
+            fullscreenBtn.setAttribute('aria-label', label);
             fullscreenBtn.classList.toggle('active', isActive);
-            const label = fullscreenBtn.querySelector('span');
-            if (label) {
-                label.textContent = isActive ? 'Exit' : 'Fullscreen';
-            } else {
-                fullscreenBtn.lastChild.textContent = isActive ? ' Exit' : ' Fullscreen';
-            }
         }
 
         function handleFullscreenChange() {
@@ -2871,6 +2916,33 @@
             renderPagesList();
             closeDeleteModal();
             showStatus('Page deleted');
+        }
+
+        // Reset document
+        function openResetModal() {
+            document.getElementById('modal-reset-document').classList.add('visible');
+        }
+
+        function closeResetModal() {
+            document.getElementById('modal-reset-document').classList.remove('visible');
+        }
+
+        function confirmResetDocument() {
+            closeResetModal();
+            clearSelection();
+            state.selectionTransform = null;
+            state.pages = [{
+                strokes: [],
+                backgroundImage: null
+            }];
+            state.history = [];
+            state.historyIndex = -1;
+            updateHistoryButtons();
+            renderAllPages();
+            saveToStorage();
+            renderPagesList();
+            centerViewOnTop();
+            showStatus('New document');
         }
 
         // Storage
