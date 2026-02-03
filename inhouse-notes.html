@@ -621,6 +621,67 @@
             margin-bottom: 16px;
         }
 
+        .confirm-slider {
+            position: relative;
+            height: 52px;
+            border-radius: 16px;
+            background: rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.08);
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+        }
+
+        .confirm-slider-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 0%;
+            background: rgba(224, 122, 60, 0.18);
+            transition: width 0.2s ease;
+        }
+
+        .confirm-slider-text {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            pointer-events: none;
+            transition: color 0.2s ease;
+        }
+
+        .confirm-slider-handle {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: var(--accent-orange);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+            transition: transform 0.2s ease;
+        }
+
+        .confirm-slider.dragging .confirm-slider-handle,
+        .confirm-slider.dragging .confirm-slider-fill {
+            transition: none;
+        }
+
+        .confirm-slider.complete .confirm-slider-fill {
+            background: rgba(224, 122, 60, 0.9);
+        }
+
+        .confirm-slider.complete .confirm-slider-text {
+            color: white;
+        }
+
         .modal-input {
             display: flex;
             align-items: center;
@@ -1054,9 +1115,14 @@
         <div class="modal modal-warning">
             <h2>Start new document?</h2>
             <p>This action will clear all pages and strokes and start a fresh document. This cannot be undone.</p>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" id="modal-reset-cancel">Cancel</button>
-                <button class="btn btn-primary" id="modal-reset-confirm">Start over</button>
+            <div class="confirm-slider" id="reset-slider" aria-label="Slide to start over">
+                <div class="confirm-slider-fill" id="reset-slider-fill"></div>
+                <div class="confirm-slider-text">Slide to start over</div>
+                <div class="confirm-slider-handle" id="reset-slider-handle" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 6 15 12 9 18"/>
+                    </svg>
+                </div>
             </div>
         </div>
     </div>
@@ -1144,6 +1210,7 @@
         const OVERSCROLL_MARGIN = 100;
         const CREATE_PAGE_MIN_BOTTOM_RATIO = 0.45;
         const LIVE_PREVIEW_SEGMENTS = 1;
+        const MIN_PAGE_VISIBLE = 5;
 
         const imageCache = new Map();
 
@@ -1542,7 +1609,7 @@
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.lineWidth = getStrokeWidth(stroke, lastPoint);
+            ctx.lineWidth = getStrokeWidth(stroke);
             ctx.beginPath();
             ctx.moveTo(points[startIndex].x, points[startIndex].y);
             for (let i = startIndex + 1; i < points.length; i++) {
@@ -1565,7 +1632,7 @@
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.lineWidth = getStrokeWidth(stroke, prev);
+            ctx.lineWidth = getStrokeWidth(stroke);
 
             if (!stroke.lastMid) {
                 ctx.beginPath();
@@ -2261,10 +2328,8 @@
             return img;
         }
 
-        function getStrokeWidth(stroke, point) {
-            if (stroke.tool !== 'pen') return stroke.width;
-            const pressure = typeof point?.p === 'number' ? point.p : 0.5;
-            return stroke.width * (0.5 + pressure);
+        function getStrokeWidth(stroke) {
+            return stroke.width;
         }
 
         function drawSmoothStroke(ctx, stroke) {
@@ -2275,7 +2340,7 @@
 
             const points = stroke.points;
             if (points.length === 2) {
-                ctx.lineWidth = getStrokeWidth(stroke, points[1]);
+                ctx.lineWidth = getStrokeWidth(stroke);
                 ctx.beginPath();
                 ctx.moveTo(points[0].x, points[0].y);
                 ctx.lineTo(points[1].x, points[1].y);
@@ -2290,7 +2355,7 @@
                 y: (p0.y + p1.y) / 2
             };
 
-            ctx.lineWidth = getStrokeWidth(stroke, p0);
+            ctx.lineWidth = getStrokeWidth(stroke);
             ctx.beginPath();
             ctx.moveTo(p0.x, p0.y);
             ctx.lineTo(prevMid.x, prevMid.y);
@@ -2303,7 +2368,7 @@
                     x: (current.x + next.x) / 2,
                     y: (current.y + next.y) / 2
                 };
-                ctx.lineWidth = getStrokeWidth(stroke, current);
+                ctx.lineWidth = getStrokeWidth(stroke);
                 ctx.beginPath();
                 ctx.moveTo(prevMid.x, prevMid.y);
                 ctx.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
@@ -2312,7 +2377,7 @@
             }
 
             const last = points[points.length - 1];
-            ctx.lineWidth = getStrokeWidth(stroke, last);
+            ctx.lineWidth = getStrokeWidth(stroke);
             ctx.beginPath();
             ctx.moveTo(prevMid.x, prevMid.y);
             ctx.lineTo(last.x, last.y);
@@ -2531,6 +2596,7 @@
                 if (eraserMenu && eraserMenu.classList.contains('visible')) {
                     positionEraserMenu();
                 }
+                resetResetSlider();
             });
 
             // Export/Import PDF
@@ -2563,8 +2629,6 @@
             // Delete modal
             document.getElementById('modal-delete-cancel').addEventListener('click', closeDeleteModal);
             document.getElementById('modal-delete-confirm').addEventListener('click', confirmDeletePage);
-            document.getElementById('modal-reset-cancel').addEventListener('click', closeResetModal);
-            document.getElementById('modal-reset-confirm').addEventListener('click', confirmResetDocument);
             document.getElementById('modal-delete-page').addEventListener('click', (e) => {
                 if (e.target.id === 'modal-delete-page') closeDeleteModal();
             });
@@ -2588,6 +2652,7 @@
                     }
                 });
             }
+            setupResetSlider();
 
             // Viewport pan/zoom with touch and mouse
             canvasViewport.addEventListener('pointerdown', handleViewportPointerDown);
@@ -2664,6 +2729,41 @@
             const padding = 30;
             if (pageCount === 0) return 0;
             return padding * 2 + pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
+        }
+
+        function getPageBounds() {
+            const pageCount = state.pages.length || 1;
+            const gap = 30;
+            const padding = 30;
+            const height = pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
+            return {
+                left: padding,
+                top: padding,
+                right: padding + A4_WIDTH,
+                bottom: padding + height
+            };
+        }
+
+        function clampPanToVisible() {
+            const rect = canvasViewport.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const bounds = getPageBounds();
+            const minPanX = MIN_PAGE_VISIBLE - bounds.right * state.zoom;
+            const maxPanX = rect.width - MIN_PAGE_VISIBLE - bounds.left * state.zoom;
+            const minPanY = MIN_PAGE_VISIBLE - bounds.bottom * state.zoom;
+            const maxPanY = rect.height - MIN_PAGE_VISIBLE - bounds.top * state.zoom;
+
+            if (minPanX > maxPanX) {
+                state.panX = (minPanX + maxPanX) / 2;
+            } else {
+                state.panX = Math.max(minPanX, Math.min(state.panX, maxPanX));
+            }
+
+            if (minPanY > maxPanY) {
+                state.panY = (minPanY + maxPanY) / 2;
+            } else {
+                state.panY = Math.max(minPanY, Math.min(state.panY, maxPanY));
+            }
         }
 
         function getBottomLimit() {
@@ -3212,6 +3312,7 @@
         }
 
         function updateTransform() {
+            clampPanToVisible();
             canvasContainer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
         }
 
@@ -3371,11 +3472,13 @@
 
         // Reset document
         function openResetModal() {
+            resetResetSlider();
             document.getElementById('modal-reset-document').classList.add('visible');
         }
 
         function closeResetModal() {
             document.getElementById('modal-reset-document').classList.remove('visible');
+            resetResetSlider();
         }
 
         function confirmResetDocument() {
@@ -3395,6 +3498,113 @@
             renderPagesList();
             centerViewOnTop();
             showStatus('New document');
+        }
+
+        const resetSliderState = {
+            slider: null,
+            handle: null,
+            fill: null,
+            isDragging: false,
+            maxX: 0,
+            handleWidth: 44,
+            padding: 4,
+            currentX: 0
+        };
+
+        function setupResetSlider() {
+            const slider = document.getElementById('reset-slider');
+            const handle = document.getElementById('reset-slider-handle');
+            const fill = document.getElementById('reset-slider-fill');
+            if (!slider || !handle || !fill) return;
+
+            resetSliderState.slider = slider;
+            resetSliderState.handle = handle;
+            resetSliderState.fill = fill;
+
+            slider.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                startResetSliderDrag(e);
+            });
+            slider.addEventListener('pointermove', onResetSliderDrag);
+            slider.addEventListener('pointerup', endResetSliderDrag);
+            slider.addEventListener('pointercancel', endResetSliderDrag);
+            slider.addEventListener('lostpointercapture', endResetSliderDrag);
+        }
+
+        function updateResetSliderMetrics() {
+            const slider = resetSliderState.slider;
+            const handle = resetSliderState.handle;
+            if (!slider || !handle) return;
+            const rect = slider.getBoundingClientRect();
+            const handleRect = handle.getBoundingClientRect();
+            resetSliderState.handleWidth = handleRect.width || 44;
+            resetSliderState.maxX = Math.max(0, rect.width - resetSliderState.handleWidth - resetSliderState.padding * 2);
+        }
+
+        function setResetSliderPosition(x, animate = true) {
+            const slider = resetSliderState.slider;
+            const handle = resetSliderState.handle;
+            const fill = resetSliderState.fill;
+            if (!slider || !handle || !fill) return;
+            updateResetSliderMetrics();
+            const clamped = Math.max(0, Math.min(x, resetSliderState.maxX));
+            resetSliderState.currentX = clamped;
+            slider.classList.toggle('dragging', !animate);
+            handle.style.transform = `translateX(${clamped}px)`;
+            const fillWidth = clamped + resetSliderState.handleWidth / 2 + resetSliderState.padding;
+            fill.style.width = `${fillWidth}px`;
+        }
+
+        function resetResetSlider() {
+            const slider = resetSliderState.slider;
+            if (slider) {
+                slider.classList.remove('complete');
+            }
+            setResetSliderPosition(0, true);
+        }
+
+        function startResetSliderDrag(e) {
+            const slider = resetSliderState.slider;
+            const handle = resetSliderState.handle;
+            if (!slider || !handle) return;
+            resetSliderState.isDragging = true;
+            slider.classList.remove('complete');
+            slider.classList.add('dragging');
+            slider.setPointerCapture(e.pointerId);
+            updateResetSliderMetrics();
+            const sliderRect = slider.getBoundingClientRect();
+            const handleRect = handle.getBoundingClientRect();
+            const pointerOffset = e.clientX - handleRect.left;
+            resetSliderState.dragOffset = Math.min(Math.max(pointerOffset, 0), handleRect.width);
+            const initialX = e.clientX - sliderRect.left - resetSliderState.padding - resetSliderState.dragOffset;
+            setResetSliderPosition(initialX, false);
+        }
+
+        function onResetSliderDrag(e) {
+            if (!resetSliderState.isDragging) return;
+            const slider = resetSliderState.slider;
+            if (!slider) return;
+            const sliderRect = slider.getBoundingClientRect();
+            const nextX = e.clientX - sliderRect.left - resetSliderState.padding - resetSliderState.dragOffset;
+            setResetSliderPosition(nextX, false);
+        }
+
+        function endResetSliderDrag() {
+            if (!resetSliderState.isDragging) return;
+            resetSliderState.isDragging = false;
+            const slider = resetSliderState.slider;
+            if (!slider) return;
+            slider.classList.remove('dragging');
+            const threshold = resetSliderState.maxX * 0.9;
+            if (resetSliderState.currentX >= threshold) {
+                slider.classList.add('complete');
+                setResetSliderPosition(resetSliderState.maxX, true);
+                setTimeout(() => {
+                    confirmResetDocument();
+                }, 120);
+            } else {
+                resetResetSlider();
+            }
         }
 
         // Storage
