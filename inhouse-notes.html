@@ -1609,6 +1609,15 @@
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
 
             if (!stroke || !stroke.points || stroke.points.length < 2) return;
+            if (stroke.tool === 'highlighter') {
+                setupContext(ctx, stroke.tool, stroke.color, stroke.width);
+                setStrokeCaps(ctx, stroke.tool);
+                ctx.lineWidth = getStrokeWidth(stroke);
+                buildSmoothPath(ctx, stroke.points);
+                ctx.stroke();
+                drawHighlighterCaps(ctx, stroke);
+                return;
+            }
             const points = stroke.points;
             const startIndex = stroke.finalizedIndex >= 0
                 ? stroke.finalizedIndex + 1
@@ -1710,6 +1719,10 @@
         }
 
         function updateLiveStroke(pageIndex, canvas, stroke) {
+            if (stroke.tool === 'highlighter') {
+                drawStrokePreviewTail(pageIndex, stroke);
+                return;
+            }
             if (!stroke || stroke.points.length < 2) {
                 drawStrokePreviewTail(pageIndex, stroke);
                 return;
@@ -2413,14 +2426,56 @@
             }
         }
 
+        function buildSmoothPath(ctx, points) {
+            if (points.length < 2) return;
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            if (points.length === 2) {
+                ctx.lineTo(points[1].x, points[1].y);
+                return;
+            }
+            for (let i = 1; i < points.length - 1; i++) {
+                const current = points[i];
+                const next = points[i + 1];
+                const mid = {
+                    x: (current.x + next.x) / 2,
+                    y: (current.y + next.y) / 2
+                };
+                ctx.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
+            }
+            const last = points[points.length - 1];
+            ctx.lineTo(last.x, last.y);
+        }
+
+        function drawHighlighterCaps(ctx, stroke) {
+            const points = stroke.points;
+            if (!points || points.length < 2) return;
+            const radius = Math.max(1, stroke.width * 0.16);
+            ctx.save();
+            ctx.globalAlpha *= 0.45;
+            ctx.fillStyle = stroke.color;
+            ctx.beginPath();
+            ctx.arc(points[0].x, points[0].y, radius, 0, Math.PI * 2);
+            ctx.arc(points[points.length - 1].x, points[points.length - 1].y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
         function drawSmoothStroke(ctx, stroke) {
             if (!stroke || !stroke.points || stroke.points.length < 2) return;
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             setStrokeCaps(ctx, stroke.tool);
+            ctx.lineWidth = getStrokeWidth(stroke);
+
+            if (stroke.tool === 'highlighter') {
+                buildSmoothPath(ctx, stroke.points);
+                ctx.stroke();
+                drawHighlighterCaps(ctx, stroke);
+                return;
+            }
 
             const points = stroke.points;
             if (points.length === 2) {
-                ctx.lineWidth = getStrokeWidth(stroke);
                 ctx.beginPath();
                 ctx.moveTo(points[0].x, points[0].y);
                 ctx.lineTo(points[1].x, points[1].y);
@@ -2435,7 +2490,6 @@
                 y: (p0.y + p1.y) / 2
             };
 
-            ctx.lineWidth = getStrokeWidth(stroke);
             ctx.beginPath();
             ctx.moveTo(p0.x, p0.y);
             ctx.lineTo(prevMid.x, prevMid.y);
@@ -2448,7 +2502,6 @@
                     x: (current.x + next.x) / 2,
                     y: (current.y + next.y) / 2
                 };
-                ctx.lineWidth = getStrokeWidth(stroke);
                 ctx.beginPath();
                 ctx.moveTo(prevMid.x, prevMid.y);
                 ctx.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
@@ -2457,7 +2510,6 @@
             }
 
             const last = points[points.length - 1];
-            ctx.lineWidth = getStrokeWidth(stroke);
             ctx.beginPath();
             ctx.moveTo(prevMid.x, prevMid.y);
             ctx.lineTo(last.x, last.y);
@@ -2494,8 +2546,8 @@
                 ctx.lineWidth = width;
                 ctx.strokeStyle = 'rgba(0,0,0,1)';
             } else if (tool === 'highlighter') {
-                ctx.globalCompositeOperation = 'multiply';
-                ctx.globalAlpha = 0.4;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 0.35;
                 ctx.strokeStyle = color;
                 ctx.lineWidth = width;
             } else {
