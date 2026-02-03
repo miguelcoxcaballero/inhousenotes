@@ -16,6 +16,12 @@
             -webkit-tap-highlight-color: transparent;
         }
 
+        @property --toolbar-rotate {
+            syntax: '<angle>';
+            inherits: true;
+            initial-value: 0deg;
+        }
+
         :root {
             --bg-primary: #f5f5f0;
             --bg-secondary: #ffffff;
@@ -32,11 +38,11 @@
             --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 16px;
-            --tool-size: 52px;
-            --toolbar-padding: 12px;
-            --handle-width: 52px;
-            --handle-height: 28px;
-            --icon-size: 24px;
+            --tool-size: 44px;
+            --toolbar-padding: 10px;
+            --handle-width: 44px;
+            --handle-height: 24px;
+            --icon-size: 20px;
             --header-btn-size: 44px;
             --selection-handle-size: 14px;
             --selection-handle-offset: calc(-1px - (var(--selection-handle-size) / 2));
@@ -318,7 +324,7 @@
             padding: 0;
         }
 
-        .selection-box.has-image .selection-trash {
+        .selection-box.has-selection .selection-trash {
             display: flex;
         }
 
@@ -409,19 +415,26 @@
             top: 50%;
             --toolbar-scale: 1;
             --toolbar-translate: -50%;
-            transform: translateY(var(--toolbar-translate)) scale(var(--toolbar-scale));
+            --toolbar-rotate: 0deg;
+            transform: translateY(var(--toolbar-translate)) scale(var(--toolbar-scale)) rotate(var(--toolbar-rotate));
             transform-origin: top left;
-            background: var(--bg-secondary);
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid rgba(0,0,0,0.06);
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-medium);
             padding: var(--toolbar-padding);
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
             z-index: 1000;
             transition: border-radius 0.2s ease;
             touch-action: none;
             user-select: none;
+            backdrop-filter: blur(8px);
+        }
+
+        #toolbar.toolbar-orienting {
+            animation: toolbar-orient 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
 
         #toolbar.horizontal {
@@ -465,8 +478,19 @@
             height: var(--handle-width);
         }
 
+        #toolbar #toolbar-handle svg {
+            --handle-rotation: 0deg;
+            transform: rotate(calc(var(--handle-rotation) - var(--toolbar-rotate)));
+            transition: transform 0.2s ease;
+        }
+
         #toolbar.horizontal #toolbar-handle svg {
-            transform: rotate(90deg);
+            --handle-rotation: 90deg;
+        }
+
+        #toolbar .tool-btn svg {
+            transform: rotate(calc(-1 * var(--toolbar-rotate)));
+            transition: transform 0.2s ease;
         }
 
         .tool-btn {
@@ -496,6 +520,21 @@
         .tool-btn svg {
             width: var(--icon-size);
             height: var(--icon-size);
+        }
+
+        @keyframes toolbar-orient {
+            0% {
+                --toolbar-rotate: 0deg;
+            }
+            55% {
+                --toolbar-rotate: 92deg;
+            }
+            78% {
+                --toolbar-rotate: 86deg;
+            }
+            100% {
+                --toolbar-rotate: 0deg;
+            }
         }
 
         .tool-btn.size-btn {
@@ -1290,6 +1329,10 @@
         const VIEW_STORAGE_KEY = 'notebook-view-v1';
         const VIEW_SAVE_DELAY = 250;
         const MAX_SAVE_INTERVAL = 15000;
+        const PEN_DOUBLE_TAP_MS = 320;
+        const PEN_DOUBLE_TAP_DIST = 42;
+        const TOUCH_INERTIA_DECAY = 0.92;
+        const TOUCH_INERTIA_STOP = 0.02;
         const DATA_STORAGE_KEY = 'notebook-data-v2';
         const DB_NAME = 'notebook-data-db-v1';
         const DB_STORE = 'snapshots';
@@ -1306,7 +1349,7 @@
             currentColor: '#002FD9',
             currentWidth: 2,
             eraserWidth: 12,
-            eraserMode: 'area',
+            eraserMode: 'stroke',
             exportName: 'cuaderno',
             zoom: 1,
             panX: 0,
@@ -1330,6 +1373,16 @@
             activePointers: new Map(),
             saveTimeout: null,
             lastSavedAt: null,
+            lastNonEraserTool: {
+                tool: 'pen',
+                color: '#002FD9',
+                width: 2
+            },
+            panVelocityX: 0,
+            panVelocityY: 0,
+            lastPanTime: 0,
+            inertiaFrame: null,
+            inertiaLock: 'free',
             selection: {
                 pageIndex: null,
                 strokeIndices: [],
@@ -1359,6 +1412,7 @@
         let viewSaveTimeout = null;
         let pendingViewState = null;
         let saveTimestampInterval = null;
+        let lastPenBackgroundTap = null;
         const addPageIndicator = document.createElement('div');
         addPageIndicator.id = 'add-page-indicator';
         addPageIndicator.textContent = '+';
@@ -1468,8 +1522,8 @@
             const cursorOverlay = document.createElement('canvas');
             cursorOverlay.className = 'cursor-overlay';
             cursorOverlay.dataset.page = pageIndex;
-            cursorOverlay.width = A4_WIDTH * OVERLAY_SCALE;
-            cursorOverlay.height = A4_HEIGHT * OVERLAY_SCALE;
+            cursorOverlay.width = A4_WIDTH * CANVAS_SCALE;
+            cursorOverlay.height = A4_HEIGHT * CANVAS_SCALE;
             cursorOverlay.style.width = '100%';
             cursorOverlay.style.height = '100%';
             wrapper.appendChild(cursorOverlay);
@@ -1859,7 +1913,7 @@
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
+            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
             const radius = state.eraserWidth / 2;
             ctx.strokeStyle = 'rgba(0,0,0,0.45)';
@@ -2097,6 +2151,62 @@
             showStatus(uniqueIndices.length > 1 ? 'Images deleted' : 'Image deleted', { preserveState: true });
         }
 
+        function deleteSelection(pageIndex) {
+            const page = state.pages[pageIndex];
+            if (!page) return;
+            const strokeIndices = Array.from(new Set(state.selection.strokeIndices || []))
+                .filter(index => index >= 0 && index < page.strokes.length);
+            const imageIndices = Array.from(new Set(state.selection.imageIndices || []))
+                .filter(index => page.images?.[index]);
+
+            if (strokeIndices.length === 0 && imageIndices.length === 0) return;
+
+            const removedStrokes = strokeIndices
+                .slice()
+                .sort((a, b) => a - b)
+                .map(index => ({
+                    index,
+                    stroke: JSON.parse(JSON.stringify(page.strokes[index]))
+                }));
+
+            const removedImages = imageIndices
+                .slice()
+                .sort((a, b) => a - b)
+                .map(index => ({
+                    index,
+                    image: JSON.parse(JSON.stringify(page.images[index]))
+                }));
+
+            strokeIndices
+                .slice()
+                .sort((a, b) => b - a)
+                .forEach(index => {
+                    page.strokes.splice(index, 1);
+                });
+
+            if (Array.isArray(page.images)) {
+                imageIndices
+                    .slice()
+                    .sort((a, b) => b - a)
+                    .forEach(index => {
+                        page.images.splice(index, 1);
+                    });
+            }
+
+            saveToHistory({
+                type: 'delete-selection',
+                pageIndex,
+                strokes: removedStrokes,
+                images: removedImages
+            });
+
+            clearSelection();
+            redrawPage(pageIndex);
+            renderPagesList();
+            scheduleSave();
+            showStatus((removedStrokes.length + removedImages.length) > 1 ? 'Selection deleted' : 'Item deleted', { preserveState: true });
+        }
+
         function duplicateSelection(pageIndex) {
             const page = state.pages[pageIndex];
             if (!page) return;
@@ -2220,15 +2330,106 @@
             return Math.min(max, Math.max(min, value));
         }
 
-        function setActiveTool(toolName) {
+        function isEraserTool(toolName) {
+            return toolName === 'eraser' || toolName === 'eraser-area' || toolName === 'eraser-stroke';
+        }
+
+        function rememberNonEraserTool(toolName) {
+            if (!toolName || isEraserTool(toolName) || toolName === 'lasso') return;
+            state.lastNonEraserTool = {
+                tool: toolName,
+                color: state.currentColor,
+                width: state.currentWidth
+            };
+        }
+
+        function setActiveToolButton(toolName, color = null, width = null) {
             if (!toolbar) return;
+            const normalizedTool = isEraserTool(toolName) ? 'eraser' : toolName;
+            const targetColor = color || ((normalizedTool === 'pen' || normalizedTool === 'highlighter') ? state.currentColor : null);
+            const targetWidth = width || ((normalizedTool === 'pen' || normalizedTool === 'highlighter') ? state.currentWidth : null);
+
             toolbar.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.tool === toolName);
+                if (btn.dataset.tool !== normalizedTool) {
+                    btn.classList.remove('active');
+                    return;
+                }
+                if (normalizedTool === 'pen' || normalizedTool === 'highlighter') {
+                    if (targetColor && btn.dataset.color && btn.dataset.color.toLowerCase() !== targetColor.toLowerCase()) {
+                        btn.classList.remove('active');
+                        return;
+                    }
+                    if (targetWidth && btn.dataset.width && parseFloat(btn.dataset.width) !== parseFloat(targetWidth)) {
+                        btn.classList.remove('active');
+                        return;
+                    }
+                }
+                btn.classList.add('active');
             });
-            state.currentTool = toolName;
+        }
+
+        function setActiveTool(toolName, options = {}) {
+            if (!toolName) return;
+            if (toolName === 'eraser') {
+                state.currentTool = state.eraserMode === 'stroke' ? 'eraser-stroke' : 'eraser-area';
+                setActiveToolButton('eraser');
+            } else {
+                if (options.color) state.currentColor = options.color;
+                if (options.width) state.currentWidth = options.width;
+                state.currentTool = toolName;
+                setActiveToolButton(toolName, options.color, options.width);
+            }
             if (toolName !== 'eraser') {
                 closeEraserMenu();
             }
+            rememberNonEraserTool(state.currentTool);
+        }
+
+        function activateEraserTool() {
+            setActiveTool('eraser');
+        }
+
+        function restoreLastNonEraserTool() {
+            const fallback = {
+                tool: 'pen',
+                color: state.currentColor,
+                width: state.currentWidth
+            };
+            const last = state.lastNonEraserTool || fallback;
+            if (last.color) state.currentColor = last.color;
+            if (last.width) state.currentWidth = last.width;
+            state.currentTool = last.tool;
+            setActiveToolButton(last.tool, last.color, last.width);
+            closeEraserMenu();
+        }
+
+        function toggleEraserFromGesture() {
+            if (isEraserTool(state.currentTool)) {
+                restoreLastNonEraserTool();
+                return;
+            }
+            rememberNonEraserTool(state.currentTool);
+            activateEraserTool();
+        }
+
+        function handlePenBackgroundDoubleTap(e) {
+            if (!e || e.pointerType !== 'pen') return false;
+            if (e.target && e.target.closest && e.target.closest('.page-wrapper')) return false;
+            const now = Date.now();
+            const tap = { time: now, x: e.clientX, y: e.clientY };
+            if (lastPenBackgroundTap) {
+                const dt = now - lastPenBackgroundTap.time;
+                const dx = tap.x - lastPenBackgroundTap.x;
+                const dy = tap.y - lastPenBackgroundTap.y;
+                const dist = Math.hypot(dx, dy);
+                if (dt <= PEN_DOUBLE_TAP_MS && dist <= PEN_DOUBLE_TAP_DIST) {
+                    lastPenBackgroundTap = null;
+                    toggleEraserFromGesture();
+                    return true;
+                }
+            }
+            lastPenBackgroundTap = tap;
+            return false;
         }
 
         function addImageToPage(pageIndex, src, dropPos, offsetIndex = 0) {
@@ -2397,7 +2598,7 @@
                     return;
                 }
                 if (target.closest && target.closest('.selection-trash')) {
-                    deleteSelectedImages(pageIndex);
+                    deleteSelection(pageIndex);
                     e.preventDefault();
                     e.stopPropagation();
                     return;
@@ -3023,6 +3224,7 @@
                     if (nextTool !== 'eraser') {
                         closeEraserMenu();
                     }
+                    rememberNonEraserTool(state.currentTool);
                 });
             });
 
@@ -3343,6 +3545,49 @@
             updateAddPageIndicator();
         }
 
+        function stopInertia() {
+            if (state.inertiaFrame) {
+                cancelAnimationFrame(state.inertiaFrame);
+                state.inertiaFrame = null;
+            }
+            state.panVelocityX = 0;
+            state.panVelocityY = 0;
+            state.lastPanTime = 0;
+        }
+
+        function startInertia() {
+            if (state.inertiaFrame) return;
+            let lastTime = performance.now();
+            state.inertiaFrame = requestAnimationFrame(function step(time) {
+                const dt = Math.max(1, time - lastTime);
+                lastTime = time;
+
+                const decay = Math.pow(TOUCH_INERTIA_DECAY, dt / 16.67);
+                state.panVelocityX *= decay;
+                state.panVelocityY *= decay;
+
+                if (Math.abs(state.panVelocityX) < TOUCH_INERTIA_STOP && Math.abs(state.panVelocityY) < TOUCH_INERTIA_STOP) {
+                    stopInertia();
+                    return;
+                }
+
+                const dx = state.panVelocityX * dt;
+                const dy = state.panVelocityY * dt;
+
+                if (state.inertiaLock === 'vertical') {
+                    applyVerticalPan(dy);
+                } else if (state.inertiaLock === 'horizontal') {
+                    state.panX += dx;
+                } else {
+                    state.panX += dx;
+                    applyVerticalPan(dy);
+                }
+
+                updateTransform();
+                state.inertiaFrame = requestAnimationFrame(step);
+            });
+        }
+
         // Toolbar dragging functionality
         function setupToolbarDrag() {
             const toolbarHandle = document.getElementById('toolbar-handle');
@@ -3386,6 +3631,7 @@
                 const viewportHeight = window.innerHeight;
                 const viewportWidth = window.innerWidth;
                 const rect = toolbar.getBoundingClientRect();
+                const wasHorizontal = toolbar.classList.contains('horizontal');
 
                 const margin = 15;
                 const snapThreshold = 80;
@@ -3445,6 +3691,16 @@
                     toolbar.style.top = Math.max(limits.minTop, Math.min(rect.top, limits.maxTop)) + 'px';
                     toolbar.style.bottom = 'auto';
                     toolbar.style.right = 'auto';
+                }
+
+                const isHorizontal = toolbar.classList.contains('horizontal');
+                if (wasHorizontal !== isHorizontal) {
+                    toolbar.classList.remove('toolbar-orienting');
+                    void toolbar.offsetWidth;
+                    toolbar.classList.add('toolbar-orienting');
+                    setTimeout(() => {
+                        toolbar.classList.remove('toolbar-orienting');
+                    }, 320);
                 }
 
                 if (snapTimeout) {
@@ -3594,7 +3850,14 @@
         // Viewport pointer handlers for pan/zoom
         function handleViewportPointerDown(e) {
             // Pen is handled by canvas
-            if (e.pointerType === 'pen') return;
+            if (e.pointerType === 'pen') {
+                if (handlePenBackgroundDoubleTap(e)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                return;
+            }
+            stopInertia();
             if (state.currentTool === 'lasso' && state.selection.pageIndex !== null) {
                 const selectionBox = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
                 if (selectionBox && !selectionBox.classList.contains('hidden')) {
@@ -3628,6 +3891,9 @@
                 state.initialPanX = state.panX;
                 state.initialPanY = state.panY;
                 state.scrollLocked = false;
+                state.panVelocityX = 0;
+                state.panVelocityY = 0;
+                state.lastPanTime = 0;
             } else if (state.activePointers.size === 1) {
                 state.isPanning = true;
                 state.scrollLocked = false;
@@ -3635,6 +3901,9 @@
                 state.lastPanY = e.clientY;
                 state.panStartX = e.clientX;
                 state.panStartY = e.clientY;
+                state.panVelocityX = 0;
+                state.panVelocityY = 0;
+                state.lastPanTime = performance.now();
             }
         }
 
@@ -3716,6 +3985,13 @@
 
                 state.lastPanX = e.clientX;
                 state.lastPanY = e.clientY;
+                const now = performance.now();
+                const dt = Math.max(1, now - (state.lastPanTime || now));
+                const vx = dx / dt;
+                const vy = dy / dt;
+                state.panVelocityX = state.panVelocityX * 0.8 + vx * 0.2;
+                state.panVelocityY = state.panVelocityY * 0.8 + vy * 0.2;
+                state.lastPanTime = now;
                 updateTransform();
             }
         }
@@ -3742,6 +4018,7 @@
                 canvasViewport.style.cursor = '';
                 finalizePageCreation();
                 state.pageCreateLocked = false;
+                stopInertia();
                 if (state.overscrollY > 0) {
                     const reset = getBottomLimit();
                     state.overscrollY = 0;
@@ -3767,9 +4044,17 @@
             }
             if (state.activePointers.size === 0) {
                 state.isPanning = false;
+                const finalLock = state.scrollLocked || 'free';
                 state.scrollLocked = false;
                 finalizePageCreation();
                 state.pageCreateLocked = false;
+                if (state.overscrollY === 0) {
+                    const speed = Math.hypot(state.panVelocityX, state.panVelocityY);
+                    if (speed > TOUCH_INERTIA_STOP) {
+                        state.inertiaLock = finalLock;
+                        startInertia();
+                    }
+                }
             }
             if (state.overscrollY > 0) {
                 const reset = getBottomLimit();
@@ -4428,6 +4713,27 @@
                     page.images.splice(item.index, 0, JSON.parse(JSON.stringify(item.image)));
                 });
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'delete-selection') {
+                const page = state.pages[action.pageIndex];
+                if (!page) return;
+                if (Array.isArray(action.strokes) && action.strokes.length > 0) {
+                    const sorted = [...action.strokes].sort((a, b) => a.index - b.index);
+                    sorted.forEach(item => {
+                        const insertIndex = Math.min(item.index, page.strokes.length);
+                        page.strokes.splice(insertIndex, 0, JSON.parse(JSON.stringify(item.stroke)));
+                    });
+                }
+                if (Array.isArray(action.images) && action.images.length > 0) {
+                    if (!Array.isArray(page.images)) page.images = [];
+                    const sorted = [...action.images].sort((a, b) => a.index - b.index);
+                    sorted.forEach(item => {
+                        const insertIndex = Math.min(item.index, page.images.length);
+                        page.images.splice(insertIndex, 0, JSON.parse(JSON.stringify(item.image)));
+                    });
+                }
+                clearSelection();
+                redrawPage(action.pageIndex);
+                renderPagesList();
             } else if (action.type === 'duplicate-selection') {
                 const page = state.pages[action.pageIndex];
                 if (!page) return;
@@ -4517,6 +4823,29 @@
                     }
                 });
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'delete-selection') {
+                const page = state.pages[action.pageIndex];
+                if (!page) return;
+                if (Array.isArray(action.strokes) && action.strokes.length > 0) {
+                    const indices = action.strokes.map(item => item.index).sort((a, b) => b - a);
+                    indices.forEach(index => {
+                        if (index >= 0 && index < page.strokes.length) {
+                            page.strokes.splice(index, 1);
+                        }
+                    });
+                }
+                if (Array.isArray(action.images) && action.images.length > 0) {
+                    if (!Array.isArray(page.images)) return;
+                    const indices = action.images.map(item => item.index).sort((a, b) => b - a);
+                    indices.forEach(index => {
+                        if (index >= 0 && index < page.images.length) {
+                            page.images.splice(index, 1);
+                        }
+                    });
+                }
+                clearSelection();
+                redrawPage(action.pageIndex);
+                renderPagesList();
             } else if (action.type === 'duplicate-selection') {
                 const page = state.pages[action.pageIndex];
                 if (!page) return;
