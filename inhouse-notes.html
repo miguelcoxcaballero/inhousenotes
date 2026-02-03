@@ -1541,7 +1541,7 @@
                     const pressure = ev.pressure || 0.5;
                     if (currentStroke.tool === 'highlighter') {
                         const lastPoint = currentStroke.points[currentStroke.points.length - 1];
-                        const minDist = Math.max(0.8, currentStroke.width * 0.15);
+                        const minDist = Math.max(0.6, currentStroke.width * 0.12);
                         const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
                         if (dist < minDist) {
                             lastPoint.x = pos.x;
@@ -2559,11 +2559,11 @@
 
             const thickness = Math.max(1, stroke.width || 12);
             const brushWidth = thickness;
-            const brushHeight = thickness * 0.85;
+            const brushHeight = thickness * 1.2;
             const halfW = brushWidth / 2;
             const halfH = brushHeight / 2;
-            const radius = thickness * 0.2;
-            const spacing = Math.max(0.6, Math.min(brushWidth, brushHeight) * 0.2);
+            const radius = thickness * 0.28;
+            const spacing = Math.max(0.5, Math.min(brushWidth, brushHeight) * 0.12);
 
             const points = stroke.points;
             const addStamp = (x, y) => {
@@ -2743,7 +2743,8 @@
             drawImagesOnContext(ctx, page, pageIndex, redrawPage);
 
             for (const stroke of page.strokes) {
-                if (stroke.points.length < 2) continue;
+                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                if (!stroke.points || stroke.points.length < minPoints) continue;
                 if (stroke.tool === 'eraser-stroke') continue;
                 drawSmoothStroke(ctx, stroke);
             }
@@ -3718,7 +3719,8 @@
             drawImagesOnContext(ctx, page, pageIndex, generateThumbnail);
 
             for (const stroke of page.strokes) {
-                if (stroke.points.length < 2) continue;
+                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                if (!stroke.points || stroke.points.length < minPoints) continue;
                 if (stroke.tool === 'eraser-stroke') continue;
                 drawSmoothStroke(ctx, stroke);
             }
@@ -4401,7 +4403,8 @@
                 tempCtx.lineJoin = 'round';
                 await drawImagesOnCanvas(tempCtx, page);
                 for (const stroke of page.strokes) {
-                    if (stroke.points.length < 2) continue;
+                    const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                    if (!stroke.points || stroke.points.length < minPoints) continue;
                     if (stroke.tool === 'eraser-stroke') continue;
 
                     drawSmoothStroke(tempCtx, stroke);
