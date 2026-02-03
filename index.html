@@ -85,6 +85,13 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            cursor: pointer;
+        }
+
+        .logo:focus-visible {
+            outline: 2px solid rgba(0, 47, 217, 0.5);
+            outline-offset: 4px;
+            border-radius: 10px;
         }
 
         .logo svg {
@@ -1388,7 +1395,7 @@
     <div id="editor-view" class="hidden">
     <div id="app">
         <header>
-            <div class="logo">
+            <div class="logo" id="btn-drive-home" role="button" tabindex="0" title="Drive Home" aria-label="Drive Home">
                 <svg viewBox="0 0 40 24" fill="none">
                     <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
                 </svg>
@@ -1396,12 +1403,6 @@
                 <span class="doc-title" id="doc-title">Untitled</span>
             </div>
             <div class="header-actions">
-                <button class="btn btn-secondary btn-icon-square" id="btn-drive-home" title="Drive Home" aria-label="Drive Home">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 11l9-8 9 8"/>
-                        <path d="M5 10v10h14V10"/>
-                    </svg>
-                </button>
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
                 <button class="btn btn-warning btn-icon-square" id="btn-reset-document" title="Start new document" aria-label="Start new document">
@@ -1647,6 +1648,7 @@
         const A4_WIDTH = 794;
         const A4_HEIGHT = 1123;
         const CANVAS_SCALE = Math.min(3, Math.max(2, Math.round((window.devicePixelRatio || 2) * 2))); // High DPI, capped for memory
+        const PDF_IMPORT_SCALE = 1.35;
         const OVERLAY_SCALE = 1;
         const OVERSCROLL_THRESHOLD = 360;
         const OVERSCROLL_FRICTION = 0.24;
@@ -1666,6 +1668,10 @@
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
+        const DRIVE_TOKEN_KEY = 'drive-token-v1';
+        const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
+        const DRIVE_SESSION_KEY = 'drive-session-v1';
+        const VIEW_MODE_KEY = 'notebook-view-mode-v1';
         const DATA_STORAGE_KEY = 'notebook-data-v2';
         const DB_NAME = 'notebook-data-db-v1';
         const DB_STORE = 'snapshots';
@@ -1788,6 +1794,7 @@
         async function init() {
             pendingViewState = loadViewState();
             await loadFromStorage();
+            loadDriveSession();
             bakeLegacyEraserAreaStrokes();
             if (state.pages.length === 0) {
                 addPage();
@@ -1801,7 +1808,12 @@
             if (!saveTimestampInterval) {
                 saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
             }
-            showDriveHome();
+            const lastView = loadViewMode();
+            if (lastView === 'drive') {
+                showDriveHome();
+            } else {
+                showEditorView();
+            }
             
             // Center page after DOM is ready
             setTimeout(() => {
@@ -1873,6 +1885,8 @@
                 canvas.style.backgroundImage = `url("${SVG_BACKGROUND}")`;
             }
             canvas.style.backgroundSize = 'cover';
+            canvas.style.backgroundRepeat = 'no-repeat';
+            canvas.style.backgroundPosition = 'center';
 
             const pageNumber = document.createElement('div');
             pageNumber.className = 'page-number';
@@ -2810,11 +2824,35 @@
         function showDriveHome() {
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
+            saveViewMode('drive');
+        }
+
+        function clampToolbarPosition() {
+            if (!toolbar) return;
+            const header = document.querySelector('header');
+            const headerHeight = header ? header.getBoundingClientRect().height : 60;
+            const margin = 12;
+            const rect = toolbar.getBoundingClientRect();
+            const minTop = headerHeight + margin;
+            const maxTop = Math.max(minTop, window.innerHeight - rect.height - margin);
+            const minLeft = margin;
+            const maxLeft = Math.max(minLeft, window.innerWidth - rect.width - margin);
+            const nextLeft = Math.max(minLeft, Math.min(rect.left, maxLeft));
+            const nextTop = Math.max(minTop, Math.min(rect.top, maxTop));
+            toolbar.style.left = nextLeft + 'px';
+            toolbar.style.top = nextTop + 'px';
+            toolbar.style.right = 'auto';
+            toolbar.style.bottom = 'auto';
+            toolbar.style.setProperty('--toolbar-translate', '0px');
         }
 
         function showEditorView() {
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                clampToolbarPosition();
+            });
+            saveViewMode('editor');
         }
 
         function initDriveAuth() {
@@ -2827,7 +2865,15 @@
                 scope: DRIVE_SCOPE,
                 callback: () => {}
             });
+            const hasStoredToken = loadDriveTokenFromStorage();
             updateDriveAuthUI();
+            if (hasStoredToken) {
+                refreshDriveFiles();
+            } else if (localStorage.getItem(DRIVE_REMEMBER_KEY) === '1') {
+                ensureDriveToken(false)
+                    .then(() => refreshDriveFiles())
+                    .catch(() => updateDriveAuthUI());
+            }
         }
 
         function updateDriveAuthUI() {
@@ -2844,6 +2890,11 @@
             if (!signedIn) {
                 if (driveRecentsEmptyEl) driveRecentsEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
+            } else if (state.driveAutosave) {
+                clearTimeout(driveSaveTimeout);
+                driveSaveTimeout = setTimeout(() => {
+                    queueDriveSave();
+                }, 500);
             }
         }
 
@@ -2862,6 +2913,7 @@
                     }
                     driveAccessToken = resp.access_token;
                     driveTokenExpiry = Date.now() + (resp.expires_in || 0) * 1000;
+                    saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
                     updateDriveAuthUI();
                     resolve(driveAccessToken);
                 };
@@ -2896,6 +2948,9 @@
             if (driveFolderFilesEl) driveFolderFilesEl.innerHTML = '';
             if (driveBreadcrumbsEl) driveBreadcrumbsEl.innerHTML = '';
             if (driveStatusEl) driveStatusEl.textContent = 'Sign in to browse your Drive.';
+            clearDriveTokenStorage();
+            localStorage.removeItem(DRIVE_REMEMBER_KEY);
+            clearDriveSession();
             updateDriveAuthUI();
         }
 
@@ -3181,6 +3236,7 @@
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
                 updateDocTitle();
+                saveDriveSession();
                 showStatus('PDF loaded', { preserveState: true });
             } catch (err) {
                 showStatus('Failed to load PDF', { preserveState: true });
@@ -3214,6 +3270,7 @@
             state.driveFileName = 'Untitled';
             state.driveAutosave = true;
             updateDocTitle();
+            saveDriveSession();
             scheduleSave(true);
         }
 
@@ -4026,9 +4083,16 @@
                 driveNewBtn.addEventListener('click', createNewDriveDocument);
             }
             if (driveHomeBtn) {
-                driveHomeBtn.addEventListener('click', () => {
+                const goHome = () => {
                     showDriveHome();
                     refreshDriveFiles();
+                };
+                driveHomeBtn.addEventListener('click', goHome);
+                driveHomeBtn.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        goHome();
+                    }
                 });
             }
             if (driveBackBtn) {
@@ -5246,6 +5310,99 @@
             }
         }
 
+        function saveViewMode(mode) {
+            try {
+                localStorage.setItem(VIEW_MODE_KEY, mode);
+            } catch (e) {
+                console.error('Failed to save view mode:', e);
+            }
+        }
+
+        function loadViewMode() {
+            try {
+                return localStorage.getItem(VIEW_MODE_KEY);
+            } catch (e) {
+                console.error('Failed to load view mode:', e);
+                return null;
+            }
+        }
+
+        function saveDriveTokenToStorage(token, expiry) {
+            try {
+                const payload = JSON.stringify({ token, expiry });
+                localStorage.setItem(DRIVE_TOKEN_KEY, payload);
+                localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
+            } catch (e) {
+                console.error('Failed to save Drive token:', e);
+            }
+        }
+
+        function clearDriveTokenStorage() {
+            try {
+                localStorage.removeItem(DRIVE_TOKEN_KEY);
+            } catch (e) {
+                console.error('Failed to clear Drive token:', e);
+            }
+        }
+
+        function loadDriveTokenFromStorage() {
+            try {
+                const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                if (!parsed || !parsed.token || !parsed.expiry) return false;
+                if (Date.now() >= parsed.expiry - 60000) {
+                    clearDriveTokenStorage();
+                    return false;
+                }
+                driveAccessToken = parsed.token;
+                driveTokenExpiry = parsed.expiry;
+                return true;
+            } catch (e) {
+                console.error('Failed to load Drive token:', e);
+                return false;
+            }
+        }
+
+        function saveDriveSession() {
+            try {
+                const payload = {
+                    fileId: state.driveFileId,
+                    fileName: state.driveFileName,
+                    exportName: state.exportName,
+                    autosave: state.driveAutosave
+                };
+                localStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify(payload));
+            } catch (e) {
+                console.error('Failed to save Drive session:', e);
+            }
+        }
+
+        function clearDriveSession() {
+            try {
+                localStorage.removeItem(DRIVE_SESSION_KEY);
+            } catch (e) {
+                console.error('Failed to clear Drive session:', e);
+            }
+        }
+
+        function loadDriveSession() {
+            try {
+                const raw = localStorage.getItem(DRIVE_SESSION_KEY);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (!parsed) return;
+                state.driveFileId = parsed.fileId || null;
+                state.driveFileName = parsed.fileName || null;
+                if (parsed.exportName) {
+                    state.exportName = parsed.exportName;
+                }
+                state.driveAutosave = !!parsed.autosave || !!parsed.fileId;
+            } catch (e) {
+                console.error('Failed to load Drive session:', e);
+            }
+        }
+
         function applyViewState(viewState) {
             if (!viewState) return false;
             state.zoom = Math.max(0.5, Math.min(3, viewState.zoom));
@@ -5463,7 +5620,7 @@
         }
 
         function scheduleDriveSave() {
-            if (!state.driveAutosave) return;
+            if (!state.driveAutosave || !driveAccessToken) return;
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
                 queueDriveSave();
@@ -5492,6 +5649,7 @@
             state.driveFileId = data.id;
             state.driveFileName = data.name || fileName;
             updateDocTitle();
+            saveDriveSession();
             return state.driveFileId;
         }
 
@@ -5842,6 +6000,7 @@
             name = sanitizeFilename(name);
             state.exportName = name;
             updateDocTitle();
+            saveDriveSession();
             closeExportModal();
             exportPDF(`${name}.pdf`);
         }
@@ -5914,41 +6073,31 @@
                     showLoading(`Processing page ${i} of ${numPages}...`);
                     
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 2 });
+                    const viewport = page.getViewport({ scale: 1 });
 
-                    // Create temp canvas for PDF page
-                    const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = viewport.width;
-                    tempCanvas.height = viewport.height;
-                    const tempCtx = tempCanvas.getContext('2d');
-
-                    await page.render({
-                        canvasContext: tempCtx,
-                        viewport: viewport
-                    }).promise;
-
-                    // Convert to base64 and resize to A4
+                    // Render directly into an A4-sized canvas for speed
                     const a4Canvas = document.createElement('canvas');
-                    a4Canvas.width = A4_WIDTH * CANVAS_SCALE;
-                    a4Canvas.height = A4_HEIGHT * CANVAS_SCALE;
-                    const a4Ctx = a4Canvas.getContext('2d');
-                    
+                    a4Canvas.width = Math.round(A4_WIDTH * PDF_IMPORT_SCALE);
+                    a4Canvas.height = Math.round(A4_HEIGHT * PDF_IMPORT_SCALE);
+                    const a4Ctx = a4Canvas.getContext('2d', { alpha: false });
+
                     a4Ctx.fillStyle = 'white';
                     a4Ctx.fillRect(0, 0, a4Canvas.width, a4Canvas.height);
-                    
+
                     const scale = Math.min(
                         a4Canvas.width / viewport.width,
                         a4Canvas.height / viewport.height
                     );
                     const offsetX = (a4Canvas.width - viewport.width * scale) / 2;
                     const offsetY = (a4Canvas.height - viewport.height * scale) / 2;
-                    
-                    a4Ctx.drawImage(
-                        tempCanvas,
-                        offsetX, offsetY,
-                        viewport.width * scale,
-                        viewport.height * scale
-                    );
+
+                    await page.render({
+                        canvasContext: a4Ctx,
+                        viewport: viewport,
+                        transform: [scale, 0, 0, scale, offsetX, offsetY]
+                    }).promise;
+
+                    page.cleanup();
 
                     // Check if we have embedded strokes for this page
                     if (embeddedStrokes && embeddedStrokes[i - 1]) {
@@ -5959,7 +6108,7 @@
                             : [];
                         const useLegacyRaster = !hasImagesKey;
                         const baseBackground = (useLegacyRaster || pageData.hasCustomBackground)
-                            ? a4Canvas.toDataURL('image/jpeg', 0.85)
+                            ? a4Canvas.toDataURL('image/jpeg', 0.8)
                             : null;
                         const restoredStrokes = useLegacyRaster
                             ? []
@@ -5986,10 +6135,12 @@
                         // No embedded data - this is a regular PDF, use as background
                         state.pages.push({
                             strokes: [],
-                            backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85),
+                            backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.8),
                             images: []
                         });
                     }
+
+                    await new Promise(resolve => requestAnimationFrame(resolve));
                 }
 
                 renderAllPages();
