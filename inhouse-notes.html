@@ -621,6 +621,32 @@
             margin-bottom: 16px;
         }
 
+        .modal-input {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 12px;
+            border-radius: var(--radius-md);
+            background: rgba(0,0,0,0.05);
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+
+        .modal-input input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            font-size: 0.95rem;
+            font-family: inherit;
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .modal-input .file-ext {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            user-select: none;
+        }
+
         .modal-actions {
             display: flex;
             gap: clamp(4px, 1.2vw, 8px);
@@ -991,10 +1017,10 @@
         <div id="eraser-menu" class="eraser-menu" aria-hidden="true">
             <div class="eraser-menu-title">Eraser size</div>
             <div class="eraser-menu-options">
-                <button class="tool-btn size-btn" data-eraser-size="12" title="Small">
+                <button class="tool-btn size-btn active" data-eraser-size="12" title="Small">
                     <span class="size-dot sm"></span>
                 </button>
-                <button class="tool-btn size-btn active" data-eraser-size="22" title="Medium">
+                <button class="tool-btn size-btn" data-eraser-size="22" title="Medium">
                     <span class="size-dot md"></span>
                 </button>
                 <button class="tool-btn size-btn" data-eraser-size="32" title="Large">
@@ -1031,6 +1057,21 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-reset-cancel">Cancel</button>
                 <button class="btn btn-primary" id="modal-reset-confirm">Start over</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-export-pdf">
+        <div class="modal">
+            <h2>Export PDF</h2>
+            <p>Choose a filename for your PDF.</p>
+            <div class="modal-input">
+                <input type="text" id="export-filename" placeholder="cuaderno" autocomplete="off" spellcheck="false">
+                <span class="file-ext">.pdf</span>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="modal-export-cancel">Cancel</button>
+                <button class="btn btn-primary" id="modal-export-confirm">Export</button>
             </div>
         </div>
     </div>
@@ -1102,6 +1143,9 @@
         const OVERSCROLL_FRICTION = 0.24;
         const OVERSCROLL_MARGIN = 100;
         const CREATE_PAGE_MIN_BOTTOM_RATIO = 0.45;
+        const LIVE_PREVIEW_SEGMENTS = 1;
+
+        const imageCache = new Map();
 
         // App State
         const state = {
@@ -1109,8 +1153,9 @@
             currentTool: 'pen',
             currentColor: '#002FD9',
             currentWidth: 2,
-            eraserWidth: 22,
+            eraserWidth: 12,
             eraserMode: 'area',
+            exportName: 'cuaderno',
             zoom: 1,
             panX: 0,
             panY: 0,
@@ -1134,7 +1179,8 @@
             saveTimeout: null,
             selection: {
                 pageIndex: null,
-                strokeIndices: []
+                strokeIndices: [],
+                imageIndices: []
             },
             selectionTransform: null,
             // Undo/Redo history
@@ -1205,7 +1251,8 @@
             const pageIndex = state.pages.length;
             const pageData = {
                 strokes: [],
-                backgroundImage: backgroundImage // Base64 image for PDF pages
+                backgroundImage: backgroundImage, // Base64 image for PDF pages
+                images: []
             };
             state.pages.push(pageData);
             createPageElement(pageIndex, animate);
@@ -1309,7 +1356,7 @@
 
             canvas.addEventListener('pointerdown', (e) => {
                 if (state.currentTool === 'lasso') {
-                    if (e.pointerType !== 'pen') return;
+                    if (e.pointerType === 'touch') return;
                     if (!lassoCanvas) return;
                     isLassoing = true;
                     lassoPoints = [];
@@ -1349,13 +1396,9 @@
                         tool: state.currentTool,
                         color: state.currentColor,
                         width: state.currentWidth,
-                        points: [{ x: pos.x, y: pos.y, p: pressure }]
+                        points: [{ x: pos.x, y: pos.y, p: pressure }],
+                        lastMid: null
                     };
-
-                    const ctx = canvas.getContext('2d');
-                    setupContext(ctx, state.currentTool, state.currentColor, state.currentWidth);
-                    ctx.beginPath();
-                    ctx.moveTo(pos.x, pos.y);
                 }
             });
 
@@ -1370,7 +1413,6 @@
                 if (!isDrawing || e.pointerType !== 'pen') return;
 
                 const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-                const ctx = canvas.getContext('2d');
 
                 events.forEach(ev => {
                     const pos = getCanvasPos(canvas, ev);
@@ -1383,16 +1425,8 @@
                         areaEraseChanged = eraseAreaAtPoint(pageIndex, pos.x, pos.y, state.eraserWidth / 2) || areaEraseChanged;
                         drawEraserPreview(pageIndex, pos);
                     } else {
-                        if (state.currentTool === 'pen') {
-                            ctx.lineWidth = state.currentWidth * (0.5 + pressure);
-                        }
-
-                        ctx.lineTo(pos.x, pos.y);
-                        ctx.stroke();
-                        ctx.beginPath();
-                        ctx.moveTo(pos.x, pos.y);
-
                         currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
+                        drawLiveStrokeSegment(pageIndex, canvas, currentStroke);
                     }
                 });
             });
@@ -1440,11 +1474,17 @@
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
-                    state.pages[pageIndex].strokes.push(currentStroke);
+                    const finalizedStroke = {
+                        tool: currentStroke.tool,
+                        color: currentStroke.color,
+                        width: currentStroke.width,
+                        points: currentStroke.points
+                    };
+                    state.pages[pageIndex].strokes.push(finalizedStroke);
                     saveToHistory({
                         type: 'add-stroke',
                         pageIndex: pageIndex,
-                        stroke: JSON.parse(JSON.stringify(currentStroke))
+                        stroke: JSON.parse(JSON.stringify(finalizedStroke))
                     });
                     scheduleSave();
                     redrawPage(pageIndex);
@@ -1487,6 +1527,62 @@
             ctx.setLineDash([]);
         }
 
+        function drawStrokePreviewTail(pageIndex, stroke) {
+            const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
+            if (!previewCanvas) return;
+            const ctx = previewCanvas.getContext('2d');
+            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+            ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+
+            if (!stroke || !stroke.points || stroke.points.length < 2) return;
+            const points = stroke.points;
+            const startIndex = Math.max(0, points.length - (LIVE_PREVIEW_SEGMENTS + 1));
+            const lastPoint = points[points.length - 1];
+
+            setupContext(ctx, stroke.tool, stroke.color, stroke.width);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = getStrokeWidth(stroke, lastPoint);
+            ctx.beginPath();
+            ctx.moveTo(points[startIndex].x, points[startIndex].y);
+            for (let i = startIndex + 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            ctx.stroke();
+        }
+
+        function drawLiveStrokeSegment(pageIndex, canvas, stroke) {
+            if (!stroke || stroke.points.length < 2) return;
+            const ctx = canvas.getContext('2d');
+            const points = stroke.points;
+            const prev = points[points.length - 2];
+            const curr = points[points.length - 1];
+            const mid = {
+                x: (prev.x + curr.x) / 2,
+                y: (prev.y + curr.y) / 2
+            };
+
+            setupContext(ctx, stroke.tool, stroke.color, stroke.width);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = getStrokeWidth(stroke, prev);
+
+            if (!stroke.lastMid) {
+                ctx.beginPath();
+                ctx.moveTo(prev.x, prev.y);
+                ctx.lineTo(mid.x, mid.y);
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
+                ctx.quadraticCurveTo(prev.x, prev.y, mid.x, mid.y);
+                ctx.stroke();
+            }
+
+            stroke.lastMid = mid;
+            drawStrokePreviewTail(pageIndex, stroke);
+        }
+
         function drawEraserPreview(pageIndex, pos) {
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
@@ -1525,12 +1621,14 @@
             });
             state.selection.pageIndex = null;
             state.selection.strokeIndices = [];
+            state.selection.imageIndices = [];
         }
 
         function selectStrokesWithLasso(pageIndex, polygon) {
             const page = state.pages[pageIndex];
             if (!page) return;
             const selected = [];
+            const selectedImages = [];
             for (let i = 0; i < page.strokes.length; i++) {
                 const stroke = page.strokes[i];
                 if (stroke.tool && stroke.tool.startsWith('eraser')) continue;
@@ -1538,12 +1636,23 @@
                     selected.push(i);
                 }
             }
-            if (selected.length === 0) {
+            if (Array.isArray(page.images)) {
+                for (let i = 0; i < page.images.length; i++) {
+                    const image = page.images[i];
+                    if (!image) continue;
+                    const corners = getImageCorners(image);
+                    if (polygonIntersectsRect(polygon, corners)) {
+                        selectedImages.push(i);
+                    }
+                }
+            }
+            if (selected.length === 0 && selectedImages.length === 0) {
                 clearSelection();
                 return;
             }
             state.selection.pageIndex = pageIndex;
             state.selection.strokeIndices = selected;
+            state.selection.imageIndices = selectedImages;
             updateSelectionBox();
         }
 
@@ -1568,10 +1677,67 @@
             return inside;
         }
 
-        function getSelectionBounds(pageIndex, indices) {
+        function getImageCorners(image) {
+            const halfW = image.width / 2;
+            const halfH = image.height / 2;
+            const cos = Math.cos(image.rotation || 0);
+            const sin = Math.sin(image.rotation || 0);
+            const corners = [
+                { x: -halfW, y: -halfH },
+                { x: halfW, y: -halfH },
+                { x: halfW, y: halfH },
+                { x: -halfW, y: halfH }
+            ];
+            return corners.map(pt => ({
+                x: image.x + pt.x * cos - pt.y * sin,
+                y: image.y + pt.x * sin + pt.y * cos
+            }));
+        }
+
+        function getImageBounds(image) {
+            const corners = getImageCorners(image);
+            const xs = corners.map(pt => pt.x);
+            const ys = corners.map(pt => pt.y);
+            return {
+                minX: Math.min(...xs),
+                minY: Math.min(...ys),
+                maxX: Math.max(...xs),
+                maxY: Math.max(...ys)
+            };
+        }
+
+        function segmentsIntersect(a, b, c, d) {
+            const det = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
+            if (det === 0) return false;
+            const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / det;
+            const u = ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)) / det;
+            return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+        }
+
+        function polygonIntersectsRect(polygon, rectCorners) {
+            for (const corner of rectCorners) {
+                if (pointInPolygon(corner, polygon)) return true;
+            }
+            for (const point of polygon) {
+                if (pointInPolygon(point, rectCorners)) return true;
+            }
+            for (let i = 0; i < polygon.length; i++) {
+                const a = polygon[i];
+                const b = polygon[(i + 1) % polygon.length];
+                for (let j = 0; j < rectCorners.length; j++) {
+                    const c = rectCorners[j];
+                    const d = rectCorners[(j + 1) % rectCorners.length];
+                    if (segmentsIntersect(a, b, c, d)) return true;
+                }
+            }
+            return false;
+        }
+
+        function getSelectionBounds(pageIndex, strokeIndices = [], imageIndices = []) {
             const page = state.pages[pageIndex];
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            indices.forEach(index => {
+
+            strokeIndices.forEach(index => {
                 const stroke = page.strokes[index];
                 if (!stroke) return;
                 stroke.points.forEach(pt => {
@@ -1581,6 +1747,17 @@
                     maxY = Math.max(maxY, pt.y);
                 });
             });
+
+            imageIndices.forEach(index => {
+                const image = page.images?.[index];
+                if (!image) return;
+                const bounds = getImageBounds(image);
+                minX = Math.min(minX, bounds.minX);
+                minY = Math.min(minY, bounds.minY);
+                maxX = Math.max(maxX, bounds.maxX);
+                maxY = Math.max(maxY, bounds.maxY);
+            });
+
             if (!isFinite(minX)) return null;
             return {
                 minX,
@@ -1594,7 +1771,11 @@
 
         function updateSelectionBox() {
             if (state.selection.pageIndex === null) return;
-            const bounds = getSelectionBounds(state.selection.pageIndex, state.selection.strokeIndices);
+            const bounds = getSelectionBounds(
+                state.selection.pageIndex,
+                state.selection.strokeIndices,
+                state.selection.imageIndices
+            );
             const box = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
             if (!box || !bounds) return;
             box.classList.remove('hidden');
@@ -1616,6 +1797,135 @@
             };
         }
 
+        function getPagePosFromClient(pageIndex, clientX, clientY) {
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (!wrapper) return { x: 0, y: 0 };
+            const rect = wrapper.getBoundingClientRect();
+            const scaleX = A4_WIDTH / rect.width;
+            const scaleY = A4_HEIGHT / rect.height;
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function getPageIndexFromClientPoint(clientX, clientY) {
+            const wrappers = Array.from(document.querySelectorAll('.page-wrapper'));
+            let bestIndex = null;
+            let bestDistance = Infinity;
+            wrappers.forEach(wrapper => {
+                const rect = wrapper.getBoundingClientRect();
+                const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
+                const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
+                const dist = Math.hypot(dx, dy);
+                if (dist < bestDistance) {
+                    bestDistance = dist;
+                    bestIndex = parseInt(wrapper.dataset.page, 10);
+                }
+            });
+            return Number.isFinite(bestIndex) ? bestIndex : null;
+        }
+
+        function clamp(value, min, max) {
+            return Math.min(max, Math.max(min, value));
+        }
+
+        function setActiveTool(toolName) {
+            if (!toolbar) return;
+            toolbar.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tool === toolName);
+            });
+            state.currentTool = toolName;
+            if (toolName !== 'eraser') {
+                closeEraserMenu();
+            }
+        }
+
+        function addImageToPage(pageIndex, src, dropPos, offsetIndex = 0) {
+            const page = state.pages[pageIndex];
+            if (!page) return;
+            if (!Array.isArray(page.images)) page.images = [];
+
+            const img = getCachedImage(src, () => redrawPage(pageIndex));
+            if (!img) return;
+
+            const placeImage = () => {
+                const maxWidth = A4_WIDTH * 0.6;
+                const maxHeight = A4_HEIGHT * 0.45;
+                const naturalWidth = img.naturalWidth || maxWidth;
+                const naturalHeight = img.naturalHeight || maxHeight;
+                const scale = Math.min(maxWidth / naturalWidth, maxHeight / naturalHeight, 1);
+                const width = naturalWidth * scale;
+                const height = naturalHeight * scale;
+                const offset = offsetIndex * 18;
+                const centerX = clamp(dropPos.x + offset, width / 2, A4_WIDTH - width / 2);
+                const centerY = clamp(dropPos.y + offset, height / 2, A4_HEIGHT - height / 2);
+
+                const imageData = {
+                    src,
+                    x: centerX,
+                    y: centerY,
+                    width,
+                    height,
+                    rotation: 0
+                };
+                page.images.push(imageData);
+                saveToHistory({
+                    type: 'add-image',
+                    pageIndex,
+                    index: page.images.length - 1,
+                    image: JSON.parse(JSON.stringify(imageData))
+                });
+                clearSelection();
+                state.selection.pageIndex = pageIndex;
+                state.selection.strokeIndices = [];
+                state.selection.imageIndices = [page.images.length - 1];
+                setActiveTool('lasso');
+                updateSelectionBox();
+                redrawPage(pageIndex);
+                renderPagesList();
+                scheduleSave();
+                showStatus('Image added');
+            };
+
+            if (img.complete) {
+                placeImage();
+            } else {
+                img.addEventListener('load', placeImage, { once: true });
+            }
+        }
+
+        function handleImageDragOver(e) {
+            if (!e.dataTransfer) return;
+            const types = Array.from(e.dataTransfer.types || []);
+            const hasFiles = types.includes('Files');
+            if (!hasFiles) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+        }
+
+        function handleImageDrop(e) {
+            if (!e.dataTransfer) return;
+            e.preventDefault();
+            const files = Array.from(e.dataTransfer.files || []).filter(file => file.type.startsWith('image/'));
+            if (files.length === 0) return;
+
+            const pageIndex = getPageIndexFromClientPoint(e.clientX, e.clientY);
+            if (pageIndex === null) return;
+            const dropPos = getPagePosFromClient(pageIndex, e.clientX, e.clientY);
+
+            files.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const src = reader.result;
+                    if (typeof src === 'string') {
+                        addImageToPage(pageIndex, src, dropPos, index);
+                    }
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         function captureStrokes(pageIndex, indices) {
             const page = state.pages[pageIndex];
             return indices.map(index => ({
@@ -1624,10 +1934,20 @@
             }));
         }
 
-        function applyTransformToSelection(originalStrokes, transform, center, pageIndex) {
+        function captureImages(pageIndex, indices) {
+            const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.images)) return [];
+            return indices.map(index => ({
+                index,
+                image: JSON.parse(JSON.stringify(page.images[index]))
+            }));
+        }
+
+        function applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex) {
             const page = state.pages[pageIndex];
             const cos = Math.cos(transform.rotation);
             const sin = Math.sin(transform.rotation);
+
             originalStrokes.forEach(item => {
                 const stroke = item.stroke;
                 const updated = {
@@ -1650,6 +1970,28 @@
                 };
                 page.strokes[item.index] = updated;
             });
+
+            if (Array.isArray(originalImages) && originalImages.length > 0) {
+                if (!Array.isArray(page.images)) page.images = [];
+                originalImages.forEach(item => {
+                    const image = item.image;
+                    let x = image.x - center.x;
+                    let y = image.y - center.y;
+                    x *= transform.scaleX;
+                    y *= transform.scaleY;
+                    const rx = x * cos - y * sin;
+                    const ry = x * sin + y * cos;
+                    page.images[item.index] = {
+                        ...image,
+                        x: center.x + rx + transform.translateX,
+                        y: center.y + ry + transform.translateY,
+                        width: image.width * transform.scaleX,
+                        height: image.height * transform.scaleY,
+                        rotation: (image.rotation || 0) + transform.rotation
+                    };
+                });
+            }
+
             redrawPage(pageIndex);
         }
 
@@ -1671,7 +2013,11 @@
         }
 
         function startSelectionTransform(pageIndex, mode, handle, e) {
-            const bounds = getSelectionBounds(pageIndex, state.selection.strokeIndices);
+            const bounds = getSelectionBounds(
+                pageIndex,
+                state.selection.strokeIndices,
+                state.selection.imageIndices
+            );
             if (!bounds) return;
             const center = {
                 x: bounds.minX + bounds.width / 2,
@@ -1679,6 +2025,7 @@
             };
             const startPos = getPagePosFromEvent(pageIndex, e);
             const originalStrokes = captureStrokes(pageIndex, state.selection.strokeIndices);
+            const originalImages = captureImages(pageIndex, state.selection.imageIndices);
             const startAngle = Math.atan2(startPos.y - center.y, startPos.x - center.x);
             state.selectionTransform = {
                 pageIndex,
@@ -1689,6 +2036,7 @@
                 startPos,
                 startAngle,
                 originalStrokes,
+                originalImages,
                 pointerId: e.pointerId
             };
         }
@@ -1696,7 +2044,7 @@
         function onSelectionPointerMove(e) {
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
-            const { pageIndex, mode, handle, bounds, center, startPos, startAngle, originalStrokes } = state.selectionTransform;
+            const { pageIndex, mode, handle, bounds, center, startPos, startAngle, originalStrokes, originalImages } = state.selectionTransform;
             const pos = getPagePosFromEvent(pageIndex, e);
             const transform = {
                 translateX: 0,
@@ -1734,7 +2082,7 @@
                 transform.rotation = angle - startAngle;
             }
 
-            applyTransformToSelection(originalStrokes, transform, center, pageIndex);
+            applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex);
             updateSelectionBox();
             e.preventDefault();
         }
@@ -1742,16 +2090,25 @@
         function onSelectionPointerUp(e) {
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
-            const { pageIndex, originalStrokes } = state.selectionTransform;
+            const { pageIndex, originalStrokes, originalImages } = state.selectionTransform;
             const afterStrokes = captureStrokes(pageIndex, state.selection.strokeIndices);
-            const beforeJSON = JSON.stringify(originalStrokes);
-            const afterJSON = JSON.stringify(afterStrokes);
+            const afterImages = captureImages(pageIndex, state.selection.imageIndices);
+            const before = {
+                strokes: originalStrokes,
+                images: originalImages
+            };
+            const after = {
+                strokes: afterStrokes,
+                images: afterImages
+            };
+            const beforeJSON = JSON.stringify(before);
+            const afterJSON = JSON.stringify(after);
             if (beforeJSON !== afterJSON) {
                 saveToHistory({
-                    type: 'transform-strokes',
+                    type: 'transform-selection',
                     pageIndex: pageIndex,
-                    before: originalStrokes,
-                    after: afterStrokes
+                    before,
+                    after
                 });
                 scheduleSave();
             }
@@ -1888,6 +2245,100 @@
             };
         }
 
+        function getCachedImage(src, onload) {
+            if (!src) return null;
+            let img = imageCache.get(src);
+            if (!img) {
+                img = new Image();
+                img.onload = () => {
+                    if (onload) onload();
+                };
+                img.src = src;
+                imageCache.set(src, img);
+            } else if (onload && !img.complete) {
+                img.addEventListener('load', onload, { once: true });
+            }
+            return img;
+        }
+
+        function getStrokeWidth(stroke, point) {
+            if (stroke.tool !== 'pen') return stroke.width;
+            const pressure = typeof point?.p === 'number' ? point.p : 0.5;
+            return stroke.width * (0.5 + pressure);
+        }
+
+        function drawSmoothStroke(ctx, stroke) {
+            if (!stroke || !stroke.points || stroke.points.length < 2) return;
+            setupContext(ctx, stroke.tool, stroke.color, stroke.width);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            const points = stroke.points;
+            if (points.length === 2) {
+                ctx.lineWidth = getStrokeWidth(stroke, points[1]);
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                ctx.lineTo(points[1].x, points[1].y);
+                ctx.stroke();
+                return;
+            }
+
+            const p0 = points[0];
+            const p1 = points[1];
+            let prevMid = {
+                x: (p0.x + p1.x) / 2,
+                y: (p0.y + p1.y) / 2
+            };
+
+            ctx.lineWidth = getStrokeWidth(stroke, p0);
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(prevMid.x, prevMid.y);
+            ctx.stroke();
+
+            for (let i = 1; i < points.length - 1; i++) {
+                const current = points[i];
+                const next = points[i + 1];
+                const mid = {
+                    x: (current.x + next.x) / 2,
+                    y: (current.y + next.y) / 2
+                };
+                ctx.lineWidth = getStrokeWidth(stroke, current);
+                ctx.beginPath();
+                ctx.moveTo(prevMid.x, prevMid.y);
+                ctx.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
+                ctx.stroke();
+                prevMid = mid;
+            }
+
+            const last = points[points.length - 1];
+            ctx.lineWidth = getStrokeWidth(stroke, last);
+            ctx.beginPath();
+            ctx.moveTo(prevMid.x, prevMid.y);
+            ctx.lineTo(last.x, last.y);
+            ctx.stroke();
+        }
+
+        function drawImagesOnContext(ctx, page, pageIndex, onload) {
+            if (!page || !Array.isArray(page.images) || page.images.length === 0) return;
+            page.images.forEach(image => {
+                if (!image || !image.src) return;
+                const img = getCachedImage(image.src, onload ? () => onload(pageIndex) : null);
+                if (!img || !img.complete) return;
+                ctx.save();
+                ctx.translate(image.x, image.y);
+                ctx.rotate(image.rotation || 0);
+                ctx.drawImage(
+                    img,
+                    -image.width / 2,
+                    -image.height / 2,
+                    image.width,
+                    image.height
+                );
+                ctx.restore();
+            });
+        }
+
         // Setup context for different tools
         function setupContext(ctx, tool, color, width) {
             ctx.globalCompositeOperation = 'source-over';
@@ -1917,34 +2368,16 @@
             ctx.save();
             ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
 
             const page = state.pages[pageIndex];
             if (!page) return;
 
-              for (const stroke of page.strokes) {
-                  if (stroke.points.length < 2) continue;
+            drawImagesOnContext(ctx, page, pageIndex, redrawPage);
+
+            for (const stroke of page.strokes) {
+                if (stroke.points.length < 2) continue;
                 if (stroke.tool === 'eraser-stroke') continue;
-
-                setupContext(ctx, stroke.tool, stroke.color, stroke.width);
-
-                ctx.beginPath();
-                let p1 = stroke.points[0];
-                ctx.moveTo(p1.x, p1.y);
-
-                // Draw smooth curves using quadratic bezier
-                for (let i = 1; i < stroke.points.length; i++) {
-                    const p2 = stroke.points[i];
-                    const midPoint = {
-                        x: p1.x + (p2.x - p1.x) / 2,
-                        y: p1.y + (p2.y - p1.y) / 2
-                    };
-                    ctx.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y);
-                    p1 = p2;
-                }
-                ctx.lineTo(p1.x, p1.y);
-                ctx.stroke();
+                drawSmoothStroke(ctx, stroke);
             }
 
             ctx.restore();
@@ -2101,7 +2534,7 @@
             });
 
             // Export/Import PDF
-            document.getElementById('btn-export-pdf').addEventListener('click', exportPDF);
+            document.getElementById('btn-export-pdf').addEventListener('click', openExportModal);
             document.getElementById('btn-import-pdf').addEventListener('click', () => pdfInput.click());
             pdfInput.addEventListener('change', importPDF);
             document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
@@ -2132,6 +2565,29 @@
             document.getElementById('modal-delete-confirm').addEventListener('click', confirmDeletePage);
             document.getElementById('modal-reset-cancel').addEventListener('click', closeResetModal);
             document.getElementById('modal-reset-confirm').addEventListener('click', confirmResetDocument);
+            document.getElementById('modal-delete-page').addEventListener('click', (e) => {
+                if (e.target.id === 'modal-delete-page') closeDeleteModal();
+            });
+            document.getElementById('modal-reset-document').addEventListener('click', (e) => {
+                if (e.target.id === 'modal-reset-document') closeResetModal();
+            });
+            document.getElementById('modal-export-cancel').addEventListener('click', closeExportModal);
+            document.getElementById('modal-export-confirm').addEventListener('click', confirmExportModal);
+            document.getElementById('modal-export-pdf').addEventListener('click', (e) => {
+                if (e.target.id === 'modal-export-pdf') closeExportModal();
+            });
+            const exportInput = document.getElementById('export-filename');
+            if (exportInput) {
+                exportInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        confirmExportModal();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeExportModal();
+                    }
+                });
+            }
 
             // Viewport pan/zoom with touch and mouse
             canvasViewport.addEventListener('pointerdown', handleViewportPointerDown);
@@ -2144,6 +2600,10 @@
 
             // Mouse wheel for scroll and zoom
             canvasViewport.addEventListener('wheel', handleWheel, { passive: false });
+
+            // Drag & drop images
+            canvasViewport.addEventListener('dragover', handleImageDragOver);
+            canvasViewport.addEventListener('drop', handleImageDrop);
 
             // Setup toolbar dragging
             setupToolbarDrag();
@@ -2851,21 +3311,12 @@
 
             ctx.save();
             ctx.scale(scaleX, scaleY);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
+            drawImagesOnContext(ctx, page, pageIndex, generateThumbnail);
 
             for (const stroke of page.strokes) {
                 if (stroke.points.length < 2) continue;
                 if (stroke.tool === 'eraser-stroke') continue;
-
-                setupContext(ctx, stroke.tool, stroke.color, stroke.width);
-
-                ctx.beginPath();
-                ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-                for (let i = 1; i < stroke.points.length; i++) {
-                    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-                }
-                ctx.stroke();
+                drawSmoothStroke(ctx, stroke);
             }
 
             ctx.restore();
@@ -2933,7 +3384,8 @@
             state.selectionTransform = null;
             state.pages = [{
                 strokes: [],
-                backgroundImage: null
+                backgroundImage: null,
+                images: []
             }];
             state.history = [];
             state.historyIndex = -1;
@@ -2963,7 +3415,11 @@
                 const data = localStorage.getItem('notebook-data-v2');
                 if (data) {
                     const parsed = JSON.parse(data);
-                    state.pages = parsed.pages || [];
+                    state.pages = (parsed.pages || []).map(page => ({
+                        strokes: Array.isArray(page?.strokes) ? page.strokes : [],
+                        backgroundImage: page?.backgroundImage || null,
+                        images: Array.isArray(page?.images) ? page.images : []
+                    }));
                 }
             } catch (e) {
                 console.error('Failed to load:', e);
@@ -3011,6 +3467,12 @@
                 const page = state.pages[action.pageIndex];
                 page.strokes.pop();
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'add-image') {
+                const page = state.pages[action.pageIndex];
+                if (Array.isArray(page.images)) {
+                    page.images.splice(action.index, 1);
+                    redrawPage(action.pageIndex);
+                }
             } else if (action.type === 'erase-strokes') {
                 // Restore erased strokes
                 const page = state.pages[action.pageIndex];
@@ -3024,6 +3486,20 @@
                 const page = state.pages[action.pageIndex];
                 for (const item of action.before) {
                     page.strokes[item.index] = JSON.parse(JSON.stringify(item.stroke));
+                }
+                redrawPage(action.pageIndex);
+            } else if (action.type === 'transform-selection') {
+                const page = state.pages[action.pageIndex];
+                if (action.before?.strokes) {
+                    for (const item of action.before.strokes) {
+                        page.strokes[item.index] = JSON.parse(JSON.stringify(item.stroke));
+                    }
+                }
+                if (action.before?.images) {
+                    if (!Array.isArray(page.images)) page.images = [];
+                    for (const item of action.before.images) {
+                        page.images[item.index] = JSON.parse(JSON.stringify(item.image));
+                    }
                 }
                 redrawPage(action.pageIndex);
             } else if (action.type === 'erase-area') {
@@ -3047,6 +3523,12 @@
                 const page = state.pages[action.pageIndex];
                 page.strokes.push(JSON.parse(JSON.stringify(action.stroke)));
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'add-image') {
+                const page = state.pages[action.pageIndex];
+                if (!Array.isArray(page.images)) page.images = [];
+                const insertIndex = Math.min(action.index, page.images.length);
+                page.images.splice(insertIndex, 0, JSON.parse(JSON.stringify(action.image)));
+                redrawPage(action.pageIndex);
             } else if (action.type === 'erase-strokes') {
                 // Re-erase the strokes
                 const page = state.pages[action.pageIndex];
@@ -3060,6 +3542,20 @@
                 const page = state.pages[action.pageIndex];
                 for (const item of action.after) {
                     page.strokes[item.index] = JSON.parse(JSON.stringify(item.stroke));
+                }
+                redrawPage(action.pageIndex);
+            } else if (action.type === 'transform-selection') {
+                const page = state.pages[action.pageIndex];
+                if (action.after?.strokes) {
+                    for (const item of action.after.strokes) {
+                        page.strokes[item.index] = JSON.parse(JSON.stringify(item.stroke));
+                    }
+                }
+                if (action.after?.images) {
+                    if (!Array.isArray(page.images)) page.images = [];
+                    for (const item of action.after.images) {
+                        page.images[item.index] = JSON.parse(JSON.stringify(item.image));
+                    }
                 }
                 redrawPage(action.pageIndex);
             } else if (action.type === 'erase-area') {
@@ -3093,6 +3589,74 @@
 
         function hideLoading() {
             loadingOverlay.classList.remove('visible');
+        }
+
+        function sanitizeFilename(name) {
+            const cleaned = name.replace(/[\\/:*?"<>|]+/g, '_').trim();
+            return cleaned || 'cuaderno';
+        }
+
+        function openExportModal() {
+            const modal = document.getElementById('modal-export-pdf');
+            const input = document.getElementById('export-filename');
+            if (!modal || !input) return;
+            input.value = state.exportName || 'cuaderno';
+            modal.classList.add('visible');
+            requestAnimationFrame(() => {
+                input.focus();
+                input.select();
+            });
+        }
+
+        function closeExportModal() {
+            const modal = document.getElementById('modal-export-pdf');
+            if (!modal) return;
+            modal.classList.remove('visible');
+        }
+
+        function confirmExportModal() {
+            const input = document.getElementById('export-filename');
+            if (!input) return;
+            let name = input.value.trim();
+            if (name.toLowerCase().endsWith('.pdf')) {
+                name = name.slice(0, -4);
+            }
+            name = sanitizeFilename(name);
+            state.exportName = name;
+            closeExportModal();
+            exportPDF(`${name}.pdf`);
+        }
+
+        function loadImage(src) {
+            return new Promise((resolve) => {
+                if (!src) {
+                    resolve(null);
+                    return;
+                }
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => resolve(null);
+                img.src = src;
+            });
+        }
+
+        async function drawImagesOnCanvas(ctx, page) {
+            if (!page || !Array.isArray(page.images) || page.images.length === 0) return;
+            for (const image of page.images) {
+                const img = await loadImage(image.src);
+                if (!img) continue;
+                ctx.save();
+                ctx.translate(image.x, image.y);
+                ctx.rotate(image.rotation || 0);
+                ctx.drawImage(
+                    img,
+                    -image.width / 2,
+                    -image.height / 2,
+                    image.width,
+                    image.height
+                );
+                ctx.restore();
+            }
         }
 
         // Import PDF - detect embedded strokes or treat as background
@@ -3179,21 +3743,24 @@
                         if (pageData.hasCustomBackground) {
                             state.pages.push({
                                 strokes: pageData.strokes || [],
-                                backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85)
+                                backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85),
+                                images: []
                             });
                         } else {
                             // Original was default template, don't use PDF as background
                             // (PDF contains rendered strokes, we want clean template + vector strokes)
                             state.pages.push({
                                 strokes: pageData.strokes || [],
-                                backgroundImage: null // Will use default SVG
+                                backgroundImage: null, // Will use default SVG
+                                images: []
                             });
                         }
                     } else {
                         // No embedded data - this is a regular PDF, use as background
                         state.pages.push({
                             strokes: [],
-                            backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85)
+                            backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85),
+                            images: []
                         });
                     }
                 }
@@ -3220,7 +3787,8 @@
         }
 
         // Export PDF with embedded stroke data
-        async function exportPDF() {
+        async function exportPDF(fileName) {
+            const safeName = fileName || 'cuaderno.pdf';
             showLoading('Generando PDF...');
 
             const { jsPDF } = window.jspdf;
@@ -3289,34 +3857,19 @@
                 tempCtx.scale(CANVAS_SCALE, CANVAS_SCALE);
                 tempCtx.lineCap = 'round';
                 tempCtx.lineJoin = 'round';
+                await drawImagesOnCanvas(tempCtx, page);
                 for (const stroke of page.strokes) {
                     if (stroke.points.length < 2) continue;
                     if (stroke.tool === 'eraser-stroke') continue;
 
-                    setupContext(tempCtx, stroke.tool, stroke.color, stroke.width);
-
-                    tempCtx.beginPath();
-                    let p1 = stroke.points[0];
-                    tempCtx.moveTo(p1.x, p1.y);
-
-                    for (let j = 1; j < stroke.points.length; j++) {
-                        const p2 = stroke.points[j];
-                        const midPoint = {
-                            x: p1.x + (p2.x - p1.x) / 2,
-                            y: p1.y + (p2.y - p1.y) / 2
-                        };
-                        tempCtx.quadraticCurveTo(p1.x, p1.y, midPoint.x, midPoint.y);
-                        p1 = p2;
-                    }
-                    tempCtx.lineTo(p1.x, p1.y);
-                    tempCtx.stroke();
+                    drawSmoothStroke(tempCtx, stroke);
                 }
 
                 const imgData = tempCanvas.toDataURL('image/jpeg', 0.9);
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             }
 
-            pdf.save('cuaderno.pdf');
+            pdf.save(safeName);
             hideLoading();
             showStatus('PDF exported');
         }
