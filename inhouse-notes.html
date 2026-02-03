@@ -271,6 +271,37 @@
             height: var(--rotate-handle-size);
         }
 
+        .selection-trash {
+            position: absolute;
+            top: -42px;
+            right: -42px;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            background: rgba(255, 255, 255, 0.98);
+            color: var(--accent-red);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+            padding: 0;
+        }
+
+        .selection-box.has-image .selection-trash {
+            display: flex;
+        }
+
+        .selection-trash:hover {
+            background: rgba(232, 16, 16, 0.08);
+        }
+
+        .selection-trash svg {
+            width: 16px;
+            height: 16px;
+        }
+
         .selection-box .selection-handle.edge {
             border-radius: 3px;
         }
@@ -1388,6 +1419,12 @@
             selectionBox.innerHTML = `
                 <div class="selection-rotate-line"></div>
                 <div class="rotate-handle" data-handle="rotate"></div>
+                <button class="selection-trash" type="button" title="Delete image" aria-label="Delete image">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
                 <div class="selection-handle edge handle-n" data-handle="n"></div>
                 <div class="selection-handle edge handle-s" data-handle="s"></div>
                 <div class="selection-handle edge handle-e" data-handle="e"></div>
@@ -1504,7 +1541,7 @@
                     const pressure = ev.pressure || 0.5;
                     if (currentStroke.tool === 'highlighter') {
                         const lastPoint = currentStroke.points[currentStroke.points.length - 1];
-                        const minDist = Math.max(1.5, currentStroke.width * 0.3);
+                        const minDist = Math.max(0.8, currentStroke.width * 0.15);
                         const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
                         if (dist < minDist) {
                             lastPoint.x = pos.x;
@@ -1561,6 +1598,14 @@
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
+                    if (e && typeof e.clientX === 'number' && typeof e.clientY === 'number') {
+                        const pos = getCanvasPos(canvas, e);
+                        const last = currentStroke.points[currentStroke.points.length - 1];
+                        const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
+                        if (dist > 0.5) {
+                            currentStroke.points.push({ x: pos.x, y: pos.y, p: e.pressure || last.p || 0.5 });
+                        }
+                    }
                     const finalizedStroke = {
                         tool: currentStroke.tool,
                         color: currentStroke.color,
@@ -1939,10 +1984,46 @@
             const box = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
             if (!box || !bounds) return;
             box.classList.remove('hidden');
+            box.classList.toggle('has-image', state.selection.imageIndices.length > 0);
             box.style.left = bounds.minX + 'px';
             box.style.top = bounds.minY + 'px';
             box.style.width = bounds.width + 'px';
             box.style.height = bounds.height + 'px';
+        }
+
+        function deleteSelectedImages(pageIndex) {
+            const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.images)) return;
+            if (!state.selection.imageIndices || state.selection.imageIndices.length === 0) return;
+            const uniqueIndices = Array.from(new Set(state.selection.imageIndices))
+                .filter(index => index >= 0 && index < page.images.length);
+            if (uniqueIndices.length === 0) return;
+
+            const removed = uniqueIndices
+                .slice()
+                .sort((a, b) => a - b)
+                .map(index => ({
+                    index,
+                    image: JSON.parse(JSON.stringify(page.images[index]))
+                }));
+
+            uniqueIndices
+                .slice()
+                .sort((a, b) => b - a)
+                .forEach(index => {
+                    page.images.splice(index, 1);
+                });
+
+            saveToHistory({
+                type: 'delete-images',
+                pageIndex,
+                images: removed
+            });
+            clearSelection();
+            redrawPage(pageIndex);
+            renderPagesList();
+            scheduleSave();
+            showStatus(uniqueIndices.length > 1 ? 'Images deleted' : 'Image deleted');
         }
 
         function getPagePosFromEvent(pageIndex, e) {
@@ -2160,6 +2241,12 @@
                 if (state.currentTool !== 'lasso') return;
                 if (state.selection.pageIndex !== pageIndex) return;
                 const target = e.target;
+                if (target.closest && target.closest('.selection-trash')) {
+                    deleteSelectedImages(pageIndex);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
                 if (target.classList.contains('rotate-handle')) {
                     startSelectionTransform(pageIndex, 'rotate', 'rotate', e);
                 } else if (target.classList.contains('selection-handle')) {
@@ -2463,24 +2550,26 @@
             ensureHighlighterMask();
 
             const maskCtx = highlighterMaskCtx;
+            maskCtx.setTransform(1, 0, 0, 1, 0, 0);
+            maskCtx.clearRect(0, 0, highlighterMaskCanvas.width, highlighterMaskCanvas.height);
             maskCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
-            maskCtx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
             maskCtx.globalCompositeOperation = 'source-over';
             maskCtx.globalAlpha = 1;
             maskCtx.fillStyle = stroke.color || '#ffde00';
 
-            const brushHeight = Math.max(1, stroke.width || 12);
-            const brushWidth = brushHeight * 1.6;
+            const thickness = Math.max(1, stroke.width || 12);
+            const brushWidth = thickness;
+            const brushHeight = thickness * 0.85;
             const halfW = brushWidth / 2;
             const halfH = brushHeight / 2;
-            const radius = brushHeight * 0.22;
-            const spacing = Math.max(1, brushHeight * 0.45);
+            const radius = thickness * 0.2;
+            const spacing = Math.max(0.6, Math.min(brushWidth, brushHeight) * 0.2);
 
             const points = stroke.points;
-            maskCtx.beginPath();
-
             const addStamp = (x, y) => {
+                maskCtx.beginPath();
                 addRoundedRectPath(maskCtx, x - halfW, y - halfH, brushWidth, brushHeight, radius);
+                maskCtx.fill();
             };
 
             let prev = points[0];
@@ -2502,8 +2591,6 @@
                 }
                 prev = curr;
             }
-
-            maskCtx.fill();
 
             ctx.save();
             ctx.globalCompositeOperation = 'source-over';
@@ -3932,6 +4019,13 @@
                 const page = state.pages[action.pageIndex];
                 page.strokes = JSON.parse(JSON.stringify(action.before));
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'delete-images') {
+                const page = state.pages[action.pageIndex];
+                if (!Array.isArray(page.images)) page.images = [];
+                action.images.forEach(item => {
+                    page.images.splice(item.index, 0, JSON.parse(JSON.stringify(item.image)));
+                });
+                redrawPage(action.pageIndex);
             }
 
             updateHistoryButtons();
@@ -3987,6 +4081,16 @@
             } else if (action.type === 'erase-area') {
                 const page = state.pages[action.pageIndex];
                 page.strokes = JSON.parse(JSON.stringify(action.after));
+                redrawPage(action.pageIndex);
+            } else if (action.type === 'delete-images') {
+                const page = state.pages[action.pageIndex];
+                if (!Array.isArray(page.images)) return;
+                const indices = action.images.map(item => item.index).sort((a, b) => b - a);
+                indices.forEach(index => {
+                    if (index >= 0 && index < page.images.length) {
+                        page.images.splice(index, 1);
+                    }
+                });
                 redrawPage(action.pageIndex);
             }
 
@@ -4163,23 +4267,31 @@
                     // Check if we have embedded strokes for this page
                     if (embeddedStrokes && embeddedStrokes[i - 1]) {
                         const pageData = embeddedStrokes[i - 1];
+                        const hasImagesKey = Object.prototype.hasOwnProperty.call(pageData, 'images');
                         const restoredImages = Array.isArray(pageData.images)
                             ? pageData.images
                             : [];
+                        const useLegacyRaster = !hasImagesKey;
+                        const baseBackground = (useLegacyRaster || pageData.hasCustomBackground)
+                            ? a4Canvas.toDataURL('image/jpeg', 0.85)
+                            : null;
+                        const restoredStrokes = useLegacyRaster
+                            ? []
+                            : (pageData.strokes || []);
                         
                         // If page had custom background, keep PDF as background
                         // If not (was using default SVG), use default SVG background
-                        if (pageData.hasCustomBackground) {
+                        if (baseBackground) {
                             state.pages.push({
-                                strokes: pageData.strokes || [],
-                                backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85),
-                                images: restoredImages
+                                strokes: restoredStrokes,
+                                backgroundImage: baseBackground,
+                                images: useLegacyRaster ? [] : restoredImages
                             });
                         } else {
                             // Original was default template, don't use PDF as background
                             // (PDF contains rendered strokes, we want clean template + vector strokes)
                             state.pages.push({
-                                strokes: pageData.strokes || [],
+                                strokes: restoredStrokes,
                                 backgroundImage: null, // Will use default SVG
                                 images: restoredImages
                             });
