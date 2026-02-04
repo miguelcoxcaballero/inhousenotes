@@ -2854,6 +2854,9 @@
         const driveFolderMetaCache = new Map();
         let driveOpenInProgress = false;
         let driveOpenFileId = null;
+        let driveRefreshInProgress = false;
+        let driveOpenNeedsRefresh = false;
+        let driveAutosavePreferred = false;
         let driveUserProfile = null;
         let docTitleEditing = false;
         let docTitleOriginal = '';
@@ -4463,7 +4466,7 @@
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
-            } else if (state.driveAutosave) {
+            } else if (state.driveAutosave && !driveOpenNeedsRefresh) {
                 clearTimeout(driveSaveTimeout);
                 driveSaveTimeout = setTimeout(() => {
                     queueDriveSave();
@@ -4471,7 +4474,11 @@
             }
             if (signedIn) {
                 loadDriveProfile();
-                restorePdfBackgroundsIfNeeded();
+                if (driveOpenNeedsRefresh) {
+                    refreshOpenDriveFileFromDrive();
+                } else {
+                    restorePdfBackgroundsIfNeeded();
+                }
             }
         }
 
@@ -4516,6 +4523,8 @@
             state.driveFileName = null;
             state.driveFolderId = null;
             state.driveAutosave = false;
+            driveOpenNeedsRefresh = false;
+            driveAutosavePreferred = false;
             driveRecentsCache = [];
             driveStarredCache = [];
             driveFolderCache = { folders: [], files: [] };
@@ -4616,6 +4625,52 @@
         function closeDriveProfileMenus() {
             closeDriveProfileMenu(driveProfileMenu, driveProfileBtn);
             closeDriveProfileMenu(driveProfileMenuEditor, driveProfileBtnEditor);
+        }
+
+        async function refreshOpenDriveFileFromDrive() {
+            if (!driveAccessToken || !state.driveFileId) return;
+            if (driveRefreshInProgress || driveOpenInProgress) return;
+            if (editorView && editorView.classList.contains('hidden')) return;
+
+            driveRefreshInProgress = true;
+            showEditorView();
+            showLoading('Refreshing PDF...');
+            try {
+                await ensureDriveToken(false);
+                let latestName = state.driveFileName;
+                try {
+                    const metaRes = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=name`);
+                    const meta = await metaRes.json();
+                    if (meta?.name) {
+                        latestName = meta.name;
+                    }
+                } catch (err) {
+                    // Keep existing name if metadata fetch fails.
+                }
+
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`);
+                const arrayBuffer = await res.arrayBuffer();
+                await importPDFArrayBuffer(arrayBuffer);
+
+                state.driveFileName = latestName || state.driveFileName;
+                if (state.driveFileName) {
+                    const baseName = state.driveFileName.replace(/\.pdf$/i, '');
+                    state.exportName = baseName || state.exportName;
+                }
+
+                driveOpenNeedsRefresh = false;
+                const shouldAutosave = driveAutosavePreferred || !!state.driveFileId;
+                state.driveAutosave = shouldAutosave;
+                driveAutosavePreferred = shouldAutosave;
+                updateDocTitle();
+                saveDriveSession();
+                showStatus('PDF loaded', { preserveState: true });
+            } catch (err) {
+                showStatus('Failed to refresh PDF', { preserveState: true });
+            } finally {
+                hideLoading();
+                driveRefreshInProgress = false;
+            }
         }
 
         async function restorePdfBackgroundsIfNeeded() {
@@ -5100,6 +5155,8 @@
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
                 state.driveAutosave = true;
+                driveOpenNeedsRefresh = false;
+                driveAutosavePreferred = true;
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
                 updateDocTitle();
@@ -5147,6 +5204,8 @@
             state.driveFileName = fileName;
             state.driveFolderId = folderId || null;
             state.driveAutosave = true;
+            driveOpenNeedsRefresh = false;
+            driveAutosavePreferred = true;
             updateDocTitle();
             saveDriveSession();
             scheduleSave(true);
@@ -8201,7 +8260,13 @@
                 if (parsed.exportName) {
                     state.exportName = parsed.exportName;
                 }
-                state.driveAutosave = !!parsed.autosave || !!parsed.fileId;
+                const hasFile = !!parsed.fileId;
+                driveAutosavePreferred = !!parsed.autosave || hasFile;
+                state.driveAutosave = driveAutosavePreferred;
+                driveOpenNeedsRefresh = hasFile;
+                if (driveOpenNeedsRefresh) {
+                    state.driveAutosave = false;
+                }
             } catch (e) {
                 console.error('Failed to load Drive session:', e);
             }
