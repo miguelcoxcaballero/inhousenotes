@@ -1532,8 +1532,9 @@
 
         [data-theme="dark"] .drive-card-more,
         [data-theme="dark"] .bin-item-more {
-            background: rgba(255,255,255,0.08);
+            background: rgba(0,0,0,0.6);
             color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.12);
         }
 
         [data-theme="dark"] .drive-card-dropdown,
@@ -1644,8 +1645,11 @@
             flex-direction: column;
             gap: 10px;
             max-height: 260px;
+            min-height: 220px;
             overflow: auto;
             margin-top: 12px;
+            padding-bottom: 64px;
+            scroll-padding-bottom: 64px;
         }
 
         .bin-item {
@@ -1727,6 +1731,33 @@
         .bin-item-dropdown svg {
             width: 16px;
             height: 16px;
+        }
+
+        .bin-loading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        .bin-loading.hidden {
+            display: none;
+        }
+
+        .mini-spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-top-color: var(--text-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        [data-theme="dark"] .mini-spinner {
+            border-color: rgba(255,255,255,0.18);
+            border-top-color: var(--text-primary);
         }
 
         .drive-folder-card {
@@ -2145,6 +2176,10 @@
         <div class="modal">
             <h2>Bin</h2>
             <p>Files currently in your Drive bin.</p>
+            <div class="bin-loading hidden" id="drive-bin-loading">
+                <div class="mini-spinner" aria-hidden="true"></div>
+                <span>Loading bin...</span>
+            </div>
             <div class="bin-list" id="drive-bin-list"></div>
             <div class="drive-empty hidden" id="drive-bin-empty">Bin is empty.</div>
             <div class="modal-actions">
@@ -2401,6 +2436,7 @@
         const driveBinList = document.getElementById('drive-bin-list');
         const driveBinEmpty = document.getElementById('drive-bin-empty');
         const driveBinClose = document.getElementById('drive-bin-close');
+        const driveBinLoading = document.getElementById('drive-bin-loading');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
@@ -4792,13 +4828,17 @@
         async function refreshDriveBin() {
             if (!driveBinList || !driveAccessToken) return;
             driveBinList.innerHTML = '';
+            driveBinList.setAttribute('aria-busy', 'true');
             if (driveBinEmpty) driveBinEmpty.classList.add('hidden');
+            if (driveBinLoading) driveBinLoading.classList.remove('hidden');
             try {
                 const q = encodeURIComponent(`trashed=true and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
                 const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,mimeType,parents)');
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=100&fields=${fields}`);
                 const data = await res.json();
                 const files = data.files || [];
+                if (driveBinLoading) driveBinLoading.classList.add('hidden');
+                driveBinList.setAttribute('aria-busy', 'false');
                 if (files.length === 0) {
                     if (driveBinEmpty) driveBinEmpty.classList.remove('hidden');
                     return;
@@ -4864,6 +4904,8 @@
                     driveBinList.appendChild(item);
                 });
             } catch (err) {
+                if (driveBinLoading) driveBinLoading.classList.add('hidden');
+                driveBinList.setAttribute('aria-busy', 'false');
                 if (driveBinEmpty) driveBinEmpty.classList.remove('hidden');
             }
         }
