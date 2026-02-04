@@ -1339,6 +1339,11 @@
             display: none;
         }
 
+        #editor-view {
+            height: 100%;
+            width: 100%;
+        }
+
         .doc-title {
             font-size: 0.95rem;
             font-weight: 500;
@@ -1648,7 +1653,6 @@
         const A4_WIDTH = 794;
         const A4_HEIGHT = 1123;
         const CANVAS_SCALE = Math.min(3, Math.max(2, Math.round((window.devicePixelRatio || 2) * 2))); // High DPI, capped for memory
-        const PDF_IMPORT_SCALE = 1.35;
         const OVERLAY_SCALE = 1;
         const OVERSCROLL_THRESHOLD = 360;
         const OVERSCROLL_FRICTION = 0.24;
@@ -6073,31 +6077,41 @@
                     showLoading(`Processing page ${i} of ${numPages}...`);
                     
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 1 });
+                    const viewport = page.getViewport({ scale: 2 });
 
-                    // Render directly into an A4-sized canvas for speed
+                    // Create temp canvas for PDF page
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = viewport.width;
+                    tempCanvas.height = viewport.height;
+                    const tempCtx = tempCanvas.getContext('2d');
+
+                    await page.render({
+                        canvasContext: tempCtx,
+                        viewport: viewport
+                    }).promise;
+
+                    // Convert to base64 and resize to A4
                     const a4Canvas = document.createElement('canvas');
-                    a4Canvas.width = Math.round(A4_WIDTH * PDF_IMPORT_SCALE);
-                    a4Canvas.height = Math.round(A4_HEIGHT * PDF_IMPORT_SCALE);
-                    const a4Ctx = a4Canvas.getContext('2d', { alpha: false });
-
+                    a4Canvas.width = A4_WIDTH * CANVAS_SCALE;
+                    a4Canvas.height = A4_HEIGHT * CANVAS_SCALE;
+                    const a4Ctx = a4Canvas.getContext('2d');
+                    
                     a4Ctx.fillStyle = 'white';
                     a4Ctx.fillRect(0, 0, a4Canvas.width, a4Canvas.height);
-
+                    
                     const scale = Math.min(
                         a4Canvas.width / viewport.width,
                         a4Canvas.height / viewport.height
                     );
                     const offsetX = (a4Canvas.width - viewport.width * scale) / 2;
                     const offsetY = (a4Canvas.height - viewport.height * scale) / 2;
-
-                    await page.render({
-                        canvasContext: a4Ctx,
-                        viewport: viewport,
-                        transform: [scale, 0, 0, scale, offsetX, offsetY]
-                    }).promise;
-
-                    page.cleanup();
+                    
+                    a4Ctx.drawImage(
+                        tempCanvas,
+                        offsetX, offsetY,
+                        viewport.width * scale,
+                        viewport.height * scale
+                    );
 
                     // Check if we have embedded strokes for this page
                     if (embeddedStrokes && embeddedStrokes[i - 1]) {
@@ -6108,7 +6122,7 @@
                             : [];
                         const useLegacyRaster = !hasImagesKey;
                         const baseBackground = (useLegacyRaster || pageData.hasCustomBackground)
-                            ? a4Canvas.toDataURL('image/jpeg', 0.8)
+                            ? a4Canvas.toDataURL('image/jpeg', 0.85)
                             : null;
                         const restoredStrokes = useLegacyRaster
                             ? []
@@ -6135,12 +6149,10 @@
                         // No embedded data - this is a regular PDF, use as background
                         state.pages.push({
                             strokes: [],
-                            backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.8),
+                            backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85),
                             images: []
                         });
                     }
-
-                    await new Promise(resolve => requestAnimationFrame(resolve));
                 }
 
                 renderAllPages();
