@@ -2858,9 +2858,13 @@
                 toolbar.querySelectorAll('button').forEach(btn => {
                     btn.disabled = next;
                 });
-                toolbar.classList.remove('toolbar-flash');
-                void toolbar.offsetWidth;
-                toolbar.classList.add('toolbar-flash');
+                if (next) {
+                    toolbar.classList.remove('toolbar-flash');
+                } else {
+                    toolbar.classList.remove('toolbar-flash');
+                    void toolbar.offsetWidth;
+                    toolbar.classList.add('toolbar-flash');
+                }
             }
             if (eraserToggle) {
                 eraserToggle.disabled = next;
