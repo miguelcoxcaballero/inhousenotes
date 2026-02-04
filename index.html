@@ -6860,20 +6860,16 @@
             }
 
             // Check if we should create a page before resetting
-            if (!skipPageCreate && state.pendingPageCreate && state.overscrollY >= OVERSCROLL_THRESHOLD) {
-                const viewportHeight = canvasViewport.getBoundingClientRect().height;
-                const bottomInView = state.panY + getContentHeight() * state.zoom;
-                const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                if (canCreate) {
-                    const prevLimit = getBottomLimit();
-                    addPage(null, true);
-                    state.overscrollY = 0;
-                    state.pendingPageCreate = false;
-                    state.pageCreateLocked = false;
-                    updateAddPageIndicator();
-                    animatePanTo(prevLimit.minPanY);
-                    return;
-                }
+            // If pendingPageCreate is true, the + icon was at full size, so create the page
+            if (!skipPageCreate && state.pendingPageCreate) {
+                const prevLimit = getBottomLimit();
+                addPage(null, true);
+                state.overscrollY = 0;
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                updateAddPageIndicator();
+                animatePanTo(prevLimit.minPanY);
+                return;
             }
 
             const startOverscroll = state.overscrollY;
@@ -7453,10 +7449,8 @@
             }
 
             const finalizePageCreation = () => {
-                const viewportHeight = canvasViewport.getBoundingClientRect().height;
-                const bottomInView = state.panY + getContentHeight() * state.zoom;
-                const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                if (state.pendingPageCreate && state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate) {
+                // If pendingPageCreate is true, the + icon was at full size, so create the page
+                if (state.pendingPageCreate) {
                     const prevLimit = getBottomLimit();
                     addPage(null, true);
                     state.overscrollY = 0;
@@ -7466,7 +7460,6 @@
                     animatePanTo(prevLimit.minPanY);
                     return true;
                 }
-                state.pendingPageCreate = false;
                 return false;
             };
 
