@@ -2533,8 +2533,7 @@
             return stroke;
         }
 
-        // Limit strokes array size by baking old strokes into background
-        // Lower thresholds for mobile to reduce memory usage
+        // Stroke baking system - converts old strokes to background image to save memory
         const MAX_STROKES_PER_PAGE = IS_LOW_MEMORY_DEVICE ? 250 : 500;
         const BAKE_THRESHOLD = IS_LOW_MEMORY_DEVICE ? 200 : 400;
         let bakingInProgress = new Set();
@@ -2565,21 +2564,40 @@
             const offCtx = offscreen.getContext('2d');
             offCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
 
-            // Draw background
-            if (page.backgroundSource === 'template') {
-                const bgImg = new Image();
-                bgImg.onload = () => {
-                    offCtx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+            // Draw existing baked background first (if any)
+            const existingBaked = page.bakedBackground;
+
+            function drawExistingBakedAndContinue() {
+                if (existingBaked) {
+                    const img = new Image();
+                    img.onload = () => {
+                        offCtx.drawImage(img, 0, 0, A4_WIDTH, A4_HEIGHT);
+                        drawBackgroundAndBake();
+                    };
+                    img.onerror = drawBackgroundAndBake;
+                    img.src = existingBaked;
+                } else {
+                    drawBackgroundAndBake();
+                }
+            }
+
+            function drawBackgroundAndBake() {
+                // Draw template background if needed (only if no existing baked bg)
+                if (!existingBaked && page.backgroundSource === 'template') {
+                    const bgImg = new Image();
+                    bgImg.onload = () => {
+                        offCtx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                        finishBaking();
+                    };
+                    bgImg.onerror = finishBaking;
+                    bgImg.src = SVG_BACKGROUND;
+                } else {
                     finishBaking();
-                };
-                bgImg.onerror = finishBaking;
-                bgImg.src = SVG_BACKGROUND;
-            } else {
-                finishBaking();
+                }
             }
 
             function finishBaking() {
-                // Draw old strokes to bake (keep last BAKE_THRESHOLD/2 strokes editable)
+                // Keep last BAKE_THRESHOLD/2 strokes editable
                 const keepCount = Math.floor(BAKE_THRESHOLD / 2);
                 const strokesToBake = page.strokes.slice(0, page.strokes.length - keepCount);
 
@@ -2589,14 +2607,20 @@
                 }
 
                 // Convert baked strokes to background image
-                page.bakedBackground = offscreen.toDataURL('image/png', 0.9);
+                page.bakedBackground = offscreen.toDataURL('image/png', 0.92);
 
-                // Remove baked strokes
+                // Remove baked strokes from array
                 page.strokes = page.strokes.slice(page.strokes.length - keepCount);
 
                 bakingInProgress.delete(pageIndex);
+
+                // CRITICAL: Save immediately to persist bakedBackground
+                scheduleSave(true);
+
                 redrawPage(pageIndex);
             }
+
+            drawExistingBakedAndContinue();
         }
 
         // Memory-limited history with stroke count estimation
@@ -8237,7 +8261,8 @@
                 images: Array.isArray(page?.images) ? page.images : [],
                 backgroundImage: page?.backgroundSource === 'pdf' ? null : (page?.backgroundImage || null),
                 backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template')),
-                pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null
+                pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
+                bakedBackground: page?.bakedBackground || null
             }));
             const payload = {
                 pages: pagesForStorage,
@@ -8301,6 +8326,7 @@
                         backgroundSource,
                         pdfPageIndex,
                         images: Array.isArray(page?.images) ? page.images : [],
+                        bakedBackground: page?.bakedBackground || null,
                         needsRedraw: true
                     };
                 });
@@ -8859,6 +8885,7 @@
                                 backgroundSource: 'pdf',
                                 pdfPageIndex: pagePdfIndex,
                                 images: useLegacyRaster ? [] : restoredImages,
+                                bakedBackground: pageData.bakedBackground || null,
                                 needsRedraw: true
                             });
                         } else {
@@ -8868,6 +8895,7 @@
                                 backgroundSource: 'template',
                                 pdfPageIndex: null,
                                 images: restoredImages,
+                                bakedBackground: pageData.bakedBackground || null,
                                 needsRedraw: true
                             });
                         }
@@ -8933,7 +8961,8 @@
                 images: Array.isArray(page.images) ? page.images : [],
                 hasCustomBackground: page.backgroundSource === 'pdf' || !!page.backgroundImage,
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
-                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null
+                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                bakedBackground: page.bakedBackground || null
             }));
 
             // Embed stroke data as PDF metadata (custom property)
