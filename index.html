@@ -1542,6 +1542,11 @@
             border-color: rgba(255,255,255,0.08);
         }
 
+        [data-theme="dark"] .folder-picker-meta {
+            background: rgba(255,255,255,0.04);
+            border-color: rgba(255,255,255,0.08);
+        }
+
         [data-theme="dark"] .drive-empty {
             background: rgba(255,255,255,0.04);
             border-color: rgba(255,255,255,0.1);
@@ -1587,6 +1592,36 @@
             overflow: auto;
             background: rgba(0,0,0,0.02);
             margin: 14px 0;
+        }
+
+        .folder-picker-meta {
+            margin-top: 8px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(0,0,0,0.08);
+            background: rgba(0,0,0,0.03);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .folder-picker-meta-label {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+        }
+
+        .folder-picker-meta-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .folder-picker-meta-path {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            word-break: break-word;
         }
 
         .folder-picker-breadcrumbs {
@@ -1770,6 +1805,7 @@
             display: flex;
             align-items: center;
             gap: 12px;
+            position: relative;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -2137,6 +2173,11 @@
         <div class="modal">
             <h2 id="folder-picker-title">New PDF</h2>
             <p id="folder-picker-subtitle">Choose a folder and name your file.</p>
+            <div class="folder-picker-meta hidden" id="folder-picker-meta">
+                <div class="folder-picker-meta-label">Moving</div>
+                <div class="folder-picker-meta-name" id="folder-picker-file-name"></div>
+                <div class="folder-picker-meta-path" id="folder-picker-file-path"></div>
+            </div>
             <div class="folder-picker">
                 <div class="folder-picker-breadcrumbs" id="folder-picker-breadcrumbs"></div>
                 <div class="folder-picker-list" id="folder-picker-list"></div>
@@ -2276,6 +2317,7 @@
         const PAGE_PADDING = 30;
         const PAGE_GAP = 30;
         const VISIBLE_PAGE_BUFFER = 2;
+        const VISIBLE_PAGE_BUFFER_ACTIVE = 1;
         const MAX_PDF_BACKGROUND_CACHE = 12;
         const PDF_RENDER_SCALE_LARGE = 1.5;
         const PDF_RENDER_SCALE_HUGE = 1.2;
@@ -2422,6 +2464,9 @@
         const folderPickerModal = document.getElementById('modal-folder-picker');
         const folderPickerTitle = document.getElementById('folder-picker-title');
         const folderPickerSubtitle = document.getElementById('folder-picker-subtitle');
+        const folderPickerMeta = document.getElementById('folder-picker-meta');
+        const folderPickerFileName = document.getElementById('folder-picker-file-name');
+        const folderPickerFilePath = document.getElementById('folder-picker-file-path');
         const folderPickerBreadcrumbs = document.getElementById('folder-picker-breadcrumbs');
         const folderPickerList = document.getElementById('folder-picker-list');
         const folderPickerEmpty = document.getElementById('folder-picker-empty');
@@ -2454,6 +2499,7 @@
         let driveFolderCache = { folders: [], files: [] };
         let driveFolderStack = [{ id: 'root', name: 'My Drive' }];
         let driveCurrentFolderId = 'root';
+        const driveFolderMetaCache = new Map();
         let driveOpenInProgress = false;
         let driveOpenFileId = null;
         let driveUserProfile = null;
@@ -2472,10 +2518,12 @@
         let pdfRenderQueue = [];
         let pdfRenderActive = false;
         let pdfRenderToken = 0;
+        let pdfRenderResumeHandle = null;
         let pdfRestoreInProgress = false;
         const pdfBackgroundCache = new Map();
         const activePageIndices = new Set();
         let visiblePageUpdateHandle = null;
+        let visiblePageUpdateForce = false;
         const addPageIndicator = document.createElement('div');
         addPageIndicator.id = 'add-page-indicator';
         addPageIndicator.textContent = '+';
@@ -2580,9 +2628,11 @@
             return wrapper;
         }
 
-        function attachPageCanvases(wrapper, pageIndex) {
+        function attachPageCanvases(wrapper, pageIndex, options = {}) {
             if (!wrapper) return;
             if (wrapper.querySelector('canvas.page-canvas')) return;
+            const defer = !!options.defer;
+            const deferPdfRender = !!options.deferPdfRender;
 
             const canvas = document.createElement('canvas');
             canvas.className = 'page-canvas';
@@ -2641,7 +2691,7 @@
             wrapper.insertBefore(cursorOverlay, wrapper.lastChild);
             wrapper.insertBefore(selectionBox, wrapper.lastChild);
 
-            applyPageBackground(pageIndex, canvas);
+            applyPageBackground(pageIndex, canvas, { deferPdfRender });
 
             // Setup context with scale
             const ctx = canvas.getContext('2d');
@@ -2651,20 +2701,27 @@
 
             setupCanvasEvents(canvas, pageIndex);
             setupSelectionBoxEvents(selectionBox, pageIndex);
-            redrawPage(pageIndex);
+            if (!defer) {
+                redrawPage(pageIndex);
+            } else {
+                const page = state.pages[pageIndex];
+                if (page) {
+                    page.needsRedraw = true;
+                }
+            }
         }
 
-        function ensurePageCanvas(pageIndex) {
+        function ensurePageCanvas(pageIndex, options = {}) {
             if (activePageIndices.has(pageIndex)) {
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
                 if (canvas) {
-                    applyPageBackground(pageIndex, canvas);
+                    applyPageBackground(pageIndex, canvas, { deferPdfRender: !!options.deferPdfRender });
                 }
                 return;
             }
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (!wrapper) return;
-            attachPageCanvases(wrapper, pageIndex);
+            attachPageCanvases(wrapper, pageIndex, options);
             activePageIndices.add(pageIndex);
         }
 
@@ -2689,6 +2746,7 @@
         }
 
         function resetPdfState() {
+            cancelPdfRenderResume();
             pdfBackgroundCache.forEach(entry => {
                 if (entry?.dataUrl && entry.dataUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(entry.dataUrl);
@@ -2701,6 +2759,16 @@
             pdfRenderActive = false;
             pdfBackgroundCache.clear();
             pdfRenderToken += 1;
+        }
+
+        function cancelPdfRenderResume() {
+            if (!pdfRenderResumeHandle) return;
+            if ('cancelIdleCallback' in window) {
+                cancelIdleCallback(pdfRenderResumeHandle);
+            } else {
+                clearTimeout(pdfRenderResumeHandle);
+            }
+            pdfRenderResumeHandle = null;
         }
 
         function touchPdfBackgroundCache(pageIndex, dataUrl) {
@@ -2732,9 +2800,10 @@
             }
         }
 
-        function applyPageBackground(pageIndex, canvas) {
+        function applyPageBackground(pageIndex, canvas, options = {}) {
             const page = state.pages[pageIndex];
             if (!page || !canvas) return;
+            const deferPdfRender = !!options.deferPdfRender;
             if (page.backgroundImage) {
                 if (!page.backgroundSource) {
                     page.backgroundSource = page.pdfPageIndex ? 'pdf' : 'custom';
@@ -2753,7 +2822,9 @@
             if (page.pdfPageIndex && activePdfDocument) {
                 canvas.style.backgroundImage = '';
                 canvas.style.backgroundColor = 'white';
-                queuePdfPageRender(pageIndex);
+                if (!deferPdfRender) {
+                    queuePdfPageRender(pageIndex);
+                }
                 return;
             }
 
@@ -2773,16 +2844,39 @@
 
         async function processPdfRenderQueue() {
             if (pdfRenderActive) return;
+            if (isViewportInteracting()) {
+                schedulePdfRenderResume();
+                return;
+            }
             pdfRenderActive = true;
             const token = pdfRenderToken;
             while (pdfRenderQueue.length > 0) {
                 const pageIndex = pdfRenderQueue.shift();
                 if (token !== pdfRenderToken) break;
+                if (isViewportInteracting()) break;
                 if (!activePageIndices.has(pageIndex)) continue;
                 await renderPdfPageToBackground(pageIndex, token);
                 await new Promise(requestAnimationFrame);
             }
             pdfRenderActive = false;
+            if (pdfRenderQueue.length > 0 && !isViewportInteracting()) {
+                schedulePdfRenderResume();
+            }
+        }
+
+        function schedulePdfRenderResume() {
+            if (pdfRenderResumeHandle) return;
+            const resume = () => {
+                pdfRenderResumeHandle = null;
+                if (!isViewportInteracting()) {
+                    processPdfRenderQueue();
+                }
+            };
+            if ('requestIdleCallback' in window) {
+                pdfRenderResumeHandle = requestIdleCallback(resume, { timeout: 600 });
+            } else {
+                pdfRenderResumeHandle = setTimeout(resume, 120);
+            }
         }
 
         async function renderPdfPageToBackground(pageIndex, token) {
@@ -2848,7 +2942,11 @@
             }
         }
 
-        function getVisiblePageRange() {
+        function isViewportInteracting() {
+            return !!state.isPanning || state.activePointers.size > 0 || !!state.inertiaFrame;
+        }
+
+        function getVisiblePageRange(bufferOverride = null) {
             const rect = canvasViewport.getBoundingClientRect();
             if (!rect.height) return { start: 0, end: -1 };
             const viewTop = (-state.panY) / state.zoom;
@@ -2856,15 +2954,18 @@
             const pageSpan = A4_HEIGHT + PAGE_GAP;
             let start = Math.floor((viewTop - PAGE_PADDING) / pageSpan);
             let end = Math.floor((viewBottom - PAGE_PADDING) / pageSpan);
-            start = Math.max(0, Math.min(state.pages.length - 1, start - VISIBLE_PAGE_BUFFER));
-            end = Math.max(0, Math.min(state.pages.length - 1, end + VISIBLE_PAGE_BUFFER));
+            const buffer = Number.isFinite(bufferOverride) ? bufferOverride : VISIBLE_PAGE_BUFFER;
+            start = Math.max(0, Math.min(state.pages.length - 1, start - buffer));
+            end = Math.max(0, Math.min(state.pages.length - 1, end + buffer));
             return { start, end };
         }
 
         function updateVisiblePages(force = false) {
             const pageCount = state.pages.length;
             if (!pageCount) return;
-            const range = getVisiblePageRange();
+            const deferHeavy = !force && isViewportInteracting();
+            const buffer = deferHeavy ? VISIBLE_PAGE_BUFFER_ACTIVE : VISIBLE_PAGE_BUFFER;
+            const range = getVisiblePageRange(buffer);
             if (range.end < range.start) return;
             const desired = new Set();
             for (let i = range.start; i <= range.end; i++) {
@@ -2872,12 +2973,12 @@
             }
 
             desired.forEach(index => {
-                ensurePageCanvas(index);
+                ensurePageCanvas(index, { defer: deferHeavy, deferPdfRender: deferHeavy });
                 const page = state.pages[index];
-                if (page && page.needsRedraw) {
+                if (page && page.needsRedraw && !deferHeavy) {
                     redrawPage(index);
                 }
-                if (page && page.backgroundSource === 'pdf' && !page.backgroundImage && activePdfDocument) {
+                if (page && page.backgroundSource === 'pdf' && !page.backgroundImage && activePdfDocument && !deferHeavy) {
                     const canvas = document.querySelector(`canvas.page-canvas[data-page="${index}"]`);
                     if (canvas) {
                         applyPageBackground(index, canvas);
@@ -2885,20 +2986,31 @@
                 }
             });
 
+            if (!deferHeavy) {
+            const releaseBuffer = deferHeavy ? Math.max(VISIBLE_PAGE_BUFFER_ACTIVE + 2, VISIBLE_PAGE_BUFFER_ACTIVE) : buffer;
+            const releaseRange = deferHeavy ? getVisiblePageRange(releaseBuffer) : range;
+            const keep = new Set();
+            for (let i = releaseRange.start; i <= releaseRange.end; i++) {
+                keep.add(i);
+            }
             activePageIndices.forEach(index => {
-                if (!desired.has(index)) {
+                if (!keep.has(index)) {
                     releasePageCanvas(index);
                 }
             });
+            }
 
             prunePdfBackgroundCache();
         }
 
         function scheduleVisiblePageUpdate(force = false) {
+            visiblePageUpdateForce = visiblePageUpdateForce || force;
             if (visiblePageUpdateHandle) return;
             visiblePageUpdateHandle = requestAnimationFrame(() => {
+                const shouldForce = visiblePageUpdateForce;
+                visiblePageUpdateForce = false;
                 visiblePageUpdateHandle = null;
-                updateVisiblePages(force);
+                updateVisiblePages(shouldForce);
             });
         }
 
@@ -4036,6 +4148,7 @@
             driveFolderCache = { folders: [], files: [] };
             driveFolderStack = [{ id: 'root', name: 'My Drive' }];
             driveCurrentFolderId = 'root';
+            driveFolderMetaCache.clear();
             if (driveRecentsEl) driveRecentsEl.innerHTML = '';
             if (driveStarredEl) driveStarredEl.innerHTML = '';
             if (driveFoldersEl) driveFoldersEl.innerHTML = '';
@@ -4243,6 +4356,16 @@
             meta.textContent = `Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}`;
             card.appendChild(meta);
 
+            card.appendChild(createDriveItemMenu(file));
+
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.drive-card-menu')) return;
+                openDriveFile(file);
+            });
+            return card;
+        }
+
+        function createDriveItemMenu(item) {
             const menuWrap = document.createElement('div');
             menuWrap.className = 'drive-card-menu';
 
@@ -4289,21 +4412,15 @@
                 if (!action) return;
                 closeDriveCardMenu();
                 if (action === 'move') {
-                    openFolderPicker('move', file);
+                    openFolderPicker('move', item);
                 } else if (action === 'trash') {
-                    openTrashModal(file);
+                    openTrashModal(item);
                 }
             });
 
             menuWrap.appendChild(menuBtn);
             menuWrap.appendChild(menu);
-            card.appendChild(menuWrap);
-
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('.drive-card-menu')) return;
-                openDriveFile(file);
-            });
-            return card;
+            return menuWrap;
         }
 
         function toggleDriveCardMenu(menuEl) {
@@ -4358,7 +4475,12 @@
                 meta.textContent = 'Folder';
                 card.appendChild(meta);
 
-                card.addEventListener('click', () => openStarredFolder(item));
+                card.appendChild(createDriveItemMenu(item));
+
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.drive-card-menu')) return;
+                    openStarredFolder(item);
+                });
                 return card;
             }
 
@@ -4383,7 +4505,12 @@
             name.textContent = folder.name || 'Folder';
             card.appendChild(name);
 
-            card.addEventListener('click', () => enterDriveFolder(folder));
+            card.appendChild(createDriveItemMenu(folder));
+
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.drive-card-menu')) return;
+                enterDriveFolder(folder);
+            });
             return card;
         }
 
@@ -4473,7 +4600,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveRecentsCache = data.files || [];
@@ -4482,7 +4609,7 @@
 
         async function refreshDriveStarred() {
             const q = encodeURIComponent(`starred=true and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveStarredCache = data.files || [];
@@ -4504,7 +4631,7 @@
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
                 const folderFields = encodeURIComponent('files(id,name)');
-                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink)');
+                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
 
                 const [folderRes, fileRes] = await Promise.all([
                     driveFetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&orderBy=name&pageSize=100&fields=${folderFields}`),
@@ -4635,6 +4762,65 @@
             }
         }
 
+        function getDrivePathLabelFromStack(stack) {
+            if (!Array.isArray(stack) || stack.length === 0) return 'My Drive';
+            return stack.map(crumb => crumb.name || 'Folder').join(' / ');
+        }
+
+        async function getDriveFolderMeta(folderId) {
+            if (!folderId || folderId === 'root') {
+                return { id: 'root', name: 'My Drive', parents: [] };
+            }
+            if (driveFolderMetaCache.has(folderId)) {
+                return driveFolderMetaCache.get(folderId);
+            }
+            try {
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,name,parents`);
+                const data = await res.json();
+                if (data && data.id) {
+                    driveFolderMetaCache.set(folderId, data);
+                    return data;
+                }
+            } catch (err) {
+                return null;
+            }
+            return null;
+        }
+
+        async function resolveDrivePathForFile(file) {
+            if (!file?.id) return 'My Drive';
+            const currentParents = Array.isArray(file.parents) ? file.parents : [];
+            if (currentParents.length > 0 && currentParents.includes(driveCurrentFolderId) && driveFolderStack.length > 0) {
+                return getDrivePathLabelFromStack(driveFolderStack);
+            }
+
+            let parents = currentParents;
+            if (parents.length === 0) {
+                try {
+                    const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?fields=parents`);
+                    const data = await res.json();
+                    parents = Array.isArray(data.parents) ? data.parents : [];
+                } catch (err) {
+                    parents = [];
+                }
+            }
+
+            if (parents.length === 0) return 'My Drive';
+
+            const parts = [];
+            let currentId = parents[0];
+            const visited = new Set();
+            while (currentId && currentId !== 'root' && !visited.has(currentId) && parts.length < 20) {
+                visited.add(currentId);
+                const meta = await getDriveFolderMeta(currentId);
+                if (!meta) break;
+                parts.unshift(meta.name || 'Folder');
+                const nextParents = Array.isArray(meta.parents) ? meta.parents : [];
+                currentId = nextParents[0];
+            }
+            return ['My Drive', ...parts].join(' / ');
+        }
+
         function openFolderPicker(mode, file = null) {
             if (!driveAccessToken) return;
             folderPickerMode = mode;
@@ -4653,6 +4839,24 @@
                 folderPickerSubtitle.textContent = mode === 'move'
                     ? 'Choose the destination folder.'
                     : 'Choose a folder and name your file.';
+            }
+            if (folderPickerMeta) {
+                if (mode === 'move' && file) {
+                    folderPickerMeta.classList.remove('hidden');
+                    if (folderPickerFileName) {
+                        folderPickerFileName.textContent = file.name || 'Untitled';
+                    }
+                    if (folderPickerFilePath) {
+                        folderPickerFilePath.textContent = 'Current: loading...';
+                    }
+                    resolveDrivePathForFile(file).then((path) => {
+                        if (folderPickerMode === 'move' && folderPickerTargetFile?.id === file.id && folderPickerFilePath) {
+                            folderPickerFilePath.textContent = `Current: ${path}`;
+                        }
+                    });
+                } else {
+                    folderPickerMeta.classList.add('hidden');
+                }
             }
             if (folderPickerNameRow) {
                 folderPickerNameRow.style.display = mode === 'move' ? 'none' : 'flex';
@@ -4680,6 +4884,9 @@
             folderPickerMode = null;
             folderPickerTargetFile = null;
             if (folderPickerModal) folderPickerModal.classList.remove('visible');
+            if (folderPickerMeta) folderPickerMeta.classList.add('hidden');
+            if (folderPickerFileName) folderPickerFileName.textContent = '';
+            if (folderPickerFilePath) folderPickerFilePath.textContent = '';
         }
 
         function updateFolderPickerConfirmState() {
@@ -6303,7 +6510,7 @@
             updateAddPageIndicator();
         }
 
-        function stopInertia() {
+        function stopInertia(triggerUpdate = false) {
             if (state.inertiaFrame) {
                 cancelAnimationFrame(state.inertiaFrame);
                 state.inertiaFrame = null;
@@ -6311,6 +6518,9 @@
             state.panVelocityX = 0;
             state.panVelocityY = 0;
             state.lastPanTime = 0;
+            if (triggerUpdate) {
+                scheduleVisiblePageUpdate(true);
+            }
         }
 
         function startInertia() {
@@ -6325,7 +6535,7 @@
                 state.panVelocityY *= decay;
 
                 if (Math.abs(state.panVelocityX) < TOUCH_INERTIA_STOP && Math.abs(state.panVelocityY) < TOUCH_INERTIA_STOP) {
-                    stopInertia();
+                    stopInertia(true);
                     return;
                 }
 
@@ -6784,6 +6994,7 @@
                     state.panY = Math.max(state.panY, reset.minPanY);
                     updateTransform();
                 }
+                scheduleVisiblePageUpdate(true);
                 return;
             }
 
@@ -6812,7 +7023,11 @@
                     if (speed > TOUCH_INERTIA_STOP) {
                         state.inertiaLock = finalLock;
                         startInertia();
+                    } else {
+                        scheduleVisiblePageUpdate(true);
                     }
+                } else {
+                    scheduleVisiblePageUpdate(true);
                 }
             }
             if (state.overscrollY > 0) {
@@ -6820,6 +7035,7 @@
                 state.overscrollY = 0;
                 state.panY = Math.max(state.panY, reset.minPanY);
                 updateTransform();
+                scheduleVisiblePageUpdate(true);
             }
         }
 
