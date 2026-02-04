@@ -1320,8 +1320,8 @@
         .drive-folder-grid,
         .drive-file-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
         }
 
         .drive-folder-grid {
@@ -1340,6 +1340,7 @@
             flex-direction: column;
             gap: 12px;
             min-height: 128px;
+            position: relative;
         }
 
         .drive-card:hover {
@@ -1371,6 +1372,130 @@
         }
 
         .drive-card-icon.folder {
+            color: var(--accent-orange);
+        }
+
+        .drive-card-menu {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 5;
+        }
+
+        .drive-card-more {
+            width: 30px;
+            height: 30px;
+            border-radius: 10px;
+            border: none;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .drive-card-more:hover {
+            color: var(--text-primary);
+        }
+
+        .drive-card-dropdown {
+            position: absolute;
+            top: 36px;
+            right: 0;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 14px 32px rgba(0,0,0,0.16);
+            border: 1px solid rgba(0,0,0,0.08);
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 160px;
+            z-index: 10;
+        }
+
+        .drive-card-dropdown button {
+            border: none;
+            background: transparent;
+            padding: 8px 10px;
+            border-radius: 8px;
+            text-align: left;
+            font-size: 0.85rem;
+            cursor: pointer;
+            color: var(--text-primary);
+        }
+
+        .drive-card-dropdown button:hover {
+            background: rgba(0,0,0,0.06);
+        }
+
+        .drive-card-dropdown button.danger {
+            color: #ff3b30;
+        }
+
+        .drive-card-dropdown button.danger:hover {
+            background: rgba(255,59,48,0.1);
+        }
+
+        .folder-picker {
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 14px;
+            padding: 12px;
+            max-height: 260px;
+            overflow: auto;
+            background: rgba(0,0,0,0.02);
+            margin: 14px 0;
+        }
+
+        .folder-picker-breadcrumbs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+            color: var(--text-secondary);
+        }
+
+        .folder-picker-breadcrumb {
+            background: none;
+            border: none;
+            padding: 0;
+            font: inherit;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .folder-picker-breadcrumb.active {
+            color: var(--text-primary);
+            font-weight: 600;
+            cursor: default;
+        }
+
+        .folder-picker-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .folder-picker-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            background: white;
+            border: 1px solid rgba(0,0,0,0.04);
+        }
+
+        .folder-picker-item:hover {
+            background: rgba(0,0,0,0.04);
+        }
+
+        .folder-picker-item svg {
+            width: 20px;
+            height: 20px;
             color: var(--accent-orange);
         }
 
@@ -1464,6 +1589,14 @@
                 <span>inhouse notes</span>
             </div>
             <div class="drive-actions">
+                <button class="btn btn-secondary btn-icon-square" id="btn-drive-fullscreen" title="Fullscreen" aria-label="Fullscreen">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="4 9 4 4 9 4"/>
+                        <polyline points="15 4 20 4 20 9"/>
+                        <polyline points="20 15 20 20 15 20"/>
+                        <polyline points="9 20 4 20 4 15"/>
+                    </svg>
+                </button>
                 <button class="btn btn-primary" id="btn-drive-new">New PDF</button>
                 <button class="btn btn-primary" id="btn-drive-login">Sign in</button>
                 <div class="drive-profile hidden" id="drive-profile">
@@ -1706,6 +1839,45 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="modal-folder-picker">
+        <div class="modal">
+            <h2 id="folder-picker-title">New PDF</h2>
+            <p id="folder-picker-subtitle">Choose a folder and name your file.</p>
+            <div class="folder-picker">
+                <div class="folder-picker-breadcrumbs" id="folder-picker-breadcrumbs"></div>
+                <div class="folder-picker-list" id="folder-picker-list"></div>
+                <div class="drive-empty hidden" id="folder-picker-empty">No folders here.</div>
+            </div>
+            <div class="modal-input" id="folder-picker-name-row">
+                <input type="text" id="folder-picker-name" placeholder="cuaderno" autocomplete="off" spellcheck="false">
+                <span class="file-ext">.pdf</span>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="folder-picker-cancel">Cancel</button>
+                <button class="btn btn-primary" id="folder-picker-confirm">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-trash-file">
+        <div class="modal modal-danger">
+            <h2>Move to bin?</h2>
+            <p>This will move <strong id="trash-file-name">this file</strong> to your Drive bin.</p>
+            <div class="confirm-slider" id="trash-slider" aria-label="Slide to move to bin">
+                <div class="confirm-slider-fill" id="trash-slider-fill"></div>
+                <div class="confirm-slider-text">Slide to move to bin</div>
+                <div class="confirm-slider-handle" id="trash-slider-handle" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 6 15 12 9 18"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="trash-file-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div class="panel-overlay" id="panel-overlay"></div>
 
     <div id="pages-panel">
@@ -1766,6 +1938,18 @@
             </g>
         </svg>`;
         const SVG_BACKGROUND = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+        const FULLSCREEN_ICON_ENTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 9 4 4 9 4"/>
+                <polyline points="15 4 20 4 20 9"/>
+                <polyline points="20 15 20 20 15 20"/>
+                <polyline points="9 20 4 20 4 15"/>
+            </svg>`;
+        const FULLSCREEN_ICON_EXIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 4 9 9 4 9"/>
+                <polyline points="15 9 20 9 20 4"/>
+                <polyline points="15 20 15 15 20 15"/>
+                <polyline points="9 15 4 15 4 20"/>
+            </svg>`;
         const DEFAULT_AVATAR = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
             '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
@@ -1901,6 +2085,7 @@
         const driveBreadcrumbsEl = document.getElementById('drive-breadcrumbs');
         const driveLoginBtn = document.getElementById('btn-drive-login');
         const driveNewBtn = document.getElementById('btn-drive-new');
+        const driveFullscreenBtn = document.getElementById('btn-drive-fullscreen');
         const driveProfileWrap = document.getElementById('drive-profile');
         const driveProfileBtn = document.getElementById('btn-drive-profile');
         const driveProfileMenu = document.getElementById('drive-profile-menu');
@@ -1913,6 +2098,19 @@
         const driveHomeBtn = document.getElementById('btn-drive-home');
         const driveBackBtn = document.getElementById('btn-drive-back');
         const docTitleEl = document.getElementById('doc-title');
+        const folderPickerModal = document.getElementById('modal-folder-picker');
+        const folderPickerTitle = document.getElementById('folder-picker-title');
+        const folderPickerSubtitle = document.getElementById('folder-picker-subtitle');
+        const folderPickerBreadcrumbs = document.getElementById('folder-picker-breadcrumbs');
+        const folderPickerList = document.getElementById('folder-picker-list');
+        const folderPickerEmpty = document.getElementById('folder-picker-empty');
+        const folderPickerNameRow = document.getElementById('folder-picker-name-row');
+        const folderPickerNameInput = document.getElementById('folder-picker-name');
+        const folderPickerCancel = document.getElementById('folder-picker-cancel');
+        const folderPickerConfirm = document.getElementById('folder-picker-confirm');
+        const trashModal = document.getElementById('modal-trash-file');
+        const trashFileName = document.getElementById('trash-file-name');
+        const trashCancelBtn = document.getElementById('trash-file-cancel');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
@@ -1935,6 +2133,12 @@
         let driveUserProfile = null;
         let docTitleEditing = false;
         let docTitleOriginal = '';
+        let activeDriveCardMenu = null;
+        let folderPickerMode = null;
+        let folderPickerTargetFile = null;
+        let folderPickerStack = [{ id: 'root', name: 'My Drive' }];
+        let folderPickerCurrentFolderId = 'root';
+        let trashTargetFile = null;
         let activePdfDocument = null;
         let activePdfPageCount = 0;
         let pdfBackgroundScale = Math.min(2, CANVAS_SCALE);
@@ -2157,6 +2361,11 @@
         }
 
         function resetPdfState() {
+            pdfBackgroundCache.forEach(entry => {
+                if (entry?.dataUrl && entry.dataUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(entry.dataUrl);
+                }
+            });
             activePdfDocument = null;
             activePdfPageCount = 0;
             pdfBackgroundScale = Math.min(2, CANVAS_SCALE);
@@ -2183,6 +2392,10 @@
 
             while (pdfBackgroundCache.size > MAX_PDF_BACKGROUND_CACHE && candidates.length > 0) {
                 const [pageIndex] = candidates.shift();
+                const entry = pdfBackgroundCache.get(pageIndex);
+                if (entry?.dataUrl && entry.dataUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(entry.dataUrl);
+                }
                 pdfBackgroundCache.delete(pageIndex);
                 const page = state.pages[pageIndex];
                 if (page && page.backgroundSource === 'pdf') {
@@ -2276,14 +2489,23 @@
                 const offsetY = (targetHeight - viewport.height) / 2;
                 a4Ctx.drawImage(tempCanvas, offsetX, offsetY, viewport.width, viewport.height);
 
-                const dataUrl = a4Canvas.toDataURL('image/jpeg', 0.85);
-                page.backgroundImage = dataUrl;
+                const blob = await new Promise(resolve => a4Canvas.toBlob(resolve, 'image/jpeg', 0.85));
+                let objectUrl = '';
+                if (blob) {
+                    if (page.backgroundImage && page.backgroundImage.startsWith('blob:')) {
+                        URL.revokeObjectURL(page.backgroundImage);
+                    }
+                    objectUrl = URL.createObjectURL(blob);
+                } else {
+                    objectUrl = a4Canvas.toDataURL('image/jpeg', 0.85);
+                }
+                page.backgroundImage = objectUrl;
                 page.backgroundSource = 'pdf';
-                touchPdfBackgroundCache(pageIndex, dataUrl);
+                touchPdfBackgroundCache(pageIndex, objectUrl);
 
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
                 if (canvas) {
-                    canvas.style.backgroundImage = `url("${dataUrl}")`;
+                    canvas.style.backgroundImage = `url("${objectUrl}")`;
                     canvas.style.backgroundSize = 'cover';
                     canvas.style.backgroundRepeat = 'no-repeat';
                     canvas.style.backgroundPosition = 'center';
@@ -2326,6 +2548,12 @@
                 const page = state.pages[index];
                 if (page && page.needsRedraw) {
                     redrawPage(index);
+                }
+                if (page && page.backgroundSource === 'pdf' && !page.backgroundImage && activePdfDocument) {
+                    const canvas = document.querySelector(`canvas.page-canvas[data-page="${index}"]`);
+                    if (canvas) {
+                        applyPageBackground(index, canvas);
+                    }
                 }
             });
 
@@ -3603,8 +3831,71 @@
             meta.textContent = `Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}`;
             card.appendChild(meta);
 
-            card.addEventListener('click', () => openDriveFile(file));
+            const menuWrap = document.createElement('div');
+            menuWrap.className = 'drive-card-menu';
+
+            const menuBtn = document.createElement('button');
+            menuBtn.type = 'button';
+            menuBtn.className = 'drive-card-more';
+            menuBtn.title = 'More actions';
+            menuBtn.setAttribute('aria-label', 'More actions');
+            menuBtn.innerHTML = `
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="2"></circle>
+                    <circle cx="12" cy="12" r="2"></circle>
+                    <circle cx="19" cy="12" r="2"></circle>
+                </svg>
+            `;
+
+            const menu = document.createElement('div');
+            menu.className = 'drive-card-dropdown hidden';
+            menu.innerHTML = `
+                <button type="button" data-action="move">Move</button>
+                <button type="button" class="danger" data-action="trash">Move to bin</button>
+            `;
+
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleDriveCardMenu(menu);
+            });
+
+            menu.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const action = e.target?.dataset?.action;
+                if (!action) return;
+                closeDriveCardMenu();
+                if (action === 'move') {
+                    openFolderPicker('move', file);
+                } else if (action === 'trash') {
+                    openTrashModal(file);
+                }
+            });
+
+            menuWrap.appendChild(menuBtn);
+            menuWrap.appendChild(menu);
+            card.appendChild(menuWrap);
+
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.drive-card-menu')) return;
+                openDriveFile(file);
+            });
             return card;
+        }
+
+        function toggleDriveCardMenu(menuEl) {
+            if (!menuEl) return;
+            if (activeDriveCardMenu && activeDriveCardMenu !== menuEl) {
+                activeDriveCardMenu.classList.add('hidden');
+            }
+            const shouldOpen = menuEl.classList.contains('hidden');
+            menuEl.classList.toggle('hidden', !shouldOpen);
+            activeDriveCardMenu = shouldOpen ? menuEl : null;
+        }
+
+        function closeDriveCardMenu() {
+            if (!activeDriveCardMenu) return;
+            activeDriveCardMenu.classList.add('hidden');
+            activeDriveCardMenu = null;
         }
 
         function openStarredFolder(folder) {
@@ -3837,6 +4128,7 @@
         async function openDriveFile(file) {
             if (!file || !file.id) return;
             if (driveOpenInProgress) return;
+            closeDriveCardMenu();
             driveOpenInProgress = true;
             driveOpenFileId = file.id;
             state.zoom = 1;
@@ -3868,6 +4160,12 @@
         }
 
         function createNewDriveDocument() {
+            openFolderPicker('new');
+        }
+
+        async function createNewDriveDocumentWithFolder(folderId, fileBaseName) {
+            const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
+            const fileName = `${safeBase}.pdf`;
             showEditorView();
             state.zoom = 1;
             state.panX = 0;
@@ -3889,13 +4187,228 @@
             updateHistoryButtons();
             renderAllPages();
             centerViewOnTop();
-            state.exportName = 'Untitled';
+            state.exportName = safeBase;
             state.driveFileId = null;
-            state.driveFileName = 'Untitled';
+            state.driveFileName = fileName;
+            state.driveFolderId = folderId || null;
             state.driveAutosave = true;
             updateDocTitle();
             saveDriveSession();
             scheduleSave(true);
+
+            try {
+                showLoading('Creating PDF...');
+                await ensureDriveToken(false);
+                const pdfBlob = await buildPdfBlob();
+                const createdId = await createDriveFileInFolder(folderId, fileName, pdfBlob);
+                state.driveFileId = createdId;
+                saveDriveSession();
+                showStatus('PDF created', { preserveState: true });
+            } catch (err) {
+                showStatus('Failed to create PDF', { preserveState: true });
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function openFolderPicker(mode, file = null) {
+            if (!driveAccessToken) return;
+            folderPickerMode = mode;
+            folderPickerTargetFile = file;
+            if (driveFolderStack && driveFolderStack.length > 0) {
+                folderPickerStack = driveFolderStack.map(crumb => ({ id: crumb.id, name: crumb.name }));
+                folderPickerCurrentFolderId = driveCurrentFolderId || 'root';
+            } else {
+                folderPickerStack = [{ id: 'root', name: 'My Drive' }];
+                folderPickerCurrentFolderId = 'root';
+            }
+            if (folderPickerTitle) {
+                folderPickerTitle.textContent = mode === 'move' ? 'Move file' : 'New PDF';
+            }
+            if (folderPickerSubtitle) {
+                folderPickerSubtitle.textContent = mode === 'move'
+                    ? 'Choose the destination folder.'
+                    : 'Choose a folder and name your file.';
+            }
+            if (folderPickerNameRow) {
+                folderPickerNameRow.style.display = mode === 'move' ? 'none' : 'flex';
+            }
+            if (folderPickerNameInput) {
+                const defaultName = normalizeDocTitleInput(state.exportName || 'Untitled');
+                folderPickerNameInput.value = mode === 'move' ? '' : defaultName;
+            }
+            if (folderPickerConfirm) {
+                folderPickerConfirm.textContent = mode === 'move' ? 'Move' : 'Create';
+            }
+            updateFolderPickerConfirmState();
+            renderFolderPickerBreadcrumbs();
+            refreshFolderPickerFolders();
+            if (folderPickerModal) folderPickerModal.classList.add('visible');
+            if (folderPickerNameInput && mode !== 'move') {
+                requestAnimationFrame(() => {
+                    folderPickerNameInput.focus();
+                    folderPickerNameInput.select();
+                });
+            }
+        }
+
+        function closeFolderPicker() {
+            folderPickerMode = null;
+            folderPickerTargetFile = null;
+            if (folderPickerModal) folderPickerModal.classList.remove('visible');
+        }
+
+        function updateFolderPickerConfirmState() {
+            if (!folderPickerConfirm) return;
+            if (folderPickerMode === 'move') {
+                folderPickerConfirm.disabled = false;
+                return;
+            }
+            const name = folderPickerNameInput ? folderPickerNameInput.value.trim() : '';
+            folderPickerConfirm.disabled = name.length === 0;
+        }
+
+        function renderFolderPickerBreadcrumbs() {
+            if (!folderPickerBreadcrumbs) return;
+            folderPickerBreadcrumbs.innerHTML = '';
+            folderPickerStack.forEach((crumb, index) => {
+                const btn = document.createElement('button');
+                btn.className = `folder-picker-breadcrumb${index === folderPickerStack.length - 1 ? ' active' : ''}`;
+                btn.textContent = crumb.name;
+                if (index < folderPickerStack.length - 1) {
+                    btn.addEventListener('click', () => navigateFolderPickerBreadcrumb(index));
+                }
+                folderPickerBreadcrumbs.appendChild(btn);
+                if (index < folderPickerStack.length - 1) {
+                    const sep = document.createElement('span');
+                    sep.textContent = '/';
+                    folderPickerBreadcrumbs.appendChild(sep);
+                }
+            });
+        }
+
+        function navigateFolderPickerBreadcrumb(index) {
+            folderPickerStack = folderPickerStack.slice(0, index + 1);
+            folderPickerCurrentFolderId = folderPickerStack[folderPickerStack.length - 1].id;
+            renderFolderPickerBreadcrumbs();
+            refreshFolderPickerFolders();
+        }
+
+        function enterFolderPickerFolder(folder) {
+            if (!folder || !folder.id) return;
+            folderPickerStack.push({ id: folder.id, name: folder.name || 'Folder' });
+            folderPickerCurrentFolderId = folder.id;
+            renderFolderPickerBreadcrumbs();
+            refreshFolderPickerFolders();
+        }
+
+        async function refreshFolderPickerFolders() {
+            if (!driveAccessToken || !folderPickerList) return;
+            try {
+                const q = encodeURIComponent(`'${folderPickerCurrentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+                const fields = encodeURIComponent('files(id,name)');
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=name&pageSize=200&fields=${fields}`);
+                const data = await res.json();
+                renderFolderPickerList(data.files || []);
+            } catch (err) {
+                renderFolderPickerList([]);
+            }
+        }
+
+        function renderFolderPickerList(folders) {
+            if (!folderPickerList) return;
+            folderPickerList.innerHTML = '';
+            const hasFolders = Array.isArray(folders) && folders.length > 0;
+            if (folderPickerEmpty) {
+                folderPickerEmpty.classList.toggle('hidden', hasFolders);
+            }
+            if (!hasFolders) return;
+            folders.forEach(folder => {
+                const item = document.createElement('div');
+                item.className = 'folder-picker-item';
+                item.innerHTML = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    </svg>
+                    <span>${folder.name || 'Folder'}</span>
+                `;
+                item.addEventListener('click', () => enterFolderPickerFolder(folder));
+                folderPickerList.appendChild(item);
+            });
+        }
+
+        async function confirmFolderPicker() {
+            if (folderPickerMode === 'move') {
+                const target = folderPickerTargetFile;
+                closeFolderPicker();
+                if (target) {
+                    await moveDriveFileToFolder(target, folderPickerCurrentFolderId);
+                }
+                return;
+            }
+            const name = folderPickerNameInput ? folderPickerNameInput.value.trim() : '';
+            if (!name) return;
+            closeFolderPicker();
+            await createNewDriveDocumentWithFolder(folderPickerCurrentFolderId, name);
+        }
+
+        async function moveDriveFileToFolder(file, folderId) {
+            if (!file?.id) return;
+            try {
+                showLoading('Moving file...');
+                const metaRes = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?fields=parents`);
+                const meta = await metaRes.json();
+                const parents = Array.isArray(meta.parents) ? meta.parents : [];
+                const removeParents = parents.length > 0 ? parents.join(',') : '';
+                const addParents = folderId || 'root';
+                const params = new URLSearchParams();
+                if (addParents) params.set('addParents', addParents);
+                if (removeParents) params.set('removeParents', removeParents);
+                await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?${params.toString()}`, {
+                    method: 'PATCH'
+                });
+                showStatus('File moved', { preserveState: true });
+                refreshDriveFiles();
+            } catch (err) {
+                showStatus('Move failed', { preserveState: true });
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function openTrashModal(file) {
+            trashTargetFile = file;
+            if (trashFileName) {
+                trashFileName.textContent = file?.name || 'this file';
+            }
+            resetTrashSlider();
+            if (trashModal) trashModal.classList.add('visible');
+        }
+
+        function closeTrashModal() {
+            trashTargetFile = null;
+            if (trashModal) trashModal.classList.remove('visible');
+            resetTrashSlider();
+        }
+
+        async function confirmTrashFile() {
+            if (!trashTargetFile?.id) return;
+            const target = trashTargetFile;
+            closeTrashModal();
+            try {
+                showLoading('Moving to bin...');
+                await driveFetch(`https://www.googleapis.com/drive/v3/files/${target.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trashed: true })
+                });
+                showStatus('Moved to bin', { preserveState: true });
+                refreshDriveFiles();
+            } catch (err) {
+                showStatus('Move to bin failed', { preserveState: true });
+            } finally {
+                hideLoading();
+            }
         }
 
         function addImageToPage(pageIndex, src, dropPos, offsetIndex = 0) {
@@ -4717,6 +5230,38 @@
                     signOutDrive();
                 });
             }
+            if (folderPickerCancel) {
+                folderPickerCancel.addEventListener('click', closeFolderPicker);
+            }
+            if (folderPickerConfirm) {
+                folderPickerConfirm.addEventListener('click', confirmFolderPicker);
+            }
+            if (folderPickerModal) {
+                folderPickerModal.addEventListener('click', (e) => {
+                    if (e.target && e.target.id === 'modal-folder-picker') {
+                        closeFolderPicker();
+                    }
+                });
+            }
+            if (folderPickerNameInput) {
+                folderPickerNameInput.addEventListener('input', updateFolderPickerConfirmState);
+                folderPickerNameInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        confirmFolderPicker();
+                    }
+                });
+            }
+            if (trashCancelBtn) {
+                trashCancelBtn.addEventListener('click', closeTrashModal);
+            }
+            if (trashModal) {
+                trashModal.addEventListener('click', (e) => {
+                    if (e.target && e.target.id === 'modal-trash-file') {
+                        closeTrashModal();
+                    }
+                });
+            }
             if (driveProfileBtn) {
                 driveProfileBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -4774,6 +5319,9 @@
                 });
             }
             document.addEventListener('click', (e) => {
+                if (activeDriveCardMenu && !activeDriveCardMenu.contains(e.target)) {
+                    closeDriveCardMenu();
+                }
                 if (!driveProfileMenu || driveProfileMenu.classList.contains('hidden')) return;
                 if (driveProfileMenu.contains(e.target)) return;
                 if (driveProfileBtn && driveProfileBtn.contains(e.target)) return;
@@ -4781,6 +5329,8 @@
             });
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
+                    closeFolderPicker();
+                    closeTrashModal();
                     closeDriveProfileMenu();
                 }
             });
@@ -4842,6 +5392,9 @@
             document.getElementById('btn-import-pdf').addEventListener('click', () => pdfInput.click());
             pdfInput.addEventListener('change', importPDF);
             document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+            if (driveFullscreenBtn) {
+                driveFullscreenBtn.addEventListener('click', toggleFullscreen);
+            }
             const resetBtn = document.getElementById('btn-reset-document');
             if (resetBtn) {
                 resetBtn.addEventListener('click', openResetModal);
@@ -4894,6 +5447,7 @@
                 });
             }
             setupResetSlider();
+            setupTrashSlider();
 
             // Viewport pan/zoom with touch and mouse
             canvasViewport.addEventListener('pointerdown', handleViewportPointerDown);
@@ -4941,14 +5495,20 @@
             return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
         }
 
-        function updateFullscreenButton() {
-            const fullscreenBtn = document.getElementById('btn-fullscreen');
-            if (!fullscreenBtn) return;
-            const isActive = !!isFullscreenActive();
+        function setFullscreenButtonState(button, isActive) {
+            if (!button) return;
             const label = isActive ? 'Exit fullscreen' : 'Fullscreen';
-            fullscreenBtn.title = label;
-            fullscreenBtn.setAttribute('aria-label', label);
-            fullscreenBtn.classList.toggle('active', isActive);
+            button.title = label;
+            button.setAttribute('aria-label', label);
+            button.classList.toggle('active', isActive);
+            button.innerHTML = isActive ? FULLSCREEN_ICON_EXIT : FULLSCREEN_ICON_ENTER;
+        }
+
+        function updateFullscreenButton() {
+            const isActive = !!isFullscreenActive();
+            const fullscreenBtn = document.getElementById('btn-fullscreen');
+            setFullscreenButtonState(fullscreenBtn, isActive);
+            setFullscreenButtonState(driveFullscreenBtn, isActive);
         }
 
         function handleFullscreenChange() {
@@ -5829,7 +6389,10 @@
                 closeDeleteModal();
                 return;
             }
-
+            const removedPage = state.pages[pageToDelete];
+            if (removedPage?.backgroundSource === 'pdf' && removedPage.backgroundImage && removedPage.backgroundImage.startsWith('blob:')) {
+                URL.revokeObjectURL(removedPage.backgroundImage);
+            }
             state.pages.splice(pageToDelete, 1);
             renderAllPages();
             const lastIndex = state.pages.length - 1;
@@ -5887,6 +6450,17 @@
             currentX: 0
         };
 
+        const trashSliderState = {
+            slider: null,
+            handle: null,
+            fill: null,
+            isDragging: false,
+            maxX: 0,
+            handleWidth: 44,
+            padding: 4,
+            currentX: 0
+        };
+
         function setupResetSlider() {
             const slider = document.getElementById('reset-slider');
             const handle = document.getElementById('reset-slider-handle');
@@ -5907,6 +6481,26 @@
             slider.addEventListener('lostpointercapture', endResetSliderDrag);
         }
 
+        function setupTrashSlider() {
+            const slider = document.getElementById('trash-slider');
+            const handle = document.getElementById('trash-slider-handle');
+            const fill = document.getElementById('trash-slider-fill');
+            if (!slider || !handle || !fill) return;
+
+            trashSliderState.slider = slider;
+            trashSliderState.handle = handle;
+            trashSliderState.fill = fill;
+
+            slider.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                startTrashSliderDrag(e);
+            });
+            slider.addEventListener('pointermove', onTrashSliderDrag);
+            slider.addEventListener('pointerup', endTrashSliderDrag);
+            slider.addEventListener('pointercancel', endTrashSliderDrag);
+            slider.addEventListener('lostpointercapture', endTrashSliderDrag);
+        }
+
         function updateResetSliderMetrics() {
             const slider = resetSliderState.slider;
             const handle = resetSliderState.handle;
@@ -5915,6 +6509,16 @@
             const handleRect = handle.getBoundingClientRect();
             resetSliderState.handleWidth = handleRect.width || 44;
             resetSliderState.maxX = Math.max(0, rect.width - resetSliderState.handleWidth - resetSliderState.padding * 2);
+        }
+
+        function updateTrashSliderMetrics() {
+            const slider = trashSliderState.slider;
+            const handle = trashSliderState.handle;
+            if (!slider || !handle) return;
+            const rect = slider.getBoundingClientRect();
+            const handleRect = handle.getBoundingClientRect();
+            trashSliderState.handleWidth = handleRect.width || 44;
+            trashSliderState.maxX = Math.max(0, rect.width - trashSliderState.handleWidth - trashSliderState.padding * 2);
         }
 
         function setResetSliderPosition(x, animate = true) {
@@ -5931,12 +6535,34 @@
             fill.style.width = `${fillWidth}px`;
         }
 
+        function setTrashSliderPosition(x, animate = true) {
+            const slider = trashSliderState.slider;
+            const handle = trashSliderState.handle;
+            const fill = trashSliderState.fill;
+            if (!slider || !handle || !fill) return;
+            updateTrashSliderMetrics();
+            const clamped = Math.max(0, Math.min(x, trashSliderState.maxX));
+            trashSliderState.currentX = clamped;
+            slider.classList.toggle('dragging', !animate);
+            handle.style.transform = `translateX(${clamped}px)`;
+            const fillWidth = clamped + trashSliderState.handleWidth / 2 + trashSliderState.padding;
+            fill.style.width = `${fillWidth}px`;
+        }
+
         function resetResetSlider() {
             const slider = resetSliderState.slider;
             if (slider) {
                 slider.classList.remove('complete');
             }
             setResetSliderPosition(0, true);
+        }
+
+        function resetTrashSlider() {
+            const slider = trashSliderState.slider;
+            if (slider) {
+                slider.classList.remove('complete');
+            }
+            setTrashSliderPosition(0, true);
         }
 
         function startResetSliderDrag(e) {
@@ -5956,6 +6582,23 @@
             setResetSliderPosition(initialX, false);
         }
 
+        function startTrashSliderDrag(e) {
+            const slider = trashSliderState.slider;
+            const handle = trashSliderState.handle;
+            if (!slider || !handle) return;
+            trashSliderState.isDragging = true;
+            slider.classList.remove('complete');
+            slider.classList.add('dragging');
+            slider.setPointerCapture(e.pointerId);
+            updateTrashSliderMetrics();
+            const sliderRect = slider.getBoundingClientRect();
+            const handleRect = handle.getBoundingClientRect();
+            const pointerOffset = e.clientX - handleRect.left;
+            trashSliderState.dragOffset = Math.min(Math.max(pointerOffset, 0), handleRect.width);
+            const initialX = e.clientX - sliderRect.left - trashSliderState.padding - trashSliderState.dragOffset;
+            setTrashSliderPosition(initialX, false);
+        }
+
         function onResetSliderDrag(e) {
             if (!resetSliderState.isDragging) return;
             const slider = resetSliderState.slider;
@@ -5963,6 +6606,15 @@
             const sliderRect = slider.getBoundingClientRect();
             const nextX = e.clientX - sliderRect.left - resetSliderState.padding - resetSliderState.dragOffset;
             setResetSliderPosition(nextX, false);
+        }
+
+        function onTrashSliderDrag(e) {
+            if (!trashSliderState.isDragging) return;
+            const slider = trashSliderState.slider;
+            if (!slider) return;
+            const sliderRect = slider.getBoundingClientRect();
+            const nextX = e.clientX - sliderRect.left - trashSliderState.padding - trashSliderState.dragOffset;
+            setTrashSliderPosition(nextX, false);
         }
 
         function endResetSliderDrag() {
@@ -5980,6 +6632,24 @@
                 }, 120);
             } else {
                 resetResetSlider();
+            }
+        }
+
+        function endTrashSliderDrag() {
+            if (!trashSliderState.isDragging) return;
+            trashSliderState.isDragging = false;
+            const slider = trashSliderState.slider;
+            if (!slider) return;
+            slider.classList.remove('dragging');
+            const threshold = trashSliderState.maxX * 0.9;
+            if (trashSliderState.currentX >= threshold) {
+                slider.classList.add('complete');
+                setTrashSliderPosition(trashSliderState.maxX, true);
+                setTimeout(() => {
+                    confirmTrashFile();
+                }, 120);
+            } else {
+                resetTrashSlider();
             }
         }
 
@@ -6223,8 +6893,15 @@
 
         async function saveToStorage() {
             const savedAt = Date.now();
+            const pagesForStorage = state.pages.map(page => ({
+                strokes: Array.isArray(page?.strokes) ? page.strokes : [],
+                images: Array.isArray(page?.images) ? page.images : [],
+                backgroundImage: page?.backgroundSource === 'pdf' ? null : (page?.backgroundImage || null),
+                backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template')),
+                pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null
+            }));
             const payload = {
-                pages: state.pages,
+                pages: pagesForStorage,
                 version: 2,
                 savedAt
             };
@@ -6347,13 +7024,13 @@
         async function ensureDriveFile() {
             if (state.driveFileId) return state.driveFileId;
             await ensureDriveToken(false);
-            const folderId = await ensureDriveFolder();
+            const folderId = state.driveFolderId || await ensureDriveFolder();
             const fileName = `${sanitizeFilename(state.exportName || 'Untitled')}.pdf`;
             const pdfBlob = await buildPdfBlob();
             const metadata = {
                 name: fileName,
                 mimeType: 'application/pdf',
-                parents: folderId ? [folderId] : undefined
+                parents: folderId && folderId !== 'root' ? [folderId] : undefined
             };
             const form = new FormData();
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -6368,6 +7045,23 @@
             updateDocTitle();
             saveDriveSession();
             return state.driveFileId;
+        }
+
+        async function createDriveFileInFolder(folderId, fileName, pdfBlob) {
+            const metadata = {
+                name: fileName,
+                mimeType: 'application/pdf',
+                parents: folderId && folderId !== 'root' ? [folderId] : undefined
+            };
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', pdfBlob);
+            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                body: form
+            });
+            const data = await res.json();
+            return data.id;
         }
 
         async function updateDriveFile(fileId, pdfBlob) {
@@ -6849,6 +7543,7 @@
 
                 renderAllPages();
                 scheduleSave(true);
+                updateVisiblePages(true);
 
                 const isNonAppPdf = !embeddedStrokes;
 
