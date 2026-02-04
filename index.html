@@ -49,6 +49,7 @@
             --handle-height: 24px;
             --icon-size: 20px;
             --header-btn-size: 44px;
+            --banner-height: 64px;
             --selection-handle-size: 14px;
             --selection-handle-offset: calc(-1px - (var(--selection-handle-size) / 2));
             --rotate-handle-size: 10px;
@@ -75,6 +76,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 12px 20px;
+            min-height: var(--banner-height);
             background: var(--bg-secondary);
             border-bottom: 1px solid rgba(0,0,0,0.06);
             z-index: 100;
@@ -1119,6 +1121,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 12px 20px;
+            min-height: var(--banner-height);
             background: var(--bg-secondary);
             border-bottom: 1px solid rgba(0,0,0,0.06);
             gap: 12px;
@@ -1365,6 +1368,10 @@
             width: 40px;
             height: 40px;
             color: rgba(0,0,0,0.4);
+        }
+
+        .drive-card-icon.folder {
+            color: var(--accent-orange);
         }
 
         .drive-folder-card {
@@ -3600,6 +3607,49 @@
             return card;
         }
 
+        function openStarredFolder(folder) {
+            if (!folder || !folder.id) return;
+            driveFolderStack = [{ id: 'root', name: 'My Drive' }, { id: folder.id, name: folder.name || 'Folder' }];
+            driveCurrentFolderId = folder.id;
+            renderDriveBreadcrumbs();
+            if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
+            refreshDriveFolderContents();
+        }
+
+        function createDriveStarredCard(item) {
+            if (item?.mimeType === 'application/vnd.google-apps.folder') {
+                const card = document.createElement('div');
+                card.className = 'drive-card';
+
+                const preview = document.createElement('div');
+                preview.className = 'drive-card-preview';
+                const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                icon.setAttribute('viewBox', '0 0 24 24');
+                icon.setAttribute('fill', 'none');
+                icon.setAttribute('stroke', 'currentColor');
+                icon.setAttribute('stroke-width', '1.8');
+                icon.classList.add('drive-card-icon', 'folder');
+                icon.innerHTML = '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>';
+                preview.appendChild(icon);
+                card.appendChild(preview);
+
+                const title = document.createElement('div');
+                title.className = 'drive-card-title';
+                title.textContent = item.name || 'Folder';
+                card.appendChild(title);
+
+                const meta = document.createElement('div');
+                meta.className = 'drive-card-meta';
+                meta.textContent = 'Folder';
+                card.appendChild(meta);
+
+                card.addEventListener('click', () => openStarredFolder(item));
+                return card;
+            }
+
+            return createDriveFileCard(item);
+        }
+
         function createDriveFolderCard(folder) {
             const card = document.createElement('div');
             card.className = 'drive-folder-card';
@@ -3657,7 +3707,7 @@
                 return;
             }
             if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
-            files.forEach(file => driveStarredEl.appendChild(createDriveFileCard(file)));
+            files.forEach(item => driveStarredEl.appendChild(createDriveStarredCard(item)));
         }
 
         function renderDriveFolderContents(folders, files) {
@@ -3716,8 +3766,8 @@
         }
 
         async function refreshDriveStarred() {
-            const q = encodeURIComponent(`mimeType='application/pdf' and starred=true and trashed=false`);
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink)');
+            const q = encodeURIComponent(`starred=true and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveStarredCache = data.files || [];
