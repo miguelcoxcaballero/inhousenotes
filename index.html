@@ -1517,7 +1517,6 @@
         }
 
         .drive-card:hover {
-            transform: translateY(-2px);
             box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
 
@@ -1888,7 +1887,6 @@
         }
 
         .drive-folder-card:hover {
-            transform: translateY(-2px);
             box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
 
@@ -4757,7 +4755,15 @@
 
             const menu = document.createElement('div');
             menu.className = 'drive-card-dropdown hidden';
+            const isStarred = !!item?.starred;
+            const starLabel = isStarred ? 'Remove from favorites' : 'Add to favorites';
             menu.innerHTML = `
+                <button type="button" data-action="star">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.7-5.2-2.8-5.2 2.8 1-5.7-4.2-4.1 5.8-.8z"/>
+                    </svg>
+                    <span>${starLabel}</span>
+                </button>
                 <button type="button" data-action="move">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -4784,7 +4790,10 @@
                 const action = button?.dataset?.action;
                 if (!action) return;
                 closeDriveCardMenu();
-                if (action === 'move') {
+                if (action === 'star') {
+                    const nextStar = !item?.starred;
+                    updateDriveStarStatus(item, nextStar);
+                } else if (action === 'move') {
                     openFolderPicker('move', item);
                 } else if (action === 'trash') {
                     openTrashModal(item);
@@ -4810,6 +4819,24 @@
             if (!activeDriveCardMenu) return;
             activeDriveCardMenu.classList.add('hidden');
             activeDriveCardMenu = null;
+        }
+
+        async function updateDriveStarStatus(item, shouldStar) {
+            if (!item || !item.id) return;
+            try {
+                await ensureDriveToken(false);
+                await driveFetch(`https://www.googleapis.com/drive/v3/files/${item.id}?fields=id,starred`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ starred: !!shouldStar })
+                });
+                item.starred = !!shouldStar;
+                showStatus(shouldStar ? 'Added to favorites' : 'Removed from favorites', { preserveState: true });
+                refreshDriveFiles();
+            } catch (err) {
+                console.error('Failed to update favorite status:', err);
+                showStatus('Failed to update favorites', { preserveState: true });
+            }
         }
 
         function openStarredFolder(folder) {
@@ -4893,7 +4920,8 @@
             driveFolderStack.forEach((crumb, index) => {
                 const btn = document.createElement('button');
                 btn.className = `drive-breadcrumb${index === driveFolderStack.length - 1 ? ' active' : ''}`;
-                btn.textContent = crumb.name;
+                const label = crumb.id === 'root' ? `${crumb.name}/` : crumb.name;
+                btn.textContent = label;
                 if (index < driveFolderStack.length - 1) {
                     btn.addEventListener('click', () => navigateDriveBreadcrumb(index));
                 }
@@ -4973,7 +5001,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveRecentsCache = data.files || [];
@@ -4982,7 +5010,7 @@
 
         async function refreshDriveStarred() {
             const q = encodeURIComponent(`starred=true and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveStarredCache = data.files || [];
@@ -5003,8 +5031,8 @@
 
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
-                const folderFields = encodeURIComponent('files(id,name)');
-                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
+                const folderFields = encodeURIComponent('files(id,name,starred)');
+                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
 
                 const [folderRes, fileRes] = await Promise.all([
                     driveFetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&orderBy=name&pageSize=100&fields=${folderFields}`),
