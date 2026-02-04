@@ -2409,8 +2409,8 @@
         // Adaptive scale: 1.5x for mobile/small screens, 2x for desktop
         const CANVAS_SCALE = IS_LOW_MEMORY_DEVICE ? 1.5 : 2;
         // Higher base resolution for cursor overlay (stroke preview)
-        const CURSOR_BASE_SCALE = IS_LOW_MEMORY_DEVICE ? 2 : 2.5;
-        const CURSOR_MAX_SCALE = IS_LOW_MEMORY_DEVICE ? 2.5 : 3.5;
+        const CURSOR_BASE_SCALE = IS_LOW_MEMORY_DEVICE ? 2.5 : 3;
+        const CURSOR_MAX_SCALE = IS_LOW_MEMORY_DEVICE ? 3 : 4;
         let currentCursorScale = CURSOR_BASE_SCALE;
         const PAGE_PADDING = IS_SMALL_SCREEN ? 15 : 30;
         const PAGE_GAP = IS_SMALL_SCREEN ? 20 : 30;
@@ -4906,11 +4906,10 @@
                     btn.addEventListener('click', () => navigateDriveBreadcrumb(index));
                 }
                 driveBreadcrumbsEl.appendChild(btn);
-                if (index < driveFolderStack.length - 1) {
-                    const sep = document.createElement('span');
-                    sep.textContent = '/';
-                    driveBreadcrumbsEl.appendChild(sep);
-                }
+                // Add separator after each item (including trailing / for current directory)
+                const sep = document.createElement('span');
+                sep.textContent = '/';
+                driveBreadcrumbsEl.appendChild(sep);
             });
             if (driveBackBtn) driveBackBtn.disabled = driveFolderStack.length <= 1;
         }
@@ -6855,10 +6854,28 @@
 
         // Smooth animated reset of overscroll with easing
         let overscrollResetFrame = null;
-        function animateOverscrollReset() {
+        function animateOverscrollReset(skipPageCreate = false) {
             if (overscrollResetFrame) {
                 cancelAnimationFrame(overscrollResetFrame);
             }
+
+            // Check if we should create a page before resetting
+            if (!skipPageCreate && state.pendingPageCreate && state.overscrollY >= OVERSCROLL_THRESHOLD) {
+                const viewportHeight = canvasViewport.getBoundingClientRect().height;
+                const bottomInView = state.panY + getContentHeight() * state.zoom;
+                const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
+                if (canCreate) {
+                    const prevLimit = getBottomLimit();
+                    addPage(null, true);
+                    state.overscrollY = 0;
+                    state.pendingPageCreate = false;
+                    state.pageCreateLocked = false;
+                    updateAddPageIndicator();
+                    animatePanTo(prevLimit.minPanY);
+                    return;
+                }
+            }
+
             const startOverscroll = state.overscrollY;
             if (startOverscroll <= 0) return;
 
@@ -7428,6 +7445,13 @@
         function handleViewportPointerUp(e) {
             if (e.pointerType === 'pen') return;
             state.activePointers.delete(e.pointerId);
+
+            // Clear the auto-reset timeout since user released
+            if (overscrollResetTimeout) {
+                clearTimeout(overscrollResetTimeout);
+                overscrollResetTimeout = null;
+            }
+
             const finalizePageCreation = () => {
                 const viewportHeight = canvasViewport.getBoundingClientRect().height;
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
@@ -7436,23 +7460,24 @@
                     const prevLimit = getBottomLimit();
                     addPage(null, true);
                     state.overscrollY = 0;
+                    state.pendingPageCreate = false;
+                    state.pageCreateLocked = false;
                     updateAddPageIndicator();
                     animatePanTo(prevLimit.minPanY);
+                    return true;
                 }
                 state.pendingPageCreate = false;
+                return false;
             };
 
             if (e.pointerType === 'mouse') {
                 state.isPanning = false;
                 canvasViewport.style.cursor = '';
-                finalizePageCreation();
+                const created = finalizePageCreation();
                 state.pageCreateLocked = false;
                 stopInertia();
-                if (state.overscrollY > 0) {
-                    const reset = getBottomLimit();
-                    state.overscrollY = 0;
-                    state.panY = Math.max(state.panY, reset.minPanY);
-                    updateTransform();
+                if (!created && state.overscrollY > 0) {
+                    animateOverscrollReset(true);
                 }
                 scheduleVisiblePageUpdate(true);
                 return;
@@ -7476,9 +7501,11 @@
                 state.isPanning = false;
                 const finalLock = state.scrollLocked || 'free';
                 state.scrollLocked = false;
-                finalizePageCreation();
+                const created = finalizePageCreation();
                 state.pageCreateLocked = false;
-                if (state.overscrollY === 0) {
+                if (!created && state.overscrollY > 0) {
+                    animateOverscrollReset(true);
+                } else if (state.overscrollY === 0) {
                     const speed = Math.hypot(state.panVelocityX, state.panVelocityY);
                     if (speed > TOUCH_INERTIA_STOP) {
                         state.inertiaLock = finalLock;
@@ -7486,15 +7513,7 @@
                     } else {
                         scheduleVisiblePageUpdate(true);
                     }
-                } else {
-                    scheduleVisiblePageUpdate(true);
                 }
-            }
-            if (state.overscrollY > 0) {
-                const reset = getBottomLimit();
-                state.overscrollY = 0;
-                state.panY = Math.max(state.panY, reset.minPanY);
-                updateTransform();
                 scheduleVisiblePageUpdate(true);
             }
         }
