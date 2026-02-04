@@ -1217,7 +1217,7 @@
         .drive-main {
             flex: 1;
             overflow: auto;
-            padding: 24px;
+            padding: 20px;
         }
 
         .drive-toolbar {
@@ -1272,7 +1272,7 @@
 
         .drive-recents {
             display: flex;
-            gap: 16px;
+            gap: 12px;
             overflow-x: auto;
             padding-bottom: 8px;
             scroll-snap-type: x mandatory;
@@ -1288,7 +1288,7 @@
         }
 
         .drive-recents .drive-card {
-            min-width: 220px;
+            min-width: 190px;
             scroll-snap-align: start;
         }
 
@@ -1331,7 +1331,7 @@
         .drive-card {
             background: white;
             border-radius: 14px;
-            padding: 16px;
+            padding: 14px;
             border: 1px solid rgba(0,0,0,0.06);
             box-shadow: 0 6px 18px rgba(0,0,0,0.06);
             cursor: pointer;
@@ -1339,7 +1339,7 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
-            min-height: 140px;
+            min-height: 128px;
         }
 
         .drive-card:hover {
@@ -1400,12 +1400,12 @@
 
         .drive-card-title {
             font-weight: 600;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             color: var(--text-primary);
         }
 
         .drive-card-meta {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: var(--text-secondary);
         }
 
@@ -6849,8 +6849,8 @@
 
                 renderAllPages();
                 scheduleSave(true);
-                hideLoading();
-                centerViewOnTop();
+
+                const isNonAppPdf = !embeddedStrokes;
 
                 if (embeddedStrokes) {
                     const totalStrokes = embeddedStrokes.reduce((sum, p) => sum + (p.strokes?.length || 0), 0);
@@ -6858,6 +6858,14 @@
                 } else {
                     showStatus(`PDF imported: ${numPages} pages (as background)`, { preserveState: true });
                 }
+
+                if (isNonAppPdf) {
+                    ensurePageCanvas(0);
+                    await renderPdfPageToBackground(0, pdfRenderToken);
+                }
+
+                hideLoading();
+                centerViewOnTop();
 
             } catch (err) {
                 console.error('Error importing PDF:', err);
