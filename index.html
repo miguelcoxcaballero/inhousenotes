@@ -131,6 +131,63 @@
             align-items: center;
         }
 
+        .mode-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(0,0,0,0.08);
+            background: rgba(0,0,0,0.03);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .mode-toggle-label {
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+
+        .mode-toggle input {
+            appearance: none;
+            width: 38px;
+            height: 20px;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.15);
+            position: relative;
+            outline: none;
+            transition: background 0.2s ease;
+            cursor: pointer;
+        }
+
+        .mode-toggle input::after {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: white;
+            top: 3px;
+            left: 3px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease;
+        }
+
+        .mode-toggle input:checked {
+            background: var(--accent-blue);
+        }
+
+        .mode-toggle input:checked::after {
+            transform: translateX(18px);
+        }
+
+        [data-theme="dark"] .mode-toggle {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.12);
+        }
+
         .save-indicator {
             width: 10px;
             height: 10px;
@@ -156,6 +213,27 @@
             color: var(--text-secondary);
             opacity: 0.75;
             letter-spacing: 0.01em;
+        }
+
+        #editor-view.read-only #toolbar {
+            display: none;
+        }
+
+        #editor-view.read-only .save-indicator,
+        #editor-view.read-only .save-timestamp {
+            display: none;
+        }
+
+        #editor-view.read-only #add-page-indicator {
+            opacity: 0 !important;
+        }
+
+        #editor-view.read-only .selection-box {
+            pointer-events: none;
+        }
+
+        #editor-view.read-only .doc-title {
+            cursor: default;
         }
 
         #status-bar {
@@ -1972,6 +2050,10 @@
                 <span class="doc-title" id="doc-title" role="textbox" aria-label="Document title" contenteditable="true" spellcheck="false">Untitled</span>
             </div>
             <div class="header-actions">
+                <label class="mode-toggle" id="mode-toggle" title="Cambiar entre lectura y edicion">
+                    <span class="mode-toggle-label" id="mode-toggle-label">Lectura</span>
+                    <input type="checkbox" id="mode-toggle-input" aria-label="Modo editar">
+                </label>
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
                 <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
@@ -2593,7 +2675,8 @@
             // Undo/Redo history
             history: [],
             historyIndex: -1,
-            maxHistory: 10
+            maxHistory: 10,
+            isReadOnly: true
         };
 
         // DOM Elements
@@ -2646,6 +2729,8 @@
         const driveHomeBtn = document.getElementById('btn-drive-home');
         const driveBackBtn = document.getElementById('btn-drive-back');
         const docTitleEl = document.getElementById('doc-title');
+        const modeToggleInput = document.getElementById('mode-toggle-input');
+        const modeToggleLabel = document.getElementById('mode-toggle-label');
         const folderPickerModal = document.getElementById('modal-folder-picker');
         const folderPickerTitle = document.getElementById('folder-picker-title');
         const folderPickerSubtitle = document.getElementById('folder-picker-subtitle');
@@ -2714,6 +2799,75 @@
         addPageIndicator.textContent = '+';
         canvasContainer.appendChild(addPageIndicator);
 
+        function setReadOnlyMode(isReadOnly, options = {}) {
+            const next = !!isReadOnly;
+            const wasReadOnly = !!state.isReadOnly;
+            if (next === wasReadOnly && !options.force) return;
+            state.isReadOnly = next;
+
+            if (editorView) {
+                editorView.classList.toggle('read-only', next);
+            }
+            if (modeToggleInput) {
+                modeToggleInput.checked = !next;
+            }
+            if (modeToggleLabel) {
+                modeToggleLabel.textContent = next ? 'Lectura' : 'Editar';
+            }
+            if (docTitleEl) {
+                docTitleEl.setAttribute('contenteditable', next ? 'false' : 'true');
+                docTitleEl.setAttribute('aria-readonly', next ? 'true' : 'false');
+                docTitleEl.setAttribute('tabindex', next ? '-1' : '0');
+            }
+
+            const editButtons = [
+                document.getElementById('btn-edit-pages'),
+                document.getElementById('btn-import-pdf'),
+                document.getElementById('btn-undo'),
+                document.getElementById('btn-redo'),
+                document.getElementById('btn-reset-document')
+            ];
+            editButtons.forEach(btn => {
+                if (btn) btn.disabled = next;
+            });
+
+            if (toolbar) {
+                toolbar.querySelectorAll('button').forEach(btn => {
+                    btn.disabled = next;
+                });
+            }
+            if (eraserToggle) {
+                eraserToggle.disabled = next;
+            }
+            if (eraserMenu) {
+                eraserMenu.querySelectorAll('button').forEach(btn => {
+                    btn.disabled = next;
+                });
+            }
+
+            if (next) {
+                if (docTitleEditing) {
+                    finishDocTitleEdit(false);
+                }
+                closeEraserMenu();
+                closePagesPanel();
+                closeDeleteModal();
+                closeResetModal();
+                clearSelection();
+                state.selectionTransform = null;
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                state.overscrollY = 0;
+                updateAddPageIndicator();
+                clearTimeout(state.saveTimeout);
+                clearTimeout(driveSaveTimeout);
+            } else {
+                updateHistoryButtons();
+                updateSaveTimestamp();
+                scheduleVisiblePageUpdate(true);
+            }
+        }
+
         // Initialize
         async function init() {
             pendingViewState = loadViewState();
@@ -2734,6 +2888,7 @@
             if (!saveTimestampInterval) {
                 saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
             }
+            setReadOnlyMode(true, { force: true });
             const lastView = loadViewMode();
             if (lastView === 'drive') {
                 showDriveHome();
@@ -3213,6 +3368,7 @@
             const lassoCanvas = wrapper ? wrapper.querySelector('.lasso-overlay') : null;
 
             canvas.addEventListener('pointerdown', (e) => {
+                if (state.isReadOnly) return;
                 if (state.currentTool === 'lasso') {
                     if (e.pointerType === 'touch') return;
                     if (!lassoCanvas) return;
@@ -3262,6 +3418,7 @@
             });
 
             canvas.addEventListener('pointermove', (e) => {
+                if (state.isReadOnly) return;
                 if (isLassoing) {
                     const pos = getCanvasPos(canvas, e);
                     lassoPoints.push(pos);
@@ -3307,6 +3464,20 @@
             });
 
             const endDrawing = (e) => {
+                if (state.isReadOnly) {
+                    isDrawing = false;
+                    if (isLassoing) {
+                        isLassoing = false;
+                        clearLassoCanvas(pageIndex);
+                        lassoPoints = [];
+                    }
+                    clearEraserPreview(pageIndex);
+                    currentStroke = null;
+                    erasedStrokes = [];
+                    areaEraseBefore = null;
+                    areaEraseChanged = false;
+                    return;
+                }
                 if (isLassoing) {
                     isLassoing = false;
                     if (lassoPoints.length > 2) {
@@ -3755,6 +3926,7 @@
         }
 
         function deleteSelectedImages(pageIndex) {
+            if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.images)) return;
             if (!state.selection.imageIndices || state.selection.imageIndices.length === 0) return;
@@ -3790,6 +3962,7 @@
         }
 
         function deleteSelection(pageIndex) {
+            if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
             if (!page) return;
             const strokeIndices = Array.from(new Set(state.selection.strokeIndices || []))
@@ -3846,6 +4019,7 @@
         }
 
         function duplicateSelection(pageIndex) {
+            if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
             if (!page) return;
             const strokeIndices = Array.from(new Set(state.selection.strokeIndices || []))
@@ -4008,6 +4182,7 @@
 
         function setActiveTool(toolName, options = {}) {
             if (!toolName) return;
+            if (state.isReadOnly) return;
             if (toolName === 'eraser') {
                 state.currentTool = state.eraserMode === 'stroke' ? 'eraser-stroke' : 'eraser-area';
                 setActiveToolButton('eraser');
@@ -4042,6 +4217,7 @@
         }
 
         function toggleEraserFromGesture() {
+            if (state.isReadOnly) return;
             if (isEraserTool(state.currentTool)) {
                 restoreLastNonEraserTool();
                 return;
@@ -4051,6 +4227,7 @@
         }
 
         function handlePenBackgroundDoubleTap(e) {
+            if (state.isReadOnly) return false;
             if (!e || e.pointerType !== 'pen') return false;
             if (e.target && e.target.closest && e.target.closest('.page-wrapper')) return false;
             const now = Date.now();
@@ -4179,6 +4356,7 @@
 
         function beginDocTitleEdit() {
             if (!docTitleEl) return;
+            if (state.isReadOnly) return;
             docTitleEditing = true;
             docTitleOriginal = docTitleEl.textContent || '';
             docTitleEl.classList.add('editing');
@@ -4186,6 +4364,7 @@
 
         function finishDocTitleEdit(commit) {
             if (!docTitleEl) return;
+            if (state.isReadOnly) return;
             const nextBase = normalizeDocTitleInput(docTitleEl.textContent || '');
             const originalBase = normalizeDocTitleInput(docTitleOriginal);
             docTitleEditing = false;
@@ -4284,7 +4463,7 @@
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
-            } else if (state.driveAutosave) {
+            } else if (state.driveAutosave && !state.isReadOnly) {
                 clearTimeout(driveSaveTimeout);
                 driveSaveTimeout = setTimeout(() => {
                     queueDriveSave();
@@ -4880,6 +5059,7 @@
             state.panX = 0;
             state.panY = 0;
             state.overscrollY = 0;
+            setReadOnlyMode(true, { force: true });
             showEditorView();
             showLoading('Opening PDF...');
             try {
@@ -4911,6 +5091,7 @@
         async function createNewDriveDocumentWithFolder(folderId, fileBaseName) {
             const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
             const fileName = `${safeBase}.pdf`;
+            setReadOnlyMode(true, { force: true });
             showEditorView();
             state.zoom = 1;
             state.panX = 0;
@@ -5426,6 +5607,7 @@
         }
 
         function handleImageDragOver(e) {
+            if (state.isReadOnly) return;
             if (!e.dataTransfer) return;
             const types = Array.from(e.dataTransfer.types || []);
             const hasFiles = types.includes('Files');
@@ -5435,6 +5617,7 @@
         }
 
         function handleImageDrop(e) {
+            if (state.isReadOnly) return;
             if (!e.dataTransfer) return;
             e.preventDefault();
             const files = Array.from(e.dataTransfer.files || []).filter(file => file.type.startsWith('image/'));
@@ -5527,6 +5710,7 @@
 
         function setupSelectionBoxEvents(selectionBox, pageIndex) {
             selectionBox.addEventListener('pointerdown', (e) => {
+                if (state.isReadOnly) return;
                 if (state.currentTool !== 'lasso') return;
                 if (state.selection.pageIndex !== pageIndex) return;
                 const target = e.target;
@@ -5555,6 +5739,7 @@
         }
 
         function startSelectionTransform(pageIndex, mode, handle, e) {
+            if (state.isReadOnly) return;
             const bounds = getSelectionBounds(
                 pageIndex,
                 state.selection.strokeIndices,
@@ -5584,6 +5769,7 @@
         }
 
         function onSelectionPointerMove(e) {
+            if (state.isReadOnly) return;
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
             const { pageIndex, mode, handle, bounds, center, startPos, startAngle, originalStrokes, originalImages } = state.selectionTransform;
@@ -5630,6 +5816,7 @@
         }
 
         function onSelectionPointerUp(e) {
+            if (state.isReadOnly) return;
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
             const { pageIndex, originalStrokes, originalImages } = state.selectionTransform;
@@ -6155,6 +6342,7 @@
             // Tool buttons
             toolbar.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
                 btn.addEventListener('click', () => {
+                    if (state.isReadOnly) return;
                     toolbar.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
 
@@ -6300,12 +6488,20 @@
                 });
             }
             if (docTitleEl) {
-                docTitleEl.addEventListener('focus', () => beginDocTitleEdit());
+                docTitleEl.addEventListener('focus', () => {
+                    if (state.isReadOnly) {
+                        docTitleEl.blur();
+                        return;
+                    }
+                    beginDocTitleEdit();
+                });
                 docTitleEl.addEventListener('blur', () => {
+                    if (state.isReadOnly) return;
                     if (!docTitleEditing) return;
                     finishDocTitleEdit(true);
                 });
                 docTitleEl.addEventListener('keydown', (e) => {
+                    if (state.isReadOnly) return;
                     e.stopPropagation();
                     if (e.key === 'Enter') {
                         e.preventDefault();
@@ -6388,6 +6584,7 @@
 
             document.querySelectorAll('#eraser-menu .size-btn[data-eraser-size]').forEach(btn => {
                 btn.addEventListener('click', () => {
+                    if (state.isReadOnly) return;
                     document.querySelectorAll('#eraser-menu .size-btn[data-eraser-size]').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     state.eraserWidth = parseFloat(btn.dataset.eraserSize);
@@ -6396,10 +6593,17 @@
 
             if (eraserToggle) {
                 eraserToggle.addEventListener('change', () => {
+                    if (state.isReadOnly) return;
                     state.eraserMode = eraserToggle.checked ? 'stroke' : 'area';
                     if (state.currentTool === 'eraser-area' || state.currentTool === 'eraser-stroke') {
                         state.currentTool = state.eraserMode === 'stroke' ? 'eraser-stroke' : 'eraser-area';
                     }
+                });
+            }
+
+            if (modeToggleInput) {
+                modeToggleInput.addEventListener('change', () => {
+                    setReadOnlyMode(!modeToggleInput.checked, { user: true });
                 });
             }
 
@@ -6421,7 +6625,10 @@
 
             // Export/Import PDF
             document.getElementById('btn-export-pdf').addEventListener('click', openExportModal);
-            document.getElementById('btn-import-pdf').addEventListener('click', () => pdfInput.click());
+            document.getElementById('btn-import-pdf').addEventListener('click', () => {
+                if (state.isReadOnly) return;
+                pdfInput.click();
+            });
             pdfInput.addEventListener('change', importPDF);
             document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
             if (driveFullscreenBtn) {
@@ -6433,11 +6640,18 @@
             }
 
             // Undo/Redo buttons
-            document.getElementById('btn-undo').addEventListener('click', undo);
-            document.getElementById('btn-redo').addEventListener('click', redo);
+            document.getElementById('btn-undo').addEventListener('click', () => {
+                if (state.isReadOnly) return;
+                undo();
+            });
+            document.getElementById('btn-redo').addEventListener('click', () => {
+                if (state.isReadOnly) return;
+                redo();
+            });
 
             // Keyboard shortcuts
             document.addEventListener('keydown', (e) => {
+                if (state.isReadOnly) return;
                 if (e.ctrlKey && e.key === 'z') {
                     e.preventDefault();
                     undo();
@@ -6624,6 +6838,10 @@
 
         function updateAddPageIndicator() {
             if (!addPageIndicator) return;
+            if (state.isReadOnly) {
+                addPageIndicator.style.opacity = 0;
+                return;
+            }
             const pageCount = state.pages.length;
             if (pageCount === 0) {
                 addPageIndicator.style.opacity = 0;
@@ -6660,6 +6878,15 @@
 
         function applyVerticalPan(dy) {
             if (dy === 0) return;
+            if (state.isReadOnly) {
+                const { minPanY } = getBottomLimit();
+                state.panY = Math.max(minPanY, state.panY + dy);
+                state.overscrollY = 0;
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                updateAddPageIndicator();
+                return;
+            }
             const { minPanY } = getBottomLimit();
             const nextPanY = state.panY + dy;
 
@@ -7175,6 +7402,13 @@
             if (e.pointerType === 'pen') return;
             state.activePointers.delete(e.pointerId);
             const finalizePageCreation = () => {
+                if (state.isReadOnly) {
+                    state.pendingPageCreate = false;
+                    state.pageCreateLocked = false;
+                    state.overscrollY = 0;
+                    updateAddPageIndicator();
+                    return;
+                }
                 const viewportHeight = canvasViewport.getBoundingClientRect().height;
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
@@ -7284,6 +7518,7 @@
 
         // Pages Panel
         function openPagesPanel() {
+            if (state.isReadOnly) return;
             renderPagesList();
             document.getElementById('pages-panel').classList.add('visible');
             document.getElementById('panel-overlay').classList.add('visible');
@@ -7415,6 +7650,7 @@
         let pageToDelete = null;
 
         function openDeleteModal(pageIndex) {
+            if (state.isReadOnly) return;
             pageToDelete = pageIndex;
             document.getElementById('delete-page-number').textContent = pageIndex + 1;
             document.getElementById('modal-delete-page').classList.add('visible');
@@ -7426,6 +7662,10 @@
         }
 
         function confirmDeletePage() {
+            if (state.isReadOnly) {
+                closeDeleteModal();
+                return;
+            }
             if (pageToDelete === null || state.pages.length <= 1) {
                 closeDeleteModal();
                 return;
@@ -7448,6 +7688,7 @@
 
         // Reset document
         function openResetModal() {
+            if (state.isReadOnly) return;
             resetResetSlider();
             document.getElementById('modal-reset-document').classList.add('visible');
         }
@@ -7458,6 +7699,7 @@
         }
 
         function confirmResetDocument() {
+            if (state.isReadOnly) return;
             closeResetModal();
             clearSelection();
             state.selectionTransform = null;
@@ -8018,6 +8260,7 @@
         let saveQueued = false;
 
         function scheduleSave(immediate = false) {
+            if (state.isReadOnly) return;
             showStatus('Saving...', true);
             clearTimeout(state.saveTimeout);
             const now = Date.now();
@@ -8035,6 +8278,7 @@
         }
 
         async function queueSave() {
+            if (state.isReadOnly) return;
             if (saveInProgress) {
                 saveQueued = true;
                 return;
@@ -8055,7 +8299,7 @@
         }
 
         function scheduleDriveSave() {
-            if (!state.driveAutosave || !driveAccessToken) return;
+            if (state.isReadOnly || !state.driveAutosave || !driveAccessToken) return;
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
                 queueDriveSave();
@@ -8114,7 +8358,7 @@
         }
 
         async function queueDriveSave() {
-            if (!state.driveAutosave) return;
+            if (state.isReadOnly || !state.driveAutosave) return;
             if (driveSaveInProgress) {
                 driveSaveQueued = true;
                 return;
@@ -8148,6 +8392,7 @@
 
         // History functions for undo/redo
         function saveToHistory(action) {
+            if (state.isReadOnly) return;
             // Remove any future history if we're not at the end
             if (state.historyIndex < state.history.length - 1) {
                 state.history = state.history.slice(0, state.historyIndex + 1);
@@ -8170,6 +8415,7 @@
         }
 
         function undo() {
+            if (state.isReadOnly) return;
             if (state.historyIndex < 0) return;
 
             const action = state.history[state.historyIndex];
@@ -8277,6 +8523,7 @@
         }
 
         function redo() {
+            if (state.isReadOnly) return;
             if (state.historyIndex >= state.history.length - 1) return;
 
             state.historyIndex++;
@@ -8387,8 +8634,15 @@
         }
 
         function updateHistoryButtons() {
-            document.getElementById('btn-undo').disabled = state.historyIndex < 0;
-            document.getElementById('btn-redo').disabled = state.historyIndex >= state.history.length - 1;
+            const undoBtn = document.getElementById('btn-undo');
+            const redoBtn = document.getElementById('btn-redo');
+            const readOnly = !!state.isReadOnly;
+            if (undoBtn) {
+                undoBtn.disabled = readOnly || state.historyIndex < 0;
+            }
+            if (redoBtn) {
+                redoBtn.disabled = readOnly || state.historyIndex >= state.history.length - 1;
+            }
         }
 
         function showStatus(text, options = {}) {
@@ -8463,9 +8717,11 @@
                 name = name.slice(0, -4);
             }
             name = sanitizeFilename(name);
-            state.exportName = name;
-            updateDocTitle();
-            saveDriveSession();
+            if (!state.isReadOnly) {
+                state.exportName = name;
+                updateDocTitle();
+                saveDriveSession();
+            }
             closeExportModal();
             exportPDF(`${name}.pdf`);
         }
@@ -8614,6 +8870,10 @@
         }
 
         async function importPDF(e) {
+            if (state.isReadOnly) {
+                if (pdfInput) pdfInput.value = '';
+                return;
+            }
             const file = e.target.files[0];
             if (!file) return;
             const arrayBuffer = await file.arrayBuffer();
