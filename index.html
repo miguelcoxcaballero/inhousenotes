@@ -6287,6 +6287,64 @@
             scheduleVisiblePageUpdate(true);
         }
 
+        function extractEmbeddedStrokesFromBuffer(arrayBuffer) {
+            if (!arrayBuffer) return null;
+            const bytes = new Uint8Array(arrayBuffer);
+            const marker = [83, 84, 82, 79, 75, 69, 83, 95, 68, 65, 84, 65, 58]; // "STROKES_DATA:"
+            let startIndex = -1;
+
+            for (let i = 0; i <= bytes.length - marker.length; i++) {
+                let match = true;
+                for (let j = 0; j < marker.length; j++) {
+                    if (bytes[i + j] !== marker[j]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    startIndex = i + marker.length;
+                    break;
+                }
+            }
+
+            if (startIndex < 0) return null;
+            let endIndex = startIndex;
+            const limit = bytes.length;
+            while (endIndex < limit) {
+                const byte = bytes[endIndex];
+                if (byte === 41 || byte === 62) { // ')' or '>'
+                    break;
+                }
+                endIndex += 1;
+            }
+            if (endIndex <= startIndex) return null;
+
+            let encoded = '';
+            try {
+                if (window.TextDecoder) {
+                    encoded = new TextDecoder('utf-8').decode(bytes.subarray(startIndex, endIndex));
+                } else {
+                    let chunk = '';
+                    for (let i = startIndex; i < endIndex; i++) {
+                        chunk += String.fromCharCode(bytes[i]);
+                    }
+                    encoded = chunk;
+                }
+            } catch (err) {
+                return null;
+            }
+
+            encoded = encoded.replace(/\\\r?\n/g, '').replace(/\s+/g, '');
+            if (!encoded) return null;
+            try {
+                const decoded = atob(encoded);
+                const jsonString = decodeURIComponent(escape(decoded));
+                return JSON.parse(jsonString);
+            } catch (err) {
+                return null;
+            }
+        }
+
         function bakeLegacyEraserAreaStrokes() {
             let changed = false;
             state.pages.forEach((page, pageIndex) => {
@@ -6967,16 +7025,20 @@
 
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
+                const armed = state.overscrollY >= OVERSCROLL_THRESHOLD;
 
-                state.pendingPageCreate = state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
-                state.pageCreateLocked = state.pendingPageCreate;
+                state.pendingPageCreate = armed;
+                state.pageCreateLocked = armed;
                 updateAddPageIndicator();
                 if (overscrollResetTimeout) {
                     clearTimeout(overscrollResetTimeout);
                 }
                 overscrollResetTimeout = setTimeout(() => {
                     if (state.overscrollY > 0) {
-                        animateOverscrollReset();
+                        if (state.pendingPageCreate || state.pageCreateLocked || state.isPanning || state.activePointers.size > 0) {
+                            return;
+                        }
+                        animateOverscrollReset(true);
                     }
                 }, 400);
                 return;
@@ -6993,8 +7055,9 @@
                 const viewportHeight = canvasViewport.getBoundingClientRect().height;
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                state.pendingPageCreate = state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
-                state.pageCreateLocked = state.pendingPageCreate;
+                const armed = state.overscrollY >= OVERSCROLL_THRESHOLD;
+                state.pendingPageCreate = armed;
+                state.pageCreateLocked = armed;
                 updateAddPageIndicator();
                 return;
             }
@@ -8840,20 +8903,26 @@
                 activePdfPageCount = numPages;
                 pdfBackgroundScale = getPdfBackgroundScale(numPages);
 
-                // Try to extract embedded stroke data from PDF metadata
-                let embeddedStrokes = null;
-                try {
-                    const metadata = await pdf.getMetadata();
-                    const keywords = metadata?.info?.Keywords || '';
+                // Try to extract embedded stroke data from raw PDF (more reliable for large metadata)
+                let embeddedStrokes = extractEmbeddedStrokesFromBuffer(arrayBuffer);
+                if (embeddedStrokes) {
+                    showLoading('PDF with strokes detected...');
+                }
 
-                    if (keywords.startsWith('STROKES_DATA:')) {
-                        const encodedData = keywords.substring('STROKES_DATA:'.length);
-                        const decodedString = decodeURIComponent(escape(atob(encodedData)));
-                        embeddedStrokes = JSON.parse(decodedString);
-                        showLoading('PDF with strokes detected...');
+                if (!embeddedStrokes) {
+                    try {
+                        const metadata = await pdf.getMetadata();
+                        const keywords = metadata?.info?.Keywords || '';
+
+                        if (keywords.startsWith('STROKES_DATA:')) {
+                            const encodedData = keywords.substring('STROKES_DATA:'.length);
+                            const decodedString = decodeURIComponent(escape(atob(encodedData)));
+                            embeddedStrokes = JSON.parse(decodedString);
+                            showLoading('PDF with strokes detected...');
+                        }
+                    } catch (metaErr) {
+                        console.log('No embedded stroke data found:', metaErr);
                     }
-                } catch (metaErr) {
-                    console.log('No embedded stroke data found:', metaErr);
                 }
 
                 // Clear existing pages
