@@ -1134,6 +1134,12 @@
             flex-wrap: wrap;
         }
 
+        #btn-drive-new {
+            min-height: var(--header-btn-size);
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+
         .drive-profile {
             position: relative;
             display: flex;
@@ -1218,6 +1224,7 @@
             flex: 1;
             overflow: auto;
             padding: 20px;
+            padding-bottom: 80px;
         }
 
         .drive-toolbar {
@@ -1350,7 +1357,7 @@
 
         .drive-card-preview {
             width: 100%;
-            aspect-ratio: 3 / 4;
+            aspect-ratio: 1 / 1;
             border-radius: 12px;
             overflow: hidden;
             background: rgba(0,0,0,0.04);
@@ -1363,6 +1370,7 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+            object-position: top center;
         }
 
         .drive-card-icon {
@@ -1422,8 +1430,17 @@
             border-radius: 8px;
             text-align: left;
             font-size: 0.85rem;
+            font-family: inherit;
             cursor: pointer;
             color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .drive-card-dropdown button svg {
+            width: 16px;
+            height: 16px;
         }
 
         .drive-card-dropdown button:hover {
@@ -1497,6 +1514,37 @@
             width: 20px;
             height: 20px;
             color: var(--accent-orange);
+        }
+
+        .bin-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 260px;
+            overflow: auto;
+            margin-top: 12px;
+        }
+
+        .bin-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: rgba(0,0,0,0.02);
+            border: 1px solid rgba(0,0,0,0.06);
+        }
+
+        .bin-item svg {
+            width: 18px;
+            height: 18px;
+            color: var(--text-secondary);
+            flex: 0 0 auto;
+        }
+
+        .bin-item-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
         }
 
         .drive-folder-card {
@@ -1621,6 +1669,12 @@
         </div>
         <div class="drive-main">
             <div class="drive-toolbar">
+                <button class="btn btn-secondary btn-icon-square" id="btn-drive-bin" title="Bin" aria-label="Bin">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
                 <input class="drive-search" id="drive-search" type="text" placeholder="Search PDFs..." autocomplete="off">
                 <div class="drive-status" id="drive-status">Sign in to browse your Drive.</div>
             </div>
@@ -1878,6 +1932,18 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="modal-drive-bin">
+        <div class="modal">
+            <h2>Bin</h2>
+            <p>Files currently in your Drive bin.</p>
+            <div class="bin-list" id="drive-bin-list"></div>
+            <div class="drive-empty hidden" id="drive-bin-empty">Bin is empty.</div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="drive-bin-close">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div class="panel-overlay" id="panel-overlay"></div>
 
     <div id="pages-panel">
@@ -2085,6 +2151,7 @@
         const driveBreadcrumbsEl = document.getElementById('drive-breadcrumbs');
         const driveLoginBtn = document.getElementById('btn-drive-login');
         const driveNewBtn = document.getElementById('btn-drive-new');
+        const driveBinBtn = document.getElementById('btn-drive-bin');
         const driveFullscreenBtn = document.getElementById('btn-drive-fullscreen');
         const driveProfileWrap = document.getElementById('drive-profile');
         const driveProfileBtn = document.getElementById('btn-drive-profile');
@@ -2111,6 +2178,10 @@
         const trashModal = document.getElementById('modal-trash-file');
         const trashFileName = document.getElementById('trash-file-name');
         const trashCancelBtn = document.getElementById('trash-file-cancel');
+        const driveBinModal = document.getElementById('modal-drive-bin');
+        const driveBinList = document.getElementById('drive-bin-list');
+        const driveBinEmpty = document.getElementById('drive-bin-empty');
+        const driveBinClose = document.getElementById('drive-bin-close');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
@@ -3581,6 +3652,7 @@
             if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !signedIn);
             if (driveSearchInput) driveSearchInput.disabled = !signedIn;
             if (driveNewBtn) driveNewBtn.disabled = !signedIn;
+            if (driveBinBtn) driveBinBtn.disabled = !signedIn;
             if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
             if (driveStatusEl) {
                 driveStatusEl.textContent = signedIn ? 'Loading your PDFs...' : 'Sign in to browse your Drive.';
@@ -3850,8 +3922,20 @@
             const menu = document.createElement('div');
             menu.className = 'drive-card-dropdown hidden';
             menu.innerHTML = `
-                <button type="button" data-action="move">Move</button>
-                <button type="button" class="danger" data-action="trash">Move to bin</button>
+                <button type="button" data-action="move">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 7h7l2 2h9a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+                        <path d="M3 7V5a2 2 0 0 1 2-2h4"/>
+                    </svg>
+                    <span>Move</span>
+                </button>
+                <button type="button" class="danger" data-action="trash">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    <span>Move to bin</span>
+                </button>
             `;
 
             menuBtn.addEventListener('click', (e) => {
@@ -3861,7 +3945,8 @@
 
             menu.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const action = e.target?.dataset?.action;
+                const button = e.target?.closest ? e.target.closest('button[data-action]') : null;
+                const action = button?.dataset?.action;
                 if (!action) return;
                 closeDriveCardMenu();
                 if (action === 'move') {
@@ -4389,6 +4474,52 @@
             trashTargetFile = null;
             if (trashModal) trashModal.classList.remove('visible');
             resetTrashSlider();
+        }
+
+        function openDriveBinModal() {
+            if (!driveAccessToken) return;
+            if (driveBinModal) driveBinModal.classList.add('visible');
+            refreshDriveBin();
+        }
+
+        function closeDriveBinModal() {
+            if (driveBinModal) driveBinModal.classList.remove('visible');
+        }
+
+        async function refreshDriveBin() {
+            if (!driveBinList || !driveAccessToken) return;
+            driveBinList.innerHTML = '';
+            if (driveBinEmpty) driveBinEmpty.classList.add('hidden');
+            try {
+                const q = encodeURIComponent(`trashed=true and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
+                const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,mimeType)');
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=100&fields=${fields}`);
+                const data = await res.json();
+                const files = data.files || [];
+                if (files.length === 0) {
+                    if (driveBinEmpty) driveBinEmpty.classList.remove('hidden');
+                    return;
+                }
+                files.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'bin-item';
+                    const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+                    item.innerHTML = `
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            ${isFolder
+                                ? '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
+                                : '<path d="M6 2h8l4 4v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/>'}
+                        </svg>
+                        <div>
+                            <div>${file.name || 'Untitled'}</div>
+                            <div class="bin-item-meta">Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}</div>
+                        </div>
+                    `;
+                    driveBinList.appendChild(item);
+                });
+            } catch (err) {
+                if (driveBinEmpty) driveBinEmpty.classList.remove('hidden');
+            }
         }
 
         async function confirmTrashFile() {
@@ -5243,6 +5374,19 @@
                     }
                 });
             }
+            if (driveBinBtn) {
+                driveBinBtn.addEventListener('click', openDriveBinModal);
+            }
+            if (driveBinClose) {
+                driveBinClose.addEventListener('click', closeDriveBinModal);
+            }
+            if (driveBinModal) {
+                driveBinModal.addEventListener('click', (e) => {
+                    if (e.target && e.target.id === 'modal-drive-bin') {
+                        closeDriveBinModal();
+                    }
+                });
+            }
             if (folderPickerNameInput) {
                 folderPickerNameInput.addEventListener('input', updateFolderPickerConfirmState);
                 folderPickerNameInput.addEventListener('keydown', (e) => {
@@ -5331,6 +5475,7 @@
                 if (e.key === 'Escape') {
                     closeFolderPicker();
                     closeTrashModal();
+                    closeDriveBinModal();
                     closeDriveProfileMenu();
                 }
             });
