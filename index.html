@@ -4677,7 +4677,7 @@
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${targetFileId}?alt=media`);
                 const arrayBuffer = await res.arrayBuffer();
                 if (!isCurrent()) return;
-                await importPDFArrayBuffer(arrayBuffer, { markDirty: false });
+                await importPDFArrayBuffer(arrayBuffer, { markDirty: false, guard: isCurrent });
 
                 if (!isCurrent()) return;
                 state.driveFileName = latestName || state.driveFileName;
@@ -5190,7 +5190,7 @@
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
                 const arrayBuffer = await res.arrayBuffer();
                 if (!isCurrent()) return;
-                await importPDFArrayBuffer(arrayBuffer, { markDirty: false });
+                await importPDFArrayBuffer(arrayBuffer, { markDirty: false, guard: isCurrent });
                 if (!isCurrent()) return;
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
@@ -9098,17 +9098,20 @@
         async function importPDFArrayBuffer(arrayBuffer, options = {}) {
             if (!arrayBuffer) return;
             const markDirty = options.markDirty !== false;
+            const guard = typeof options.guard === 'function' ? options.guard : null;
+            const isCurrent = () => !guard || guard();
+            if (!isCurrent()) return;
             showLoading('Analyzing PDF...');
 
             try {
-                resetViewportInteractionState();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                if (!isCurrent()) {
+                    if (pdf.destroy) {
+                        pdf.destroy();
+                    }
+                    return;
+                }
                 const numPages = pdf.numPages;
-
-                resetPdfState();
-                activePdfDocument = pdf;
-                activePdfPageCount = numPages;
-                pdfBackgroundScale = getPdfBackgroundScale(numPages);
 
                 // Try to extract embedded stroke data from raw PDF (more reliable for large metadata)
                 let embeddedStrokes = extractEmbeddedStrokesFromBuffer(arrayBuffer);
@@ -9119,6 +9122,12 @@
                 if (!embeddedStrokes) {
                     try {
                         const metadata = await pdf.getMetadata();
+                        if (!isCurrent()) {
+                            if (pdf.destroy) {
+                                pdf.destroy();
+                            }
+                            return;
+                        }
                         const keywords = metadata?.info?.Keywords || '';
 
                         if (keywords.startsWith('STROKES_DATA:')) {
@@ -9132,14 +9141,7 @@
                     }
                 }
 
-                // Clear existing pages
-                state.pages = [];
-                state.history = [];
-                state.historyIndex = -1;
-                updateHistoryButtons();
-                canvasContainer.innerHTML = '';
-                activePageIndices.clear();
-
+                const nextPages = [];
                 for (let i = 1; i <= numPages; i++) {
                     const pageData = embeddedStrokes ? embeddedStrokes[i - 1] : null;
                     if (pageData) {
@@ -9155,7 +9157,7 @@
                         const pagePdfIndex = Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : i;
 
                         if (needsPdfBackground) {
-                            state.pages.push({
+                            nextPages.push({
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'pdf',
@@ -9165,7 +9167,7 @@
                                 needsRedraw: true
                             });
                         } else {
-                            state.pages.push({
+                            nextPages.push({
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'template',
@@ -9176,7 +9178,7 @@
                             });
                         }
                     } else {
-                        state.pages.push({
+                        nextPages.push({
                             strokes: [],
                             backgroundImage: null,
                             backgroundSource: 'pdf',
@@ -9186,6 +9188,27 @@
                         });
                     }
                 }
+
+                if (!isCurrent()) {
+                    if (pdf.destroy) {
+                        pdf.destroy();
+                    }
+                    return;
+                }
+
+                resetViewportInteractionState();
+                resetPdfState();
+                activePdfDocument = pdf;
+                activePdfPageCount = numPages;
+                pdfBackgroundScale = getPdfBackgroundScale(numPages);
+
+                // Clear existing pages
+                state.pages = nextPages;
+                state.history = [];
+                state.historyIndex = -1;
+                updateHistoryButtons();
+                canvasContainer.innerHTML = '';
+                activePageIndices.clear();
 
                 renderAllPages();
                 scheduleSave(true, { markDirty });
