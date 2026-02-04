@@ -224,12 +224,14 @@
         }
 
         #editor-view.read-only #toolbar {
-            display: none;
+            opacity: 0;
+            pointer-events: none;
         }
 
         #editor-view.read-only .save-indicator,
         #editor-view.read-only .save-timestamp {
-            display: none;
+            opacity: 0;
+            pointer-events: none;
         }
 
         #editor-view.read-only #add-page-indicator {
@@ -566,10 +568,20 @@
             flex-direction: column;
             gap: 6px;
             z-index: 1000;
-            transition: border-radius 0.2s ease;
+            opacity: 1;
+            transition: border-radius 0.2s ease, opacity 0.25s ease;
             touch-action: none;
             user-select: none;
             backdrop-filter: blur(8px);
+        }
+
+        #toolbar.toolbar-flash {
+            animation: toolbar-fade 0.45s ease;
+        }
+
+        @keyframes toolbar-fade {
+            0% { opacity: 0.35; }
+            100% { opacity: 1; }
         }
 
         #toolbar.toolbar-tilt-forward {
@@ -2846,6 +2858,9 @@
                 toolbar.querySelectorAll('button').forEach(btn => {
                     btn.disabled = next;
                 });
+                toolbar.classList.remove('toolbar-flash');
+                void toolbar.offsetWidth;
+                toolbar.classList.add('toolbar-flash');
             }
             if (eraserToggle) {
                 eraserToggle.disabled = next;
@@ -6558,6 +6573,12 @@
                 });
                 docTitleEl.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    if (state.isReadOnly) {
+                        setReadOnlyMode(false, { user: true });
+                        requestAnimationFrame(() => {
+                            docTitleEl.focus();
+                        });
+                    }
                 });
             }
             if (driveProfileAvatar) {
@@ -8136,7 +8157,7 @@
         function updateSaveTimestamp() {
             const timestampEl = document.getElementById('save-timestamp');
             if (!timestampEl) return;
-            const label = state.lastSavedAt ? `Last: ${formatTime(state.lastSavedAt)}` : 'Last: --:--';
+            const label = state.lastSavedAt ? `Last edit: ${formatTime(state.lastSavedAt)}` : 'Last edit: --:--';
             timestampEl.textContent = label;
         }
 
