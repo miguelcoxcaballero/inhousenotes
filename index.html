@@ -17,6 +17,10 @@
             -webkit-tap-highlight-color: transparent;
         }
 
+        .hidden {
+            display: none !important;
+        }
+
         @property --toolbar-rotate {
             syntax: '<angle>';
             inherits: true;
@@ -77,7 +81,8 @@
             flex-shrink: 0;
         }
 
-        .logo {
+        .logo,
+        .drive-brand {
             font-family: 'Comfortaa', cursive;
             font-size: 1.25rem;
             font-weight: 600;
@@ -85,6 +90,9 @@
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+
+        .logo {
             cursor: pointer;
         }
 
@@ -94,12 +102,14 @@
             border-radius: 10px;
         }
 
-        .logo svg {
+        .logo svg,
+        .drive-brand svg {
             width: 32px;
             height: 24px;
         }
 
-        .logo span {
+        .logo span,
+        .drive-brand span {
             letter-spacing: -0.5px;
         }
 
@@ -1108,24 +1118,10 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 16px 24px;
+            padding: 12px 20px;
             background: var(--bg-secondary);
             border-bottom: 1px solid rgba(0,0,0,0.06);
-            gap: 16px;
-        }
-
-        .drive-brand {
-            display: flex;
-            align-items: center;
             gap: 12px;
-            font-family: 'Comfortaa', cursive;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .drive-brand svg {
-            width: 28px;
-            height: 20px;
         }
 
         .drive-actions {
@@ -1133,6 +1129,86 @@
             align-items: center;
             gap: 8px;
             flex-wrap: wrap;
+        }
+
+        .drive-profile {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .drive-profile-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.1);
+            background: white;
+            padding: 0;
+            cursor: pointer;
+            overflow: hidden;
+            display: grid;
+            place-items: center;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .drive-profile-btn:hover {
+            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+            transform: translateY(-1px);
+        }
+
+        .drive-profile-avatar {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .drive-profile-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 10px);
+            background: white;
+            border-radius: 16px;
+            padding: 14px;
+            min-width: 240px;
+            box-shadow: 0 18px 40px rgba(0,0,0,0.18);
+            border: 1px solid rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 2000;
+        }
+
+        .drive-profile-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .drive-profile-meta .drive-profile-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+        }
+
+        .drive-profile-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        .drive-profile-email {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+
+        .drive-profile-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .drive-profile-actions .btn {
+            flex: 1;
         }
 
         .drive-main {
@@ -1345,10 +1421,29 @@
         }
 
         .doc-title {
+            display: inline-flex;
+            align-items: center;
             font-size: 0.95rem;
             font-weight: 500;
             color: var(--text-secondary);
             margin-left: 12px;
+            padding: 4px 8px;
+            border-radius: 8px;
+            max-width: 320px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: text;
+        }
+
+        .doc-title.editing,
+        .doc-title:focus {
+            background: rgba(0,0,0,0.05);
+            color: var(--text-primary);
+            outline: 2px solid rgba(0, 47, 217, 0.3);
+            outline-offset: 2px;
+            max-width: 420px;
+            text-overflow: clip;
         }
     </style>
 </head>
@@ -1362,10 +1457,26 @@
                 <span>inhouse notes</span>
             </div>
             <div class="drive-actions">
-                <button class="btn btn-secondary" id="btn-drive-refresh">Refresh</button>
                 <button class="btn btn-primary" id="btn-drive-new">New PDF</button>
                 <button class="btn btn-primary" id="btn-drive-login">Sign in</button>
-                <button class="btn btn-secondary" id="btn-drive-logout">Sign out</button>
+                <div class="drive-profile hidden" id="drive-profile">
+                    <button class="drive-profile-btn" id="btn-drive-profile" type="button" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">
+                        <img class="drive-profile-avatar" id="drive-profile-avatar" alt="Profile">
+                    </button>
+                    <div class="drive-profile-menu hidden" id="drive-profile-menu" role="menu">
+                        <div class="drive-profile-meta">
+                            <img class="drive-profile-avatar" id="drive-profile-avatar-menu" alt="Profile">
+                            <div>
+                                <div class="drive-profile-name" id="drive-profile-name">Signed in</div>
+                                <div class="drive-profile-email" id="drive-profile-email"></div>
+                            </div>
+                        </div>
+                        <div class="drive-profile-actions">
+                            <button class="btn btn-secondary" id="btn-drive-menu-refresh" type="button">Refresh</button>
+                            <button class="btn btn-secondary" id="btn-drive-menu-logout" type="button">Sign out</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="drive-main">
@@ -1378,7 +1489,13 @@
                     <div class="drive-section-title">Recents</div>
                 </div>
                 <div class="drive-recents" id="drive-recents"></div>
-                <div class="drive-empty hidden" id="drive-recents-empty">No recent PDFs yet.</div>
+            </section>
+            <section class="drive-section">
+                <div class="drive-section-header">
+                    <div class="drive-section-title">Starred</div>
+                </div>
+                <div class="drive-recents" id="drive-starred"></div>
+                <div class="drive-empty hidden" id="drive-starred-empty">No starred PDFs yet.</div>
             </section>
             <section class="drive-section">
                 <div class="drive-section-header">
@@ -1405,17 +1522,11 @@
                     <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
                 </svg>
                 <span>inhouse notes</span>
-                <span class="doc-title" id="doc-title">Untitled</span>
+                <span class="doc-title" id="doc-title" role="textbox" aria-label="Document title" contenteditable="true" spellcheck="false">Untitled</span>
             </div>
             <div class="header-actions">
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
-                <button class="btn btn-warning btn-icon-square" id="btn-reset-document" title="Start new document" aria-label="Start new document">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="1 4 1 10 7 10"/>
-                        <path d="M3.51 15a8.5 8.5 0 1 0 2.13-9.36L1 10"/>
-                    </svg>
-                </button>
                 <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="4 9 4 4 9 4"/>
@@ -1648,11 +1759,27 @@
             </g>
         </svg>`;
         const SVG_BACKGROUND = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+        const DEFAULT_AVATAR = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+            '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">' +
+            '<stop offset="0%" stop-color="#f2f2f2"/><stop offset="100%" stop-color="#d9d9d9"/>' +
+            '</linearGradient></defs>' +
+            '<circle cx="32" cy="32" r="32" fill="url(#g)"/>' +
+            '<circle cx="32" cy="26" r="12" fill="#b3b3b3"/>' +
+            '<path d="M14 56c4-10 14-16 18-16s14 6 18 16" fill="#b3b3b3"/>' +
+            '</svg>'
+        )}`;
 
         // A4 dimensions - using 2x resolution for crisp drawing
         const A4_WIDTH = 794;
         const A4_HEIGHT = 1123;
         const CANVAS_SCALE = Math.min(3, Math.max(2, Math.round((window.devicePixelRatio || 2) * 2))); // High DPI, capped for memory
+        const PAGE_PADDING = 30;
+        const PAGE_GAP = 30;
+        const VISIBLE_PAGE_BUFFER = 2;
+        const MAX_PDF_BACKGROUND_CACHE = 12;
+        const PDF_RENDER_SCALE_LARGE = 1.5;
+        const PDF_RENDER_SCALE_HUGE = 1.2;
         const OVERLAY_SCALE = 1;
         const OVERSCROLL_THRESHOLD = 360;
         const OVERSCROLL_FRICTION = 0.24;
@@ -1759,15 +1886,23 @@
         const driveStatusEl = document.getElementById('drive-status');
         const driveSearchInput = document.getElementById('drive-search');
         const driveRecentsEl = document.getElementById('drive-recents');
-        const driveRecentsEmptyEl = document.getElementById('drive-recents-empty');
+        const driveStarredEl = document.getElementById('drive-starred');
+        const driveStarredEmptyEl = document.getElementById('drive-starred-empty');
         const driveFoldersEl = document.getElementById('drive-folders');
         const driveFolderFilesEl = document.getElementById('drive-folder-files');
         const driveFolderEmptyEl = document.getElementById('drive-folder-empty');
         const driveBreadcrumbsEl = document.getElementById('drive-breadcrumbs');
         const driveLoginBtn = document.getElementById('btn-drive-login');
-        const driveLogoutBtn = document.getElementById('btn-drive-logout');
-        const driveRefreshBtn = document.getElementById('btn-drive-refresh');
         const driveNewBtn = document.getElementById('btn-drive-new');
+        const driveProfileWrap = document.getElementById('drive-profile');
+        const driveProfileBtn = document.getElementById('btn-drive-profile');
+        const driveProfileMenu = document.getElementById('drive-profile-menu');
+        const driveProfileAvatar = document.getElementById('drive-profile-avatar');
+        const driveProfileAvatarMenu = document.getElementById('drive-profile-avatar-menu');
+        const driveProfileName = document.getElementById('drive-profile-name');
+        const driveProfileEmail = document.getElementById('drive-profile-email');
+        const driveMenuRefreshBtn = document.getElementById('btn-drive-menu-refresh');
+        const driveMenuLogoutBtn = document.getElementById('btn-drive-menu-logout');
         const driveHomeBtn = document.getElementById('btn-drive-home');
         const driveBackBtn = document.getElementById('btn-drive-back');
         const docTitleEl = document.getElementById('doc-title');
@@ -1784,11 +1919,25 @@
         let driveSaveInProgress = false;
         let driveSaveQueued = false;
         let driveRecentsCache = [];
+        let driveStarredCache = [];
         let driveFolderCache = { folders: [], files: [] };
         let driveFolderStack = [{ id: 'root', name: 'My Drive' }];
         let driveCurrentFolderId = 'root';
         let driveOpenInProgress = false;
         let driveOpenFileId = null;
+        let driveUserProfile = null;
+        let docTitleEditing = false;
+        let docTitleOriginal = '';
+        let activePdfDocument = null;
+        let activePdfPageCount = 0;
+        let pdfBackgroundScale = Math.min(2, CANVAS_SCALE);
+        let pdfRenderQueue = [];
+        let pdfRenderActive = false;
+        let pdfRenderToken = 0;
+        let pdfRestoreInProgress = false;
+        const pdfBackgroundCache = new Map();
+        const activePageIndices = new Set();
+        let visiblePageUpdateHandle = null;
         const addPageIndicator = document.createElement('div');
         addPageIndicator.id = 'add-page-indicator';
         addPageIndicator.textContent = '+';
@@ -1809,6 +1958,7 @@
             syncEraserMenuState();
             initDriveAuth();
             updateDocTitle();
+            updateDriveProfileUI(null);
             if (!saveTimestampInterval) {
                 saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
             }
@@ -1831,7 +1981,7 @@
         function centerViewOnTop() {
             const viewportRect = canvasViewport.getBoundingClientRect();
             const pageWidth = A4_WIDTH * state.zoom;
-            const padding = 30 * state.zoom;
+            const padding = PAGE_PADDING * state.zoom;
             
             // Center horizontally
             state.panX = (viewportRect.width - pageWidth) / 2 - padding;
@@ -1853,16 +2003,20 @@
             const pageData = {
                 strokes: [],
                 backgroundImage: backgroundImage, // Base64 image for PDF pages
-                images: []
+                images: [],
+                backgroundSource: backgroundImage ? 'custom' : 'template',
+                pdfPageIndex: null,
+                needsRedraw: true
             };
             state.pages.push(pageData);
-            createPageElement(pageIndex, animate);
+            createPageElement(pageIndex, animate, false);
+            scheduleVisiblePageUpdate(true);
             scheduleSave(true);
             showStatus('Page added', { preserveState: true });
         }
 
-        // Create page DOM element
-        function createPageElement(pageIndex, animate = false) {
+        // Create page DOM element shell (canvases are lazy-loaded)
+        function createPageElement(pageIndex, animate = false, withCanvas = false) {
             const wrapper = document.createElement('div');
             wrapper.className = 'page-wrapper';
             wrapper.dataset.page = pageIndex;
@@ -1873,6 +2027,24 @@
                 setTimeout(() => wrapper.classList.remove('new-page'), 600);
             }
 
+            const pageNumber = document.createElement('div');
+            pageNumber.className = 'page-number';
+            pageNumber.textContent = `${pageIndex + 1}`;
+
+            wrapper.appendChild(pageNumber);
+            canvasContainer.appendChild(wrapper);
+
+            if (withCanvas) {
+                attachPageCanvases(wrapper, pageIndex);
+                activePageIndices.add(pageIndex);
+            }
+            return wrapper;
+        }
+
+        function attachPageCanvases(wrapper, pageIndex) {
+            if (!wrapper) return;
+            if (wrapper.querySelector('canvas.page-canvas')) return;
+
             const canvas = document.createElement('canvas');
             canvas.className = 'page-canvas';
             canvas.width = A4_WIDTH * CANVAS_SCALE;
@@ -1881,22 +2053,6 @@
             canvas.style.height = '100%';
             canvas.dataset.page = pageIndex;
 
-            // Set background
-            const page = state.pages[pageIndex];
-            if (page.backgroundImage) {
-                canvas.style.backgroundImage = `url("${page.backgroundImage}")`;
-            } else {
-                canvas.style.backgroundImage = `url("${SVG_BACKGROUND}")`;
-            }
-            canvas.style.backgroundSize = 'cover';
-            canvas.style.backgroundRepeat = 'no-repeat';
-            canvas.style.backgroundPosition = 'center';
-
-            const pageNumber = document.createElement('div');
-            pageNumber.className = 'page-number';
-            pageNumber.textContent = `${pageIndex + 1}`;
-
-            wrapper.appendChild(canvas);
             const lassoOverlay = document.createElement('canvas');
             lassoOverlay.className = 'lasso-overlay';
             lassoOverlay.dataset.page = pageIndex;
@@ -1904,7 +2060,6 @@
             lassoOverlay.height = A4_HEIGHT * OVERLAY_SCALE;
             lassoOverlay.style.width = '100%';
             lassoOverlay.style.height = '100%';
-            wrapper.appendChild(lassoOverlay);
 
             const cursorOverlay = document.createElement('canvas');
             cursorOverlay.className = 'cursor-overlay';
@@ -1913,7 +2068,6 @@
             cursorOverlay.height = A4_HEIGHT * CANVAS_SCALE;
             cursorOverlay.style.width = '100%';
             cursorOverlay.style.height = '100%';
-            wrapper.appendChild(cursorOverlay);
 
             const selectionBox = document.createElement('div');
             selectionBox.className = 'selection-box hidden';
@@ -1942,19 +2096,247 @@
                 <div class="selection-handle handle-se" data-handle="se"></div>
                 <div class="selection-handle handle-sw" data-handle="sw"></div>
             `;
-            wrapper.appendChild(selectionBox);
-            wrapper.appendChild(pageNumber);
-            canvasContainer.appendChild(wrapper);
+
+            wrapper.insertBefore(canvas, wrapper.firstChild);
+            wrapper.insertBefore(lassoOverlay, wrapper.lastChild);
+            wrapper.insertBefore(cursorOverlay, wrapper.lastChild);
+            wrapper.insertBefore(selectionBox, wrapper.lastChild);
+
+            applyPageBackground(pageIndex, canvas);
 
             // Setup context with scale
             const ctx = canvas.getContext('2d');
-            ctx.scale(CANVAS_SCALE, CANVAS_SCALE);
+            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
             setupCanvasEvents(canvas, pageIndex);
             setupSelectionBoxEvents(selectionBox, pageIndex);
             redrawPage(pageIndex);
+        }
+
+        function ensurePageCanvas(pageIndex) {
+            if (activePageIndices.has(pageIndex)) {
+                const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+                if (canvas) {
+                    applyPageBackground(pageIndex, canvas);
+                }
+                return;
+            }
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (!wrapper) return;
+            attachPageCanvases(wrapper, pageIndex);
+            activePageIndices.add(pageIndex);
+        }
+
+        function releasePageCanvas(pageIndex) {
+            if (!activePageIndices.has(pageIndex)) return;
+            if (state.selection.pageIndex === pageIndex) {
+                clearSelection();
+            }
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (wrapper) {
+                wrapper.querySelectorAll('canvas.page-canvas, canvas.lasso-overlay, canvas.cursor-overlay, .selection-box').forEach(el => {
+                    el.remove();
+                });
+            }
+            activePageIndices.delete(pageIndex);
+        }
+
+        function getPdfBackgroundScale(pageCount) {
+            if (pageCount >= 500) return PDF_RENDER_SCALE_HUGE;
+            if (pageCount >= 200) return PDF_RENDER_SCALE_LARGE;
+            return Math.min(2, CANVAS_SCALE);
+        }
+
+        function resetPdfState() {
+            activePdfDocument = null;
+            activePdfPageCount = 0;
+            pdfBackgroundScale = Math.min(2, CANVAS_SCALE);
+            pdfRenderQueue = [];
+            pdfRenderActive = false;
+            pdfBackgroundCache.clear();
+            pdfRenderToken += 1;
+        }
+
+        function touchPdfBackgroundCache(pageIndex, dataUrl) {
+            if (!dataUrl) return;
+            pdfBackgroundCache.set(pageIndex, {
+                dataUrl,
+                lastUsed: Date.now()
+            });
+            prunePdfBackgroundCache();
+        }
+
+        function prunePdfBackgroundCache() {
+            if (pdfBackgroundCache.size <= MAX_PDF_BACKGROUND_CACHE) return;
+            const candidates = Array.from(pdfBackgroundCache.entries())
+                .filter(([index]) => !activePageIndices.has(index))
+                .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+
+            while (pdfBackgroundCache.size > MAX_PDF_BACKGROUND_CACHE && candidates.length > 0) {
+                const [pageIndex] = candidates.shift();
+                pdfBackgroundCache.delete(pageIndex);
+                const page = state.pages[pageIndex];
+                if (page && page.backgroundSource === 'pdf') {
+                    page.backgroundImage = null;
+                }
+            }
+        }
+
+        function applyPageBackground(pageIndex, canvas) {
+            const page = state.pages[pageIndex];
+            if (!page || !canvas) return;
+            if (page.backgroundImage) {
+                if (!page.backgroundSource) {
+                    page.backgroundSource = page.pdfPageIndex ? 'pdf' : 'custom';
+                }
+                canvas.style.backgroundImage = `url("${page.backgroundImage}")`;
+                canvas.style.backgroundSize = 'cover';
+                canvas.style.backgroundRepeat = 'no-repeat';
+                canvas.style.backgroundPosition = 'center';
+                canvas.style.backgroundColor = 'transparent';
+                if (page.backgroundSource === 'pdf') {
+                    touchPdfBackgroundCache(pageIndex, page.backgroundImage);
+                }
+                return;
+            }
+
+            if (page.pdfPageIndex && activePdfDocument) {
+                canvas.style.backgroundImage = '';
+                canvas.style.backgroundColor = 'white';
+                queuePdfPageRender(pageIndex);
+                return;
+            }
+
+            canvas.style.backgroundImage = `url("${SVG_BACKGROUND}")`;
+            canvas.style.backgroundSize = 'cover';
+            canvas.style.backgroundRepeat = 'no-repeat';
+            canvas.style.backgroundPosition = 'center';
+            canvas.style.backgroundColor = 'transparent';
+        }
+
+        function queuePdfPageRender(pageIndex) {
+            if (!activePdfDocument) return;
+            if (pdfRenderQueue.includes(pageIndex)) return;
+            pdfRenderQueue.push(pageIndex);
+            processPdfRenderQueue();
+        }
+
+        async function processPdfRenderQueue() {
+            if (pdfRenderActive) return;
+            pdfRenderActive = true;
+            const token = pdfRenderToken;
+            while (pdfRenderQueue.length > 0) {
+                const pageIndex = pdfRenderQueue.shift();
+                if (token !== pdfRenderToken) break;
+                if (!activePageIndices.has(pageIndex)) continue;
+                await renderPdfPageToBackground(pageIndex, token);
+                await new Promise(requestAnimationFrame);
+            }
+            pdfRenderActive = false;
+        }
+
+        async function renderPdfPageToBackground(pageIndex, token) {
+            if (!activePdfDocument) return;
+            const page = state.pages[pageIndex];
+            if (!page || !page.pdfPageIndex) return;
+            if (page.backgroundImage) return;
+            if (token !== pdfRenderToken) return;
+
+            try {
+                const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
+                const baseViewport = pdfPage.getViewport({ scale: 1 });
+                const targetWidth = A4_WIDTH * pdfBackgroundScale;
+                const targetHeight = A4_HEIGHT * pdfBackgroundScale;
+                const scale = Math.min(targetWidth / baseViewport.width, targetHeight / baseViewport.height);
+                const viewport = pdfPage.getViewport({ scale });
+
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = viewport.width;
+                tempCanvas.height = viewport.height;
+                const tempCtx = tempCanvas.getContext('2d');
+
+                await pdfPage.render({ canvasContext: tempCtx, viewport }).promise;
+
+                const a4Canvas = document.createElement('canvas');
+                a4Canvas.width = targetWidth;
+                a4Canvas.height = targetHeight;
+                const a4Ctx = a4Canvas.getContext('2d');
+                a4Ctx.fillStyle = 'white';
+                a4Ctx.fillRect(0, 0, targetWidth, targetHeight);
+                const offsetX = (targetWidth - viewport.width) / 2;
+                const offsetY = (targetHeight - viewport.height) / 2;
+                a4Ctx.drawImage(tempCanvas, offsetX, offsetY, viewport.width, viewport.height);
+
+                const dataUrl = a4Canvas.toDataURL('image/jpeg', 0.85);
+                page.backgroundImage = dataUrl;
+                page.backgroundSource = 'pdf';
+                touchPdfBackgroundCache(pageIndex, dataUrl);
+
+                const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+                if (canvas) {
+                    canvas.style.backgroundImage = `url("${dataUrl}")`;
+                    canvas.style.backgroundSize = 'cover';
+                    canvas.style.backgroundRepeat = 'no-repeat';
+                    canvas.style.backgroundPosition = 'center';
+                    canvas.style.backgroundColor = 'transparent';
+                }
+
+                if (pdfPage.cleanup) {
+                    pdfPage.cleanup();
+                }
+            } catch (err) {
+                console.error('Failed to render PDF page background:', err);
+            }
+        }
+
+        function getVisiblePageRange() {
+            const rect = canvasViewport.getBoundingClientRect();
+            if (!rect.height) return { start: 0, end: -1 };
+            const viewTop = (-state.panY) / state.zoom;
+            const viewBottom = (rect.height - state.panY) / state.zoom;
+            const pageSpan = A4_HEIGHT + PAGE_GAP;
+            let start = Math.floor((viewTop - PAGE_PADDING) / pageSpan);
+            let end = Math.floor((viewBottom - PAGE_PADDING) / pageSpan);
+            start = Math.max(0, Math.min(state.pages.length - 1, start - VISIBLE_PAGE_BUFFER));
+            end = Math.max(0, Math.min(state.pages.length - 1, end + VISIBLE_PAGE_BUFFER));
+            return { start, end };
+        }
+
+        function updateVisiblePages(force = false) {
+            const pageCount = state.pages.length;
+            if (!pageCount) return;
+            const range = getVisiblePageRange();
+            if (range.end < range.start) return;
+            const desired = new Set();
+            for (let i = range.start; i <= range.end; i++) {
+                desired.add(i);
+            }
+
+            desired.forEach(index => {
+                ensurePageCanvas(index);
+                const page = state.pages[index];
+                if (page && page.needsRedraw) {
+                    redrawPage(index);
+                }
+            });
+
+            activePageIndices.forEach(index => {
+                if (!desired.has(index)) {
+                    releasePageCanvas(index);
+                }
+            });
+
+            prunePdfBackgroundCache();
+        }
+
+        function scheduleVisiblePageUpdate(force = false) {
+            if (visiblePageUpdateHandle) return;
+            visiblePageUpdateHandle = requestAnimationFrame(() => {
+                visiblePageUpdateHandle = null;
+                updateVisiblePages(force);
+            });
         }
 
         // Setup canvas pointer events with improved drawing
@@ -2819,15 +3201,92 @@
             return false;
         }
 
+        function getBaseDocTitle(name) {
+            if (!name) return 'Untitled';
+            const trimmed = name.trim();
+            if (!trimmed) return 'Untitled';
+            return trimmed.replace(/\.pdf$/i, '') || 'Untitled';
+        }
+
         function updateDocTitle() {
-            if (!docTitleEl) return;
+            if (!docTitleEl || docTitleEditing) return;
             const name = state.driveFileName || (state.exportName ? `${state.exportName}` : 'Untitled');
-            docTitleEl.textContent = name;
+            docTitleEl.textContent = getBaseDocTitle(name);
+        }
+
+        function normalizeDocTitleInput(value) {
+            const cleaned = (value || '').replace(/\s+/g, ' ').trim();
+            if (!cleaned) return 'Untitled';
+            const noExt = cleaned.replace(/\.pdf$/i, '').trim();
+            return sanitizeFilename(noExt) || 'Untitled';
+        }
+
+        async function renameDriveFile(newBaseName, fallbackBase) {
+            if (!state.driveFileId) return;
+            try {
+                await ensureDriveToken(false);
+                const nextName = newBaseName.toLowerCase().endsWith('.pdf')
+                    ? newBaseName
+                    : `${newBaseName}.pdf`;
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name: nextName })
+                });
+                const data = await res.json();
+                state.driveFileName = data.name || nextName;
+                updateDocTitle();
+                saveDriveSession();
+            } catch (err) {
+                console.error('Failed to rename Drive file:', err);
+                if (fallbackBase) {
+                    state.exportName = fallbackBase;
+                }
+                updateDocTitle();
+                showStatus('Rename failed', { preserveState: true });
+            }
+        }
+
+        function beginDocTitleEdit() {
+            if (!docTitleEl) return;
+            docTitleEditing = true;
+            docTitleOriginal = docTitleEl.textContent || '';
+            docTitleEl.classList.add('editing');
+        }
+
+        function finishDocTitleEdit(commit) {
+            if (!docTitleEl) return;
+            const nextBase = normalizeDocTitleInput(docTitleEl.textContent || '');
+            const originalBase = normalizeDocTitleInput(docTitleOriginal);
+            docTitleEditing = false;
+            docTitleEl.classList.remove('editing');
+
+            if (!commit) {
+                docTitleEl.textContent = getBaseDocTitle(originalBase);
+                updateDocTitle();
+                return;
+            }
+
+            if (nextBase !== originalBase) {
+                state.exportName = nextBase;
+                const nextFileName = `${nextBase}.pdf`;
+                if (state.driveFileId) {
+                    renameDriveFile(nextBase, originalBase);
+                } else {
+                    state.driveFileName = nextFileName;
+                }
+                saveDriveSession();
+            }
+
+            updateDocTitle();
         }
 
         function showDriveHome() {
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
+            closeDriveProfileMenu();
             saveViewMode('drive');
         }
 
@@ -2855,6 +3314,7 @@
             if (editorView) editorView.classList.remove('hidden');
             requestAnimationFrame(() => {
                 clampToolbarPosition();
+                scheduleVisiblePageUpdate(true);
             });
             saveViewMode('editor');
         }
@@ -2883,22 +3343,26 @@
         function updateDriveAuthUI() {
             const signedIn = !!driveAccessToken;
             if (driveLoginBtn) driveLoginBtn.style.display = signedIn ? 'none' : 'inline-flex';
-            if (driveLogoutBtn) driveLogoutBtn.style.display = signedIn ? 'inline-flex' : 'none';
+            if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !signedIn);
             if (driveSearchInput) driveSearchInput.disabled = !signedIn;
-            if (driveRefreshBtn) driveRefreshBtn.disabled = !signedIn;
             if (driveNewBtn) driveNewBtn.disabled = !signedIn;
             if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
             if (driveStatusEl) {
                 driveStatusEl.textContent = signedIn ? 'Loading your PDFs...' : 'Sign in to browse your Drive.';
             }
             if (!signedIn) {
-                if (driveRecentsEmptyEl) driveRecentsEmptyEl.classList.add('hidden');
+                if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
+                closeDriveProfileMenu();
             } else if (state.driveAutosave) {
                 clearTimeout(driveSaveTimeout);
                 driveSaveTimeout = setTimeout(() => {
                     queueDriveSave();
                 }, 500);
+            }
+            if (signedIn) {
+                loadDriveProfile();
+                restorePdfBackgroundsIfNeeded();
             }
         }
 
@@ -2944,18 +3408,103 @@
             state.driveFolderId = null;
             state.driveAutosave = false;
             driveRecentsCache = [];
+            driveStarredCache = [];
             driveFolderCache = { folders: [], files: [] };
             driveFolderStack = [{ id: 'root', name: 'My Drive' }];
             driveCurrentFolderId = 'root';
             if (driveRecentsEl) driveRecentsEl.innerHTML = '';
+            if (driveStarredEl) driveStarredEl.innerHTML = '';
             if (driveFoldersEl) driveFoldersEl.innerHTML = '';
             if (driveFolderFilesEl) driveFolderFilesEl.innerHTML = '';
             if (driveBreadcrumbsEl) driveBreadcrumbsEl.innerHTML = '';
             if (driveStatusEl) driveStatusEl.textContent = 'Sign in to browse your Drive.';
+            driveUserProfile = null;
+            updateDriveProfileUI(null);
+            closeDriveProfileMenu();
             clearDriveTokenStorage();
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
             clearDriveSession();
             updateDriveAuthUI();
+        }
+
+        function updateDriveProfileUI(profile) {
+            const fallback = DEFAULT_AVATAR;
+            if (driveProfileAvatar) {
+                driveProfileAvatar.src = profile?.photo || fallback;
+            }
+            if (driveProfileAvatarMenu) {
+                driveProfileAvatarMenu.src = profile?.photo || fallback;
+            }
+            if (driveProfileName) {
+                driveProfileName.textContent = profile?.name || 'Signed in';
+            }
+            if (driveProfileEmail) {
+                driveProfileEmail.textContent = profile?.email || '';
+            }
+        }
+
+        async function loadDriveProfile() {
+            if (!driveAccessToken) return;
+            if (driveUserProfile && driveUserProfile.token === driveAccessToken) {
+                updateDriveProfileUI(driveUserProfile);
+                return;
+            }
+            try {
+                const res = await driveFetch('https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress,photoLink)');
+                const data = await res.json();
+                const user = data?.user;
+                if (!user) return;
+                driveUserProfile = {
+                    name: user.displayName || 'Signed in',
+                    email: user.emailAddress || '',
+                    photo: user.photoLink || DEFAULT_AVATAR,
+                    token: driveAccessToken
+                };
+                updateDriveProfileUI(driveUserProfile);
+            } catch (err) {
+                console.error('Failed to load Drive profile:', err);
+            }
+        }
+
+        function toggleDriveProfileMenu(force) {
+            if (!driveProfileMenu) return;
+            const shouldOpen = typeof force === 'boolean'
+                ? force
+                : driveProfileMenu.classList.contains('hidden');
+            driveProfileMenu.classList.toggle('hidden', !shouldOpen);
+            if (driveProfileBtn) {
+                driveProfileBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            }
+        }
+
+        function closeDriveProfileMenu() {
+            if (!driveProfileMenu) return;
+            driveProfileMenu.classList.add('hidden');
+            if (driveProfileBtn) {
+                driveProfileBtn.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        async function restorePdfBackgroundsIfNeeded() {
+            if (!driveAccessToken || activePdfDocument || !state.driveFileId) return;
+            const needsPdf = state.pages.some(page => page?.pdfPageIndex);
+            if (!needsPdf) return;
+            if (pdfRestoreInProgress) return;
+            pdfRestoreInProgress = true;
+            try {
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`);
+                const arrayBuffer = await res.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                resetPdfState();
+                activePdfDocument = pdf;
+                activePdfPageCount = pdf.numPages;
+                pdfBackgroundScale = getPdfBackgroundScale(activePdfPageCount);
+                scheduleVisiblePageUpdate(true);
+            } catch (err) {
+                console.error('Failed to restore PDF backgrounds:', err);
+            } finally {
+                pdfRestoreInProgress = false;
+            }
         }
 
         async function driveFetch(url, options = {}) {
@@ -3096,12 +3645,19 @@
         function renderDriveRecents(files) {
             if (!driveRecentsEl) return;
             driveRecentsEl.innerHTML = '';
+            if (!files || files.length === 0) return;
+            files.forEach(file => driveRecentsEl.appendChild(createDriveFileCard(file)));
+        }
+
+        function renderDriveStarred(files) {
+            if (!driveStarredEl) return;
+            driveStarredEl.innerHTML = '';
             if (!files || files.length === 0) {
-                if (driveRecentsEmptyEl) driveRecentsEmptyEl.classList.remove('hidden');
+                if (driveStarredEmptyEl) driveStarredEmptyEl.classList.remove('hidden');
                 return;
             }
-            if (driveRecentsEmptyEl) driveRecentsEmptyEl.classList.add('hidden');
-            files.forEach(file => driveRecentsEl.appendChild(createDriveFileCard(file)));
+            if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
+            files.forEach(file => driveStarredEl.appendChild(createDriveFileCard(file)));
         }
 
         function renderDriveFolderContents(folders, files) {
@@ -3159,6 +3715,15 @@
             renderDriveRecents(driveRecentsCache);
         }
 
+        async function refreshDriveStarred() {
+            const q = encodeURIComponent(`mimeType='application/pdf' and starred=true and trashed=false`);
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink)');
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
+            const data = await res.json();
+            driveStarredCache = data.files || [];
+            renderDriveStarred(driveStarredCache);
+        }
+
         async function refreshDriveFolderContents() {
             try {
                 const search = driveSearchInput ? driveSearchInput.value.trim() : '';
@@ -3197,8 +3762,9 @@
         function updateDriveStatusCounts() {
             if (!driveStatusEl || !driveAccessToken) return;
             const recentCount = driveRecentsCache.length;
+            const starredCount = driveStarredCache.length;
             const folderCount = driveFolderCache.files.length;
-            driveStatusEl.textContent = `Recents: ${recentCount} - This folder: ${folderCount} PDF${folderCount !== 1 ? 's' : ''}.`;
+            driveStatusEl.textContent = `Recents: ${recentCount} | Starred: ${starredCount} | This folder: ${folderCount} PDF${folderCount !== 1 ? 's' : ''}.`;
         }
 
         async function refreshDriveFiles() {
@@ -3211,7 +3777,7 @@
             try {
                 await ensureDriveToken(false);
                 renderDriveBreadcrumbs();
-                await Promise.all([refreshDriveRecents(), refreshDriveFolderContents()]);
+                await Promise.all([refreshDriveRecents(), refreshDriveStarred(), refreshDriveFolderContents()]);
                 updateDriveStatusCounts();
             } catch (err) {
                 driveStatusEl.textContent = 'Unable to load Drive files.';
@@ -3259,10 +3825,14 @@
             state.overscrollY = 0;
             clearSelection();
             state.selectionTransform = null;
+            resetPdfState();
             state.pages = [{
                 strokes: [],
                 backgroundImage: null,
-                images: []
+                backgroundSource: 'template',
+                pdfPageIndex: null,
+                images: [],
+                needsRedraw: true
             }];
             state.history = [];
             state.historyIndex = -1;
@@ -3932,15 +4502,17 @@
         // Redraw page with smooth quadratic curves
         function redrawPage(pageIndex) {
             const canvas = document.querySelector(`canvas[data-page="${pageIndex}"]`);
-            if (!canvas) return;
+            const page = state.pages[pageIndex];
+            if (!page) return;
+            if (!canvas) {
+                page.needsRedraw = true;
+                return;
+            }
 
             const ctx = canvas.getContext('2d');
             ctx.save();
             ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
-
-            const page = state.pages[pageIndex];
-            if (!page) return;
 
             drawImagesOnContext(ctx, page, pageIndex, redrawPage);
 
@@ -3952,6 +4524,7 @@
             }
 
             ctx.restore();
+            page.needsRedraw = false;
         }
 
         // Render all pages
@@ -3959,10 +4532,12 @@
             clearSelection();
             canvasContainer.innerHTML = '';
             canvasContainer.appendChild(addPageIndicator);
+            activePageIndices.clear();
             state.pages.forEach((_, index) => {
-                createPageElement(index, false);
+                createPageElement(index, false, false);
             });
             updateAddPageIndicator();
+            scheduleVisiblePageUpdate(true);
         }
 
         function bakeLegacyEraserAreaStrokes() {
@@ -4077,21 +4652,36 @@
             if (driveLoginBtn) {
                 driveLoginBtn.addEventListener('click', signInDrive);
             }
-            if (driveLogoutBtn) {
-                driveLogoutBtn.addEventListener('click', signOutDrive);
-            }
-            if (driveRefreshBtn) {
-                driveRefreshBtn.addEventListener('click', refreshDriveFiles);
-            }
             if (driveNewBtn) {
                 driveNewBtn.addEventListener('click', createNewDriveDocument);
+            }
+            if (driveMenuRefreshBtn) {
+                driveMenuRefreshBtn.addEventListener('click', () => {
+                    closeDriveProfileMenu();
+                    refreshDriveFiles();
+                });
+            }
+            if (driveMenuLogoutBtn) {
+                driveMenuLogoutBtn.addEventListener('click', () => {
+                    closeDriveProfileMenu();
+                    signOutDrive();
+                });
+            }
+            if (driveProfileBtn) {
+                driveProfileBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleDriveProfileMenu();
+                });
             }
             if (driveHomeBtn) {
                 const goHome = () => {
                     showDriveHome();
                     refreshDriveFiles();
                 };
-                driveHomeBtn.addEventListener('click', goHome);
+                driveHomeBtn.addEventListener('click', (e) => {
+                    if (docTitleEl && docTitleEl.contains(e.target)) return;
+                    goHome();
+                });
                 driveHomeBtn.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -4099,6 +4689,51 @@
                     }
                 });
             }
+            if (docTitleEl) {
+                docTitleEl.addEventListener('focus', () => beginDocTitleEdit());
+                docTitleEl.addEventListener('blur', () => {
+                    if (!docTitleEditing) return;
+                    finishDocTitleEdit(true);
+                });
+                docTitleEl.addEventListener('keydown', (e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        docTitleEl.blur();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        finishDocTitleEdit(false);
+                        docTitleEl.blur();
+                    }
+                });
+                docTitleEl.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                });
+                docTitleEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            }
+            if (driveProfileAvatar) {
+                driveProfileAvatar.addEventListener('error', () => {
+                    driveProfileAvatar.src = DEFAULT_AVATAR;
+                });
+            }
+            if (driveProfileAvatarMenu) {
+                driveProfileAvatarMenu.addEventListener('error', () => {
+                    driveProfileAvatarMenu.src = DEFAULT_AVATAR;
+                });
+            }
+            document.addEventListener('click', (e) => {
+                if (!driveProfileMenu || driveProfileMenu.classList.contains('hidden')) return;
+                if (driveProfileMenu.contains(e.target)) return;
+                if (driveProfileBtn && driveProfileBtn.contains(e.target)) return;
+                closeDriveProfileMenu();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeDriveProfileMenu();
+                }
+            });
             if (driveBackBtn) {
                 driveBackBtn.addEventListener('click', () => {
                     if (driveFolderStack.length <= 1) return;
@@ -4157,7 +4792,10 @@
             document.getElementById('btn-import-pdf').addEventListener('click', () => pdfInput.click());
             pdfInput.addEventListener('change', importPDF);
             document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
-            document.getElementById('btn-reset-document').addEventListener('click', openResetModal);
+            const resetBtn = document.getElementById('btn-reset-document');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', openResetModal);
+            }
 
             // Undo/Redo buttons
             document.getElementById('btn-undo').addEventListener('click', undo);
@@ -4294,16 +4932,16 @@
 
         function getContentHeight() {
             const pageCount = state.pages.length;
-            const gap = 30;
-            const padding = 30;
+            const gap = PAGE_GAP;
+            const padding = PAGE_PADDING;
             if (pageCount === 0) return 0;
             return padding * 2 + pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
         }
 
         function getPageBounds() {
             const pageCount = state.pages.length || 1;
-            const gap = 30;
-            const padding = 30;
+            const gap = PAGE_GAP;
+            const padding = PAGE_PADDING;
             const height = pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
             return {
                 left: padding,
@@ -4349,8 +4987,8 @@
                 addPageIndicator.style.opacity = 0;
                 return;
             }
-            const gap = 30;
-            const padding = 30;
+            const gap = PAGE_GAP;
+            const padding = PAGE_PADDING;
             const bottom = padding + pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
             addPageIndicator.style.left = '50%';
             addPageIndicator.style.top = (bottom + 20) + 'px';
@@ -4985,6 +5623,7 @@
             clampPanToVisible();
             canvasContainer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
             scheduleViewSave();
+            scheduleVisiblePageUpdate();
         }
 
         function setZoom(newZoom) {
@@ -5012,13 +5651,14 @@
                 const item = document.createElement('div');
                 item.className = 'page-item';
                 const strokeCount = getVisibleStrokeCount(page);
+                const isPdfBackground = page.backgroundSource === 'pdf' || Number.isFinite(page.pdfPageIndex);
                 item.innerHTML = `
                     <div class="page-thumbnail">
                         <canvas id="thumb-${index}" width="50" height="70"></canvas>
                     </div>
                     <div class="page-info">
                         <h3>Page ${index + 1}</h3>
-                        <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${page.backgroundImage ? ' - PDF' : ''}</p>
+                        <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${isPdfBackground ? ' - PDF' : ''}</p>
                     </div>
                     <div class="page-actions">
                         <button class="page-action-btn" data-action="goto" data-page="${index}" title="Go to page">
@@ -5069,6 +5709,16 @@
                     drawThumbnailStrokes(ctx, page, pageIndex);
                 };
                 img.src = page.backgroundImage;
+            } else if (page.pdfPageIndex) {
+                ctx.fillStyle = '#f2f2f2';
+                ctx.fillRect(2, 2, 46, 66);
+                ctx.strokeStyle = '#d0d0d0';
+                ctx.strokeRect(2, 2, 46, 66);
+                ctx.fillStyle = '#9a9a9a';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('PDF', 25, 38);
+                drawThumbnailStrokes(ctx, page, pageIndex);
             } else {
                 ctx.strokeStyle = '#ffde00';
                 ctx.lineWidth = 1;
@@ -5104,8 +5754,8 @@
             if (pageWrapper) {
                 const rect = pageWrapper.getBoundingClientRect();
                 const viewportRect = canvasViewport.getBoundingClientRect();
-                state.panY = -(pageIndex * (A4_HEIGHT + 30) * state.zoom) + viewportRect.height / 2 - (A4_HEIGHT * state.zoom) / 2;
-                state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - 30;
+                state.panY = -(pageIndex * (A4_HEIGHT + PAGE_GAP) * state.zoom) + viewportRect.height / 2 - (A4_HEIGHT * state.zoom) / 2;
+                state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - PAGE_PADDING;
                 updateTransform();
             }
         }
@@ -5157,10 +5807,14 @@
             closeResetModal();
             clearSelection();
             state.selectionTransform = null;
+            resetPdfState();
             state.pages = [{
                 strokes: [],
                 backgroundImage: null,
-                images: []
+                backgroundSource: 'template',
+                pdfPageIndex: null,
+                images: [],
+                needsRedraw: true
             }];
             state.history = [];
             state.historyIndex = -1;
@@ -5570,11 +6224,20 @@
             }, null);
 
             if (best && Array.isArray(best.pages)) {
-                state.pages = best.pages.map(page => ({
-                    strokes: Array.isArray(page?.strokes) ? page.strokes : [],
-                    backgroundImage: page?.backgroundImage || null,
-                    images: Array.isArray(page?.images) ? page.images : []
-                }));
+                state.pages = best.pages.map(page => {
+                    const backgroundImage = page?.backgroundImage || null;
+                    const pdfPageIndex = Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null;
+                    const backgroundSource = page?.backgroundSource
+                        || (pdfPageIndex ? 'pdf' : (backgroundImage ? 'custom' : 'template'));
+                    return {
+                        strokes: Array.isArray(page?.strokes) ? page.strokes : [],
+                        backgroundImage,
+                        backgroundSource,
+                        pdfPageIndex,
+                        images: Array.isArray(page?.images) ? page.images : [],
+                        needsRedraw: true
+                    };
+                });
                 state.lastSavedAt = typeof best.savedAt === 'number' ? best.savedAt : null;
             } else {
                 state.pages = [];
@@ -5673,6 +6336,16 @@
             }
             driveSaveInProgress = true;
             try {
+                const needsPdf = state.pages.some(page => page?.pdfPageIndex);
+                if (needsPdf && !activePdfDocument) {
+                    await restorePdfBackgroundsIfNeeded();
+                }
+                if (needsPdf && !activePdfDocument) {
+                    showStatus('Waiting for PDF...', { preserveState: true });
+                    driveSaveInProgress = false;
+                    scheduleDriveSave();
+                    return;
+                }
                 showStatus('Saving to Drive...', { saving: true });
                 const fileId = await ensureDriveFile();
                 const pdfBlob = await buildPdfBlob();
@@ -6050,12 +6723,17 @@
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 const numPages = pdf.numPages;
 
+                resetPdfState();
+                activePdfDocument = pdf;
+                activePdfPageCount = numPages;
+                pdfBackgroundScale = getPdfBackgroundScale(numPages);
+
                 // Try to extract embedded stroke data from PDF metadata
                 let embeddedStrokes = null;
                 try {
                     const metadata = await pdf.getMetadata();
                     const keywords = metadata?.info?.Keywords || '';
-                    
+
                     if (keywords.startsWith('STROKES_DATA:')) {
                         const encodedData = keywords.substring('STROKES_DATA:'.length);
                         const decodedString = decodeURIComponent(escape(atob(encodedData)));
@@ -6072,85 +6750,49 @@
                 state.historyIndex = -1;
                 updateHistoryButtons();
                 canvasContainer.innerHTML = '';
+                activePageIndices.clear();
 
                 for (let i = 1; i <= numPages; i++) {
-                    showLoading(`Processing page ${i} of ${numPages}...`);
-                    
-                    const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 2 });
-
-                    // Create temp canvas for PDF page
-                    const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = viewport.width;
-                    tempCanvas.height = viewport.height;
-                    const tempCtx = tempCanvas.getContext('2d');
-
-                    await page.render({
-                        canvasContext: tempCtx,
-                        viewport: viewport
-                    }).promise;
-
-                    // Convert to base64 and resize to A4
-                    const a4Canvas = document.createElement('canvas');
-                    a4Canvas.width = A4_WIDTH * CANVAS_SCALE;
-                    a4Canvas.height = A4_HEIGHT * CANVAS_SCALE;
-                    const a4Ctx = a4Canvas.getContext('2d');
-                    
-                    a4Ctx.fillStyle = 'white';
-                    a4Ctx.fillRect(0, 0, a4Canvas.width, a4Canvas.height);
-                    
-                    const scale = Math.min(
-                        a4Canvas.width / viewport.width,
-                        a4Canvas.height / viewport.height
-                    );
-                    const offsetX = (a4Canvas.width - viewport.width * scale) / 2;
-                    const offsetY = (a4Canvas.height - viewport.height * scale) / 2;
-                    
-                    a4Ctx.drawImage(
-                        tempCanvas,
-                        offsetX, offsetY,
-                        viewport.width * scale,
-                        viewport.height * scale
-                    );
-
-                    // Check if we have embedded strokes for this page
-                    if (embeddedStrokes && embeddedStrokes[i - 1]) {
-                        const pageData = embeddedStrokes[i - 1];
+                    const pageData = embeddedStrokes ? embeddedStrokes[i - 1] : null;
+                    if (pageData) {
                         const hasImagesKey = Object.prototype.hasOwnProperty.call(pageData, 'images');
                         const restoredImages = Array.isArray(pageData.images)
                             ? pageData.images
                             : [];
                         const useLegacyRaster = !hasImagesKey;
-                        const baseBackground = (useLegacyRaster || pageData.hasCustomBackground)
-                            ? a4Canvas.toDataURL('image/jpeg', 0.85)
-                            : null;
-                        const restoredStrokes = useLegacyRaster
-                            ? []
-                            : (pageData.strokes || []);
-                        
-                        // If page had custom background, keep PDF as background
-                        // If not (was using default SVG), use default SVG background
-                        if (baseBackground) {
+                        const restoredStrokes = useLegacyRaster ? [] : (pageData.strokes || []);
+                        const backgroundSource = pageData.backgroundSource
+                            || (pageData.hasCustomBackground ? 'pdf' : 'template');
+                        const needsPdfBackground = useLegacyRaster || backgroundSource !== 'template';
+                        const pagePdfIndex = Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : i;
+
+                        if (needsPdfBackground) {
                             state.pages.push({
                                 strokes: restoredStrokes,
-                                backgroundImage: baseBackground,
-                                images: useLegacyRaster ? [] : restoredImages
+                                backgroundImage: null,
+                                backgroundSource: 'pdf',
+                                pdfPageIndex: pagePdfIndex,
+                                images: useLegacyRaster ? [] : restoredImages,
+                                needsRedraw: true
                             });
                         } else {
-                            // Original was default template, don't use PDF as background
-                            // (PDF contains rendered strokes, we want clean template + vector strokes)
                             state.pages.push({
                                 strokes: restoredStrokes,
-                                backgroundImage: null, // Will use default SVG
-                                images: restoredImages
+                                backgroundImage: null,
+                                backgroundSource: 'template',
+                                pdfPageIndex: null,
+                                images: restoredImages,
+                                needsRedraw: true
                             });
                         }
                     } else {
-                        // No embedded data - this is a regular PDF, use as background
                         state.pages.push({
                             strokes: [],
-                            backgroundImage: a4Canvas.toDataURL('image/jpeg', 0.85),
-                            images: []
+                            backgroundImage: null,
+                            backgroundSource: 'pdf',
+                            pdfPageIndex: i,
+                            images: [],
+                            needsRedraw: true
                         });
                     }
                 }
@@ -6159,7 +6801,7 @@
                 scheduleSave(true);
                 hideLoading();
                 centerViewOnTop();
-                
+
                 if (embeddedStrokes) {
                     const totalStrokes = embeddedStrokes.reduce((sum, p) => sum + (p.strokes?.length || 0), 0);
                     showStatus(`PDF imported: ${numPages} pages, ${totalStrokes} strokes restored`, { preserveState: true });
@@ -6194,7 +6836,9 @@
             const strokeData = state.pages.map(page => ({
                 strokes: page.strokes,
                 images: Array.isArray(page.images) ? page.images : [],
-                hasCustomBackground: !!page.backgroundImage
+                hasCustomBackground: page.backgroundSource === 'pdf' || !!page.backgroundImage,
+                backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
+                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null
             }));
 
             // Embed stroke data as PDF metadata (custom property)
@@ -6232,6 +6876,22 @@
                         img.onerror = resolve;
                         img.src = page.backgroundImage;
                     });
+                } else if (page.pdfPageIndex && activePdfDocument) {
+                    const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
+                    const baseViewport = pdfPage.getViewport({ scale: 1 });
+                    const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
+                    const viewport = pdfPage.getViewport({ scale });
+                    const pdfCanvas = document.createElement('canvas');
+                    pdfCanvas.width = viewport.width;
+                    pdfCanvas.height = viewport.height;
+                    const pdfCtx = pdfCanvas.getContext('2d');
+                    await pdfPage.render({ canvasContext: pdfCtx, viewport }).promise;
+                    const offsetX = (tempCanvas.width - viewport.width) / 2;
+                    const offsetY = (tempCanvas.height - viewport.height) / 2;
+                    tempCtx.drawImage(pdfCanvas, offsetX, offsetY, viewport.width, viewport.height);
+                    if (pdfPage.cleanup) {
+                        pdfPage.cleanup();
+                    }
                 } else {
                     await new Promise((resolve) => {
                         const img = new Image();
