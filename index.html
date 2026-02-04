@@ -133,8 +133,9 @@
 
         .mode-toggle-btn {
             min-width: 140px;
+            min-height: var(--header-btn-size);
             justify-content: space-between;
-            padding: 10px 12px;
+            padding: 0 12px;
         }
 
         .mode-toggle-text {
@@ -168,7 +169,7 @@
         }
 
         .mode-toggle-btn.is-editing .mode-toggle-pill {
-            background: var(--accent-blue);
+            background: var(--accent-orange);
         }
 
         .mode-toggle-btn.is-editing .mode-toggle-knob {
@@ -181,6 +182,7 @@
             border-radius: 50%;
             background: var(--accent-green);
             box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+            transition: opacity 0.25s ease, background-color 0.25s ease;
         }
 
         .save-indicator.saving {
@@ -200,6 +202,25 @@
             color: var(--text-secondary);
             opacity: 0.75;
             letter-spacing: 0.01em;
+            transition: opacity 0.25s ease;
+        }
+
+        .save-indicator.flash {
+            animation: save-indicator-flash 0.45s ease;
+        }
+
+        .save-timestamp.flash {
+            animation: save-text-fade 0.45s ease;
+        }
+
+        @keyframes save-indicator-flash {
+            0% { opacity: 0.45; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes save-text-fade {
+            0% { opacity: 0.35; }
+            100% { opacity: 0.75; }
         }
 
         #editor-view.read-only #toolbar {
@@ -1449,6 +1470,7 @@
 
         .drive-recents .drive-card {
             min-width: 190px;
+            flex: 0 0 190px;
             scroll-snap-align: start;
         }
 
@@ -2037,8 +2059,8 @@
             <div class="header-actions">
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
-                <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button" aria-pressed="false" aria-label="Modo lectura" title="Cambiar entre lectura y edicion">
-                    <span class="mode-toggle-text" id="mode-toggle-label">Lectura</span>
+                <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button" aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
+                    <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
                     <span class="mode-toggle-pill" aria-hidden="true">
                         <span class="mode-toggle-knob"></span>
                     </span>
@@ -2798,10 +2820,10 @@
             if (modeToggleBtn) {
                 modeToggleBtn.classList.toggle('is-editing', !next);
                 modeToggleBtn.setAttribute('aria-pressed', next ? 'false' : 'true');
-                modeToggleBtn.setAttribute('aria-label', next ? 'Modo lectura' : 'Modo editar');
+                modeToggleBtn.setAttribute('aria-label', next ? 'Read mode' : 'Edit mode');
             }
             if (modeToggleLabel) {
-                modeToggleLabel.textContent = next ? 'Lectura' : 'Editar';
+                modeToggleLabel.textContent = next ? 'Read' : 'Edit';
             }
             if (docTitleEl) {
                 docTitleEl.setAttribute('contenteditable', next ? 'false' : 'true');
@@ -8102,8 +8124,8 @@
             const diffMs = Math.max(0, now - timestamp);
             const diffMin = Math.floor(diffMs / 60000);
             if (diffMin < 15) {
-                if (diffMin < 1) return 'hace <1 min';
-                return diffMin === 1 ? 'hace 1 min' : `hace ${diffMin} mins`;
+                if (diffMin < 1) return '<1 min ago';
+                return diffMin === 1 ? '1 min ago' : `${diffMin} mins ago`;
             }
             return new Date(timestamp).toLocaleTimeString(undefined, {
                 hour: '2-digit',
@@ -8114,7 +8136,7 @@
         function updateSaveTimestamp() {
             const timestampEl = document.getElementById('save-timestamp');
             if (!timestampEl) return;
-            const label = state.lastSavedAt ? `Último: ${formatTime(state.lastSavedAt)}` : 'Último: --:--';
+            const label = state.lastSavedAt ? `Last: ${formatTime(state.lastSavedAt)}` : 'Last: --:--';
             timestampEl.textContent = label;
         }
 
@@ -8667,6 +8689,7 @@
         function showStatus(text, options = {}) {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
+            const timestampEl = document.getElementById('save-timestamp');
 
             let saving = false;
             let error = false;
@@ -8689,6 +8712,14 @@
             }
             indicator.title = text;
             indicator.setAttribute('aria-label', text);
+            indicator.classList.remove('flash');
+            void indicator.offsetWidth;
+            indicator.classList.add('flash');
+            if (timestampEl) {
+                timestampEl.classList.remove('flash');
+                void timestampEl.offsetWidth;
+                timestampEl.classList.add('flash');
+            }
 
             if (savedAt) {
                 state.lastSavedAt = savedAt;
