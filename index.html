@@ -486,6 +486,15 @@
             backdrop-filter: blur(8px);
         }
 
+        body.view-mode #toolbar {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        body.view-mode #eraser-menu {
+            display: none !important;
+        }
+
         #toolbar.toolbar-tilt-forward {
             animation: toolbar-tilt-forward 0.36s cubic-bezier(0.22, 0.61, 0.36, 1);
         }
@@ -2061,6 +2070,7 @@
             <div class="header-actions">
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
+                <button class="btn btn-secondary" id="btn-mode-toggle" title="Switch to view mode" aria-pressed="false">View</button>
                 <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="15 3 21 3 21 9"/>
@@ -2746,6 +2756,7 @@
             driveFileName: null,
             driveFolderId: null,
             driveAutosave: false,
+            isEditMode: true,
             panVelocityX: 0,
             panVelocityY: 0,
             lastPanTime: 0,
@@ -2773,6 +2784,9 @@
         const statusBar = document.getElementById('status-bar');
         const statusText = document.getElementById('status-text');
         const pdfInput = document.getElementById('pdf-input');
+        const modeToggleBtn = document.getElementById('btn-mode-toggle');
+        const editPagesBtn = document.getElementById('btn-edit-pages');
+        const importPdfBtn = document.getElementById('btn-import-pdf');
         const loadingOverlay = document.getElementById('loading-overlay');
         const loadingText = document.getElementById('loading-text');
         const driveHome = document.getElementById('drive-home');
@@ -2857,6 +2871,8 @@
         let driveRefreshInProgress = false;
         let driveOpenNeedsRefresh = false;
         let driveAutosavePreferred = false;
+        let driveLoadToken = 0;
+        let driveDirty = false;
         let driveUserProfile = null;
         let docTitleEditing = false;
         let docTitleOriginal = '';
@@ -2900,6 +2916,7 @@
             syncEraserMenuState();
             initDriveAuth();
             updateDocTitle();
+            setEditorMode('edit', { force: true });
             updateDriveProfileUI(null);
             if (!saveTimestampInterval) {
                 saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
@@ -3395,6 +3412,7 @@
             const lassoCanvas = wrapper ? wrapper.querySelector('.lasso-overlay') : null;
 
             canvas.addEventListener('pointerdown', (e) => {
+                if (!state.isEditMode) return;
                 if (state.currentTool === 'lasso') {
                     if (e.pointerType === 'touch') return;
                     if (!lassoCanvas) return;
@@ -3444,6 +3462,7 @@
             });
 
             canvas.addEventListener('pointermove', (e) => {
+                if (!state.isEditMode) return;
                 if (isLassoing) {
                     const pos = getCanvasPos(canvas, e);
                     lassoPoints.push(pos);
@@ -4361,6 +4380,7 @@
 
         function beginDocTitleEdit() {
             if (!docTitleEl) return;
+            if (!state.isEditMode) return;
             docTitleEditing = true;
             docTitleOriginal = docTitleEl.textContent || '';
             docTitleEl.classList.add('editing');
@@ -4466,7 +4486,7 @@
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
-            } else if (state.driveAutosave && !driveOpenNeedsRefresh) {
+            } else if (state.driveAutosave && !driveOpenNeedsRefresh && driveDirty && state.isEditMode) {
                 clearTimeout(driveSaveTimeout);
                 driveSaveTimeout = setTimeout(() => {
                     queueDriveSave();
@@ -4519,6 +4539,7 @@
             }
             driveAccessToken = null;
             driveTokenExpiry = 0;
+            driveDirty = false;
             state.driveFileId = null;
             state.driveFileName = null;
             state.driveFolderId = null;
@@ -4633,13 +4654,17 @@
             if (editorView && editorView.classList.contains('hidden')) return;
 
             driveRefreshInProgress = true;
+            const currentToken = ++driveLoadToken;
+            const targetFileId = state.driveFileId;
+            const isCurrent = () => currentToken === driveLoadToken && targetFileId === state.driveFileId;
             showEditorView();
             showLoading('Refreshing PDF...');
             try {
                 await ensureDriveToken(false);
+                driveDirty = false;
                 let latestName = state.driveFileName;
                 try {
-                    const metaRes = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=name`);
+                    const metaRes = await driveFetch(`https://www.googleapis.com/drive/v3/files/${targetFileId}?fields=name`);
                     const meta = await metaRes.json();
                     if (meta?.name) {
                         latestName = meta.name;
@@ -4648,10 +4673,12 @@
                     // Keep existing name if metadata fetch fails.
                 }
 
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`);
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${targetFileId}?alt=media`);
                 const arrayBuffer = await res.arrayBuffer();
-                await importPDFArrayBuffer(arrayBuffer);
+                if (!isCurrent()) return;
+                await importPDFArrayBuffer(arrayBuffer, { markDirty: false });
 
+                if (!isCurrent()) return;
                 state.driveFileName = latestName || state.driveFileName;
                 if (state.driveFileName) {
                     const baseName = state.driveFileName.replace(/\.pdf$/i, '');
@@ -4659,16 +4686,22 @@
                 }
 
                 driveOpenNeedsRefresh = false;
-                const shouldAutosave = driveAutosavePreferred || !!state.driveFileId;
-                state.driveAutosave = shouldAutosave;
-                driveAutosavePreferred = shouldAutosave;
+                const preferredAutosave = driveAutosavePreferred || !!state.driveFileId;
+                driveAutosavePreferred = preferredAutosave;
+                state.driveAutosave = preferredAutosave && state.isEditMode;
                 updateDocTitle();
                 saveDriveSession();
-                showStatus('PDF loaded', { preserveState: true });
+                if (isCurrent()) {
+                    showStatus('PDF loaded', { preserveState: true });
+                }
             } catch (err) {
-                showStatus('Failed to refresh PDF', { preserveState: true });
+                if (isCurrent()) {
+                    showStatus('Failed to refresh PDF', { preserveState: true });
+                }
             } finally {
-                hideLoading();
+                if (isCurrent()) {
+                    hideLoading();
+                }
                 driveRefreshInProgress = false;
             }
         }
@@ -5137,10 +5170,12 @@
 
         async function openDriveFile(file) {
             if (!file || !file.id) return;
-            if (driveOpenInProgress) return;
             closeDriveCardMenu();
             driveOpenInProgress = true;
             driveOpenFileId = file.id;
+            const currentToken = ++driveLoadToken;
+            const requestedId = file.id;
+            const isCurrent = () => currentToken === driveLoadToken && driveOpenFileId === requestedId;
             state.zoom = 1;
             state.panX = 0;
             state.panY = 0;
@@ -5149,25 +5184,34 @@
             showLoading('Opening PDF...');
             try {
                 await ensureDriveToken(false);
+                driveDirty = false;
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
                 const arrayBuffer = await res.arrayBuffer();
-                await importPDFArrayBuffer(arrayBuffer);
+                if (!isCurrent()) return;
+                await importPDFArrayBuffer(arrayBuffer, { markDirty: false });
+                if (!isCurrent()) return;
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
-                state.driveAutosave = true;
-                driveOpenNeedsRefresh = false;
                 driveAutosavePreferred = true;
+                state.driveAutosave = state.isEditMode;
+                driveOpenNeedsRefresh = false;
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
                 updateDocTitle();
                 saveDriveSession();
-                showStatus('PDF loaded', { preserveState: true });
+                if (isCurrent()) {
+                    showStatus('PDF loaded', { preserveState: true });
+                }
             } catch (err) {
-                showStatus('Failed to load PDF', { preserveState: true });
+                if (isCurrent()) {
+                    showStatus('Failed to load PDF', { preserveState: true });
+                }
             } finally {
-                hideLoading();
-                driveOpenInProgress = false;
-                driveOpenFileId = null;
+                if (isCurrent()) {
+                    hideLoading();
+                    driveOpenInProgress = false;
+                    driveOpenFileId = null;
+                }
             }
         }
 
@@ -5186,6 +5230,7 @@
             clearSelection();
             state.selectionTransform = null;
             resetPdfState();
+            driveDirty = false;
             state.pages = [{
                 strokes: [],
                 backgroundImage: null,
@@ -5203,12 +5248,12 @@
             state.driveFileId = null;
             state.driveFileName = fileName;
             state.driveFolderId = folderId || null;
-            state.driveAutosave = true;
-            driveOpenNeedsRefresh = false;
             driveAutosavePreferred = true;
+            state.driveAutosave = state.isEditMode;
+            driveOpenNeedsRefresh = false;
             updateDocTitle();
             saveDriveSession();
-            scheduleSave(true);
+            scheduleSave(true, { markDirty: false });
 
             try {
                 showLoading('Creating PDF...');
@@ -5695,6 +5740,7 @@
         }
 
         function handleImageDragOver(e) {
+            if (!state.isEditMode) return;
             if (!e.dataTransfer) return;
             const types = Array.from(e.dataTransfer.types || []);
             const hasFiles = types.includes('Files');
@@ -5704,6 +5750,7 @@
         }
 
         function handleImageDrop(e) {
+            if (!state.isEditMode) return;
             if (!e.dataTransfer) return;
             e.preventDefault();
             const files = Array.from(e.dataTransfer.files || []).filter(file => file.type.startsWith('image/'));
@@ -5798,6 +5845,7 @@
 
         function setupSelectionBoxEvents(selectionBox, pageIndex) {
             selectionBox.addEventListener('pointerdown', (e) => {
+                if (!state.isEditMode) return;
                 if (state.currentTool !== 'lasso') return;
                 if (state.selection.pageIndex !== pageIndex) return;
                 const target = e.target;
@@ -5855,6 +5903,7 @@
         }
 
         function onSelectionPointerMove(e) {
+            if (!state.isEditMode) return;
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
             const { pageIndex, mode, handle, bounds, center, startPos, startAngle, originalStrokes, originalImages } = state.selectionTransform;
@@ -5901,6 +5950,7 @@
         }
 
         function onSelectionPointerUp(e) {
+            if (!state.isEditMode) return;
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
             const { pageIndex, originalStrokes, originalImages } = state.selectionTransform;
@@ -6753,6 +6803,11 @@
             document.getElementById('btn-import-pdf').addEventListener('click', () => pdfInput.click());
             pdfInput.addEventListener('change', importPDF);
             document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+            if (modeToggleBtn) {
+                modeToggleBtn.addEventListener('click', () => {
+                    setEditorMode(state.isEditMode ? 'view' : 'edit');
+                });
+            }
             if (driveFullscreenBtn) {
                 driveFullscreenBtn.addEventListener('click', toggleFullscreen);
             }
@@ -6836,18 +6891,18 @@
 
             window.addEventListener('beforeunload', () => {
                 saveViewState();
-                scheduleSave(true);
+                scheduleSave(true, { markDirty: false });
             });
 
             window.addEventListener('pagehide', () => {
                 saveViewState();
-                scheduleSave(true);
+                scheduleSave(true, { markDirty: false });
             });
 
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') {
                     saveViewState();
-                    scheduleSave(true);
+                    scheduleSave(true, { markDirty: false });
                 }
             });
         }
@@ -6870,6 +6925,50 @@
             const fullscreenBtn = document.getElementById('btn-fullscreen');
             setFullscreenButtonState(fullscreenBtn, isActive);
             setFullscreenButtonState(driveFullscreenBtn, isActive);
+        }
+
+        function updateModeToggleUI() {
+            if (!modeToggleBtn) return;
+            const isEdit = state.isEditMode;
+            modeToggleBtn.textContent = isEdit ? 'View' : 'Edit';
+            modeToggleBtn.title = isEdit ? 'Switch to view mode' : 'Switch to edit mode';
+            modeToggleBtn.setAttribute('aria-pressed', isEdit ? 'false' : 'true');
+        }
+
+        function setEditorMode(mode, options = {}) {
+            const nextIsEdit = mode === 'edit';
+            if (state.isEditMode === nextIsEdit && !options.force) return;
+            state.isEditMode = nextIsEdit;
+            document.body.classList.toggle('view-mode', !nextIsEdit);
+            updateModeToggleUI();
+            if (docTitleEl) {
+                docTitleEl.setAttribute('contenteditable', nextIsEdit ? 'true' : 'false');
+            }
+            if (editPagesBtn) {
+                editPagesBtn.disabled = !nextIsEdit;
+            }
+            if (importPdfBtn) {
+                importPdfBtn.disabled = !nextIsEdit;
+            }
+
+            if (!nextIsEdit) {
+                closePagesPanel();
+                closeDeleteModal();
+                closeResetModal();
+                closeEraserMenu();
+                clearSelection();
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                updateAddPageIndicator();
+                driveAutosavePreferred = state.driveAutosave || driveAutosavePreferred;
+                state.driveAutosave = false;
+                return;
+            }
+
+            state.driveAutosave = driveAutosavePreferred || !!state.driveFileId;
+            if (driveDirty) {
+                scheduleDriveSave();
+            }
         }
 
         function handleFullscreenChange() {
@@ -6953,6 +7052,11 @@
 
         function updateAddPageIndicator() {
             if (!addPageIndicator) return;
+            if (!state.isEditMode) {
+                addPageIndicator.style.opacity = 0;
+                addPageIndicator.style.transform = 'translateX(-50%) scale(0.6)';
+                return;
+            }
             const pageCount = state.pages.length;
             if (pageCount === 0) {
                 addPageIndicator.style.opacity = 0;
@@ -7002,7 +7106,7 @@
 
             // Check if we should create a page before resetting
             // If pendingPageCreate is true, the + icon was at full size, so create the page
-            if (!skipPageCreate && state.pendingPageCreate) {
+            if (!skipPageCreate && state.isEditMode && state.pendingPageCreate) {
                 const prevLimit = getBottomLimit();
                 addPage(null, true);
                 state.overscrollY = 0;
@@ -7084,7 +7188,7 @@
 
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                const armed = state.overscrollY >= OVERSCROLL_THRESHOLD;
+                const armed = state.isEditMode && state.overscrollY >= OVERSCROLL_THRESHOLD;
 
                 state.pendingPageCreate = armed;
                 state.pageCreateLocked = armed;
@@ -7114,7 +7218,7 @@
                 const viewportHeight = canvasViewport.getBoundingClientRect().height;
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                const armed = state.overscrollY >= OVERSCROLL_THRESHOLD;
+                const armed = state.isEditMode && state.overscrollY >= OVERSCROLL_THRESHOLD;
                 state.pendingPageCreate = armed;
                 state.pageCreateLocked = armed;
                 updateAddPageIndicator();
@@ -7596,7 +7700,8 @@
 
             const finalizePageCreation = () => {
                 // If pendingPageCreate is true, the + icon was at full size, so create the page
-                if (state.pendingPageCreate) {
+                const shouldCreate = state.isEditMode && (state.pendingPageCreate || state.overscrollY >= OVERSCROLL_THRESHOLD);
+                if (shouldCreate) {
                     const prevLimit = getBottomLimit();
                     addPage(null, true);
                     state.overscrollY = 0;
@@ -7728,6 +7833,7 @@
 
         // Pages Panel
         function openPagesPanel() {
+            if (!state.isEditMode) return;
             renderPagesList();
             document.getElementById('pages-panel').classList.add('visible');
             document.getElementById('panel-overlay').classList.add('visible');
@@ -7859,6 +7965,7 @@
         let pageToDelete = null;
 
         function openDeleteModal(pageIndex) {
+            if (!state.isEditMode) return;
             pageToDelete = pageIndex;
             document.getElementById('delete-page-number').textContent = pageIndex + 1;
             document.getElementById('modal-delete-page').classList.add('visible');
@@ -7870,6 +7977,10 @@
         }
 
         function confirmDeletePage() {
+            if (!state.isEditMode) {
+                closeDeleteModal();
+                return;
+            }
             if (pageToDelete === null || state.pages.length <= 1) {
                 closeDeleteModal();
                 return;
@@ -7892,6 +8003,7 @@
 
         // Reset document
         function openResetModal() {
+            if (!state.isEditMode) return;
             resetResetSlider();
             document.getElementById('modal-reset-document').classList.add('visible');
         }
@@ -7902,6 +8014,10 @@
         }
 
         function confirmResetDocument() {
+            if (!state.isEditMode) {
+                closeResetModal();
+                return;
+            }
             closeResetModal();
             clearSelection();
             state.selectionTransform = null;
@@ -8469,7 +8585,12 @@
         let saveInProgress = false;
         let saveQueued = false;
 
-        function scheduleSave(immediate = false) {
+        function scheduleSave(immediate = false, options = {}) {
+            const markDirty = options.markDirty !== false;
+            const shouldMarkDirty = markDirty && state.isEditMode;
+            if (shouldMarkDirty) {
+                driveDirty = true;
+            }
             showStatus('Saving...', true);
             clearTimeout(state.saveTimeout);
             const now = Date.now();
@@ -8477,13 +8598,17 @@
             const overdue = !lastSaved || (now - lastSaved >= MAX_SAVE_INTERVAL);
             if (immediate || overdue) {
                 queueSave();
-                scheduleDriveSave();
+                if (shouldMarkDirty) {
+                    scheduleDriveSave();
+                }
                 return;
             }
             state.saveTimeout = setTimeout(() => {
                 queueSave();
             }, 500);
-            scheduleDriveSave();
+            if (shouldMarkDirty) {
+                scheduleDriveSave();
+            }
         }
 
         async function queueSave() {
@@ -8507,7 +8632,7 @@
         }
 
         function scheduleDriveSave() {
-            if (!state.driveAutosave || !driveAccessToken) return;
+            if (!state.driveAutosave || !driveAccessToken || !state.isEditMode || !driveDirty) return;
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
                 queueDriveSave();
@@ -8566,7 +8691,7 @@
         }
 
         async function queueDriveSave() {
-            if (!state.driveAutosave) return;
+            if (!state.driveAutosave || !state.isEditMode || !driveDirty) return;
             if (driveSaveInProgress) {
                 driveSaveQueued = true;
                 return;
@@ -8587,6 +8712,7 @@
                 const fileId = await ensureDriveFile();
                 const pdfBlob = await buildPdfBlob();
                 await updateDriveFile(fileId, pdfBlob);
+                driveDirty = false;
                 showStatus('Saved', { savedAt: Date.now() });
             } catch (err) {
                 showStatus('Drive save failed', { error: true });
@@ -8955,8 +9081,9 @@
         }
 
         // Import PDF - detect embedded strokes or treat as background
-        async function importPDFArrayBuffer(arrayBuffer) {
+        async function importPDFArrayBuffer(arrayBuffer, options = {}) {
             if (!arrayBuffer) return;
+            const markDirty = options.markDirty !== false;
             showLoading('Analyzing PDF...');
 
             try {
@@ -9046,7 +9173,7 @@
                 }
 
                 renderAllPages();
-                scheduleSave(true);
+                scheduleSave(true, { markDirty });
                 updateVisiblePages(true);
 
                 const isNonAppPdf = !embeddedStrokes;
@@ -9065,6 +9192,9 @@
 
                 hideLoading();
                 centerViewOnTop();
+                if (!markDirty) {
+                    driveDirty = false;
+                }
 
             } catch (err) {
                 console.error('Error importing PDF:', err);
@@ -9074,10 +9204,11 @@
         }
 
         async function importPDF(e) {
+            if (!state.isEditMode) return;
             const file = e.target.files[0];
             if (!file) return;
             const arrayBuffer = await file.arrayBuffer();
-            await importPDFArrayBuffer(arrayBuffer);
+            await importPDFArrayBuffer(arrayBuffer, { markDirty: true });
             pdfInput.value = '';
         }
 
