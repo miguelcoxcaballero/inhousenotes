@@ -4661,6 +4661,7 @@
             showLoading('Refreshing PDF...');
             try {
                 await ensureDriveToken(false);
+                resetViewportInteractionState();
                 driveDirty = false;
                 let latestName = state.driveFileName;
                 try {
@@ -5184,6 +5185,7 @@
             showLoading('Opening PDF...');
             try {
                 await ensureDriveToken(false);
+                resetViewportInteractionState();
                 driveDirty = false;
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
                 const arrayBuffer = await res.arrayBuffer();
@@ -7244,6 +7246,18 @@
             }
         }
 
+        function resetViewportInteractionState() {
+            state.isPanning = false;
+            state.isScrolling = false;
+            state.scrollLocked = false;
+            state.activePointers.clear();
+            state.panVelocityX = 0;
+            state.panVelocityY = 0;
+            state.lastPanTime = 0;
+            state.inertiaLock = 'free';
+            stopInertia();
+        }
+
         function startInertia() {
             if (state.inertiaFrame) return;
             let lastTime = performance.now();
@@ -9087,6 +9101,7 @@
             showLoading('Analyzing PDF...');
 
             try {
+                resetViewportInteractionState();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 const numPages = pdf.numPages;
 
@@ -9188,6 +9203,9 @@
                 if (isNonAppPdf) {
                     ensurePageCanvas(0);
                     await renderPdfPageToBackground(0, pdfRenderToken);
+                } else if (activePdfDocument) {
+                    // Kick off background renders for visible pages immediately
+                    processPdfRenderQueue();
                 }
 
                 hideLoading();
