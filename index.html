@@ -1126,10 +1126,96 @@
         @media (max-width: 768px) {
             #toolbar {
                 left: 10px;
+                --toolbar-scale: 0.9;
             }
 
             #canvas-container {
-                padding: 20px;
+                padding: 15px;
+                gap: 20px;
+            }
+
+            header {
+                padding: 8px 12px;
+                min-height: 52px;
+            }
+
+            .logo span, .drive-brand span {
+                font-size: 1rem;
+            }
+
+            .btn {
+                padding: 8px 12px;
+                font-size: 0.8rem;
+            }
+
+            .btn-icon-square {
+                width: 38px;
+                height: 38px;
+            }
+        }
+
+        /* Portrait phones */
+        @media (max-width: 480px) {
+            :root {
+                --tool-size: 38px;
+                --header-btn-size: 36px;
+                --banner-height: 52px;
+            }
+
+            #toolbar {
+                left: 6px;
+                --toolbar-scale: 0.85;
+                padding: 6px;
+                gap: 4px;
+            }
+
+            #canvas-container {
+                padding: 10px;
+                gap: 15px;
+            }
+
+            header {
+                padding: 6px 10px;
+                min-height: 48px;
+            }
+
+            .header-actions {
+                gap: 2px;
+            }
+
+            .logo svg, .drive-brand svg {
+                width: 26px;
+                height: 20px;
+            }
+
+            .logo span, .drive-brand span {
+                font-size: 0.9rem;
+            }
+
+            .save-timestamp {
+                display: none;
+            }
+        }
+
+        /* Landscape phones */
+        @media (max-height: 500px) and (orientation: landscape) {
+            #toolbar {
+                flex-direction: row;
+                top: auto;
+                bottom: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                --toolbar-translate: 0;
+            }
+
+            header {
+                padding: 4px 12px;
+                min-height: 44px;
+            }
+
+            .tool-divider {
+                width: 1px;
+                height: 24px;
             }
         }
 
@@ -2310,17 +2396,24 @@
             '</svg>'
         )}`;
 
-        // A4 dimensions - using 2x resolution for crisp drawing
+        // A4 dimensions - adaptive resolution based on device
         const A4_WIDTH = 794;
         const A4_HEIGHT = 1123;
-        const CANVAS_SCALE = 2; // Fixed at 2x for memory optimization
-        const PAGE_PADDING = 30;
-        const PAGE_GAP = 30;
-        const VISIBLE_PAGE_BUFFER = 2;
+
+        // Device detection for adaptive performance
+        const IS_MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const IS_SMALL_SCREEN = window.innerWidth < 768 || window.innerHeight < 600;
+        const IS_LOW_MEMORY_DEVICE = IS_MOBILE || IS_SMALL_SCREEN || (navigator.deviceMemory && navigator.deviceMemory < 4);
+
+        // Adaptive scale: 1.5x for mobile/small screens, 2x for desktop
+        const CANVAS_SCALE = IS_LOW_MEMORY_DEVICE ? 1.5 : 2;
+        const PAGE_PADDING = IS_SMALL_SCREEN ? 15 : 30;
+        const PAGE_GAP = IS_SMALL_SCREEN ? 20 : 30;
+        const VISIBLE_PAGE_BUFFER = IS_LOW_MEMORY_DEVICE ? 1 : 2;
         const VISIBLE_PAGE_BUFFER_ACTIVE = 1;
-        const MAX_PDF_BACKGROUND_CACHE = 12;
-        const PDF_RENDER_SCALE_LARGE = 1.5;
-        const PDF_RENDER_SCALE_HUGE = 1.2;
+        const MAX_PDF_BACKGROUND_CACHE = IS_LOW_MEMORY_DEVICE ? 6 : 12;
+        const PDF_RENDER_SCALE_LARGE = IS_LOW_MEMORY_DEVICE ? 1.2 : 1.5;
+        const PDF_RENDER_SCALE_HUGE = IS_LOW_MEMORY_DEVICE ? 1 : 1.2;
         const OVERLAY_SCALE = 1;
         const OVERSCROLL_THRESHOLD = 360;
         const OVERSCROLL_FRICTION = 0.24;
@@ -2412,20 +2505,20 @@
         function simplifyStrokePoints(stroke) {
             if (!stroke || !stroke.points) return stroke;
 
-            // Only simplify strokes with many points (long strokes)
-            const minPointsToSimplify = 80;
+            // On mobile, simplify more aggressively to save memory
+            const minPointsToSimplify = IS_LOW_MEMORY_DEVICE ? 50 : 80;
             if (stroke.points.length < minPointsToSimplify) return stroke;
 
-            // Very conservative epsilon - preserve handwriting detail
-            const epsilon = 0.3;
+            // Conservative epsilon - preserve handwriting detail (slightly more aggressive on mobile)
+            const epsilon = IS_LOW_MEMORY_DEVICE ? 0.4 : 0.3;
 
             // Keep more points for highlighter
             const adjustedEpsilon = stroke.tool === 'highlighter' ? epsilon * 3 : epsilon;
 
             const simplified = simplifyPoints(stroke.points, adjustedEpsilon);
 
-            // Ensure we keep at least 60% of original points to preserve form
-            const minRetention = Math.floor(stroke.points.length * 0.6);
+            // Ensure we keep at least 50-60% of original points to preserve form
+            const minRetention = Math.floor(stroke.points.length * (IS_LOW_MEMORY_DEVICE ? 0.5 : 0.6));
             if (simplified.length < minRetention) {
                 return stroke;
             }
@@ -2435,8 +2528,9 @@
         }
 
         // Limit strokes array size by baking old strokes into background
-        const MAX_STROKES_PER_PAGE = 500;
-        const BAKE_THRESHOLD = 400;
+        // Lower thresholds for mobile to reduce memory usage
+        const MAX_STROKES_PER_PAGE = IS_LOW_MEMORY_DEVICE ? 250 : 500;
+        const BAKE_THRESHOLD = IS_LOW_MEMORY_DEVICE ? 200 : 400;
         let bakingInProgress = new Set();
 
         function shouldBakeStrokes(pageIndex) {
@@ -2500,7 +2594,8 @@
         }
 
         // Memory-limited history with stroke count estimation
-        const MAX_HISTORY_MEMORY = 50000; // Approximate max points in history
+        // Lower limit for mobile devices
+        const MAX_HISTORY_MEMORY = IS_LOW_MEMORY_DEVICE ? 20000 : 50000;
 
         function estimateHistoryMemory() {
             let totalPoints = 0;
@@ -2542,6 +2637,41 @@
                 state.history.shift();
                 state.historyIndex = Math.max(-1, state.historyIndex - 1);
             }
+        }
+
+        // Image compression to reduce memory usage
+        const MAX_IMAGE_DIMENSION = IS_LOW_MEMORY_DEVICE ? 800 : 1200;
+        const IMAGE_QUALITY = IS_LOW_MEMORY_DEVICE ? 0.7 : 0.85;
+
+        function compressImage(src) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    let { width, height } = img;
+
+                    // Calculate scale to fit within max dimensions
+                    if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+                        const scale = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+                        width = Math.round(width * scale);
+                        height = Math.round(height * scale);
+                    }
+
+                    // Create canvas and draw resized image
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Export as compressed JPEG
+                    const compressed = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+                    resolve(compressed);
+                };
+                img.onerror = () => resolve(src); // Fallback to original on error
+                img.src = src;
+            });
         }
 
         // ============= END MEMORY OPTIMIZATION UTILITIES =============
@@ -2597,10 +2727,10 @@
                 imageIndices: []
             },
             selectionTransform: null,
-            // Undo/Redo history
+            // Undo/Redo history (reduced for mobile)
             history: [],
             historyIndex: -1,
-            maxHistory: 10
+            maxHistory: IS_LOW_MEMORY_DEVICE ? 5 : 10
         };
 
         // DOM Elements
@@ -2997,6 +3127,8 @@
             const page = state.pages[pageIndex];
             if (!page || !canvas) return;
             const deferPdfRender = !!options.deferPdfRender;
+
+            // If we have a cached background image, use it
             if (page.backgroundImage) {
                 if (!page.backgroundSource) {
                     page.backgroundSource = page.pdfPageIndex ? 'pdf' : 'custom';
@@ -3012,6 +3144,7 @@
                 return;
             }
 
+            // PDF page with active document - queue render
             if (page.pdfPageIndex && activePdfDocument) {
                 canvas.style.backgroundImage = '';
                 canvas.style.backgroundColor = 'white';
@@ -3021,6 +3154,15 @@
                 return;
             }
 
+            // PDF page without active document (external PDF being loaded)
+            // Show white background instead of template to indicate PDF content
+            if (page.backgroundSource === 'pdf' || page.pdfPageIndex) {
+                canvas.style.backgroundImage = '';
+                canvas.style.backgroundColor = 'white';
+                return;
+            }
+
+            // Default template background
             canvas.style.backgroundImage = `url("${SVG_BACKGROUND}")`;
             canvas.style.backgroundSize = 'cover';
             canvas.style.backgroundRepeat = 'no-repeat';
@@ -4583,9 +4725,21 @@
                 </svg>
             `;
 
+            const isStarred = item.starred === true;
+            const starLabel = isStarred ? 'Remove from starred' : 'Add to starred';
+            const starIcon = isStarred
+                ? '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="currentColor" stroke-width="1.5"/>'
+                : '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="currentColor" stroke-width="1.5"/>';
+
             const menu = document.createElement('div');
             menu.className = 'drive-card-dropdown hidden';
             menu.innerHTML = `
+                <button type="button" data-action="star">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        ${starIcon}
+                    </svg>
+                    <span>${starLabel}</span>
+                </button>
                 <button type="button" data-action="move">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -4612,7 +4766,9 @@
                 const action = button?.dataset?.action;
                 if (!action) return;
                 closeDriveCardMenu();
-                if (action === 'move') {
+                if (action === 'star') {
+                    toggleDriveStar(item);
+                } else if (action === 'move') {
                     openFolderPicker('move', item);
                 } else if (action === 'trash') {
                     openTrashModal(item);
@@ -4622,6 +4778,24 @@
             menuWrap.appendChild(menuBtn);
             menuWrap.appendChild(menu);
             return menuWrap;
+        }
+
+        async function toggleDriveStar(item) {
+            if (!item || !item.id) return;
+            const newStarred = !item.starred;
+            try {
+                await driveFetch(`https://www.googleapis.com/drive/v3/files/${item.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ starred: newStarred })
+                });
+                item.starred = newStarred;
+                showStatus(newStarred ? 'Added to starred' : 'Removed from starred', { preserveState: true });
+                refreshDriveFiles();
+            } catch (err) {
+                console.error('Failed to toggle star:', err);
+                showStatus('Failed to update starred status', { preserveState: true });
+            }
         }
 
         function toggleDriveCardMenu(menuEl) {
@@ -4801,7 +4975,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveRecentsCache = data.files || [];
@@ -4810,10 +4984,10 @@
 
         async function refreshDriveStarred() {
             const q = encodeURIComponent(`starred=true and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
-            driveStarredCache = data.files || [];
+            driveStarredCache = (data.files || []).map(f => ({ ...f, starred: true }));
             renderDriveStarred(driveStarredCache);
         }
 
@@ -4831,8 +5005,8 @@
 
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
-                const folderFields = encodeURIComponent('files(id,name)');
-                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
+                const folderFields = encodeURIComponent('files(id,name,starred)');
+                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
 
                 const [folderRes, fileRes] = await Promise.all([
                     driveFetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&orderBy=name&pageSize=100&fields=${folderFields}`),
@@ -5453,10 +5627,12 @@
 
             files.forEach((file, index) => {
                 const reader = new FileReader();
-                reader.onload = () => {
+                reader.onload = async () => {
                     const src = reader.result;
                     if (typeof src === 'string') {
-                        addImageToPage(pageIndex, src, dropPos, index);
+                        // Compress image before adding to reduce memory
+                        const compressedSrc = await compressImage(src);
+                        addImageToPage(pageIndex, compressedSrc, dropPos, index);
                     }
                 };
                 reader.readAsDataURL(file);
