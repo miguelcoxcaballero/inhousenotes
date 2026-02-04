@@ -1657,6 +1657,7 @@
             border: 1px solid rgba(0,0,0,0.06);
             box-shadow: 0 6px 18px rgba(0,0,0,0.06);
             cursor: pointer;
+            touch-action: manipulation;
             transition: box-shadow 0.2s ease;
             display: flex;
             flex-direction: column;
@@ -1685,6 +1686,8 @@
             height: 100%;
             object-fit: cover;
             object-position: top center;
+            user-select: none;
+            -webkit-user-drag: none;
         }
 
         .drive-card-icon {
@@ -2028,6 +2031,7 @@
             border: 1px solid rgba(0,0,0,0.06);
             box-shadow: 0 6px 18px rgba(0,0,0,0.05);
             cursor: pointer;
+            touch-action: manipulation;
             display: flex;
             align-items: center;
             gap: 12px;
@@ -2936,6 +2940,7 @@
         let driveRecentsCache = [];
         let driveStarredCache = [];
         let driveFolderCache = { folders: [], files: [] };
+        let driveFolderRequestId = 0;
         let driveFolderStack = [{ id: 'root', name: 'My Drive' }];
         let driveCurrentFolderId = 'root';
         const driveFolderMetaCache = new Map();
@@ -4822,6 +4827,8 @@
                 img.src = thumb;
                 img.alt = `${file.name} preview`;
                 img.loading = 'lazy';
+                img.draggable = false;
+                img.setAttribute('draggable', 'false');
                 img.onerror = () => {
                     preview.innerHTML = '';
                     preview.appendChild(icon);
@@ -4831,6 +4838,73 @@
             }
             preview.appendChild(icon);
             return preview;
+        }
+
+        const DRIVE_TAP_MOVE_THRESHOLD = 8;
+
+        function bindDriveCardActivation(card, handler) {
+            if (!card) return;
+            let pointerId = null;
+            let startX = 0;
+            let startY = 0;
+            let moved = false;
+            let suppressClick = false;
+
+            const isMenuTarget = (target) => target && target.closest && target.closest('.drive-card-menu');
+
+            card.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                if (isMenuTarget(e.target)) return;
+                pointerId = e.pointerId;
+                startX = e.clientX;
+                startY = e.clientY;
+                moved = false;
+                if (card.setPointerCapture) {
+                    card.setPointerCapture(e.pointerId);
+                }
+            });
+
+            card.addEventListener('pointermove', (e) => {
+                if (pointerId !== e.pointerId) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                if (Math.hypot(dx, dy) > DRIVE_TAP_MOVE_THRESHOLD) {
+                    moved = true;
+                }
+            });
+
+            const releasePointer = (e) => {
+                if (pointerId !== e.pointerId) return;
+                if (card.releasePointerCapture) {
+                    card.releasePointerCapture(e.pointerId);
+                }
+                pointerId = null;
+                moved = false;
+            };
+
+            card.addEventListener('pointerup', (e) => {
+                if (pointerId !== e.pointerId) return;
+                if (card.releasePointerCapture) {
+                    card.releasePointerCapture(e.pointerId);
+                }
+                if (!moved && !isMenuTarget(e.target)) {
+                    suppressClick = true;
+                    handler(e);
+                }
+                pointerId = null;
+                moved = false;
+            });
+
+            card.addEventListener('pointercancel', releasePointer);
+
+            card.addEventListener('click', (e) => {
+                if (isMenuTarget(e.target)) return;
+                if (suppressClick) {
+                    suppressClick = false;
+                    return;
+                }
+                handler(e);
+            });
         }
 
         function createDriveFileCard(file) {
@@ -4850,10 +4924,7 @@
 
             card.appendChild(createDriveItemMenu(file));
 
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('.drive-card-menu')) return;
-                openDriveFile(file);
-            });
+            bindDriveCardActivation(card, () => openDriveFile(file));
             return card;
         }
 
@@ -5008,10 +5079,7 @@
 
                 card.appendChild(createDriveItemMenu(item));
 
-                card.addEventListener('click', (e) => {
-                    if (e.target.closest('.drive-card-menu')) return;
-                    openStarredFolder(item);
-                });
+                bindDriveCardActivation(card, () => openStarredFolder(item));
                 return card;
             }
 
@@ -5038,10 +5106,7 @@
 
             card.appendChild(createDriveItemMenu(folder));
 
-            card.addEventListener('click', (e) => {
-                if (e.target.closest('.drive-card-menu')) return;
-                enterDriveFolder(folder);
-            });
+            bindDriveCardActivation(card, () => enterDriveFolder(folder));
             return card;
         }
 
@@ -5148,10 +5213,12 @@
         }
 
         async function refreshDriveFolderContents() {
+            const requestId = ++driveFolderRequestId;
+            const folderId = driveCurrentFolderId;
             try {
                 const search = driveSearchInput ? driveSearchInput.value.trim() : '';
                 const baseParts = [
-                    `'${driveCurrentFolderId}' in parents`,
+                    `'${folderId}' in parents`,
                     'trashed=false'
                 ];
                 if (search) {
@@ -5171,6 +5238,9 @@
 
                 const foldersData = await folderRes.json();
                 const filesData = await fileRes.json();
+                if (requestId !== driveFolderRequestId || folderId !== driveCurrentFolderId) {
+                    return;
+                }
                 driveFolderCache = {
                     folders: foldersData.files || [],
                     files: filesData.files || []
@@ -5178,6 +5248,9 @@
                 renderDriveFolderContents(driveFolderCache.folders, driveFolderCache.files);
                 updateDriveStatusCounts();
             } catch (err) {
+                if (requestId !== driveFolderRequestId || folderId !== driveCurrentFolderId) {
+                    return;
+                }
                 if (driveStatusEl) driveStatusEl.textContent = 'Unable to load this folder.';
             }
         }
