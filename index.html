@@ -1590,11 +1590,11 @@
             </div>
             <div class="drive-actions">
                 <button class="btn btn-secondary btn-icon-square" id="btn-drive-fullscreen" title="Fullscreen" aria-label="Fullscreen">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="4 9 4 4 9 4"/>
-                        <polyline points="15 4 20 4 20 9"/>
-                        <polyline points="20 15 20 20 15 20"/>
-                        <polyline points="9 20 4 20 4 15"/>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 3 21 3 21 9"/>
+                        <polyline points="9 21 3 21 3 15"/>
+                        <line x1="21" y1="3" x2="14" y2="10"/>
+                        <line x1="3" y1="21" x2="10" y2="14"/>
                     </svg>
                 </button>
                 <button class="btn btn-primary" id="btn-drive-new">New PDF</button>
@@ -1668,11 +1668,11 @@
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
                 <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="4 9 4 4 9 4"/>
-                        <polyline points="15 4 20 4 20 9"/>
-                        <polyline points="20 15 20 20 15 20"/>
-                        <polyline points="9 20 4 20 4 15"/>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 3 21 3 21 9"/>
+                        <polyline points="9 21 3 21 3 15"/>
+                        <line x1="21" y1="3" x2="14" y2="10"/>
+                        <line x1="3" y1="21" x2="10" y2="14"/>
                     </svg>
                 </button>
                 <button class="btn btn-secondary btn-icon-square" id="btn-edit-pages" title="Manage Pages" aria-label="Manage Pages">
@@ -1938,17 +1938,17 @@
             </g>
         </svg>`;
         const SVG_BACKGROUND = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
-        const FULLSCREEN_ICON_ENTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="4 9 4 4 9 4"/>
-                <polyline points="15 4 20 4 20 9"/>
-                <polyline points="20 15 20 20 15 20"/>
-                <polyline points="9 20 4 20 4 15"/>
+        const FULLSCREEN_ICON_ENTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 3 21 3 21 9"/>
+                <polyline points="9 21 3 21 3 15"/>
+                <line x1="21" y1="3" x2="14" y2="10"/>
+                <line x1="3" y1="21" x2="10" y2="14"/>
             </svg>`;
-        const FULLSCREEN_ICON_EXIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="9 4 9 9 4 9"/>
-                <polyline points="15 9 20 9 20 4"/>
-                <polyline points="15 20 15 15 20 15"/>
-                <polyline points="9 15 4 15 4 20"/>
+        const FULLSCREEN_ICON_EXIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 14 10 14 10 20"/>
+                <polyline points="20 10 14 10 14 4"/>
+                <line x1="14" y1="10" x2="21" y2="3"/>
+                <line x1="10" y1="14" x2="3" y2="21"/>
             </svg>`;
         const DEFAULT_AVATAR = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
