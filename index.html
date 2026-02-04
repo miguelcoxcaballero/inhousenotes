@@ -158,6 +158,68 @@
             letter-spacing: 0.01em;
         }
 
+        .mode-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(0,0,0,0.08);
+            background: rgba(0,0,0,0.03);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            user-select: none;
+        }
+
+        .mode-toggle input {
+            appearance: none;
+            width: 36px;
+            height: 18px;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.2);
+            position: relative;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .mode-toggle input::after {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: white;
+            top: 2px;
+            left: 2px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease;
+        }
+
+        .mode-toggle input:checked {
+            background: var(--text-primary);
+        }
+
+        .mode-toggle input:checked::after {
+            transform: translateX(18px);
+        }
+
+        .mode-toggle .mode-label {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        body.view-mode #toolbar,
+        body.view-mode .save-indicator,
+        body.view-mode .save-timestamp,
+        body.view-mode #status-bar {
+            display: none !important;
+        }
+
+        body.view-mode .doc-title {
+            pointer-events: none;
+        }
+
         #status-bar {
             display: none;
         }
@@ -1133,6 +1195,171 @@
             }
         }
 
+        @media (max-width: 900px) {
+            header,
+            .drive-topbar {
+                padding: 10px 16px;
+            }
+
+            .drive-main {
+                padding: 18px;
+                padding-bottom: 90px;
+            }
+
+            .drive-folder-grid,
+            .drive-file-grid {
+                grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            }
+
+            .drive-recents .drive-card {
+                min-width: 175px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            :root {
+                --banner-height: 56px;
+                --tool-size: 40px;
+                --toolbar-padding: 8px;
+                --handle-width: 40px;
+                --handle-height: 22px;
+                --icon-size: 18px;
+                --header-btn-size: 40px;
+            }
+
+            header {
+                padding: 8px 12px;
+                flex-wrap: wrap;
+                row-gap: 8px;
+            }
+
+            .logo,
+            .drive-brand {
+                font-size: 1.05rem;
+            }
+
+            .logo svg,
+            .drive-brand svg {
+                width: 28px;
+                height: 20px;
+            }
+
+            .header-actions {
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+            .drive-topbar {
+                flex-wrap: wrap;
+                row-gap: 10px;
+            }
+
+            .drive-actions {
+                width: 100%;
+                justify-content: flex-start;
+                gap: 6px;
+            }
+
+            .drive-toolbar {
+                align-items: stretch;
+                gap: 12px;
+            }
+
+            .drive-search {
+                min-width: 0;
+                max-width: none;
+                width: 100%;
+            }
+
+            .drive-status {
+                width: 100%;
+                font-size: 0.78rem;
+            }
+
+            .drive-folder-grid,
+            .drive-file-grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            }
+
+            .drive-recents {
+                gap: 10px;
+            }
+
+            .drive-recents .drive-card {
+                min-width: 160px;
+            }
+
+            .drive-card {
+                padding: 12px;
+                min-height: 118px;
+            }
+
+            .drive-card-title {
+                font-size: 0.85rem;
+            }
+
+            .drive-card-meta {
+                font-size: 0.68rem;
+            }
+
+            .drive-folder-card {
+                padding: 12px 14px;
+            }
+
+            .drive-folder-icon {
+                width: 32px;
+                height: 24px;
+            }
+
+            #toolbar {
+                left: 8px;
+            }
+
+            #canvas-container {
+                padding: 16px;
+            }
+        }
+
+        @media (max-width: 520px) {
+            :root {
+                --banner-height: 52px;
+                --tool-size: 38px;
+                --toolbar-padding: 6px;
+                --handle-width: 36px;
+                --handle-height: 20px;
+                --icon-size: 17px;
+                --header-btn-size: 38px;
+            }
+
+            .drive-main {
+                padding: 14px;
+                padding-bottom: 100px;
+            }
+
+            .drive-section {
+                margin-bottom: 22px;
+            }
+
+            .drive-folder-grid,
+            .drive-file-grid {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            }
+
+            .drive-recents .drive-card {
+                min-width: 150px;
+            }
+
+            .drive-card-preview {
+                border-radius: 10px;
+            }
+        }
+
+        @media (max-width: 520px) and (orientation: portrait) {
+            #toolbar {
+                left: 6px;
+            }
+        }
+
         /* Loading overlay */
         #loading-overlay {
             position: fixed;
@@ -1430,7 +1657,7 @@
             border: 1px solid rgba(0,0,0,0.06);
             box-shadow: 0 6px 18px rgba(0,0,0,0.06);
             cursor: pointer;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transition: box-shadow 0.2s ease;
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -1439,7 +1666,6 @@
         }
 
         .drive-card:hover {
-            transform: translateY(-2px);
             box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
 
@@ -1806,11 +2032,10 @@
             align-items: center;
             gap: 12px;
             position: relative;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            transition: box-shadow 0.2s ease;
         }
 
         .drive-folder-card:hover {
-            transform: translateY(-2px);
             box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
 
@@ -1974,6 +2199,11 @@
             <div class="header-actions">
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
+                <label class="mode-toggle" for="mode-toggle-input" title="Toggle edit mode">
+                    <span>Read</span>
+                    <input type="checkbox" id="mode-toggle-input" aria-label="Toggle edit mode">
+                    <span class="mode-label">Edit</span>
+                </label>
                 <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="15 3 21 3 21 9"/>
@@ -2350,7 +2580,15 @@
         const DB_STORE = 'snapshots';
         const DB_KEY = 'latest';
 
+        const DEVICE_MEMORY_GB = navigator.deviceMemory || 4;
+        const IS_SMALL_SCREEN = Math.min(window.innerWidth, window.innerHeight) <= 820;
+        const IS_LOW_MEMORY_DEVICE = DEVICE_MEMORY_GB <= 4 || IS_SMALL_SCREEN;
+
         const imageCache = new Map();
+        const MAX_IMAGE_CACHE = IS_LOW_MEMORY_DEVICE ? 60 : 120;
+        const MAX_IMAGE_LONG_EDGE = IS_LOW_MEMORY_DEVICE ? 1200 : 2000;
+        const MAX_IMAGE_PIXELS = IS_LOW_MEMORY_DEVICE ? 1600000 : 4000000;
+        const IMAGE_JPEG_QUALITY = IS_LOW_MEMORY_DEVICE ? 0.75 : 0.82;
         const highlighterMaskCanvas = document.createElement('canvas');
         const highlighterMaskCtx = highlighterMaskCanvas.getContext('2d');
 
@@ -2482,12 +2720,26 @@
                 }
 
                 // Convert baked strokes to background image
-                page.bakedBackground = offscreen.toDataURL('image/png', 0.9);
+                let bakedUrl = '';
+                try {
+                    bakedUrl = offscreen.toDataURL('image/png', 0.9);
+                } catch (err) {
+                    bakedUrl = '';
+                }
 
-                // Remove baked strokes
+                if (!bakedUrl || bakedUrl.length < 128) {
+                    // Baking failed - keep all strokes
+                    bakingInProgress.delete(pageIndex);
+                    return;
+                }
+
+                page.bakedBackground = bakedUrl;
+
+                // Remove baked strokes only after a successful bake
                 page.strokes = page.strokes.slice(page.strokes.length - keepCount);
 
                 bakingInProgress.delete(pageIndex);
+                scheduleSave(true);
                 redrawPage(pageIndex);
             }
         }
@@ -2548,6 +2800,7 @@
             eraserWidth: 12,
             eraserMode: 'stroke',
             exportName: 'cuaderno',
+            isEditMode: false,
             zoom: 1,
             panX: 0,
             panY: 0,
@@ -2641,6 +2894,7 @@
         const driveProfileNameEditor = document.getElementById('drive-profile-name-editor');
         const driveProfileEmailEditor = document.getElementById('drive-profile-email-editor');
         const themeToggleEditor = document.getElementById('theme-toggle-editor');
+        const modeToggleInput = document.getElementById('mode-toggle-input');
         const driveMenuRefreshBtnEditor = document.getElementById('btn-drive-menu-refresh-editor');
         const driveMenuLogoutBtnEditor = document.getElementById('btn-drive-menu-logout-editor');
         const driveHomeBtn = document.getElementById('btn-drive-home');
@@ -2740,6 +2994,7 @@
             } else {
                 showEditorView();
             }
+            setEditorMode('view', { force: true });
             
             // Center page after DOM is ready
             setTimeout(() => {
@@ -3014,6 +3269,12 @@
                 return;
             }
 
+            if (page.backgroundSource === 'pdf' || page.pdfPageIndex) {
+                canvas.style.backgroundImage = '';
+                canvas.style.backgroundColor = 'white';
+                return;
+            }
+
             canvas.style.backgroundImage = `url("${SVG_BACKGROUND}")`;
             canvas.style.backgroundSize = 'cover';
             canvas.style.backgroundRepeat = 'no-repeat';
@@ -3067,16 +3328,21 @@
 
         async function renderPdfPageToBackground(pageIndex, token) {
             if (!activePdfDocument) return;
+            const pdfDoc = activePdfDocument;
             const page = state.pages[pageIndex];
             if (!page || !page.pdfPageIndex) return;
             if (page.backgroundImage) return;
-            if (token !== pdfRenderToken) return;
+            if (token !== pdfRenderToken || pdfDoc !== activePdfDocument) return;
 
-            try {
-                const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
+            const renderWithScale = async (scaleFactor) => {
+                const pdfPage = await pdfDoc.getPage(page.pdfPageIndex);
+                if (token !== pdfRenderToken || pdfDoc !== activePdfDocument) {
+                    if (pdfPage.cleanup) pdfPage.cleanup();
+                    return null;
+                }
                 const baseViewport = pdfPage.getViewport({ scale: 1 });
-                const targetWidth = A4_WIDTH * pdfBackgroundScale;
-                const targetHeight = A4_HEIGHT * pdfBackgroundScale;
+                const targetWidth = A4_WIDTH * scaleFactor;
+                const targetHeight = A4_HEIGHT * scaleFactor;
                 const scale = Math.min(targetWidth / baseViewport.width, targetHeight / baseViewport.height);
                 const viewport = pdfPage.getViewport({ scale });
 
@@ -3086,6 +3352,10 @@
                 const tempCtx = tempCanvas.getContext('2d');
 
                 await pdfPage.render({ canvasContext: tempCtx, viewport }).promise;
+                if (token !== pdfRenderToken || pdfDoc !== activePdfDocument) {
+                    if (pdfPage.cleanup) pdfPage.cleanup();
+                    return null;
+                }
 
                 const a4Canvas = document.createElement('canvas');
                 a4Canvas.width = targetWidth;
@@ -3107,6 +3377,30 @@
                 } else {
                     objectUrl = a4Canvas.toDataURL('image/jpeg', 0.85);
                 }
+                if (pdfPage.cleanup) pdfPage.cleanup();
+                return objectUrl;
+            };
+
+            try {
+                let objectUrl = await renderWithScale(pdfBackgroundScale);
+                if (!objectUrl && pdfBackgroundScale > 1) {
+                    objectUrl = await renderWithScale(Math.max(1, pdfBackgroundScale * 0.75));
+                }
+                if (!objectUrl || token !== pdfRenderToken || pdfDoc !== activePdfDocument) {
+                    if (objectUrl && objectUrl.startsWith('blob:')) {
+                        URL.revokeObjectURL(objectUrl);
+                    }
+                    return;
+                }
+
+                const currentPage = state.pages[pageIndex];
+                if (currentPage !== page) {
+                    if (objectUrl && objectUrl.startsWith('blob:')) {
+                        URL.revokeObjectURL(objectUrl);
+                    }
+                    return;
+                }
+
                 page.backgroundImage = objectUrl;
                 page.backgroundSource = 'pdf';
                 touchPdfBackgroundCache(pageIndex, objectUrl);
@@ -3118,10 +3412,6 @@
                     canvas.style.backgroundRepeat = 'no-repeat';
                     canvas.style.backgroundPosition = 'center';
                     canvas.style.backgroundColor = 'transparent';
-                }
-
-                if (pdfPage.cleanup) {
-                    pdfPage.cleanup();
                 }
             } catch (err) {
                 console.error('Failed to render PDF page background:', err);
@@ -3213,6 +3503,7 @@
             const lassoCanvas = wrapper ? wrapper.querySelector('.lasso-overlay') : null;
 
             canvas.addEventListener('pointerdown', (e) => {
+                if (!state.isEditMode) return;
                 if (state.currentTool === 'lasso') {
                     if (e.pointerType === 'touch') return;
                     if (!lassoCanvas) return;
@@ -4179,6 +4470,7 @@
 
         function beginDocTitleEdit() {
             if (!docTitleEl) return;
+            if (!state.isEditMode) return;
             docTitleEditing = true;
             docTitleOriginal = docTitleEl.textContent || '';
             docTitleEl.classList.add('editing');
@@ -4186,6 +4478,12 @@
 
         function finishDocTitleEdit(commit) {
             if (!docTitleEl) return;
+            if (!state.isEditMode) {
+                docTitleEditing = false;
+                docTitleEl.classList.remove('editing');
+                updateDocTitle();
+                return;
+            }
             const nextBase = normalizeDocTitleInput(docTitleEl.textContent || '');
             const originalBase = normalizeDocTitleInput(docTitleOriginal);
             docTitleEditing = false;
@@ -4559,6 +4857,30 @@
             return card;
         }
 
+        function getDriveStarLabel(item) {
+            return item?.starred ? 'Unstar' : 'Star';
+        }
+
+        function getDriveStarIcon(starred) {
+            const fill = starred ? 'currentColor' : 'none';
+            return `
+                <svg viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+                    <path d="M12 3.3l2.7 5.46 6.03.88-4.36 4.25 1.03 6.02L12 17.1l-5.4 2.81 1.03-6.02-4.36-4.25 6.03-.88L12 3.3z"/>
+                </svg>
+            `;
+        }
+
+        function updateStarMenuButton(button, starred) {
+            if (!button) return;
+            const label = button.querySelector('span');
+            if (label) label.textContent = starred ? 'Unstar' : 'Star';
+            button.dataset.starred = starred ? 'true' : 'false';
+            const icon = button.querySelector('svg');
+            if (icon) {
+                icon.setAttribute('fill', starred ? 'currentColor' : 'none');
+            }
+        }
+
         function createDriveItemMenu(item) {
             const menuWrap = document.createElement('div');
             menuWrap.className = 'drive-card-menu';
@@ -4578,7 +4900,12 @@
 
             const menu = document.createElement('div');
             menu.className = 'drive-card-dropdown hidden';
+            const isStarred = !!item?.starred;
             menu.innerHTML = `
+                <button type="button" data-action="star" data-starred="${isStarred ? 'true' : 'false'}">
+                    ${getDriveStarIcon(isStarred)}
+                    <span>${getDriveStarLabel(item)}</span>
+                </button>
                 <button type="button" data-action="move">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -4605,7 +4932,9 @@
                 const action = button?.dataset?.action;
                 if (!action) return;
                 closeDriveCardMenu();
-                if (action === 'move') {
+                if (action === 'star') {
+                    toggleDriveStar(item, button);
+                } else if (action === 'move') {
                     openFolderPicker('move', item);
                 } else if (action === 'trash') {
                     openTrashModal(item);
@@ -4642,6 +4971,14 @@
             refreshDriveFolderContents();
         }
 
+        function formatDriveFolderLabel(folder) {
+            const name = folder?.name || 'Folder';
+            if (name === 'My Drive' || folder?.id === 'root') {
+                return `${name} /`;
+            }
+            return name;
+        }
+
         function createDriveStarredCard(item) {
             if (item?.mimeType === 'application/vnd.google-apps.folder') {
                 const card = document.createElement('div');
@@ -4661,7 +4998,7 @@
 
                 const title = document.createElement('div');
                 title.className = 'drive-card-title';
-                title.textContent = item.name || 'Folder';
+                title.textContent = formatDriveFolderLabel(item);
                 card.appendChild(title);
 
                 const meta = document.createElement('div');
@@ -4696,7 +5033,7 @@
 
             const name = document.createElement('div');
             name.className = 'drive-card-title';
-            name.textContent = folder.name || 'Folder';
+            name.textContent = formatDriveFolderLabel(folder);
             card.appendChild(name);
 
             card.appendChild(createDriveItemMenu(folder));
@@ -4794,7 +5131,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveRecentsCache = data.files || [];
@@ -4824,8 +5161,8 @@
 
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
-                const folderFields = encodeURIComponent('files(id,name)');
-                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents)');
+                const folderFields = encodeURIComponent('files(id,name,starred)');
+                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
 
                 const [folderRes, fileRes] = await Promise.all([
                     driveFetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&orderBy=name&pageSize=100&fields=${folderFields}`),
@@ -4881,6 +5218,7 @@
             state.panY = 0;
             state.overscrollY = 0;
             showEditorView();
+            setEditorMode('view', { force: true });
             showLoading('Opening PDF...');
             try {
                 await ensureDriveToken(false);
@@ -4889,7 +5227,6 @@
                 await importPDFArrayBuffer(arrayBuffer);
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
-                state.driveAutosave = true;
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
                 updateDocTitle();
@@ -4912,6 +5249,7 @@
             const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
             const fileName = `${safeBase}.pdf`;
             showEditorView();
+            setEditorMode('view', { force: true });
             state.zoom = 1;
             state.panX = 0;
             state.panY = 0;
@@ -4936,7 +5274,6 @@
             state.driveFileId = null;
             state.driveFileName = fileName;
             state.driveFolderId = folderId || null;
-            state.driveAutosave = true;
             updateDocTitle();
             saveDriveSession();
             scheduleSave(true);
@@ -5155,7 +5492,7 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                     </svg>
-                    <span>${folder.name || 'Folder'}</span>
+                    <span>${formatDriveFolderLabel(folder)}</span>
                 `;
                 item.addEventListener('click', () => enterFolderPickerFolder(folder));
                 folderPickerList.appendChild(item);
@@ -5196,6 +5533,29 @@
                 refreshDriveFiles();
             } catch (err) {
                 showStatus('Move failed', { preserveState: true });
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function toggleDriveStar(item, button) {
+            if (!item?.id) return;
+            const nextStarred = !item.starred;
+            try {
+                showLoading(nextStarred ? 'Adding to starred...' : 'Removing star...');
+                await driveFetch(`https://www.googleapis.com/drive/v3/files/${item.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ starred: nextStarred })
+                });
+                item.starred = nextStarred;
+                updateStarMenuButton(button, nextStarred);
+                showStatus(nextStarred ? 'Starred' : 'Unstarred', { preserveState: true });
+                refreshDriveStarred();
+                refreshDriveRecents();
+                refreshDriveFolderContents();
+            } catch (err) {
+                showStatus('Star update failed', { preserveState: true });
             } finally {
                 hideLoading();
             }
@@ -5434,7 +5794,8 @@
             e.dataTransfer.dropEffect = 'copy';
         }
 
-        function handleImageDrop(e) {
+        async function handleImageDrop(e) {
+            if (!state.isEditMode) return;
             if (!e.dataTransfer) return;
             e.preventDefault();
             const files = Array.from(e.dataTransfer.files || []).filter(file => file.type.startsWith('image/'));
@@ -5444,16 +5805,19 @@
             if (pageIndex === null) return;
             const dropPos = getPagePosFromClient(pageIndex, e.clientX, e.clientY);
 
-            files.forEach((file, index) => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const src = reader.result;
-                    if (typeof src === 'string') {
-                        addImageToPage(pageIndex, src, dropPos, index);
+            showLoading('Optimizing images...');
+            let offsetIndex = 0;
+            try {
+                for (const file of files) {
+                    const optimizedSrc = await optimizeImageFile(file);
+                    if (typeof optimizedSrc === 'string') {
+                        addImageToPage(pageIndex, optimizedSrc, dropPos, offsetIndex);
+                        offsetIndex += 1;
                     }
-                };
-                reader.readAsDataURL(file);
-            });
+                }
+            } finally {
+                hideLoading();
+            }
         }
 
         function captureStrokes(pageIndex, indices) {
@@ -5787,6 +6151,15 @@
             };
         }
 
+        function pruneImageCache() {
+            if (imageCache.size <= MAX_IMAGE_CACHE) return;
+            const keys = Array.from(imageCache.keys());
+            while (imageCache.size > MAX_IMAGE_CACHE && keys.length > 0) {
+                const key = keys.shift();
+                imageCache.delete(key);
+            }
+        }
+
         function getCachedImage(src, onload) {
             if (!src) return null;
             let img = imageCache.get(src);
@@ -5797,6 +6170,7 @@
                 };
                 img.src = src;
                 imageCache.set(src, img);
+                pruneImageCache();
             } else if (onload && !img.complete) {
                 img.addEventListener('load', onload, { once: true });
             }
@@ -6039,12 +6413,17 @@
 
             // Draw baked background if available (contains old strokes)
             if (page.bakedBackground) {
-                const bakedImg = imageCache.get(page.bakedBackground) || new Image();
-                if (!imageCache.has(page.bakedBackground)) {
+                let bakedImg = imageCache.get(page.bakedBackground);
+                if (!bakedImg) {
+                    bakedImg = new Image();
+                    bakedImg.onload = () => {
+                        redrawPage(pageIndex);
+                    };
                     bakedImg.src = page.bakedBackground;
                     imageCache.set(page.bakedBackground, bakedImg);
+                    pruneImageCache();
                 }
-                if (bakedImg.complete) {
+                if (bakedImg.complete && bakedImg.naturalWidth) {
                     ctx.drawImage(bakedImg, 0, 0, A4_WIDTH, A4_HEIGHT);
                 }
             }
@@ -6281,6 +6660,11 @@
                 themeToggleEditor.addEventListener('change', () => {
                     const next = themeToggleEditor.checked ? 'dark' : 'light';
                     applyTheme(next, true);
+                });
+            }
+            if (modeToggleInput) {
+                modeToggleInput.addEventListener('change', () => {
+                    setEditorMode(modeToggleInput.checked ? 'edit' : 'view');
                 });
             }
             if (driveHomeBtn) {
@@ -6543,6 +6927,44 @@
             setFullscreenButtonState(driveFullscreenBtn, isActive);
         }
 
+        function updateModeToggleUI() {
+            if (!modeToggleInput) return;
+            modeToggleInput.checked = !!state.isEditMode;
+        }
+
+        function setEditorMode(mode, options = {}) {
+            const nextIsEdit = mode === 'edit';
+            if (state.isEditMode === nextIsEdit && !options.force) return;
+            state.isEditMode = nextIsEdit;
+            document.body.classList.toggle('view-mode', !nextIsEdit);
+            updateModeToggleUI();
+
+            if (docTitleEl) {
+                docTitleEl.setAttribute('contenteditable', nextIsEdit ? 'true' : 'false');
+            }
+            if (editPagesBtn) {
+                editPagesBtn.disabled = !nextIsEdit;
+            }
+            if (importPdfBtn) {
+                importPdfBtn.disabled = !nextIsEdit;
+            }
+
+            if (!nextIsEdit) {
+                closePagesPanel();
+                closeDeleteModal();
+                closeResetModal();
+                closeEraserMenu();
+                clearSelection();
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                state.driveAutosave = false;
+                updateAddPageIndicator();
+                return;
+            }
+
+            state.driveAutosave = !!state.driveFileId;
+        }
+
         function handleFullscreenChange() {
             updateFullscreenButton();
             // Allow layout to settle before recalculating layout-dependent positions
@@ -6624,6 +7046,10 @@
 
         function updateAddPageIndicator() {
             if (!addPageIndicator) return;
+            if (!state.isEditMode) {
+                addPageIndicator.style.opacity = 0;
+                return;
+            }
             const pageCount = state.pages.length;
             if (pageCount === 0) {
                 addPageIndicator.style.opacity = 0;
@@ -6672,9 +7098,9 @@
                 state.panY = minPanY - state.overscrollY * OVERSCROLL_FRICTION;
 
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
-                const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
+                const canCreate = state.isEditMode && bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
 
-                state.pendingPageCreate = state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
+                state.pendingPageCreate = state.isEditMode && state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
                 state.pageCreateLocked = state.pendingPageCreate;
                 updateAddPageIndicator();
                 if (overscrollResetTimeout) {
@@ -6703,8 +7129,8 @@
                 }
                 const viewportHeight = canvasViewport.getBoundingClientRect().height;
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
-                const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                state.pendingPageCreate = state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
+                const canCreate = state.isEditMode && bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
+                state.pendingPageCreate = state.isEditMode && state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
                 state.pageCreateLocked = state.pendingPageCreate;
                 updateAddPageIndicator();
                 return;
@@ -7177,8 +7603,8 @@
             const finalizePageCreation = () => {
                 const viewportHeight = canvasViewport.getBoundingClientRect().height;
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
-                const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                if (state.pendingPageCreate && state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate) {
+                const canCreate = state.isEditMode && bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
+                if (state.isEditMode && state.pendingPageCreate && state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate) {
                     const prevLimit = getBottomLimit();
                     addPage(null, true);
                     state.overscrollY = 0;
@@ -8170,6 +8596,7 @@
         }
 
         function undo() {
+            if (!state.isEditMode) return;
             if (state.historyIndex < 0) return;
 
             const action = state.history[state.historyIndex];
@@ -8277,6 +8704,7 @@
         }
 
         function redo() {
+            if (!state.isEditMode) return;
             if (state.historyIndex >= state.history.length - 1) return;
 
             state.historyIndex++;
@@ -8483,6 +8911,58 @@
             });
         }
 
+        function loadImageFromObjectUrl(url) {
+            return new Promise((resolve) => {
+                if (!url) {
+                    resolve(null);
+                    return;
+                }
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => resolve(null);
+                img.src = url;
+            });
+        }
+
+        async function optimizeImageFile(file) {
+            if (!file) return null;
+            const objectUrl = URL.createObjectURL(file);
+            const img = await loadImageFromObjectUrl(objectUrl);
+            URL.revokeObjectURL(objectUrl);
+            if (!img) return null;
+
+            const naturalWidth = img.naturalWidth || img.width || 1;
+            const naturalHeight = img.naturalHeight || img.height || 1;
+            const longEdge = Math.max(naturalWidth, naturalHeight);
+            const totalPixels = naturalWidth * naturalHeight;
+
+            let scale = 1;
+            if (longEdge > MAX_IMAGE_LONG_EDGE) {
+                scale = Math.min(scale, MAX_IMAGE_LONG_EDGE / longEdge);
+            }
+            if (totalPixels > MAX_IMAGE_PIXELS) {
+                scale = Math.min(scale, Math.sqrt(MAX_IMAGE_PIXELS / totalPixels));
+            }
+
+            const targetWidth = Math.max(1, Math.round(naturalWidth * scale));
+            const targetHeight = Math.max(1, Math.round(naturalHeight * scale));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, targetWidth, targetHeight);
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+            const usePng = file.type === 'image/png' && scale >= 0.95 && file.size < 700000;
+            const dataUrl = usePng
+                ? canvas.toDataURL('image/png')
+                : canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY);
+
+            return dataUrl;
+        }
+
         async function drawImagesOnCanvas(ctx, page) {
             if (!page || !Array.isArray(page.images) || page.images.length === 0) return;
             for (const image of page.images) {
@@ -8561,6 +9041,7 @@
                                 backgroundSource: 'pdf',
                                 pdfPageIndex: pagePdfIndex,
                                 images: useLegacyRaster ? [] : restoredImages,
+                                bakedBackground: pageData.bakedBackground || null,
                                 needsRedraw: true
                             });
                         } else {
@@ -8570,6 +9051,7 @@
                                 backgroundSource: 'template',
                                 pdfPageIndex: null,
                                 images: restoredImages,
+                                bakedBackground: pageData.bakedBackground || null,
                                 needsRedraw: true
                             });
                         }
@@ -8580,6 +9062,7 @@
                             backgroundSource: 'pdf',
                             pdfPageIndex: i,
                             images: [],
+                            bakedBackground: null,
                             needsRedraw: true
                         });
                     }
@@ -8588,6 +9071,9 @@
                 renderAllPages();
                 scheduleSave(true);
                 updateVisiblePages(true);
+                if (activePdfDocument) {
+                    processPdfRenderQueue();
+                }
 
                 const isNonAppPdf = !embeddedStrokes;
 
@@ -8605,6 +9091,12 @@
 
                 hideLoading();
                 centerViewOnTop();
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        scheduleVisiblePageUpdate(true);
+                        processPdfRenderQueue();
+                    });
+                });
 
             } catch (err) {
                 console.error('Error importing PDF:', err);
@@ -8614,6 +9106,7 @@
         }
 
         async function importPDF(e) {
+            if (!state.isEditMode) return;
             const file = e.target.files[0];
             if (!file) return;
             const arrayBuffer = await file.arrayBuffer();
@@ -8635,7 +9128,8 @@
                 images: Array.isArray(page.images) ? page.images : [],
                 hasCustomBackground: page.backgroundSource === 'pdf' || !!page.backgroundImage,
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
-                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null
+                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                bakedBackground: page.bakedBackground || null
             }));
 
             // Embed stroke data as PDF metadata (custom property)
@@ -8698,6 +9192,18 @@
                         };
                         img.onerror = resolve;
                         img.src = SVG_BACKGROUND;
+                    });
+                }
+
+                if (page.bakedBackground) {
+                    await new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                            resolve();
+                        };
+                        img.onerror = resolve;
+                        img.src = page.bakedBackground;
                     });
                 }
 
