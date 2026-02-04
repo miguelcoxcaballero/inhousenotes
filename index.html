@@ -1516,6 +1516,37 @@
             position: relative;
         }
 
+        .drive-card.compact {
+            min-height: auto;
+            padding: 12px;
+            gap: 6px;
+            display: grid;
+            grid-template-columns: 52px 1fr;
+            grid-template-rows: auto auto;
+            align-items: center;
+        }
+
+        .drive-card.compact .drive-card-preview {
+            width: 52px;
+            height: 52px;
+            aspect-ratio: auto;
+            border-radius: 12px;
+        }
+
+        .drive-card.compact .drive-card-preview img {
+            object-position: center;
+        }
+
+        .drive-card.compact .drive-card-title,
+        .drive-card.compact .drive-card-meta {
+            grid-column: 2;
+        }
+
+        .drive-card.compact .drive-card-menu {
+            top: 6px;
+            right: 6px;
+        }
+
         .drive-card:hover {
             box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
@@ -4851,7 +4882,7 @@
         function createDriveStarredCard(item) {
             if (item?.mimeType === 'application/vnd.google-apps.folder') {
                 const card = document.createElement('div');
-                card.className = 'drive-card';
+                card.className = 'drive-card compact';
 
                 const preview = document.createElement('div');
                 preview.className = 'drive-card-preview';
@@ -4884,7 +4915,9 @@
                 return card;
             }
 
-            return createDriveFileCard(item);
+            const fileCard = createDriveFileCard(item);
+            fileCard.classList.add('compact');
+            return fileCard;
         }
 
         function createDriveFolderCard(folder) {
