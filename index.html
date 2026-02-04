@@ -2408,18 +2408,25 @@
             return [points[0], points[end]];
         }
 
-        // Simplify stroke points to reduce memory
-        function simplifyStrokePoints(stroke, epsilon = 0.8) {
-            if (!stroke || !stroke.points || stroke.points.length < 5) return stroke;
+        // Simplify stroke points to reduce memory (only for very long strokes)
+        function simplifyStrokePoints(stroke) {
+            if (!stroke || !stroke.points) return stroke;
 
-            // Keep more points for highlighter (needs smooth appearance)
-            const adjustedEpsilon = stroke.tool === 'highlighter' ? epsilon * 2 : epsilon;
+            // Only simplify strokes with many points (long strokes)
+            const minPointsToSimplify = 80;
+            if (stroke.points.length < minPointsToSimplify) return stroke;
 
-            // Preserve pressure data by mapping simplified indices
+            // Very conservative epsilon - preserve handwriting detail
+            const epsilon = 0.3;
+
+            // Keep more points for highlighter
+            const adjustedEpsilon = stroke.tool === 'highlighter' ? epsilon * 3 : epsilon;
+
             const simplified = simplifyPoints(stroke.points, adjustedEpsilon);
 
-            // Ensure minimum points for smooth curves
-            if (simplified.length < 3 && stroke.points.length >= 3) {
+            // Ensure we keep at least 60% of original points to preserve form
+            const minRetention = Math.floor(stroke.points.length * 0.6);
+            if (simplified.length < minRetention) {
                 return stroke;
             }
 
@@ -2838,9 +2845,9 @@
             const cursorOverlay = document.createElement('canvas');
             cursorOverlay.className = 'cursor-overlay';
             cursorOverlay.dataset.page = pageIndex;
-            // Use lower resolution for cursor overlay (eraser preview only)
-            cursorOverlay.width = A4_WIDTH * OVERLAY_SCALE;
-            cursorOverlay.height = A4_HEIGHT * OVERLAY_SCALE;
+            // Use full resolution for smooth stroke preview
+            cursorOverlay.width = A4_WIDTH * CANVAS_SCALE;
+            cursorOverlay.height = A4_HEIGHT * CANVAS_SCALE;
             cursorOverlay.style.width = '100%';
             cursorOverlay.style.height = '100%';
 
@@ -3422,7 +3429,7 @@
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
+            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
 
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
@@ -3551,7 +3558,7 @@
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
+            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
             const radius = state.eraserWidth / 2;
             ctx.strokeStyle = 'rgba(0,0,0,0.45)';
