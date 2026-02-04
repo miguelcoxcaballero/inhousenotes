@@ -3134,6 +3134,18 @@
             pdfRenderToken += 1;
         }
 
+        function clearActiveDocumentView() {
+            resetPdfState();
+            state.pages = [];
+            state.history = [];
+            state.historyIndex = -1;
+            updateHistoryButtons();
+            canvasContainer.innerHTML = '';
+            canvasContainer.appendChild(addPageIndicator);
+            activePageIndices.clear();
+            updateAddPageIndicator();
+        }
+
         function cancelPdfRenderResume() {
             if (!pdfRenderResumeHandle) return;
             if ('cancelIdleCallback' in window) {
@@ -4674,12 +4686,11 @@
                     // Keep existing name if metadata fetch fails.
                 }
 
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${targetFileId}?alt=media`);
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${targetFileId}?alt=media`, { cache: 'no-store' });
                 const arrayBuffer = await res.arrayBuffer();
                 if (!isCurrent()) return;
-                await importPDFArrayBuffer(arrayBuffer, { markDirty: false, guard: isCurrent });
-
-                if (!isCurrent()) return;
+                const ok = await importPDFArrayBuffer(arrayBuffer, { markDirty: false, guard: isCurrent });
+                if (!isCurrent() || !ok) return;
                 state.driveFileName = latestName || state.driveFileName;
                 if (state.driveFileName) {
                     const baseName = state.driveFileName.replace(/\.pdf$/i, '');
@@ -4714,7 +4725,7 @@
             if (pdfRestoreInProgress) return;
             pdfRestoreInProgress = true;
             try {
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`);
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`, { cache: 'no-store' });
                 const arrayBuffer = await res.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 resetPdfState();
@@ -5182,16 +5193,17 @@
             state.panY = 0;
             state.overscrollY = 0;
             showEditorView();
+            clearActiveDocumentView();
             showLoading('Opening PDF...');
             try {
                 await ensureDriveToken(false);
                 resetViewportInteractionState();
                 driveDirty = false;
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, { cache: 'no-store' });
                 const arrayBuffer = await res.arrayBuffer();
                 if (!isCurrent()) return;
-                await importPDFArrayBuffer(arrayBuffer, { markDirty: false, guard: isCurrent });
-                if (!isCurrent()) return;
+                const ok = await importPDFArrayBuffer(arrayBuffer, { markDirty: false, guard: isCurrent });
+                if (!isCurrent() || !ok) return;
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
                 driveAutosavePreferred = true;
@@ -9100,7 +9112,7 @@
             const markDirty = options.markDirty !== false;
             const guard = typeof options.guard === 'function' ? options.guard : null;
             const isCurrent = () => !guard || guard();
-            if (!isCurrent()) return;
+            if (!isCurrent()) return false;
             showLoading('Analyzing PDF...');
 
             try {
@@ -9109,7 +9121,7 @@
                     if (pdf.destroy) {
                         pdf.destroy();
                     }
-                    return;
+                    return false;
                 }
                 const numPages = pdf.numPages;
 
@@ -9126,7 +9138,7 @@
                             if (pdf.destroy) {
                                 pdf.destroy();
                             }
-                            return;
+                            return false;
                         }
                         const keywords = metadata?.info?.Keywords || '';
 
@@ -9193,7 +9205,7 @@
                     if (pdf.destroy) {
                         pdf.destroy();
                     }
-                    return;
+                    return false;
                 }
 
                 resetViewportInteractionState();
@@ -9237,10 +9249,12 @@
                     driveDirty = false;
                 }
 
+                return true;
             } catch (err) {
                 console.error('Error importing PDF:', err);
                 hideLoading();
                 showStatus('Error importing PDF', { preserveState: true });
+                return false;
             }
         }
 
