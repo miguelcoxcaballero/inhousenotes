@@ -2617,9 +2617,22 @@
                 }
 
                 // Convert baked strokes to background image
-                page.bakedBackground = offscreen.toDataURL('image/png', 0.92);
+                let bakedUrl = '';
+                try {
+                    bakedUrl = offscreen.toDataURL('image/png', 0.92);
+                } catch (err) {
+                    bakedUrl = '';
+                }
 
-                // Remove baked strokes from array
+                if (!bakedUrl || bakedUrl.length < 128) {
+                    // Baking failed - do not drop any strokes
+                    bakingInProgress.delete(pageIndex);
+                    return;
+                }
+
+                page.bakedBackground = bakedUrl;
+
+                // Remove baked strokes from array only after successful bake
                 page.strokes = page.strokes.slice(page.strokes.length - keepCount);
 
                 bakingInProgress.delete(pageIndex);
@@ -3278,13 +3291,20 @@
 
         async function renderPdfPageToBackground(pageIndex, token) {
             if (!activePdfDocument) return;
+            const pdfDoc = activePdfDocument;
             const page = state.pages[pageIndex];
             if (!page || !page.pdfPageIndex) return;
             if (page.backgroundImage) return;
-            if (token !== pdfRenderToken) return;
+            if (token !== pdfRenderToken || pdfDoc !== activePdfDocument) return;
 
             try {
-                const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
+                const pdfPage = await pdfDoc.getPage(page.pdfPageIndex);
+                if (token !== pdfRenderToken || pdfDoc !== activePdfDocument) {
+                    if (pdfPage.cleanup) {
+                        pdfPage.cleanup();
+                    }
+                    return;
+                }
                 const baseViewport = pdfPage.getViewport({ scale: 1 });
                 const targetWidth = A4_WIDTH * pdfBackgroundScale;
                 const targetHeight = A4_HEIGHT * pdfBackgroundScale;
@@ -3297,6 +3317,12 @@
                 const tempCtx = tempCanvas.getContext('2d');
 
                 await pdfPage.render({ canvasContext: tempCtx, viewport }).promise;
+                if (token !== pdfRenderToken || pdfDoc !== activePdfDocument) {
+                    if (pdfPage.cleanup) {
+                        pdfPage.cleanup();
+                    }
+                    return;
+                }
 
                 const a4Canvas = document.createElement('canvas');
                 a4Canvas.width = targetWidth;
@@ -3318,6 +3344,27 @@
                 } else {
                     objectUrl = a4Canvas.toDataURL('image/jpeg', 0.85);
                 }
+                if (token !== pdfRenderToken || pdfDoc !== activePdfDocument) {
+                    if (objectUrl && objectUrl.startsWith('blob:')) {
+                        URL.revokeObjectURL(objectUrl);
+                    }
+                    if (pdfPage.cleanup) {
+                        pdfPage.cleanup();
+                    }
+                    return;
+                }
+
+                const currentPage = state.pages[pageIndex];
+                if (currentPage !== page) {
+                    if (objectUrl && objectUrl.startsWith('blob:')) {
+                        URL.revokeObjectURL(objectUrl);
+                    }
+                    if (pdfPage.cleanup) {
+                        pdfPage.cleanup();
+                    }
+                    return;
+                }
+
                 page.backgroundImage = objectUrl;
                 page.backgroundSource = 'pdf';
                 touchPdfBackgroundCache(pageIndex, objectUrl);
@@ -4506,6 +4553,9 @@
             }
             if (signedIn) {
                 loadDriveProfile();
+                if (driveOpenInProgress || driveRefreshInProgress) {
+                    return;
+                }
                 if (driveOpenNeedsRefresh) {
                     refreshOpenDriveFileFromDrive();
                 } else {
@@ -4720,6 +4770,7 @@
 
         async function restorePdfBackgroundsIfNeeded() {
             if (!driveAccessToken || activePdfDocument || !state.driveFileId) return;
+            if (driveOpenInProgress || driveRefreshInProgress) return;
             const needsPdf = state.pages.some(page => page?.pdfPageIndex);
             if (!needsPdf) return;
             if (pdfRestoreInProgress) return;
@@ -6374,12 +6425,16 @@
 
             // Draw baked background if available (contains old strokes)
             if (page.bakedBackground) {
-                const bakedImg = imageCache.get(page.bakedBackground) || new Image();
-                if (!imageCache.has(page.bakedBackground)) {
+                let bakedImg = imageCache.get(page.bakedBackground);
+                if (!bakedImg) {
+                    bakedImg = new Image();
+                    bakedImg.onload = () => {
+                        redrawPage(pageIndex);
+                    };
                     bakedImg.src = page.bakedBackground;
                     imageCache.set(page.bakedBackground, bakedImg);
                 }
-                if (bakedImg.complete) {
+                if (bakedImg.complete && bakedImg.naturalWidth) {
                     ctx.drawImage(bakedImg, 0, 0, A4_WIDTH, A4_HEIGHT);
                 }
             }
@@ -7725,8 +7780,9 @@
             }
 
             const finalizePageCreation = () => {
-                // If pendingPageCreate is true, the + icon was at full size, so create the page
-                const shouldCreate = state.isEditMode && (state.pendingPageCreate || state.overscrollY >= OVERSCROLL_THRESHOLD);
+                const progress = state.overscrollY / OVERSCROLL_THRESHOLD;
+                // If pendingPageCreate is true or we are very close to the threshold, create the page
+                const shouldCreate = state.isEditMode && (state.pendingPageCreate || progress >= 0.9);
                 if (shouldCreate) {
                     const prevLimit = getBottomLimit();
                     addPage(null, true);
@@ -9345,6 +9401,19 @@
                         };
                         img.onerror = resolve;
                         img.src = SVG_BACKGROUND;
+                    });
+                }
+
+                // Draw baked strokes (if any) on top of background
+                if (page.bakedBackground) {
+                    await new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                            resolve();
+                        };
+                        img.onerror = resolve;
+                        img.src = page.bakedBackground;
                     });
                 }
 
