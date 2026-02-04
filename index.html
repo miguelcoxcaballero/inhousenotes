@@ -131,39 +131,31 @@
             align-items: center;
         }
 
-        .mode-toggle {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 10px;
-            border-radius: 999px;
-            border: 1px solid rgba(0,0,0,0.08);
-            background: rgba(0,0,0,0.03);
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            cursor: pointer;
-            user-select: none;
+        .mode-toggle-btn {
+            min-width: 140px;
+            justify-content: space-between;
+            padding: 10px 12px;
         }
 
-        .mode-toggle-label {
+        .mode-toggle-text {
+            display: inline-block;
+            width: 72px;
+            text-align: left;
             font-weight: 600;
             letter-spacing: 0.01em;
         }
 
-        .mode-toggle input {
-            appearance: none;
+        .mode-toggle-pill {
             width: 38px;
             height: 20px;
             border-radius: 999px;
             background: rgba(0,0,0,0.15);
             position: relative;
-            outline: none;
             transition: background 0.2s ease;
-            cursor: pointer;
+            flex: 0 0 auto;
         }
 
-        .mode-toggle input::after {
-            content: '';
+        .mode-toggle-knob {
             position: absolute;
             width: 14px;
             height: 14px;
@@ -175,17 +167,12 @@
             transition: transform 0.2s ease;
         }
 
-        .mode-toggle input:checked {
+        .mode-toggle-btn.is-editing .mode-toggle-pill {
             background: var(--accent-blue);
         }
 
-        .mode-toggle input:checked::after {
+        .mode-toggle-btn.is-editing .mode-toggle-knob {
             transform: translateX(18px);
-        }
-
-        [data-theme="dark"] .mode-toggle {
-            background: rgba(255,255,255,0.08);
-            border-color: rgba(255,255,255,0.12);
         }
 
         .save-indicator {
@@ -1516,37 +1503,6 @@
             position: relative;
         }
 
-        .drive-card.compact {
-            min-height: auto;
-            padding: 12px;
-            gap: 6px;
-            display: grid;
-            grid-template-columns: 52px 1fr;
-            grid-template-rows: auto auto;
-            align-items: center;
-        }
-
-        .drive-card.compact .drive-card-preview {
-            width: 52px;
-            height: 52px;
-            aspect-ratio: auto;
-            border-radius: 12px;
-        }
-
-        .drive-card.compact .drive-card-preview img {
-            object-position: center;
-        }
-
-        .drive-card.compact .drive-card-title,
-        .drive-card.compact .drive-card-meta {
-            grid-column: 2;
-        }
-
-        .drive-card.compact .drive-card-menu {
-            top: 6px;
-            right: 6px;
-        }
-
         .drive-card:hover {
             box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
@@ -2079,12 +2035,14 @@
                 <span class="doc-title" id="doc-title" role="textbox" aria-label="Document title" contenteditable="true" spellcheck="false">Untitled</span>
             </div>
             <div class="header-actions">
-                <label class="mode-toggle" id="mode-toggle" title="Cambiar entre lectura y edicion">
-                    <span class="mode-toggle-label" id="mode-toggle-label">Lectura</span>
-                    <input type="checkbox" id="mode-toggle-input" aria-label="Modo editar">
-                </label>
                 <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
+                <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button" aria-pressed="false" aria-label="Modo lectura" title="Cambiar entre lectura y edicion">
+                    <span class="mode-toggle-text" id="mode-toggle-label">Lectura</span>
+                    <span class="mode-toggle-pill" aria-hidden="true">
+                        <span class="mode-toggle-knob"></span>
+                    </span>
+                </button>
                 <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="15 3 21 3 21 9"/>
@@ -2758,7 +2716,7 @@
         const driveHomeBtn = document.getElementById('btn-drive-home');
         const driveBackBtn = document.getElementById('btn-drive-back');
         const docTitleEl = document.getElementById('doc-title');
-        const modeToggleInput = document.getElementById('mode-toggle-input');
+        const modeToggleBtn = document.getElementById('mode-toggle-btn');
         const modeToggleLabel = document.getElementById('mode-toggle-label');
         const folderPickerModal = document.getElementById('modal-folder-picker');
         const folderPickerTitle = document.getElementById('folder-picker-title');
@@ -2837,8 +2795,10 @@
             if (editorView) {
                 editorView.classList.toggle('read-only', next);
             }
-            if (modeToggleInput) {
-                modeToggleInput.checked = !next;
+            if (modeToggleBtn) {
+                modeToggleBtn.classList.toggle('is-editing', !next);
+                modeToggleBtn.setAttribute('aria-pressed', next ? 'false' : 'true');
+                modeToggleBtn.setAttribute('aria-label', next ? 'Modo lectura' : 'Modo editar');
             }
             if (modeToggleLabel) {
                 modeToggleLabel.textContent = next ? 'Lectura' : 'Editar';
@@ -4882,7 +4842,7 @@
         function createDriveStarredCard(item) {
             if (item?.mimeType === 'application/vnd.google-apps.folder') {
                 const card = document.createElement('div');
-                card.className = 'drive-card compact';
+                card.className = 'drive-card';
 
                 const preview = document.createElement('div');
                 preview.className = 'drive-card-preview';
@@ -4915,9 +4875,7 @@
                 return card;
             }
 
-            const fileCard = createDriveFileCard(item);
-            fileCard.classList.add('compact');
-            return fileCard;
+            return createDriveFileCard(item);
         }
 
         function createDriveFolderCard(folder) {
@@ -6662,9 +6620,9 @@
                 });
             }
 
-            if (modeToggleInput) {
-                modeToggleInput.addEventListener('change', () => {
-                    setReadOnlyMode(!modeToggleInput.checked, { user: true });
+            if (modeToggleBtn) {
+                modeToggleBtn.addEventListener('click', () => {
+                    setReadOnlyMode(!state.isReadOnly, { user: true });
                 });
             }
 
