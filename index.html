@@ -50,9 +50,19 @@
             --icon-size: 20px;
             --header-btn-size: 44px;
             --banner-height: 64px;
+            --toolbar-tilt: 18deg;
             --selection-handle-size: 14px;
             --selection-handle-offset: calc(-1px - (var(--selection-handle-size) / 2));
             --rotate-handle-size: 10px;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #151515;
+            --bg-secondary: #1c1c1c;
+            --text-primary: #f5f5f5;
+            --text-secondary: #a2a2a2;
+            --shadow-soft: 0 2px 20px rgba(0,0,0,0.35);
+            --shadow-medium: 0 4px 30px rgba(0,0,0,0.45);
         }
 
         html, body {
@@ -213,6 +223,20 @@
             color: var(--text-primary);
         }
 
+        [data-theme="dark"] .btn-secondary {
+            background: rgba(255,255,255,0.08);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .btn-primary {
+            background: #f5f5f5;
+            color: #111;
+        }
+
+        [data-theme="dark"] .btn-primary:hover {
+            background: #ffffff;
+        }
+
         .btn-secondary:hover {
             background: rgba(0,0,0,0.1);
         }
@@ -228,6 +252,10 @@
             background: #2c2c2c;
             position: relative;
             cursor: grab;
+        }
+
+        [data-theme="dark"] #canvas-viewport {
+            background: #121212;
         }
 
         #canvas-container {
@@ -459,11 +487,11 @@
         }
 
         #toolbar.toolbar-tilt-forward {
-            animation: toolbar-tilt-forward 0.52s cubic-bezier(0.2, 0.7, 0.2, 1);
+            animation: toolbar-tilt-forward 0.36s cubic-bezier(0.22, 0.61, 0.36, 1);
         }
 
         #toolbar.toolbar-tilt-back {
-            animation: toolbar-tilt-back 0.52s cubic-bezier(0.2, 0.7, 0.2, 1);
+            animation: toolbar-tilt-back 0.36s cubic-bezier(0.22, 0.61, 0.36, 1);
         }
 
         #toolbar.horizontal {
@@ -555,8 +583,8 @@
             0% {
                 --toolbar-rotate: 0deg;
             }
-            60% {
-                --toolbar-rotate: 84deg;
+            50% {
+                --toolbar-rotate: var(--toolbar-tilt);
             }
             100% {
                 --toolbar-rotate: 0deg;
@@ -567,8 +595,8 @@
             0% {
                 --toolbar-rotate: 0deg;
             }
-            60% {
-                --toolbar-rotate: -84deg;
+            50% {
+                --toolbar-rotate: calc(-1 * var(--toolbar-tilt));
             }
             100% {
                 --toolbar-rotate: 0deg;
@@ -700,6 +728,48 @@
         }
 
         .eraser-toggle input:checked::after {
+            transform: translateX(18px);
+        }
+
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+        }
+
+        .theme-toggle input {
+            appearance: none;
+            width: 38px;
+            height: 20px;
+            border-radius: 999px;
+            background: rgba(0,0,0,0.15);
+            position: relative;
+            outline: none;
+            transition: background 0.2s ease;
+            cursor: pointer;
+        }
+
+        .theme-toggle input::after {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: white;
+            top: 3px;
+            left: 3px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease;
+        }
+
+        .theme-toggle input:checked {
+            background: var(--text-primary);
+        }
+
+        .theme-toggle input:checked::after {
             transform: translateX(18px);
         }
 
@@ -1140,6 +1210,12 @@
             padding-bottom: 10px;
         }
 
+        #btn-drive-login {
+            min-height: var(--header-btn-size);
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+
         .drive-profile {
             position: relative;
             display: flex;
@@ -1185,6 +1261,12 @@
             flex-direction: column;
             gap: 12px;
             z-index: 2000;
+        }
+
+        [data-theme="dark"] .drive-profile-btn,
+        [data-theme="dark"] .drive-profile-menu {
+            background: #1f1f1f;
+            border-color: rgba(255,255,255,0.08);
         }
 
         .drive-profile-meta {
@@ -1246,6 +1328,12 @@
             background: white;
             font-family: inherit;
             font-size: 0.9rem;
+        }
+
+        [data-theme="dark"] .drive-search {
+            background: #1f1f1f;
+            border-color: rgba(255,255,255,0.08);
+            color: var(--text-primary);
         }
 
         .drive-search:disabled {
@@ -1423,6 +1511,41 @@
             z-index: 10;
         }
 
+        [data-theme="dark"] .drive-card,
+        [data-theme="dark"] .drive-folder-card,
+        [data-theme="dark"] .drive-card-dropdown,
+        [data-theme="dark"] .drive-card-more,
+        [data-theme="dark"] .drive-card-preview,
+        [data-theme="dark"] .bin-item,
+        [data-theme="dark"] .bin-item-dropdown,
+        [data-theme="dark"] .folder-picker-item,
+        [data-theme="dark"] .modal {
+            background: #1f1f1f;
+            border-color: rgba(255,255,255,0.08);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+        }
+
+        [data-theme="dark"] .drive-card-preview,
+        [data-theme="dark"] .bin-item {
+            background: rgba(255,255,255,0.04);
+        }
+
+        [data-theme="dark"] .drive-card-more,
+        [data-theme="dark"] .bin-item-more {
+            background: rgba(255,255,255,0.08);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .drive-card-dropdown,
+        [data-theme="dark"] .bin-item-dropdown {
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        [data-theme="dark"] .drive-empty {
+            background: rgba(255,255,255,0.04);
+            border-color: rgba(255,255,255,0.1);
+        }
+
         .drive-card-dropdown button {
             border: none;
             background: transparent;
@@ -1533,6 +1656,7 @@
             border-radius: 12px;
             background: rgba(0,0,0,0.02);
             border: 1px solid rgba(0,0,0,0.06);
+            position: relative;
         }
 
         .bin-item svg {
@@ -1545,6 +1669,64 @@
         .bin-item-meta {
             font-size: 0.75rem;
             color: var(--text-secondary);
+        }
+
+        .bin-item-menu {
+            margin-left: auto;
+            position: relative;
+        }
+
+        .bin-item-more {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            border: none;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .bin-item-dropdown {
+            position: absolute;
+            right: 0;
+            top: 34px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 12px 26px rgba(0,0,0,0.18);
+            border: 1px solid rgba(0,0,0,0.08);
+            padding: 6px;
+            min-width: 160px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 10;
+        }
+
+        .bin-item-dropdown button {
+            border: none;
+            background: transparent;
+            padding: 8px 10px;
+            border-radius: 8px;
+            text-align: left;
+            font-size: 0.85rem;
+            font-family: inherit;
+            cursor: pointer;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .bin-item-dropdown button:hover {
+            background: rgba(0,0,0,0.06);
+        }
+
+        .bin-item-dropdown svg {
+            width: 16px;
+            height: 16px;
         }
 
         .drive-folder-card {
@@ -1659,6 +1841,10 @@
                                 <div class="drive-profile-email" id="drive-profile-email"></div>
                             </div>
                         </div>
+                        <label class="theme-toggle" for="theme-toggle">
+                            <span>Night mode</span>
+                            <input type="checkbox" id="theme-toggle" aria-label="Night mode">
+                        </label>
                         <div class="drive-profile-actions">
                             <button class="btn btn-secondary" id="btn-drive-menu-refresh" type="button">Refresh</button>
                             <button class="btn btn-secondary" id="btn-drive-menu-logout" type="button">Sign out</button>
@@ -1752,6 +1938,28 @@
                         <polyline points="9 15 12 18 15 15"/>
                     </svg>
                 </button>
+                <div class="drive-profile hidden" id="drive-profile-editor">
+                    <button class="drive-profile-btn" id="btn-drive-profile-editor" type="button" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">
+                        <img class="drive-profile-avatar" id="drive-profile-avatar-editor" alt="Profile">
+                    </button>
+                    <div class="drive-profile-menu hidden" id="drive-profile-menu-editor" role="menu">
+                        <div class="drive-profile-meta">
+                            <img class="drive-profile-avatar" id="drive-profile-avatar-menu-editor" alt="Profile">
+                            <div>
+                                <div class="drive-profile-name" id="drive-profile-name-editor">Signed in</div>
+                                <div class="drive-profile-email" id="drive-profile-email-editor"></div>
+                            </div>
+                        </div>
+                        <label class="theme-toggle" for="theme-toggle-editor">
+                            <span>Night mode</span>
+                            <input type="checkbox" id="theme-toggle-editor" aria-label="Night mode">
+                        </label>
+                        <div class="drive-profile-actions">
+                            <button class="btn btn-secondary" id="btn-drive-menu-refresh-editor" type="button">Refresh</button>
+                            <button class="btn btn-secondary" id="btn-drive-menu-logout-editor" type="button">Sign out</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -1849,6 +2057,7 @@
             <div class="status-dot"></div>
             <span id="status-text">Saved</span>
         </div>
+    </div>
     </div>
 
     <div class="modal-overlay" id="modal-delete-page">
@@ -1965,8 +2174,6 @@
     </div>
 
     <input type="file" id="pdf-input" accept=".pdf">
-    </div>
-    </div>
 
     <script>
         // Configure PDF.js worker
@@ -2059,6 +2266,7 @@
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = 'drive-session-v1';
+        const THEME_KEY = 'inhouse-theme';
         const VIEW_MODE_KEY = 'notebook-view-mode-v1';
         const DATA_STORAGE_KEY = 'notebook-data-v2';
         const DB_NAME = 'notebook-data-db-v1';
@@ -2160,8 +2368,19 @@
         const driveProfileAvatarMenu = document.getElementById('drive-profile-avatar-menu');
         const driveProfileName = document.getElementById('drive-profile-name');
         const driveProfileEmail = document.getElementById('drive-profile-email');
+        const themeToggle = document.getElementById('theme-toggle');
         const driveMenuRefreshBtn = document.getElementById('btn-drive-menu-refresh');
         const driveMenuLogoutBtn = document.getElementById('btn-drive-menu-logout');
+        const driveProfileWrapEditor = document.getElementById('drive-profile-editor');
+        const driveProfileBtnEditor = document.getElementById('btn-drive-profile-editor');
+        const driveProfileMenuEditor = document.getElementById('drive-profile-menu-editor');
+        const driveProfileAvatarEditor = document.getElementById('drive-profile-avatar-editor');
+        const driveProfileAvatarMenuEditor = document.getElementById('drive-profile-avatar-menu-editor');
+        const driveProfileNameEditor = document.getElementById('drive-profile-name-editor');
+        const driveProfileEmailEditor = document.getElementById('drive-profile-email-editor');
+        const themeToggleEditor = document.getElementById('theme-toggle-editor');
+        const driveMenuRefreshBtnEditor = document.getElementById('btn-drive-menu-refresh-editor');
+        const driveMenuLogoutBtnEditor = document.getElementById('btn-drive-menu-logout-editor');
         const driveHomeBtn = document.getElementById('btn-drive-home');
         const driveBackBtn = document.getElementById('btn-drive-back');
         const docTitleEl = document.getElementById('doc-title');
@@ -2205,6 +2424,7 @@
         let docTitleEditing = false;
         let docTitleOriginal = '';
         let activeDriveCardMenu = null;
+        let activeBinMenu = null;
         let folderPickerMode = null;
         let folderPickerTargetFile = null;
         let folderPickerStack = [{ id: 'root', name: 'My Drive' }];
@@ -2228,6 +2448,7 @@
         // Initialize
         async function init() {
             pendingViewState = loadViewState();
+            initTheme();
             await loadFromStorage();
             loadDriveSession();
             bakeLegacyEraserAreaStrokes();
@@ -3520,6 +3741,65 @@
             docTitleEl.textContent = getBaseDocTitle(name);
         }
 
+        function getSystemTheme() {
+            return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+        }
+
+        function applyTheme(mode, persist = false) {
+            const next = mode === 'dark' ? 'dark' : 'light';
+            document.documentElement.dataset.theme = next;
+            if (persist) {
+                try {
+                    localStorage.setItem(THEME_KEY, next);
+                } catch (e) {
+                    console.error('Failed to save theme:', e);
+                }
+            }
+            updateThemeToggleState();
+        }
+
+        function updateThemeToggleState() {
+            const isDark = document.documentElement.dataset.theme === 'dark';
+            if (themeToggle) {
+                themeToggle.checked = isDark;
+            }
+            if (themeToggleEditor) {
+                themeToggleEditor.checked = isDark;
+            }
+        }
+
+        function initTheme() {
+            let stored = null;
+            try {
+                stored = localStorage.getItem(THEME_KEY);
+            } catch (e) {
+                stored = null;
+            }
+            if (stored === 'dark' || stored === 'light') {
+                applyTheme(stored, false);
+            } else {
+                applyTheme(getSystemTheme(), false);
+            }
+            if (window.matchMedia) {
+                const media = window.matchMedia('(prefers-color-scheme: dark)');
+                if (media && media.addEventListener) {
+                    media.addEventListener('change', (e) => {
+                        let currentStored = null;
+                        try {
+                            currentStored = localStorage.getItem(THEME_KEY);
+                        } catch (err) {
+                            currentStored = null;
+                        }
+                        if (!currentStored) {
+                            applyTheme(e.matches ? 'dark' : 'light', false);
+                        }
+                    });
+                }
+            }
+        }
+
         function normalizeDocTitleInput(value) {
             const cleaned = (value || '').replace(/\s+/g, ' ').trim();
             if (!cleaned) return 'Untitled';
@@ -3592,7 +3872,7 @@
         function showDriveHome() {
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
-            closeDriveProfileMenu();
+            closeDriveProfileMenus();
             saveViewMode('drive');
         }
 
@@ -3650,6 +3930,7 @@
             const signedIn = !!driveAccessToken;
             if (driveLoginBtn) driveLoginBtn.style.display = signedIn ? 'none' : 'inline-flex';
             if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !signedIn);
+            if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !signedIn);
             if (driveSearchInput) driveSearchInput.disabled = !signedIn;
             if (driveNewBtn) driveNewBtn.disabled = !signedIn;
             if (driveBinBtn) driveBinBtn.disabled = !signedIn;
@@ -3660,7 +3941,7 @@
             if (!signedIn) {
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
-                closeDriveProfileMenu();
+                closeDriveProfileMenus();
             } else if (state.driveAutosave) {
                 clearTimeout(driveSaveTimeout);
                 driveSaveTimeout = setTimeout(() => {
@@ -3727,7 +4008,7 @@
             if (driveStatusEl) driveStatusEl.textContent = 'Sign in to browse your Drive.';
             driveUserProfile = null;
             updateDriveProfileUI(null);
-            closeDriveProfileMenu();
+            closeDriveProfileMenus();
             clearDriveTokenStorage();
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
             clearDriveSession();
@@ -3747,6 +4028,18 @@
             }
             if (driveProfileEmail) {
                 driveProfileEmail.textContent = profile?.email || '';
+            }
+            if (driveProfileAvatarEditor) {
+                driveProfileAvatarEditor.src = profile?.photo || fallback;
+            }
+            if (driveProfileAvatarMenuEditor) {
+                driveProfileAvatarMenuEditor.src = profile?.photo || fallback;
+            }
+            if (driveProfileNameEditor) {
+                driveProfileNameEditor.textContent = profile?.name || 'Signed in';
+            }
+            if (driveProfileEmailEditor) {
+                driveProfileEmailEditor.textContent = profile?.email || '';
             }
         }
 
@@ -3773,23 +4066,34 @@
             }
         }
 
-        function toggleDriveProfileMenu(force) {
-            if (!driveProfileMenu) return;
+        function toggleDriveProfileMenu(menuEl, btnEl, force) {
+            if (!menuEl) return;
             const shouldOpen = typeof force === 'boolean'
                 ? force
-                : driveProfileMenu.classList.contains('hidden');
-            driveProfileMenu.classList.toggle('hidden', !shouldOpen);
-            if (driveProfileBtn) {
-                driveProfileBtn.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+                : menuEl.classList.contains('hidden');
+            if (menuEl !== driveProfileMenu) {
+                closeDriveProfileMenu(driveProfileMenu, driveProfileBtn);
+            }
+            if (menuEl !== driveProfileMenuEditor) {
+                closeDriveProfileMenu(driveProfileMenuEditor, driveProfileBtnEditor);
+            }
+            menuEl.classList.toggle('hidden', !shouldOpen);
+            if (btnEl) {
+                btnEl.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
             }
         }
 
-        function closeDriveProfileMenu() {
-            if (!driveProfileMenu) return;
-            driveProfileMenu.classList.add('hidden');
-            if (driveProfileBtn) {
-                driveProfileBtn.setAttribute('aria-expanded', 'false');
+        function closeDriveProfileMenu(menuEl, btnEl) {
+            if (!menuEl) return;
+            menuEl.classList.add('hidden');
+            if (btnEl) {
+                btnEl.setAttribute('aria-expanded', 'false');
             }
+        }
+
+        function closeDriveProfileMenus() {
+            closeDriveProfileMenu(driveProfileMenu, driveProfileBtn);
+            closeDriveProfileMenu(driveProfileMenuEditor, driveProfileBtnEditor);
         }
 
         async function restorePdfBackgroundsIfNeeded() {
@@ -3923,9 +4227,8 @@
             menu.className = 'drive-card-dropdown hidden';
             menu.innerHTML = `
                 <button type="button" data-action="move">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 7h7l2 2h9a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-                        <path d="M3 7V5a2 2 0 0 1 2-2h4"/>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                     </svg>
                     <span>Move</span>
                 </button>
@@ -4492,7 +4795,7 @@
             if (driveBinEmpty) driveBinEmpty.classList.add('hidden');
             try {
                 const q = encodeURIComponent(`trashed=true and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
-                const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,mimeType)');
+                const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,mimeType,parents)');
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=100&fields=${fields}`);
                 const data = await res.json();
                 const files = data.files || [];
@@ -4515,10 +4818,93 @@
                             <div class="bin-item-meta">Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}</div>
                         </div>
                     `;
+                    const menuWrap = document.createElement('div');
+                    menuWrap.className = 'bin-item-menu';
+                    const menuBtn = document.createElement('button');
+                    menuBtn.type = 'button';
+                    menuBtn.className = 'bin-item-more';
+                    menuBtn.title = 'More actions';
+                    menuBtn.setAttribute('aria-label', 'More actions');
+                    menuBtn.innerHTML = `
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                            <circle cx="5" cy="12" r="2"></circle>
+                            <circle cx="12" cy="12" r="2"></circle>
+                            <circle cx="19" cy="12" r="2"></circle>
+                        </svg>
+                    `;
+                    const menu = document.createElement('div');
+                    menu.className = 'bin-item-dropdown hidden';
+                    menu.innerHTML = `
+                        <button type="button" data-action="restore">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                                <path d="M10 11l2-2 2 2"/>
+                                <path d="M12 9v6"/>
+                            </svg>
+                            <span>Restore</span>
+                        </button>
+                    `;
+                    menuBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        toggleBinItemMenu(menu);
+                    });
+                    menu.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const btn = e.target?.closest ? e.target.closest('button[data-action]') : null;
+                        const action = btn?.dataset?.action;
+                        if (action === 'restore') {
+                            closeBinItemMenu();
+                            await restoreDriveFile(file);
+                        }
+                    });
+                    menuWrap.appendChild(menuBtn);
+                    menuWrap.appendChild(menu);
+                    item.appendChild(menuWrap);
                     driveBinList.appendChild(item);
                 });
             } catch (err) {
                 if (driveBinEmpty) driveBinEmpty.classList.remove('hidden');
+            }
+        }
+
+        function toggleBinItemMenu(menuEl) {
+            if (!menuEl) return;
+            if (activeBinMenu && activeBinMenu !== menuEl) {
+                activeBinMenu.classList.add('hidden');
+            }
+            const shouldOpen = menuEl.classList.contains('hidden');
+            menuEl.classList.toggle('hidden', !shouldOpen);
+            activeBinMenu = shouldOpen ? menuEl : null;
+        }
+
+        function closeBinItemMenu() {
+            if (!activeBinMenu) return;
+            activeBinMenu.classList.add('hidden');
+            activeBinMenu = null;
+        }
+
+        async function restoreDriveFile(file) {
+            if (!file?.id) return;
+            try {
+                showLoading('Restoring...');
+                const parents = Array.isArray(file.parents) ? file.parents : [];
+                const params = new URLSearchParams();
+                if (parents.length > 0) {
+                    params.set('addParents', parents.join(','));
+                }
+                await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?${params.toString()}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trashed: false })
+                });
+                showStatus('Restored', { preserveState: true });
+                refreshDriveBin();
+                refreshDriveFiles();
+            } catch (err) {
+                showStatus('Restore failed', { preserveState: true });
+            } finally {
+                hideLoading();
             }
         }
 
@@ -5351,13 +5737,25 @@
             }
             if (driveMenuRefreshBtn) {
                 driveMenuRefreshBtn.addEventListener('click', () => {
-                    closeDriveProfileMenu();
+                    closeDriveProfileMenus();
                     refreshDriveFiles();
                 });
             }
             if (driveMenuLogoutBtn) {
                 driveMenuLogoutBtn.addEventListener('click', () => {
-                    closeDriveProfileMenu();
+                    closeDriveProfileMenus();
+                    signOutDrive();
+                });
+            }
+            if (driveMenuRefreshBtnEditor) {
+                driveMenuRefreshBtnEditor.addEventListener('click', () => {
+                    closeDriveProfileMenus();
+                    refreshDriveFiles();
+                });
+            }
+            if (driveMenuLogoutBtnEditor) {
+                driveMenuLogoutBtnEditor.addEventListener('click', () => {
+                    closeDriveProfileMenus();
                     signOutDrive();
                 });
             }
@@ -5409,7 +5807,25 @@
             if (driveProfileBtn) {
                 driveProfileBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    toggleDriveProfileMenu();
+                    toggleDriveProfileMenu(driveProfileMenu, driveProfileBtn);
+                });
+            }
+            if (driveProfileBtnEditor) {
+                driveProfileBtnEditor.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleDriveProfileMenu(driveProfileMenuEditor, driveProfileBtnEditor);
+                });
+            }
+            if (themeToggle) {
+                themeToggle.addEventListener('change', () => {
+                    const next = themeToggle.checked ? 'dark' : 'light';
+                    applyTheme(next, true);
+                });
+            }
+            if (themeToggleEditor) {
+                themeToggleEditor.addEventListener('change', () => {
+                    const next = themeToggleEditor.checked ? 'dark' : 'light';
+                    applyTheme(next, true);
                 });
             }
             if (driveHomeBtn) {
@@ -5462,21 +5878,37 @@
                     driveProfileAvatarMenu.src = DEFAULT_AVATAR;
                 });
             }
+            if (driveProfileAvatarEditor) {
+                driveProfileAvatarEditor.addEventListener('error', () => {
+                    driveProfileAvatarEditor.src = DEFAULT_AVATAR;
+                });
+            }
+            if (driveProfileAvatarMenuEditor) {
+                driveProfileAvatarMenuEditor.addEventListener('error', () => {
+                    driveProfileAvatarMenuEditor.src = DEFAULT_AVATAR;
+                });
+            }
             document.addEventListener('click', (e) => {
+                if (activeBinMenu && !activeBinMenu.contains(e.target)) {
+                    closeBinItemMenu();
+                }
                 if (activeDriveCardMenu && !activeDriveCardMenu.contains(e.target)) {
                     closeDriveCardMenu();
                 }
-                if (!driveProfileMenu || driveProfileMenu.classList.contains('hidden')) return;
-                if (driveProfileMenu.contains(e.target)) return;
-                if (driveProfileBtn && driveProfileBtn.contains(e.target)) return;
-                closeDriveProfileMenu();
+                const profileMenus = [driveProfileMenu, driveProfileMenuEditor].filter(Boolean);
+                const profileButtons = [driveProfileBtn, driveProfileBtnEditor].filter(Boolean);
+                const clickedInsideMenu = profileMenus.some(menu => menu.contains(e.target));
+                const clickedButton = profileButtons.some(btn => btn.contains(e.target));
+                if (clickedInsideMenu || clickedButton) return;
+                closeDriveProfileMenus();
             });
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
                     closeFolderPicker();
                     closeTrashModal();
                     closeDriveBinModal();
-                    closeDriveProfileMenu();
+                    closeBinItemMenu();
+                    closeDriveProfileMenus();
                 }
             });
             if (driveBackBtn) {
@@ -5981,11 +6413,11 @@
                 if (wasHorizontal !== isHorizontal) {
                     toolbar.classList.remove('toolbar-tilt-forward', 'toolbar-tilt-back');
                     void toolbar.offsetWidth;
-                    const tiltClass = isHorizontal ? 'toolbar-tilt-forward' : 'toolbar-tilt-back';
+                    const tiltClass = isHorizontal ? 'toolbar-tilt-back' : 'toolbar-tilt-forward';
                     toolbar.classList.add(tiltClass);
                     setTimeout(() => {
                         toolbar.classList.remove(tiltClass);
-                    }, 520);
+                    }, 360);
                 }
 
                 if (snapTimeout) {
