@@ -132,18 +132,27 @@
         }
 
         .mode-toggle-group {
+            position: relative;
             display: flex;
-            flex-direction: column;
             align-items: center;
-            gap: 4px;
+            justify-content: center;
+            height: var(--header-btn-size);
         }
 
         .mode-toggle-status {
+            position: absolute;
+            left: 50%;
+            top: calc(100% - 4px);
+            transform: translate(-50%, -4px);
             display: flex;
             align-items: center;
             gap: 6px;
             font-size: 0.68rem;
             color: var(--text-secondary);
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease, transform 0.2s ease;
         }
 
         .mode-toggle-status .save-indicator {
@@ -158,10 +167,23 @@
 
         .mode-toggle-btn {
             min-width: 132px;
+            min-height: var(--header-btn-size);
+            height: var(--header-btn-size);
+            justify-content: space-between;
+            padding: 0 12px;
+            transition: height 0.22s ease, min-height 0.22s ease, transform 0.22s ease, padding 0.22s ease;
+        }
+
+        .mode-toggle-btn.is-editing {
             min-height: 36px;
             height: 36px;
-            justify-content: space-between;
             padding: 0 10px;
+            transform: translateY(-4px);
+        }
+
+        .mode-toggle-btn.is-editing + .mode-toggle-status {
+            opacity: 1;
+            transform: translate(-50%, 0);
         }
 
         .mode-toggle-text {
