@@ -3698,6 +3698,7 @@
                             strokes: erasedStrokes
                         });
                         scheduleSave(false, pageIndex);
+                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (state.currentTool === 'eraser-area') {
@@ -3710,6 +3711,7 @@
                             after
                         });
                         scheduleSave(false, pageIndex);
+                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
@@ -3737,6 +3739,7 @@
                         stroke: cloneStroke(finalizedStroke)
                     });
                     scheduleSave(false, pageIndex);
+                    requestImmediateDriveSave();
                     redrawPage(pageIndex);
 
                     // Check if we need to bake old strokes
@@ -9038,6 +9041,14 @@
             return !!(state.driveAutosave && !state.isReadOnly && (driveDirty || driveSaveInProgress || driveSaveQueued));
         }
 
+        function requestImmediateDriveSave() {
+            if (state.isReadOnly || !state.driveAutosave) return;
+            driveDirty = true;
+            if (!driveAccessToken) return;
+            clearDriveSyncTimers();
+            queueDriveSave(true);
+        }
+
         function scheduleSave(immediate = false, pageIndex = null) {
             if (state.isReadOnly) return;
             if (Number.isFinite(pageIndex)) {
@@ -9789,6 +9800,12 @@
             const pageCount = state.pages.length;
             const strokeData = new Array(pageCount);
             const backgroundImages = new Array(pageCount);
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = A4_WIDTH * CANVAS_SCALE;
+            tempCanvas.height = A4_HEIGHT * CANVAS_SCALE;
+            const tempCtx = tempCanvas.getContext('2d');
+            const pdfCanvas = document.createElement('canvas');
+            const pdfCtx = pdfCanvas.getContext('2d');
 
             for (let i = 0; i < pageCount; i++) {
                 const pageData = await loadPageDataForExport(i);
@@ -9821,10 +9838,8 @@
                 if (i > 0) pdf.addPage();
 
                 const page = strokeData[i];
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = A4_WIDTH * CANVAS_SCALE;
-                tempCanvas.height = A4_HEIGHT * CANVAS_SCALE;
-                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
 
                 // Draw background
                 tempCtx.fillStyle = 'white';
@@ -9846,10 +9861,8 @@
                     const baseViewport = pdfPage.getViewport({ scale: 1 });
                     const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
                     const viewport = pdfPage.getViewport({ scale });
-                    const pdfCanvas = document.createElement('canvas');
                     pdfCanvas.width = viewport.width;
                     pdfCanvas.height = viewport.height;
-                    const pdfCtx = pdfCanvas.getContext('2d');
                     await pdfPage.render({ canvasContext: pdfCtx, viewport }).promise;
                     const offsetX = (tempCanvas.width - viewport.width) / 2;
                     const offsetY = (tempCanvas.height - viewport.height) / 2;
@@ -9870,7 +9883,7 @@
                 }
 
                 // Draw strokes
-                tempCtx.scale(CANVAS_SCALE, CANVAS_SCALE);
+                tempCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
                 tempCtx.lineCap = 'round';
                 tempCtx.lineJoin = 'round';
                 await drawImagesOnCanvas(tempCtx, page);
