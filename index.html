@@ -9034,6 +9034,10 @@
         let saveInProgress = false;
         let saveQueued = false;
 
+        function isDriveSyncPending() {
+            return !!(state.driveAutosave && !state.isReadOnly && (driveDirty || driveSaveInProgress || driveSaveQueued));
+        }
+
         function scheduleSave(immediate = false, pageIndex = null) {
             if (state.isReadOnly) return;
             if (Number.isFinite(pageIndex)) {
@@ -9064,7 +9068,11 @@
             saveInProgress = true;
             const result = await saveToStorage();
             if (result.ok) {
-                showStatus('Saved', { savedAt: result.savedAt });
+                if (isDriveSyncPending()) {
+                    showStatus('Saving to Drive...', { saving: true, savedAt: result.savedAt });
+                } else {
+                    showStatus('Saved', { savedAt: result.savedAt });
+                }
             } else {
                 showStatus('Save failed', { error: true });
             }
@@ -9102,8 +9110,9 @@
         }
 
         function scheduleDriveSync() {
-            if (state.isReadOnly || !state.driveAutosave || !driveAccessToken) return;
+            if (state.isReadOnly || !state.driveAutosave) return;
             driveDirty = true;
+            if (!driveAccessToken) return;
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
                 queueDriveSave(false);
@@ -9196,7 +9205,8 @@
                 const fileId = await ensureDriveFile(options);
                 const pdfBlob = await buildPdfBlob();
                 await updateDriveFile(fileId, pdfBlob, options);
-                showStatus('Saved', { savedAt: Date.now() });
+                const savedAt = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : Date.now();
+                showStatus('Saved', { savedAt });
             } catch (err) {
                 showStatus('Drive save failed', { error: true });
                 driveDirty = true;
