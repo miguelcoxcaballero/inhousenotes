@@ -2659,17 +2659,37 @@
             const offCtx = offscreen.getContext('2d');
             offCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
 
-            // Draw background
-            if (page.backgroundSource === 'template') {
-                const bgImg = new Image();
-                bgImg.onload = () => {
-                    offCtx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+            // Draw existing baked background first (if any), then template background
+            function drawBackgroundsAndBake() {
+                if (page.backgroundSource === 'template') {
+                    const bgImg = new Image();
+                    bgImg.onload = () => {
+                        offCtx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                        finishBaking();
+                    };
+                    bgImg.onerror = finishBaking;
+                    bgImg.src = SVG_BACKGROUND;
+                } else {
                     finishBaking();
+                }
+            }
+
+            // If there's an existing baked background, load and draw it first
+            if (page.bakedBackground) {
+                const existingBaked = new Image();
+                existingBaked.onload = () => {
+                    offCtx.drawImage(existingBaked, 0, 0, A4_WIDTH, A4_HEIGHT);
+                    drawBackgroundsAndBake();
                 };
-                bgImg.onerror = finishBaking;
-                bgImg.src = SVG_BACKGROUND;
+                existingBaked.onerror = () => {
+                    // Existing baked background failed to load - abort to avoid data loss
+                    console.warn('Baking aborted: existing bakedBackground failed to load');
+                    bakingInProgress.delete(pageIndex);
+                    releaseOffscreenCanvas();
+                };
+                existingBaked.src = page.bakedBackground;
             } else {
-                finishBaking();
+                drawBackgroundsAndBake();
             }
 
             function finishBaking() {
@@ -2683,14 +2703,67 @@
                 }
 
                 // Convert baked strokes to background image
-                page.bakedBackground = offscreen.toDataURL('image/png', 0.9);
+                let bakedDataUrl;
+                try {
+                    bakedDataUrl = offscreen.toDataURL('image/png', 0.9);
+                } catch (e) {
+                    console.warn('Baking failed: toDataURL error', e);
+                    bakingInProgress.delete(pageIndex);
+                    releaseOffscreenCanvas();
+                    return;
+                }
 
-                // Remove baked strokes
-                page.strokes = page.strokes.slice(page.strokes.length - keepCount);
+                // Validate the baked image before removing strokes
+                // A valid PNG data URL should be at least ~100 chars (header + minimal data)
+                // and must start with the correct prefix
+                const minValidLength = 100;
+                if (!bakedDataUrl ||
+                    !bakedDataUrl.startsWith('data:image/png;base64,') ||
+                    bakedDataUrl.length < minValidLength) {
+                    console.warn('Baking failed: invalid data URL generated');
+                    bakingInProgress.delete(pageIndex);
+                    releaseOffscreenCanvas();
+                    return;
+                }
 
-                bakingInProgress.delete(pageIndex);
-                redrawPage(pageIndex);
-                scheduleSave(false, pageIndex);
+                // Verify the image can actually be loaded before removing strokes
+                const testImg = new Image();
+                testImg.onload = () => {
+                    // Double-check dimensions match
+                    if (testImg.width !== offscreen.width || testImg.height !== offscreen.height) {
+                        console.warn('Baking failed: image dimensions mismatch');
+                        bakingInProgress.delete(pageIndex);
+                        releaseOffscreenCanvas();
+                        return;
+                    }
+
+                    // Release old baked background from cache before replacing
+                    if (page.bakedBackground) {
+                        imageCache.delete(page.bakedBackground);
+                        imageCacheUsage.delete(page.bakedBackground);
+                    }
+
+                    // Safe to proceed - image validated
+                    page.bakedBackground = bakedDataUrl;
+                    page.strokes = page.strokes.slice(page.strokes.length - keepCount);
+
+                    bakingInProgress.delete(pageIndex);
+                    releaseOffscreenCanvas();
+                    redrawPage(pageIndex);
+                    scheduleSave(false, pageIndex);
+                };
+                testImg.onerror = () => {
+                    console.warn('Baking failed: generated image could not be loaded');
+                    bakingInProgress.delete(pageIndex);
+                    releaseOffscreenCanvas();
+                };
+                testImg.src = bakedDataUrl;
+            }
+
+            // Release offscreen canvas memory
+            function releaseOffscreenCanvas() {
+                offscreen.width = 0;
+                offscreen.height = 0;
             }
         }
 
@@ -2734,6 +2807,25 @@
 
         function trimHistoryByMemory() {
             while (state.history.length > 1 && estimateHistoryMemory() > MAX_HISTORY_MEMORY) {
+                state.history.shift();
+                state.historyIndex = Math.max(-1, state.historyIndex - 1);
+            }
+        }
+
+        // Release non-essential memory when tab is hidden
+        function releaseMemoryOnHide() {
+            // Aggressively prune image cache to half capacity when hidden
+            const targetSize = Math.floor(MAX_IMAGE_CACHE / 2);
+            const candidates = Array.from(imageCacheUsage.entries())
+                .sort((a, b) => a[1] - b[1]);
+            while (imageCache.size > targetSize && candidates.length > 0) {
+                const [src] = candidates.shift();
+                imageCache.delete(src);
+                imageCacheUsage.delete(src);
+            }
+            // Trim history more aggressively
+            const reducedHistoryTarget = Math.floor(MAX_HISTORY_MEMORY / 2);
+            while (state.history.length > 1 && estimateHistoryMemory() > reducedHistoryTarget) {
                 state.history.shift();
                 state.historyIndex = Math.max(-1, state.historyIndex - 1);
             }
@@ -7080,6 +7172,8 @@
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') {
                     flushOnClose();
+                    // Release memory when tab is hidden
+                    releaseMemoryOnHide();
                 }
             });
         }
