@@ -127,10 +127,10 @@
 
         @media (max-width: 720px) {
             .logo {
-                gap: 0;
+                gap: 6px;
             }
 
-            .logo span {
+            .logo .brand-name {
                 display: none;
             }
         }
@@ -2037,7 +2037,7 @@
                 <svg viewBox="0 0 40 24" fill="none">
                     <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
                 </svg>
-                <span>inhouse notes</span>
+                <span class="brand-name">inhouse notes</span>
             </div>
             <div class="drive-actions">
                 <button class="btn btn-secondary btn-icon-square" id="btn-drive-fullscreen" title="Fullscreen" aria-label="Fullscreen">
@@ -6774,18 +6774,42 @@
                 });
             }
             if (driveHomeBtn) {
-                const goHome = () => {
+                let goHomeInProgress = false;
+                const goHome = async () => {
+                    if (goHomeInProgress) return;
+                    goHomeInProgress = true;
+                    const needsSave = !state.isReadOnly && (hasPendingLocalSave() || hasPendingDriveSave() || driveDirty);
+                    if (needsSave) {
+                        showLoading('Saving to Drive...');
+                        clearTimeout(state.saveTimeout);
+                        state.saveTimeout = null;
+                        queueSave();
+                        if (state.driveAutosave) {
+                            driveDirty = true;
+                            if (driveAccessToken) {
+                                clearDriveSyncTimers();
+                                await queueDriveSave(true, { keepalive: true });
+                            }
+                        }
+                        const ok = await waitForSavesIdle(15000);
+                        hideLoading();
+                        if (!ok || hasPendingDriveSave()) {
+                            goHomeInProgress = false;
+                            return;
+                        }
+                    }
                     showDriveHome();
                     refreshDriveFiles();
+                    goHomeInProgress = false;
                 };
                 driveHomeBtn.addEventListener('click', (e) => {
                     if (docTitleEl && docTitleEl.contains(e.target)) return;
-                    goHome();
+                    void goHome();
                 });
                 driveHomeBtn.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        goHome();
+                        void goHome();
                     }
                 });
             }
@@ -9057,6 +9081,32 @@
             if (!driveAccessToken) return;
             clearDriveSyncTimers();
             queueDriveSave(true);
+        }
+
+        function hasPendingLocalSave() {
+            return !!(saveInProgress || saveQueued || state.saveTimeout);
+        }
+
+        function hasPendingDriveSave() {
+            return !!(state.driveAutosave && driveAccessToken && (driveDirty || driveSaveInProgress || driveSaveQueued));
+        }
+
+        function waitForSavesIdle(timeoutMs = 15000) {
+            return new Promise((resolve) => {
+                const start = Date.now();
+                const tick = () => {
+                    if (!hasPendingLocalSave() && !hasPendingDriveSave()) {
+                        resolve(true);
+                        return;
+                    }
+                    if (Date.now() - start >= timeoutMs) {
+                        resolve(false);
+                        return;
+                    }
+                    setTimeout(tick, 60);
+                };
+                tick();
+            });
         }
 
         function scheduleSave(immediate = false, pageIndex = null) {
