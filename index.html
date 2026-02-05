@@ -6893,17 +6893,39 @@
                         showLoading('Saving to Drive...');
                         clearTimeout(state.saveTimeout);
                         state.saveTimeout = null;
-                        queueSave();
-                        if (state.driveAutosave) {
+
+                        // Wait for local save to complete first to avoid race conditions
+                        await queueSave();
+
+                        if (state.driveAutosave && driveAccessToken) {
                             driveDirty = true;
-                            if (driveAccessToken) {
-                                clearDriveSyncTimers();
-                                await queueDriveSave(true, { keepalive: true });
+                            clearDriveSyncTimers();
+
+                            // Retry Drive save up to 3 times with immediate retries
+                            let driveSuccess = false;
+                            for (let attempt = 0; attempt < 3 && !driveSuccess; attempt++) {
+                                try {
+                                    await queueDriveSave(true, { keepalive: true });
+                                    // Check if save actually succeeded (driveDirty would be false)
+                                    if (!driveDirty && !driveSaveInProgress && !driveSaveQueued) {
+                                        driveSuccess = true;
+                                    } else if (attempt < 2) {
+                                        // Wait a moment before retry
+                                        await new Promise(r => setTimeout(r, 1000));
+                                    }
+                                } catch (e) {
+                                    if (attempt < 2) {
+                                        await new Promise(r => setTimeout(r, 1000));
+                                    }
+                                }
                             }
                         }
-                        const ok = await waitForSavesIdle(15000);
+
+                        // Wait for any remaining saves with shorter timeout since we already retried
+                        const ok = await waitForSavesIdle(5000);
                         hideLoading();
                         if (!ok || hasPendingDriveSave()) {
+                            showStatus('Could not save to Drive', { error: true });
                             goHomeInProgress = false;
                             return;
                         }
