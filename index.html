@@ -125,6 +125,16 @@
             letter-spacing: -0.5px;
         }
 
+        @media (max-width: 720px) {
+            .logo {
+                gap: 0;
+            }
+
+            .logo span {
+                display: none;
+            }
+        }
+
         .header-actions {
             display: flex;
             gap: clamp(4px, 1.2vw, 8px);
@@ -9535,13 +9545,7 @@
             }
             indicator.title = text;
             indicator.setAttribute('aria-label', text);
-            indicator.classList.remove('flash');
-            void indicator.offsetWidth;
-            indicator.classList.add('flash');
             if (timestampEl) {
-                timestampEl.classList.remove('flash');
-                void timestampEl.offsetWidth;
-                timestampEl.classList.add('flash');
             }
 
             if (savedAt) {
