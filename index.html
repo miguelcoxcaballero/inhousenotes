@@ -3278,8 +3278,6 @@
             wrapper.insertBefore(cursorOverlay, wrapper.lastChild);
             wrapper.insertBefore(selectionBox, wrapper.lastChild);
 
-            applyPageBackground(pageIndex, canvas, { deferPdfRender });
-
             // Setup context with scale
             const ctx = canvas.getContext('2d');
             ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
@@ -3288,17 +3286,26 @@
 
             setupCanvasEvents(canvas, pageIndex);
             setupSelectionBoxEvents(selectionBox, pageIndex);
+
+            const page = state.pages[pageIndex];
             if (!defer) {
-                const page = state.pages[pageIndex];
                 if (page && isPageLoaded(page)) {
+                    // Page is loaded - apply background and draw immediately
+                    applyPageBackground(pageIndex, canvas, { deferPdfRender });
                     redrawPage(pageIndex);
+                    clearPagePreview(pageIndex);
                 } else if (page) {
+                    // Page not loaded - keep canvas transparent so preview shows through
+                    canvas.style.backgroundColor = 'transparent';
+                    canvas.style.backgroundImage = '';
                     page.needsRedraw = true;
                     ensurePageDataLoaded(pageIndex);
                 }
             } else {
-                const page = state.pages[pageIndex];
                 if (page) {
+                    // Deferred - keep canvas transparent
+                    canvas.style.backgroundColor = 'transparent';
+                    canvas.style.backgroundImage = '';
                     page.needsRedraw = true;
                 }
             }
@@ -4974,12 +4981,32 @@
             const token = await ensureDriveToken(false);
             const headers = new Headers(options.headers || {});
             headers.set('Authorization', `Bearer ${token}`);
-            const res = await fetch(url, { ...options, headers, keepalive: !!options.keepalive });
-            if (!res.ok) {
-                const message = await res.text().catch(() => '');
-                throw new Error(`Drive API error ${res.status}: ${message}`);
+
+            // Add timeout to prevent hanging requests
+            const timeoutMs = options.timeout || 60000;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+                const res = await fetch(url, {
+                    ...options,
+                    headers,
+                    keepalive: !!options.keepalive,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                if (!res.ok) {
+                    const message = await res.text().catch(() => '');
+                    throw new Error(`Drive API error ${res.status}: ${message}`);
+                }
+                return res;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError') {
+                    throw new Error('Drive request timed out');
+                }
+                throw err;
             }
-            return res;
         }
 
         async function ensureDriveFolder() {
@@ -6035,6 +6062,88 @@
             }));
         }
 
+        // Move selection from one page to another with Y offset
+        function moveSelectionToPage(fromPageIndex, toPageIndex, yOffset) {
+            const fromPage = state.pages[fromPageIndex];
+            const toPage = state.pages[toPageIndex];
+            if (!fromPage || !toPage) return false;
+            if (!isPageLoaded(fromPage) || !isPageLoaded(toPage)) return false;
+
+            // Hide selection box on source page
+            const oldBox = document.querySelector(`.selection-box[data-page="${fromPageIndex}"]`);
+            if (oldBox) {
+                oldBox.classList.add('hidden');
+                oldBox.classList.remove('has-selection', 'has-image');
+            }
+
+            // Ensure target page has arrays
+            if (!Array.isArray(toPage.strokes)) toPage.strokes = [];
+            if (!Array.isArray(toPage.images)) toPage.images = [];
+
+            // Get current strokes and images to move
+            const strokeIndicesToMove = [...state.selection.strokeIndices].sort((a, b) => b - a);
+            const imageIndicesToMove = [...state.selection.imageIndices].sort((a, b) => b - a);
+
+            // Extract strokes from source page (in reverse order to preserve indices)
+            const movedStrokes = [];
+            for (const idx of strokeIndicesToMove) {
+                if (idx >= 0 && idx < fromPage.strokes.length) {
+                    const stroke = fromPage.strokes.splice(idx, 1)[0];
+                    // Adjust Y coordinates
+                    if (stroke.points) {
+                        stroke.points = stroke.points.map(pt => ({
+                            ...pt,
+                            y: pt.y + yOffset
+                        }));
+                    }
+                    movedStrokes.unshift(stroke);
+                }
+            }
+
+            // Extract images from source page
+            const movedImages = [];
+            for (const idx of imageIndicesToMove) {
+                if (idx >= 0 && idx < fromPage.images.length) {
+                    const image = fromPage.images.splice(idx, 1)[0];
+                    // Adjust Y coordinate
+                    image.y = (image.y || 0) + yOffset;
+                    movedImages.unshift(image);
+                }
+            }
+
+            // Add to target page
+            const newStrokeStartIndex = toPage.strokes.length;
+            const newImageStartIndex = toPage.images.length;
+            toPage.strokes.push(...movedStrokes);
+            toPage.images.push(...movedImages);
+
+            // Update selection to point to new page
+            state.selection.pageIndex = toPageIndex;
+            state.selection.strokeIndices = movedStrokes.map((_, i) => newStrokeStartIndex + i);
+            state.selection.imageIndices = movedImages.map((_, i) => newImageStartIndex + i);
+
+            // Save to history for undo support
+            saveToHistory({
+                type: 'cross-page-move',
+                pageIndex: fromPageIndex, // Used for history tracking
+                fromPageIndex,
+                toPageIndex,
+                strokeIndices: state.selection.strokeIndices.slice(),
+                imageIndices: state.selection.imageIndices.slice(),
+                yOffset
+            });
+
+            // Mark both pages as dirty
+            markPageDirty(fromPageIndex);
+            markPageDirty(toPageIndex);
+
+            // Redraw both pages
+            redrawPage(fromPageIndex);
+            redrawPage(toPageIndex);
+
+            return true;
+        }
+
         function applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex) {
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.strokes)) return;
@@ -6152,7 +6261,7 @@
             if (state.isReadOnly) return;
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
-            const { pageIndex, mode, handle, bounds, center, startPos, startAngle, originalStrokes, originalImages } = state.selectionTransform;
+            let { pageIndex, mode, handle, bounds, center, startPos, startAngle, originalStrokes, originalImages } = state.selectionTransform;
             const pos = getPagePosFromEvent(pageIndex, e);
             const transform = {
                 translateX: 0,
@@ -6165,6 +6274,68 @@
             if (mode === 'move') {
                 transform.translateX = pos.x - startPos.x;
                 transform.translateY = pos.y - startPos.y;
+
+                // Check for cross-page drag
+                const newCenterY = center.y + transform.translateY;
+                const crossPageThreshold = 50; // pixels beyond page edge to trigger move
+
+                // Moving up to previous page
+                if (newCenterY < -crossPageThreshold && pageIndex > 0) {
+                    const targetPage = pageIndex - 1;
+                    // Ensure target page is loaded
+                    ensurePageDataLoaded(targetPage, { keepLoaded: true }).then(() => {
+                        if (!isPageLoaded(state.pages[targetPage])) return;
+                        // Apply current transform first
+                        applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex);
+                        // Move selection to previous page (shift Y by +A4_HEIGHT)
+                        if (moveSelectionToPage(pageIndex, targetPage, A4_HEIGHT)) {
+                            // Update transform state for the new page
+                            const newBounds = getSelectionBounds(targetPage, state.selection.strokeIndices, state.selection.imageIndices);
+                            if (newBounds) {
+                                state.selectionTransform.pageIndex = targetPage;
+                                state.selectionTransform.bounds = newBounds;
+                                state.selectionTransform.center = {
+                                    x: newBounds.minX + newBounds.width / 2,
+                                    y: newBounds.minY + newBounds.height / 2
+                                };
+                                state.selectionTransform.startPos = { x: pos.x, y: pos.y + A4_HEIGHT };
+                                state.selectionTransform.originalStrokes = captureStrokes(targetPage, state.selection.strokeIndices);
+                                state.selectionTransform.originalImages = captureImages(targetPage, state.selection.imageIndices);
+                            }
+                            updateSelectionBox();
+                        }
+                    });
+                    return;
+                }
+
+                // Moving down to next page
+                if (newCenterY > A4_HEIGHT + crossPageThreshold && pageIndex < state.pages.length - 1) {
+                    const targetPage = pageIndex + 1;
+                    // Ensure target page is loaded
+                    ensurePageDataLoaded(targetPage, { keepLoaded: true }).then(() => {
+                        if (!isPageLoaded(state.pages[targetPage])) return;
+                        // Apply current transform first
+                        applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex);
+                        // Move selection to next page (shift Y by -A4_HEIGHT)
+                        if (moveSelectionToPage(pageIndex, targetPage, -A4_HEIGHT)) {
+                            // Update transform state for the new page
+                            const newBounds = getSelectionBounds(targetPage, state.selection.strokeIndices, state.selection.imageIndices);
+                            if (newBounds) {
+                                state.selectionTransform.pageIndex = targetPage;
+                                state.selectionTransform.bounds = newBounds;
+                                state.selectionTransform.center = {
+                                    x: newBounds.minX + newBounds.width / 2,
+                                    y: newBounds.minY + newBounds.height / 2
+                                };
+                                state.selectionTransform.startPos = { x: pos.x, y: pos.y - A4_HEIGHT };
+                                state.selectionTransform.originalStrokes = captureStrokes(targetPage, state.selection.strokeIndices);
+                                state.selectionTransform.originalImages = captureImages(targetPage, state.selection.imageIndices);
+                            }
+                            updateSelectionBox();
+                        }
+                    });
+                    return;
+                }
             } else if (mode === 'scale') {
                 const halfW = Math.max(10, bounds.width / 2);
                 const halfH = Math.max(10, bounds.height / 2);
@@ -9146,11 +9317,12 @@
                     await unloadPageData(pageIndex);
                     return state.pages[pageIndex];
                 }
-                clearPagePreview(pageIndex);
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
                 if (canvas) {
                     applyPageBackground(pageIndex, canvas);
                     redrawPage(pageIndex);
+                    // Clear preview only after strokes are drawn on canvas
+                    clearPagePreview(pageIndex);
                 }
                 return next;
             })();
@@ -9610,6 +9782,51 @@
                 clearSelection();
                 redrawPage(action.pageIndex);
                 renderPagesList();
+            } else if (action.type === 'cross-page-move') {
+                // Move strokes/images back to the original page
+                const { fromPageIndex, toPageIndex, strokeIndices, imageIndices, yOffset } = action;
+                await ensurePageDataLoaded(toPageIndex, { keepLoaded: true });
+                const fromPage = state.pages[fromPageIndex];
+                const toPage = state.pages[toPageIndex];
+                if (!fromPage || !toPage) return;
+                if (!Array.isArray(fromPage.strokes)) fromPage.strokes = [];
+                if (!Array.isArray(fromPage.images)) fromPage.images = [];
+
+                // Get strokes/images from target page and move back to source
+                const sortedStrokeIndices = [...strokeIndices].sort((a, b) => b - a);
+                const sortedImageIndices = [...imageIndices].sort((a, b) => b - a);
+
+                const movedStrokes = [];
+                for (const idx of sortedStrokeIndices) {
+                    if (idx >= 0 && idx < toPage.strokes.length) {
+                        const stroke = toPage.strokes.splice(idx, 1)[0];
+                        if (stroke.points) {
+                            stroke.points = stroke.points.map(pt => ({
+                                ...pt,
+                                y: pt.y - yOffset
+                            }));
+                        }
+                        movedStrokes.unshift(stroke);
+                    }
+                }
+
+                const movedImages = [];
+                for (const idx of sortedImageIndices) {
+                    if (idx >= 0 && idx < toPage.images.length) {
+                        const image = toPage.images.splice(idx, 1)[0];
+                        image.y = (image.y || 0) - yOffset;
+                        movedImages.unshift(image);
+                    }
+                }
+
+                fromPage.strokes.push(...movedStrokes);
+                fromPage.images.push(...movedImages);
+
+                clearSelection();
+                markPageDirty(fromPageIndex);
+                markPageDirty(toPageIndex);
+                redrawPage(fromPageIndex);
+                redrawPage(toPageIndex);
             }
 
             updateHistoryButtons();
@@ -9731,6 +9948,52 @@
                 clearSelection();
                 redrawPage(action.pageIndex);
                 renderPagesList();
+            } else if (action.type === 'cross-page-move') {
+                // Redo the cross-page move
+                const { fromPageIndex, toPageIndex, yOffset } = action;
+                await ensurePageDataLoaded(fromPageIndex, { keepLoaded: true });
+                await ensurePageDataLoaded(toPageIndex, { keepLoaded: true });
+                const fromPage = state.pages[fromPageIndex];
+                const toPage = state.pages[toPageIndex];
+                if (!fromPage || !toPage) return;
+                if (!Array.isArray(toPage.strokes)) toPage.strokes = [];
+                if (!Array.isArray(toPage.images)) toPage.images = [];
+
+                // Move strokes from end of fromPage to toPage
+                const numStrokes = action.strokeIndices.length;
+                const numImages = action.imageIndices.length;
+
+                const movedStrokes = [];
+                for (let i = 0; i < numStrokes; i++) {
+                    if (fromPage.strokes.length > 0) {
+                        const stroke = fromPage.strokes.pop();
+                        if (stroke.points) {
+                            stroke.points = stroke.points.map(pt => ({
+                                ...pt,
+                                y: pt.y + yOffset
+                            }));
+                        }
+                        movedStrokes.unshift(stroke);
+                    }
+                }
+
+                const movedImages = [];
+                for (let i = 0; i < numImages; i++) {
+                    if (fromPage.images && fromPage.images.length > 0) {
+                        const image = fromPage.images.pop();
+                        image.y = (image.y || 0) + yOffset;
+                        movedImages.unshift(image);
+                    }
+                }
+
+                toPage.strokes.push(...movedStrokes);
+                toPage.images.push(...movedImages);
+
+                clearSelection();
+                markPageDirty(fromPageIndex);
+                markPageDirty(toPageIndex);
+                redrawPage(fromPageIndex);
+                redrawPage(toPageIndex);
             }
 
             updateHistoryButtons();
