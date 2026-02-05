@@ -2634,12 +2634,17 @@
         let bakingInProgress = new Set();
 
         function shouldBakeStrokes(pageIndex) {
-            const page = state.pages[pageIndex];
-            if (!page || !Array.isArray(page.strokes) || bakingInProgress.has(pageIndex)) return false;
-            return page.strokes.length > MAX_STROKES_PER_PAGE;
+            // DISABLED: Baking optimization was causing data loss
+            return false;
         }
 
         function bakeOldStrokes(pageIndex) {
+            // DISABLED: This optimization was causing stroke data loss due to race conditions
+            // between async image loading callbacks and user input. The strokes array could
+            // change between when we start baking and when the async callback runs.
+            // User data integrity is more important than memory optimization.
+            return;
+
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.strokes) || bakingInProgress.has(pageIndex)) return;
             if (page.strokes.length <= BAKE_THRESHOLD) return;
@@ -9026,13 +9031,23 @@
             ctx.scale(scale, scale);
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
-            if (page.backgroundImage) {
+
+            // Draw appropriate background
+            const backgroundSource = page.backgroundSource || 'template';
+            if (page.backgroundImage && backgroundSource !== 'template') {
                 const img = new Image();
                 img.src = page.backgroundImage;
                 if (img.complete) {
                     ctx.drawImage(img, 0, 0, A4_WIDTH, A4_HEIGHT);
                 }
+            } else if (backgroundSource === 'template') {
+                // Draw SVG template background for preview
+                const svgImg = getCachedImage(SVG_BACKGROUND);
+                if (svgImg.complete) {
+                    ctx.drawImage(svgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                }
             }
+
             if (page.bakedBackground) {
                 const bakedImg = getCachedImage(page.bakedBackground);
                 if (bakedImg.complete) {
