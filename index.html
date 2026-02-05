@@ -131,11 +131,37 @@
             align-items: center;
         }
 
+        .mode-toggle-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .mode-toggle-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.68rem;
+            color: var(--text-secondary);
+        }
+
+        .mode-toggle-status .save-indicator {
+            width: 8px;
+            height: 8px;
+            box-shadow: 0 0 0 1.5px rgba(0,0,0,0.08);
+        }
+
+        .mode-toggle-status .save-timestamp {
+            font-size: 0.68rem;
+        }
+
         .mode-toggle-btn {
-            min-width: 140px;
-            min-height: var(--header-btn-size);
+            min-width: 132px;
+            min-height: 36px;
+            height: 36px;
             justify-content: space-between;
-            padding: 0 12px;
+            padding: 0 10px;
         }
 
         .mode-toggle-text {
@@ -2069,14 +2095,18 @@
                 <span class="doc-title" id="doc-title" role="textbox" aria-label="Document title" contenteditable="true" spellcheck="false">Untitled</span>
             </div>
             <div class="header-actions">
-                <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
-                <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
-                <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button" aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
-                    <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
-                    <span class="mode-toggle-pill" aria-hidden="true">
-                        <span class="mode-toggle-knob"></span>
-                    </span>
-                </button>
+                <div class="mode-toggle-group">
+                    <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button" aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
+                        <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
+                        <span class="mode-toggle-pill" aria-hidden="true">
+                            <span class="mode-toggle-knob"></span>
+                        </span>
+                    </button>
+                    <div class="mode-toggle-status">
+                        <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
+                        <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
+                    </div>
+                </div>
                 <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="15 3 21 3 21 9"/>
