@@ -2419,9 +2419,12 @@
         const CANVAS_SCALE = 2; // Fixed at 2x for memory optimization
         const PAGE_PADDING = 30;
         const PAGE_GAP = 30;
-        const VISIBLE_PAGE_BUFFER = 2;
-        const VISIBLE_PAGE_BUFFER_ACTIVE = 1;
-        const MAX_PDF_BACKGROUND_CACHE = 12;
+        const VISIBLE_PAGE_BUFFER = 1;
+        const VISIBLE_PAGE_BUFFER_ACTIVE = 0;
+        const MAX_ACTIVE_PAGES = 3;
+        const MAX_PDF_BACKGROUND_CACHE = 6;
+        const MAX_IMAGE_CACHE = 80;
+        const PAGE_PREVIEW_SCALE = 0.18;
         const PDF_RENDER_SCALE_LARGE = 1.5;
         const PDF_RENDER_SCALE_HUGE = 1.2;
         const OVERLAY_SCALE = 1;
@@ -2439,7 +2442,8 @@
         const PEN_DOUBLE_TAP_DIST = 42;
         const TOUCH_INERTIA_DECAY = 0.92;
         const TOUCH_INERTIA_STOP = 0.02;
-        const DRIVE_AUTOSAVE_DELAY = 3000;
+        const DRIVE_SYNC_IDLE_DELAY = 15000;
+        const DRIVE_SYNC_MAX_DELAY = 120000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -2448,14 +2452,22 @@
         const DRIVE_SESSION_KEY = 'drive-session-v1';
         const THEME_KEY = 'inhouse-theme';
         const VIEW_MODE_KEY = 'notebook-view-mode-v1';
-        const DATA_STORAGE_KEY = 'notebook-data-v2';
+        const DATA_STORAGE_KEY = 'notebook-data-v3';
+        const LEGACY_DATA_KEYS = ['notebook-data-v2'];
         const DB_NAME = 'notebook-data-db-v1';
+        const DB_VERSION = 2;
         const DB_STORE = 'snapshots';
         const DB_KEY = 'latest';
+        const PAGE_STORE = 'pages';
 
         const imageCache = new Map();
+        const imageCacheUsage = new Map();
         const highlighterMaskCanvas = document.createElement('canvas');
         const highlighterMaskCtx = highlighterMaskCanvas.getContext('2d');
+        const pageAccess = new Map();
+        const pageDirty = new Set();
+        const pageLoadQueue = new Map();
+        let legacyPagesCache = null;
 
         // ============= MEMORY OPTIMIZATION UTILITIES =============
 
@@ -2512,17 +2524,29 @@
         }
 
         // Simplify stroke points to reduce memory
-        function simplifyStrokePoints(stroke, epsilon = 0.8) {
+        function simplifyStrokePoints(stroke, epsilon = 0.9) {
             if (!stroke || !stroke.points || stroke.points.length < 5) return stroke;
 
+            // Light simplification with a tiny distance filter
+            const minDist = stroke.tool === 'highlighter' ? 0.9 : 0.6;
+            const filtered = [stroke.points[0]];
+            for (let i = 1; i < stroke.points.length - 1; i++) {
+                const last = filtered[filtered.length - 1];
+                const point = stroke.points[i];
+                if (Math.hypot(point.x - last.x, point.y - last.y) >= minDist) {
+                    filtered.push(point);
+                }
+            }
+            filtered.push(stroke.points[stroke.points.length - 1]);
+
             // Keep more points for highlighter (needs smooth appearance)
-            const adjustedEpsilon = stroke.tool === 'highlighter' ? epsilon * 2 : epsilon;
+            const adjustedEpsilon = stroke.tool === 'highlighter' ? epsilon * 1.6 : epsilon;
 
             // Preserve pressure data by mapping simplified indices
-            const simplified = simplifyPoints(stroke.points, adjustedEpsilon);
+            const simplified = simplifyPoints(filtered, adjustedEpsilon);
 
             // Ensure minimum points for smooth curves
-            if (simplified.length < 3 && stroke.points.length >= 3) {
+            if (simplified.length < 3 && filtered.length >= 3) {
                 return stroke;
             }
 
@@ -2537,13 +2561,13 @@
 
         function shouldBakeStrokes(pageIndex) {
             const page = state.pages[pageIndex];
-            if (!page || bakingInProgress.has(pageIndex)) return false;
+            if (!page || !Array.isArray(page.strokes) || bakingInProgress.has(pageIndex)) return false;
             return page.strokes.length > MAX_STROKES_PER_PAGE;
         }
 
         function bakeOldStrokes(pageIndex) {
             const page = state.pages[pageIndex];
-            if (!page || bakingInProgress.has(pageIndex)) return;
+            if (!page || !Array.isArray(page.strokes) || bakingInProgress.has(pageIndex)) return;
             if (page.strokes.length <= BAKE_THRESHOLD) return;
 
             bakingInProgress.add(pageIndex);
@@ -2592,6 +2616,7 @@
 
                 bakingInProgress.delete(pageIndex);
                 redrawPage(pageIndex);
+                scheduleSave(false, pageIndex);
             }
         }
 
@@ -2693,6 +2718,7 @@
                 imageIndices: []
             },
             selectionTransform: null,
+            activePageIndex: 0,
             // Undo/Redo history
             history: [],
             historyIndex: -1,
@@ -2783,8 +2809,12 @@
         let driveAccessToken = null;
         let driveTokenExpiry = 0;
         let driveSaveTimeout = null;
+        let driveSyncMaxTimeout = null;
         let driveSaveInProgress = false;
         let driveSaveQueued = false;
+        let driveSaveQueuedForce = false;
+        let driveSaveQueuedKeepalive = false;
+        let driveDirty = false;
         let driveRecentsCache = [];
         let driveStarredCache = [];
         let driveFolderCache = { folders: [], files: [] };
@@ -2890,7 +2920,7 @@
                 state.overscrollY = 0;
                 updateAddPageIndicator();
                 clearTimeout(state.saveTimeout);
-                clearTimeout(driveSaveTimeout);
+                clearDriveSyncTimers();
             } else {
                 updateHistoryButtons();
                 updateSaveTimestamp();
@@ -2963,12 +2993,15 @@
                 images: [],
                 backgroundSource: backgroundImage ? 'custom' : 'template',
                 pdfPageIndex: null,
-                needsRedraw: true
+                needsRedraw: true,
+                preview: null,
+                strokeCount: 0,
+                unloaded: false
             };
             state.pages.push(pageData);
             createPageElement(pageIndex, animate, false);
             scheduleVisiblePageUpdate(true);
-            scheduleSave(true);
+            scheduleSave(true, pageIndex);
             showStatus('Page added', { preserveState: true });
         }
 
@@ -2995,6 +3028,18 @@
                 attachPageCanvases(wrapper, pageIndex);
                 activePageIndices.add(pageIndex);
             }
+            applyPagePreview(pageIndex);
+            wrapper.addEventListener('pointerdown', (e) => {
+                if (state.isReadOnly) return;
+                state.activePageIndex = pageIndex;
+                if (!activePageIndices.has(pageIndex)) {
+                    if (!e.target || !e.target.closest || !e.target.closest('canvas.page-canvas')) {
+                        ensurePageCanvas(pageIndex);
+                        ensurePageDataLoaded(pageIndex);
+                        scheduleVisiblePageUpdate(true);
+                    }
+                }
+            });
             return wrapper;
         }
 
@@ -3073,7 +3118,13 @@
             setupCanvasEvents(canvas, pageIndex);
             setupSelectionBoxEvents(selectionBox, pageIndex);
             if (!defer) {
-                redrawPage(pageIndex);
+                const page = state.pages[pageIndex];
+                if (page && isPageLoaded(page)) {
+                    redrawPage(pageIndex);
+                } else if (page) {
+                    page.needsRedraw = true;
+                    ensurePageDataLoaded(pageIndex);
+                }
             } else {
                 const page = state.pages[pageIndex];
                 if (page) {
@@ -3088,18 +3139,31 @@
                 if (canvas) {
                     applyPageBackground(pageIndex, canvas, { deferPdfRender: !!options.deferPdfRender });
                 }
+                touchPageAccess(pageIndex);
                 return;
             }
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (!wrapper) return;
+            const page = state.pages[pageIndex];
+            if (page) {
+                page.pendingUnload = false;
+            }
             attachPageCanvases(wrapper, pageIndex, options);
             activePageIndices.add(pageIndex);
+            touchPageAccess(pageIndex);
+            if (!options.defer) {
+                ensurePageDataLoaded(pageIndex);
+            }
         }
 
         function releasePageCanvas(pageIndex) {
             if (!activePageIndices.has(pageIndex)) return;
             if (state.selection.pageIndex === pageIndex) {
                 clearSelection();
+            }
+            const page = state.pages[pageIndex];
+            if (page) {
+                page.pendingUnload = true;
             }
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (wrapper) {
@@ -3108,6 +3172,7 @@
                 });
             }
             activePageIndices.delete(pageIndex);
+            void unloadPageData(pageIndex);
         }
 
         function getPdfBackgroundScale(pageCount) {
@@ -3338,13 +3403,44 @@
             const buffer = deferHeavy ? VISIBLE_PAGE_BUFFER_ACTIVE : VISIBLE_PAGE_BUFFER;
             const range = getVisiblePageRange(buffer);
             if (range.end < range.start) return;
-            const desired = new Set();
+            const visibleIndices = [];
             for (let i = range.start; i <= range.end; i++) {
-                desired.add(i);
+                visibleIndices.push(i);
             }
 
-            desired.forEach(index => {
+            const rect = canvasViewport.getBoundingClientRect();
+            const viewCenterY = (-state.panY + rect.height / 2) / state.zoom;
+            const pageSpan = A4_HEIGHT + PAGE_GAP;
+            const pageCenterY = (index) => PAGE_PADDING + (index * pageSpan) + (A4_HEIGHT / 2);
+
+            const activeSet = new Set();
+            if (Number.isFinite(state.selection.pageIndex)
+                && state.selection.pageIndex >= range.start
+                && state.selection.pageIndex <= range.end) {
+                activeSet.add(state.selection.pageIndex);
+            }
+            if (Number.isFinite(state.activePageIndex)
+                && state.activePageIndex >= range.start
+                && state.activePageIndex <= range.end) {
+                activeSet.add(state.activePageIndex);
+            }
+
+            const candidates = visibleIndices
+                .map(index => ({
+                    index,
+                    dist: Math.abs(pageCenterY(index) - viewCenterY)
+                }))
+                .sort((a, b) => a.dist - b.dist);
+
+            for (const item of candidates) {
+                if (activeSet.size >= MAX_ACTIVE_PAGES) break;
+                activeSet.add(item.index);
+            }
+
+            activeSet.forEach(index => {
+                if (index < range.start || index > range.end) return;
                 ensurePageCanvas(index, { defer: deferHeavy, deferPdfRender: deferHeavy });
+                clearPagePreview(index);
                 const page = state.pages[index];
                 if (page && page.needsRedraw && !deferHeavy) {
                     redrawPage(index);
@@ -3355,20 +3451,23 @@
                         applyPageBackground(index, canvas);
                     }
                 }
+                if (!deferHeavy) {
+                    ensurePageDataLoaded(index);
+                }
+            });
+
+            visibleIndices.forEach(index => {
+                if (!activeSet.has(index)) {
+                    applyPagePreview(index);
+                }
             });
 
             if (!deferHeavy) {
-            const releaseBuffer = deferHeavy ? Math.max(VISIBLE_PAGE_BUFFER_ACTIVE + 2, VISIBLE_PAGE_BUFFER_ACTIVE) : buffer;
-            const releaseRange = deferHeavy ? getVisiblePageRange(releaseBuffer) : range;
-            const keep = new Set();
-            for (let i = releaseRange.start; i <= releaseRange.end; i++) {
-                keep.add(i);
-            }
-            activePageIndices.forEach(index => {
-                if (!keep.has(index)) {
-                    releasePageCanvas(index);
-                }
-            });
+                activePageIndices.forEach(index => {
+                    if (!activeSet.has(index)) {
+                        releasePageCanvas(index);
+                    }
+                });
             }
 
             prunePdfBackgroundCache();
@@ -3399,6 +3498,12 @@
 
             canvas.addEventListener('pointerdown', (e) => {
                 if (state.isReadOnly) return;
+                state.activePageIndex = pageIndex;
+                const activePage = state.pages[pageIndex];
+                if (!isPageLoaded(activePage)) {
+                    ensurePageDataLoaded(pageIndex);
+                    return;
+                }
                 if (state.currentTool === 'lasso') {
                     if (e.pointerType === 'touch') return;
                     if (!lassoCanvas) return;
@@ -3534,7 +3639,7 @@
                             pageIndex: pageIndex,
                             strokes: erasedStrokes
                         });
-                        scheduleSave();
+                        scheduleSave(false, pageIndex);
                     }
                     clearEraserPreview(pageIndex);
                 } else if (state.currentTool === 'eraser-area') {
@@ -3546,7 +3651,7 @@
                             before: areaEraseBefore,
                             after
                         });
-                        scheduleSave();
+                        scheduleSave(false, pageIndex);
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
@@ -3573,7 +3678,7 @@
                         pageIndex: pageIndex,
                         stroke: cloneStroke(finalizedStroke)
                     });
-                    scheduleSave();
+                    scheduleSave(false, pageIndex);
                     redrawPage(pageIndex);
 
                     // Check if we need to bake old strokes
@@ -3793,7 +3898,7 @@
 
         function selectStrokesWithLasso(pageIndex, polygon) {
             const page = state.pages[pageIndex];
-            if (!page) return;
+            if (!page || !Array.isArray(page.strokes)) return;
             const selected = [];
             const selectedImages = [];
             for (let i = 0; i < page.strokes.length; i++) {
@@ -3902,6 +4007,7 @@
 
         function getSelectionBounds(pageIndex, strokeIndices = [], imageIndices = []) {
             const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.strokes)) return null;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
             strokeIndices.forEach(index => {
@@ -3958,7 +4064,12 @@
         function deleteSelectedImages(pageIndex) {
             if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
-            if (!page || !Array.isArray(page.images)) return;
+            if (!page) return;
+            if (!isPageLoaded(page)) {
+                ensurePageDataLoaded(pageIndex);
+                return;
+            }
+            if (!Array.isArray(page.images)) return;
             if (!state.selection.imageIndices || state.selection.imageIndices.length === 0) return;
             const uniqueIndices = Array.from(new Set(state.selection.imageIndices))
                 .filter(index => index >= 0 && index < page.images.length);
@@ -3987,7 +4098,7 @@
             clearSelection();
             redrawPage(pageIndex);
             renderPagesList();
-            scheduleSave();
+            scheduleSave(false, pageIndex);
             showStatus(uniqueIndices.length > 1 ? 'Images deleted' : 'Image deleted', { preserveState: true });
         }
 
@@ -3995,6 +4106,10 @@
             if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
             if (!page) return;
+            if (!isPageLoaded(page)) {
+                ensurePageDataLoaded(pageIndex);
+                return;
+            }
             const strokeIndices = Array.from(new Set(state.selection.strokeIndices || []))
                 .filter(index => index >= 0 && index < page.strokes.length);
             const imageIndices = Array.from(new Set(state.selection.imageIndices || []))
@@ -4044,7 +4159,7 @@
             clearSelection();
             redrawPage(pageIndex);
             renderPagesList();
-            scheduleSave();
+            scheduleSave(false, pageIndex);
             showStatus((removedStrokes.length + removedImages.length) > 1 ? 'Selection deleted' : 'Item deleted', { preserveState: true });
         }
 
@@ -4052,6 +4167,10 @@
             if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
             if (!page) return;
+            if (!isPageLoaded(page)) {
+                ensurePageDataLoaded(pageIndex);
+                return;
+            }
             const strokeIndices = Array.from(new Set(state.selection.strokeIndices || []))
                 .filter(index => index >= 0 && index < page.strokes.length);
             const imageIndices = Array.from(new Set(state.selection.imageIndices || []))
@@ -4123,7 +4242,7 @@
             updateSelectionBox();
             redrawPage(pageIndex);
             renderPagesList();
-            scheduleSave();
+            scheduleSave(false, pageIndex);
             showStatus('Selection duplicated', { preserveState: true });
         }
 
@@ -4493,10 +4612,10 @@
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
-            } else if (state.driveAutosave && !state.isReadOnly) {
+            } else if (state.driveAutosave && !state.isReadOnly && driveDirty) {
                 clearTimeout(driveSaveTimeout);
                 driveSaveTimeout = setTimeout(() => {
-                    queueDriveSave();
+                    scheduleDriveSync();
                 }, 500);
             }
             if (signedIn) {
@@ -4674,7 +4793,7 @@
             const token = await ensureDriveToken(false);
             const headers = new Headers(options.headers || {});
             headers.set('Authorization', `Bearer ${token}`);
-            const res = await fetch(url, { ...options, headers });
+            const res = await fetch(url, { ...options, headers, keepalive: !!options.keepalive });
             if (!res.ok) {
                 const message = await res.text().catch(() => '');
                 throw new Error(`Drive API error ${res.status}: ${message}`);
@@ -5160,13 +5279,23 @@
             clearSelection();
             state.selectionTransform = null;
             resetPdfState();
+            await clearPageStore();
+            pageDirty.clear();
+            pageAccess.clear();
+            pageLoadQueue.clear();
+            legacyPagesCache = null;
+            imageCache.clear();
+            imageCacheUsage.clear();
             state.pages = [{
                 strokes: [],
                 backgroundImage: null,
                 backgroundSource: 'template',
                 pdfPageIndex: null,
                 images: [],
-                needsRedraw: true
+                needsRedraw: true,
+                preview: null,
+                strokeCount: 0,
+                unloaded: false
             }];
             state.history = [];
             state.historyIndex = -1;
@@ -5180,7 +5309,7 @@
             state.driveAutosave = true;
             updateDocTitle();
             saveDriveSession();
-            scheduleSave(true);
+            scheduleSave(true, 0);
 
             try {
                 showLoading('Creating PDF...');
@@ -5612,9 +5741,17 @@
             }
         }
 
-        function addImageToPage(pageIndex, src, dropPos, offsetIndex = 0) {
+        function addImageToPage(pageIndex, src, dropPos, offsetIndex = 0, options = {}) {
             const page = state.pages[pageIndex];
             if (!page) return;
+            if (!isPageLoaded(page)) {
+                ensurePageCanvas(pageIndex);
+                ensurePageDataLoaded(pageIndex, { keepLoaded: true }).then(() => {
+                    if (options.retry) return;
+                    addImageToPage(pageIndex, src, dropPos, offsetIndex, { retry: true });
+                });
+                return;
+            }
             if (!Array.isArray(page.images)) page.images = [];
 
             const img = getCachedImage(src, () => redrawPage(pageIndex));
@@ -5655,7 +5792,7 @@
                 updateSelectionBox();
                 redrawPage(pageIndex);
                 renderPagesList();
-                scheduleSave();
+                scheduleSave(false, pageIndex);
                 showStatus('Image added', { preserveState: true });
             };
 
@@ -5701,6 +5838,7 @@
 
         function captureStrokes(pageIndex, indices) {
             const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.strokes)) return [];
             return indices.map(index => ({
                 index,
                 stroke: cloneStroke(page.strokes[index])
@@ -5718,6 +5856,7 @@
 
         function applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex) {
             const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.strokes)) return;
             const cos = Math.cos(transform.rotation);
             const sin = Math.sin(transform.rotation);
 
@@ -5899,7 +6038,7 @@
                     before,
                     after
                 });
-                scheduleSave();
+                scheduleSave(false, pageIndex);
             }
             state.selectionTransform = null;
         }
@@ -5970,7 +6109,7 @@
 
         function eraseAreaAtPoint(pageIndex, x, y, radius, options = {}) {
             const page = state.pages[pageIndex];
-            if (!page) return false;
+            if (!page || !Array.isArray(page.strokes)) return false;
             let changed = false;
             const newStrokes = [];
 
@@ -6007,6 +6146,7 @@
         // Erase entire stroke that intersects with point
         function eraseStrokeAtPoint(pageIndex, x, y, erasedList, hitRadius = 15) {
             const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.strokes)) return;
             
             for (let i = page.strokes.length - 1; i >= 0; i--) {
                 const stroke = page.strokes[i];
@@ -6034,6 +6174,31 @@
             };
         }
 
+        function touchImageCache(src) {
+            if (!src) return;
+            imageCacheUsage.set(src, Date.now());
+            pruneImageCache();
+        }
+
+        function pruneImageCache() {
+            if (imageCache.size <= MAX_IMAGE_CACHE) return;
+            const candidates = Array.from(imageCacheUsage.entries())
+                .sort((a, b) => a[1] - b[1]);
+            while (imageCache.size > MAX_IMAGE_CACHE && candidates.length > 0) {
+                const [src] = candidates.shift();
+                imageCache.delete(src);
+                imageCacheUsage.delete(src);
+            }
+            if (imageCache.size > MAX_IMAGE_CACHE) {
+                const fallback = Array.from(imageCache.keys());
+                while (imageCache.size > MAX_IMAGE_CACHE && fallback.length > 0) {
+                    const src = fallback.shift();
+                    imageCache.delete(src);
+                    imageCacheUsage.delete(src);
+                }
+            }
+        }
+
         function getCachedImage(src, onload) {
             if (!src) return null;
             let img = imageCache.get(src);
@@ -6047,6 +6212,7 @@
             } else if (onload && !img.complete) {
                 img.addEventListener('load', onload, { once: true });
             }
+            touchImageCache(src);
             return img;
         }
 
@@ -6278,6 +6444,12 @@
                 page.needsRedraw = true;
                 return;
             }
+            if (!isPageLoaded(page)) {
+                page.needsRedraw = true;
+                applyPagePreview(pageIndex);
+                ensurePageDataLoaded(pageIndex);
+                return;
+            }
 
             const ctx = canvas.getContext('2d');
             ctx.save();
@@ -6286,11 +6458,7 @@
 
             // Draw baked background if available (contains old strokes)
             if (page.bakedBackground) {
-                const bakedImg = imageCache.get(page.bakedBackground) || new Image();
-                if (!imageCache.has(page.bakedBackground)) {
-                    bakedImg.src = page.bakedBackground;
-                    imageCache.set(page.bakedBackground, bakedImg);
-                }
+                const bakedImg = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex));
                 if (bakedImg.complete) {
                     ctx.drawImage(bakedImg, 0, 0, A4_WIDTH, A4_HEIGHT);
                 }
@@ -6319,6 +6487,8 @@
                 createPageElement(index, false, false);
             });
             updateAddPageIndicator();
+            const maxIndex = Math.max(0, state.pages.length - 1);
+            state.activePageIndex = Math.min(Math.max(0, state.activePageIndex || 0), maxIndex);
             scheduleVisiblePageUpdate(true);
         }
 
@@ -6339,6 +6509,7 @@
                 });
             });
             if (changed) {
+                markAllPagesDirty();
                 scheduleSave(true);
             }
         }
@@ -6786,19 +6957,16 @@
             handleFullscreenChange();
 
             window.addEventListener('beforeunload', () => {
-                saveViewState();
-                scheduleSave(true);
+                flushOnClose();
             });
 
             window.addEventListener('pagehide', () => {
-                saveViewState();
-                scheduleSave(true);
+                flushOnClose();
             });
 
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') {
-                    saveViewState();
-                    scheduleSave(true);
+                    flushOnClose();
                 }
             });
         }
@@ -7649,9 +7817,19 @@
 
             const ctx = thumbCanvas.getContext('2d');
             const page = state.pages[pageIndex];
+            if (!page) return;
 
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, 50, 70);
+
+            if (page.unloaded && page.preview) {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, 50, 70);
+                };
+                img.src = page.preview;
+                return;
+            }
 
             // Draw background image if exists
             if (page.backgroundImage) {
@@ -7687,6 +7865,10 @@
             ctx.scale(scaleX, scaleY);
             drawImagesOnContext(ctx, page, pageIndex, generateThumbnail);
 
+            if (!Array.isArray(page.strokes)) {
+                ctx.restore();
+                return;
+            }
             for (const stroke of page.strokes) {
                 const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
                 if (!stroke.points || stroke.points.length < minPoints) continue;
@@ -7698,6 +7880,10 @@
         }
 
         function getVisibleStrokeCount(page) {
+            if (!page) return 0;
+            if (!Array.isArray(page.strokes)) {
+                return typeof page.strokeCount === 'number' ? page.strokeCount : 0;
+            }
             return page.strokes.filter(stroke => !(stroke.tool && stroke.tool.startsWith('eraser'))).length;
         }
 
@@ -7709,6 +7895,8 @@
                 state.panY = -(pageIndex * (A4_HEIGHT + PAGE_GAP) * state.zoom) + viewportRect.height / 2 - (A4_HEIGHT * state.zoom) / 2;
                 state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - PAGE_PADDING;
                 updateTransform();
+                state.activePageIndex = pageIndex;
+                scheduleVisiblePageUpdate(true);
             }
         }
 
@@ -7727,7 +7915,7 @@
             document.getElementById('modal-delete-page').classList.remove('visible');
         }
 
-        function confirmDeletePage() {
+        async function confirmDeletePage() {
             if (state.isReadOnly) {
                 closeDeleteModal();
                 return;
@@ -7740,7 +7928,10 @@
             if (removedPage?.backgroundSource === 'pdf' && removedPage.backgroundImage && removedPage.backgroundImage.startsWith('blob:')) {
                 URL.revokeObjectURL(removedPage.backgroundImage);
             }
+            await flushDirtyPages();
             state.pages.splice(pageToDelete, 1);
+            reindexLocalCachesAfterDelete(pageToDelete);
+            await reindexPagesAfterDelete(pageToDelete, state.pages.length);
             renderAllPages();
             const lastIndex = state.pages.length - 1;
             if (lastIndex >= 0) {
@@ -7764,25 +7955,35 @@
             resetResetSlider();
         }
 
-        function confirmResetDocument() {
+        async function confirmResetDocument() {
             if (state.isReadOnly) return;
             closeResetModal();
             clearSelection();
             state.selectionTransform = null;
             resetPdfState();
+            await clearPageStore();
+            pageDirty.clear();
+            pageAccess.clear();
+            pageLoadQueue.clear();
+            legacyPagesCache = null;
+            imageCache.clear();
+            imageCacheUsage.clear();
             state.pages = [{
                 strokes: [],
                 backgroundImage: null,
                 backgroundSource: 'template',
                 pdfPageIndex: null,
                 images: [],
-                needsRedraw: true
+                needsRedraw: true,
+                preview: null,
+                strokeCount: 0,
+                unloaded: false
             }];
             state.history = [];
             state.historyIndex = -1;
             updateHistoryButtons();
             renderAllPages();
-            scheduleSave(true);
+            scheduleSave(true, 0);
             renderPagesList();
             centerViewOnTop();
             showStatus('New document', { preserveState: true });
@@ -8168,11 +8369,14 @@
         function openNotebookDb() {
             if (!('indexedDB' in window)) return Promise.resolve(null);
             return new Promise((resolve) => {
-                const request = indexedDB.open(DB_NAME, 1);
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
                 request.onupgradeneeded = () => {
                     const db = request.result;
                     if (!db.objectStoreNames.contains(DB_STORE)) {
                         db.createObjectStore(DB_STORE, { keyPath: 'key' });
+                    }
+                    if (!db.objectStoreNames.contains(PAGE_STORE)) {
+                        db.createObjectStore(PAGE_STORE);
                     }
                 };
                 request.onsuccess = () => resolve(request.result);
@@ -8221,6 +8425,222 @@
             });
         }
 
+        function sanitizePageForStorage(page) {
+            return {
+                strokes: Array.isArray(page.strokes) ? page.strokes : [],
+                images: Array.isArray(page.images) ? page.images : [],
+                backgroundImage: page.backgroundSource === 'pdf' ? null : (page.backgroundImage || null),
+                backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
+                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null
+            };
+        }
+
+        function buildPageMeta(page) {
+            const strokeCount = Array.isArray(page.strokes)
+                ? getVisibleStrokeCount(page)
+                : (typeof page.strokeCount === 'number' ? page.strokeCount : 0);
+            return {
+                backgroundImage: page.backgroundSource === 'pdf' ? null : (page.backgroundImage || null),
+                backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
+                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                preview: page.preview || null,
+                strokeCount
+            };
+        }
+
+        async function savePageToIndexedDb(pageIndex, page) {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    console.error('Failed to save page to IndexedDB:', tx.error);
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(PAGE_STORE);
+                store.put(sanitizePageForStorage(page), pageIndex);
+            });
+        }
+
+        async function loadPageFromIndexedDb(pageIndex) {
+            const db = await openNotebookDb();
+            if (!db) return null;
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readonly');
+                tx.oncomplete = () => db.close();
+                tx.onerror = () => db.close();
+                const store = tx.objectStore(PAGE_STORE);
+                const request = store.get(pageIndex);
+                request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => resolve(null);
+            });
+        }
+
+        async function deletePageFromIndexedDb(pageIndex) {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(PAGE_STORE);
+                store.delete(pageIndex);
+            });
+        }
+
+        async function clearPageStore() {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(PAGE_STORE);
+                store.clear();
+            });
+        }
+
+        async function reindexPagesAfterDelete(startIndex, totalPages) {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(PAGE_STORE);
+                const lastIndex = totalPages;
+                let current = startIndex;
+                const moveNext = () => {
+                    if (current > lastIndex) {
+                        return;
+                    }
+                    if (current === lastIndex) {
+                        store.delete(lastIndex);
+                        return;
+                    }
+                    const request = store.get(current + 1);
+                    request.onsuccess = () => {
+                        const data = request.result;
+                        if (data) {
+                            store.put(data, current);
+                        } else {
+                            store.delete(current);
+                        }
+                        current += 1;
+                        moveNext();
+                    };
+                    request.onerror = () => {
+                        current += 1;
+                        moveNext();
+                    };
+                };
+                moveNext();
+            });
+        }
+
+        function reindexLocalCachesAfterDelete(startIndex) {
+            const nextDirty = new Set();
+            pageDirty.forEach(index => {
+                if (index === startIndex) return;
+                nextDirty.add(index > startIndex ? index - 1 : index);
+            });
+            pageDirty.clear();
+            nextDirty.forEach(index => pageDirty.add(index));
+
+            const nextAccess = new Map();
+            pageAccess.forEach((value, index) => {
+                if (index === startIndex) return;
+                nextAccess.set(index > startIndex ? index - 1 : index, value);
+            });
+            pageAccess.clear();
+            nextAccess.forEach((value, index) => pageAccess.set(index, value));
+
+            if (Number.isFinite(state.activePageIndex)) {
+                if (state.activePageIndex === startIndex) {
+                    state.activePageIndex = Math.max(0, state.activePageIndex - 1);
+                } else if (state.activePageIndex > startIndex) {
+                    state.activePageIndex -= 1;
+                }
+            }
+
+            pageLoadQueue.clear();
+        }
+
+        function touchPageAccess(pageIndex) {
+            pageAccess.set(pageIndex, Date.now());
+        }
+
+        function applyPagePreview(pageIndex) {
+            const page = state.pages[pageIndex];
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (!wrapper) return;
+            if (page && page.preview) {
+                wrapper.style.backgroundImage = `url("${page.preview}")`;
+                wrapper.style.backgroundSize = 'cover';
+                wrapper.style.backgroundRepeat = 'no-repeat';
+                wrapper.style.backgroundPosition = 'center';
+            } else {
+                wrapper.style.backgroundImage = '';
+            }
+        }
+
+        function renderPagePreview(pageIndex) {
+            const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.strokes)) return null;
+            const scale = PAGE_PREVIEW_SCALE;
+            const previewCanvas = document.createElement('canvas');
+            previewCanvas.width = Math.max(1, Math.floor(A4_WIDTH * scale));
+            previewCanvas.height = Math.max(1, Math.floor(A4_HEIGHT * scale));
+            const ctx = previewCanvas.getContext('2d');
+            ctx.scale(scale, scale);
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            if (page.backgroundImage) {
+                const img = new Image();
+                img.src = page.backgroundImage;
+                if (img.complete) {
+                    ctx.drawImage(img, 0, 0, A4_WIDTH, A4_HEIGHT);
+                }
+            }
+            if (page.bakedBackground) {
+                const bakedImg = getCachedImage(page.bakedBackground);
+                if (bakedImg.complete) {
+                    ctx.drawImage(bakedImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                }
+            }
+            drawImagesOnContext(ctx, page, pageIndex);
+            for (const stroke of page.strokes) {
+                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                if (!stroke.points || stroke.points.length < minPoints) continue;
+                if (stroke.tool === 'eraser-stroke') continue;
+                drawSmoothStroke(ctx, stroke);
+            }
+            return previewCanvas.toDataURL('image/jpeg', 0.6);
+        }
+
         function serializePayload(payload) {
             try {
                 return JSON.stringify(payload);
@@ -8240,25 +8660,39 @@
             }
         }
 
-        async function saveToStorage() {
-            const savedAt = Date.now();
-            const pagesForStorage = state.pages.map(page => ({
-                strokes: Array.isArray(page?.strokes) ? page.strokes : [],
-                images: Array.isArray(page?.images) ? page.images : [],
-                backgroundImage: page?.backgroundSource === 'pdf' ? null : (page?.backgroundImage || null),
-                backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template')),
-                pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null
-            }));
-            const payload = {
-                pages: pagesForStorage,
-                version: 2,
+        function buildMetaPayload(savedAt) {
+            return {
+                pages: state.pages.map(page => buildPageMeta(page)),
+                version: 3,
                 savedAt
             };
+        }
+
+        async function flushDirtyPages() {
+            if (pageDirty.size === 0) return true;
+            const dirty = Array.from(pageDirty);
+            for (const pageIndex of dirty) {
+                const page = state.pages[pageIndex];
+                if (!page || page.unloaded) {
+                    pageDirty.delete(pageIndex);
+                    continue;
+                }
+                page.strokeCount = getVisibleStrokeCount(page);
+                await savePageToIndexedDb(pageIndex, page);
+                pageDirty.delete(pageIndex);
+            }
+            return true;
+        }
+
+        async function saveToStorage() {
+            const savedAt = Date.now();
+            const payload = buildMetaPayload(savedAt);
             const data = serializePayload(payload);
             if (!data) return { ok: false, savedAt: null };
 
             const localOk = saveToLocalStorage(data);
             const dbOk = await saveToIndexedDb(data, savedAt);
+            await flushDirtyPages();
             const ok = localOk || dbOk;
 
             if (ok) {
@@ -8272,6 +8706,8 @@
         async function loadFromStorage() {
             let localPayload = null;
             let idbPayload = null;
+            let legacyPayload = null;
+            legacyPagesCache = null;
 
             try {
                 const data = localStorage.getItem(DATA_STORAGE_KEY);
@@ -8280,6 +8716,20 @@
                 }
             } catch (e) {
                 console.error('Failed to load from localStorage:', e);
+            }
+
+            if (!localPayload) {
+                LEGACY_DATA_KEYS.forEach((key) => {
+                    if (legacyPayload) return;
+                    try {
+                        const data = localStorage.getItem(key);
+                        if (data) {
+                            legacyPayload = JSON.parse(data);
+                        }
+                    } catch (err) {
+                        console.error('Failed to load legacy payload:', err);
+                    }
+                });
             }
 
             try {
@@ -8291,7 +8741,7 @@
                 console.error('Failed to load from IndexedDB:', e);
             }
 
-            const candidates = [localPayload, idbPayload].filter(Boolean);
+            const candidates = [localPayload, idbPayload, legacyPayload].filter(Boolean);
             const best = candidates.reduce((acc, item) => {
                 if (!acc) return item;
                 const accTime = typeof acc.savedAt === 'number' ? acc.savedAt : 0;
@@ -8300,21 +8750,23 @@
             }, null);
 
             if (best && Array.isArray(best.pages)) {
-                state.pages = best.pages.map(page => {
-                    const backgroundImage = page?.backgroundImage || null;
-                    const pdfPageIndex = Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null;
-                    const backgroundSource = page?.backgroundSource
-                        || (pdfPageIndex ? 'pdf' : (backgroundImage ? 'custom' : 'template'));
-                    return {
-                        strokes: Array.isArray(page?.strokes) ? page.strokes : [],
-                        backgroundImage,
-                        backgroundSource,
-                        pdfPageIndex,
-                        images: Array.isArray(page?.images) ? page.images : [],
+                const hasLegacyStrokes = best.pages.some(page => Array.isArray(page?.strokes));
+                if (hasLegacyStrokes) {
+                    await migrateLegacyPayload(best);
+                } else {
+                    state.pages = best.pages.map(page => ({
+                        strokes: null,
+                        images: null,
+                        backgroundImage: page?.backgroundImage || null,
+                        backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template')),
+                        pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
+                        preview: page?.preview || null,
+                        strokeCount: typeof page?.strokeCount === 'number' ? page.strokeCount : 0,
+                        unloaded: true,
                         needsRedraw: true
-                    };
-                });
-                state.lastSavedAt = typeof best.savedAt === 'number' ? best.savedAt : null;
+                    }));
+                    state.lastSavedAt = typeof best.savedAt === 'number' ? best.savedAt : null;
+                }
             } else {
                 state.pages = [];
                 state.lastSavedAt = null;
@@ -8322,11 +8774,213 @@
             updateSaveTimestamp();
         }
 
+        function normalizeLegacyPage(page) {
+            const backgroundImage = page?.backgroundImage || null;
+            const pdfPageIndex = Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null;
+            const backgroundSource = page?.backgroundSource
+                || (pdfPageIndex ? 'pdf' : (backgroundImage ? 'custom' : 'template'));
+            return {
+                strokes: Array.isArray(page?.strokes) ? page.strokes : [],
+                images: Array.isArray(page?.images) ? page.images : [],
+                backgroundImage,
+                backgroundSource,
+                pdfPageIndex,
+                needsRedraw: true,
+                unloaded: false
+            };
+        }
+
+        async function migrateLegacyPayload(payload) {
+            const pages = Array.isArray(payload?.pages) ? payload.pages : [];
+            await clearPageStore();
+            pageDirty.clear();
+            pageAccess.clear();
+            pageLoadQueue.clear();
+            state.lastSavedAt = typeof payload?.savedAt === 'number' ? payload.savedAt : null;
+            legacyPagesCache = pages;
+            state.pages = pages.map(page => {
+                const meta = buildPageMeta(page);
+                return {
+                    strokes: null,
+                    images: null,
+                    backgroundImage: meta.backgroundImage,
+                    backgroundSource: meta.backgroundSource,
+                    pdfPageIndex: meta.pdfPageIndex,
+                    preview: meta.preview || null,
+                    strokeCount: meta.strokeCount || 0,
+                    unloaded: true,
+                    needsRedraw: true
+                };
+            });
+
+            const keepCount = Math.min(MAX_ACTIVE_PAGES, pages.length);
+            for (let i = 0; i < keepCount; i++) {
+                const fullPage = normalizeLegacyPage(pages[i]);
+                state.pages[i] = {
+                    ...fullPage,
+                    preview: state.pages[i].preview || null,
+                    strokeCount: getVisibleStrokeCount(fullPage),
+                    unloaded: false
+                };
+                await savePageToIndexedDb(i, fullPage);
+                legacyPagesCache[i] = null;
+                touchPageAccess(i);
+            }
+
+            let index = keepCount;
+            const batchSize = 10;
+            const migrateBatch = async () => {
+                let count = 0;
+                while (index < pages.length && count < batchSize) {
+                    const fullPage = normalizeLegacyPage(pages[index]);
+                    await savePageToIndexedDb(index, fullPage);
+                    legacyPagesCache[index] = null;
+                    count += 1;
+                    index += 1;
+                }
+                if (index < pages.length) {
+                    if ('requestIdleCallback' in window) {
+                        requestIdleCallback(migrateBatch, { timeout: 500 });
+                    } else {
+                        setTimeout(migrateBatch, 60);
+                    }
+                } else {
+                    legacyPagesCache = null;
+                    saveToStorage();
+                }
+            };
+
+            if (index < pages.length) {
+                migrateBatch();
+            }
+        }
+
+        function isPageLoaded(page) {
+            return !!(page && !page.unloaded && Array.isArray(page.strokes));
+        }
+
+        function clearPagePreview(pageIndex) {
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (wrapper) {
+                wrapper.style.backgroundImage = '';
+            }
+        }
+
+        async function ensurePageDataLoaded(pageIndex, options = {}) {
+            const page = state.pages[pageIndex];
+            if (!page) return null;
+            if (isPageLoaded(page)) {
+                touchPageAccess(pageIndex);
+                return page;
+            }
+            if (pageLoadQueue.has(pageIndex)) {
+                return pageLoadQueue.get(pageIndex);
+            }
+            const loadPromise = (async () => {
+                let data = await loadPageFromIndexedDb(pageIndex);
+                if (!data && legacyPagesCache && legacyPagesCache[pageIndex]) {
+                    data = normalizeLegacyPage(legacyPagesCache[pageIndex]);
+                    legacyPagesCache[pageIndex] = null;
+                    await savePageToIndexedDb(pageIndex, data);
+                }
+                if (!data) {
+                    data = {
+                        strokes: [],
+                        images: [],
+                        backgroundImage: page.backgroundImage || null,
+                        backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
+                        pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                        needsRedraw: true
+                    };
+                }
+                const current = state.pages[pageIndex] || page;
+                const pendingUnload = !!current.pendingUnload;
+                const next = {
+                    ...page,
+                    ...data,
+                    preview: page.preview || null,
+                    strokeCount: typeof page.strokeCount === 'number' ? page.strokeCount : getVisibleStrokeCount(data),
+                    unloaded: false,
+                    pendingUnload
+                };
+                state.pages[pageIndex] = next;
+                touchPageAccess(pageIndex);
+                if (!options.keepLoaded && (next.pendingUnload || !activePageIndices.has(pageIndex))) {
+                    await unloadPageData(pageIndex);
+                    return state.pages[pageIndex];
+                }
+                clearPagePreview(pageIndex);
+                const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+                if (canvas) {
+                    applyPageBackground(pageIndex, canvas);
+                    redrawPage(pageIndex);
+                }
+                return next;
+            })();
+            pageLoadQueue.set(pageIndex, loadPromise);
+            loadPromise.finally(() => pageLoadQueue.delete(pageIndex));
+            return loadPromise;
+        }
+
+        async function unloadPageData(pageIndex) {
+            const page = state.pages[pageIndex];
+            if (!isPageLoaded(page)) return;
+            page.strokeCount = getVisibleStrokeCount(page);
+            if (!page.preview) {
+                const hasImages = Array.isArray(page.images) && page.images.length > 0;
+                const hasStrokes = Array.isArray(page.strokes) && page.strokes.length > 0;
+                const hasBackground = page.backgroundSource === 'pdf'
+                    || !!page.backgroundImage
+                    || !!page.bakedBackground;
+                if (hasImages || hasStrokes || hasBackground) {
+                    page.preview = renderPagePreview(pageIndex);
+                }
+            }
+            if (page.backgroundSource === 'pdf' && page.backgroundImage && page.backgroundImage.startsWith('blob:')) {
+                const bg = page.backgroundImage;
+                imageCache.delete(bg);
+                imageCacheUsage.delete(bg);
+                URL.revokeObjectURL(bg);
+                page.backgroundImage = null;
+            }
+            await savePageToIndexedDb(pageIndex, page);
+            pageDirty.delete(pageIndex);
+            page.strokes = null;
+            page.images = null;
+            if (page.bakedBackground) {
+                imageCache.delete(page.bakedBackground);
+                imageCacheUsage.delete(page.bakedBackground);
+            }
+            page.bakedBackground = null;
+            page.unloaded = true;
+            page.pendingUnload = false;
+            applyPagePreview(pageIndex);
+        }
+
+        function markPageDirty(pageIndex) {
+            if (!Number.isFinite(pageIndex)) return;
+            if (pageIndex < 0 || pageIndex >= state.pages.length) return;
+            pageDirty.add(pageIndex);
+            scheduleDriveSync();
+        }
+
+        function markAllPagesDirty() {
+            state.pages.forEach((page, index) => {
+                if (page && !page.unloaded) {
+                    pageDirty.add(index);
+                }
+            });
+            scheduleDriveSync();
+        }
+
         let saveInProgress = false;
         let saveQueued = false;
 
-        function scheduleSave(immediate = false) {
+        function scheduleSave(immediate = false, pageIndex = null) {
             if (state.isReadOnly) return;
+            if (Number.isFinite(pageIndex)) {
+                markPageDirty(pageIndex);
+            }
             showStatus('Saving...', true);
             clearTimeout(state.saveTimeout);
             const now = Date.now();
@@ -8334,13 +8988,13 @@
             const overdue = !lastSaved || (now - lastSaved >= MAX_SAVE_INTERVAL);
             if (immediate || overdue) {
                 queueSave();
-                scheduleDriveSave();
+                scheduleDriveSync();
                 return;
             }
             state.saveTimeout = setTimeout(() => {
                 queueSave();
             }, 500);
-            scheduleDriveSave();
+            scheduleDriveSync();
         }
 
         async function queueSave() {
@@ -8364,15 +9018,46 @@
             }
         }
 
-        function scheduleDriveSave() {
-            if (state.isReadOnly || !state.driveAutosave || !driveAccessToken) return;
-            clearTimeout(driveSaveTimeout);
-            driveSaveTimeout = setTimeout(() => {
-                queueDriveSave();
-            }, DRIVE_AUTOSAVE_DELAY);
+        function flushOnClose() {
+            if (state.isReadOnly) return;
+            saveViewState();
+            const savedAt = Date.now();
+            const payload = buildMetaPayload(savedAt);
+            const data = serializePayload(payload);
+            if (data) {
+                saveToLocalStorage(data);
+                saveToIndexedDb(data, savedAt);
+            }
+            state.lastSavedAt = savedAt;
+            updateSaveTimestamp();
+            flushDirtyPages();
+            if (driveDirty) {
+                queueDriveSave(true, { keepalive: true });
+            }
         }
 
-        async function ensureDriveFile() {
+        function clearDriveSyncTimers() {
+            clearTimeout(driveSaveTimeout);
+            driveSaveTimeout = null;
+            clearTimeout(driveSyncMaxTimeout);
+            driveSyncMaxTimeout = null;
+        }
+
+        function scheduleDriveSync() {
+            if (state.isReadOnly || !state.driveAutosave || !driveAccessToken) return;
+            driveDirty = true;
+            clearTimeout(driveSaveTimeout);
+            driveSaveTimeout = setTimeout(() => {
+                queueDriveSave(false);
+            }, DRIVE_SYNC_IDLE_DELAY);
+            if (!driveSyncMaxTimeout) {
+                driveSyncMaxTimeout = setTimeout(() => {
+                    queueDriveSave(true);
+                }, DRIVE_SYNC_MAX_DELAY);
+            }
+        }
+
+        async function ensureDriveFile(options = {}) {
             if (state.driveFileId) return state.driveFileId;
             await ensureDriveToken(false);
             const folderId = state.driveFolderId || await ensureDriveFolder();
@@ -8388,7 +9073,8 @@
             form.append('file', pdfBlob);
             const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                 method: 'POST',
-                body: form
+                body: form,
+                keepalive: !!options.keepalive
             });
             const data = await res.json();
             state.driveFileId = data.id;
@@ -8398,7 +9084,7 @@
             return state.driveFileId;
         }
 
-        async function createDriveFileInFolder(folderId, fileName, pdfBlob) {
+        async function createDriveFileInFolder(folderId, fileName, pdfBlob, options = {}) {
             const metadata = {
                 name: fileName,
                 mimeType: 'application/pdf',
@@ -8409,27 +9095,34 @@
             form.append('file', pdfBlob);
             const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                 method: 'POST',
-                body: form
+                body: form,
+                keepalive: !!options.keepalive
             });
             const data = await res.json();
             return data.id;
         }
 
-        async function updateDriveFile(fileId, pdfBlob) {
+        async function updateDriveFile(fileId, pdfBlob, options = {}) {
             await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/pdf' },
-                body: pdfBlob
+                body: pdfBlob,
+                keepalive: !!options.keepalive
             });
         }
 
-        async function queueDriveSave() {
+        async function queueDriveSave(force = false, options = {}) {
             if (state.isReadOnly || !state.driveAutosave) return;
+            if (!driveDirty && !force) return;
             if (driveSaveInProgress) {
                 driveSaveQueued = true;
+                driveSaveQueuedForce = driveSaveQueuedForce || force;
+                driveSaveQueuedKeepalive = driveSaveQueuedKeepalive || !!options.keepalive;
                 return;
             }
             driveSaveInProgress = true;
+            driveDirty = false;
+            clearDriveSyncTimers();
             try {
                 const needsPdf = state.pages.some(page => page?.pdfPageIndex);
                 if (needsPdf && !activePdfDocument) {
@@ -8438,21 +9131,27 @@
                 if (needsPdf && !activePdfDocument) {
                     showStatus('Waiting for PDF...', { preserveState: true });
                     driveSaveInProgress = false;
-                    scheduleDriveSave();
+                    scheduleDriveSync();
                     return;
                 }
                 showStatus('Saving to Drive...', { saving: true });
-                const fileId = await ensureDriveFile();
+                const fileId = await ensureDriveFile(options);
                 const pdfBlob = await buildPdfBlob();
-                await updateDriveFile(fileId, pdfBlob);
+                await updateDriveFile(fileId, pdfBlob, options);
                 showStatus('Saved', { savedAt: Date.now() });
             } catch (err) {
                 showStatus('Drive save failed', { error: true });
+                driveDirty = true;
+                scheduleDriveSync();
             }
             driveSaveInProgress = false;
             if (driveSaveQueued) {
+                const queuedForce = driveSaveQueuedForce;
+                const queuedKeepalive = driveSaveQueuedKeepalive;
                 driveSaveQueued = false;
-                queueDriveSave();
+                driveSaveQueuedForce = false;
+                driveSaveQueuedKeepalive = false;
+                queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
             }
         }
 
@@ -8480,12 +9179,19 @@
             updateHistoryButtons();
         }
 
-        function undo() {
+        async function undo() {
             if (state.isReadOnly) return;
             if (state.historyIndex < 0) return;
 
             const action = state.history[state.historyIndex];
             state.historyIndex--;
+            state.activePageIndex = action.pageIndex;
+            await ensurePageDataLoaded(action.pageIndex, { keepLoaded: true });
+            const loadedPage = state.pages[action.pageIndex];
+            if (!isPageLoaded(loadedPage)) {
+                updateHistoryButtons();
+                return;
+            }
 
             if (action.type === 'add-stroke') {
                 // Remove the stroke
@@ -8585,15 +9291,25 @@
             }
 
             updateHistoryButtons();
-            scheduleSave();
+            scheduleSave(false, action.pageIndex);
+            if (!activePageIndices.has(action.pageIndex)) {
+                await unloadPageData(action.pageIndex);
+            }
         }
 
-        function redo() {
+        async function redo() {
             if (state.isReadOnly) return;
             if (state.historyIndex >= state.history.length - 1) return;
 
             state.historyIndex++;
             const action = state.history[state.historyIndex];
+            state.activePageIndex = action.pageIndex;
+            await ensurePageDataLoaded(action.pageIndex, { keepLoaded: true });
+            const loadedPage = state.pages[action.pageIndex];
+            if (!isPageLoaded(loadedPage)) {
+                updateHistoryButtons();
+                return;
+            }
 
             if (action.type === 'add-stroke') {
                 // Re-add the stroke
@@ -8696,7 +9412,10 @@
             }
 
             updateHistoryButtons();
-            scheduleSave();
+            scheduleSave(false, action.pageIndex);
+            if (!activePageIndices.has(action.pageIndex)) {
+                await unloadPageData(action.pageIndex);
+            }
         }
 
         function updateHistoryButtons() {
@@ -8863,14 +9582,18 @@
                     console.log('No embedded stroke data found:', metaErr);
                 }
 
-                // Clear existing pages
-                state.pages = [];
+                await clearPageStore();
+                pageDirty.clear();
+                pageAccess.clear();
+                pageLoadQueue.clear();
+                legacyPagesCache = null;
+                imageCache.clear();
+                imageCacheUsage.clear();
                 state.history = [];
                 state.historyIndex = -1;
                 updateHistoryButtons();
-                canvasContainer.innerHTML = '';
-                activePageIndices.clear();
 
+                const importedPages = [];
                 for (let i = 1; i <= numPages; i++) {
                     const pageData = embeddedStrokes ? embeddedStrokes[i - 1] : null;
                     if (pageData) {
@@ -8886,7 +9609,7 @@
                         const pagePdfIndex = Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : i;
 
                         if (needsPdfBackground) {
-                            state.pages.push({
+                            importedPages.push({
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'pdf',
@@ -8895,7 +9618,7 @@
                                 needsRedraw: true
                             });
                         } else {
-                            state.pages.push({
+                            importedPages.push({
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'template',
@@ -8905,7 +9628,7 @@
                             });
                         }
                     } else {
-                        state.pages.push({
+                        importedPages.push({
                             strokes: [],
                             backgroundImage: null,
                             backgroundSource: 'pdf',
@@ -8916,7 +9639,9 @@
                     }
                 }
 
+                await migrateLegacyPayload({ pages: importedPages });
                 renderAllPages();
+                state.activePageIndex = 0;
                 scheduleSave(true);
                 updateVisiblePages(true);
 
@@ -8956,6 +9681,33 @@
             pdfInput.value = '';
         }
 
+        async function loadPageDataForExport(pageIndex) {
+            const page = state.pages[pageIndex];
+            if (!page) {
+                return {
+                    strokes: [],
+                    images: [],
+                    backgroundImage: null,
+                    backgroundSource: 'template',
+                    pdfPageIndex: null
+                };
+            }
+            if (isPageLoaded(page)) {
+                return page;
+            }
+            let data = await loadPageFromIndexedDb(pageIndex);
+            if (!data && legacyPagesCache && legacyPagesCache[pageIndex]) {
+                data = normalizeLegacyPage(legacyPagesCache[pageIndex]);
+            }
+            const fallback = data || {};
+            return {
+                ...page,
+                ...fallback,
+                strokes: Array.isArray(fallback.strokes) ? fallback.strokes : [],
+                images: Array.isArray(fallback.images) ? fallback.images : []
+            };
+        }
+
         async function buildPdfBlob() {
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({
@@ -8964,14 +9716,26 @@
                 format: 'a4'
             });
 
-            // Prepare data to embed (without backgroundImage to save space)
-            const strokeData = state.pages.map(page => ({
-                strokes: page.strokes,
-                images: Array.isArray(page.images) ? page.images : [],
-                hasCustomBackground: page.backgroundSource === 'pdf' || !!page.backgroundImage,
-                backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
-                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null
-            }));
+            await flushDirtyPages();
+
+            const pageCount = state.pages.length;
+            const strokeData = new Array(pageCount);
+            const backgroundImages = new Array(pageCount);
+
+            for (let i = 0; i < pageCount; i++) {
+                const pageData = await loadPageDataForExport(i);
+                const backgroundSource = pageData.backgroundSource
+                    || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
+                const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
+                backgroundImages[i] = backgroundImage;
+                strokeData[i] = {
+                    strokes: Array.isArray(pageData.strokes) ? pageData.strokes : [],
+                    images: Array.isArray(pageData.images) ? pageData.images : [],
+                    hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
+                    backgroundSource,
+                    pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null
+                };
+            }
 
             // Embed stroke data as PDF metadata (custom property)
             const metadataString = JSON.stringify(strokeData);
@@ -8985,10 +9749,10 @@
                 keywords: `STROKES_DATA:${encodedMetadata}`
             });
 
-            for (let i = 0; i < state.pages.length; i++) {
+            for (let i = 0; i < pageCount; i++) {
                 if (i > 0) pdf.addPage();
 
-                const page = state.pages[i];
+                const page = strokeData[i];
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = A4_WIDTH * CANVAS_SCALE;
                 tempCanvas.height = A4_HEIGHT * CANVAS_SCALE;
@@ -8998,7 +9762,8 @@
                 tempCtx.fillStyle = 'white';
                 tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-                if (page.backgroundImage) {
+                const bgImage = backgroundImages[i];
+                if (bgImage) {
                     await new Promise((resolve) => {
                         const img = new Image();
                         img.onload = () => {
@@ -9006,7 +9771,7 @@
                             resolve();
                         };
                         img.onerror = resolve;
-                        img.src = page.backgroundImage;
+                        img.src = bgImage;
                     });
                 } else if (page.pdfPageIndex && activePdfDocument) {
                     const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
