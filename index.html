@@ -126,12 +126,18 @@
         }
 
         @media (max-width: 720px) {
-            .logo {
+            .logo,
+            .drive-brand {
                 gap: 6px;
             }
 
-            .logo .brand-name {
+            .brand-name {
                 display: none;
+            }
+
+            .doc-title {
+                margin-left: 6px;
+                max-width: min(56vw, 260px);
             }
         }
 
@@ -2122,7 +2128,7 @@
                 <svg viewBox="0 0 40 24" fill="none">
                     <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
                 </svg>
-                <span>inhouse notes</span>
+                <span class="brand-name">inhouse notes</span>
                 <span class="doc-title" id="doc-title" role="textbox" aria-label="Document title" contenteditable="true" spellcheck="false">Untitled</span>
             </div>
             <div class="header-actions">
@@ -2883,6 +2889,11 @@
         let driveSaveQueuedForce = false;
         let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
+        let isPenWriting = false;
+        let penWritingIdleTimer = null;
+        let deferredLocalSave = false;
+        let deferredDriveSave = false;
+        const deferredBakePages = new Set();
         let driveRecentsCache = [];
         let driveStarredCache = [];
         let driveFolderCache = { folders: [], files: [] };
@@ -3599,6 +3610,7 @@
 
                 isDrawing = true;
                 erasedStrokes = [];
+                notePenActivity();
 
                 if (state.currentTool === 'eraser-stroke') {
                     // Check if we hit a stroke to erase
@@ -3630,6 +3642,8 @@
                 }
 
                 if (!isDrawing || e.pointerType !== 'pen') return;
+
+                notePenActivity();
 
                 const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
 
@@ -3754,7 +3768,11 @@
 
                     // Check if we need to bake old strokes
                     if (shouldBakeStrokes(pageIndex)) {
-                        setTimeout(() => bakeOldStrokes(pageIndex), 100);
+                        if (isPenWriting) {
+                            deferredBakePages.add(pageIndex);
+                        } else {
+                            setTimeout(() => bakeOldStrokes(pageIndex), 100);
+                        }
                     }
                 }
                 clearEraserPreview(pageIndex);
@@ -9075,10 +9093,39 @@
             return !!(state.driveAutosave && !state.isReadOnly && (driveDirty || driveSaveInProgress || driveSaveQueued));
         }
 
-        function requestImmediateDriveSave() {
+        function notePenActivity() {
+            isPenWriting = true;
+            if (penWritingIdleTimer) {
+                clearTimeout(penWritingIdleTimer);
+            }
+            penWritingIdleTimer = setTimeout(() => {
+                isPenWriting = false;
+                if (deferredLocalSave) {
+                    deferredLocalSave = false;
+                    queueSave();
+                }
+                if (deferredDriveSave) {
+                    deferredDriveSave = false;
+                    requestImmediateDriveSave({ fromIdle: true });
+                }
+                if (deferredBakePages.size > 0) {
+                    const pending = Array.from(deferredBakePages);
+                    deferredBakePages.clear();
+                    pending.forEach((pageIndex) => {
+                        setTimeout(() => bakeOldStrokes(pageIndex), 100);
+                    });
+                }
+            }, 120);
+        }
+
+        function requestImmediateDriveSave(options = {}) {
             if (state.isReadOnly || !state.driveAutosave) return;
             driveDirty = true;
             if (!driveAccessToken) return;
+            if (isPenWriting && !options.fromIdle && !options.force) {
+                deferredDriveSave = true;
+                return;
+            }
             clearDriveSyncTimers();
             queueDriveSave(true);
         }
@@ -9120,11 +9167,13 @@
             const lastSaved = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : 0;
             const overdue = !lastSaved || (now - lastSaved >= MAX_SAVE_INTERVAL);
             if (immediate || overdue) {
+                state.saveTimeout = null;
                 queueSave();
                 scheduleDriveSync();
                 return;
             }
             state.saveTimeout = setTimeout(() => {
+                state.saveTimeout = null;
                 queueSave();
             }, 500);
             scheduleDriveSync();
@@ -9132,6 +9181,10 @@
 
         async function queueSave() {
             if (state.isReadOnly) return;
+            if (isPenWriting) {
+                deferredLocalSave = true;
+                return;
+            }
             if (saveInProgress) {
                 saveQueued = true;
                 return;
@@ -9183,6 +9236,7 @@
         function scheduleDriveSync() {
             if (state.isReadOnly || !state.driveAutosave) return;
             driveDirty = true;
+            if (isPenWriting) return;
             if (!driveAccessToken) return;
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
@@ -9252,6 +9306,10 @@
         async function queueDriveSave(force = false, options = {}) {
             if (state.isReadOnly || !state.driveAutosave) return;
             if (!driveDirty && !force) return;
+            if (isPenWriting && !force) {
+                deferredDriveSave = true;
+                return;
+            }
             if (driveSaveInProgress) {
                 driveSaveQueued = true;
                 driveSaveQueuedForce = driveSaveQueuedForce || force;
