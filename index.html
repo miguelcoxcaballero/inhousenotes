@@ -6894,41 +6894,49 @@
                         clearTimeout(state.saveTimeout);
                         state.saveTimeout = null;
 
-                        // Wait for local save to complete first to avoid race conditions
+                        // Wait for local save to complete first
                         await queueSave();
 
                         if (state.driveAutosave && driveAccessToken) {
-                            driveDirty = true;
                             clearDriveSyncTimers();
 
-                            // Retry Drive save up to 3 times with immediate retries
-                            let driveSuccess = false;
-                            for (let attempt = 0; attempt < 3 && !driveSuccess; attempt++) {
-                                try {
-                                    await queueDriveSave(true, { keepalive: true });
-                                    // Check if save actually succeeded (driveDirty would be false)
-                                    if (!driveDirty && !driveSaveInProgress && !driveSaveQueued) {
-                                        driveSuccess = true;
-                                    } else if (attempt < 2) {
-                                        // Wait a moment before retry
-                                        await new Promise(r => setTimeout(r, 1000));
-                                    }
-                                } catch (e) {
-                                    if (attempt < 2) {
-                                        await new Promise(r => setTimeout(r, 1000));
-                                    }
-                                }
+                            // Wait for any in-progress Drive save to finish first (with timeout)
+                            const waitStart = Date.now();
+                            while (driveSaveInProgress && (Date.now() - waitStart < 30000)) {
+                                await new Promise(r => setTimeout(r, 100));
                             }
+                            if (driveSaveInProgress) {
+                                // Previous save is stuck, proceed anyway
+                                console.warn('goHome: previous Drive save stuck, proceeding');
+                            }
+
+                            // Now trigger a fresh save if still needed
+                            if (driveDirty || driveSaveQueued) {
+                                driveDirty = true;
+                                console.log('goHome: starting Drive save');
+                                await queueDriveSave(true, { keepalive: true });
+                                console.log('goHome: Drive save returned, driveDirty=', driveDirty, 'inProgress=', driveSaveInProgress);
+                            }
+
+                            // Wait for completion with timeout
+                            const maxWait = 30000;
+                            const startWait = Date.now();
+                            while ((driveSaveInProgress || driveSaveQueued) && (Date.now() - startWait < maxWait)) {
+                                await new Promise(r => setTimeout(r, 100));
+                            }
+
+                            // Check final state
+                            if (driveDirty || driveSaveInProgress || driveSaveQueued) {
+                                console.warn('goHome: save incomplete - dirty:', driveDirty, 'inProgress:', driveSaveInProgress, 'queued:', driveSaveQueued);
+                                hideLoading();
+                                showStatus('Could not save to Drive', { error: true });
+                                goHomeInProgress = false;
+                                return;
+                            }
+                            console.log('goHome: Drive save completed successfully');
                         }
 
-                        // Wait for any remaining saves with shorter timeout since we already retried
-                        const ok = await waitForSavesIdle(5000);
                         hideLoading();
-                        if (!ok || hasPendingDriveSave()) {
-                            showStatus('Could not save to Drive', { error: true });
-                            goHomeInProgress = false;
-                            return;
-                        }
                     }
                     showDriveHome();
                     refreshDriveFiles();
@@ -9453,6 +9461,7 @@
                 const savedAt = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : Date.now();
                 showStatus('Saved', { savedAt });
             } catch (err) {
+                console.error('queueDriveSave failed:', err);
                 showStatus('Drive save failed', { error: true });
                 driveDirty = true;
                 scheduleDriveSync();
@@ -9464,7 +9473,7 @@
                 driveSaveQueued = false;
                 driveSaveQueuedForce = false;
                 driveSaveQueuedKeepalive = false;
-                queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
+                await queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
             }
         }
 
