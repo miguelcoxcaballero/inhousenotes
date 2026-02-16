@@ -2979,6 +2979,7 @@
         let driveTokenClient = null;
         let driveAccessToken = null;
         let driveTokenExpiry = 0;
+        let driveTokenRefreshTimer = null;
         let driveSaveTimeout = null;
         let driveSyncMaxTimeout = null;
         let driveSaveInProgress = false;
@@ -3530,7 +3531,7 @@
                 const offsetY = (targetHeight - viewport.height) / 2;
                 a4Ctx.drawImage(tempCanvas, offsetX, offsetY, viewport.width, viewport.height);
 
-                const blob = await new Promise(resolve => a4Canvas.toBlob(resolve, 'image/jpeg', 0.85));
+                const blob = await new Promise(resolve => a4Canvas.toBlob(resolve, 'image/jpeg', 0.7));
                 let objectUrl = '';
                 if (blob) {
                     if (page.backgroundImage && page.backgroundImage.startsWith('blob:')) {
@@ -4817,6 +4818,20 @@
             }
         }
 
+        function scheduleDriveTokenRefresh() {
+            if (driveTokenRefreshTimer) clearTimeout(driveTokenRefreshTimer);
+            driveTokenRefreshTimer = null;
+            if (!driveAccessToken || !driveTokenExpiry) return;
+            // Refresh 5 minutes before expiry
+            const refreshIn = driveTokenExpiry - Date.now() - 5 * 60 * 1000;
+            if (refreshIn <= 0) return;
+            driveTokenRefreshTimer = setTimeout(() => {
+                driveTokenRefreshTimer = null;
+                // Silently refresh the token
+                ensureDriveToken(false).catch(() => {});
+            }, refreshIn);
+        }
+
         function ensureDriveToken(interactive = false) {
             if (driveAccessToken && Date.now() < driveTokenExpiry - 60000) {
                 return Promise.resolve(driveAccessToken);
@@ -4833,10 +4848,20 @@
                     driveAccessToken = resp.access_token;
                     driveTokenExpiry = Date.now() + (resp.expires_in || 0) * 1000;
                     saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+                    scheduleDriveTokenRefresh();
                     updateDriveAuthUI();
                     resolve(driveAccessToken);
                 };
-                driveTokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+                const reqOptions = {};
+                if (interactive) {
+                    reqOptions.prompt = 'consent';
+                } else {
+                    reqOptions.prompt = '';
+                    // Pass hint to auto-select the account without showing the picker
+                    const email = driveUserProfile?.email || localStorage.getItem('drive-hint-email');
+                    if (email) reqOptions.login_hint = email;
+                }
+                driveTokenClient.requestAccessToken(reqOptions);
             });
         }
 
@@ -4852,6 +4877,7 @@
             if (driveAccessToken && window.google?.accounts?.oauth2?.revoke) {
                 google.accounts.oauth2.revoke(driveAccessToken, () => {});
             }
+            if (driveTokenRefreshTimer) { clearTimeout(driveTokenRefreshTimer); driveTokenRefreshTimer = null; }
             driveAccessToken = null;
             driveTokenExpiry = 0;
             state.driveFileId = null;
@@ -4875,6 +4901,7 @@
             closeDriveProfileMenus();
             clearDriveTokenStorage();
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
+            try { localStorage.removeItem('drive-hint-email'); } catch (e) {}
             clearDriveSession();
             updateDriveAuthUI();
         }
@@ -4924,6 +4951,9 @@
                     photo: user.photoLink || DEFAULT_AVATAR,
                     token: driveAccessToken
                 };
+                if (driveUserProfile.email) {
+                    try { localStorage.setItem('drive-hint-email', driveUserProfile.email); } catch (e) {}
+                }
                 updateDriveProfileUI(driveUserProfile);
             } catch (err) {
                 console.error('Failed to load Drive profile:', err);
@@ -4982,7 +5012,7 @@
             }
         }
 
-        async function driveFetch(url, options = {}) {
+        async function driveFetch(url, options = {}, _retried = false) {
             const token = await ensureDriveToken(false);
             const headers = new Headers(options.headers || {});
             headers.set('Authorization', `Bearer ${token}`);
@@ -5000,6 +5030,13 @@
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
+                if (res.status === 401 && !_retried) {
+                    // Token expired server-side — force refresh and retry once
+                    driveAccessToken = null;
+                    driveTokenExpiry = 0;
+                    clearDriveTokenStorage();
+                    return driveFetch(url, options, true);
+                }
                 if (!res.ok) {
                     const message = await res.text().catch(() => '');
                     throw new Error(`Drive API error ${res.status}: ${message}`);
@@ -5044,8 +5081,8 @@
 
         function normalizeDriveThumbnail(link) {
             if (!link) return '';
-            const resized = link.replace(/=s\d+/, '=s480');
-            return resized.includes('=s') ? resized : `${resized}&sz=w480-h640`;
+            const resized = link.replace(/=s\d+/, '=s220');
+            return resized.includes('=s') ? resized : `${resized}&sz=w220-h310`;
         }
 
         function createDrivePreview(file) {
@@ -8698,6 +8735,7 @@
                 }
                 driveAccessToken = parsed.token;
                 driveTokenExpiry = parsed.expiry;
+                scheduleDriveTokenRefresh();
                 return true;
             } catch (e) {
                 console.error('Failed to load Drive token:', e);
@@ -10410,7 +10448,7 @@
                     drawSmoothStroke(tempCtx, stroke);
                 }
 
-                const imgData = tempCanvas.toDataURL('image/jpeg', 0.9);
+                const imgData = tempCanvas.toDataURL('image/jpeg', 0.72);
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             }
 
