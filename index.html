@@ -3827,7 +3827,6 @@
                             strokes: erasedStrokes
                         });
                         scheduleSave(false, pageIndex);
-                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (state.currentTool === 'eraser-area') {
@@ -3840,7 +3839,6 @@
                             after
                         });
                         scheduleSave(false, pageIndex);
-                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
@@ -3868,7 +3866,6 @@
                         stroke: cloneStroke(finalizedStroke)
                     });
                     scheduleSave(false, pageIndex);
-                    requestImmediateDriveSave();
                     redrawPage(pageIndex);
 
                     // Check if we need to bake old strokes
@@ -9129,6 +9126,10 @@
             };
         }
 
+        function yieldToMain() {
+            return new Promise(resolve => setTimeout(resolve, 0));
+        }
+
         async function flushDirtyPages() {
             if (pageDirty.size === 0) return true;
             const dirty = Array.from(pageDirty);
@@ -9141,6 +9142,7 @@
                 page.strokeCount = getVisibleStrokeCount(page);
                 await savePageToIndexedDb(pageIndex, page);
                 pageDirty.delete(pageIndex);
+                await yieldToMain();
             }
             return true;
         }
@@ -9148,11 +9150,15 @@
         async function saveToStorage() {
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
+            await yieldToMain();
             const data = serializePayload(payload);
             if (!data) return { ok: false, savedAt: null };
 
+            await yieldToMain();
             const localOk = saveToLocalStorage(data);
+            await yieldToMain();
             const dbOk = await saveToIndexedDb(data, savedAt);
+            await yieldToMain();
             await flushDirtyPages();
             const ok = localOk || dbOk;
 
@@ -9464,7 +9470,7 @@
                         setTimeout(() => bakeOldStrokes(pageIndex), 100);
                     });
                 }
-            }, 120);
+            }, 400);
         }
 
         function requestImmediateDriveSave(options = {}) {
@@ -10373,10 +10379,13 @@
                     backgroundSource,
                     pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null
                 };
+                await yieldToMain();
             }
 
             // Embed stroke data as PDF metadata (custom property)
+            await yieldToMain();
             const metadataString = JSON.stringify(strokeData);
+            await yieldToMain();
             const encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
             
             // Add as PDF property
@@ -10448,8 +10457,10 @@
                     drawSmoothStroke(tempCtx, stroke);
                 }
 
+                await yieldToMain();
                 const imgData = tempCanvas.toDataURL('image/jpeg', 0.72);
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                await yieldToMain();
             }
 
             return pdf.output('blob');
