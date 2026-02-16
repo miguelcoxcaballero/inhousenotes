@@ -2991,9 +2991,11 @@
         let driveSaveQueuedForce = false;
         let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
+        let activeDriveSaveController = null;
         let isPenWriting = false;
         let penWritingIdleTimer = null;
         let deferredDriveSave = false;
+        let activeLocalSaveController = null;
         let strokeOpsFlushScheduled = false;
         let strokeOpsFlushInProgress = false;
         const strokeOpsQueue = [];
@@ -3885,6 +3887,7 @@
                         stroke: persistedStroke
                     });
                     scheduleSave(false, pageIndex, 'stroke');
+                    requestImmediateDriveSave();
 
                     // Check if we need to bake old strokes
                     if (shouldBakeStrokes(pageIndex)) {
@@ -5051,15 +5054,30 @@
             const timeoutMs = options.timeout || 60000;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            let externalAbortHandler = null;
+            if (options.signal) {
+                if (options.signal.aborted) {
+                    controller.abort();
+                } else {
+                    externalAbortHandler = () => controller.abort();
+                    options.signal.addEventListener('abort', externalAbortHandler, { once: true });
+                }
+            }
 
             try {
+                const fetchOptions = { ...options };
+                delete fetchOptions.timeout;
+                delete fetchOptions.signal;
                 const res = await fetch(url, {
-                    ...options,
+                    ...fetchOptions,
                     headers,
                     keepalive: !!options.keepalive,
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
+                if (externalAbortHandler && options.signal) {
+                    options.signal.removeEventListener('abort', externalAbortHandler);
+                }
                 if (res.status === 401 && !_retried) {
                     // Token expired server-side — force refresh and retry once
                     driveAccessToken = null;
@@ -5074,17 +5092,25 @@
                 return res;
             } catch (err) {
                 clearTimeout(timeoutId);
+                if (externalAbortHandler && options.signal) {
+                    options.signal.removeEventListener('abort', externalAbortHandler);
+                }
                 if (err.name === 'AbortError') {
+                    if (options.signal?.aborted) {
+                        const abortErr = new Error('Drive request aborted');
+                        abortErr.name = 'AbortError';
+                        throw abortErr;
+                    }
                     throw new Error('Drive request timed out');
                 }
                 throw err;
             }
         }
 
-        async function ensureDriveFolder() {
+        async function ensureDriveFolder(options = {}) {
             if (state.driveFolderId) return state.driveFolderId;
             const query = encodeURIComponent(`name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`);
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`, { signal: options.signal });
             const data = await res.json();
             if (data.files && data.files.length > 0) {
                 state.driveFolderId = data.files[0].id;
@@ -5096,7 +5122,8 @@
                 body: JSON.stringify({
                     name: DRIVE_FOLDER_NAME,
                     mimeType: 'application/vnd.google-apps.folder'
-                })
+                }),
+                signal: options.signal
             });
             const created = await createRes.json();
             state.driveFolderId = created.id;
@@ -9336,10 +9363,13 @@
 
         async function flushDirtyPages(options = {}) {
             const force = !!options.force;
+            const abortSignal = options.abortSignal || null;
             await flushStrokeOpsQueue();
+            if (abortSignal?.aborted) return false;
             if (pageDirty.size === 0) return true;
             const dirty = Array.from(pageDirty);
             for (const pageIndex of dirty) {
+                if (abortSignal?.aborted) return false;
                 const page = state.pages[pageIndex];
                 if (!page || page.unloaded) {
                     pageDirty.delete(pageIndex);
@@ -9354,6 +9384,7 @@
                     continue;
                 }
                 await savePageToIndexedDb(pageIndex, page);
+                if (abortSignal?.aborted) return false;
                 if (hasPendingOps) {
                     const cleared = await clearStrokeOpsForPage(pageIndex);
                     if (cleared) {
@@ -9366,17 +9397,23 @@
             return true;
         }
 
-        async function saveToStorage() {
+        async function saveToStorage(controller = null) {
+            if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             await flushStrokeOpsQueue();
+            if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             const dbOk = await saveToIndexedDb(payload, savedAt);
+            if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             scheduleLocalStorageBackup(payload);
             let localOk = false;
             if (!dbOk) {
                 localOk = scheduleLocalStorageBackup(payload, { immediate: true });
             }
-            await flushDirtyPages();
+            const flushed = await flushDirtyPages({ abortSignal: controller });
+            if (!flushed && controller?.aborted) {
+                return { ok: false, savedAt: null, cancelled: true };
+            }
             const ok = localOk || dbOk;
 
             if (ok) {
@@ -9384,7 +9421,7 @@
                 updateSaveTimestamp();
             }
 
-            return { ok, savedAt };
+            return { ok, savedAt, cancelled: false };
         }
 
         async function loadFromStorage() {
@@ -9789,6 +9826,15 @@
 
         function notePenActivity() {
             isPenWriting = true;
+            if (saveInProgress && activeLocalSaveController) {
+                activeLocalSaveController.aborted = true;
+                saveQueued = true;
+            }
+            if (driveSaveInProgress && activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
+                activeDriveSaveController.abort();
+                deferredDriveSave = true;
+                driveDirty = true;
+            }
             if (penWritingIdleTimer) {
                 clearTimeout(penWritingIdleTimer);
             }
@@ -9802,6 +9848,9 @@
                 });
                 if (pageDirty.size > 0) {
                     queueSave();
+                }
+                if (driveDirty && !deferredDriveSave) {
+                    scheduleDriveSync();
                 }
                 if (deferredDriveSave) {
                     deferredDriveSave = false;
@@ -9864,13 +9913,6 @@
 
         function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
-            if (mode === 'stroke' && !immediate) {
-                clearTimeout(state.saveTimeout);
-                state.saveTimeout = null;
-                flushStrokeOpsQueue();
-                scheduleDriveSync();
-                return;
-            }
             if (Number.isFinite(pageIndex)) {
                 markPageDirty(pageIndex, mode);
             }
@@ -9888,9 +9930,16 @@
                 return;
             }
             saveInProgress = true;
-            const result = await saveToStorage();
-            if (result.ok) {
-                if (isDriveSyncPending()) {
+            const controller = { aborted: false };
+            activeLocalSaveController = controller;
+            const result = await saveToStorage(controller);
+            activeLocalSaveController = null;
+            if (result.cancelled) {
+                showStatus('Saving...', { saving: true });
+            } else if (result.ok) {
+                if (state.driveAutosave && !state.isReadOnly) {
+                    showStatus('Saving to Drive...', { saving: true, savedAt: result.savedAt });
+                } else if (isDriveSyncPending()) {
                     showStatus('Saving to Drive...', { saving: true, savedAt: result.savedAt });
                 } else {
                     showStatus('Saved', { savedAt: result.savedAt });
@@ -9901,6 +9950,9 @@
             saveInProgress = false;
             if (saveQueued) {
                 saveQueued = false;
+                if (isPenWriting) {
+                    return;
+                }
                 showStatus('Saving...', true);
                 queueSave();
             }
@@ -9948,8 +10000,18 @@
         async function ensureDriveFile(options = {}) {
             if (state.driveFileId) return state.driveFileId;
             await ensureDriveToken(false);
-            const folderId = state.driveFolderId || await ensureDriveFolder();
+            if (options.signal?.aborted) {
+                const abortErr = new Error('Drive save aborted');
+                abortErr.name = 'AbortError';
+                throw abortErr;
+            }
+            const folderId = state.driveFolderId || await ensureDriveFolder({ signal: options.signal });
             const fileName = `${sanitizeFilename(state.exportName || 'Untitled')}.pdf`;
+            if (options.signal?.aborted) {
+                const abortErr = new Error('Drive save aborted');
+                abortErr.name = 'AbortError';
+                throw abortErr;
+            }
             const pdfBlob = await buildPdfBlob();
             const metadata = {
                 name: fileName,
@@ -9962,7 +10024,8 @@
             const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                 method: 'POST',
                 body: form,
-                keepalive: !!options.keepalive
+                keepalive: !!options.keepalive,
+                signal: options.signal
             });
             const data = await res.json();
             state.driveFileId = data.id;
@@ -9984,7 +10047,8 @@
             const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                 method: 'POST',
                 body: form,
-                keepalive: !!options.keepalive
+                keepalive: !!options.keepalive,
+                signal: options.signal
             });
             const data = await res.json();
             return data.id;
@@ -9995,7 +10059,8 @@
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/pdf' },
                 body: pdfBlob,
-                keepalive: !!options.keepalive
+                keepalive: !!options.keepalive,
+                signal: options.signal
             });
         }
 
@@ -10012,6 +10077,8 @@
                 driveSaveQueuedKeepalive = driveSaveQueuedKeepalive || !!options.keepalive;
                 return;
             }
+            const controller = new AbortController();
+            activeDriveSaveController = controller;
             driveSaveInProgress = true;
             driveDirty = false;
             clearDriveSyncTimers();
@@ -10023,21 +10090,45 @@
                 if (needsPdf && !activePdfDocument) {
                     showStatus('Waiting for PDF...', { preserveState: true });
                     driveSaveInProgress = false;
+                    activeDriveSaveController = null;
                     scheduleDriveSync();
                     return;
                 }
                 showStatus('Saving to Drive...', { saving: true });
-                const fileId = await ensureDriveFile(options);
+                const driveOptions = {
+                    ...options,
+                    signal: controller.signal
+                };
+                const fileId = await ensureDriveFile(driveOptions);
+                if (controller.signal.aborted) {
+                    throw new Error('Drive save aborted');
+                }
                 const pdfBlob = await buildPdfBlob();
-                await updateDriveFile(fileId, pdfBlob, options);
+                if (controller.signal.aborted) {
+                    throw new Error('Drive save aborted');
+                }
+                await updateDriveFile(fileId, pdfBlob, driveOptions);
                 const savedAt = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : Date.now();
                 showStatus('Saved', { savedAt });
             } catch (err) {
-                console.error('queueDriveSave failed:', err);
-                showStatus('Drive save failed', { error: true });
-                driveDirty = true;
-                scheduleDriveSync();
+                const aborted = controller.signal.aborted
+                    || err?.name === 'AbortError'
+                    || (typeof err?.message === 'string' && err.message.toLowerCase().includes('aborted'));
+                if (aborted) {
+                    driveDirty = true;
+                    deferredDriveSave = true;
+                    showStatus('Saving to Drive...', { saving: true });
+                    if (!isPenWriting) {
+                        scheduleDriveSync();
+                    }
+                } else {
+                    console.error('queueDriveSave failed:', err);
+                    showStatus('Drive save failed', { error: true });
+                    driveDirty = true;
+                    scheduleDriveSync();
+                }
             }
+            activeDriveSaveController = null;
             driveSaveInProgress = false;
             if (driveSaveQueued) {
                 const queuedForce = driveSaveQueuedForce;
