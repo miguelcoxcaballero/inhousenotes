@@ -2504,12 +2504,12 @@
         const MIN_PAGE_VISIBLE = 5;
         const VIEW_STORAGE_KEY = 'notebook-view-v1';
         const VIEW_SAVE_DELAY = 250;
-        const MAX_SAVE_INTERVAL = 15000;
         const LOCAL_BACKUP_MIN_INTERVAL = 3000;
         const PEN_DOUBLE_TAP_MS = 320;
         const PEN_DOUBLE_TAP_DIST = 42;
         const TOUCH_INERTIA_DECAY = 0.92;
         const TOUCH_INERTIA_STOP = 0.02;
+        const STROKE_OP_COMPACT_THRESHOLD = 24;
         const DRIVE_SYNC_IDLE_DELAY = 15000;
         const DRIVE_SYNC_MAX_DELAY = 120000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
@@ -2523,10 +2523,11 @@
         const DATA_STORAGE_KEY = 'notebook-data-v3';
         const LEGACY_DATA_KEYS = ['notebook-data-v2'];
         const DB_NAME = 'notebook-data-db-v1';
-        const DB_VERSION = 2;
+        const DB_VERSION = 3;
         const DB_STORE = 'snapshots';
         const DB_KEY = 'latest';
         const PAGE_STORE = 'pages';
+        const OPS_STORE = 'stroke-ops';
 
         const imageCache = new Map();
         const imageCacheUsage = new Map();
@@ -2534,7 +2535,9 @@
         const highlighterMaskCtx = highlighterMaskCanvas.getContext('2d');
         const pageAccess = new Map();
         const pageDirty = new Set();
+        const pageDirtyMode = new Map();
         const pageLoadQueue = new Map();
+        const pendingStrokeOps = new Map();
         let legacyPagesCache = null;
 
         // ============= MEMORY OPTIMIZATION UTILITIES =============
@@ -2991,6 +2994,9 @@
         let isPenWriting = false;
         let penWritingIdleTimer = null;
         let deferredDriveSave = false;
+        let strokeOpsFlushScheduled = false;
+        let strokeOpsFlushInProgress = false;
+        const strokeOpsQueue = [];
         let localBackupTimer = null;
         let localBackupPayload = null;
         let localBackupLastAt = 0;
@@ -3865,12 +3871,18 @@
                         points: currentStroke.points
                     };
                     state.pages[pageIndex].strokes.push(finalizedStroke);
+                    if (typeof state.pages[pageIndex].strokeCount === 'number') {
+                        state.pages[pageIndex].strokeCount += 1;
+                    } else {
+                        state.pages[pageIndex].strokeCount = getVisibleStrokeCount(state.pages[pageIndex]);
+                    }
+                    enqueueStrokeOp(pageIndex, finalizedStroke);
                     saveToHistory({
                         type: 'add-stroke',
                         pageIndex: pageIndex,
                         stroke: cloneStroke(finalizedStroke)
                     });
-                    scheduleSave(false, pageIndex);
+                    scheduleSave(false, pageIndex, 'stroke');
                     requestImmediateDriveSave();
                     redrawPage(pageIndex);
 
@@ -5534,6 +5546,7 @@
             resetPdfState();
             await clearPageStore();
             pageDirty.clear();
+            pageDirtyMode.clear();
             pageAccess.clear();
             pageLoadQueue.clear();
             legacyPagesCache = null;
@@ -7112,6 +7125,7 @@
 
                         // Wait for local save to complete first
                         await queueSave();
+                        await flushDirtyPages({ force: true });
 
                         if (state.driveAutosave && driveAccessToken) {
                             clearDriveSyncTimers();
@@ -8387,7 +8401,12 @@
             if (removedPage?.backgroundSource === 'pdf' && removedPage.backgroundImage && removedPage.backgroundImage.startsWith('blob:')) {
                 URL.revokeObjectURL(removedPage.backgroundImage);
             }
-            await flushDirtyPages();
+            pendingStrokeOps.forEach((_, index) => {
+                markPageDirty(index, 'full');
+            });
+            await flushDirtyPages({ force: true });
+            await clearStrokeOpsStore();
+            pageDirtyMode.clear();
             state.pages.splice(pageToDelete, 1);
             reindexLocalCachesAfterDelete(pageToDelete);
             await reindexPagesAfterDelete(pageToDelete, state.pages.length);
@@ -8422,6 +8441,7 @@
             resetPdfState();
             await clearPageStore();
             pageDirty.clear();
+            pageDirtyMode.clear();
             pageAccess.clear();
             pageLoadQueue.clear();
             legacyPagesCache = null;
@@ -8838,6 +8858,18 @@
                     if (!db.objectStoreNames.contains(PAGE_STORE)) {
                         db.createObjectStore(PAGE_STORE);
                     }
+                    if (!db.objectStoreNames.contains(OPS_STORE)) {
+                        const opsStore = db.createObjectStore(OPS_STORE, { keyPath: 'id', autoIncrement: true });
+                        opsStore.createIndex('pageIndex', 'pageIndex', { unique: false });
+                    } else {
+                        const tx = request.transaction;
+                        if (tx) {
+                            const opsStore = tx.objectStore(OPS_STORE);
+                            if (!opsStore.indexNames.contains('pageIndex')) {
+                                opsStore.createIndex('pageIndex', 'pageIndex', { unique: false });
+                            }
+                        }
+                    }
                 };
                 request.onsuccess = () => resolve(request.result);
                 request.onerror = () => {
@@ -8940,6 +8972,99 @@
             });
         }
 
+        async function appendStrokeOpsToIndexedDb(ops) {
+            if (!Array.isArray(ops) || ops.length === 0) return true;
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(OPS_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    console.error('Failed to append stroke ops:', tx.error);
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(OPS_STORE);
+                for (const op of ops) {
+                    store.add(op);
+                }
+            });
+        }
+
+        async function loadStrokeOpsFromIndexedDb() {
+            const db = await openNotebookDb();
+            if (!db) return [];
+            return new Promise((resolve) => {
+                const tx = db.transaction(OPS_STORE, 'readonly');
+                tx.oncomplete = () => db.close();
+                tx.onerror = () => db.close();
+                const store = tx.objectStore(OPS_STORE);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
+                request.onerror = () => resolve([]);
+            });
+        }
+
+        async function clearStrokeOpsForPage(pageIndex) {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(OPS_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(OPS_STORE);
+                const index = store.index('pageIndex');
+                const request = index.openCursor(IDBKeyRange.only(pageIndex));
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (!cursor) return;
+                    cursor.delete();
+                    cursor.continue();
+                };
+                request.onerror = () => {};
+            });
+        }
+
+        async function clearStrokeOpsStore() {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(OPS_STORE, 'readwrite');
+                tx.oncomplete = () => {
+                    db.close();
+                    pendingStrokeOps.clear();
+                    strokeOpsQueue.length = 0;
+                    strokeOpsFlushScheduled = false;
+                    strokeOpsFlushInProgress = false;
+                    resolve(true);
+                };
+                tx.onerror = () => {
+                    db.close();
+                    resolve(false);
+                };
+                const store = tx.objectStore(OPS_STORE);
+                store.clear();
+            });
+        }
+
+        function applyPendingStrokesToPageData(pageIndex, pageData) {
+            if (!Number.isFinite(pageIndex) || !pageData || !Array.isArray(pageData.strokes)) return;
+            const pending = pendingStrokeOps.get(pageIndex);
+            if (!pending || pending.length === 0) return;
+            for (const stroke of pending) {
+                pageData.strokes.push(cloneStroke(stroke));
+            }
+        }
+
         async function deletePageFromIndexedDb(pageIndex) {
             const db = await openNotebookDb();
             if (!db) return false;
@@ -8962,17 +9087,21 @@
             const db = await openNotebookDb();
             if (!db) return false;
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                const tx = db.transaction([PAGE_STORE, OPS_STORE], 'readwrite');
                 tx.oncomplete = () => {
                     db.close();
+                    pendingStrokeOps.clear();
+                    strokeOpsQueue.length = 0;
+                    strokeOpsFlushScheduled = false;
+                    strokeOpsFlushInProgress = false;
                     resolve(true);
                 };
                 tx.onerror = () => {
                     db.close();
                     resolve(false);
                 };
-                const store = tx.objectStore(PAGE_STORE);
-                store.clear();
+                tx.objectStore(PAGE_STORE).clear();
+                tx.objectStore(OPS_STORE).clear();
             });
         }
 
@@ -9028,6 +9157,22 @@
             });
             pageDirty.clear();
             nextDirty.forEach(index => pageDirty.add(index));
+
+            const nextDirtyMode = new Map();
+            pageDirtyMode.forEach((mode, index) => {
+                if (index === startIndex) return;
+                nextDirtyMode.set(index > startIndex ? index - 1 : index, mode);
+            });
+            pageDirtyMode.clear();
+            nextDirtyMode.forEach((mode, index) => pageDirtyMode.set(index, mode));
+
+            const nextPendingOps = new Map();
+            pendingStrokeOps.forEach((ops, index) => {
+                if (index === startIndex) return;
+                nextPendingOps.set(index > startIndex ? index - 1 : index, ops);
+            });
+            pendingStrokeOps.clear();
+            nextPendingOps.forEach((ops, index) => pendingStrokeOps.set(index, ops));
 
             const nextAccess = new Map();
             pageAccess.forEach((value, index) => {
@@ -9174,22 +9319,40 @@
             };
         }
 
-        async function flushDirtyPages() {
+        async function flushDirtyPages(options = {}) {
+            const force = !!options.force;
+            await flushStrokeOpsQueue();
             if (pageDirty.size === 0) return true;
             const dirty = Array.from(pageDirty);
             for (const pageIndex of dirty) {
                 const page = state.pages[pageIndex];
                 if (!page || page.unloaded) {
                     pageDirty.delete(pageIndex);
+                    pageDirtyMode.delete(pageIndex);
+                    continue;
+                }
+                const mode = pageDirtyMode.get(pageIndex) || 'full';
+                const hasPendingOps = !!(pendingStrokeOps.get(pageIndex)?.length);
+                if (!force && mode === 'stroke' && hasPendingOps) {
+                    pageDirty.delete(pageIndex);
+                    pageDirtyMode.delete(pageIndex);
                     continue;
                 }
                 await savePageToIndexedDb(pageIndex, page);
+                if (hasPendingOps) {
+                    const cleared = await clearStrokeOpsForPage(pageIndex);
+                    if (cleared) {
+                        pendingStrokeOps.delete(pageIndex);
+                    }
+                }
                 pageDirty.delete(pageIndex);
+                pageDirtyMode.delete(pageIndex);
             }
             return true;
         }
 
         async function saveToStorage() {
+            await flushStrokeOpsQueue();
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             const dbOk = await saveToIndexedDb(payload, savedAt);
@@ -9281,6 +9444,7 @@
                 state.pages = [];
                 state.lastSavedAt = null;
             }
+            await restorePendingStrokeOps();
             updateSaveTimestamp();
         }
 
@@ -9304,6 +9468,7 @@
             const pages = Array.isArray(payload?.pages) ? payload.pages : [];
             await clearPageStore();
             pageDirty.clear();
+            pageDirtyMode.clear();
             pageAccess.clear();
             pageLoadQueue.clear();
             state.lastSavedAt = typeof payload?.savedAt === 'number' ? payload.savedAt : null;
@@ -9403,6 +9568,7 @@
                         needsRedraw: true
                     };
                 }
+                applyPendingStrokesToPageData(pageIndex, data);
                 const current = state.pages[pageIndex] || page;
                 const pendingUnload = !!current.pendingUnload;
                 const next = {
@@ -9436,6 +9602,7 @@
         async function unloadPageData(pageIndex) {
             const page = state.pages[pageIndex];
             if (!isPageLoaded(page)) return;
+            await flushStrokeOpsQueue();
             page.strokeCount = getVisibleStrokeCount(page);
             if (!page.preview) {
                 const hasImages = Array.isArray(page.images) && page.images.length > 0;
@@ -9455,6 +9622,11 @@
                 page.backgroundImage = null;
             }
             await savePageToIndexedDb(pageIndex, page);
+            const cleared = await clearStrokeOpsForPage(pageIndex);
+            if (cleared) {
+                pendingStrokeOps.delete(pageIndex);
+            }
+            pageDirtyMode.delete(pageIndex);
             pageDirty.delete(pageIndex);
             page.strokes = null;
             page.images = null;
@@ -9468,23 +9640,118 @@
             applyPagePreview(pageIndex);
         }
 
-        function markPageDirty(pageIndex) {
+        function enqueueStrokeOp(pageIndex, stroke) {
+            if (!Number.isFinite(pageIndex) || !stroke) return;
+            const cloned = cloneStroke(stroke);
+            if (!cloned) return;
+            const existing = pendingStrokeOps.get(pageIndex) || [];
+            existing.push(cloned);
+            pendingStrokeOps.set(pageIndex, existing);
+            strokeOpsQueue.push({
+                pageIndex,
+                type: 'add-stroke',
+                stroke: cloned,
+                savedAt: Date.now()
+            });
+            if (!strokeOpsFlushScheduled) {
+                strokeOpsFlushScheduled = true;
+                Promise.resolve().then(() => {
+                    strokeOpsFlushScheduled = false;
+                    flushStrokeOpsQueue();
+                });
+            }
+        }
+
+        async function flushStrokeOpsQueue() {
+            if (strokeOpsFlushInProgress || strokeOpsQueue.length === 0) return;
+            strokeOpsFlushInProgress = true;
+            const batch = strokeOpsQueue.splice(0, strokeOpsQueue.length);
+            const ok = await appendStrokeOpsToIndexedDb(batch);
+            if (!ok) {
+                const failedPages = new Set();
+                batch.forEach(op => {
+                    if (Number.isFinite(op?.pageIndex)) failedPages.add(op.pageIndex);
+                });
+                failedPages.forEach((pageIndex) => markPageDirty(pageIndex, 'full'));
+                strokeOpsQueue.unshift(...batch);
+            }
+            strokeOpsFlushInProgress = false;
+            if (strokeOpsQueue.length > 0 && !strokeOpsFlushScheduled) {
+                strokeOpsFlushScheduled = true;
+                if (ok) {
+                    Promise.resolve().then(() => {
+                        strokeOpsFlushScheduled = false;
+                        flushStrokeOpsQueue();
+                    });
+                } else {
+                    setTimeout(() => {
+                        strokeOpsFlushScheduled = false;
+                        flushStrokeOpsQueue();
+                    }, 250);
+                }
+            }
+        }
+
+        async function restorePendingStrokeOps() {
+            pendingStrokeOps.clear();
+            const ops = await loadStrokeOpsFromIndexedDb();
+            if (!Array.isArray(ops) || ops.length === 0) return;
+            for (const op of ops) {
+                if (!op || op.type !== 'add-stroke') continue;
+                if (!Number.isFinite(op.pageIndex) || !op.stroke) continue;
+                const list = pendingStrokeOps.get(op.pageIndex) || [];
+                list.push(op.stroke);
+                pendingStrokeOps.set(op.pageIndex, list);
+            }
+            const maxIndex = Math.max(...pendingStrokeOps.keys(), -1);
+            while (state.pages.length <= maxIndex) {
+                state.pages.push({
+                    strokes: null,
+                    images: null,
+                    backgroundImage: null,
+                    backgroundSource: 'template',
+                    pdfPageIndex: null,
+                    preview: null,
+                    strokeCount: 0,
+                    unloaded: true,
+                    needsRedraw: true
+                });
+            }
+            pendingStrokeOps.forEach((strokes, pageIndex) => {
+                const page = state.pages[pageIndex];
+                if (page && Array.isArray(page.strokes)) {
+                    for (const stroke of strokes) {
+                        page.strokes.push(cloneStroke(stroke));
+                    }
+                    page.strokeCount = getVisibleStrokeCount(page);
+                } else if (page) {
+                    const currentCount = typeof page.strokeCount === 'number' ? page.strokeCount : 0;
+                    page.strokeCount = Math.max(currentCount, strokes.length);
+                }
+            });
+        }
+
+        function markPageDirty(pageIndex, mode = 'full') {
             if (!Number.isFinite(pageIndex)) return;
             if (pageIndex < 0 || pageIndex >= state.pages.length) return;
             const page = state.pages[pageIndex];
-            if (page && Array.isArray(page.strokes)) {
+            if (page && Array.isArray(page.strokes) && mode !== 'stroke') {
                 page.strokeCount = getVisibleStrokeCount(page);
             }
+            const prevMode = pageDirtyMode.get(pageIndex) || 'stroke';
+            pageDirtyMode.set(pageIndex, (prevMode === 'full' || mode === 'full') ? 'full' : 'stroke');
             pageDirty.add(pageIndex);
             scheduleDriveSync();
         }
 
-        function markAllPagesDirty() {
+        function markAllPagesDirty(mode = 'full') {
             state.pages.forEach((page, index) => {
                 if (page && !page.unloaded) {
                     if (Array.isArray(page.strokes)) {
                         page.strokeCount = getVisibleStrokeCount(page);
                     }
+                    const prevMode = pageDirtyMode.get(index) || 'stroke';
+                    pageDirtyMode.set(index, (prevMode === 'full' || mode === 'full') ? 'full' : 'stroke');
                     pageDirty.add(index);
                 }
             });
@@ -9505,6 +9772,15 @@
             }
             penWritingIdleTimer = setTimeout(() => {
                 isPenWriting = false;
+                flushStrokeOpsQueue();
+                pendingStrokeOps.forEach((ops, pageIndex) => {
+                    if (ops.length >= STROKE_OP_COMPACT_THRESHOLD) {
+                        markPageDirty(pageIndex, 'full');
+                    }
+                });
+                if (pageDirty.size > 0) {
+                    queueSave();
+                }
                 if (deferredDriveSave) {
                     deferredDriveSave = false;
                     requestImmediateDriveSave({ fromIdle: true });
@@ -9532,7 +9808,14 @@
         }
 
         function hasPendingLocalSave() {
-            return !!(saveInProgress || saveQueued || state.saveTimeout);
+            return !!(
+                saveInProgress
+                || saveQueued
+                || state.saveTimeout
+                || strokeOpsFlushInProgress
+                || strokeOpsQueue.length > 0
+                || pageDirty.size > 0
+            );
         }
 
         function hasPendingDriveSave() {
@@ -9557,26 +9840,15 @@
             });
         }
 
-        function scheduleSave(immediate = false, pageIndex = null) {
+        function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
             if (Number.isFinite(pageIndex)) {
-                markPageDirty(pageIndex);
+                markPageDirty(pageIndex, mode);
             }
             showStatus('Saving...', true);
             clearTimeout(state.saveTimeout);
-            const now = Date.now();
-            const lastSaved = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : 0;
-            const overdue = !lastSaved || (now - lastSaved >= MAX_SAVE_INTERVAL);
-            if (immediate || overdue) {
-                state.saveTimeout = null;
-                queueSave();
-                scheduleDriveSync();
-                return;
-            }
-            state.saveTimeout = setTimeout(() => {
-                state.saveTimeout = null;
-                queueSave();
-            }, 180);
+            state.saveTimeout = null;
+            queueSave();
             scheduleDriveSync();
         }
 
@@ -9608,13 +9880,14 @@
         function flushOnClose() {
             if (state.isReadOnly) return;
             saveViewState();
+            flushStrokeOpsQueue();
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             scheduleLocalStorageBackup(payload, { immediate: true });
             saveToIndexedDb(payload, savedAt);
             state.lastSavedAt = savedAt;
             updateSaveTimestamp();
-            flushDirtyPages();
+            flushDirtyPages({ force: true });
             if (driveDirty) {
                 queueDriveSave(true, { keepalive: true });
             }
@@ -10261,6 +10534,7 @@
 
                 await clearPageStore();
                 pageDirty.clear();
+                pageDirtyMode.clear();
                 pageAccess.clear();
                 pageLoadQueue.clear();
                 legacyPagesCache = null;
