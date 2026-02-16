@@ -2505,6 +2505,7 @@
         const VIEW_STORAGE_KEY = 'notebook-view-v1';
         const VIEW_SAVE_DELAY = 250;
         const MAX_SAVE_INTERVAL = 15000;
+        const LOCAL_BACKUP_MIN_INTERVAL = 3000;
         const PEN_DOUBLE_TAP_MS = 320;
         const PEN_DOUBLE_TAP_DIST = 42;
         const TOUCH_INERTIA_DECAY = 0.92;
@@ -2989,8 +2990,10 @@
         let driveDirty = false;
         let isPenWriting = false;
         let penWritingIdleTimer = null;
-        let deferredLocalSave = false;
         let deferredDriveSave = false;
+        let localBackupTimer = null;
+        let localBackupPayload = null;
+        let localBackupLastAt = 0;
         const deferredBakePages = new Set();
         let driveRecentsCache = [];
         let driveStarredCache = [];
@@ -3827,6 +3830,7 @@
                             strokes: erasedStrokes
                         });
                         scheduleSave(false, pageIndex);
+                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (state.currentTool === 'eraser-area') {
@@ -3839,6 +3843,7 @@
                             after
                         });
                         scheduleSave(false, pageIndex);
+                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
@@ -3866,6 +3871,7 @@
                         stroke: cloneStroke(finalizedStroke)
                     });
                     scheduleSave(false, pageIndex);
+                    requestImmediateDriveSave();
                     redrawPage(pageIndex);
 
                     // Check if we need to bake old strokes
@@ -8331,7 +8337,13 @@
             if (!Array.isArray(page.strokes)) {
                 return typeof page.strokeCount === 'number' ? page.strokeCount : 0;
             }
-            return page.strokes.filter(stroke => !(stroke.tool && stroke.tool.startsWith('eraser'))).length;
+            let count = 0;
+            for (const stroke of page.strokes) {
+                if (!(stroke.tool && stroke.tool.startsWith('eraser'))) {
+                    count += 1;
+                }
+            }
+            return count;
         }
 
         function goToPage(pageIndex) {
@@ -8835,7 +8847,7 @@
             });
         }
 
-        async function saveToIndexedDb(data, savedAt) {
+        async function saveToIndexedDb(payload, savedAt) {
             const db = await openNotebookDb();
             if (!db) return false;
             return new Promise((resolve) => {
@@ -8852,9 +8864,9 @@
                 const store = tx.objectStore(DB_STORE);
                 store.put({
                     key: DB_KEY,
-                    data,
+                    data: payload,
                     savedAt,
-                    version: 2
+                    version: 3
                 });
             });
         }
@@ -8884,14 +8896,13 @@
         }
 
         function buildPageMeta(page) {
-            const strokeCount = Array.isArray(page.strokes)
-                ? getVisibleStrokeCount(page)
-                : (typeof page.strokeCount === 'number' ? page.strokeCount : 0);
+            const strokeCount = typeof page.strokeCount === 'number'
+                ? page.strokeCount
+                : getVisibleStrokeCount(page);
             return {
                 backgroundImage: page.backgroundSource === 'pdf' ? null : (page.backgroundImage || null),
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
                 pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
-                preview: page.preview || null,
                 strokeCount
             };
         }
@@ -9118,16 +9129,49 @@
             }
         }
 
+        function flushLocalStorageBackup() {
+            if (!localBackupPayload) return false;
+            const serialized = serializePayload(localBackupPayload);
+            if (!serialized) return false;
+            const ok = saveToLocalStorage(serialized);
+            if (ok) {
+                localBackupLastAt = Date.now();
+                localBackupPayload = null;
+            }
+            return ok;
+        }
+
+        function scheduleLocalStorageBackup(payload, options = {}) {
+            if (!payload) return false;
+            localBackupPayload = payload;
+            if (options.immediate) {
+                clearTimeout(localBackupTimer);
+                localBackupTimer = null;
+                return flushLocalStorageBackup();
+            }
+            if (localBackupTimer) return true;
+            const elapsed = Date.now() - localBackupLastAt;
+            const delay = Math.max(200, LOCAL_BACKUP_MIN_INTERVAL - elapsed);
+            localBackupTimer = setTimeout(() => {
+                localBackupTimer = null;
+                const run = () => {
+                    flushLocalStorageBackup();
+                };
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(run, { timeout: 800 });
+                } else {
+                    setTimeout(run, 0);
+                }
+            }, delay);
+            return true;
+        }
+
         function buildMetaPayload(savedAt) {
             return {
                 pages: state.pages.map(page => buildPageMeta(page)),
                 version: 3,
                 savedAt
             };
-        }
-
-        function yieldToMain() {
-            return new Promise(resolve => setTimeout(resolve, 0));
         }
 
         async function flushDirtyPages() {
@@ -9139,10 +9183,8 @@
                     pageDirty.delete(pageIndex);
                     continue;
                 }
-                page.strokeCount = getVisibleStrokeCount(page);
                 await savePageToIndexedDb(pageIndex, page);
                 pageDirty.delete(pageIndex);
-                await yieldToMain();
             }
             return true;
         }
@@ -9150,15 +9192,12 @@
         async function saveToStorage() {
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
-            await yieldToMain();
-            const data = serializePayload(payload);
-            if (!data) return { ok: false, savedAt: null };
-
-            await yieldToMain();
-            const localOk = saveToLocalStorage(data);
-            await yieldToMain();
-            const dbOk = await saveToIndexedDb(data, savedAt);
-            await yieldToMain();
+            const dbOk = await saveToIndexedDb(payload, savedAt);
+            scheduleLocalStorageBackup(payload);
+            let localOk = false;
+            if (!dbOk) {
+                localOk = scheduleLocalStorageBackup(payload, { immediate: true });
+            }
             await flushDirtyPages();
             const ok = localOk || dbOk;
 
@@ -9202,7 +9241,11 @@
             try {
                 const record = await loadFromIndexedDb();
                 if (record && record.data) {
-                    idbPayload = JSON.parse(record.data);
+                    if (typeof record.data === 'string') {
+                        idbPayload = JSON.parse(record.data);
+                    } else if (typeof record.data === 'object') {
+                        idbPayload = record.data;
+                    }
                 }
             } catch (e) {
                 console.error('Failed to load from IndexedDB:', e);
@@ -9428,6 +9471,10 @@
         function markPageDirty(pageIndex) {
             if (!Number.isFinite(pageIndex)) return;
             if (pageIndex < 0 || pageIndex >= state.pages.length) return;
+            const page = state.pages[pageIndex];
+            if (page && Array.isArray(page.strokes)) {
+                page.strokeCount = getVisibleStrokeCount(page);
+            }
             pageDirty.add(pageIndex);
             scheduleDriveSync();
         }
@@ -9435,6 +9482,9 @@
         function markAllPagesDirty() {
             state.pages.forEach((page, index) => {
                 if (page && !page.unloaded) {
+                    if (Array.isArray(page.strokes)) {
+                        page.strokeCount = getVisibleStrokeCount(page);
+                    }
                     pageDirty.add(index);
                 }
             });
@@ -9455,10 +9505,6 @@
             }
             penWritingIdleTimer = setTimeout(() => {
                 isPenWriting = false;
-                if (deferredLocalSave) {
-                    deferredLocalSave = false;
-                    queueSave();
-                }
                 if (deferredDriveSave) {
                     deferredDriveSave = false;
                     requestImmediateDriveSave({ fromIdle: true });
@@ -9470,7 +9516,7 @@
                         setTimeout(() => bakeOldStrokes(pageIndex), 100);
                     });
                 }
-            }, 400);
+            }, 120);
         }
 
         function requestImmediateDriveSave(options = {}) {
@@ -9530,16 +9576,12 @@
             state.saveTimeout = setTimeout(() => {
                 state.saveTimeout = null;
                 queueSave();
-            }, 500);
+            }, 180);
             scheduleDriveSync();
         }
 
         async function queueSave() {
             if (state.isReadOnly) return;
-            if (isPenWriting) {
-                deferredLocalSave = true;
-                return;
-            }
             if (saveInProgress) {
                 saveQueued = true;
                 return;
@@ -9568,11 +9610,8 @@
             saveViewState();
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
-            const data = serializePayload(payload);
-            if (data) {
-                saveToLocalStorage(data);
-                saveToIndexedDb(data, savedAt);
-            }
+            scheduleLocalStorageBackup(payload, { immediate: true });
+            saveToIndexedDb(payload, savedAt);
             state.lastSavedAt = savedAt;
             updateSaveTimestamp();
             flushDirtyPages();
@@ -10379,13 +10418,10 @@
                     backgroundSource,
                     pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null
                 };
-                await yieldToMain();
             }
 
             // Embed stroke data as PDF metadata (custom property)
-            await yieldToMain();
             const metadataString = JSON.stringify(strokeData);
-            await yieldToMain();
             const encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
             
             // Add as PDF property
@@ -10457,10 +10493,8 @@
                     drawSmoothStroke(tempCtx, stroke);
                 }
 
-                await yieldToMain();
                 const imgData = tempCanvas.toDataURL('image/jpeg', 0.72);
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-                await yieldToMain();
             }
 
             return pdf.output('blob');
