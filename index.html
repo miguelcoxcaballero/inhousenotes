@@ -2509,7 +2509,7 @@
         const PEN_DOUBLE_TAP_DIST = 42;
         const TOUCH_INERTIA_DECAY = 0.92;
         const TOUCH_INERTIA_STOP = 0.02;
-        const STROKE_OP_COMPACT_THRESHOLD = 24;
+        const STROKE_OP_COMPACT_THRESHOLD = 200;
         const DRIVE_SYNC_IDLE_DELAY = 15000;
         const DRIVE_SYNC_MAX_DELAY = 120000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
@@ -3861,6 +3861,7 @@
                             currentStroke.points.push({ x: pos.x, y: pos.y, p: e.pressure || last.p || 0.5 });
                         }
                     }
+                    commitLiveStrokeToCanvas(pageIndex, canvas, currentStroke);
                     // Simplify stroke points to save memory
                     simplifyStrokePoints(currentStroke);
 
@@ -3876,15 +3877,14 @@
                     } else {
                         state.pages[pageIndex].strokeCount = getVisibleStrokeCount(state.pages[pageIndex]);
                     }
-                    enqueueStrokeOp(pageIndex, finalizedStroke);
+                    const persistedStroke = cloneStroke(finalizedStroke);
+                    enqueueStrokeOp(pageIndex, persistedStroke, { alreadyCloned: true });
                     saveToHistory({
                         type: 'add-stroke',
                         pageIndex: pageIndex,
-                        stroke: cloneStroke(finalizedStroke)
+                        stroke: persistedStroke
                     });
                     scheduleSave(false, pageIndex, 'stroke');
-                    requestImmediateDriveSave();
-                    redrawPage(pageIndex);
 
                     // Check if we need to bake old strokes
                     if (shouldBakeStrokes(pageIndex)) {
@@ -3933,19 +3933,8 @@
             ctx.setLineDash([]);
         }
 
-        function drawStrokePreviewTail(pageIndex, stroke) {
-            const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
-            if (!previewCanvas) return;
-            const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
-            ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
-
-            if (!stroke || !stroke.points || stroke.points.length === 0) return;
-            if (stroke.tool === 'highlighter') {
-                drawFixedHighlighterStroke(ctx, stroke);
-                return;
-            }
-            if (stroke.points.length < 2) return;
+        function drawStrokeTailSegment(ctx, stroke) {
+            if (!stroke || !stroke.points || stroke.points.length < 2) return;
             const points = stroke.points;
             const startIndex = stroke.finalizedIndex >= 0
                 ? stroke.finalizedIndex + 1
@@ -4003,6 +3992,32 @@
             ctx.moveTo(localMid.x, localMid.y);
             ctx.lineTo(last.x, last.y);
             ctx.stroke();
+        }
+
+        function drawStrokePreviewTail(pageIndex, stroke) {
+            const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
+            if (!previewCanvas) return;
+            const ctx = previewCanvas.getContext('2d');
+            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
+            ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+
+            if (!stroke || !stroke.points || stroke.points.length === 0) return;
+            if (stroke.tool === 'highlighter') {
+                drawFixedHighlighterStroke(ctx, stroke);
+                return;
+            }
+            drawStrokeTailSegment(ctx, stroke);
+        }
+
+        function commitLiveStrokeToCanvas(pageIndex, canvas, stroke) {
+            if (!canvas || !stroke || !stroke.points || stroke.points.length < 2) return;
+            const ctx = canvas.getContext('2d');
+            if (stroke.tool === 'highlighter') {
+                drawSmoothStroke(ctx, stroke);
+                return;
+            }
+            finalizeStrokeSegments(pageIndex, canvas, stroke);
+            drawStrokeTailSegment(ctx, stroke);
         }
 
         function finalizeStrokeSegments(pageIndex, canvas, stroke) {
@@ -9640,9 +9655,9 @@
             applyPagePreview(pageIndex);
         }
 
-        function enqueueStrokeOp(pageIndex, stroke) {
+        function enqueueStrokeOp(pageIndex, stroke, options = {}) {
             if (!Number.isFinite(pageIndex) || !stroke) return;
-            const cloned = cloneStroke(stroke);
+            const cloned = options.alreadyCloned ? stroke : cloneStroke(stroke);
             if (!cloned) return;
             const existing = pendingStrokeOps.get(pageIndex) || [];
             existing.push(cloned);
@@ -9667,6 +9682,13 @@
             strokeOpsFlushInProgress = true;
             const batch = strokeOpsQueue.splice(0, strokeOpsQueue.length);
             const ok = await appendStrokeOpsToIndexedDb(batch);
+            if (ok && batch.length > 0) {
+                const latest = batch[batch.length - 1];
+                const savedAt = typeof latest?.savedAt === 'number' ? latest.savedAt : Date.now();
+                if (!state.lastSavedAt || savedAt > state.lastSavedAt) {
+                    state.lastSavedAt = savedAt;
+                }
+            }
             if (!ok) {
                 const failedPages = new Set();
                 batch.forEach(op => {
@@ -9842,6 +9864,13 @@
 
         function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
+            if (mode === 'stroke' && !immediate) {
+                clearTimeout(state.saveTimeout);
+                state.saveTimeout = null;
+                flushStrokeOpsQueue();
+                scheduleDriveSync();
+                return;
+            }
             if (Number.isFinite(pageIndex)) {
                 markPageDirty(pageIndex, mode);
             }
