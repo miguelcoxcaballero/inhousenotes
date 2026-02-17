@@ -3858,7 +3858,7 @@
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
-                    if (e && typeof e.clientX === 'number' && typeof e.clientY === 'number') {
+                    if (e && e.type === 'pointerup' && typeof e.clientX === 'number' && typeof e.clientY === 'number') {
                         const pos = getCanvasPos(canvas, e);
                         const last = currentStroke.points[currentStroke.points.length - 1];
                         const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
