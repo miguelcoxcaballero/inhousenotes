@@ -2537,6 +2537,10 @@
         const PEN_DOUBLE_TAP_DIST = 42;
         const TOUCH_INERTIA_DECAY = 0.92;
         const TOUCH_INERTIA_STOP = 0.02;
+        const SELECTION_ALLOWED_COLORS = ['#4D4D4D', '#002FD9', '#E81010'];
+        const SELECTION_ALLOWED_COLOR_MAP = new Map(
+            SELECTION_ALLOWED_COLORS.map(color => [color.toLowerCase(), color])
+        );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 24;
         const DRIVE_SYNC_IDLE_DELAY = 15000;
@@ -3296,6 +3300,9 @@
             const selectionBox = document.createElement('div');
             selectionBox.className = 'selection-box hidden';
             selectionBox.dataset.page = pageIndex;
+            const selectionSwatchesHtml = SELECTION_ALLOWED_COLORS.map(color =>
+                `<div class="selection-color-swatch" data-swatch-color="${color}" style="background:${color}"></div>`
+            ).join('');
             selectionBox.innerHTML = `
                 <div class="selection-rotate-line"></div>
                 <div class="rotate-handle" data-handle="rotate"></div>
@@ -3305,15 +3312,10 @@
                             <circle cx="12" cy="12" r="9"/>
                             <circle cx="12" cy="7.5" r="2" fill="#E81010" stroke="none"/>
                             <circle cx="7.5" cy="14" r="2" fill="#002FD9" stroke="none"/>
-                            <circle cx="16.5" cy="14" r="2" fill="#ffde00" stroke="none"/>
+                            <circle cx="16.5" cy="14" r="2" fill="#4D4D4D" stroke="none"/>
                         </svg>
                         <div class="selection-color-menu">
-                            <div class="selection-color-swatch" data-swatch-color="#4D4D4D" style="background:#4D4D4D"></div>
-                            <div class="selection-color-swatch" data-swatch-color="#002FD9" style="background:#002FD9"></div>
-                            <div class="selection-color-swatch" data-swatch-color="#E81010" style="background:#E81010"></div>
-                            <div class="selection-color-swatch" data-swatch-color="#E07A3C" style="background:#E07A3C"></div>
-                            <div class="selection-color-swatch" data-swatch-color="#34c759" style="background:#34c759"></div>
-                            <div class="selection-color-swatch" data-swatch-color="#ffde00" style="background:#ffde00"></div>
+                            ${selectionSwatchesHtml}
                         </div>
                     </button>
                     <button class="selection-duplicate" type="button" title="Duplicate selection" aria-label="Duplicate selection">
@@ -4345,21 +4347,19 @@
             // Position action buttons to avoid overlapping handles
             const actions = box.querySelector('.selection-actions');
             if (actions) {
-                const actionsWidth = 3 * 34 + 2 * 4; // 3 buttons * 34px + 2 gaps * 4px
-                // Place above selection, centered
-                if (bounds.minY > 50) {
-                    // Enough space above
-                    actions.style.bottom = '100%';
+                const actionsClearanceAbove = 28;
+                const actionsClearanceBelow = 12;
+                const actionsHeight = 34;
+                const canPlaceAbove = bounds.minY > (actionsHeight + actionsClearanceAbove);
+                if (canPlaceAbove) {
+                    actions.style.bottom = `calc(100% + ${actionsClearanceAbove}px)`;
                     actions.style.top = 'auto';
-                    actions.style.marginBottom = '8px';
-                    actions.style.marginTop = '';
                 } else {
-                    // Place below selection
-                    actions.style.top = '100%';
+                    actions.style.top = `calc(100% + ${actionsClearanceBelow}px)`;
                     actions.style.bottom = 'auto';
-                    actions.style.marginTop = '8px';
-                    actions.style.marginBottom = '';
                 }
+                actions.style.marginTop = '0';
+                actions.style.marginBottom = '0';
                 actions.style.left = '50%';
                 actions.style.transform = 'translateX(-50%)';
             }
@@ -4557,6 +4557,9 @@
             if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
             if (!page) return;
+            const normalizedColor = typeof newColor === 'string' ? newColor.trim().toLowerCase() : '';
+            const allowedColor = SELECTION_ALLOWED_COLOR_MAP.get(normalizedColor);
+            if (!allowedColor) return;
             const strokeIndices = state.selection.strokeIndices || [];
             if (strokeIndices.length === 0) return;
 
@@ -4568,7 +4571,7 @@
             strokeIndices.forEach(index => {
                 const stroke = page.strokes[index];
                 if (stroke && stroke.color) {
-                    stroke.color = newColor;
+                    stroke.color = allowedColor;
                 }
             });
 
