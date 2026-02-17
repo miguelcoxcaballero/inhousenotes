@@ -492,66 +492,94 @@
             height: var(--rotate-handle-size);
         }
 
-        .selection-trash {
+        .selection-actions {
             position: absolute;
-            top: -42px;
-            right: -42px;
+            display: none;
+            gap: 4px;
+            z-index: 10;
+        }
+
+        .selection-box.has-selection .selection-actions {
+            display: flex;
+        }
+
+        .selection-actions button {
             width: 34px;
             height: 34px;
             border-radius: 10px;
             border: 1px solid rgba(0, 0, 0, 0.1);
             background: rgba(255, 255, 255, 0.98);
-            color: var(--accent-red);
-            display: none;
+            display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             box-shadow: 0 6px 16px rgba(0,0,0,0.12);
             padding: 0;
+        }
+
+        .selection-trash {
+            color: var(--accent-red);
         }
 
         .selection-duplicate {
-            position: absolute;
-            top: -42px;
-            right: 4px;
-            width: 34px;
-            height: 34px;
-            border-radius: 10px;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            background: rgba(255, 255, 255, 0.98);
             color: var(--accent-blue);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
-            padding: 0;
         }
 
-        .selection-box.has-selection .selection-trash {
-            display: flex;
-        }
-
-        .selection-box.has-selection .selection-duplicate {
-            display: flex;
+        .selection-color-btn {
+            color: var(--text-secondary);
+            position: relative;
         }
 
         .selection-trash:hover {
-            background: rgba(232, 16, 16, 0.08);
+            background: rgba(232, 16, 16, 0.08) !important;
         }
 
         .selection-duplicate:hover {
-            background: rgba(0, 47, 217, 0.08);
+            background: rgba(0, 47, 217, 0.08) !important;
         }
 
-        .selection-trash svg {
+        .selection-color-btn:hover {
+            background: rgba(0, 0, 0, 0.05) !important;
+        }
+
+        .selection-actions button svg {
             width: 16px;
             height: 16px;
         }
 
-        .selection-duplicate svg {
-            width: 16px;
-            height: 16px;
+        .selection-color-menu {
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            gap: 4px;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+        }
+
+        .selection-color-menu.open {
+            display: flex;
+        }
+
+        .selection-color-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .selection-color-swatch:hover {
+            transform: scale(1.2);
+        }
+
+        .selection-color-swatch.active {
+            border-color: var(--text-primary);
         }
 
         .selection-box .selection-handle.edge {
@@ -3271,18 +3299,36 @@
             selectionBox.innerHTML = `
                 <div class="selection-rotate-line"></div>
                 <div class="rotate-handle" data-handle="rotate"></div>
-                <button class="selection-duplicate" type="button" title="Duplicate selection" aria-label="Duplicate selection">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="9" y="9" width="10" height="10" rx="2"/>
-                        <rect x="5" y="5" width="10" height="10" rx="2"/>
-                    </svg>
-                </button>
-                <button class="selection-trash" type="button" title="Delete image" aria-label="Delete image">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    </svg>
-                </button>
+                <div class="selection-actions">
+                    <button class="selection-color-btn" type="button" title="Change color" aria-label="Change color">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="9"/>
+                            <circle cx="12" cy="7.5" r="2" fill="#E81010" stroke="none"/>
+                            <circle cx="7.5" cy="14" r="2" fill="#002FD9" stroke="none"/>
+                            <circle cx="16.5" cy="14" r="2" fill="#ffde00" stroke="none"/>
+                        </svg>
+                        <div class="selection-color-menu">
+                            <div class="selection-color-swatch" data-swatch-color="#4D4D4D" style="background:#4D4D4D"></div>
+                            <div class="selection-color-swatch" data-swatch-color="#002FD9" style="background:#002FD9"></div>
+                            <div class="selection-color-swatch" data-swatch-color="#E81010" style="background:#E81010"></div>
+                            <div class="selection-color-swatch" data-swatch-color="#E07A3C" style="background:#E07A3C"></div>
+                            <div class="selection-color-swatch" data-swatch-color="#34c759" style="background:#34c759"></div>
+                            <div class="selection-color-swatch" data-swatch-color="#ffde00" style="background:#ffde00"></div>
+                        </div>
+                    </button>
+                    <button class="selection-duplicate" type="button" title="Duplicate selection" aria-label="Duplicate selection">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="10" height="10" rx="2"/>
+                            <rect x="5" y="5" width="10" height="10" rx="2"/>
+                        </svg>
+                    </button>
+                    <button class="selection-trash" type="button" title="Delete selection" aria-label="Delete selection">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                    </button>
+                </div>
                 <div class="selection-handle edge handle-n" data-handle="n"></div>
                 <div class="selection-handle edge handle-s" data-handle="s"></div>
                 <div class="selection-handle edge handle-e" data-handle="e"></div>
@@ -3821,7 +3867,11 @@
                     } else {
                         clearSelection();
                     }
+                    // Clear lasso path then redraw selection outlines
                     clearLassoCanvas(pageIndex);
+                    if (state.selection.pageIndex === pageIndex && state.selection.strokeIndices.length > 0) {
+                        drawSelectionOutlines(pageIndex);
+                    }
                     lassoPoints = [];
                     if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
                         canvas.releasePointerCapture(e.pointerId);
@@ -4114,6 +4164,8 @@
                     box.classList.add('hidden');
                     box.classList.remove('has-selection');
                     box.classList.remove('has-image');
+                    const menu = box.querySelector('.selection-color-menu');
+                    if (menu) menu.classList.remove('open');
                 }
             }
             document.querySelectorAll('.lasso-overlay').forEach(canvas => {
@@ -4289,6 +4341,31 @@
             box.style.top = bounds.minY + 'px';
             box.style.width = bounds.width + 'px';
             box.style.height = bounds.height + 'px';
+
+            // Position action buttons to avoid overlapping handles
+            const actions = box.querySelector('.selection-actions');
+            if (actions) {
+                const actionsWidth = 3 * 34 + 2 * 4; // 3 buttons * 34px + 2 gaps * 4px
+                // Place above selection, centered
+                if (bounds.minY > 50) {
+                    // Enough space above
+                    actions.style.bottom = '100%';
+                    actions.style.top = 'auto';
+                    actions.style.marginBottom = '8px';
+                    actions.style.marginTop = '';
+                } else {
+                    // Place below selection
+                    actions.style.top = '100%';
+                    actions.style.bottom = 'auto';
+                    actions.style.marginTop = '8px';
+                    actions.style.marginBottom = '';
+                }
+                actions.style.left = '50%';
+                actions.style.transform = 'translateX(-50%)';
+            }
+
+            // Draw selection outlines
+            drawSelectionOutlines(state.selection.pageIndex);
         }
 
         function deleteSelectedImages(pageIndex) {
@@ -4474,6 +4551,77 @@
             renderPagesList();
             scheduleSave(false, pageIndex);
             showStatus('Selection duplicated', { preserveState: true });
+        }
+
+        function changeSelectionColor(pageIndex, newColor) {
+            if (state.isReadOnly) return;
+            const page = state.pages[pageIndex];
+            if (!page) return;
+            const strokeIndices = state.selection.strokeIndices || [];
+            if (strokeIndices.length === 0) return;
+
+            const beforeStrokes = strokeIndices.map(index => ({
+                index,
+                stroke: cloneStroke(page.strokes[index])
+            }));
+
+            strokeIndices.forEach(index => {
+                const stroke = page.strokes[index];
+                if (stroke && stroke.color) {
+                    stroke.color = newColor;
+                }
+            });
+
+            const afterStrokes = strokeIndices.map(index => ({
+                index,
+                stroke: cloneStroke(page.strokes[index])
+            }));
+
+            saveToHistory({
+                type: 'color-change',
+                pageIndex,
+                before: beforeStrokes,
+                after: afterStrokes
+            });
+
+            redrawPage(pageIndex);
+            drawSelectionOutlines(pageIndex);
+            scheduleSave(false, pageIndex);
+            showStatus('Color changed', { preserveState: true });
+        }
+
+        function drawSelectionOutlines(pageIndex) {
+            const lassoCanvas = document.querySelector(`.lasso-overlay[data-page="${pageIndex}"]`);
+            if (!lassoCanvas) return;
+            const ctx = lassoCanvas.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, lassoCanvas.width, lassoCanvas.height);
+
+            if (state.selection.pageIndex !== pageIndex) return;
+            const page = state.pages[pageIndex];
+            if (!page || !Array.isArray(page.strokes)) return;
+            const strokeIndices = state.selection.strokeIndices || [];
+            if (strokeIndices.length === 0) return;
+
+            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
+            ctx.strokeStyle = 'rgba(0, 47, 217, 0.45)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 3]);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            strokeIndices.forEach(index => {
+                const stroke = page.strokes[index];
+                if (!stroke || !stroke.points || stroke.points.length < 2) return;
+                ctx.beginPath();
+                ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+                for (let i = 1; i < stroke.points.length; i++) {
+                    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+                }
+                ctx.stroke();
+            });
+
+            ctx.setLineDash([]);
         }
 
         function getPagePosFromEvent(pageIndex, e) {
@@ -6306,6 +6454,34 @@
                 if (state.currentTool !== 'lasso') return;
                 if (state.selection.pageIndex !== pageIndex) return;
                 const target = e.target;
+
+                // Handle color swatch click
+                if (target.closest && target.closest('.selection-color-swatch')) {
+                    const swatch = target.closest('.selection-color-swatch');
+                    const newColor = swatch.dataset.swatchColor;
+                    if (newColor) {
+                        changeSelectionColor(pageIndex, newColor);
+                        const menu = selectionBox.querySelector('.selection-color-menu');
+                        if (menu) menu.classList.remove('open');
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                // Handle color button click (toggle menu)
+                if (target.closest && target.closest('.selection-color-btn')) {
+                    const menu = selectionBox.querySelector('.selection-color-menu');
+                    if (menu) menu.classList.toggle('open');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                // Close color menu on any other interaction
+                const menu = selectionBox.querySelector('.selection-color-menu');
+                if (menu) menu.classList.remove('open');
+
                 if (target.closest && target.closest('.selection-duplicate')) {
                     duplicateSelection(pageIndex);
                     e.preventDefault();
@@ -6498,6 +6674,21 @@
             state.selectionTransform = null;
         }
 
+        const _eraserRedrawPending = new Set();
+        let _eraserRedrawRaf = null;
+        function scheduleEraserRedraw(pageIndex) {
+            _eraserRedrawPending.add(pageIndex);
+            if (!_eraserRedrawRaf) {
+                _eraserRedrawRaf = requestAnimationFrame(() => {
+                    _eraserRedrawRaf = null;
+                    for (const pi of _eraserRedrawPending) {
+                        redrawPage(pi);
+                    }
+                    _eraserRedrawPending.clear();
+                });
+            }
+        }
+
         function splitStrokeByEraser(stroke, x, y, radius) {
             const segments = [];
             let current = [];
@@ -6591,7 +6782,7 @@
             if (changed) {
                 page.strokes = newStrokes;
                 if (!options.deferRedraw) {
-                    redrawPage(pageIndex);
+                    scheduleEraserRedraw(pageIndex);
                 }
             }
 
@@ -6602,21 +6793,24 @@
         function eraseStrokeAtPoint(pageIndex, x, y, erasedList, hitRadius = 15) {
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.strokes)) return;
-            
+            let changed = false;
+
             for (let i = page.strokes.length - 1; i >= 0; i--) {
                 const stroke = page.strokes[i];
-                if (stroke.tool && stroke.tool.startsWith('eraser')) continue; // Don't erase eraser strokes
-                
+                if (stroke.tool && stroke.tool.startsWith('eraser')) continue;
+
                 for (const point of stroke.points) {
                     const dist = Math.hypot(point.x - x, point.y - y);
                     if (dist < hitRadius) {
-                        // Remove stroke and add to erased list
                         const removed = page.strokes.splice(i, 1)[0];
                         erasedList.push({ index: i, stroke: cloneStroke(removed) });
-                        redrawPage(pageIndex);
+                        changed = true;
                         break;
                     }
                 }
+            }
+            if (changed) {
+                scheduleEraserRedraw(pageIndex);
             }
         }
 
@@ -10317,6 +10511,16 @@
                 clearSelection();
                 redrawPage(action.pageIndex);
                 renderPagesList();
+            } else if (action.type === 'color-change') {
+                const page = state.pages[action.pageIndex];
+                if (!page) return;
+                action.before.forEach(item => {
+                    if (page.strokes[item.index]) {
+                        page.strokes[item.index].color = item.stroke.color;
+                    }
+                });
+                clearSelection();
+                redrawPage(action.pageIndex);
             } else if (action.type === 'cross-page-move') {
                 // Move strokes/images back to the original page
                 const { fromPageIndex, toPageIndex, strokeIndices, imageIndices, yOffset } = action;
@@ -10483,6 +10687,16 @@
                 clearSelection();
                 redrawPage(action.pageIndex);
                 renderPagesList();
+            } else if (action.type === 'color-change') {
+                const page = state.pages[action.pageIndex];
+                if (!page) return;
+                action.after.forEach(item => {
+                    if (page.strokes[item.index]) {
+                        page.strokes[item.index].color = item.stroke.color;
+                    }
+                });
+                clearSelection();
+                redrawPage(action.pageIndex);
             } else if (action.type === 'cross-page-move') {
                 // Redo the cross-page move
                 const { fromPageIndex, toPageIndex, yOffset } = action;
