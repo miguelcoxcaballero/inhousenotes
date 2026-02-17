@@ -2510,6 +2510,7 @@
         const TOUCH_INERTIA_DECAY = 0.92;
         const TOUCH_INERTIA_STOP = 0.02;
         const STROKE_OP_COMPACT_THRESHOLD = 200;
+        const STROKE_OP_FLUSH_BATCH_SIZE = 24;
         const DRIVE_SYNC_IDLE_DELAY = 15000;
         const DRIVE_SYNC_MAX_DELAY = 120000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
@@ -3002,6 +3003,8 @@
         let localBackupTimer = null;
         let localBackupPayload = null;
         let localBackupLastAt = 0;
+        let notebookDbPromise = null;
+        let notebookDbInstance = null;
         const deferredBakePages = new Set();
         let driveRecentsCache = [];
         let driveStarredCache = [];
@@ -8890,7 +8893,8 @@
 
         function openNotebookDb() {
             if (!('indexedDB' in window)) return Promise.resolve(null);
-            return new Promise((resolve) => {
+            if (notebookDbPromise) return notebookDbPromise;
+            notebookDbPromise = new Promise((resolve) => {
                 const request = indexedDB.open(DB_NAME, DB_VERSION);
                 request.onupgradeneeded = () => {
                     const db = request.result;
@@ -8913,12 +8917,35 @@
                         }
                     }
                 };
-                request.onsuccess = () => resolve(request.result);
+                request.onsuccess = () => {
+                    const db = request.result;
+                    if (notebookDbInstance !== db) {
+                        db.onversionchange = () => {
+                            try {
+                                db.close();
+                            } catch (err) {}
+                            notebookDbInstance = null;
+                            notebookDbPromise = null;
+                        };
+                        db.onclose = () => {
+                            notebookDbInstance = null;
+                            notebookDbPromise = null;
+                        };
+                    }
+                    notebookDbInstance = db;
+                    resolve(db);
+                };
                 request.onerror = () => {
                     console.error('Failed to open IndexedDB:', request.error);
+                    notebookDbInstance = null;
+                    notebookDbPromise = null;
                     resolve(null);
                 };
+                request.onblocked = () => {
+                    console.warn('IndexedDB open blocked. Close other tabs using this notebook.');
+                };
             });
+            return notebookDbPromise;
         }
 
         async function saveToIndexedDb(payload, savedAt) {
@@ -8926,13 +8953,9 @@
             if (!db) return false;
             return new Promise((resolve) => {
                 const tx = db.transaction(DB_STORE, 'readwrite');
-                tx.oncomplete = () => {
-                    db.close();
-                    resolve(true);
-                };
+                tx.oncomplete = () => resolve(true);
                 tx.onerror = () => {
                     console.error('Failed to save to IndexedDB:', tx.error);
-                    db.close();
                     resolve(false);
                 };
                 const store = tx.objectStore(DB_STORE);
@@ -8950,8 +8973,6 @@
             if (!db) return null;
             return new Promise((resolve) => {
                 const tx = db.transaction(DB_STORE, 'readonly');
-                tx.oncomplete = () => db.close();
-                tx.onerror = () => db.close();
                 const store = tx.objectStore(DB_STORE);
                 const request = store.get(DB_KEY);
                 request.onsuccess = () => resolve(request.result || null);
@@ -8986,13 +9007,9 @@
             if (!db) return false;
             return new Promise((resolve) => {
                 const tx = db.transaction(PAGE_STORE, 'readwrite');
-                tx.oncomplete = () => {
-                    db.close();
-                    resolve(true);
-                };
+                tx.oncomplete = () => resolve(true);
                 tx.onerror = () => {
                     console.error('Failed to save page to IndexedDB:', tx.error);
-                    db.close();
                     resolve(false);
                 };
                 const store = tx.objectStore(PAGE_STORE);
@@ -9005,8 +9022,6 @@
             if (!db) return null;
             return new Promise((resolve) => {
                 const tx = db.transaction(PAGE_STORE, 'readonly');
-                tx.oncomplete = () => db.close();
-                tx.onerror = () => db.close();
                 const store = tx.objectStore(PAGE_STORE);
                 const request = store.get(pageIndex);
                 request.onsuccess = () => resolve(request.result || null);
@@ -9020,13 +9035,9 @@
             if (!db) return false;
             return new Promise((resolve) => {
                 const tx = db.transaction(OPS_STORE, 'readwrite');
-                tx.oncomplete = () => {
-                    db.close();
-                    resolve(true);
-                };
+                tx.oncomplete = () => resolve(true);
                 tx.onerror = () => {
                     console.error('Failed to append stroke ops:', tx.error);
-                    db.close();
                     resolve(false);
                 };
                 const store = tx.objectStore(OPS_STORE);
@@ -9041,8 +9052,6 @@
             if (!db) return [];
             return new Promise((resolve) => {
                 const tx = db.transaction(OPS_STORE, 'readonly');
-                tx.oncomplete = () => db.close();
-                tx.onerror = () => db.close();
                 const store = tx.objectStore(OPS_STORE);
                 const request = store.getAll();
                 request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
@@ -9055,14 +9064,8 @@
             if (!db) return false;
             return new Promise((resolve) => {
                 const tx = db.transaction(OPS_STORE, 'readwrite');
-                tx.oncomplete = () => {
-                    db.close();
-                    resolve(true);
-                };
-                tx.onerror = () => {
-                    db.close();
-                    resolve(false);
-                };
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
                 const store = tx.objectStore(OPS_STORE);
                 const index = store.index('pageIndex');
                 const request = index.openCursor(IDBKeyRange.only(pageIndex));
@@ -9082,17 +9085,13 @@
             return new Promise((resolve) => {
                 const tx = db.transaction(OPS_STORE, 'readwrite');
                 tx.oncomplete = () => {
-                    db.close();
                     pendingStrokeOps.clear();
                     strokeOpsQueue.length = 0;
                     strokeOpsFlushScheduled = false;
                     strokeOpsFlushInProgress = false;
                     resolve(true);
                 };
-                tx.onerror = () => {
-                    db.close();
-                    resolve(false);
-                };
+                tx.onerror = () => resolve(false);
                 const store = tx.objectStore(OPS_STORE);
                 store.clear();
             });
@@ -9112,14 +9111,8 @@
             if (!db) return false;
             return new Promise((resolve) => {
                 const tx = db.transaction(PAGE_STORE, 'readwrite');
-                tx.oncomplete = () => {
-                    db.close();
-                    resolve(true);
-                };
-                tx.onerror = () => {
-                    db.close();
-                    resolve(false);
-                };
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
                 const store = tx.objectStore(PAGE_STORE);
                 store.delete(pageIndex);
             });
@@ -9131,17 +9124,13 @@
             return new Promise((resolve) => {
                 const tx = db.transaction([PAGE_STORE, OPS_STORE], 'readwrite');
                 tx.oncomplete = () => {
-                    db.close();
                     pendingStrokeOps.clear();
                     strokeOpsQueue.length = 0;
                     strokeOpsFlushScheduled = false;
                     strokeOpsFlushInProgress = false;
                     resolve(true);
                 };
-                tx.onerror = () => {
-                    db.close();
-                    resolve(false);
-                };
+                tx.onerror = () => resolve(false);
                 tx.objectStore(PAGE_STORE).clear();
                 tx.objectStore(OPS_STORE).clear();
             });
@@ -9152,14 +9141,8 @@
             if (!db) return false;
             return new Promise((resolve) => {
                 const tx = db.transaction(PAGE_STORE, 'readwrite');
-                tx.oncomplete = () => {
-                    db.close();
-                    resolve(true);
-                };
-                tx.onerror = () => {
-                    db.close();
-                    resolve(false);
-                };
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
                 const store = tx.objectStore(PAGE_STORE);
                 const lastIndex = totalPages;
                 let current = startIndex;
@@ -9364,8 +9347,8 @@
         async function flushDirtyPages(options = {}) {
             const force = !!options.force;
             const abortSignal = options.abortSignal || null;
-            await flushStrokeOpsQueue();
-            if (abortSignal?.aborted) return false;
+            const opsFlushed = await flushStrokeOpsQueue({ abortSignal });
+            if (!opsFlushed && abortSignal?.aborted) return false;
             if (pageDirty.size === 0) return true;
             const dirty = Array.from(pageDirty);
             for (const pageIndex of dirty) {
@@ -9399,8 +9382,8 @@
 
         async function saveToStorage(controller = null) {
             if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
-            await flushStrokeOpsQueue();
-            if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
+            const opsFlushed = await flushStrokeOpsQueue({ abortSignal: controller });
+            if (!opsFlushed && controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             const dbOk = await saveToIndexedDb(payload, savedAt);
@@ -9714,41 +9697,71 @@
             }
         }
 
-        async function flushStrokeOpsQueue() {
-            if (strokeOpsFlushInProgress || strokeOpsQueue.length === 0) return;
-            strokeOpsFlushInProgress = true;
-            const batch = strokeOpsQueue.splice(0, strokeOpsQueue.length);
-            const ok = await appendStrokeOpsToIndexedDb(batch);
-            if (ok && batch.length > 0) {
-                const latest = batch[batch.length - 1];
-                const savedAt = typeof latest?.savedAt === 'number' ? latest.savedAt : Date.now();
-                if (!state.lastSavedAt || savedAt > state.lastSavedAt) {
-                    state.lastSavedAt = savedAt;
-                }
-            }
-            if (!ok) {
-                const failedPages = new Set();
-                batch.forEach(op => {
-                    if (Number.isFinite(op?.pageIndex)) failedPages.add(op.pageIndex);
-                });
-                failedPages.forEach((pageIndex) => markPageDirty(pageIndex, 'full'));
-                strokeOpsQueue.unshift(...batch);
-            }
-            strokeOpsFlushInProgress = false;
-            if (strokeOpsQueue.length > 0 && !strokeOpsFlushScheduled) {
-                strokeOpsFlushScheduled = true;
-                if (ok) {
-                    Promise.resolve().then(() => {
-                        strokeOpsFlushScheduled = false;
-                        flushStrokeOpsQueue();
-                    });
+        async function yieldToMainThread() {
+            await new Promise((resolve) => {
+                if (typeof requestAnimationFrame === 'function') {
+                    requestAnimationFrame(() => resolve());
                 } else {
-                    setTimeout(() => {
-                        strokeOpsFlushScheduled = false;
-                        flushStrokeOpsQueue();
-                    }, 250);
+                    setTimeout(resolve, 0);
+                }
+            });
+        }
+
+        async function flushStrokeOpsQueue(options = {}) {
+            const abortSignal = options.abortSignal || null;
+            if (abortSignal?.aborted) return false;
+            if (strokeOpsFlushInProgress || strokeOpsQueue.length === 0) return true;
+            strokeOpsFlushInProgress = true;
+            let overallOk = true;
+            let pausedByAbort = false;
+            try {
+                while (strokeOpsQueue.length > 0) {
+                    if (abortSignal?.aborted) {
+                        pausedByAbort = true;
+                        return false;
+                    }
+                    const batchSize = Math.min(STROKE_OP_FLUSH_BATCH_SIZE, strokeOpsQueue.length);
+                    const batch = strokeOpsQueue.splice(0, batchSize);
+                    const ok = await appendStrokeOpsToIndexedDb(batch);
+                    if (ok && batch.length > 0) {
+                        const latest = batch[batch.length - 1];
+                        const savedAt = typeof latest?.savedAt === 'number' ? latest.savedAt : Date.now();
+                        if (!state.lastSavedAt || savedAt > state.lastSavedAt) {
+                            state.lastSavedAt = savedAt;
+                        }
+                    }
+                    if (!ok) {
+                        const failedPages = new Set();
+                        batch.forEach(op => {
+                            if (Number.isFinite(op?.pageIndex)) failedPages.add(op.pageIndex);
+                        });
+                        failedPages.forEach((pageIndex) => markPageDirty(pageIndex, 'full'));
+                        strokeOpsQueue.unshift(...batch);
+                        overallOk = false;
+                        break;
+                    }
+                    if (strokeOpsQueue.length > 0) {
+                        await yieldToMainThread();
+                    }
+                }
+            } finally {
+                strokeOpsFlushInProgress = false;
+                if (!pausedByAbort && strokeOpsQueue.length > 0 && !strokeOpsFlushScheduled) {
+                    strokeOpsFlushScheduled = true;
+                    if (overallOk) {
+                        Promise.resolve().then(() => {
+                            strokeOpsFlushScheduled = false;
+                            flushStrokeOpsQueue();
+                        });
+                    } else {
+                        setTimeout(() => {
+                            strokeOpsFlushScheduled = false;
+                            flushStrokeOpsQueue();
+                        }, 250);
+                    }
                 }
             }
+            return overallOk;
         }
 
         async function restorePendingStrokeOps() {
@@ -9824,8 +9837,19 @@
             return !!(state.driveAutosave && !state.isReadOnly && (driveDirty || driveSaveInProgress || driveSaveQueued));
         }
 
+        function showPendingSaveStatus() {
+            const indicator = document.getElementById('save-indicator');
+            if (indicator && indicator.classList.contains('saving')) return;
+            if (state.driveAutosave && !state.isReadOnly) {
+                showStatus('Saving to Drive...', { saving: true });
+            } else {
+                showStatus('Saving...', { saving: true });
+            }
+        }
+
         function notePenActivity() {
             isPenWriting = true;
+            showPendingSaveStatus();
             if (saveInProgress && activeLocalSaveController) {
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
@@ -9846,7 +9870,7 @@
                         markPageDirty(pageIndex, 'full');
                     }
                 });
-                if (pageDirty.size > 0) {
+                if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
                     queueSave();
                 }
                 if (driveDirty && !deferredDriveSave) {
@@ -9913,10 +9937,18 @@
 
         function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
+            if (mode === 'stroke' && !immediate) {
+                showPendingSaveStatus();
+                clearTimeout(state.saveTimeout);
+                state.saveTimeout = null;
+                flushStrokeOpsQueue();
+                scheduleDriveSync();
+                return;
+            }
             if (Number.isFinite(pageIndex)) {
                 markPageDirty(pageIndex, mode);
             }
-            showStatus('Saving...', true);
+            showPendingSaveStatus();
             clearTimeout(state.saveTimeout);
             state.saveTimeout = null;
             queueSave();
@@ -9935,6 +9967,7 @@
             const result = await saveToStorage(controller);
             activeLocalSaveController = null;
             if (result.cancelled) {
+                saveQueued = true;
                 showStatus('Saving...', { saving: true });
             } else if (result.ok) {
                 if (state.driveAutosave && !state.isReadOnly) {
@@ -9949,10 +9982,10 @@
             }
             saveInProgress = false;
             if (saveQueued) {
-                saveQueued = false;
                 if (isPenWriting) {
                     return;
                 }
+                saveQueued = false;
                 showStatus('Saving...', true);
                 queueSave();
             }
@@ -9998,21 +10031,19 @@
         }
 
         async function ensureDriveFile(options = {}) {
-            if (state.driveFileId) return state.driveFileId;
+            if (state.driveFileId) {
+                return { fileId: state.driveFileId, created: false };
+            }
             await ensureDriveToken(false);
             if (options.signal?.aborted) {
-                const abortErr = new Error('Drive save aborted');
-                abortErr.name = 'AbortError';
-                throw abortErr;
+                throw createAbortError('Drive save aborted');
             }
             const folderId = state.driveFolderId || await ensureDriveFolder({ signal: options.signal });
             const fileName = `${sanitizeFilename(state.exportName || 'Untitled')}.pdf`;
             if (options.signal?.aborted) {
-                const abortErr = new Error('Drive save aborted');
-                abortErr.name = 'AbortError';
-                throw abortErr;
+                throw createAbortError('Drive save aborted');
             }
-            const pdfBlob = await buildPdfBlob();
+            const pdfBlob = options.initialPdfBlob || await buildPdfBlob({ signal: options.signal });
             const metadata = {
                 name: fileName,
                 mimeType: 'application/pdf',
@@ -10032,7 +10063,7 @@
             state.driveFileName = data.name || fileName;
             updateDocTitle();
             saveDriveSession();
-            return state.driveFileId;
+            return { fileId: state.driveFileId, created: true };
         }
 
         async function createDriveFileInFolder(folderId, fileName, pdfBlob, options = {}) {
@@ -10099,15 +10130,28 @@
                     ...options,
                     signal: controller.signal
                 };
-                const fileId = await ensureDriveFile(driveOptions);
+                let pdfBlob = null;
+                if (!state.driveFileId) {
+                    pdfBlob = await buildPdfBlob({ signal: controller.signal });
+                }
+                const ensureResult = await ensureDriveFile({
+                    ...driveOptions,
+                    initialPdfBlob: pdfBlob
+                });
+                const fileId = typeof ensureResult === 'string' ? ensureResult : ensureResult.fileId;
+                const wasCreated = typeof ensureResult === 'object' && !!ensureResult.created;
                 if (controller.signal.aborted) {
                     throw new Error('Drive save aborted');
                 }
-                const pdfBlob = await buildPdfBlob();
-                if (controller.signal.aborted) {
-                    throw new Error('Drive save aborted');
+                if (!wasCreated) {
+                    if (!pdfBlob) {
+                        pdfBlob = await buildPdfBlob({ signal: controller.signal });
+                    }
+                    if (controller.signal.aborted) {
+                        throw new Error('Drive save aborted');
+                    }
+                    await updateDriveFile(fileId, pdfBlob, driveOptions);
                 }
-                await updateDriveFile(fileId, pdfBlob, driveOptions);
                 const savedAt = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : Date.now();
                 showStatus('Saved', { savedAt });
             } catch (err) {
@@ -10590,23 +10634,79 @@
             exportPDF(`${name}.pdf`);
         }
 
-        function loadImage(src) {
+        function createAbortError(message) {
+            const err = new Error(message || 'Operation aborted');
+            err.name = 'AbortError';
+            return err;
+        }
+
+        function loadImage(src, options = {}) {
             return new Promise((resolve) => {
                 if (!src) {
                     resolve(null);
                     return;
                 }
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = () => resolve(null);
-                img.src = src;
+                const abortSignal = options.abortSignal || null;
+                const img = getCachedImage(src);
+                if (!img) {
+                    resolve(null);
+                    return;
+                }
+                if (abortSignal?.aborted) {
+                    resolve(null);
+                    return;
+                }
+                if (img.complete) {
+                    resolve(img);
+                    return;
+                }
+                const cleanup = () => {
+                    img.removeEventListener('load', onLoad);
+                    img.removeEventListener('error', onError);
+                    if (abortSignal) {
+                        abortSignal.removeEventListener('abort', onAbort);
+                    }
+                };
+                const onLoad = () => {
+                    cleanup();
+                    resolve(img);
+                };
+                const onError = () => {
+                    cleanup();
+                    resolve(null);
+                };
+                const onAbort = () => {
+                    cleanup();
+                    resolve(null);
+                };
+                img.addEventListener('load', onLoad, { once: true });
+                img.addEventListener('error', onError, { once: true });
+                if (abortSignal) {
+                    abortSignal.addEventListener('abort', onAbort, { once: true });
+                }
             });
         }
 
-        async function drawImagesOnCanvas(ctx, page) {
+        function hasPendingUserInput() {
+            try {
+                const scheduling = navigator?.scheduling;
+                if (!scheduling || typeof scheduling.isInputPending !== 'function') return false;
+                return !!scheduling.isInputPending({ includeContinuous: true });
+            } catch (err) {
+                return false;
+            }
+        }
+
+        async function drawImagesOnCanvas(ctx, page, options = {}) {
             if (!page || !Array.isArray(page.images) || page.images.length === 0) return;
+            const abortSignal = options.abortSignal || null;
+            const yieldFn = typeof options.yieldFn === 'function' ? options.yieldFn : null;
+            let drawn = 0;
             for (const image of page.images) {
-                const img = await loadImage(image.src);
+                if (abortSignal?.aborted) {
+                    throw createAbortError('Drive save aborted');
+                }
+                const img = await loadImage(image.src, { abortSignal });
                 if (!img) continue;
                 ctx.save();
                 ctx.translate(image.x, image.y);
@@ -10619,6 +10719,10 @@
                     image.height
                 );
                 ctx.restore();
+                drawn += 1;
+                if (yieldFn && drawn % 2 === 0) {
+                    await yieldFn();
+                }
             }
         }
 
@@ -10779,7 +10883,22 @@
             };
         }
 
-        async function buildPdfBlob() {
+        async function buildPdfBlob(options = {}) {
+            const abortSignal = options.signal || null;
+            const throwIfAborted = () => {
+                if (!abortSignal?.aborted) return;
+                throw createAbortError('Drive save aborted');
+            };
+            const yieldForResponsiveness = async (force = false) => {
+                throwIfAborted();
+                if (!force && !isPenWriting && !hasPendingUserInput()) {
+                    return;
+                }
+                await yieldToMainThread();
+                throwIfAborted();
+            };
+
+            throwIfAborted();
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({
                 orientation: 'portrait',
@@ -10787,7 +10906,11 @@
                 format: 'a4'
             });
 
-            await flushDirtyPages();
+            const dirtyFlushed = await flushDirtyPages({ abortSignal });
+            if (!dirtyFlushed && abortSignal?.aborted) {
+                throw createAbortError('Drive save aborted');
+            }
+            throwIfAborted();
 
             const pageCount = state.pages.length;
             const strokeData = new Array(pageCount);
@@ -10800,7 +10923,12 @@
             const pdfCtx = pdfCanvas.getContext('2d');
 
             for (let i = 0; i < pageCount; i++) {
+                throwIfAborted();
+                if (i > 0 && i % 2 === 0) {
+                    await yieldForResponsiveness(true);
+                }
                 const pageData = await loadPageDataForExport(i);
+                throwIfAborted();
                 const backgroundSource = pageData.backgroundSource
                     || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
                 const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
@@ -10815,7 +10943,16 @@
             }
 
             // Embed stroke data as PDF metadata (custom property)
-            const metadataString = JSON.stringify(strokeData);
+            const metadataParts = [];
+            for (let i = 0; i < strokeData.length; i++) {
+                throwIfAborted();
+                metadataParts.push(JSON.stringify(strokeData[i] || {}));
+                if (i > 0 && i % 2 === 0) {
+                    await yieldForResponsiveness(true);
+                }
+            }
+            const metadataString = `[${metadataParts.join(',')}]`;
+            await yieldForResponsiveness(true);
             const encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
             
             // Add as PDF property
@@ -10827,6 +10964,8 @@
             });
 
             for (let i = 0; i < pageCount; i++) {
+                throwIfAborted();
+                await yieldForResponsiveness(true);
                 if (i > 0) pdf.addPage();
 
                 const page = strokeData[i];
@@ -10839,15 +10978,11 @@
 
                 const bgImage = backgroundImages[i];
                 if (bgImage) {
-                    await new Promise((resolve) => {
-                        const img = new Image();
-                        img.onload = () => {
-                            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
-                            resolve();
-                        };
-                        img.onerror = resolve;
-                        img.src = bgImage;
-                    });
+                    const img = await loadImage(bgImage, { abortSignal });
+                    if (img) {
+                        tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                    }
+                    throwIfAborted();
                 } else if (page.pdfPageIndex && activePdfDocument) {
                     const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
                     const baseViewport = pdfPage.getViewport({ scale: 1 });
@@ -10855,7 +10990,29 @@
                     const viewport = pdfPage.getViewport({ scale });
                     pdfCanvas.width = viewport.width;
                     pdfCanvas.height = viewport.height;
-                    await pdfPage.render({ canvasContext: pdfCtx, viewport }).promise;
+                    const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport });
+                    let abortHandler = null;
+                    if (abortSignal) {
+                        abortHandler = () => {
+                            try {
+                                renderTask.cancel();
+                            } catch (err) {}
+                        };
+                        abortSignal.addEventListener('abort', abortHandler, { once: true });
+                    }
+                    try {
+                        await renderTask.promise;
+                    } catch (err) {
+                        if (abortSignal?.aborted || err?.name === 'RenderingCancelledException') {
+                            throw createAbortError('Drive save aborted');
+                        }
+                        throw err;
+                    } finally {
+                        if (abortHandler && abortSignal) {
+                            abortSignal.removeEventListener('abort', abortHandler);
+                        }
+                    }
+                    throwIfAborted();
                     const offsetX = (tempCanvas.width - viewport.width) / 2;
                     const offsetY = (tempCanvas.height - viewport.height) / 2;
                     tempCtx.drawImage(pdfCanvas, offsetX, offsetY, viewport.width, viewport.height);
@@ -10863,34 +11020,46 @@
                         pdfPage.cleanup();
                     }
                 } else {
-                    await new Promise((resolve) => {
-                        const img = new Image();
-                        img.onload = () => {
-                            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
-                            resolve();
-                        };
-                        img.onerror = resolve;
-                        img.src = SVG_BACKGROUND;
-                    });
+                    const img = await loadImage(SVG_BACKGROUND, { abortSignal });
+                    if (img) {
+                        tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                    }
+                    throwIfAborted();
                 }
 
                 // Draw strokes
                 tempCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
                 tempCtx.lineCap = 'round';
                 tempCtx.lineJoin = 'round';
-                await drawImagesOnCanvas(tempCtx, page);
+                await drawImagesOnCanvas(tempCtx, page, {
+                    abortSignal,
+                    yieldFn: () => yieldForResponsiveness(false)
+                });
+                let strokeCheckCounter = 0;
+                let pointCheckCounter = 0;
                 for (const stroke of page.strokes) {
                     const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
                     if (!stroke.points || stroke.points.length < minPoints) continue;
                     if (stroke.tool === 'eraser-stroke') continue;
 
                     drawSmoothStroke(tempCtx, stroke);
+                    strokeCheckCounter += 1;
+                    pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
+                    if (strokeCheckCounter % 10 === 0 || pointCheckCounter >= 1500) {
+                        pointCheckCounter = 0;
+                        await yieldForResponsiveness(false);
+                        throwIfAborted();
+                    }
                 }
 
+                await yieldForResponsiveness(true);
+                throwIfAborted();
                 const imgData = tempCanvas.toDataURL('image/jpeg', 0.72);
+                throwIfAborted();
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
             }
 
+            throwIfAborted();
             return pdf.output('blob');
         }
 
