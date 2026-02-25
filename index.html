@@ -3286,10 +3286,15 @@
                 updateAddPageIndicator();
                 clearTimeout(state.saveTimeout);
                 clearDriveSyncTimers();
+                stopCollabPolling();
             } else {
                 updateHistoryButtons();
                 updateSaveTimestamp();
                 scheduleVisiblePageUpdate(true);
+                // Start collaborative polling when entering edit mode
+                if (state.driveFileId && state.driveAutosave && driveAccessToken) {
+                    startCollabPolling();
+                }
             }
         }
 
@@ -3325,6 +3330,10 @@
             setTimeout(() => {
                 if (!applyViewState(pendingViewState)) {
                     centerViewOnTop();
+                }
+                // Start collaborative polling if we have a Drive session
+                if (state.driveFileId && state.driveAutosave && driveAccessToken && !state.isReadOnly) {
+                    startCollabPolling();
                 }
             }, 100);
         }
@@ -5155,6 +5164,10 @@
             if (signedIn) {
                 loadDriveProfile();
                 restorePdfBackgroundsIfNeeded();
+                // Start collab polling if we have a Drive file
+                if (state.driveFileId && state.driveAutosave && !state.isReadOnly) {
+                    startCollabPolling();
+                }
             }
         }
 
@@ -5869,6 +5882,20 @@
                 state.exportName = baseName || state.exportName;
                 updateDocTitle();
                 saveDriveSession();
+                // Fetch initial revision and start collaborative polling
+                try {
+                    const revRes = await driveFetch(
+                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=headRevisionId`
+                    );
+                    const revData = await revRes.json();
+                    if (revData.headRevisionId) {
+                        state.driveHeadRevisionId = revData.headRevisionId;
+                        saveDriveSession();
+                    }
+                } catch (revErr) {
+                    console.warn('Failed to fetch initial revision:', revErr);
+                }
+                startCollabPolling();
                 showStatus('PDF loaded', { preserveState: true });
             } catch (err) {
                 showStatus('Failed to load PDF', { preserveState: true });
