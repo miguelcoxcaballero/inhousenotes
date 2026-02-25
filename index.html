@@ -2179,28 +2179,7 @@
             text-overflow: clip;
         }
 
-        /* Modal Styles */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            opacity: 1;
-            transition: opacity 0.2s ease;
-        }
-
-        .modal-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-            display: flex !important;
-        }
-
+        /* Share Modal Styles */
         .modal-container {
             background: var(--bg-secondary);
             border-radius: var(--radius-md);
@@ -2210,12 +2189,12 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            transform: scale(1);
+            transform: scale(0.95);
             transition: transform 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
         }
 
-        .modal-overlay.hidden .modal-container {
-            transform: scale(0.95);
+        .modal-overlay.visible .modal-container {
+            transform: scale(1);
         }
 
         .modal-header {
@@ -2766,7 +2745,7 @@
 
     <input type="file" id="pdf-input" accept=".pdf">
 
-    <div id="share-modal-overlay" class="modal-overlay hidden">
+    <div id="share-modal-overlay" class="modal-overlay">
         <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
             <div class="modal-header">
                 <h2 id="share-modal-title">Share document</h2>
@@ -7753,7 +7732,7 @@
             if (!shareBtn || !shareModal) return;
 
             shareBtn.addEventListener('click', async () => {
-                shareModal.classList.remove('hidden');
+                shareModal.classList.add('visible');
                 // load current link sharing permission
                 if (state.driveFileId) {
                     try {
@@ -7774,12 +7753,12 @@
             });
 
             closeBtn.addEventListener('click', () => {
-                shareModal.classList.add('hidden');
+                shareModal.classList.remove('visible');
             });
 
             shareModal.addEventListener('click', (e) => {
                 if (e.target === shareModal) {
-                    shareModal.classList.add('hidden');
+                    shareModal.classList.remove('visible');
                 }
             });
 
