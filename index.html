@@ -4071,7 +4071,7 @@
                         const page = state.pages[pageIndex];
                         if (!Array.isArray(page.deletedStrokeIds)) page.deletedStrokeIds = [];
                         for (const es of erasedStrokes) {
-                            if (es.id) page.deletedStrokeIds.push(es.id);
+                            if (es.stroke && es.stroke.id) page.deletedStrokeIds.push(es.stroke.id);
                         }
                         saveToHistory({
                             type: 'erase-strokes',
@@ -6932,6 +6932,7 @@
                     if (crosses) {
                         if (current.length > 1) {
                             segments.push({
+                                id: generateStrokeId(),
                                 tool: stroke.tool,
                                 color: stroke.color,
                                 width: stroke.width,
@@ -6948,6 +6949,7 @@
                 } else {
                     if (current.length > 1) {
                         segments.push({
+                            id: generateStrokeId(),
                             tool: stroke.tool,
                             color: stroke.color,
                             width: stroke.width,
@@ -6959,6 +6961,7 @@
             }
             if (current.length > 1) {
                 segments.push({
+                    id: generateStrokeId(),
                     tool: stroke.tool,
                     color: stroke.color,
                     width: stroke.width,
@@ -7388,7 +7391,8 @@
                 });
             });
             if (changed) {
-                scheduleLocalSave();
+                markAllPagesDirty();
+                scheduleSave(true);
             }
         }
 
@@ -10590,7 +10594,7 @@
             const form = new FormData();
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
             form.append('file', pdfBlob);
-            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,headRevisionId,modifiedTime', {
                 method: 'POST',
                 body: form,
                 keepalive: !!options.keepalive,
@@ -10599,6 +10603,8 @@
             const data = await res.json();
             state.driveFileId = data.id;
             state.driveFileName = data.name || fileName;
+            if (data.headRevisionId) state.driveHeadRevisionId = data.headRevisionId;
+            if (data.modifiedTime) state.driveLastKnownModified = new Date(data.modifiedTime).getTime();
             updateDocTitle();
             saveDriveSession();
             return { fileId: state.driveFileId, created: true };
@@ -10613,24 +10619,25 @@
             const form = new FormData();
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
             form.append('file', pdfBlob);
-            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,headRevisionId,modifiedTime', {
                 method: 'POST',
                 body: form,
                 keepalive: !!options.keepalive,
                 signal: options.signal
             });
             const data = await res.json();
-            return data.id;
+            return data;
         }
 
         async function updateDriveFile(fileId, pdfBlob, options = {}) {
-            await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+            const res = await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,headRevisionId,modifiedTime`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/pdf' },
                 body: pdfBlob,
                 keepalive: !!options.keepalive,
                 signal: options.signal
             });
+            return res.json();
         }
 
         async function queueDriveSave(force = false, options = {}) {
@@ -10718,28 +10725,19 @@
                     if (controller.signal.aborted) {
                         throw new Error('Drive save aborted');
                     }
-                    await updateDriveFile(fileId, pdfBlob, driveOptions);
+                    const updateRes = await updateDriveFile(fileId, pdfBlob, driveOptions);
+                    if (updateRes.headRevisionId) {
+                        state.driveHeadRevisionId = updateRes.headRevisionId;
+                    }
+                    if (updateRes.modifiedTime) {
+                        state.driveLastKnownModified = new Date(updateRes.modifiedTime).getTime();
+                    }
+                    saveDriveSession();
                 }
                 const savedAt = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : Date.now();
                 // Bug fix: record the time of the last successful Drive upload
                 state.lastDriveSaveAt = Date.now();
                 updateSaveTimestamp();
-                // Capture revision ID to avoid detecting our own save as a remote change
-                try {
-                    const revRes = await driveFetch(
-                        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`
-                    );
-                    const revData = await revRes.json();
-                    if (revData.headRevisionId) {
-                        state.driveHeadRevisionId = revData.headRevisionId;
-                    }
-                    if (revData.modifiedTime) {
-                        state.driveLastKnownModified = new Date(revData.modifiedTime).getTime();
-                    }
-                    saveDriveSession();
-                } catch (revErr) {
-                    console.warn('Failed to capture revision ID after save:', revErr);
-                }
                 // Update sync baseline — these strokes are now the "last synced" set
                 updateSyncBaseline();
                 startCollabPolling();
@@ -11078,6 +11076,7 @@
                 scheduleVisiblePageUpdate(true);
                 updateSaveTimestamp();
             }
+            return { changed, hasLocalMerges };
         }
 
         function setsEqual(a, b) {
