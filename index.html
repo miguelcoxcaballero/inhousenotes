@@ -1373,6 +1373,18 @@
             color: #ff3b30;
         }
 
+        .page-action-btn:disabled {
+            opacity: 0.45;
+            color: #9a9a9a;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .page-action-btn:disabled:hover {
+            background: transparent;
+            color: #9a9a9a;
+        }
+
         .page-action-btn svg {
             width: 18px;
             height: 18px;
@@ -2472,12 +2484,7 @@
     <div id="editor-view" class="hidden">
         <div id="readonly-banner" class="hidden"
             style="background:var(--accent-yellow);color:#000;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;font-size:0.95rem;border-bottom:1px solid rgba(0,0,0,0.1);">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M2 12C2 6.48 6.48 2 12 2s10 4.48 10 10-4.48 10-10 10S2 17.52 2 12z"></path>
-                    <path d="M12 8v4"></path>
-                    <path d="M12 16h.01"></path>
-                </svg>
+            <div style="display:flex;align-items:center;">
                 <span><strong>View Only</strong> You don't have permission to edit this file.</span>
             </div>
             <div style="display:flex;gap:12px;">
@@ -3386,6 +3393,10 @@
             driveFolderId: null,
             driveAutosave: false,
             driveCanEdit: true,
+            driveOwnedByMe: true,
+            driveOwnerName: '',
+            driveOwnerEmail: '',
+            driveOwnerPhoto: '',
             isUndoRedo: false,
             panVelocityX: 0,
             panVelocityY: 0,
@@ -3527,6 +3538,7 @@
         let driveOpenInProgress = false;
         let driveOpenFileId = null;
         let driveUserProfile = null;
+        let sharedLinkSignInPrompted = false;
         let docTitleEditing = false;
         let docTitleOriginal = '';
         let activeDriveCardMenu = null;
@@ -3672,6 +3684,9 @@
                 showDriveHome();
             } else {
                 showEditorView();
+            }
+            if (state.driveFileId) {
+                updateViewerModeUI();
             }
 
             // Center page after DOM is ready
@@ -5527,6 +5542,19 @@
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
+                if (window.pendingSharedDriveId && !sharedLinkSignInPrompted) {
+                    sharedLinkSignInPrompted = true;
+                    if (typeof showStatus === 'function') {
+                        showStatus('Sign in to open shared document', { preserveState: true });
+                    }
+                    ensureDriveToken(true)
+                        .then(() => refreshDriveFiles())
+                        .catch(() => {
+                            if (typeof showStatus === 'function') {
+                                showStatus('Sign-in required to open shared document', { error: true });
+                            }
+                        });
+                }
             } else if (state.driveAutosave && !state.isReadOnly && driveDirty) {
                 clearTimeout(driveSaveTimeout);
                 driveSaveTimeout = setTimeout(() => {
@@ -5534,6 +5562,7 @@
                 }, 500);
             }
             if (signedIn) {
+                sharedLinkSignInPrompted = false;
                 loadDriveProfile();
                 restorePdfBackgroundsIfNeeded();
                 // Start collab polling if we have a Drive file
@@ -5633,6 +5662,11 @@
             state.driveFileName = null;
             state.driveFolderId = null;
             state.driveAutosave = false;
+            state.driveCanEdit = true;
+            state.driveOwnedByMe = true;
+            state.driveOwnerName = '';
+            state.driveOwnerEmail = '';
+            state.driveOwnerPhoto = '';
             driveRecentsCache = [];
             driveStarredCache = [];
             driveFolderCache = { folders: [], files: [] };
@@ -5646,6 +5680,7 @@
             if (driveBreadcrumbsEl) driveBreadcrumbsEl.innerHTML = '';
             if (driveStatusEl) driveStatusEl.textContent = 'Sign in to browse your Drive.';
             driveUserProfile = null;
+            sharedLinkSignInPrompted = false;
             updateDriveProfileUI(null);
             closeDriveProfileMenus();
             clearDriveTokenStorage();
@@ -6301,13 +6336,26 @@
 
                 // Fetch metadata (capabilities, revision)
                 let canEdit = true;
+                let ownedByMe = true;
+                let ownerName = '';
+                let ownerEmail = '';
+                let ownerPhoto = '';
                 try {
                     const metaRes = await driveFetch(
-                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=capabilities(canEdit),headRevisionId,modifiedTime`
+                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),headRevisionId,modifiedTime`
                     );
                     const metaData = await metaRes.json();
                     if (metaData.capabilities && metaData.capabilities.canEdit === false) {
                         canEdit = false;
+                    }
+                    if (metaData.ownedByMe === false) {
+                        ownedByMe = false;
+                    }
+                    const owner = Array.isArray(metaData.owners) ? metaData.owners[0] : null;
+                    if (owner) {
+                        ownerName = owner.displayName || '';
+                        ownerEmail = owner.emailAddress || '';
+                        ownerPhoto = owner.photoLink || '';
                     }
                     if (metaData.headRevisionId) {
                         state.driveHeadRevisionId = metaData.headRevisionId;
@@ -6320,6 +6368,10 @@
                 }
 
                 state.driveCanEdit = canEdit;
+                state.driveOwnedByMe = ownedByMe;
+                state.driveOwnerName = ownerName;
+                state.driveOwnerEmail = ownerEmail;
+                state.driveOwnerPhoto = ownerPhoto;
 
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
                 const arrayBuffer = await res.arrayBuffer();
@@ -6485,6 +6537,11 @@
             state.driveFileName = fileName;
             state.driveFolderId = folderId || null;
             state.driveAutosave = true;
+            state.driveCanEdit = true;
+            state.driveOwnedByMe = true;
+            state.driveOwnerName = driveUserProfile?.name || '';
+            state.driveOwnerEmail = driveUserProfile?.email || '';
+            state.driveOwnerPhoto = driveUserProfile?.photo || '';
             updateDocTitle();
             saveDriveSession();
             setReadOnlyMode(false);
@@ -7977,94 +8034,129 @@
 
             if (!shareBtn || !shareModal) return;
 
+            const avatarFallback = 'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"%23ccc\"><path d=\"M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\"/></svg>';
+
+            function renderOwnerOnlyRow(accessList, ownerInfo, ownerLabel, ownerPerm) {
+                if (!accessList || !ownerInfo) return;
+                accessList.innerHTML = '';
+                if (ownerLabel) ownerLabel.textContent = 'Owner';
+
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.gap = '12px';
+
+                const avatar = document.createElement('img');
+                avatar.src = (ownerPerm && ownerPerm.photoLink) || state.driveOwnerPhoto || avatarFallback;
+                avatar.style.width = '36px';
+                avatar.style.height = '36px';
+                avatar.style.borderRadius = '50%';
+                avatar.style.objectFit = 'cover';
+
+                const name = document.createElement('div');
+                name.textContent = (ownerPerm && ownerPerm.displayName) || state.driveOwnerName || 'Owner';
+                name.style.fontWeight = '500';
+                name.style.fontSize = '0.95rem';
+                name.style.color = 'var(--text-primary)';
+
+                row.appendChild(avatar);
+                row.appendChild(name);
+                accessList.appendChild(row);
+                ownerInfo.classList.remove('hidden');
+            }
+
             shareBtn.addEventListener('click', async () => {
                 shareModal.classList.add('visible');
-                // load current link sharing permission
-                if (state.driveFileId) {
-                    try {
-                        const data = await fetchDrivePermissions(state.driveFileId);
+                const ownerInfo = document.getElementById('share-owner-info');
+                const accessList = document.getElementById('share-access-list');
+                const ownerLabel = ownerInfo ? ownerInfo.querySelector('div') : null;
+                const inviteForm = document.getElementById('share-invite-form');
+                const generalAccess = inviteForm ? inviteForm.nextElementSibling : null;
+                const copySection = copyBtn ? copyBtn.closest('.share-section') : null;
+                const isOwner = state.driveOwnedByMe !== false;
 
-                        // Handle access list display
-                        const ownerInfo = document.getElementById('share-owner-info');
-                        const accessList = document.getElementById('share-access-list');
-                        const inviteForm = document.getElementById('share-invite-form');
-                        const generalAccess = inviteForm ? inviteForm.nextElementSibling : null;
+                if (inviteForm) inviteForm.style.display = isOwner ? '' : 'none';
+                if (generalAccess && generalAccess.classList.contains('share-section')) generalAccess.style.display = isOwner ? '' : 'none';
+                if (copySection && copySection.classList.contains('share-section')) copySection.style.display = isOwner ? '' : 'none';
 
-                        if (ownerInfo && accessList && data.permissions) {
-                            // Filter constraints
-                            const canEdit = state.driveCanEdit !== false;
+                if (!state.driveFileId) return;
 
-                            // Adjust form visibility for viewers
-                            if (!canEdit) {
-                                if (inviteForm) inviteForm.style.display = 'none';
-                                if (generalAccess && generalAccess.classList.contains('share-section')) generalAccess.style.display = 'none';
-                            } else {
-                                if (inviteForm) inviteForm.style.display = '';
-                                if (generalAccess && generalAccess.classList.contains('share-section')) generalAccess.style.display = '';
-                            }
+                try {
+                    const data = await fetchDrivePermissions(state.driveFileId);
+                    const permissions = Array.isArray(data.permissions) ? data.permissions : [];
 
-                            // Render list
-                            accessList.innerHTML = '';
-                            data.permissions.forEach(perm => {
-                                if (perm.type === 'anyone') return; // Handled below
-                                if (!canEdit && perm.role !== 'owner') return; // Force constraint
+                    if (!isOwner) {
+                        const ownerPerm = permissions.find(perm => perm.role === 'owner');
+                        renderOwnerOnlyRow(accessList, ownerInfo, ownerLabel, ownerPerm);
+                        accessSelect.value = 'restricted';
+                        roleSelect.classList.add('hidden');
+                        return;
+                    }
 
-                                const row = document.createElement('div');
-                                row.style.display = 'flex';
-                                row.style.alignItems = 'center';
-                                row.style.gap = '12px';
+                    if (ownerInfo && accessList) {
+                        if (ownerLabel) ownerLabel.textContent = 'People with access';
+                        accessList.innerHTML = '';
+                        permissions.forEach(perm => {
+                            if (perm.type === 'anyone') return; // handled below
 
-                                const avatar = document.createElement('img');
-                                avatar.src = perm.photoLink || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ccc"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
-                                avatar.style.width = '36px';
-                                avatar.style.height = '36px';
-                                avatar.style.borderRadius = '50%';
-                                avatar.style.objectFit = 'cover';
+                            const row = document.createElement('div');
+                            row.style.display = 'flex';
+                            row.style.alignItems = 'center';
+                            row.style.gap = '12px';
 
-                                const details = document.createElement('div');
-                                details.style.flex = '1';
-                                details.style.display = 'flex';
-                                details.style.flexDirection = 'column';
-                                details.style.lineHeight = '1.3';
+                            const avatar = document.createElement('img');
+                            avatar.src = perm.photoLink || avatarFallback;
+                            avatar.style.width = '36px';
+                            avatar.style.height = '36px';
+                            avatar.style.borderRadius = '50%';
+                            avatar.style.objectFit = 'cover';
 
-                                const name = document.createElement('div');
-                                name.textContent = perm.displayName || 'Unknown user';
-                                name.style.fontWeight = '500';
-                                name.style.fontSize = '0.9rem';
-                                name.style.color = 'var(--text-primary)';
+                            const details = document.createElement('div');
+                            details.style.flex = '1';
+                            details.style.display = 'flex';
+                            details.style.flexDirection = 'column';
+                            details.style.lineHeight = '1.3';
 
-                                const email = document.createElement('div');
-                                email.textContent = perm.emailAddress || '';
-                                email.style.fontSize = '0.8rem';
-                                email.style.color = 'var(--text-secondary)';
+                            const name = document.createElement('div');
+                            name.textContent = perm.displayName || 'Unknown user';
+                            name.style.fontWeight = '500';
+                            name.style.fontSize = '0.9rem';
+                            name.style.color = 'var(--text-primary)';
 
-                                details.appendChild(name);
-                                if (perm.emailAddress) details.appendChild(email);
+                            const email = document.createElement('div');
+                            email.textContent = perm.emailAddress || '';
+                            email.style.fontSize = '0.8rem';
+                            email.style.color = 'var(--text-secondary)';
 
-                                const roleLabel = document.createElement('div');
-                                roleLabel.textContent = perm.role.charAt(0).toUpperCase() + perm.role.slice(1);
-                                roleLabel.style.fontSize = '0.85rem';
-                                roleLabel.style.color = 'var(--text-secondary)';
+                            details.appendChild(name);
+                            if (perm.emailAddress) details.appendChild(email);
 
-                                row.appendChild(avatar);
-                                row.appendChild(details);
-                                row.appendChild(roleLabel);
-                                accessList.appendChild(row);
-                            });
-                            ownerInfo.classList.remove('hidden');
-                        }
+                            const roleLabel = document.createElement('div');
+                            roleLabel.textContent = perm.role.charAt(0).toUpperCase() + perm.role.slice(1);
+                            roleLabel.style.fontSize = '0.85rem';
+                            roleLabel.style.color = 'var(--text-secondary)';
 
-                        const anyonePerm = data.permissions?.find(p => p.type === 'anyone');
-                        if (anyonePerm) {
-                            accessSelect.value = 'anyone';
-                            roleSelect.value = anyonePerm.role === 'writer' ? 'writer' : 'reader';
-                            roleSelect.classList.remove('hidden');
-                        } else {
-                            accessSelect.value = 'restricted';
-                            roleSelect.classList.add('hidden');
-                        }
-                    } catch (err) {
-                        console.error('Failed to load permissions', err);
+                            row.appendChild(avatar);
+                            row.appendChild(details);
+                            row.appendChild(roleLabel);
+                            accessList.appendChild(row);
+                        });
+                        ownerInfo.classList.remove('hidden');
+                    }
+
+                    const anyonePerm = permissions.find(p => p.type === 'anyone');
+                    if (anyonePerm) {
+                        accessSelect.value = 'anyone';
+                        roleSelect.value = anyonePerm.role === 'writer' ? 'writer' : 'reader';
+                        roleSelect.classList.remove('hidden');
+                    } else {
+                        accessSelect.value = 'restricted';
+                        roleSelect.classList.add('hidden');
+                    }
+                } catch (err) {
+                    console.error('Failed to load permissions', err);
+                    if (!isOwner) {
+                        renderOwnerOnlyRow(accessList, ownerInfo, ownerLabel, null);
                     }
                 }
             });
@@ -8081,6 +8173,7 @@
 
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
+                if (state.driveOwnedByMe === false) return;
                 const emailInput = document.getElementById('share-email-input');
                 const roleInput = document.getElementById('share-role-select');
                 const email = emailInput.value.trim();
@@ -8104,6 +8197,7 @@
             });
 
             accessSelect.addEventListener('change', async () => {
+                if (state.driveOwnedByMe === false) return;
                 if (!state.driveFileId) return;
                 const access = accessSelect.value;
                 if (access === 'anyone') {
@@ -8122,6 +8216,7 @@
             });
 
             roleSelect.addEventListener('change', async () => {
+                if (state.driveOwnedByMe === false) return;
                 if (!state.driveFileId || accessSelect.value !== 'anyone') return;
                 try {
                     await setDriveLinkPermission(state.driveFileId, roleSelect.value);
@@ -8133,6 +8228,7 @@
             });
 
             copyBtn.addEventListener('click', () => {
+                if (state.driveOwnedByMe === false) return;
                 if (!state.driveFileId) return;
                 const link = window.location.origin + window.location.pathname + '?drive=' + state.driveFileId;
                 navigator.clipboard.writeText(link).then(() => {
@@ -9407,7 +9503,6 @@
 
         // Pages Panel
         function openPagesPanel() {
-            if (state.isReadOnly) return;
             renderPagesList();
             document.getElementById('pages-panel').classList.add('visible');
             document.getElementById('panel-overlay').classList.add('visible');
@@ -9421,6 +9516,7 @@
         function renderPagesList() {
             const pagesList = document.getElementById('pages-list');
             pagesList.innerHTML = '';
+            const canDeletePages = !state.isReadOnly && state.driveOwnedByMe !== false && state.pages.length > 1;
 
             state.pages.forEach((page, index) => {
                 const item = document.createElement('div');
@@ -9442,7 +9538,7 @@
                                 <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                             </svg>
                         </button>
-                        <button class="page-action-btn delete" data-action="delete" data-page="${index}" title="Delete" ${state.pages.length === 1 ? 'disabled style="opacity:0.3;pointer-events:none;"' : ''}>
+                        <button class="page-action-btn delete" data-action="delete" data-page="${index}" title="Delete" ${canDeletePages ? '' : 'disabled aria-disabled="true"'}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="3 6 5 6 21 6"/>
                                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -9460,7 +9556,7 @@
                 });
 
                 const deleteBtn = item.querySelector('[data-action="delete"]');
-                if (state.pages.length > 1) {
+                if (canDeletePages) {
                     deleteBtn.addEventListener('click', () => openDeleteModal(index));
                 }
             });
@@ -9565,7 +9661,7 @@
         let pageToDelete = null;
 
         function openDeleteModal(pageIndex) {
-            if (state.isReadOnly) return;
+            if (state.isReadOnly || state.driveOwnedByMe === false || state.pages.length <= 1) return;
             pageToDelete = pageIndex;
             document.getElementById('delete-page-number').textContent = pageIndex + 1;
             document.getElementById('modal-delete-page').classList.add('visible');
@@ -9577,7 +9673,7 @@
         }
 
         async function confirmDeletePage() {
-            if (state.isReadOnly) {
+            if (state.isReadOnly || state.driveOwnedByMe === false) {
                 closeDeleteModal();
                 return;
             }
@@ -9967,6 +10063,11 @@
                     fileName: state.driveFileName,
                     exportName: state.exportName,
                     autosave: state.driveAutosave,
+                    canEdit: state.driveCanEdit,
+                    ownedByMe: state.driveOwnedByMe,
+                    ownerName: state.driveOwnerName || '',
+                    ownerEmail: state.driveOwnerEmail || '',
+                    ownerPhoto: state.driveOwnerPhoto || '',
                     lastDriveSaveAt: state.lastDriveSaveAt || null,
                     headRevisionId: state.driveHeadRevisionId || null,
                     lastKnownModified: state.driveLastKnownModified || null
@@ -9996,7 +10097,22 @@
                 if (parsed.exportName) {
                     state.exportName = parsed.exportName;
                 }
-                state.driveAutosave = !!parsed.autosave || !!parsed.fileId;
+                state.driveAutosave = typeof parsed.autosave === 'boolean' ? parsed.autosave : !!parsed.fileId;
+                if (typeof parsed.canEdit === 'boolean') {
+                    state.driveCanEdit = parsed.canEdit;
+                } else if (typeof parsed.autosave === 'boolean') {
+                    state.driveCanEdit = parsed.autosave;
+                } else {
+                    state.driveCanEdit = true;
+                }
+                if (typeof parsed.ownedByMe === 'boolean') {
+                    state.driveOwnedByMe = parsed.ownedByMe;
+                } else {
+                    state.driveOwnedByMe = state.driveCanEdit;
+                }
+                state.driveOwnerName = typeof parsed.ownerName === 'string' ? parsed.ownerName : '';
+                state.driveOwnerEmail = typeof parsed.ownerEmail === 'string' ? parsed.ownerEmail : '';
+                state.driveOwnerPhoto = typeof parsed.ownerPhoto === 'string' ? parsed.ownerPhoto : '';
                 if (typeof parsed.lastDriveSaveAt === 'number') {
                     state.lastDriveSaveAt = parsed.lastDriveSaveAt;
                 }
