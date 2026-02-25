@@ -3061,7 +3061,12 @@
             history: [],
             historyIndex: -1,
             maxHistory: 10,
-            isReadOnly: true
+            isReadOnly: true,
+            // Collaborative sync
+            driveHeadRevisionId: null,
+            driveLastPolledAt: 0,
+            collabEnabled: false,
+            collabPollInterval: null
         };
 
         // DOM Elements
@@ -5209,6 +5214,8 @@
         }
 
         function signOutDrive() {
+            stopCollabPolling();
+            state.driveHeadRevisionId = null;
             if (driveAccessToken && window.google?.accounts?.oauth2?.revoke) {
                 google.accounts.oauth2.revoke(driveAccessToken, () => { });
             }
@@ -7831,6 +7838,15 @@
                     flushOnClose();
                     // Release memory when tab is hidden
                     releaseMemoryOnHide();
+                    // Pause collab polling when tab is not visible
+                    stopCollabPolling();
+                } else if (document.visibilityState === 'visible') {
+                    // Resume collab polling when tab becomes visible again
+                    if (state.driveAutosave && state.driveFileId && driveAccessToken && !state.isReadOnly) {
+                        startCollabPolling();
+                        // Immediately poll once to catch up on changes
+                        pollDriveRevision();
+                    }
                 }
             });
         }
@@ -9182,7 +9198,8 @@
                     fileName: state.driveFileName,
                     exportName: state.exportName,
                     autosave: state.driveAutosave,
-                    lastDriveSaveAt: state.lastDriveSaveAt || null
+                    lastDriveSaveAt: state.lastDriveSaveAt || null,
+                    headRevisionId: state.driveHeadRevisionId || null
                 };
                 localStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify(payload));
             } catch (e) {
@@ -9212,6 +9229,9 @@
                 state.driveAutosave = !!parsed.autosave || !!parsed.fileId;
                 if (typeof parsed.lastDriveSaveAt === 'number') {
                     state.lastDriveSaveAt = parsed.lastDriveSaveAt;
+                }
+                if (parsed.headRevisionId) {
+                    state.driveHeadRevisionId = parsed.headRevisionId;
                 }
             } catch (e) {
                 console.error('Failed to load Drive session:', e);
@@ -10604,6 +10624,20 @@
                 // Bug fix: record the time of the last successful Drive upload
                 state.lastDriveSaveAt = Date.now();
                 updateSaveTimestamp();
+                // Capture revision ID to avoid detecting our own save as a remote change
+                try {
+                    const revRes = await driveFetch(
+                        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId`
+                    );
+                    const revData = await revRes.json();
+                    if (revData.headRevisionId) {
+                        state.driveHeadRevisionId = revData.headRevisionId;
+                        saveDriveSession();
+                    }
+                } catch (revErr) {
+                    console.warn('Failed to capture revision ID after save:', revErr);
+                }
+                startCollabPolling();
                 showStatus('Saved', { savedAt });
             } catch (err) {
                 const aborted = controller.signal.aborted
@@ -10632,6 +10666,236 @@
                 driveSaveQueuedForce = false;
                 driveSaveQueuedKeepalive = false;
                 await queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
+            }
+        }
+
+        // ============================================================
+        // Collaborative sync: polling, pulling, and merging
+        // ============================================================
+        const COLLAB_POLL_INTERVAL = 5000; // 5 seconds
+        let collabPollInProgress = false;
+        let collabPullInProgress = false;
+
+        function startCollabPolling() {
+            if (state.collabPollInterval) return; // Already polling
+            if (!state.driveFileId || !state.driveAutosave) return;
+            if (state.isReadOnly) return;
+            state.collabEnabled = true;
+            state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
+            console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
+        }
+
+        function stopCollabPolling() {
+            if (state.collabPollInterval) {
+                clearInterval(state.collabPollInterval);
+                state.collabPollInterval = null;
+            }
+            state.collabEnabled = false;
+            collabPollInProgress = false;
+            console.log('Collab polling stopped');
+        }
+
+        async function pollDriveRevision() {
+            if (!state.driveFileId || !driveAccessToken || state.isReadOnly) return;
+            if (collabPollInProgress || collabPullInProgress) return;
+            if (driveSaveInProgress || driveSaveQueued) return; // Don't poll while saving
+            if (document.visibilityState === 'hidden') return; // Skip when tab hidden
+            collabPollInProgress = true;
+            try {
+                const res = await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
+                    { method: 'GET' }
+                );
+                const data = await res.json();
+                state.driveLastPolledAt = Date.now();
+                if (data.headRevisionId && data.headRevisionId !== state.driveHeadRevisionId) {
+                    console.log('Remote change detected:', data.headRevisionId, 'vs local:', state.driveHeadRevisionId);
+                    await pullRemoteChanges();
+                }
+            } catch (err) {
+                console.warn('Collab poll failed:', err);
+            } finally {
+                collabPollInProgress = false;
+            }
+        }
+
+        async function pullRemoteChanges() {
+            if (!state.driveFileId || !driveAccessToken) return;
+            if (collabPullInProgress) return;
+            collabPullInProgress = true;
+            try {
+                showStatus('Syncing...', { saving: true });
+
+                // 1. Download the PDF content
+                const res = await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`,
+                    { method: 'GET' }
+                );
+                const arrayBuffer = await res.arrayBuffer();
+
+                // 2. Extract stroke data from PDF metadata
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let remoteStrokeData = null;
+                try {
+                    const metadata = await pdf.getMetadata();
+                    const keywords = metadata?.info?.Keywords || '';
+                    if (keywords.startsWith('STROKES_DATA:')) {
+                        const encodedData = keywords.substring('STROKES_DATA:'.length);
+                        const decodedString = decodeURIComponent(escape(atob(encodedData)));
+                        remoteStrokeData = JSON.parse(decodedString);
+                    }
+                } catch (metaErr) {
+                    console.warn('Failed to extract remote stroke data:', metaErr);
+                }
+
+                if (pdf.cleanup) {
+                    try { pdf.cleanup(); } catch (e) { }
+                }
+
+                if (!remoteStrokeData || !Array.isArray(remoteStrokeData)) {
+                    console.log('No usable remote stroke data found, skipping merge');
+                    // Still update the revision so we don't keep re-downloading
+                    await updateLocalRevisionId();
+                    showStatus('Synced', { savedAt: Date.now() });
+                    return;
+                }
+
+                // 3. Apply remote changes
+                await applyRemotePages(remoteStrokeData);
+
+                // 4. Update revision tracking
+                await updateLocalRevisionId();
+
+                showStatus('Changes from collaborator', { savedAt: Date.now() });
+                console.log('Remote changes applied successfully');
+            } catch (err) {
+                console.error('pullRemoteChanges failed:', err);
+                showStatus('Sync failed', { error: true });
+            } finally {
+                collabPullInProgress = false;
+            }
+        }
+
+        async function updateLocalRevisionId() {
+            if (!state.driveFileId || !driveAccessToken) return;
+            try {
+                const revRes = await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId`
+                );
+                const revData = await revRes.json();
+                if (revData.headRevisionId) {
+                    state.driveHeadRevisionId = revData.headRevisionId;
+                    saveDriveSession();
+                }
+            } catch (err) {
+                console.warn('Failed to update revision ID:', err);
+            }
+        }
+
+        async function applyRemotePages(remoteStrokeData) {
+            if (!Array.isArray(remoteStrokeData)) return;
+
+            const localPageCount = state.pages.length;
+            const remotePageCount = remoteStrokeData.length;
+            const lastLocalSave = state.lastDriveSaveAt || 0;
+            let changed = false;
+
+            // Determine which local pages have unsaved changes
+            const localDirtyPages = new Set();
+            pageDirty.forEach(index => localDirtyPages.add(index));
+            pendingStrokeOps.forEach((ops, index) => {
+                if (ops.length > 0) localDirtyPages.add(index);
+            });
+            if (isPenWriting) {
+                // Currently drawing — protect all active pages
+                activePageIndices.forEach(index => localDirtyPages.add(index));
+            }
+
+            // Add new pages from remote if they don't exist locally
+            for (let i = localPageCount; i < remotePageCount; i++) {
+                const remotePageData = remoteStrokeData[i];
+                if (!remotePageData) continue;
+                const newPage = {
+                    strokes: Array.isArray(remotePageData.strokes) ? remotePageData.strokes : [],
+                    images: Array.isArray(remotePageData.images) ? remotePageData.images : [],
+                    backgroundImage: remotePageData.backgroundSource === 'pdf' ? null : (remotePageData.backgroundImage || null),
+                    backgroundSource: remotePageData.backgroundSource || 'template',
+                    pdfPageIndex: Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null,
+                    needsRedraw: true,
+                    preview: null,
+                    strokeCount: 0,
+                    unloaded: false
+                };
+                newPage.strokeCount = getVisibleStrokeCount(newPage);
+                state.pages.push(newPage);
+                createPageElement(state.pages.length - 1, false, false);
+                await savePageToIndexedDb(state.pages.length - 1, newPage);
+                changed = true;
+            }
+
+            // Update existing pages if they are NOT locally dirty
+            const maxUpdate = Math.min(localPageCount, remotePageCount);
+            for (let i = 0; i < maxUpdate; i++) {
+                if (localDirtyPages.has(i)) {
+                    console.log(`Skipping page ${i}: has local changes`);
+                    continue;
+                }
+                const remotePageData = remoteStrokeData[i];
+                if (!remotePageData) continue;
+
+                const page = state.pages[i];
+                if (!page) continue;
+
+                // Load page data for comparison
+                const wasLoaded = isPageLoaded(page);
+                if (!wasLoaded) {
+                    await ensurePageDataLoaded(i, { keepLoaded: true });
+                }
+                const currentPage = state.pages[i];
+                if (!currentPage || !Array.isArray(currentPage.strokes)) continue;
+
+                // Simple comparison: check if remote has different stroke count or content changed
+                const remoteStrokes = Array.isArray(remotePageData.strokes) ? remotePageData.strokes : [];
+                const remoteImages = Array.isArray(remotePageData.images) ? remotePageData.images : [];
+                const localStrokes = currentPage.strokes;
+                const localImages = Array.isArray(currentPage.images) ? currentPage.images : [];
+
+                const strokesChanged = localStrokes.length !== remoteStrokes.length;
+                const imagesChanged = localImages.length !== remoteImages.length;
+
+                if (strokesChanged || imagesChanged) {
+                    // Apply remote data
+                    currentPage.strokes = remoteStrokes;
+                    currentPage.images = remoteImages;
+                    currentPage.backgroundSource = remotePageData.backgroundSource || currentPage.backgroundSource;
+                    if (remotePageData.pdfPageIndex !== undefined) {
+                        currentPage.pdfPageIndex = Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null;
+                    }
+                    currentPage.strokeCount = getVisibleStrokeCount(currentPage);
+                    currentPage.needsRedraw = true;
+                    await savePageToIndexedDb(i, currentPage);
+                    if (activePageIndices.has(i)) {
+                        redrawPage(i);
+                    }
+                    changed = true;
+                    console.log(`Page ${i} updated from remote (strokes: ${localStrokes.length} → ${remoteStrokes.length})`);
+                }
+
+                // Unload if it wasn't loaded before
+                if (!wasLoaded && !activePageIndices.has(i)) {
+                    await unloadPageData(i);
+                }
+            }
+
+            if (changed) {
+                // Save metadata and refresh visible pages
+                const savedAt = Date.now();
+                const payload = buildMetaPayload(savedAt);
+                await saveToIndexedDb(payload, savedAt);
+                scheduleLocalStorageBackup(payload);
+                state.lastSavedAt = savedAt;
+                scheduleVisiblePageUpdate(true);
+                updateSaveTimestamp();
             }
         }
 
