@@ -1270,6 +1270,27 @@
             height: 20px;
         }
 
+        .pages-panel-actions {
+            display: flex;
+            gap: 12px;
+            padding: 16px 20px 0 20px;
+        }
+
+        .pages-panel-actions .btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 40px;
+            font-size: 0.95rem;
+        }
+
+        .pages-panel-actions .btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
         .pages-list {
             flex: 1;
             overflow-y: auto;
@@ -2462,24 +2483,6 @@
                             <line x1="23" y1="11" x2="17" y2="11" />
                         </svg>
                     </button>
-                    <button class="btn btn-secondary btn-icon-square" id="btn-import-pdf" title="Import PDF"
-                        aria-label="Import PDF">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <line x1="12" y1="18" x2="12" y2="12" />
-                            <polyline points="9 15 12 12 15 15" />
-                        </svg>
-                    </button>
-                    <button class="btn btn-primary btn-icon-square" id="btn-export-pdf" title="Export PDF"
-                        aria-label="Export PDF">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <line x1="12" y1="18" x2="12" y2="12" />
-                            <polyline points="9 15 12 18 15 15" />
-                        </svg>
-                    </button>
                     <div class="drive-profile hidden" id="drive-profile-editor">
                         <button class="drive-profile-btn" id="btn-drive-profile-editor" type="button"
                             aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">
@@ -2731,6 +2734,26 @@
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
+            </button>
+        </div>
+        <div class="pages-panel-actions">
+            <button class="btn btn-secondary" id="btn-import-pdf" title="Import PDF" aria-label="Import PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <polyline points="9 15 12 12 15 15" />
+                </svg>
+                Import
+            </button>
+            <button class="btn btn-primary" id="btn-export-pdf" title="Export PDF" aria-label="Export PDF">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <polyline points="9 15 12 18 15 15" />
+                </svg>
+                Export
             </button>
         </div>
         <div class="pages-list" id="pages-list"></div>
