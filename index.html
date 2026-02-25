@@ -5913,6 +5913,42 @@
             }
         }
 
+        async function updateDrivePermissionRole(fileId, permissionId, role) {
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${permissionId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: role })
+            });
+            return await res.json();
+        }
+
+        async function revokeDrivePermission(fileId, permissionId) {
+            await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${permissionId}`, { method: 'DELETE' });
+            return { success: true };
+        }
+
+        async function fetchDriveOwnerInfo(fileId) {
+            const res = await driveFetch(
+                `https://www.googleapis.com/drive/v3/files/${fileId}?fields=ownedByMe,capabilities(canEdit),owners(displayName,emailAddress,photoLink)`,
+                { method: 'GET' }
+            );
+            const data = await res.json();
+            if (typeof data.ownedByMe === 'boolean') {
+                state.driveOwnedByMe = data.ownedByMe;
+            }
+            if (data.capabilities && typeof data.capabilities.canEdit === 'boolean') {
+                state.driveCanEdit = data.capabilities.canEdit;
+            }
+            const owner = Array.isArray(data.owners) ? data.owners[0] : null;
+            if (owner) {
+                state.driveOwnerName = owner.displayName || state.driveOwnerName || '';
+                state.driveOwnerEmail = owner.emailAddress || state.driveOwnerEmail || '';
+                state.driveOwnerPhoto = owner.photoLink || state.driveOwnerPhoto || '';
+            }
+            saveDriveSession();
+            return owner;
+        }
+
         function formatDriveDate(value) {
             if (!value) return '';
             const date = new Date(value);
@@ -8036,6 +8072,16 @@
 
             const avatarFallback = 'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"%23ccc\"><path d=\"M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\"/></svg>';
 
+            function normalizeShareRole(role) {
+                return role === 'writer' ? 'writer' : 'reader';
+            }
+
+            function roleLabelFromPermission(role) {
+                if (role === 'owner') return 'Owner';
+                if (role === 'writer') return 'Editor';
+                return 'Viewer';
+            }
+
             function renderOwnerOnlyRow(accessList, ownerInfo, ownerLabel, ownerPerm) {
                 if (!accessList || !ownerInfo) return;
                 accessList.innerHTML = '';
@@ -8054,7 +8100,7 @@
                 avatar.style.objectFit = 'cover';
 
                 const name = document.createElement('div');
-                name.textContent = (ownerPerm && ownerPerm.displayName) || state.driveOwnerName || 'Owner';
+                name.textContent = (ownerPerm && ownerPerm.displayName) || state.driveOwnerName || state.driveOwnerEmail || 'Owner';
                 name.style.fontWeight = '500';
                 name.style.fontSize = '0.95rem';
                 name.style.color = 'var(--text-primary)';
@@ -8065,28 +8111,40 @@
                 ownerInfo.classList.remove('hidden');
             }
 
-            shareBtn.addEventListener('click', async () => {
-                shareModal.classList.add('visible');
+            async function refreshShareModalData() {
                 const ownerInfo = document.getElementById('share-owner-info');
                 const accessList = document.getElementById('share-access-list');
                 const ownerLabel = ownerInfo ? ownerInfo.querySelector('div') : null;
                 const inviteForm = document.getElementById('share-invite-form');
                 const generalAccess = inviteForm ? inviteForm.nextElementSibling : null;
                 const copySection = copyBtn ? copyBtn.closest('.share-section') : null;
-                const isOwner = state.driveOwnedByMe !== false;
-
-                if (inviteForm) inviteForm.style.display = isOwner ? '' : 'none';
-                if (generalAccess && generalAccess.classList.contains('share-section')) generalAccess.style.display = isOwner ? '' : 'none';
-                if (copySection && copySection.classList.contains('share-section')) copySection.style.display = isOwner ? '' : 'none';
 
                 if (!state.driveFileId) return;
 
                 try {
+                    await fetchDriveOwnerInfo(state.driveFileId);
+                } catch (ownerErr) {
+                    console.warn('Failed to refresh owner metadata:', ownerErr);
+                }
+
+                const isOwner = state.driveOwnedByMe !== false;
+                if (inviteForm) inviteForm.style.display = isOwner ? '' : 'none';
+                if (generalAccess && generalAccess.classList.contains('share-section')) generalAccess.style.display = isOwner ? '' : 'none';
+                if (copySection && copySection.classList.contains('share-section')) copySection.style.display = isOwner ? '' : 'none';
+
+                try {
                     const data = await fetchDrivePermissions(state.driveFileId);
                     const permissions = Array.isArray(data.permissions) ? data.permissions : [];
+                    const ownerPerm = permissions.find(perm => perm.role === 'owner');
+
+                    if (ownerPerm) {
+                        state.driveOwnerName = ownerPerm.displayName || state.driveOwnerName || '';
+                        state.driveOwnerEmail = ownerPerm.emailAddress || state.driveOwnerEmail || '';
+                        state.driveOwnerPhoto = ownerPerm.photoLink || state.driveOwnerPhoto || '';
+                        saveDriveSession();
+                    }
 
                     if (!isOwner) {
-                        const ownerPerm = permissions.find(perm => perm.role === 'owner');
                         renderOwnerOnlyRow(accessList, ownerInfo, ownerLabel, ownerPerm);
                         accessSelect.value = 'restricted';
                         roleSelect.classList.add('hidden');
@@ -8096,8 +8154,19 @@
                     if (ownerInfo && accessList) {
                         if (ownerLabel) ownerLabel.textContent = 'People with access';
                         accessList.innerHTML = '';
-                        permissions.forEach(perm => {
-                            if (perm.type === 'anyone') return; // handled below
+                        const visiblePermissions = permissions.filter(perm => perm.type !== 'anyone');
+                        if (!visiblePermissions.some(perm => perm.role === 'owner')) {
+                            visiblePermissions.unshift({
+                                id: '',
+                                type: 'user',
+                                role: 'owner',
+                                displayName: state.driveOwnerName || driveUserProfile?.name || 'Owner',
+                                emailAddress: state.driveOwnerEmail || driveUserProfile?.email || '',
+                                photoLink: state.driveOwnerPhoto || driveUserProfile?.photo || ''
+                            });
+                        }
+
+                        visiblePermissions.forEach(perm => {
 
                             const row = document.createElement('div');
                             row.style.display = 'flex';
@@ -8105,7 +8174,8 @@
                             row.style.gap = '12px';
 
                             const avatar = document.createElement('img');
-                            avatar.src = perm.photoLink || avatarFallback;
+                            const isOwnerPermission = perm.role === 'owner';
+                            avatar.src = perm.photoLink || (isOwnerPermission ? state.driveOwnerPhoto : '') || avatarFallback;
                             avatar.style.width = '36px';
                             avatar.style.height = '36px';
                             avatar.style.borderRadius = '50%';
@@ -8118,27 +8188,95 @@
                             details.style.lineHeight = '1.3';
 
                             const name = document.createElement('div');
-                            name.textContent = perm.displayName || 'Unknown user';
+                            name.textContent = perm.displayName
+                                || (isOwnerPermission ? state.driveOwnerName : '')
+                                || perm.emailAddress
+                                || 'Unknown user';
                             name.style.fontWeight = '500';
                             name.style.fontSize = '0.9rem';
                             name.style.color = 'var(--text-primary)';
 
                             const email = document.createElement('div');
-                            email.textContent = perm.emailAddress || '';
+                            email.textContent = perm.emailAddress || (isOwnerPermission ? state.driveOwnerEmail : '');
                             email.style.fontSize = '0.8rem';
                             email.style.color = 'var(--text-secondary)';
 
                             details.appendChild(name);
-                            if (perm.emailAddress) details.appendChild(email);
-
-                            const roleLabel = document.createElement('div');
-                            roleLabel.textContent = perm.role.charAt(0).toUpperCase() + perm.role.slice(1);
-                            roleLabel.style.fontSize = '0.85rem';
-                            roleLabel.style.color = 'var(--text-secondary)';
+                            if (email.textContent) details.appendChild(email);
 
                             row.appendChild(avatar);
                             row.appendChild(details);
-                            row.appendChild(roleLabel);
+                            if (isOwnerPermission || !perm.id) {
+                                const roleLabel = document.createElement('div');
+                                roleLabel.textContent = roleLabelFromPermission(perm.role);
+                                roleLabel.style.fontSize = '0.85rem';
+                                roleLabel.style.color = 'var(--text-secondary)';
+                                row.appendChild(roleLabel);
+                            } else {
+                                const actions = document.createElement('div');
+                                actions.style.display = 'flex';
+                                actions.style.alignItems = 'center';
+                                actions.style.gap = '8px';
+
+                                let currentRole = normalizeShareRole(perm.role);
+                                const permRoleSelect = document.createElement('select');
+                                permRoleSelect.setAttribute('aria-label', `Role for ${name.textContent}`);
+                                permRoleSelect.innerHTML = '<option value="reader">Viewer</option><option value="writer">Editor</option>';
+                                permRoleSelect.value = currentRole;
+                                permRoleSelect.style.padding = '8px 28px 8px 10px';
+                                permRoleSelect.style.border = '1px solid rgba(0, 0, 0, 0.15)';
+                                permRoleSelect.style.borderRadius = '8px';
+                                permRoleSelect.style.backgroundColor = 'var(--bg-primary)';
+                                permRoleSelect.style.color = 'var(--text-primary)';
+                                permRoleSelect.style.fontSize = '0.85rem';
+
+                                const revokeBtn = document.createElement('button');
+                                revokeBtn.type = 'button';
+                                revokeBtn.className = 'btn btn-secondary';
+                                revokeBtn.textContent = 'Remove';
+                                revokeBtn.style.padding = '6px 10px';
+                                revokeBtn.style.fontSize = '0.8rem';
+
+                                permRoleSelect.addEventListener('change', async () => {
+                                    const nextRole = permRoleSelect.value;
+                                    if (nextRole === currentRole) return;
+                                    permRoleSelect.disabled = true;
+                                    revokeBtn.disabled = true;
+                                    try {
+                                        await updateDrivePermissionRole(state.driveFileId, perm.id, nextRole);
+                                        currentRole = nextRole;
+                                        showStatus('Access updated', { icon: 'check' });
+                                        await refreshShareModalData();
+                                    } catch (err) {
+                                        console.error('Failed to update permission role:', err);
+                                        permRoleSelect.value = currentRole;
+                                        showStatus('Failed to update access', { error: true });
+                                    } finally {
+                                        permRoleSelect.disabled = false;
+                                        revokeBtn.disabled = false;
+                                    }
+                                });
+
+                                revokeBtn.addEventListener('click', async () => {
+                                    permRoleSelect.disabled = true;
+                                    revokeBtn.disabled = true;
+                                    try {
+                                        await revokeDrivePermission(state.driveFileId, perm.id);
+                                        showStatus('Access revoked', { icon: 'check' });
+                                        await refreshShareModalData();
+                                    } catch (err) {
+                                        console.error('Failed to revoke permission:', err);
+                                        showStatus('Failed to revoke access', { error: true });
+                                    } finally {
+                                        permRoleSelect.disabled = false;
+                                        revokeBtn.disabled = false;
+                                    }
+                                });
+
+                                actions.appendChild(permRoleSelect);
+                                actions.appendChild(revokeBtn);
+                                row.appendChild(actions);
+                            }
                             accessList.appendChild(row);
                         });
                         ownerInfo.classList.remove('hidden');
@@ -8159,6 +8297,11 @@
                         renderOwnerOnlyRow(accessList, ownerInfo, ownerLabel, null);
                     }
                 }
+            }
+
+            shareBtn.addEventListener('click', async () => {
+                shareModal.classList.add('visible');
+                await refreshShareModalData();
             });
 
             closeBtn.addEventListener('click', () => {
@@ -8187,6 +8330,7 @@
                     await addDrivePermission(state.driveFileId, email, role);
                     showStatus('Invitation sent', { icon: 'check' });
                     emailInput.value = '';
+                    await refreshShareModalData();
                 } catch (err) {
                     console.error('Share error:', err);
                     showStatus('Failed to share', { error: true });
@@ -8209,6 +8353,7 @@
                 try {
                     await setDriveLinkPermission(state.driveFileId, role);
                     showStatus('Link access updated', { icon: 'check' });
+                    await refreshShareModalData();
                 } catch (err) {
                     console.error('Link access error:', err);
                     showStatus('Failed to update access', { error: true });
@@ -8221,6 +8366,7 @@
                 try {
                     await setDriveLinkPermission(state.driveFileId, roleSelect.value);
                     showStatus('Link role updated', { icon: 'check' });
+                    await refreshShareModalData();
                 } catch (err) {
                     console.error('Link role error:', err);
                     showStatus('Failed to update role', { error: true });
