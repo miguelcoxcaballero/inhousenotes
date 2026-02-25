@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -3694,7 +3694,7 @@
             activeSet.forEach(index => {
                 if (index < range.start || index > range.end) return;
                 ensurePageCanvas(index, { defer: deferHeavy, deferPdfRender: deferHeavy });
-                clearPagePreview(index);
+                // Bug fix: keep preview visible while strokes load (cleared in redrawPage instead).
                 const page = state.pages[index];
                 if (page && page.needsRedraw && !deferHeavy) {
                     redrawPage(index);
@@ -5053,7 +5053,7 @@
                 if (interactive) {
                     reqOptions.prompt = 'consent';
                 } else {
-                    reqOptions.prompt = '';
+                    reqOptions.prompt = 'none'; // Bug fix: silent refresh, no popup
                     // Pass hint to auto-select the account without showing the picker
                     const email = driveUserProfile?.email || localStorage.getItem('drive-hint-email');
                     if (email) reqOptions.login_hint = email;
@@ -5795,6 +5795,8 @@
                 showStatus('Failed to create PDF', { preserveState: true });
             } finally {
                 hideLoading();
+                // Bug fix: allow editing immediately after new file creation
+                setReadOnlyMode(false);
             }
         }
 
@@ -7141,6 +7143,8 @@
 
             ctx.restore();
             page.needsRedraw = false;
+            // Bug fix: clear preview only after page is fully drawn
+            clearPagePreview(pageIndex);
         }
 
         // Render all pages
@@ -9104,7 +9108,9 @@
         function updateSaveTimestamp() {
             const timestampEl = document.getElementById('save-timestamp');
             if (!timestampEl) return;
-            const label = state.lastSavedAt ? `Last edit: ${formatTime(state.lastSavedAt)}` : 'Last edit: --:--';
+            // Bug fix: show last Drive save time, fall back to local save time
+            const driveTs = state.lastDriveSaveAt || null;
+            const label = driveTs ? `Last saved: ${formatTime(driveTs)}` : (state.lastSavedAt ? `Last edit: ${formatTime(state.lastSavedAt)}` : 'Last edit: --:--');
             timestampEl.textContent = label;
         }
 
@@ -10454,6 +10460,9 @@
                     await updateDriveFile(fileId, pdfBlob, driveOptions);
                 }
                 const savedAt = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : Date.now();
+                // Bug fix: record the time of the last successful Drive upload
+                state.lastDriveSaveAt = Date.now();
+                updateSaveTimestamp();
                 showStatus('Saved', { savedAt });
             } catch (err) {
                 const aborted = controller.signal.aborted
