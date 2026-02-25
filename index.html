@@ -3086,6 +3086,7 @@
             isReadOnly: true,
             // Collaborative sync
             driveHeadRevisionId: null,
+            driveLastKnownModified: null,
             driveLastPolledAt: 0,
             collabEnabled: false,
             collabPollInterval: null
@@ -3308,15 +3309,10 @@
                 updateAddPageIndicator();
                 clearTimeout(state.saveTimeout);
                 clearDriveSyncTimers();
-                stopCollabPolling();
             } else {
                 updateHistoryButtons();
                 updateSaveTimestamp();
                 scheduleVisiblePageUpdate(true);
-                // Start collaborative polling when entering edit mode
-                if (state.driveFileId && state.driveAutosave && driveAccessToken) {
-                    startCollabPolling();
-                }
             }
         }
 
@@ -3354,7 +3350,7 @@
                     centerViewOnTop();
                 }
                 // Start collaborative polling if we have a Drive session
-                if (state.driveFileId && state.driveAutosave && driveAccessToken && !state.isReadOnly) {
+                if (state.driveFileId && state.driveAutosave && driveAccessToken) {
                     startCollabPolling();
                 }
             }, 100);
@@ -5188,7 +5184,7 @@
                 loadDriveProfile();
                 restorePdfBackgroundsIfNeeded();
                 // Start collab polling if we have a Drive file
-                if (state.driveFileId && state.driveAutosave && !state.isReadOnly) {
+                if (state.driveFileId && state.driveAutosave) {
                     startCollabPolling();
                 }
             }
@@ -5908,13 +5904,16 @@
                 // Fetch initial revision and start collaborative polling
                 try {
                     const revRes = await driveFetch(
-                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=headRevisionId`
+                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=headRevisionId,modifiedTime`
                     );
                     const revData = await revRes.json();
                     if (revData.headRevisionId) {
                         state.driveHeadRevisionId = revData.headRevisionId;
-                        saveDriveSession();
                     }
+                    if (revData.modifiedTime) {
+                        state.driveLastKnownModified = new Date(revData.modifiedTime).getTime();
+                    }
+                    saveDriveSession();
                 } catch (revErr) {
                     console.warn('Failed to fetch initial revision:', revErr);
                 }
@@ -7895,7 +7894,7 @@
                     stopCollabPolling();
                 } else if (document.visibilityState === 'visible') {
                     // Resume collab polling when tab becomes visible again
-                    if (state.driveAutosave && state.driveFileId && driveAccessToken && !state.isReadOnly) {
+                    if (state.driveAutosave && state.driveFileId && driveAccessToken) {
                         startCollabPolling();
                         // Immediately poll once to catch up on changes
                         pollDriveRevision();
@@ -9252,7 +9251,8 @@
                     exportName: state.exportName,
                     autosave: state.driveAutosave,
                     lastDriveSaveAt: state.lastDriveSaveAt || null,
-                    headRevisionId: state.driveHeadRevisionId || null
+                    headRevisionId: state.driveHeadRevisionId || null,
+                    lastKnownModified: state.driveLastKnownModified || null
                 };
                 localStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify(payload));
             } catch (e) {
@@ -9285,6 +9285,9 @@
                 }
                 if (parsed.headRevisionId) {
                     state.driveHeadRevisionId = parsed.headRevisionId;
+                }
+                if (typeof parsed.lastKnownModified === 'number') {
+                    state.driveLastKnownModified = parsed.lastKnownModified;
                 }
             } catch (e) {
                 console.error('Failed to load Drive session:', e);
@@ -10681,13 +10684,16 @@
                 // Capture revision ID to avoid detecting our own save as a remote change
                 try {
                     const revRes = await driveFetch(
-                        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId`
+                        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`
                     );
                     const revData = await revRes.json();
                     if (revData.headRevisionId) {
                         state.driveHeadRevisionId = revData.headRevisionId;
-                        saveDriveSession();
                     }
+                    if (revData.modifiedTime) {
+                        state.driveLastKnownModified = new Date(revData.modifiedTime).getTime();
+                    }
+                    saveDriveSession();
                 } catch (revErr) {
                     console.warn('Failed to capture revision ID after save:', revErr);
                 }
@@ -10735,7 +10741,6 @@
         function startCollabPolling() {
             if (state.collabPollInterval) return; // Already polling
             if (!state.driveFileId || !state.driveAutosave) return;
-            if (state.isReadOnly) return;
             state.collabEnabled = true;
             state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
             console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
@@ -10752,7 +10757,7 @@
         }
 
         async function pollDriveRevision() {
-            if (!state.driveFileId || !driveAccessToken || state.isReadOnly) return;
+            if (!state.driveFileId || !driveAccessToken) return;
             if (collabPollInProgress || collabPullInProgress) return;
             if (driveSaveInProgress || driveSaveQueued) return; // Don't poll while saving
             if (document.visibilityState === 'hidden') return; // Skip when tab hidden
@@ -10764,8 +10769,23 @@
                 );
                 const data = await res.json();
                 state.driveLastPolledAt = Date.now();
-                if (data.headRevisionId && data.headRevisionId !== state.driveHeadRevisionId) {
-                    console.log('Remote change detected:', data.headRevisionId, 'vs local:', state.driveHeadRevisionId);
+
+                // Detect changes via headRevisionId or modifiedTime fallback
+                let hasChanged = false;
+                if (data.headRevisionId) {
+                    if (data.headRevisionId !== state.driveHeadRevisionId) {
+                        hasChanged = true;
+                    }
+                } else if (data.modifiedTime) {
+                    // Fallback: use modifiedTime if headRevisionId not available
+                    const remoteModified = new Date(data.modifiedTime).getTime();
+                    if (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified) {
+                        hasChanged = true;
+                    }
+                }
+
+                if (hasChanged) {
+                    console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
                     await pullRemoteChanges();
                 }
             } catch (err) {
@@ -10836,13 +10856,16 @@
             if (!state.driveFileId || !driveAccessToken) return;
             try {
                 const revRes = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId`
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`
                 );
                 const revData = await revRes.json();
                 if (revData.headRevisionId) {
                     state.driveHeadRevisionId = revData.headRevisionId;
-                    saveDriveSession();
                 }
+                if (revData.modifiedTime) {
+                    state.driveLastKnownModified = new Date(revData.modifiedTime).getTime();
+                }
+                saveDriveSession();
             } catch (err) {
                 console.warn('Failed to update revision ID:', err);
             }
@@ -10973,6 +10996,11 @@
                     await savePageToIndexedDb(i, currentPage);
                     if (activePageIndices.has(i)) {
                         redrawPage(i);
+                    }
+                    // Regenerate preview for non-active pages (read mode or scrolled away)
+                    if (!activePageIndices.has(i) || state.isReadOnly) {
+                        currentPage.preview = renderPagePreview(i);
+                        applyPagePreview(i);
                     }
                     changed = true;
                     console.log(`Page ${i} merged: ${localNewStrokes.length} local-new, ${deletedByRemote.size} remote-deleted, ${mergedStrokes.length} total strokes`);
