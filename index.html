@@ -6371,10 +6371,11 @@
             if (isViewer) {
                 setReadOnlyMode(true, { force: true });
                 const tb = document.getElementById('toolbar');
-                if (tb) {
-                    tb.style.pointerEvents = 'none';
-                    tb.style.opacity = '0.5';
-                }
+                if (tb) tb.style.display = 'none';
+
+                const mtb = document.getElementById('mode-toggle-btn');
+                if (mtb) mtb.style.display = 'none';
+
                 const shareBtn = document.getElementById('btn-drive-share');
                 if (shareBtn) {
                     shareBtn.style.pointerEvents = 'auto'; // allow sharing view list
@@ -6382,10 +6383,10 @@
                 }
             } else {
                 const tb = document.getElementById('toolbar');
-                if (tb) {
-                    tb.style.pointerEvents = '';
-                    tb.style.opacity = '';
-                }
+                if (tb) tb.style.display = '';
+
+                const mtb = document.getElementById('mode-toggle-btn');
+                if (mtb) mtb.style.display = '';
             }
         }
 
@@ -6417,22 +6418,7 @@
 
         async function askToEdit() {
             if (!state.driveFileId) return;
-            showLoading('Finding owner...');
-            try {
-                const data = await fetchDrivePermissions(state.driveFileId);
-                const ownerPerm = data.permissions?.find(p => p.role === 'owner');
-                hideLoading();
-                if (ownerPerm && ownerPerm.emailAddress) {
-                    const subject = encodeURIComponent(`Requesting edit access to: ${state.driveFileName}`);
-                    const body = encodeURIComponent(`Hi ${ownerPerm.displayName || ''},\n\nI would like to request edit access to the following document:\n${window.location.origin}${window.location.pathname}?drive=${state.driveFileId}\n\nThanks!`);
-                    window.location.href = `mailto:${ownerPerm.emailAddress}?subject=${subject}&body=${body}`;
-                } else {
-                    showStatus('Could not find owner email.', { error: true });
-                }
-            } catch (e) {
-                hideLoading();
-                showStatus('Failed to find owner.', { error: true });
-            }
+            window.open(`https://drive.google.com/open?id=${state.driveFileId}`, '_blank');
         }
 
         function createNewDriveDocument() {
@@ -7963,10 +7949,28 @@
                         // Handle access list display
                         const ownerInfo = document.getElementById('share-owner-info');
                         const accessList = document.getElementById('share-access-list');
+                        const inviteForm = document.getElementById('share-invite-form');
+                        const generalAccess = inviteForm ? inviteForm.nextElementSibling : null;
+
                         if (ownerInfo && accessList && data.permissions) {
+                            // Filter constraints
+                            const canEdit = state.driveCanEdit !== false;
+
+                            // Adjust form visibility for viewers
+                            if (!canEdit) {
+                                if (inviteForm) inviteForm.style.display = 'none';
+                                if (generalAccess && generalAccess.classList.contains('share-section')) generalAccess.style.display = 'none';
+                            } else {
+                                if (inviteForm) inviteForm.style.display = '';
+                                if (generalAccess && generalAccess.classList.contains('share-section')) generalAccess.style.display = '';
+                            }
+
+                            // Render list
                             accessList.innerHTML = '';
                             data.permissions.forEach(perm => {
                                 if (perm.type === 'anyone') return; // Handled below
+                                if (!canEdit && perm.role !== 'owner') return; // Force constraint
+
                                 const row = document.createElement('div');
                                 row.style.display = 'flex';
                                 row.style.alignItems = 'center';
