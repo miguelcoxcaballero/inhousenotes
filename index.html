@@ -4067,6 +4067,12 @@
                 if (state.currentTool === 'eraser-stroke') {
                     // Save erased strokes to history
                     if (erasedStrokes.length > 0) {
+                        // Track deleted stroke IDs for collaborative sync
+                        const page = state.pages[pageIndex];
+                        if (!Array.isArray(page.deletedStrokeIds)) page.deletedStrokeIds = [];
+                        for (const es of erasedStrokes) {
+                            if (es.id) page.deletedStrokeIds.push(es.id);
+                        }
                         saveToHistory({
                             type: 'erase-strokes',
                             pageIndex: pageIndex,
@@ -4079,6 +4085,13 @@
                 } else if (state.currentTool === 'eraser-area') {
                     if (areaEraseChanged && areaEraseBefore) {
                         const after = cloneStrokesArray(state.pages[pageIndex].strokes);
+                        // Track deleted stroke IDs for collaborative sync
+                        const page = state.pages[pageIndex];
+                        if (!Array.isArray(page.deletedStrokeIds)) page.deletedStrokeIds = [];
+                        const afterIds = new Set(after.map(s => s.id).filter(Boolean));
+                        for (const bs of areaEraseBefore) {
+                            if (bs.id && !afterIds.has(bs.id)) page.deletedStrokeIds.push(bs.id);
+                        }
                         saveToHistory({
                             type: 'erase-area',
                             pageIndex: pageIndex,
@@ -9424,6 +9437,7 @@
             return {
                 strokes: Array.isArray(page.strokes) ? page.strokes : [],
                 images: Array.isArray(page.images) ? page.images : [],
+                deletedStrokeIds: Array.isArray(page.deletedStrokeIds) ? page.deletedStrokeIds : [],
                 backgroundImage: page.backgroundSource === 'pdf' ? null : (page.backgroundImage || null),
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
                 pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null
@@ -10984,27 +10998,22 @@
                 const remoteImageIds = new Set(remoteImages.map(img => img.id));
                 const localStrokeIds = new Set(currentPage.strokes.map(s => s.id));
                 const localImageIds = new Set((currentPage.images || []).map(img => img.id));
-                const lastSynced = lastSyncedStrokeIds.get(i) || new Set();
 
-                // Identify local-only new strokes (created since last sync)
-                const localNewStrokes = currentPage.strokes.filter(s => !lastSynced.has(s.id) && !remoteStrokeIds.has(s.id));
-                const localNewImages = (currentPage.images || []).filter(img => !lastSynced.has(img.id) && !remoteImageIds.has(img.id));
+                // Use explicit deletion lists instead of inferring from absence
+                const remoteDeleted = new Set(Array.isArray(remotePageData.deletedStrokeIds) ? remotePageData.deletedStrokeIds : []);
+                const localDeleted = new Set(Array.isArray(currentPage.deletedStrokeIds) ? currentPage.deletedStrokeIds : []);
+                const allDeleted = new Set([...remoteDeleted, ...localDeleted]);
 
-                // Identify strokes deleted by collaborator (were in last sync but gone from remote)
-                const deletedByRemote = new Set();
-                lastSynced.forEach(id => {
-                    if (!remoteStrokeIds.has(id) && !remoteImageIds.has(id)) {
-                        deletedByRemote.add(id);
-                    }
-                });
+                // Additive merge: keep ALL local strokes not in remote (fixes race condition)
+                const localOnlyStrokes = currentPage.strokes.filter(s => !remoteStrokeIds.has(s.id));
+                const localOnlyImages = (currentPage.images || []).filter(img => !remoteImageIds.has(img.id));
 
-                // Filter out locally-new strokes that were deleted by remote
-                const survivingLocalNewStrokes = localNewStrokes.filter(s => !deletedByRemote.has(s.id));
-                const survivingLocalNewImages = localNewImages.filter(img => !deletedByRemote.has(img.id));
+                // Merge: remote ∪ localOnly, then remove explicitly deleted
+                const mergedStrokes = [...remoteStrokes, ...localOnlyStrokes].filter(s => !allDeleted.has(s.id));
+                const mergedImages = [...remoteImages, ...localOnlyImages].filter(img => !allDeleted.has(img.id));
 
-                // Merge: remote strokes + surviving local-only new strokes
-                const mergedStrokes = [...remoteStrokes, ...survivingLocalNewStrokes];
-                const mergedImages = [...remoteImages, ...survivingLocalNewImages];
+                // Merge deletion lists (union)
+                currentPage.deletedStrokeIds = [...allDeleted];
 
                 // Check if anything actually changed
                 const strokeCountChanged = mergedStrokes.length !== currentPage.strokes.length;
@@ -11845,6 +11854,7 @@
                 strokeData[i] = {
                     strokes: Array.isArray(pageData.strokes) ? pageData.strokes : [],
                     images: Array.isArray(pageData.images) ? pageData.images : [],
+                    deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
                     backgroundSource,
                     pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null
