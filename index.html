@@ -3570,6 +3570,7 @@
         let driveOpenFileId = null;
         let driveUserProfile = null;
         let sharedLinkSignInPrompted = false;
+        let lastPendingSharedPublicAttemptId = null;
         let docTitleEditing = false;
         let docTitleOriginal = '';
         let activeDriveCardMenu = null;
@@ -3705,6 +3706,8 @@
             const sharedDriveId = urlParams.get('drive');
             if (sharedDriveId) {
                 window.pendingSharedDriveId = sharedDriveId;
+                sharedLinkSignInPrompted = false;
+                lastPendingSharedPublicAttemptId = null;
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
 
@@ -3722,6 +3725,9 @@
             }
             if (state.driveFileId) {
                 updateViewerModeUI();
+            }
+            if (window.pendingSharedDriveId && !driveAccessToken) {
+                tryOpenPendingSharedWithoutSignIn();
             }
 
             // Center page after DOM is ready
@@ -5564,6 +5570,7 @@
         function updateDriveAuthUI() {
             const signedIn = !!driveAccessToken;
             const hasPendingShared = !!window.pendingSharedDriveId;
+            const pendingSharedOpenFailed = hasPendingShared && sharedLinkSignInPrompted;
             if (driveLoginBtn) driveLoginBtn.style.display = signedIn ? 'none' : 'inline-flex';
             if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !signedIn);
             if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !signedIn);
@@ -5574,19 +5581,18 @@
             if (driveStatusEl) {
                 driveStatusEl.textContent = signedIn
                     ? 'Loading your PDFs...'
-                    : (hasPendingShared ? 'Sign in to open shared document.' : 'Sign in to browse your Drive.');
+                    : (hasPendingShared
+                        ? (pendingSharedOpenFailed ? 'Sign in to open shared document.' : 'Opening shared document...')
+                        : 'Sign in to browse your Drive.');
             }
             if (!signedIn) {
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
-                if (hasPendingShared && !sharedLinkSignInPrompted) {
-                    sharedLinkSignInPrompted = true;
+                if (hasPendingShared) {
                     showDriveHome();
-                    if (typeof showStatus === 'function') {
-                        showStatus('Sign in to open shared document', { preserveState: true });
-                    }
+                    tryOpenPendingSharedWithoutSignIn();
                 }
             } else if (state.driveAutosave && !state.isReadOnly && driveDirty) {
                 clearTimeout(driveSaveTimeout);
@@ -5725,6 +5731,7 @@
             if (driveStatusEl) driveStatusEl.textContent = 'Sign in to browse your Drive.';
             driveUserProfile = null;
             sharedLinkSignInPrompted = false;
+            lastPendingSharedPublicAttemptId = null;
             updateDriveProfileUI(null);
             closeDriveProfileMenus();
             clearDriveTokenStorage();
@@ -5900,6 +5907,130 @@
                 }
                 throw err;
             }
+        }
+
+        function parseFilenameFromContentDisposition(value) {
+            if (!value || typeof value !== 'string') return '';
+            const utfMatch = value.match(/filename\*=UTF-8''([^;]+)/i);
+            if (utfMatch && utfMatch[1]) {
+                try {
+                    return decodeURIComponent(utfMatch[1].trim().replace(/^["']|["']$/g, ''));
+                } catch (e) {
+                    // ignore decode failures and fall back to plain filename
+                }
+            }
+            const plainMatch = value.match(/filename="?([^";]+)"?/i);
+            return plainMatch && plainMatch[1] ? plainMatch[1].trim() : '';
+        }
+
+        function isPdfArrayBuffer(arrayBuffer) {
+            if (!arrayBuffer || arrayBuffer.byteLength < 4) return false;
+            const header = new Uint8Array(arrayBuffer, 0, 4);
+            return header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+        }
+
+        async function fetchPublicSharedPdf(fileId) {
+            const endpoints = [
+                `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+                `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`,
+                `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`
+            ];
+            let lastError = null;
+
+            for (const endpoint of endpoints) {
+                try {
+                    const res = await fetch(endpoint, {
+                        method: 'GET',
+                        redirect: 'follow',
+                        cache: 'no-store',
+                        credentials: 'omit'
+                    });
+                    if (!res.ok) {
+                        lastError = new Error(`Shared fetch failed (${res.status})`);
+                        continue;
+                    }
+                    const arrayBuffer = await res.arrayBuffer();
+                    if (!isPdfArrayBuffer(arrayBuffer)) {
+                        lastError = new Error('Shared response is not a PDF');
+                        continue;
+                    }
+                    const fileName = parseFilenameFromContentDisposition(res.headers.get('content-disposition')) || '';
+                    return { arrayBuffer, fileName };
+                } catch (err) {
+                    lastError = err;
+                }
+            }
+
+            throw lastError || new Error('Unable to fetch shared PDF without sign-in');
+        }
+
+        async function openSharedFileWithoutSignIn(fileId) {
+            if (!fileId) return false;
+            if (driveOpenInProgress) return false;
+            closeDriveCardMenu();
+            driveOpenInProgress = true;
+            driveOpenFileId = fileId;
+            state.zoom = 1;
+            state.panX = 0;
+            state.panY = 0;
+            state.overscrollY = 0;
+            setReadOnlyMode(true, { force: true });
+            showDriveHome();
+            showLoading('Opening shared document...');
+            try {
+                const publicPdf = await fetchPublicSharedPdf(fileId);
+                const arrayBuffer = publicPdf.arrayBuffer;
+                await importPDFArrayBuffer(arrayBuffer);
+
+                state.driveFileId = fileId;
+                state.driveFileName = publicPdf.fileName || 'Shared Document';
+                state.driveFolderId = null;
+                state.driveAutosave = false;
+                state.driveCanEdit = false;
+                state.driveOwnedByMe = false;
+                state.driveOwnerName = '';
+                state.driveOwnerEmail = '';
+                state.driveOwnerPhoto = '';
+                state.driveHeadRevisionId = null;
+                state.driveLastKnownModified = null;
+                stopCollabPolling();
+
+                const baseName = state.driveFileName.replace(/\.pdf$/i, '');
+                state.exportName = baseName || state.exportName;
+                updateDocTitle();
+                saveDriveSession();
+                updateViewerModeUI();
+                showEditorView();
+                window.pendingSharedDriveId = null;
+                sharedLinkSignInPrompted = false;
+                lastPendingSharedPublicAttemptId = null;
+                showStatus('Shared PDF loaded (View Only)', { preserveState: true });
+                return true;
+            } catch (err) {
+                console.error('Could not open shared file without sign-in:', err);
+                showDriveHome();
+                sharedLinkSignInPrompted = true;
+                if (driveStatusEl) {
+                    driveStatusEl.textContent = 'Sign in to open shared document.';
+                }
+                showStatus('Could not open shared document without sign-in. If restricted, sign in first.', { error: true });
+                return false;
+            } finally {
+                hideLoading();
+                driveOpenInProgress = false;
+                driveOpenFileId = null;
+            }
+        }
+
+        function tryOpenPendingSharedWithoutSignIn(options = {}) {
+            const force = !!options.force;
+            const fileId = window.pendingSharedDriveId;
+            if (!fileId || driveAccessToken || driveOpenInProgress) return;
+            if (!force && lastPendingSharedPublicAttemptId === fileId) return;
+            lastPendingSharedPublicAttemptId = fileId;
+            openSharedFileWithoutSignIn(fileId).catch(err => {
+                console.error('Public shared open attempt failed:', err);
+            });
         }
 
         async function ensureDriveFolder(options = {}) {
