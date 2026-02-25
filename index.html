@@ -2140,6 +2140,9 @@
             font-weight: 600;
             font-size: 0.9rem;
             color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .drive-card-title.is-shared {
@@ -3425,6 +3428,7 @@
             driveOwnerName: '',
             driveOwnerEmail: '',
             driveOwnerPhoto: '',
+            driveResourceKey: '',
             isUndoRedo: false,
             panVelocityX: 0,
             panVelocityY: 0,
@@ -3571,6 +3575,7 @@
         let driveUserProfile = null;
         let sharedLinkSignInPrompted = false;
         let lastPendingSharedPublicAttemptId = null;
+        let pendingSharedDriveResourceKey = null;
         let docTitleEditing = false;
         let docTitleOriginal = '';
         let activeDriveCardMenu = null;
@@ -3704,10 +3709,12 @@
             // Handle shared drive links on load
             const urlParams = new URLSearchParams(window.location.search);
             const sharedDriveId = urlParams.get('drive');
+            const sharedDriveResourceKey = urlParams.get('resourcekey') || urlParams.get('rk');
             if (sharedDriveId) {
                 window.pendingSharedDriveId = sharedDriveId;
                 sharedLinkSignInPrompted = false;
                 lastPendingSharedPublicAttemptId = null;
+                pendingSharedDriveResourceKey = sharedDriveResourceKey || null;
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
 
@@ -5612,15 +5619,22 @@
                 // Load pending shared file if present
                 if (window.pendingSharedDriveId && !driveOpenInProgress) {
                     const fileIdToOpen = window.pendingSharedDriveId;
+                    const resourceKey = pendingSharedDriveResourceKey || '';
+                    const fileInfoUrl = new URL(`https://www.googleapis.com/drive/v3/files/${fileIdToOpen}`);
+                    fileInfoUrl.searchParams.set('fields', 'id,name,resourceKey');
+                    if (resourceKey) {
+                        fileInfoUrl.searchParams.set('resourceKey', resourceKey);
+                    }
                     if (typeof showStatus === 'function') showStatus('Loading document info...', { autoClose: false });
 
-                    driveFetch(`https://www.googleapis.com/drive/v3/files/${fileIdToOpen}?fields=id,name`, { method: 'GET' })
+                    driveFetch(fileInfoUrl.toString(), { method: 'GET' })
                         .then(res => res.json())
                         .then(data => {
                             if (typeof showStatus === 'function') showStatus('Opening document...');
-                            openDriveFile({ id: data.id, name: data.name })
+                            openDriveFile({ id: data.id, name: data.name, resourceKey: data.resourceKey || resourceKey || '' })
                                 .then(() => {
                                     window.pendingSharedDriveId = null;
+                                    pendingSharedDriveResourceKey = null;
                                 })
                                 .catch(err => {
                                     console.error('Failed to open shared file:', err);
@@ -5629,9 +5643,10 @@
                         })
                         .catch(err => {
                             console.error('Failed to load file info', err);
-                            openDriveFile({ id: fileIdToOpen, name: 'Shared Document' })
+                            openDriveFile({ id: fileIdToOpen, name: 'Shared Document', resourceKey: resourceKey || '' })
                                 .then(() => {
                                     window.pendingSharedDriveId = null;
+                                    pendingSharedDriveResourceKey = null;
                                 })
                                 .catch(openErr => {
                                     console.error('Fallback open failed:', openErr);
@@ -5715,6 +5730,7 @@
             state.driveOwnerName = '';
             state.driveOwnerEmail = '';
             state.driveOwnerPhoto = '';
+            state.driveResourceKey = '';
             driveRecentsCache = [];
             driveStarredCache = [];
             driveSharedCache = [];
@@ -5732,6 +5748,7 @@
             driveUserProfile = null;
             sharedLinkSignInPrompted = false;
             lastPendingSharedPublicAttemptId = null;
+            pendingSharedDriveResourceKey = null;
             updateDriveProfileUI(null);
             closeDriveProfileMenus();
             clearDriveTokenStorage();
@@ -5929,15 +5946,27 @@
             return header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
         }
 
-        async function fetchPublicSharedPdf(fileId) {
+        async function fetchPublicSharedPdf(fileId, resourceKey = '') {
+            const safeResourceKey = resourceKey ? String(resourceKey).trim() : '';
+            const withResourceKey = (base) => {
+                if (!safeResourceKey) return base;
+                const sep = base.includes('?') ? '&' : '?';
+                const keyParam = base.includes('googleapis.com/drive/') ? 'resourceKey' : 'resourcekey';
+                return `${base}${sep}${keyParam}=${encodeURIComponent(safeResourceKey)}`;
+            };
             const endpoints = [
-                `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-                `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`,
-                `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`
+                withResourceKey(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`),
+                withResourceKey(`https://drive.usercontent.google.com/download?id=${fileId}&export=download`),
+                withResourceKey(`https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`),
+                withResourceKey(`https://drive.google.com/uc?export=download&id=${fileId}`),
+                withResourceKey(`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`)
             ];
+            const queue = [...endpoints];
+            const visited = new Set(queue);
             let lastError = null;
 
-            for (const endpoint of endpoints) {
+            while (queue.length > 0) {
+                const endpoint = queue.shift();
                 try {
                     const res = await fetch(endpoint, {
                         method: 'GET',
@@ -5949,12 +5978,32 @@
                         lastError = new Error(`Shared fetch failed (${res.status})`);
                         continue;
                     }
+                    const contentDisposition = res.headers.get('content-disposition') || '';
+                    const contentType = (res.headers.get('content-type') || '').toLowerCase();
                     const arrayBuffer = await res.arrayBuffer();
                     if (!isPdfArrayBuffer(arrayBuffer)) {
+                        if (contentType.includes('text/html') || contentType.includes('text/plain') || !contentDisposition) {
+                            try {
+                                const maxDecode = Math.min(arrayBuffer.byteLength, 220000);
+                                const text = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, maxDecode)));
+                                const tokenMatch = text.match(/[?&]confirm=([0-9A-Za-z_-]+)/i) || text.match(/name=\"confirm\"[^>]*value=\"([^\"]+)\"/i);
+                                if (tokenMatch && tokenMatch[1] && endpoint.includes('drive.google.com/uc')) {
+                                    const url = new URL(endpoint);
+                                    url.searchParams.set('confirm', tokenMatch[1]);
+                                    const nextEndpoint = url.toString();
+                                    if (!visited.has(nextEndpoint)) {
+                                        visited.add(nextEndpoint);
+                                        queue.push(nextEndpoint);
+                                    }
+                                }
+                            } catch (parseErr) {
+                                // ignore html parse errors and continue trying next endpoints
+                            }
+                        }
                         lastError = new Error('Shared response is not a PDF');
                         continue;
                     }
-                    const fileName = parseFilenameFromContentDisposition(res.headers.get('content-disposition')) || '';
+                    const fileName = parseFilenameFromContentDisposition(contentDisposition) || '';
                     return { arrayBuffer, fileName };
                 } catch (err) {
                     lastError = err;
@@ -5964,7 +6013,7 @@
             throw lastError || new Error('Unable to fetch shared PDF without sign-in');
         }
 
-        async function openSharedFileWithoutSignIn(fileId) {
+        async function openSharedFileWithoutSignIn(fileId, resourceKey = '') {
             if (!fileId) return false;
             if (driveOpenInProgress) return false;
             closeDriveCardMenu();
@@ -5978,7 +6027,7 @@
             showDriveHome();
             showLoading('Opening shared document...');
             try {
-                const publicPdf = await fetchPublicSharedPdf(fileId);
+                const publicPdf = await fetchPublicSharedPdf(fileId, resourceKey);
                 const arrayBuffer = publicPdf.arrayBuffer;
                 await importPDFArrayBuffer(arrayBuffer);
 
@@ -5991,6 +6040,7 @@
                 state.driveOwnerName = '';
                 state.driveOwnerEmail = '';
                 state.driveOwnerPhoto = '';
+                state.driveResourceKey = resourceKey || '';
                 state.driveHeadRevisionId = null;
                 state.driveLastKnownModified = null;
                 stopCollabPolling();
@@ -6002,6 +6052,7 @@
                 updateViewerModeUI();
                 showEditorView();
                 window.pendingSharedDriveId = null;
+                pendingSharedDriveResourceKey = null;
                 sharedLinkSignInPrompted = false;
                 lastPendingSharedPublicAttemptId = null;
                 showStatus('Shared PDF loaded (View Only)', { preserveState: true });
@@ -6025,10 +6076,11 @@
         function tryOpenPendingSharedWithoutSignIn(options = {}) {
             const force = !!options.force;
             const fileId = window.pendingSharedDriveId;
+            const resourceKey = pendingSharedDriveResourceKey || '';
             if (!fileId || driveAccessToken || driveOpenInProgress) return;
             if (!force && lastPendingSharedPublicAttemptId === fileId) return;
             lastPendingSharedPublicAttemptId = fileId;
-            openSharedFileWithoutSignIn(fileId).catch(err => {
+            openSharedFileWithoutSignIn(fileId, resourceKey).catch(err => {
                 console.error('Public shared open attempt failed:', err);
             });
         }
@@ -6102,17 +6154,23 @@
             return { success: true };
         }
 
-        async function fetchDriveOwnerInfo(fileId) {
-            const res = await driveFetch(
-                `https://www.googleapis.com/drive/v3/files/${fileId}?fields=ownedByMe,capabilities(canEdit),owners(displayName,emailAddress,photoLink)`,
-                { method: 'GET' }
-            );
+        async function fetchDriveOwnerInfo(fileId, resourceKey = '') {
+            const requestResourceKey = resourceKey || state.driveResourceKey || '';
+            const ownerUrl = new URL(`https://www.googleapis.com/drive/v3/files/${fileId}`);
+            ownerUrl.searchParams.set('fields', 'ownedByMe,capabilities(canEdit),owners(displayName,emailAddress,photoLink),resourceKey');
+            if (requestResourceKey) {
+                ownerUrl.searchParams.set('resourceKey', requestResourceKey);
+            }
+            const res = await driveFetch(ownerUrl.toString(), { method: 'GET' });
             const data = await res.json();
             if (typeof data.ownedByMe === 'boolean') {
                 state.driveOwnedByMe = data.ownedByMe;
             }
             if (data.capabilities && typeof data.capabilities.canEdit === 'boolean') {
                 state.driveCanEdit = data.capabilities.canEdit;
+            }
+            if (typeof data.resourceKey === 'string' && data.resourceKey) {
+                state.driveResourceKey = data.resourceKey;
             }
             const owner = Array.isArray(data.owners) ? data.owners[0] : null;
             if (owner) {
@@ -6169,14 +6227,36 @@
             return file.mimeType === 'application/pdf' && file.ownedByMe === false;
         }
 
+        function formatDriveCardFileName(name, fallbackName = 'Untitled') {
+            const raw = (typeof name === 'string' && name.trim()) ? name.trim() : fallbackName;
+            const maxChars = 38;
+            if (raw.length <= maxChars) return raw;
+
+            const dot = raw.lastIndexOf('.');
+            const hasExtension = dot > 0 && dot < raw.length - 1;
+            if (hasExtension) {
+                const ext = raw.slice(dot);
+                const normalizedExt = ext.toLowerCase() === '.pdf' ? '.pdf' : ext;
+                const suffix = `... ${normalizedExt}`;
+                const headLimit = maxChars - suffix.length;
+                if (headLimit > 6) {
+                    return `${raw.slice(0, headLimit)}${suffix}`;
+                }
+            }
+
+            return `${raw.slice(0, Math.max(6, maxChars - 3))}...`;
+        }
+
         function applyDriveTitleWithSharedIcon(titleEl, file, fallbackName = 'Untitled') {
             if (!titleEl) return;
             const name = file?.name || fallbackName;
+            const displayName = formatDriveCardFileName(name, fallbackName);
             titleEl.classList.remove('is-shared');
             titleEl.textContent = '';
+            titleEl.title = name;
 
             if (!isSharedDriveDoc(file)) {
-                titleEl.textContent = name;
+                titleEl.textContent = displayName;
                 return;
             }
 
@@ -6193,7 +6273,7 @@
 
             const text = document.createElement('span');
             text.className = 'drive-card-title-text';
-            text.textContent = name;
+            text.textContent = displayName;
 
             titleEl.appendChild(icon);
             titleEl.appendChild(text);
@@ -6499,7 +6579,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe)');
+            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveRecentsCache = data.files || [];
@@ -6508,7 +6588,7 @@
 
         async function refreshDriveStarred() {
             const q = encodeURIComponent(`starred=true and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred,ownedByMe)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred,ownedByMe,resourceKey)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveStarredCache = data.files || [];
@@ -6527,7 +6607,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe)');
+            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=24&fields=${fields}`);
             const data = await res.json();
             driveSharedCache = (data.files || []).filter(file => file && file.ownedByMe === false);
@@ -6549,7 +6629,7 @@
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
                 const folderFields = encodeURIComponent('files(id,name,starred)');
-                const fileFields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe)');
+                const fileFields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey)');
 
                 const [folderRes, fileRes] = await Promise.all([
                     driveFetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&orderBy=name&pageSize=100&fields=${folderFields}`),
@@ -6601,6 +6681,7 @@
             closeDriveCardMenu();
             driveOpenInProgress = true;
             driveOpenFileId = file.id;
+            const requestedResourceKey = file.resourceKey || '';
             state.zoom = 1;
             state.panX = 0;
             state.panY = 0;
@@ -6617,10 +6698,14 @@
                 let ownerName = '';
                 let ownerEmail = '';
                 let ownerPhoto = '';
+                let resolvedResourceKey = requestedResourceKey;
                 try {
-                    const metaRes = await driveFetch(
-                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),headRevisionId,modifiedTime`
-                    );
+                    const metaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
+                    metaUrl.searchParams.set('fields', 'capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),resourceKey,headRevisionId,modifiedTime');
+                    if (requestedResourceKey) {
+                        metaUrl.searchParams.set('resourceKey', requestedResourceKey);
+                    }
+                    const metaRes = await driveFetch(metaUrl.toString());
                     const metaData = await metaRes.json();
                     if (metaData.capabilities && metaData.capabilities.canEdit === false) {
                         canEdit = false;
@@ -6640,6 +6725,9 @@
                     if (metaData.modifiedTime) {
                         state.driveLastKnownModified = new Date(metaData.modifiedTime).getTime();
                     }
+                    if (typeof metaData.resourceKey === 'string' && metaData.resourceKey) {
+                        resolvedResourceKey = metaData.resourceKey;
+                    }
                 } catch (metaErr) {
                     console.warn('Failed to fetch file metadata:', metaErr);
                 }
@@ -6649,8 +6737,14 @@
                 state.driveOwnerName = ownerName;
                 state.driveOwnerEmail = ownerEmail;
                 state.driveOwnerPhoto = ownerPhoto;
+                state.driveResourceKey = resolvedResourceKey || '';
 
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
+                const mediaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
+                mediaUrl.searchParams.set('alt', 'media');
+                if (state.driveResourceKey) {
+                    mediaUrl.searchParams.set('resourceKey', state.driveResourceKey);
+                }
+                const res = await driveFetch(mediaUrl.toString());
                 const arrayBuffer = await res.arrayBuffer();
                 await importPDFArrayBuffer(arrayBuffer);
                 state.driveFileId = file.id;
@@ -6819,6 +6913,7 @@
             state.driveOwnerName = driveUserProfile?.name || '';
             state.driveOwnerEmail = driveUserProfile?.email || '';
             state.driveOwnerPhoto = driveUserProfile?.photo || '';
+            state.driveResourceKey = '';
             updateDocTitle();
             saveDriveSession();
             setReadOnlyMode(false);
@@ -8617,7 +8712,12 @@
             copyBtn.addEventListener('click', () => {
                 if (state.driveOwnedByMe === false) return;
                 if (!state.driveFileId) return;
-                const link = window.location.origin + window.location.pathname + '?drive=' + state.driveFileId;
+                const params = new URLSearchParams();
+                params.set('drive', state.driveFileId);
+                if (state.driveResourceKey) {
+                    params.set('resourcekey', state.driveResourceKey);
+                }
+                const link = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
                 navigator.clipboard.writeText(link).then(() => {
                     showStatus('Link copied', { icon: 'check' });
                 }).catch(err => {
@@ -10455,6 +10555,7 @@
                     ownerName: state.driveOwnerName || '',
                     ownerEmail: state.driveOwnerEmail || '',
                     ownerPhoto: state.driveOwnerPhoto || '',
+                    resourceKey: state.driveResourceKey || '',
                     lastDriveSaveAt: state.lastDriveSaveAt || null,
                     headRevisionId: state.driveHeadRevisionId || null,
                     lastKnownModified: state.driveLastKnownModified || null
@@ -10500,6 +10601,7 @@
                 state.driveOwnerName = typeof parsed.ownerName === 'string' ? parsed.ownerName : '';
                 state.driveOwnerEmail = typeof parsed.ownerEmail === 'string' ? parsed.ownerEmail : '';
                 state.driveOwnerPhoto = typeof parsed.ownerPhoto === 'string' ? parsed.ownerPhoto : '';
+                state.driveResourceKey = typeof parsed.resourceKey === 'string' ? parsed.resourceKey : '';
                 if (typeof parsed.lastDriveSaveAt === 'number') {
                     state.lastDriveSaveAt = parsed.lastDriveSaveAt;
                 }
