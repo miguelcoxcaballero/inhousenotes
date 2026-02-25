@@ -5941,9 +5941,21 @@
         }
 
         function isPdfArrayBuffer(arrayBuffer) {
-            if (!arrayBuffer || arrayBuffer.byteLength < 4) return false;
-            const header = new Uint8Array(arrayBuffer, 0, 4);
-            return header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46;
+            if (!arrayBuffer || arrayBuffer.byteLength < 5) return false;
+            const maxScan = Math.min(arrayBuffer.byteLength, 1024);
+            const header = new Uint8Array(arrayBuffer, 0, maxScan);
+            for (let i = 0; i <= header.length - 5; i++) {
+                if (
+                    header[i] === 0x25 && // %
+                    header[i + 1] === 0x50 && // P
+                    header[i + 2] === 0x44 && // D
+                    header[i + 3] === 0x46 && // F
+                    header[i + 4] === 0x2D // -
+                ) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         async function fetchPublicSharedPdf(fileId, resourceKey = '') {
@@ -5953,6 +5965,69 @@
                 const sep = base.includes('?') ? '&' : '?';
                 const keyParam = base.includes('googleapis.com/drive/') ? 'resourceKey' : 'resourcekey';
                 return `${base}${sep}${keyParam}=${encodeURIComponent(safeResourceKey)}`;
+            };
+            const decodeHtmlEntities = (value) => value
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>');
+            const queueParsedDownloadUrls = (sourceText, currentEndpoint, queue, visited) => {
+                if (!sourceText) return;
+                const candidates = [];
+
+                const directUrlMatches = sourceText.match(/https?:\/\/drive(?:\.usercontent)?\.google\.com\/[^\s"'<>\\]+/g) || [];
+                directUrlMatches.forEach(url => candidates.push(url));
+
+                const relativeUcMatches = sourceText.match(/\/uc\?[^\s"'<>\\]+/g) || [];
+                relativeUcMatches.forEach(path => {
+                    candidates.push(`https://drive.google.com${path}`);
+                });
+
+                const jsonDownloadUrlMatches = sourceText.match(/"downloadUrl"\s*:\s*"([^"]+)"/g) || [];
+                jsonDownloadUrlMatches.forEach(chunk => {
+                    const m = chunk.match(/"downloadUrl"\s*:\s*"([^"]+)"/);
+                    if (!m || !m[1]) return;
+                    let url = m[1].replace(/\\u003d/g, '=').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+                    url = decodeHtmlEntities(url);
+                    candidates.push(url);
+                });
+
+                const formMatch = sourceText.match(/<form[^>]+action="([^"]+)"[^>]*>([\s\S]*?)<\/form>/i);
+                if (formMatch && formMatch[1]) {
+                    try {
+                        const actionUrl = new URL(decodeHtmlEntities(formMatch[1]), currentEndpoint);
+                        const formBody = formMatch[2] || '';
+                        const inputRegex = /<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi;
+                        let inputMatch;
+                        while ((inputMatch = inputRegex.exec(formBody)) !== null) {
+                            actionUrl.searchParams.set(
+                                decodeHtmlEntities(inputMatch[1]),
+                                decodeHtmlEntities(inputMatch[2])
+                            );
+                        }
+                        candidates.push(actionUrl.toString());
+                    } catch (e) {
+                        // ignore invalid form action URLs
+                    }
+                }
+
+                candidates.forEach(candidateRaw => {
+                    try {
+                        const candidateUrl = new URL(decodeHtmlEntities(candidateRaw), currentEndpoint);
+                        if (safeResourceKey && !candidateUrl.searchParams.get('resourcekey') && !candidateUrl.searchParams.get('resourceKey')) {
+                            const keyParam = candidateUrl.hostname.includes('googleapis.com') ? 'resourceKey' : 'resourcekey';
+                            candidateUrl.searchParams.set(keyParam, safeResourceKey);
+                        }
+                        const candidate = candidateUrl.toString();
+                        if (!visited.has(candidate)) {
+                            visited.add(candidate);
+                            queue.push(candidate);
+                        }
+                    } catch (e) {
+                        // ignore invalid candidate URL strings
+                    }
+                });
             };
             const endpoints = [
                 withResourceKey(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`),
@@ -5986,10 +6061,15 @@
                             try {
                                 const maxDecode = Math.min(arrayBuffer.byteLength, 220000);
                                 const text = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, maxDecode)));
+                                queueParsedDownloadUrls(text, endpoint, queue, visited);
                                 const tokenMatch = text.match(/[?&]confirm=([0-9A-Za-z_-]+)/i) || text.match(/name=\"confirm\"[^>]*value=\"([^\"]+)\"/i);
-                                if (tokenMatch && tokenMatch[1] && endpoint.includes('drive.google.com/uc')) {
+                                if (tokenMatch && tokenMatch[1]) {
                                     const url = new URL(endpoint);
                                     url.searchParams.set('confirm', tokenMatch[1]);
+                                    if (safeResourceKey && !url.searchParams.get('resourcekey') && !url.searchParams.get('resourceKey')) {
+                                        const keyParam = endpoint.includes('googleapis.com/drive/') ? 'resourceKey' : 'resourcekey';
+                                        url.searchParams.set(keyParam, safeResourceKey);
+                                    }
                                     const nextEndpoint = url.toString();
                                     if (!visited.has(nextEndpoint)) {
                                         visited.add(nextEndpoint);
