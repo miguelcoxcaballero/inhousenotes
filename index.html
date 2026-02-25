@@ -2157,6 +2157,161 @@
             max-width: 420px;
             text-overflow: clip;
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        .modal-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+            display: flex !important;
+        }
+
+        .modal-container {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            width: 90%;
+            max-width: 480px;
+            box-shadow: var(--shadow-medium);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transform: scale(1);
+            transition: transform 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        }
+
+        .modal-overlay.hidden .modal-container {
+            transform: scale(0.95);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        [data-theme="dark"] .modal-header {
+            border-bottom-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .modal-header h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .modal-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .share-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .share-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .share-input-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .share-input-group input[type="email"] {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+        }
+
+        [data-theme="dark"] .share-input-group input[type="email"] {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .share-input-group select {
+            padding: 10px 30px 10px 14px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat right 8px center;
+            appearance: none;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        [data-theme="dark"] .share-input-group select {
+            border-color: rgba(255, 255, 255, 0.15);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a2a2a2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        }
+
+        .link-access-group {
+            background: var(--bg-primary);
+            border-radius: var(--radius-sm);
+            padding: 6px 12px;
+            justify-content: space-between;
+        }
+
+        .link-access-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .link-access-info svg {
+            width: 20px;
+            height: 20px;
+            color: var(--text-secondary);
+        }
+
+        .link-access-info select {
+            border: none;
+            background-color: transparent;
+            padding-left: 0;
+            font-weight: 500;
+        }
+
+        .copy-link-section {
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            align-items: flex-end;
+        }
+
+        [data-theme="dark"] .copy-link-section {
+            border-top-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .copy-link-section button svg {
+            margin-right: 8px;
+            width: 18px;
+            height: 18px;
+        }
     </style>
 </head>
 
@@ -2295,6 +2450,16 @@
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                             <polyline points="14 2 14 8 20 8" />
                             <line x1="9" y1="15" x2="15" y2="15" />
+                        </svg>
+                    </button>
+                    <button class="btn btn-secondary btn-icon-square hidden" id="btn-drive-share" title="Share Document"
+                        aria-label="Share Document">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="8.5" cy="7" r="4" />
+                            <line x1="20" y1="8" x2="20" y2="14" />
+                            <line x1="23" y1="11" x2="17" y2="11" />
                         </svg>
                     </button>
                     <button class="btn btn-secondary btn-icon-square" id="btn-import-pdf" title="Import PDF"
@@ -4982,6 +5147,16 @@
             if (!docTitleEl || docTitleEditing) return;
             const name = state.driveFileName || (state.exportName ? `${state.exportName}` : 'Untitled');
             docTitleEl.textContent = getBaseDocTitle(name);
+
+            // Toggle share button visibility
+            const shareBtn = document.getElementById('btn-drive-share');
+            if (shareBtn) {
+                if (state.driveFileId) {
+                    shareBtn.classList.remove('hidden');
+                } else {
+                    shareBtn.classList.add('hidden');
+                }
+            }
         }
 
         function getSystemTheme() {
@@ -5482,6 +5657,38 @@
             const created = await createRes.json();
             state.driveFolderId = created.id;
             return state.driveFolderId;
+        }
+
+        async function fetchDrivePermissions(fileId) {
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role,emailAddress,displayName)`, { method: 'GET' });
+            return await res.json();
+        }
+
+        async function addDrivePermission(fileId, email, role) {
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?sendNotificationEmail=true`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'user', role: role, emailAddress: email })
+            });
+            return await res.json();
+        }
+
+        async function setDriveLinkPermission(fileId, role) {
+            if (role === 'restricted') {
+                const data = await fetchDrivePermissions(fileId);
+                const anyonePerm = data.permissions?.find(p => p.type === 'anyone');
+                if (anyonePerm) {
+                    await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${anyonePerm.id}`, { method: 'DELETE' });
+                }
+                return { success: true };
+            } else {
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'anyone', role: role })
+                });
+                return await res.json();
+            }
         }
 
         function formatDriveDate(value) {
@@ -7450,8 +7657,116 @@
             }
         }
 
+        function setupShareModalEvents() {
+            const shareBtn = document.getElementById('btn-drive-share');
+            const shareModal = document.getElementById('share-modal-overlay');
+            const closeBtn = document.getElementById('btn-close-share-modal');
+            const form = document.getElementById('share-invite-form');
+            const copyBtn = document.getElementById('btn-copy-share-link');
+            const accessSelect = document.getElementById('share-link-access-select');
+            const roleSelect = document.getElementById('share-link-role-select');
+
+            if (!shareBtn || !shareModal) return;
+
+            shareBtn.addEventListener('click', async () => {
+                shareModal.classList.remove('hidden');
+                // load current link sharing permission
+                if (state.driveFileId) {
+                    try {
+                        const data = await fetchDrivePermissions(state.driveFileId);
+                        const anyonePerm = data.permissions?.find(p => p.type === 'anyone');
+                        if (anyonePerm) {
+                            accessSelect.value = 'anyone';
+                            roleSelect.value = anyonePerm.role === 'writer' ? 'writer' : 'reader';
+                            roleSelect.classList.remove('hidden');
+                        } else {
+                            accessSelect.value = 'restricted';
+                            roleSelect.classList.add('hidden');
+                        }
+                    } catch (err) {
+                        console.error('Failed to load permissions', err);
+                    }
+                }
+            });
+
+            closeBtn.addEventListener('click', () => {
+                shareModal.classList.add('hidden');
+            });
+
+            shareModal.addEventListener('click', (e) => {
+                if (e.target === shareModal) {
+                    shareModal.classList.add('hidden');
+                }
+            });
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const emailInput = document.getElementById('share-email-input');
+                const roleInput = document.getElementById('share-role-select');
+                const email = emailInput.value.trim();
+                const role = roleInput.value;
+                if (!email || !state.driveFileId) return;
+
+                const btn = document.getElementById('btn-send-share');
+                btn.disabled = true;
+                btn.textContent = 'Sending...';
+                try {
+                    await addDrivePermission(state.driveFileId, email, role);
+                    showStatus('Invitation sent', { icon: 'check' });
+                    emailInput.value = '';
+                } catch (err) {
+                    console.error('Share error:', err);
+                    showStatus('Failed to share', { error: true });
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = 'Send';
+                }
+            });
+
+            accessSelect.addEventListener('change', async () => {
+                if (!state.driveFileId) return;
+                const access = accessSelect.value;
+                if (access === 'anyone') {
+                    roleSelect.classList.remove('hidden');
+                } else {
+                    roleSelect.classList.add('hidden');
+                }
+                const role = access === 'anyone' ? roleSelect.value : 'restricted';
+                try {
+                    await setDriveLinkPermission(state.driveFileId, role);
+                    showStatus('Link access updated', { icon: 'check' });
+                } catch (err) {
+                    console.error('Link access error:', err);
+                    showStatus('Failed to update access', { error: true });
+                }
+            });
+
+            roleSelect.addEventListener('change', async () => {
+                if (!state.driveFileId || accessSelect.value !== 'anyone') return;
+                try {
+                    await setDriveLinkPermission(state.driveFileId, roleSelect.value);
+                    showStatus('Link role updated', { icon: 'check' });
+                } catch (err) {
+                    console.error('Link role error:', err);
+                    showStatus('Failed to update role', { error: true });
+                }
+            });
+
+            copyBtn.addEventListener('click', () => {
+                if (!state.driveFileId) return;
+                const link = window.location.origin + window.location.pathname + '?drive=' + state.driveFileId;
+                navigator.clipboard.writeText(link).then(() => {
+                    showStatus('Link copied', { icon: 'check' });
+                }).catch(err => {
+                    console.error('Copy error:', err);
+                    showStatus('Failed to copy', { error: true });
+                });
+            });
+        }
+
         // Setup event listeners
         function setupEventListeners() {
+            setupShareModalEvents();
             // Tool buttons
             toolbar.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -12015,6 +12330,67 @@
         // Start
         init();
     </script>
+    <div id="share-modal-overlay" class="modal-overlay hidden">
+        <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+            <div class="modal-header">
+                <h2 id="share-modal-title">Share document</h2>
+                <button type="button" class="btn btn-secondary btn-icon-square" id="btn-close-share-modal"
+                    aria-label="Close" style="border:none;background:transparent;box-shadow:none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-content">
+                <form id="share-invite-form" class="share-section">
+                    <label for="share-email-input" class="share-label">Add people</label>
+                    <div class="share-input-group">
+                        <input type="email" id="share-email-input" placeholder="Email address" required
+                            autocomplete="email">
+                        <select id="share-role-select" aria-label="Select role">
+                            <option value="reader">Viewer</option>
+                            <option value="writer">Editor</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary" id="btn-send-share">Send</button>
+                    </div>
+                </form>
+
+                <div class="share-section">
+                    <label class="share-label">General access</label>
+                    <div class="share-input-group link-access-group">
+                        <div class="link-access-info">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                <path
+                                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                                </path>
+                            </svg>
+                            <select id="share-link-access-select" aria-label="Link access">
+                                <option value="restricted">Restricted</option>
+                                <option value="anyone">Anyone with the link</option>
+                            </select>
+                        </div>
+                        <select id="share-link-role-select" class="hidden" aria-label="Link role">
+                            <option value="reader">Viewer</option>
+                            <option value="writer">Editor</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="share-section copy-link-section">
+                    <button type="button" class="btn btn-secondary" id="btn-copy-share-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                        Copy link
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
