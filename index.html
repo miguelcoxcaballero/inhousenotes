@@ -2179,6 +2179,28 @@
             text-overflow: clip;
         }
 
+        /* Legacy Modals Overrides */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        .modal-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+            display: flex !important;
+        }
+
         /* Share Modal Styles */
         .modal-container {
             background: var(--bg-secondary);
@@ -3565,8 +3587,19 @@
                 saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
             }
             setReadOnlyMode(true, { force: true });
+
+            // Handle shared drive links on load
+            const urlParams = new URLSearchParams(window.location.search);
+            const sharedDriveId = urlParams.get('drive');
+            if (sharedDriveId) {
+                window.pendingSharedDriveId = sharedDriveId;
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+
             const lastView = loadViewMode();
-            if (lastView === 'drive') {
+            if (window.pendingSharedDriveId) {
+                showEditorView();
+            } else if (lastView === 'drive') {
                 showDriveHome();
             } else {
                 showEditorView();
@@ -5437,6 +5470,17 @@
                 // Start collab polling if we have a Drive file
                 if (state.driveFileId && state.driveAutosave) {
                     startCollabPolling();
+                }
+
+                // Load pending shared file if present
+                if (window.pendingSharedDriveId) {
+                    const fileIdToOpen = window.pendingSharedDriveId;
+                    window.pendingSharedDriveId = null;
+                    openDriveFile({ id: fileIdToOpen, name: 'Shared Document' })
+                        .catch(err => {
+                            console.error('Failed to open shared file:', err);
+                            showStatus('Could not open shared document', { error: true });
+                        });
                 }
             }
         }
