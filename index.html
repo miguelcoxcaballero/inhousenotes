@@ -2236,6 +2236,47 @@
             font-weight: 600;
         }
 
+        .share-owner-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px 0 20px;
+        }
+
+        .share-owner-info.hidden {
+            display: none;
+        }
+
+        .share-owner-info img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .share-owner-details {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.3;
+        }
+
+        #share-owner-name {
+            font-weight: 500;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        #share-owner-email {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .share-owner-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
         .modal-content {
             padding: 20px;
             display: flex;
@@ -2779,6 +2820,16 @@
                     </svg>
                 </button>
             </div>
+
+            <div class="share-owner-info hidden" id="share-owner-info">
+                <img id="share-owner-avatar" src="" alt="Owner">
+                <div class="share-owner-details">
+                    <div id="share-owner-name"></div>
+                    <div id="share-owner-email"></div>
+                    <div class="share-owner-label">Owner</div>
+                </div>
+            </div>
+
             <div class="modal-content">
                 <form id="share-invite-form" class="share-section">
                     <label for="share-email-input" class="share-label">Add people</label>
@@ -5476,10 +5527,21 @@
                 if (window.pendingSharedDriveId) {
                     const fileIdToOpen = window.pendingSharedDriveId;
                     window.pendingSharedDriveId = null;
-                    openDriveFile({ id: fileIdToOpen, name: 'Shared Document' })
+                    if (typeof showStatus === 'function') showStatus('Loading document info...', { autoClose: false });
+
+                    driveFetch(`https://www.googleapis.com/drive/v3/files/${fileIdToOpen}?fields=id,name`, { method: 'GET' })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (typeof showStatus === 'function') showStatus('Opening document...');
+                            openDriveFile({ id: data.id, name: data.name })
+                                .catch(err => {
+                                    console.error('Failed to open shared file:', err);
+                                    if (typeof showStatus === 'function') showStatus('Could not open shared document', { error: true });
+                                });
+                        })
                         .catch(err => {
-                            console.error('Failed to open shared file:', err);
-                            showStatus('Could not open shared document', { error: true });
+                            console.error('Failed to load file info', err);
+                            openDriveFile({ id: fileIdToOpen, name: 'Shared Document' });
                         });
                 }
             }
@@ -5767,7 +5829,7 @@
         }
 
         async function fetchDrivePermissions(fileId) {
-            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role,emailAddress,displayName)`, { method: 'GET' });
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role,emailAddress,displayName,photoLink)`, { method: 'GET' });
             return await res.json();
         }
 
@@ -7781,6 +7843,22 @@
                 if (state.driveFileId) {
                     try {
                         const data = await fetchDrivePermissions(state.driveFileId);
+
+                        // Handle owner display
+                        const ownerPerm = data.permissions?.find(p => p.role === 'owner');
+                        const ownerInfo = document.getElementById('share-owner-info');
+                        if (ownerPerm && ownerInfo) {
+                            document.getElementById('share-owner-name').textContent = ownerPerm.displayName || 'Unknown';
+                            document.getElementById('share-owner-email').textContent = ownerPerm.emailAddress || '';
+                            if (ownerPerm.photoLink) {
+                                document.getElementById('share-owner-avatar').src = ownerPerm.photoLink;
+                                document.getElementById('share-owner-avatar').classList.remove('hidden');
+                            } else {
+                                document.getElementById('share-owner-avatar').classList.add('hidden');
+                            }
+                            ownerInfo.classList.remove('hidden');
+                        }
+
                         const anyonePerm = data.permissions?.find(p => p.type === 'anyone');
                         if (anyonePerm) {
                             accessSelect.value = 'anyone';
