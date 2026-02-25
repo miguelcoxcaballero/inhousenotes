@@ -2142,6 +2142,27 @@
             color: var(--text-primary);
         }
 
+        .drive-card-title.is-shared {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .drive-card-title-text {
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .drive-shared-icon {
+            width: 14px;
+            height: 14px;
+            color: var(--text-secondary);
+            flex: 0 0 auto;
+        }
+
         .drive-card-meta {
             font-size: 0.7rem;
             color: var(--text-secondary);
@@ -2477,6 +2498,13 @@
                 <div class="drive-folder-grid" id="drive-folders"></div>
                 <div class="drive-file-grid" id="drive-folder-files"></div>
                 <div class="drive-empty hidden" id="drive-folder-empty">No PDFs found in this folder.</div>
+            </section>
+            <section class="drive-section">
+                <div class="drive-section-header">
+                    <div class="drive-section-title">Shared docs</div>
+                </div>
+                <div class="drive-recents" id="drive-shared"></div>
+                <div class="drive-empty hidden" id="drive-shared-empty">No shared docs.</div>
             </section>
         </div>
     </div>
@@ -3442,6 +3470,8 @@
         const driveRecentsEl = document.getElementById('drive-recents');
         const driveStarredEl = document.getElementById('drive-starred');
         const driveStarredEmptyEl = document.getElementById('drive-starred-empty');
+        const driveSharedEl = document.getElementById('drive-shared');
+        const driveSharedEmptyEl = document.getElementById('drive-shared-empty');
         const driveFoldersEl = document.getElementById('drive-folders');
         const driveFolderFilesEl = document.getElementById('drive-folder-files');
         const driveFolderEmptyEl = document.getElementById('drive-folder-empty');
@@ -3531,6 +3561,7 @@
         const deferredBakePages = new Set();
         let driveRecentsCache = [];
         let driveStarredCache = [];
+        let driveSharedCache = [];
         let driveFolderCache = { folders: [], files: [] };
         let driveFolderStack = [{ id: 'root', name: 'My Drive' }];
         let driveCurrentFolderId = 'root';
@@ -5540,6 +5571,7 @@
             }
             if (!signedIn) {
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
+                if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
                 if (window.pendingSharedDriveId && !sharedLinkSignInPrompted) {
@@ -5669,12 +5701,14 @@
             state.driveOwnerPhoto = '';
             driveRecentsCache = [];
             driveStarredCache = [];
+            driveSharedCache = [];
             driveFolderCache = { folders: [], files: [] };
             driveFolderStack = [{ id: 'root', name: 'My Drive' }];
             driveCurrentFolderId = 'root';
             driveFolderMetaCache.clear();
             if (driveRecentsEl) driveRecentsEl.innerHTML = '';
             if (driveStarredEl) driveStarredEl.innerHTML = '';
+            if (driveSharedEl) driveSharedEl.innerHTML = '';
             if (driveFoldersEl) driveFoldersEl.innerHTML = '';
             if (driveFolderFilesEl) driveFolderFilesEl.innerHTML = '';
             if (driveBreadcrumbsEl) driveBreadcrumbsEl.innerHTML = '';
@@ -5989,6 +6023,41 @@
             return preview;
         }
 
+        function isSharedDriveDoc(file) {
+            if (!file) return false;
+            return file.mimeType === 'application/pdf' && file.ownedByMe === false;
+        }
+
+        function applyDriveTitleWithSharedIcon(titleEl, file, fallbackName = 'Untitled') {
+            if (!titleEl) return;
+            const name = file?.name || fallbackName;
+            titleEl.classList.remove('is-shared');
+            titleEl.textContent = '';
+
+            if (!isSharedDriveDoc(file)) {
+                titleEl.textContent = name;
+                return;
+            }
+
+            titleEl.classList.add('is-shared');
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('fill', 'none');
+            icon.setAttribute('stroke', 'currentColor');
+            icon.setAttribute('stroke-width', '1.8');
+            icon.setAttribute('stroke-linecap', 'round');
+            icon.setAttribute('stroke-linejoin', 'round');
+            icon.classList.add('drive-shared-icon');
+            icon.innerHTML = '<circle cx="12" cy="8" r="2.2"></circle><circle cx="6.8" cy="9" r="1.8"></circle><circle cx="17.2" cy="9" r="1.8"></circle><path d="M8.5 17c.4-2 1.9-3.5 3.5-3.5s3.1 1.5 3.5 3.5"></path><path d="M3.8 17c.3-1.5 1.5-2.7 3-2.9"></path><path d="M20.2 17c-.3-1.5-1.5-2.7-3-2.9"></path>';
+
+            const text = document.createElement('span');
+            text.className = 'drive-card-title-text';
+            text.textContent = name;
+
+            titleEl.appendChild(icon);
+            titleEl.appendChild(text);
+        }
+
         function createDriveFileCard(file) {
             const card = document.createElement('div');
             card.className = 'drive-card';
@@ -5996,7 +6065,7 @@
 
             const title = document.createElement('div');
             title.className = 'drive-card-title';
-            title.textContent = file.name || 'Untitled';
+            applyDriveTitleWithSharedIcon(title, file, 'Untitled');
             card.appendChild(title);
 
             const meta = document.createElement('div');
@@ -6230,6 +6299,17 @@
             files.forEach(item => driveStarredEl.appendChild(createDriveStarredCard(item)));
         }
 
+        function renderDriveShared(files) {
+            if (!driveSharedEl) return;
+            driveSharedEl.innerHTML = '';
+            if (!files || files.length === 0) {
+                if (driveSharedEmptyEl) driveSharedEmptyEl.classList.remove('hidden');
+                return;
+            }
+            if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
+            files.forEach(file => driveSharedEl.appendChild(createDriveFileCard(file)));
+        }
+
         function renderDriveFolderContents(folders, files) {
             if (driveFoldersEl) driveFoldersEl.innerHTML = '';
             if (driveFolderFilesEl) driveFolderFilesEl.innerHTML = '';
@@ -6278,7 +6358,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
+            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveRecentsCache = data.files || [];
@@ -6287,11 +6367,30 @@
 
         async function refreshDriveStarred() {
             const q = encodeURIComponent(`starred=true and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred,ownedByMe)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveStarredCache = data.files || [];
             renderDriveStarred(driveStarredCache);
+        }
+
+        async function refreshDriveShared() {
+            const search = driveSearchInput ? driveSearchInput.value.trim() : '';
+            const queryParts = [
+                `mimeType='application/pdf'`,
+                'sharedWithMe=true',
+                'trashed=false'
+            ];
+            if (search) {
+                const safe = search.replace(/'/g, "\\'");
+                queryParts.push(`name contains '${safe}'`);
+            }
+            const q = encodeURIComponent(queryParts.join(' and '));
+            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe)');
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=24&fields=${fields}`);
+            const data = await res.json();
+            driveSharedCache = (data.files || []).filter(file => file && file.ownedByMe === false);
+            renderDriveShared(driveSharedCache);
         }
 
         async function refreshDriveFolderContents() {
@@ -6309,7 +6408,7 @@
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
                 const folderFields = encodeURIComponent('files(id,name,starred)');
-                const fileFields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred)');
+                const fileFields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe)');
 
                 const [folderRes, fileRes] = await Promise.all([
                     driveFetch(`https://www.googleapis.com/drive/v3/files?q=${folderQuery}&orderBy=name&pageSize=100&fields=${folderFields}`),
@@ -6333,8 +6432,9 @@
             if (!driveStatusEl || !driveAccessToken) return;
             const recentCount = driveRecentsCache.length;
             const starredCount = driveStarredCache.length;
+            const sharedCount = driveSharedCache.length;
             const folderCount = driveFolderCache.files.length;
-            driveStatusEl.textContent = `Recents: ${recentCount} | Starred: ${starredCount} | This folder: ${folderCount} PDF${folderCount !== 1 ? 's' : ''}.`;
+            driveStatusEl.textContent = `Recents: ${recentCount} | Starred: ${starredCount} | Shared: ${sharedCount} | This folder: ${folderCount} PDF${folderCount !== 1 ? 's' : ''}.`;
         }
 
         async function refreshDriveFiles() {
@@ -6347,7 +6447,7 @@
             try {
                 await ensureDriveToken(false);
                 renderDriveBreadcrumbs();
-                await Promise.all([refreshDriveRecents(), refreshDriveStarred(), refreshDriveFolderContents()]);
+                await Promise.all([refreshDriveRecents(), refreshDriveStarred(), refreshDriveShared(), refreshDriveFolderContents()]);
                 updateDriveStatusCounts();
             } catch (err) {
                 driveStatusEl.textContent = 'Unable to load Drive files.';
