@@ -2470,6 +2470,25 @@
     </div>
 
     <div id="editor-view" class="hidden">
+        <div id="readonly-banner" class="hidden"
+            style="background:var(--accent-yellow);color:#000;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;font-size:0.95rem;border-bottom:1px solid rgba(0,0,0,0.1);">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M2 12C2 6.48 6.48 2 12 2s10 4.48 10 10-4.48 10-10 10S2 17.52 2 12z"></path>
+                    <path d="M12 8v4"></path>
+                    <path d="M12 16h.01"></path>
+                </svg>
+                <span><strong>View Only</strong> You don't have permission to edit this file.</span>
+            </div>
+            <div style="display:flex;gap:12px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-make-copy"
+                    style="background:rgba(255,255,255,0.7);color:#000;border:none;padding:6px 12px;font-size:0.85rem;">Make
+                    a Copy</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-ask-edit"
+                    style="background:#000;color:#fff;border:none;padding:6px 12px;font-size:0.85rem;">Ask to
+                    Edit</button>
+            </div>
+        </div>
         <div id="app">
             <header>
                 <div class="logo" id="btn-drive-home" role="button" tabindex="0" title="Drive Home"
@@ -2821,13 +2840,11 @@
                 </button>
             </div>
 
-            <div class="share-owner-info hidden" id="share-owner-info">
-                <img id="share-owner-avatar" src="" alt="Owner">
-                <div class="share-owner-details">
-                    <div id="share-owner-name"></div>
-                    <div id="share-owner-email"></div>
-                    <div class="share-owner-label">Owner</div>
-                </div>
+            <div class="share-owner-info hidden" id="share-owner-info"
+                style="border-bottom:1px solid rgba(0,0,0,0.1);padding-bottom:16px;flex-direction:column;align-items:stretch;">
+                <div style="font-size:0.85rem;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">People
+                    with access</div>
+                <div id="share-access-list" style="display:flex;flex-direction:column;gap:12px;"></div>
             </div>
 
             <div class="modal-content">
@@ -3368,6 +3385,8 @@
             driveFileName: null,
             driveFolderId: null,
             driveAutosave: false,
+            driveCanEdit: true,
+            isUndoRedo: false,
             panVelocityX: 0,
             panVelocityY: 0,
             lastPanTime: 0,
@@ -6280,42 +6299,139 @@
             showLoading('Opening PDF...');
             try {
                 await ensureDriveToken(false);
+
+                // Fetch metadata (capabilities, revision)
+                let canEdit = true;
+                try {
+                    const metaRes = await driveFetch(
+                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=capabilities(canEdit),headRevisionId,modifiedTime`
+                    );
+                    const metaData = await metaRes.json();
+                    if (metaData.capabilities && metaData.capabilities.canEdit === false) {
+                        canEdit = false;
+                    }
+                    if (metaData.headRevisionId) {
+                        state.driveHeadRevisionId = metaData.headRevisionId;
+                    }
+                    if (metaData.modifiedTime) {
+                        state.driveLastKnownModified = new Date(metaData.modifiedTime).getTime();
+                    }
+                } catch (metaErr) {
+                    console.warn('Failed to fetch file metadata:', metaErr);
+                }
+
+                state.driveCanEdit = canEdit;
+
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
                 const arrayBuffer = await res.arrayBuffer();
                 await importPDFArrayBuffer(arrayBuffer);
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
-                state.driveAutosave = true;
+                state.driveAutosave = canEdit;
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
                 updateDocTitle();
                 saveDriveSession();
-                // Fetch initial revision and start collaborative polling
-                try {
-                    const revRes = await driveFetch(
-                        `https://www.googleapis.com/drive/v3/files/${file.id}?fields=headRevisionId,modifiedTime`
-                    );
-                    const revData = await revRes.json();
-                    if (revData.headRevisionId) {
-                        state.driveHeadRevisionId = revData.headRevisionId;
-                    }
-                    if (revData.modifiedTime) {
-                        state.driveLastKnownModified = new Date(revData.modifiedTime).getTime();
-                    }
-                    saveDriveSession();
-                } catch (revErr) {
-                    console.warn('Failed to fetch initial revision:', revErr);
+
+                updateViewerModeUI();
+
+                if (canEdit) {
+                    startCollabPolling();
                 }
-                startCollabPolling();
+
                 // Set the sync baseline so merge can track changes
                 updateSyncBaseline();
-                showStatus('PDF loaded', { preserveState: true });
+                showStatus(canEdit ? 'PDF loaded' : 'PDF loaded (View Only)', { preserveState: true });
             } catch (err) {
                 showStatus('Failed to load PDF', { preserveState: true });
             } finally {
                 hideLoading();
                 driveOpenInProgress = false;
                 driveOpenFileId = null;
+            }
+        }
+
+        function updateViewerModeUI() {
+            const banner = document.getElementById('readonly-banner');
+            const isViewer = state.driveFileId && state.driveCanEdit === false;
+            if (banner) {
+                if (isViewer) {
+                    banner.classList.remove('hidden');
+                } else {
+                    banner.classList.add('hidden');
+                }
+            }
+
+            const toolsToDisable = ['btn-pen', 'btn-highlighter', 'btn-eraser', 'btn-image', 'btn-insert-page', 'btn-delete-page', 'btn-clear-page'];
+            toolsToDisable.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.disabled = isViewer;
+            });
+
+            if (isViewer) {
+                setReadOnlyMode(true, { force: true });
+                const tb = document.getElementById('toolbar');
+                if (tb) {
+                    tb.style.pointerEvents = 'none';
+                    tb.style.opacity = '0.5';
+                }
+                const shareBtn = document.getElementById('btn-drive-share');
+                if (shareBtn) {
+                    shareBtn.style.pointerEvents = 'auto'; // allow sharing view list
+                    shareBtn.disabled = false;
+                }
+            } else {
+                const tb = document.getElementById('toolbar');
+                if (tb) {
+                    tb.style.pointerEvents = '';
+                    tb.style.opacity = '';
+                }
+            }
+        }
+
+        async function makeDriveCopy() {
+            if (!state.driveFileId) return;
+            showLoading('Creating copy...');
+            try {
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}/copy`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: `Copy of ${state.driveFileName}`
+                    })
+                });
+                const data = await res.json();
+                hideLoading();
+                if (data.id) {
+                    showStatus('Copy created! Opening...');
+                    await openDriveFile({ id: data.id, name: data.name });
+                } else {
+                    showStatus('Failed to create copy.', { error: true });
+                }
+            } catch (err) {
+                hideLoading();
+                console.error(err);
+                showStatus('Error creating copy.', { error: true });
+            }
+        }
+
+        async function askToEdit() {
+            if (!state.driveFileId) return;
+            showLoading('Finding owner...');
+            try {
+                const data = await fetchDrivePermissions(state.driveFileId);
+                const ownerPerm = data.permissions?.find(p => p.role === 'owner');
+                hideLoading();
+                if (ownerPerm && ownerPerm.emailAddress) {
+                    const subject = encodeURIComponent(`Requesting edit access to: ${state.driveFileName}`);
+                    const body = encodeURIComponent(`Hi ${ownerPerm.displayName || ''},\n\nI would like to request edit access to the following document:\n${window.location.origin}${window.location.pathname}?drive=${state.driveFileId}\n\nThanks!`);
+                    window.location.href = `mailto:${ownerPerm.emailAddress}?subject=${subject}&body=${body}`;
+                } else {
+                    showStatus('Could not find owner email.', { error: true });
+                }
+            } catch (e) {
+                hideLoading();
+                showStatus('Failed to find owner.', { error: true });
             }
         }
 
@@ -7844,18 +7960,55 @@
                     try {
                         const data = await fetchDrivePermissions(state.driveFileId);
 
-                        // Handle owner display
-                        const ownerPerm = data.permissions?.find(p => p.role === 'owner');
+                        // Handle access list display
                         const ownerInfo = document.getElementById('share-owner-info');
-                        if (ownerPerm && ownerInfo) {
-                            document.getElementById('share-owner-name').textContent = ownerPerm.displayName || 'Unknown';
-                            document.getElementById('share-owner-email').textContent = ownerPerm.emailAddress || '';
-                            if (ownerPerm.photoLink) {
-                                document.getElementById('share-owner-avatar').src = ownerPerm.photoLink;
-                                document.getElementById('share-owner-avatar').classList.remove('hidden');
-                            } else {
-                                document.getElementById('share-owner-avatar').classList.add('hidden');
-                            }
+                        const accessList = document.getElementById('share-access-list');
+                        if (ownerInfo && accessList && data.permissions) {
+                            accessList.innerHTML = '';
+                            data.permissions.forEach(perm => {
+                                if (perm.type === 'anyone') return; // Handled below
+                                const row = document.createElement('div');
+                                row.style.display = 'flex';
+                                row.style.alignItems = 'center';
+                                row.style.gap = '12px';
+
+                                const avatar = document.createElement('img');
+                                avatar.src = perm.photoLink || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ccc"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+                                avatar.style.width = '36px';
+                                avatar.style.height = '36px';
+                                avatar.style.borderRadius = '50%';
+                                avatar.style.objectFit = 'cover';
+
+                                const details = document.createElement('div');
+                                details.style.flex = '1';
+                                details.style.display = 'flex';
+                                details.style.flexDirection = 'column';
+                                details.style.lineHeight = '1.3';
+
+                                const name = document.createElement('div');
+                                name.textContent = perm.displayName || 'Unknown user';
+                                name.style.fontWeight = '500';
+                                name.style.fontSize = '0.9rem';
+                                name.style.color = 'var(--text-primary)';
+
+                                const email = document.createElement('div');
+                                email.textContent = perm.emailAddress || '';
+                                email.style.fontSize = '0.8rem';
+                                email.style.color = 'var(--text-secondary)';
+
+                                details.appendChild(name);
+                                if (perm.emailAddress) details.appendChild(email);
+
+                                const roleLabel = document.createElement('div');
+                                roleLabel.textContent = perm.role.charAt(0).toUpperCase() + perm.role.slice(1);
+                                roleLabel.style.fontSize = '0.85rem';
+                                roleLabel.style.color = 'var(--text-secondary)';
+
+                                row.appendChild(avatar);
+                                row.appendChild(details);
+                                row.appendChild(roleLabel);
+                                accessList.appendChild(row);
+                            });
                             ownerInfo.classList.remove('hidden');
                         }
 
@@ -7952,6 +8105,12 @@
         // Setup event listeners
         function setupEventListeners() {
             setupShareModalEvents();
+
+            const copyBtn = document.getElementById('btn-make-copy');
+            if (copyBtn) copyBtn.addEventListener('click', makeDriveCopy);
+            const askBtn = document.getElementById('btn-ask-edit');
+            if (askBtn) askBtn.addEventListener('click', askToEdit);
+
             // Tool buttons
             toolbar.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
                 btn.addEventListener('click', () => {
