@@ -10669,6 +10669,36 @@
                     throw new Error('Drive save aborted');
                 }
                 if (!wasCreated) {
+                    // Pull-before-push: merge remote changes before uploading
+                    // so we don't overwrite a collaborator's strokes
+                    if (state.driveHeadRevisionId || state.driveLastKnownModified) {
+                        try {
+                            const checkRes = await driveFetch(
+                                `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
+                                { signal: controller.signal }
+                            );
+                            const checkData = await checkRes.json();
+                            let hasRemoteChanges = false;
+                            if (checkData.headRevisionId && checkData.headRevisionId !== state.driveHeadRevisionId) {
+                                hasRemoteChanges = true;
+                            } else if (checkData.modifiedTime) {
+                                const remoteModified = new Date(checkData.modifiedTime).getTime();
+                                if (state.driveLastKnownModified && remoteModified > state.driveLastKnownModified) {
+                                    hasRemoteChanges = true;
+                                }
+                            }
+                            if (hasRemoteChanges) {
+                                console.log('Remote changes detected before save — merging first');
+                                await pullRemoteChanges();
+                            }
+                        } catch (mergeErr) {
+                            if (mergeErr?.name === 'AbortError' || controller.signal.aborted) throw mergeErr;
+                            console.warn('Pre-save merge check failed:', mergeErr);
+                        }
+                    }
+                    if (controller.signal.aborted) {
+                        throw new Error('Drive save aborted');
+                    }
                     if (!pdfBlob) {
                         pdfBlob = await buildPdfBlob({ signal: controller.signal });
                     }
