@@ -1,12 +1,13 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>inhouse notes</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer data-auto_prompt="false"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
 
@@ -38,8 +39,8 @@
             --accent-black: #4D4D4D;
             --accent-orange: #E07A3C;
             --accent-green: #34c759;
-            --shadow-soft: 0 2px 20px rgba(0,0,0,0.08);
-            --shadow-medium: 0 4px 30px rgba(0,0,0,0.12);
+            --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.08);
+            --shadow-medium: 0 4px 30px rgba(0, 0, 0, 0.12);
             --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 16px;
@@ -61,11 +62,12 @@
             --bg-secondary: #1c1c1c;
             --text-primary: #f5f5f5;
             --text-secondary: #a2a2a2;
-            --shadow-soft: 0 2px 20px rgba(0,0,0,0.35);
-            --shadow-medium: 0 4px 30px rgba(0,0,0,0.45);
+            --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.35);
+            --shadow-medium: 0 4px 30px rgba(0, 0, 0, 0.45);
         }
 
-        html, body {
+        html,
+        body {
             height: 100%;
             overflow: hidden;
             font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -88,7 +90,7 @@
             padding: 12px 20px;
             min-height: var(--banner-height);
             background: var(--bg-secondary);
-            border-bottom: 1px solid rgba(0,0,0,0.06);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
             z-index: 100;
             flex-shrink: 0;
         }
@@ -126,6 +128,7 @@
         }
 
         @media (max-width: 720px) {
+
             .logo,
             .drive-brand {
                 gap: 6px;
@@ -174,7 +177,7 @@
         .mode-toggle-status .save-indicator {
             width: 8px;
             height: 8px;
-            box-shadow: 0 0 0 1.5px rgba(0,0,0,0.08);
+            box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
         }
 
         .mode-toggle-status .save-timestamp {
@@ -196,7 +199,7 @@
             transform: translateY(-4px);
         }
 
-        .mode-toggle-btn.is-editing + .mode-toggle-status {
+        .mode-toggle-btn.is-editing+.mode-toggle-status {
             opacity: 1;
             transform: translate(-50%, 0);
         }
@@ -213,7 +216,7 @@
             width: 38px;
             height: 20px;
             border-radius: 999px;
-            background: rgba(0,0,0,0.15);
+            background: rgba(0, 0, 0, 0.15);
             position: relative;
             transition: background 0.2s ease;
             flex: 0 0 auto;
@@ -227,7 +230,7 @@
             background: white;
             top: 3px;
             left: 3px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             transition: transform 0.2s ease;
         }
 
@@ -244,7 +247,7 @@
             height: 10px;
             border-radius: 50%;
             background: var(--accent-green);
-            box-shadow: 0 0 0 2px rgba(0,0,0,0.08);
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
             transition: opacity 0.25s ease, background-color 0.25s ease;
         }
 
@@ -277,13 +280,23 @@
         }
 
         @keyframes save-indicator-flash {
-            0% { opacity: 0.45; }
-            100% { opacity: 1; }
+            0% {
+                opacity: 0.45;
+            }
+
+            100% {
+                opacity: 1;
+            }
         }
 
         @keyframes save-text-fade {
-            0% { opacity: 0.35; }
-            100% { opacity: 0.75; }
+            0% {
+                opacity: 0.35;
+            }
+
+            100% {
+                opacity: 0.75;
+            }
         }
 
         #editor-view.read-only #toolbar {
@@ -370,12 +383,12 @@
         }
 
         .btn-secondary {
-            background: rgba(0,0,0,0.05);
+            background: rgba(0, 0, 0, 0.05);
             color: var(--text-primary);
         }
 
         [data-theme="dark"] .btn-secondary {
-            background: rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
         }
 
@@ -389,7 +402,7 @@
         }
 
         .btn-secondary:hover {
-            background: rgba(0,0,0,0.1);
+            background: rgba(0, 0, 0, 0.1);
         }
 
         .btn svg {
@@ -424,7 +437,7 @@
 
         .page-wrapper {
             position: relative;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
             border-radius: 2px;
             overflow: hidden;
             flex-shrink: 0;
@@ -436,8 +449,13 @@
         }
 
         @keyframes pageFadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
 
         .page-canvas {
@@ -476,7 +494,7 @@
         .selection-box .rotate-handle {
             position: absolute;
             border-radius: 50%;
-            background: rgba(255,255,255,0.9);
+            background: rgba(255, 255, 255, 0.9);
             border: 1px solid rgba(0, 47, 217, 0.7);
             box-shadow: none;
             opacity: 0.9;
@@ -513,7 +531,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
             padding: 0;
         }
 
@@ -558,7 +576,7 @@
             background: rgba(255, 255, 255, 0.98);
             border-radius: 10px;
             border: 1px solid rgba(0, 0, 0, 0.1);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
         }
 
         .selection-color-menu.open {
@@ -586,14 +604,61 @@
             border-radius: 3px;
         }
 
-        .selection-box .handle-n { top: var(--selection-handle-offset); left: 50%; transform: translate(-50%, -50%); cursor: ns-resize; }
-        .selection-box .handle-s { bottom: var(--selection-handle-offset); left: 50%; transform: translate(-50%, 50%); cursor: ns-resize; }
-        .selection-box .handle-e { right: var(--selection-handle-offset); top: 50%; transform: translate(50%, -50%); cursor: ew-resize; }
-        .selection-box .handle-w { left: var(--selection-handle-offset); top: 50%; transform: translate(-50%, -50%); cursor: ew-resize; }
-        .selection-box .handle-ne { right: var(--selection-handle-offset); top: var(--selection-handle-offset); transform: translate(50%, -50%); cursor: nesw-resize; }
-        .selection-box .handle-nw { left: var(--selection-handle-offset); top: var(--selection-handle-offset); transform: translate(-50%, -50%); cursor: nwse-resize; }
-        .selection-box .handle-se { right: var(--selection-handle-offset); bottom: var(--selection-handle-offset); transform: translate(50%, 50%); cursor: nwse-resize; }
-        .selection-box .handle-sw { left: var(--selection-handle-offset); bottom: var(--selection-handle-offset); transform: translate(-50%, 50%); cursor: nesw-resize; }
+        .selection-box .handle-n {
+            top: var(--selection-handle-offset);
+            left: 50%;
+            transform: translate(-50%, -50%);
+            cursor: ns-resize;
+        }
+
+        .selection-box .handle-s {
+            bottom: var(--selection-handle-offset);
+            left: 50%;
+            transform: translate(-50%, 50%);
+            cursor: ns-resize;
+        }
+
+        .selection-box .handle-e {
+            right: var(--selection-handle-offset);
+            top: 50%;
+            transform: translate(50%, -50%);
+            cursor: ew-resize;
+        }
+
+        .selection-box .handle-w {
+            left: var(--selection-handle-offset);
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: ew-resize;
+        }
+
+        .selection-box .handle-ne {
+            right: var(--selection-handle-offset);
+            top: var(--selection-handle-offset);
+            transform: translate(50%, -50%);
+            cursor: nesw-resize;
+        }
+
+        .selection-box .handle-nw {
+            left: var(--selection-handle-offset);
+            top: var(--selection-handle-offset);
+            transform: translate(-50%, -50%);
+            cursor: nwse-resize;
+        }
+
+        .selection-box .handle-se {
+            right: var(--selection-handle-offset);
+            bottom: var(--selection-handle-offset);
+            transform: translate(50%, 50%);
+            cursor: nwse-resize;
+        }
+
+        .selection-box .handle-sw {
+            left: var(--selection-handle-offset);
+            bottom: var(--selection-handle-offset);
+            transform: translate(-50%, 50%);
+            cursor: nesw-resize;
+        }
 
         .selection-box .selection-rotate-line {
             position: absolute;
@@ -627,8 +692,8 @@
             opacity: 0;
             transition: opacity 0.5s ease;
             pointer-events: none;
-            background: rgba(20,20,20,0.25);
-            box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+            background: rgba(20, 20, 20, 0.25);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
         }
 
         .page-number {
@@ -651,7 +716,7 @@
             transform: translateY(var(--toolbar-translate)) scale(var(--toolbar-scale)) rotate(var(--toolbar-rotate));
             transform-origin: top left;
             background: rgba(255, 255, 255, 0.92);
-            border: 1px solid rgba(0,0,0,0.06);
+            border: 1px solid rgba(0, 0, 0, 0.06);
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-medium);
             padding: var(--toolbar-padding);
@@ -671,8 +736,13 @@
         }
 
         @keyframes toolbar-fade {
-            0% { opacity: 0.35; }
-            100% { opacity: 1; }
+            0% {
+                opacity: 0.35;
+            }
+
+            100% {
+                opacity: 1;
+            }
         }
 
         #toolbar.toolbar-tilt-forward {
@@ -707,7 +777,7 @@
         }
 
         #toolbar-handle:hover {
-            background: rgba(0,0,0,0.05);
+            background: rgba(0, 0, 0, 0.05);
         }
 
         #toolbar-handle:active {
@@ -756,7 +826,7 @@
         }
 
         .tool-btn:hover {
-            background: rgba(0,0,0,0.05);
+            background: rgba(0, 0, 0, 0.05);
         }
 
         .tool-btn.active {
@@ -772,9 +842,11 @@
             0% {
                 --toolbar-rotate: 0deg;
             }
+
             50% {
                 --toolbar-rotate: var(--toolbar-tilt);
             }
+
             100% {
                 --toolbar-rotate: 0deg;
             }
@@ -784,9 +856,11 @@
             0% {
                 --toolbar-rotate: 0deg;
             }
+
             50% {
                 --toolbar-rotate: calc(-1 * var(--toolbar-tilt));
             }
+
             100% {
                 --toolbar-rotate: 0deg;
             }
@@ -804,9 +878,20 @@
             opacity: 0.7;
         }
 
-        .size-dot.sm { width: 6px; height: 6px; }
-        .size-dot.md { width: 10px; height: 10px; }
-        .size-dot.lg { width: 14px; height: 14px; }
+        .size-dot.sm {
+            width: 6px;
+            height: 6px;
+        }
+
+        .size-dot.md {
+            width: 10px;
+            height: 10px;
+        }
+
+        .size-dot.lg {
+            width: 14px;
+            height: 14px;
+        }
 
         .color-dot {
             width: 28px;
@@ -830,7 +915,7 @@
 
         .tool-divider {
             height: 1px;
-            background: rgba(0,0,0,0.1);
+            background: rgba(0, 0, 0, 0.1);
             margin: 4px 0;
             width: calc(var(--tool-size) * 0.6);
             align-self: center;
@@ -892,7 +977,7 @@
             width: 38px;
             height: 20px;
             border-radius: 999px;
-            background: rgba(0,0,0,0.15);
+            background: rgba(0, 0, 0, 0.15);
             position: relative;
             outline: none;
             transition: background 0.2s ease;
@@ -908,7 +993,7 @@
             background: white;
             top: 3px;
             left: 3px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             transition: transform 0.2s ease;
         }
 
@@ -934,7 +1019,7 @@
             width: 38px;
             height: 20px;
             border-radius: 999px;
-            background: rgba(0,0,0,0.15);
+            background: rgba(0, 0, 0, 0.15);
             position: relative;
             outline: none;
             transition: background 0.2s ease;
@@ -950,7 +1035,7 @@
             background: white;
             top: 3px;
             left: 3px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
             transition: transform 0.2s ease;
         }
 
@@ -995,7 +1080,7 @@
         .modal-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.4);
+            background: rgba(0, 0, 0, 0.4);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1034,8 +1119,8 @@
             position: relative;
             height: 52px;
             border-radius: 16px;
-            background: rgba(0,0,0,0.05);
-            border: 1px solid rgba(0,0,0,0.08);
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(0, 0, 0, 0.08);
             overflow: hidden;
             touch-action: none;
             user-select: none;
@@ -1074,7 +1159,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
             transition: transform 0.2s ease;
         }
 
@@ -1097,8 +1182,8 @@
             gap: 6px;
             padding: 10px 12px;
             border-radius: var(--radius-md);
-            background: rgba(0,0,0,0.05);
-            border: 1px solid rgba(0,0,0,0.08);
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(0, 0, 0, 0.08);
         }
 
         .modal-input input {
@@ -1127,7 +1212,8 @@
             flex: 1;
         }
 
-        #file-input, #pdf-input {
+        #file-input,
+        #pdf-input {
             display: none;
         }
 
@@ -1138,7 +1224,7 @@
             width: 350px;
             height: 100%;
             background: var(--bg-secondary);
-            box-shadow: -4px 0 30px rgba(0,0,0,0.15);
+            box-shadow: -4px 0 30px rgba(0, 0, 0, 0.15);
             z-index: 1500;
             transition: right 0.3s ease;
             display: flex;
@@ -1154,7 +1240,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 16px 20px;
-            border-bottom: 1px solid rgba(0,0,0,0.08);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
         }
 
         .panel-header h2 {
@@ -1176,7 +1262,7 @@
         }
 
         .panel-close:hover {
-            background: rgba(0,0,0,0.05);
+            background: rgba(0, 0, 0, 0.05);
         }
 
         .panel-close svg {
@@ -1202,14 +1288,14 @@
         }
 
         .page-item:hover {
-            background: rgba(0,0,0,0.06);
+            background: rgba(0, 0, 0, 0.06);
         }
 
         .page-thumbnail {
             width: 50px;
             height: 70px;
             background: white;
-            border: 1px solid rgba(0,0,0,0.1);
+            border: 1px solid rgba(0, 0, 0, 0.1);
             border-radius: 4px;
             overflow: hidden;
             flex-shrink: 0;
@@ -1257,12 +1343,12 @@
         }
 
         .page-action-btn:hover {
-            background: rgba(0,0,0,0.08);
+            background: rgba(0, 0, 0, 0.08);
             color: var(--text-primary);
         }
 
         .page-action-btn.delete:hover {
-            background: rgba(255,59,48,0.1);
+            background: rgba(255, 59, 48, 0.1);
             color: #ff3b30;
         }
 
@@ -1274,7 +1360,7 @@
         .panel-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.3);
+            background: rgba(0, 0, 0, 0.3);
             z-index: 1400;
             opacity: 0;
             visibility: hidden;
@@ -1308,8 +1394,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         @media (max-width: 768px) {
@@ -1326,7 +1419,7 @@
         #loading-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0, 0, 0, 0.7);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -1345,14 +1438,16 @@
         .spinner {
             width: 48px;
             height: 48px;
-            border: 4px solid rgba(255,255,255,0.3);
+            border: 4px solid rgba(255, 255, 255, 0.3);
             border-top-color: white;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         #loading-text {
@@ -1382,7 +1477,7 @@
             padding: 12px 20px;
             min-height: var(--banner-height);
             background: var(--bg-secondary);
-            border-bottom: 1px solid rgba(0,0,0,0.06);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
             gap: 12px;
         }
 
@@ -1415,7 +1510,7 @@
             width: 38px;
             height: 38px;
             border-radius: 50%;
-            border: 1px solid rgba(0,0,0,0.1);
+            border: 1px solid rgba(0, 0, 0, 0.1);
             background: white;
             padding: 0;
             cursor: pointer;
@@ -1426,7 +1521,7 @@
         }
 
         .drive-profile-btn:hover {
-            box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
             transform: translateY(-1px);
         }
 
@@ -1444,8 +1539,8 @@
             border-radius: 16px;
             padding: 14px;
             min-width: 240px;
-            box-shadow: 0 18px 40px rgba(0,0,0,0.18);
-            border: 1px solid rgba(0,0,0,0.08);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+            border: 1px solid rgba(0, 0, 0, 0.08);
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -1455,7 +1550,7 @@
         [data-theme="dark"] .drive-profile-btn,
         [data-theme="dark"] .drive-profile-menu {
             background: #1f1f1f;
-            border-color: rgba(255,255,255,0.08);
+            border-color: rgba(255, 255, 255, 0.08);
         }
 
         .drive-profile-meta {
@@ -1513,7 +1608,7 @@
             max-width: 420px;
             padding: 10px 12px;
             border-radius: 12px;
-            border: 1px solid rgba(0,0,0,0.08);
+            border: 1px solid rgba(0, 0, 0, 0.08);
             background: white;
             font-family: inherit;
             font-size: 0.9rem;
@@ -1521,7 +1616,7 @@
 
         [data-theme="dark"] .drive-search {
             background: #1f1f1f;
-            border-color: rgba(255,255,255,0.08);
+            border-color: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
         }
 
@@ -1567,7 +1662,7 @@
         }
 
         .drive-recents::-webkit-scrollbar-thumb {
-            background: rgba(0,0,0,0.12);
+            background: rgba(0, 0, 0, 0.12);
             border-radius: 999px;
         }
 
@@ -1617,8 +1712,8 @@
             background: white;
             border-radius: 14px;
             padding: 14px;
-            border: 1px solid rgba(0,0,0,0.06);
-            box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
             display: flex;
@@ -1629,7 +1724,7 @@
         }
 
         .drive-card:hover {
-            box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
         }
 
         .drive-card-preview {
@@ -1637,7 +1732,7 @@
             aspect-ratio: 1 / 1;
             border-radius: 12px;
             overflow: hidden;
-            background: rgba(0,0,0,0.04);
+            background: rgba(0, 0, 0, 0.04);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1653,7 +1748,7 @@
         .drive-card-icon {
             width: 40px;
             height: 40px;
-            color: rgba(0,0,0,0.4);
+            color: rgba(0, 0, 0, 0.4);
         }
 
         .drive-card-icon.folder {
@@ -1672,8 +1767,8 @@
             height: 30px;
             border-radius: 10px;
             border: none;
-            background: rgba(255,255,255,0.9);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
             display: grid;
             place-items: center;
             cursor: pointer;
@@ -1690,8 +1785,8 @@
             right: 0;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 14px 32px rgba(0,0,0,0.16);
-            border: 1px solid rgba(0,0,0,0.08);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.16);
+            border: 1px solid rgba(0, 0, 0, 0.08);
             padding: 6px;
             display: flex;
             flex-direction: column;
@@ -1710,35 +1805,35 @@
         [data-theme="dark"] .folder-picker-item,
         [data-theme="dark"] .modal {
             background: #1f1f1f;
-            border-color: rgba(255,255,255,0.08);
-            box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+            border-color: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
         }
 
         [data-theme="dark"] .drive-card-preview,
         [data-theme="dark"] .bin-item {
-            background: rgba(255,255,255,0.04);
+            background: rgba(255, 255, 255, 0.04);
         }
 
         [data-theme="dark"] .drive-card-more,
         [data-theme="dark"] .bin-item-more {
-            background: rgba(0,0,0,0.6);
+            background: rgba(0, 0, 0, 0.6);
             color: var(--text-primary);
-            border: 1px solid rgba(255,255,255,0.12);
+            border: 1px solid rgba(255, 255, 255, 0.12);
         }
 
         [data-theme="dark"] .drive-card-dropdown,
         [data-theme="dark"] .bin-item-dropdown {
-            border-color: rgba(255,255,255,0.08);
+            border-color: rgba(255, 255, 255, 0.08);
         }
 
         [data-theme="dark"] .folder-picker-meta {
-            background: rgba(255,255,255,0.04);
-            border-color: rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.08);
         }
 
         [data-theme="dark"] .drive-empty {
-            background: rgba(255,255,255,0.04);
-            border-color: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.1);
         }
 
         .drive-card-dropdown button {
@@ -1762,7 +1857,7 @@
         }
 
         .drive-card-dropdown button:hover {
-            background: rgba(0,0,0,0.06);
+            background: rgba(0, 0, 0, 0.06);
         }
 
         .drive-card-dropdown button.danger {
@@ -1770,16 +1865,16 @@
         }
 
         .drive-card-dropdown button.danger:hover {
-            background: rgba(255,59,48,0.1);
+            background: rgba(255, 59, 48, 0.1);
         }
 
         .folder-picker {
-            border: 1px solid rgba(0,0,0,0.08);
+            border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 14px;
             padding: 12px;
             max-height: 260px;
             overflow: auto;
-            background: rgba(0,0,0,0.02);
+            background: rgba(0, 0, 0, 0.02);
             margin: 14px 0;
         }
 
@@ -1787,8 +1882,8 @@
             margin-top: 8px;
             padding: 10px 12px;
             border-radius: 12px;
-            border: 1px solid rgba(0,0,0,0.08);
-            background: rgba(0,0,0,0.03);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: rgba(0, 0, 0, 0.03);
             display: flex;
             flex-direction: column;
             gap: 4px;
@@ -1851,11 +1946,11 @@
             border-radius: 10px;
             cursor: pointer;
             background: white;
-            border: 1px solid rgba(0,0,0,0.04);
+            border: 1px solid rgba(0, 0, 0, 0.04);
         }
 
         .folder-picker-item:hover {
-            background: rgba(0,0,0,0.04);
+            background: rgba(0, 0, 0, 0.04);
         }
 
         .folder-picker-item svg {
@@ -1882,8 +1977,8 @@
             gap: 10px;
             padding: 10px 12px;
             border-radius: 12px;
-            background: rgba(0,0,0,0.02);
-            border: 1px solid rgba(0,0,0,0.06);
+            background: rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(0, 0, 0, 0.06);
             position: relative;
         }
 
@@ -1909,8 +2004,8 @@
             height: 28px;
             border-radius: 8px;
             border: none;
-            background: rgba(255,255,255,0.9);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
             display: grid;
             place-items: center;
             cursor: pointer;
@@ -1923,8 +2018,8 @@
             top: 34px;
             background: white;
             border-radius: 10px;
-            box-shadow: 0 12px 26px rgba(0,0,0,0.18);
-            border: 1px solid rgba(0,0,0,0.08);
+            box-shadow: 0 12px 26px rgba(0, 0, 0, 0.18);
+            border: 1px solid rgba(0, 0, 0, 0.08);
             padding: 6px;
             min-width: 160px;
             display: flex;
@@ -1949,7 +2044,7 @@
         }
 
         .bin-item-dropdown button:hover {
-            background: rgba(0,0,0,0.06);
+            background: rgba(0, 0, 0, 0.06);
         }
 
         .bin-item-dropdown svg {
@@ -1973,14 +2068,14 @@
         .mini-spinner {
             width: 18px;
             height: 18px;
-            border: 2px solid rgba(0,0,0,0.2);
+            border: 2px solid rgba(0, 0, 0, 0.2);
             border-top-color: var(--text-primary);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
 
         [data-theme="dark"] .mini-spinner {
-            border-color: rgba(255,255,255,0.18);
+            border-color: rgba(255, 255, 255, 0.18);
             border-top-color: var(--text-primary);
         }
 
@@ -1988,8 +2083,8 @@
             background: white;
             border-radius: 14px;
             padding: 14px 16px;
-            border: 1px solid rgba(0,0,0,0.06);
-            box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -1999,7 +2094,7 @@
         }
 
         .drive-folder-card:hover {
-            box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
         }
 
         .drive-folder-icon {
@@ -2023,9 +2118,9 @@
             padding: 24px;
             text-align: center;
             color: var(--text-secondary);
-            border: 1px dashed rgba(0,0,0,0.12);
+            border: 1px dashed rgba(0, 0, 0, 0.12);
             border-radius: 16px;
-            background: rgba(255,255,255,0.6);
+            background: rgba(255, 255, 255, 0.6);
         }
 
         #editor-view.hidden {
@@ -2055,7 +2150,7 @@
 
         .doc-title.editing,
         .doc-title:focus {
-            background: rgba(0,0,0,0.05);
+            background: rgba(0, 0, 0, 0.05);
             color: var(--text-primary);
             outline: 2px solid rgba(0, 47, 217, 0.3);
             outline-offset: 2px;
@@ -2064,28 +2159,33 @@
         }
     </style>
 </head>
+
 <body>
     <div id="drive-home">
         <div class="drive-topbar">
             <div class="drive-brand">
                 <svg viewBox="0 0 40 24" fill="none">
-                    <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                    <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round"
+                        stroke-linejoin="round" fill="none" />
                 </svg>
                 <span class="brand-name">inhouse notes</span>
             </div>
             <div class="drive-actions">
-                <button class="btn btn-secondary btn-icon-square" id="btn-drive-fullscreen" title="Fullscreen" aria-label="Fullscreen">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="15 3 21 3 21 9"/>
-                        <polyline points="9 21 3 21 3 15"/>
-                        <line x1="21" y1="3" x2="14" y2="10"/>
-                        <line x1="3" y1="21" x2="10" y2="14"/>
+                <button class="btn btn-secondary btn-icon-square" id="btn-drive-fullscreen" title="Fullscreen"
+                    aria-label="Fullscreen">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <polyline points="15 3 21 3 21 9" />
+                        <polyline points="9 21 3 21 3 15" />
+                        <line x1="21" y1="3" x2="14" y2="10" />
+                        <line x1="3" y1="21" x2="10" y2="14" />
                     </svg>
                 </button>
                 <button class="btn btn-primary" id="btn-drive-new">New PDF</button>
                 <button class="btn btn-primary" id="btn-drive-login">Sign in</button>
                 <div class="drive-profile hidden" id="drive-profile">
-                    <button class="drive-profile-btn" id="btn-drive-profile" type="button" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">
+                    <button class="drive-profile-btn" id="btn-drive-profile" type="button" aria-label="Account menu"
+                        aria-haspopup="menu" aria-expanded="false">
                         <img class="drive-profile-avatar" id="drive-profile-avatar" alt="Profile">
                     </button>
                     <div class="drive-profile-menu hidden" id="drive-profile-menu" role="menu">
@@ -2112,11 +2212,12 @@
             <div class="drive-toolbar">
                 <button class="btn btn-secondary btn-icon-square" id="btn-drive-bin" title="Bin" aria-label="Bin">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                     </svg>
                 </button>
-                <input class="drive-search" id="drive-search" type="text" placeholder="Search PDFs..." autocomplete="off">
+                <input class="drive-search" id="drive-search" type="text" placeholder="Search PDFs..."
+                    autocomplete="off">
                 <div class="drive-status" id="drive-status">Sign in to browse your Drive.</div>
             </div>
             <section class="drive-section">
@@ -2135,9 +2236,10 @@
             <section class="drive-section">
                 <div class="drive-section-header">
                     <div class="drive-section-title">My Drive</div>
-                    <button class="btn btn-secondary btn-icon-square" id="btn-drive-back" title="Up one folder" aria-label="Up one folder">
+                    <button class="btn btn-secondary btn-icon-square" id="btn-drive-back" title="Up one folder"
+                        aria-label="Up one folder">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="15 18 9 12 15 6"/>
+                            <polyline points="15 18 9 12 15 6" />
                         </svg>
                     </button>
                 </div>
@@ -2150,185 +2252,210 @@
     </div>
 
     <div id="editor-view" class="hidden">
-    <div id="app">
-        <header>
-            <div class="logo" id="btn-drive-home" role="button" tabindex="0" title="Drive Home" aria-label="Drive Home">
-                <svg viewBox="0 0 40 24" fill="none">
-                    <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                </svg>
-                <span class="brand-name">inhouse notes</span>
-                <span class="doc-title" id="doc-title" role="textbox" aria-label="Document title" contenteditable="true" spellcheck="false">Untitled</span>
-            </div>
-            <div class="header-actions">
-                <div class="mode-toggle-group">
-                    <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button" aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
-                        <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
-                        <span class="mode-toggle-pill" aria-hidden="true">
-                            <span class="mode-toggle-knob"></span>
-                        </span>
-                    </button>
-                    <div class="mode-toggle-status">
-                        <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved"></div>
-                        <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
-                    </div>
+        <div id="app">
+            <header>
+                <div class="logo" id="btn-drive-home" role="button" tabindex="0" title="Drive Home"
+                    aria-label="Drive Home">
+                    <svg viewBox="0 0 40 24" fill="none">
+                        <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round"
+                            stroke-linejoin="round" fill="none" />
+                    </svg>
+                    <span class="brand-name">inhouse notes</span>
+                    <span class="doc-title" id="doc-title" role="textbox" aria-label="Document title"
+                        contenteditable="true" spellcheck="false">Untitled</span>
                 </div>
-                <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen" aria-label="Fullscreen">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="15 3 21 3 21 9"/>
-                        <polyline points="9 21 3 21 3 15"/>
-                        <line x1="21" y1="3" x2="14" y2="10"/>
-                        <line x1="3" y1="21" x2="10" y2="14"/>
-                    </svg>
-                </button>
-                <button class="btn btn-secondary btn-icon-square" id="btn-edit-pages" title="Manage Pages" aria-label="Manage Pages">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                        <line x1="9" y1="15" x2="15" y2="15"/>
-                    </svg>
-                </button>
-                <button class="btn btn-secondary btn-icon-square" id="btn-import-pdf" title="Import PDF" aria-label="Import PDF">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                        <line x1="12" y1="18" x2="12" y2="12"/>
-                        <polyline points="9 15 12 12 15 15"/>
-                    </svg>
-                </button>
-                <button class="btn btn-primary btn-icon-square" id="btn-export-pdf" title="Export PDF" aria-label="Export PDF">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                        <line x1="12" y1="18" x2="12" y2="12"/>
-                        <polyline points="9 15 12 18 15 15"/>
-                    </svg>
-                </button>
-                <div class="drive-profile hidden" id="drive-profile-editor">
-                    <button class="drive-profile-btn" id="btn-drive-profile-editor" type="button" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">
-                        <img class="drive-profile-avatar" id="drive-profile-avatar-editor" alt="Profile">
+                <div class="header-actions">
+                    <div class="mode-toggle-group">
+                        <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button"
+                            aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
+                            <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
+                            <span class="mode-toggle-pill" aria-hidden="true">
+                                <span class="mode-toggle-knob"></span>
+                            </span>
+                        </button>
+                        <div class="mode-toggle-status">
+                            <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved">
+                            </div>
+                            <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen"
+                        aria-label="Fullscreen">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 3 21 3 21 9" />
+                            <polyline points="9 21 3 21 3 15" />
+                            <line x1="21" y1="3" x2="14" y2="10" />
+                            <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
                     </button>
-                    <div class="drive-profile-menu hidden" id="drive-profile-menu-editor" role="menu">
-                        <div class="drive-profile-meta">
-                            <img class="drive-profile-avatar" id="drive-profile-avatar-menu-editor" alt="Profile">
-                            <div>
-                                <div class="drive-profile-name" id="drive-profile-name-editor">Signed in</div>
-                                <div class="drive-profile-email" id="drive-profile-email-editor"></div>
+                    <button class="btn btn-secondary btn-icon-square" id="btn-edit-pages" title="Manage Pages"
+                        aria-label="Manage Pages">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="9" y1="15" x2="15" y2="15" />
+                        </svg>
+                    </button>
+                    <button class="btn btn-secondary btn-icon-square" id="btn-import-pdf" title="Import PDF"
+                        aria-label="Import PDF">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="12" y1="18" x2="12" y2="12" />
+                            <polyline points="9 15 12 12 15 15" />
+                        </svg>
+                    </button>
+                    <button class="btn btn-primary btn-icon-square" id="btn-export-pdf" title="Export PDF"
+                        aria-label="Export PDF">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="12" y1="18" x2="12" y2="12" />
+                            <polyline points="9 15 12 18 15 15" />
+                        </svg>
+                    </button>
+                    <div class="drive-profile hidden" id="drive-profile-editor">
+                        <button class="drive-profile-btn" id="btn-drive-profile-editor" type="button"
+                            aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">
+                            <img class="drive-profile-avatar" id="drive-profile-avatar-editor" alt="Profile">
+                        </button>
+                        <div class="drive-profile-menu hidden" id="drive-profile-menu-editor" role="menu">
+                            <div class="drive-profile-meta">
+                                <img class="drive-profile-avatar" id="drive-profile-avatar-menu-editor" alt="Profile">
+                                <div>
+                                    <div class="drive-profile-name" id="drive-profile-name-editor">Signed in</div>
+                                    <div class="drive-profile-email" id="drive-profile-email-editor"></div>
+                                </div>
+                            </div>
+                            <label class="theme-toggle" for="theme-toggle-editor">
+                                <span>Night mode</span>
+                                <input type="checkbox" id="theme-toggle-editor" aria-label="Night mode">
+                            </label>
+                            <div class="drive-profile-actions">
+                                <button class="btn btn-secondary" id="btn-drive-menu-refresh-editor"
+                                    type="button">Refresh</button>
+                                <button class="btn btn-secondary" id="btn-drive-menu-logout-editor" type="button">Sign
+                                    out</button>
                             </div>
                         </div>
-                        <label class="theme-toggle" for="theme-toggle-editor">
-                            <span>Night mode</span>
-                            <input type="checkbox" id="theme-toggle-editor" aria-label="Night mode">
-                        </label>
-                        <div class="drive-profile-actions">
-                            <button class="btn btn-secondary" id="btn-drive-menu-refresh-editor" type="button">Refresh</button>
-                            <button class="btn btn-secondary" id="btn-drive-menu-logout-editor" type="button">Sign out</button>
-                        </div>
                     </div>
                 </div>
+            </header>
+
+            <div id="canvas-viewport">
+                <div id="canvas-container"></div>
             </div>
-        </header>
 
-        <div id="canvas-viewport">
-            <div id="canvas-container"></div>
-        </div>
-
-        <div id="toolbar">
-            <div id="toolbar-handle" title="Drag to move">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <circle cx="9" cy="6" r="1.5" fill="currentColor"/>
-                    <circle cx="15" cy="6" r="1.5" fill="currentColor"/>
-                    <circle cx="9" cy="12" r="1.5" fill="currentColor"/>
-                    <circle cx="15" cy="12" r="1.5" fill="currentColor"/>
-                    <circle cx="9" cy="18" r="1.5" fill="currentColor"/>
-                    <circle cx="15" cy="18" r="1.5" fill="currentColor"/>
-                </svg>
-            </div>
-            <div class="tool-divider"></div>
-            <button class="tool-btn" data-tool="pen" data-color="#4D4D4D" data-width="2" title="Black Pen">
-                <svg viewBox="0 0 24 24" fill="none">
-                    <path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#4D4D4D" stroke="#4D4D4D" stroke-width="1.5" stroke-linejoin="round"/>
-                    <path d="M13.5 6.5l4 4" stroke="white" stroke-width="1" stroke-linecap="round"/>
-                </svg>
-            </button>
-            <button class="tool-btn active" data-tool="pen" data-color="#002FD9" data-width="2" title="Blue Pen">
-                <svg viewBox="0 0 24 24" fill="none">
-                    <path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#002FD9" stroke="#002FD9" stroke-width="1.5" stroke-linejoin="round"/>
-                    <path d="M13.5 6.5l4 4" stroke="white" stroke-width="1" stroke-linecap="round"/>
-                </svg>
-            </button>
-            <button class="tool-btn" data-tool="pen" data-color="#E81010" data-width="2" title="Red Pen">
-                <svg viewBox="0 0 24 24" fill="none">
-                    <path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#E81010" stroke="#E81010" stroke-width="1.5" stroke-linejoin="round"/>
-                    <path d="M13.5 6.5l4 4" stroke="white" stroke-width="1" stroke-linecap="round"/>
-                </svg>
-            </button>
-            <div class="tool-divider"></div>
-            <button class="tool-btn" data-tool="highlighter" data-color="#ffde00" data-width="16" title="Highlighter">
-                <svg viewBox="0 0 24 24" fill="none">
-                    <rect x="6" y="3" width="6" height="14" rx="1" fill="#ffde00" stroke="#1a1a1a" stroke-width="1.2"/>
-                    <path d="M6 17l3 4 3-4" fill="#ffde00" stroke="#1a1a1a" stroke-width="1.2" stroke-linejoin="round"/>
-                    <rect x="7" y="5" width="4" height="3" fill="#fff" opacity="0.5" rx="0.5"/>
-                </svg>
-            </button>
-            <div class="tool-divider"></div>
-            <button class="tool-btn" data-tool="eraser" id="btn-eraser" title="Eraser">
-                <svg viewBox="0 0 24 24" fill="none">
-                    <rect x="3" y="10" width="18" height="8" rx="2" fill="#f5f5f5" stroke="currentColor" stroke-width="1.5"/>
-                    <rect x="3" y="10" width="7" height="8" rx="2" fill="#ffb6c1" stroke="currentColor" stroke-width="1.5"/>
-                    <path d="M3 18h18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-            </button>
-            <button class="tool-btn" data-tool="lasso" title="Lasso Select">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 8c0-2.5 2.7-4 6-4s6 1.5 6 4-2.7 4-6 4-6-1.5-6-4z"/>
-                    <path d="M12 12c0 3-2 5-5 6"/>
-                </svg>
-            </button>
-            <div class="tool-divider"></div>
-            <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 10h10a5 5 0 0 1 5 5v2"/>
-                    <path d="M7 6l-4 4 4 4"/>
-                </svg>
-            </button>
-            <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Y)" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 10H11a5 5 0 0 0-5 5v2"/>
-                    <path d="M17 6l4 4-4 4"/>
-                </svg>
-            </button>
-        </div>
-
-        <div id="eraser-menu" class="eraser-menu" aria-hidden="true">
-            <div class="eraser-menu-title">Eraser size</div>
-            <div class="eraser-menu-options">
-                <button class="tool-btn size-btn active" data-eraser-size="12" title="Small">
-                    <span class="size-dot sm"></span>
+            <div id="toolbar">
+                <div id="toolbar-handle" title="Drag to move">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <circle cx="9" cy="6" r="1.5" fill="currentColor" />
+                        <circle cx="15" cy="6" r="1.5" fill="currentColor" />
+                        <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+                        <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+                        <circle cx="9" cy="18" r="1.5" fill="currentColor" />
+                        <circle cx="15" cy="18" r="1.5" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="tool-divider"></div>
+                <button class="tool-btn" data-tool="pen" data-color="#4D4D4D" data-width="2" title="Black Pen">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#4D4D4D"
+                            stroke="#4D4D4D" stroke-width="1.5" stroke-linejoin="round" />
+                        <path d="M13.5 6.5l4 4" stroke="white" stroke-width="1" stroke-linecap="round" />
+                    </svg>
                 </button>
-                <button class="tool-btn size-btn" data-eraser-size="22" title="Medium">
-                    <span class="size-dot md"></span>
+                <button class="tool-btn active" data-tool="pen" data-color="#002FD9" data-width="2" title="Blue Pen">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#002FD9"
+                            stroke="#002FD9" stroke-width="1.5" stroke-linejoin="round" />
+                        <path d="M13.5 6.5l4 4" stroke="white" stroke-width="1" stroke-linecap="round" />
+                    </svg>
                 </button>
-                <button class="tool-btn size-btn" data-eraser-size="32" title="Large">
-                    <span class="size-dot lg"></span>
+                <button class="tool-btn" data-tool="pen" data-color="#E81010" data-width="2" title="Red Pen">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#E81010"
+                            stroke="#E81010" stroke-width="1.5" stroke-linejoin="round" />
+                        <path d="M13.5 6.5l4 4" stroke="white" stroke-width="1" stroke-linecap="round" />
+                    </svg>
+                </button>
+                <div class="tool-divider"></div>
+                <button class="tool-btn" data-tool="highlighter" data-color="#ffde00" data-width="16"
+                    title="Highlighter">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <rect x="6" y="3" width="6" height="14" rx="1" fill="#ffde00" stroke="#1a1a1a"
+                            stroke-width="1.2" />
+                        <path d="M6 17l3 4 3-4" fill="#ffde00" stroke="#1a1a1a" stroke-width="1.2"
+                            stroke-linejoin="round" />
+                        <rect x="7" y="5" width="4" height="3" fill="#fff" opacity="0.5" rx="0.5" />
+                    </svg>
+                </button>
+                <div class="tool-divider"></div>
+                <button class="tool-btn" data-tool="eraser" id="btn-eraser" title="Eraser">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <rect x="3" y="10" width="18" height="8" rx="2" fill="#f5f5f5" stroke="currentColor"
+                            stroke-width="1.5" />
+                        <rect x="3" y="10" width="7" height="8" rx="2" fill="#ffb6c1" stroke="currentColor"
+                            stroke-width="1.5" />
+                        <path d="M3 18h18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                    </svg>
+                </button>
+                <button class="tool-btn" data-tool="lasso" title="Lasso Select">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M6 8c0-2.5 2.7-4 6-4s6 1.5 6 4-2.7 4-6 4-6-1.5-6-4z" />
+                        <path d="M12 12c0 3-2 5-5 6" />
+                    </svg>
+                </button>
+                <div class="tool-divider"></div>
+                <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M3 10h10a5 5 0 0 1 5 5v2" />
+                        <path d="M7 6l-4 4 4 4" />
+                    </svg>
+                </button>
+                <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Y)" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 10H11a5 5 0 0 0-5 5v2" />
+                        <path d="M17 6l4 4-4 4" />
+                    </svg>
                 </button>
             </div>
-            <label class="eraser-toggle" for="eraser-stroke-toggle">
-                <span>Stroke eraser</span>
-                <input type="checkbox" id="eraser-stroke-toggle">
-            </label>
-        </div>
 
-        <div id="status-bar">
-            <div class="status-dot"></div>
-            <span id="status-text">Saved</span>
+            <div id="eraser-menu" class="eraser-menu" aria-hidden="true">
+                <div class="eraser-menu-title">Eraser size</div>
+                <div class="eraser-menu-options">
+                    <button class="tool-btn size-btn active" data-eraser-size="12" title="Small">
+                        <span class="size-dot sm"></span>
+                    </button>
+                    <button class="tool-btn size-btn" data-eraser-size="22" title="Medium">
+                        <span class="size-dot md"></span>
+                    </button>
+                    <button class="tool-btn size-btn" data-eraser-size="32" title="Large">
+                        <span class="size-dot lg"></span>
+                    </button>
+                </div>
+                <label class="eraser-toggle" for="eraser-stroke-toggle">
+                    <span>Stroke eraser</span>
+                    <input type="checkbox" id="eraser-stroke-toggle">
+                </label>
+            </div>
+
+            <div id="status-bar">
+                <div class="status-dot"></div>
+                <span id="status-text">Saved</span>
+            </div>
         </div>
-    </div>
     </div>
 
     <div class="modal-overlay" id="modal-delete-page">
         <div class="modal modal-danger">
             <h2>Delete page?</h2>
-            <p>This action will delete page <strong id="delete-page-number">1</strong> and all its strokes. This cannot be undone.</p>
+            <p>This action will delete page <strong id="delete-page-number">1</strong> and all its strokes. This cannot
+                be undone.</p>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="modal-delete-cancel">Cancel</button>
                 <button class="btn btn-primary" id="modal-delete-confirm">Delete</button>
@@ -2344,8 +2471,9 @@
                 <div class="confirm-slider-fill" id="reset-slider-fill"></div>
                 <div class="confirm-slider-text">Slide to start over</div>
                 <div class="confirm-slider-handle" id="reset-slider-handle" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 6 15 12 9 18"/>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 6 15 12 9 18" />
                     </svg>
                 </div>
             </div>
@@ -2400,8 +2528,9 @@
                 <div class="confirm-slider-fill" id="trash-slider-fill"></div>
                 <div class="confirm-slider-text">Slide to move to bin</div>
                 <div class="confirm-slider-handle" id="trash-slider-handle" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="9 6 15 12 9 18"/>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 6 15 12 9 18" />
                     </svg>
                 </div>
             </div>
@@ -2434,8 +2563,8 @@
             <h2>Manage Pages</h2>
             <button class="panel-close" id="panel-close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"/>
-                    <line x1="6" y1="6" x2="18" y2="18"/>
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
             </button>
         </div>
@@ -3186,7 +3315,7 @@
             } else {
                 showEditorView();
             }
-            
+
             // Center page after DOM is ready
             setTimeout(() => {
                 if (!applyViewState(pendingViewState)) {
@@ -3200,7 +3329,7 @@
             const viewportRect = canvasViewport.getBoundingClientRect();
             const pageWidth = A4_WIDTH * state.zoom;
             const padding = PAGE_PADDING * state.zoom;
-            
+
             // Center horizontally
             state.panX = (viewportRect.width - pageWidth) / 2 - padding;
             // Show top with some margin
@@ -3211,7 +3340,7 @@
                 overscrollResetTimeout = null;
             }
             updateAddPageIndicator();
-            
+
             updateTransform();
         }
 
@@ -3258,6 +3387,15 @@
             if (withCanvas) {
                 attachPageCanvases(wrapper, pageIndex);
                 activePageIndices.add(pageIndex);
+            }
+            const page = state.pages[pageIndex];
+            if (page && !page.preview && !page.unloaded) {
+                const hasContent = (Array.isArray(page.strokes) && page.strokes.length > 0)
+                    || page.backgroundImage || page.bakedBackground
+                    || (Array.isArray(page.images) && page.images.length > 0);
+                if (hasContent) {
+                    page.preview = renderPagePreview(pageIndex);
+                }
             }
             applyPagePreview(pageIndex);
             wrapper.addEventListener('pointerdown', (e) => {
@@ -4974,7 +5112,7 @@
             driveTokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: GOOGLE_CLIENT_ID,
                 scope: DRIVE_SCOPE,
-                callback: () => {}
+                callback: () => { }
             });
             const hasStoredToken = loadDriveTokenFromStorage();
             updateDriveAuthUI();
@@ -5025,7 +5163,7 @@
             driveTokenRefreshTimer = setTimeout(() => {
                 driveTokenRefreshTimer = null;
                 // Silently refresh the token
-                ensureDriveToken(false).catch(() => {});
+                ensureDriveToken(false).catch(() => { });
             }, refreshIn);
         }
 
@@ -5072,7 +5210,7 @@
 
         function signOutDrive() {
             if (driveAccessToken && window.google?.accounts?.oauth2?.revoke) {
-                google.accounts.oauth2.revoke(driveAccessToken, () => {});
+                google.accounts.oauth2.revoke(driveAccessToken, () => { });
             }
             if (driveTokenRefreshTimer) { clearTimeout(driveTokenRefreshTimer); driveTokenRefreshTimer = null; }
             driveAccessToken = null;
@@ -5098,7 +5236,7 @@
             closeDriveProfileMenus();
             clearDriveTokenStorage();
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
-            try { localStorage.removeItem('drive-hint-email'); } catch (e) {}
+            try { localStorage.removeItem('drive-hint-email'); } catch (e) { }
             clearDriveSession();
             updateDriveAuthUI();
         }
@@ -5149,7 +5287,7 @@
                     token: driveAccessToken
                 };
                 if (driveUserProfile.email) {
-                    try { localStorage.setItem('drive-hint-email', driveUserProfile.email); } catch (e) {}
+                    try { localStorage.setItem('drive-hint-email', driveUserProfile.email); } catch (e) { }
                 }
                 updateDriveProfileUI(driveUserProfile);
             } catch (err) {
@@ -5774,6 +5912,7 @@
             updateHistoryButtons();
             renderAllPages();
             centerViewOnTop();
+            setReadOnlyMode(false);
             state.exportName = safeBase;
             state.driveFileId = null;
             state.driveFileName = fileName;
@@ -5795,8 +5934,6 @@
                 showStatus('Failed to create PDF', { preserveState: true });
             } finally {
                 hideLoading();
-                // Bug fix: allow editing immediately after new file creation
-                setReadOnlyMode(false);
             }
         }
 
@@ -6095,8 +6232,8 @@
                     item.innerHTML = `
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             ${isFolder
-                                ? '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
-                                : '<path d="M6 2h8l4 4v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/>'}
+                            ? '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
+                            : '<path d="M6 2h8l4 4v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/>'}
                         </svg>
                         <div>
                             <div>${file.name || 'Untitled'}</div>
@@ -8177,28 +8314,28 @@
         function handleWheel(e) {
             e.preventDefault();
             noteInteractionActivity();
-            
+
             if (e.ctrlKey || e.metaKey) {
                 // Zoom with Ctrl+wheel or pinch on trackpad
                 const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
                 const newZoom = Math.min(Math.max(0.5, state.zoom * zoomFactor), 3);
-                
+
                 // Zoom centered on mouse position
                 const rect = canvasViewport.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
-                
+
                 // Calculate point in content coordinates
                 const contentX = (mouseX - state.panX) / state.zoom;
                 const contentY = (mouseY - state.panY) / state.zoom;
-                
+
                 // Update zoom
                 state.zoom = newZoom;
-                
+
                 // Adjust pan to keep the point under the mouse
                 state.panX = mouseX - contentX * state.zoom;
                 state.panY = mouseY - contentY * state.zoom;
-                
+
                 updateTransform();
             } else {
                 // Scroll with wheel
@@ -8234,7 +8371,7 @@
                     }
                 }
             }
-            
+
             // For mouse, only start pan on middle button or when not on canvas
             if (e.pointerType === 'mouse') {
                 // Left click drag to pan
@@ -8245,7 +8382,7 @@
                 canvasViewport.style.cursor = 'grabbing';
                 return;
             }
-            
+
             // Touch handling
             state.activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
 
@@ -8280,7 +8417,7 @@
             if (e.pointerType === 'pen') return;
             if (!state.activePointers.has(e.pointerId)) return;
             noteInteractionActivity();
-            
+
             state.activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
 
             // Mouse drag
@@ -8301,36 +8438,36 @@
                 if (state.initialPinchDist > 0) {
                     const scaleFactor = currentDist / state.initialPinchDist;
                     const newZoom = Math.min(Math.max(0.5, state.initialScale * scaleFactor), 3);
-                    
+
                     // Get current pinch center
                     const points = Array.from(state.activePointers.values());
                     const currentCenterX = (points[0].clientX + points[1].clientX) / 2;
                     const currentCenterY = (points[0].clientY + points[1].clientY) / 2;
-                    
+
                     // Calculate the point in content space at the original pinch center
                     const rect = canvasViewport.getBoundingClientRect();
                     const contentX = (state.pinchCenterX - rect.left - state.initialPanX) / state.initialScale;
                     const contentY = (state.pinchCenterY - rect.top - state.initialPanY) / state.initialScale;
-                    
+
                     // Update zoom
                     state.zoom = newZoom;
-                    
+
                     // Adjust pan to keep the content point under the current pinch center
                     state.panX = currentCenterX - rect.left - contentX * state.zoom;
                     state.panY = currentCenterY - rect.top - contentY * state.zoom;
-                    
+
                     updateTransform();
                 }
             } else if (state.activePointers.size === 1 && state.isPanning) {
                 // Single finger pan
                 const dx = e.clientX - state.lastPanX;
                 const dy = e.clientY - state.lastPanY;
-                
+
                 // Check if we should lock to vertical scroll
                 if (!state.scrollLocked) {
                     const totalDx = Math.abs(e.clientX - state.panStartX);
                     const totalDy = Math.abs(e.clientY - state.panStartY);
-                    
+
                     if (totalDx > 10 || totalDy > 10) {
                         if (totalDy > totalDx * 2) {
                             state.scrollLocked = 'vertical';
@@ -9044,7 +9181,8 @@
                     fileId: state.driveFileId,
                     fileName: state.driveFileName,
                     exportName: state.exportName,
-                    autosave: state.driveAutosave
+                    autosave: state.driveAutosave,
+                    lastDriveSaveAt: state.lastDriveSaveAt || null
                 };
                 localStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify(payload));
             } catch (e) {
@@ -9072,6 +9210,9 @@
                     state.exportName = parsed.exportName;
                 }
                 state.driveAutosave = !!parsed.autosave || !!parsed.fileId;
+                if (typeof parsed.lastDriveSaveAt === 'number') {
+                    state.lastDriveSaveAt = parsed.lastDriveSaveAt;
+                }
             } catch (e) {
                 console.error('Failed to load Drive session:', e);
             }
@@ -9146,7 +9287,7 @@
                         db.onversionchange = () => {
                             try {
                                 db.close();
-                            } catch (err) {}
+                            } catch (err) { }
                             notebookDbInstance = null;
                             notebookDbPromise = null;
                         };
@@ -9309,7 +9450,7 @@
                     cursor.delete();
                     cursor.continue();
                 };
-                request.onerror = () => {};
+                request.onerror = () => { };
             });
         }
 
@@ -11289,7 +11430,7 @@
             const metadataString = `[${metadataParts.join(',')}]`;
             await yieldForResponsiveness(true);
             const encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
-            
+
             // Add as PDF property
             pdf.setProperties({
                 title: 'Cuaderno Digital',
@@ -11331,7 +11472,7 @@
                         abortHandler = () => {
                             try {
                                 renderTask.cancel();
-                            } catch (err) {}
+                            } catch (err) { }
                         };
                         abortSignal.addEventListener('abort', abortHandler, { once: true });
                     }
@@ -11422,4 +11563,5 @@
         init();
     </script>
 </body>
+
 </html>
