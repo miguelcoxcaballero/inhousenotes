@@ -2743,6 +2743,67 @@
 
     <input type="file" id="pdf-input" accept=".pdf">
 
+    <div id="share-modal-overlay" class="modal-overlay hidden">
+        <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+            <div class="modal-header">
+                <h2 id="share-modal-title">Share document</h2>
+                <button type="button" class="btn btn-secondary btn-icon-square" id="btn-close-share-modal"
+                    aria-label="Close" style="border:none;background:transparent;box-shadow:none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-content">
+                <form id="share-invite-form" class="share-section">
+                    <label for="share-email-input" class="share-label">Add people</label>
+                    <div class="share-input-group">
+                        <input type="email" id="share-email-input" placeholder="Email address" required
+                            autocomplete="email">
+                        <select id="share-role-select" aria-label="Select role">
+                            <option value="reader">Viewer</option>
+                            <option value="writer">Editor</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary" id="btn-send-share">Send</button>
+                    </div>
+                </form>
+
+                <div class="share-section">
+                    <label class="share-label">General access</label>
+                    <div class="share-input-group link-access-group">
+                        <div class="link-access-info">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                <path
+                                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                                </path>
+                            </svg>
+                            <select id="share-link-access-select" aria-label="Link access">
+                                <option value="restricted">Restricted</option>
+                                <option value="anyone">Anyone with the link</option>
+                            </select>
+                        </div>
+                        <select id="share-link-role-select" class="hidden" aria-label="Link role">
+                            <option value="reader">Viewer</option>
+                            <option value="writer">Editor</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="share-section copy-link-section">
+                    <button type="button" class="btn btn-secondary" id="btn-copy-share-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                        Copy link
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     <script>
         // Configure PDF.js worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -12330,67 +12391,6 @@
         // Start
         init();
     </script>
-    <div id="share-modal-overlay" class="modal-overlay hidden">
-        <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
-            <div class="modal-header">
-                <h2 id="share-modal-title">Share document</h2>
-                <button type="button" class="btn btn-secondary btn-icon-square" id="btn-close-share-modal"
-                    aria-label="Close" style="border:none;background:transparent;box-shadow:none;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                </button>
-            </div>
-            <div class="modal-content">
-                <form id="share-invite-form" class="share-section">
-                    <label for="share-email-input" class="share-label">Add people</label>
-                    <div class="share-input-group">
-                        <input type="email" id="share-email-input" placeholder="Email address" required
-                            autocomplete="email">
-                        <select id="share-role-select" aria-label="Select role">
-                            <option value="reader">Viewer</option>
-                            <option value="writer">Editor</option>
-                        </select>
-                        <button type="submit" class="btn btn-primary" id="btn-send-share">Send</button>
-                    </div>
-                </form>
-
-                <div class="share-section">
-                    <label class="share-label">General access</label>
-                    <div class="share-input-group link-access-group">
-                        <div class="link-access-info">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="2" y1="12" x2="22" y2="12"></line>
-                                <path
-                                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
-                                </path>
-                            </svg>
-                            <select id="share-link-access-select" aria-label="Link access">
-                                <option value="restricted">Restricted</option>
-                                <option value="anyone">Anyone with the link</option>
-                            </select>
-                        </div>
-                        <select id="share-link-role-select" class="hidden" aria-label="Link role">
-                            <option value="reader">Viewer</option>
-                            <option value="writer">Editor</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="share-section copy-link-section">
-                    <button type="button" class="btn btn-secondary" id="btn-copy-share-link">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                        </svg>
-                        Copy link
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
 </body>
 
 </html>
