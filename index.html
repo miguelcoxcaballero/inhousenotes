@@ -7388,8 +7388,7 @@
                 });
             });
             if (changed) {
-                markAllPagesDirty();
-                scheduleSave(true);
+                scheduleLocalSave();
             }
         }
 
@@ -10881,12 +10880,19 @@
                 }
 
                 // 3. Apply remote changes
-                await applyRemotePages(remoteStrokeData);
+                const mergeResult = await applyRemotePages(remoteStrokeData);
 
                 // 4. Update revision tracking
                 await updateLocalRevisionId();
 
-                showStatus('Changes from collaborator', { savedAt: Date.now() });
+                // 5. If we merged local-only content, save back to Drive so others get it
+                if (mergeResult && mergeResult.hasLocalMerges && !state.isReadOnly) {
+                    console.log('Local strokes merged into pull — saving back to Drive');
+                    showStatus('Syncing merged changes...', { saving: true });
+                    requestImmediateDriveSave();
+                } else {
+                    showStatus('Changes from collaborator', { savedAt: Date.now() });
+                }
                 console.log('Remote changes applied successfully');
             } catch (err) {
                 console.error('pullRemoteChanges failed:', err);
@@ -10931,11 +10937,12 @@
         }
 
         async function applyRemotePages(remoteStrokeData) {
-            if (!Array.isArray(remoteStrokeData)) return;
+            if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false };
 
+            let changed = false;
+            let hasLocalMerges = false;
             const localPageCount = state.pages.length;
             const remotePageCount = remoteStrokeData.length;
-            let changed = false;
 
             // Add new pages from remote if they don't exist locally
             for (let i = localPageCount; i < remotePageCount; i++) {
@@ -11041,8 +11048,12 @@
                         currentPage.preview = renderPagePreview(i);
                         applyPagePreview(i);
                     }
+                    // Track if local-only content was merged (means Drive needs updating)
+                    if (localOnlyStrokes.length > 0 || localOnlyImages.length > 0) {
+                        hasLocalMerges = true;
+                    }
                     changed = true;
-                    console.log(`Page ${i} merged: ${localNewStrokes.length} local-new, ${deletedByRemote.size} remote-deleted, ${mergedStrokes.length} total strokes`);
+                    console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
                 }
 
                 // Update last synced IDs to the combined set
