@@ -2705,10 +2705,32 @@
 
         // ============= MEMORY OPTIMIZATION UTILITIES =============
 
+        function generateStrokeId() {
+            return Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Assign IDs to strokes/images that don't have one (backward compat)
+        function ensureStrokeIds(page) {
+            if (!page) return;
+            if (Array.isArray(page.strokes)) {
+                for (const stroke of page.strokes) {
+                    if (!stroke.id) stroke.id = generateStrokeId();
+                }
+            }
+            if (Array.isArray(page.images)) {
+                for (const image of page.images) {
+                    if (!image.id) image.id = generateStrokeId();
+                }
+            }
+        }
+
+        // Track last synced stroke/image IDs per page for merge operations
+        const lastSyncedStrokeIds = new Map(); // pageIndex -> Set<id>
         // Efficient deep clone without JSON.parse/stringify
         function cloneStroke(stroke) {
             if (!stroke) return null;
             return {
+                id: stroke.id,
                 tool: stroke.tool,
                 color: stroke.color,
                 width: stroke.width,
@@ -4085,6 +4107,7 @@
                     simplifyStrokePoints(currentStroke);
 
                     const finalizedStroke = {
+                        id: generateStrokeId(),
                         tool: currentStroke.tool,
                         color: currentStroke.color,
                         width: currentStroke.width,
@@ -5896,6 +5919,8 @@
                     console.warn('Failed to fetch initial revision:', revErr);
                 }
                 startCollabPolling();
+                // Set the sync baseline so merge can track changes
+                updateSyncBaseline();
                 showStatus('PDF loaded', { preserveState: true });
             } catch (err) {
                 showStatus('Failed to load PDF', { preserveState: true });
@@ -6415,6 +6440,7 @@
                 const centerY = clamp(dropPos.y + offset, height / 2, A4_HEIGHT - height / 2);
 
                 const imageData = {
+                    id: generateStrokeId(),
                     src,
                     x: centerX,
                     y: centerY,
@@ -10076,6 +10102,7 @@
                     unloaded: false,
                     pendingUnload
                 };
+                ensureStrokeIds(next);
                 state.pages[pageIndex] = next;
                 touchPageAccess(pageIndex);
                 if (!options.keepLoaded && (next.pendingUnload || !activePageIndices.has(pageIndex))) {
@@ -10664,6 +10691,8 @@
                 } catch (revErr) {
                     console.warn('Failed to capture revision ID after save:', revErr);
                 }
+                // Update sync baseline — these strokes are now the "last synced" set
+                updateSyncBaseline();
                 startCollabPolling();
                 showStatus('Saved', { savedAt });
             } catch (err) {
@@ -10819,32 +10848,40 @@
             }
         }
 
+        function updateSyncBaseline() {
+            for (let i = 0; i < state.pages.length; i++) {
+                const page = state.pages[i];
+                if (!page) continue;
+                const ids = new Set();
+                if (Array.isArray(page.strokes)) {
+                    page.strokes.forEach(s => { if (s.id) ids.add(s.id); });
+                }
+                if (Array.isArray(page.images)) {
+                    page.images.forEach(img => { if (img.id) ids.add(img.id); });
+                }
+                lastSyncedStrokeIds.set(i, ids);
+            }
+        }
+
         async function applyRemotePages(remoteStrokeData) {
             if (!Array.isArray(remoteStrokeData)) return;
 
             const localPageCount = state.pages.length;
             const remotePageCount = remoteStrokeData.length;
-            const lastLocalSave = state.lastDriveSaveAt || 0;
             let changed = false;
-
-            // Determine which local pages have unsaved changes
-            const localDirtyPages = new Set();
-            pageDirty.forEach(index => localDirtyPages.add(index));
-            pendingStrokeOps.forEach((ops, index) => {
-                if (ops.length > 0) localDirtyPages.add(index);
-            });
-            if (isPenWriting) {
-                // Currently drawing — protect all active pages
-                activePageIndices.forEach(index => localDirtyPages.add(index));
-            }
 
             // Add new pages from remote if they don't exist locally
             for (let i = localPageCount; i < remotePageCount; i++) {
                 const remotePageData = remoteStrokeData[i];
                 if (!remotePageData) continue;
+                const remoteStrokes = Array.isArray(remotePageData.strokes) ? remotePageData.strokes : [];
+                const remoteImages = Array.isArray(remotePageData.images) ? remotePageData.images : [];
+                // Ensure remote data has IDs
+                for (const s of remoteStrokes) { if (!s.id) s.id = generateStrokeId(); }
+                for (const img of remoteImages) { if (!img.id) img.id = generateStrokeId(); }
                 const newPage = {
-                    strokes: Array.isArray(remotePageData.strokes) ? remotePageData.strokes : [],
-                    images: Array.isArray(remotePageData.images) ? remotePageData.images : [],
+                    strokes: remoteStrokes,
+                    images: remoteImages,
                     backgroundImage: remotePageData.backgroundSource === 'pdf' ? null : (remotePageData.backgroundImage || null),
                     backgroundSource: remotePageData.backgroundSource || 'template',
                     pdfPageIndex: Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null,
@@ -10857,23 +10894,24 @@
                 state.pages.push(newPage);
                 createPageElement(state.pages.length - 1, false, false);
                 await savePageToIndexedDb(state.pages.length - 1, newPage);
+                // Track this new page's synced state
+                const newIds = new Set();
+                remoteStrokes.forEach(s => newIds.add(s.id));
+                remoteImages.forEach(img => newIds.add(img.id));
+                lastSyncedStrokeIds.set(state.pages.length - 1, newIds);
                 changed = true;
             }
 
-            // Update existing pages if they are NOT locally dirty
+            // Stroke-level merge for existing pages
             const maxUpdate = Math.min(localPageCount, remotePageCount);
             for (let i = 0; i < maxUpdate; i++) {
-                if (localDirtyPages.has(i)) {
-                    console.log(`Skipping page ${i}: has local changes`);
-                    continue;
-                }
                 const remotePageData = remoteStrokeData[i];
                 if (!remotePageData) continue;
 
                 const page = state.pages[i];
                 if (!page) continue;
 
-                // Load page data for comparison
+                // Load page data so we can compare strokes
                 const wasLoaded = isPageLoaded(page);
                 if (!wasLoaded) {
                     await ensurePageDataLoaded(i, { keepLoaded: true });
@@ -10881,19 +10919,51 @@
                 const currentPage = state.pages[i];
                 if (!currentPage || !Array.isArray(currentPage.strokes)) continue;
 
-                // Simple comparison: check if remote has different stroke count or content changed
+                // Ensure all strokes/images have IDs
+                ensureStrokeIds(currentPage);
                 const remoteStrokes = Array.isArray(remotePageData.strokes) ? remotePageData.strokes : [];
                 const remoteImages = Array.isArray(remotePageData.images) ? remotePageData.images : [];
-                const localStrokes = currentPage.strokes;
-                const localImages = Array.isArray(currentPage.images) ? currentPage.images : [];
+                for (const s of remoteStrokes) { if (!s.id) s.id = generateStrokeId(); }
+                for (const img of remoteImages) { if (!img.id) img.id = generateStrokeId(); }
 
-                const strokesChanged = localStrokes.length !== remoteStrokes.length;
-                const imagesChanged = localImages.length !== remoteImages.length;
+                // Build ID sets
+                const remoteStrokeIds = new Set(remoteStrokes.map(s => s.id));
+                const remoteImageIds = new Set(remoteImages.map(img => img.id));
+                const localStrokeIds = new Set(currentPage.strokes.map(s => s.id));
+                const localImageIds = new Set((currentPage.images || []).map(img => img.id));
+                const lastSynced = lastSyncedStrokeIds.get(i) || new Set();
 
-                if (strokesChanged || imagesChanged) {
-                    // Apply remote data
-                    currentPage.strokes = remoteStrokes;
-                    currentPage.images = remoteImages;
+                // Identify local-only new strokes (created since last sync)
+                const localNewStrokes = currentPage.strokes.filter(s => !lastSynced.has(s.id) && !remoteStrokeIds.has(s.id));
+                const localNewImages = (currentPage.images || []).filter(img => !lastSynced.has(img.id) && !remoteImageIds.has(img.id));
+
+                // Identify strokes deleted by collaborator (were in last sync but gone from remote)
+                const deletedByRemote = new Set();
+                lastSynced.forEach(id => {
+                    if (!remoteStrokeIds.has(id) && !remoteImageIds.has(id)) {
+                        deletedByRemote.add(id);
+                    }
+                });
+
+                // Filter out locally-new strokes that were deleted by remote
+                const survivingLocalNewStrokes = localNewStrokes.filter(s => !deletedByRemote.has(s.id));
+                const survivingLocalNewImages = localNewImages.filter(img => !deletedByRemote.has(img.id));
+
+                // Merge: remote strokes + surviving local-only new strokes
+                const mergedStrokes = [...remoteStrokes, ...survivingLocalNewStrokes];
+                const mergedImages = [...remoteImages, ...survivingLocalNewImages];
+
+                // Check if anything actually changed
+                const strokeCountChanged = mergedStrokes.length !== currentPage.strokes.length;
+                const imageCountChanged = mergedImages.length !== (currentPage.images || []).length;
+                const mergedStrokeIds = new Set(mergedStrokes.map(s => s.id));
+                const mergedImageIds = new Set(mergedImages.map(img => img.id));
+                const strokeIdsChanged = !setsEqual(mergedStrokeIds, localStrokeIds);
+                const imageIdsChanged = !setsEqual(mergedImageIds, localImageIds);
+
+                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged) {
+                    currentPage.strokes = mergedStrokes;
+                    currentPage.images = mergedImages;
                     currentPage.backgroundSource = remotePageData.backgroundSource || currentPage.backgroundSource;
                     if (remotePageData.pdfPageIndex !== undefined) {
                         currentPage.pdfPageIndex = Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null;
@@ -10905,8 +10975,14 @@
                         redrawPage(i);
                     }
                     changed = true;
-                    console.log(`Page ${i} updated from remote (strokes: ${localStrokes.length} → ${remoteStrokes.length})`);
+                    console.log(`Page ${i} merged: ${localNewStrokes.length} local-new, ${deletedByRemote.size} remote-deleted, ${mergedStrokes.length} total strokes`);
                 }
+
+                // Update last synced IDs to the combined set
+                const newSyncedIds = new Set();
+                mergedStrokes.forEach(s => newSyncedIds.add(s.id));
+                mergedImages.forEach(img => newSyncedIds.add(img.id));
+                lastSyncedStrokeIds.set(i, newSyncedIds);
 
                 // Unload if it wasn't loaded before
                 if (!wasLoaded && !activePageIndices.has(i)) {
@@ -10924,6 +11000,14 @@
                 scheduleVisiblePageUpdate(true);
                 updateSaveTimestamp();
             }
+        }
+
+        function setsEqual(a, b) {
+            if (a.size !== b.size) return false;
+            for (const item of a) {
+                if (!b.has(item)) return false;
+            }
+            return true;
         }
 
         // History functions for undo/redo
