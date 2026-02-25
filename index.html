@@ -2157,9 +2157,9 @@
         }
 
         .drive-shared-icon {
-            width: 14px;
-            height: 14px;
-            color: var(--text-secondary);
+            width: 15px;
+            height: 15px;
+            color: currentColor;
             flex: 0 0 auto;
         }
 
@@ -3710,7 +3710,11 @@
 
             const lastView = loadViewMode();
             if (window.pendingSharedDriveId) {
-                showEditorView();
+                if (driveAccessToken) {
+                    showEditorView();
+                } else {
+                    showDriveHome();
+                }
             } else if (lastView === 'drive') {
                 showDriveHome();
             } else {
@@ -5559,6 +5563,7 @@
 
         function updateDriveAuthUI() {
             const signedIn = !!driveAccessToken;
+            const hasPendingShared = !!window.pendingSharedDriveId;
             if (driveLoginBtn) driveLoginBtn.style.display = signedIn ? 'none' : 'inline-flex';
             if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !signedIn);
             if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !signedIn);
@@ -5567,25 +5572,21 @@
             if (driveBinBtn) driveBinBtn.disabled = !signedIn;
             if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
             if (driveStatusEl) {
-                driveStatusEl.textContent = signedIn ? 'Loading your PDFs...' : 'Sign in to browse your Drive.';
+                driveStatusEl.textContent = signedIn
+                    ? 'Loading your PDFs...'
+                    : (hasPendingShared ? 'Sign in to open shared document.' : 'Sign in to browse your Drive.');
             }
             if (!signedIn) {
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
-                if (window.pendingSharedDriveId && !sharedLinkSignInPrompted) {
+                if (hasPendingShared && !sharedLinkSignInPrompted) {
                     sharedLinkSignInPrompted = true;
+                    showDriveHome();
                     if (typeof showStatus === 'function') {
                         showStatus('Sign in to open shared document', { preserveState: true });
                     }
-                    ensureDriveToken(true)
-                        .then(() => refreshDriveFiles())
-                        .catch(() => {
-                            if (typeof showStatus === 'function') {
-                                showStatus('Sign-in required to open shared document', { error: true });
-                            }
-                        });
                 }
             } else if (state.driveAutosave && !state.isReadOnly && driveDirty) {
                 clearTimeout(driveSaveTimeout);
@@ -5603,9 +5604,8 @@
                 }
 
                 // Load pending shared file if present
-                if (window.pendingSharedDriveId) {
+                if (window.pendingSharedDriveId && !driveOpenInProgress) {
                     const fileIdToOpen = window.pendingSharedDriveId;
-                    window.pendingSharedDriveId = null;
                     if (typeof showStatus === 'function') showStatus('Loading document info...', { autoClose: false });
 
                     driveFetch(`https://www.googleapis.com/drive/v3/files/${fileIdToOpen}?fields=id,name`, { method: 'GET' })
@@ -5613,6 +5613,9 @@
                         .then(data => {
                             if (typeof showStatus === 'function') showStatus('Opening document...');
                             openDriveFile({ id: data.id, name: data.name })
+                                .then(() => {
+                                    window.pendingSharedDriveId = null;
+                                })
                                 .catch(err => {
                                     console.error('Failed to open shared file:', err);
                                     if (typeof showStatus === 'function') showStatus('Could not open shared document', { error: true });
@@ -5620,7 +5623,14 @@
                         })
                         .catch(err => {
                             console.error('Failed to load file info', err);
-                            openDriveFile({ id: fileIdToOpen, name: 'Shared Document' });
+                            openDriveFile({ id: fileIdToOpen, name: 'Shared Document' })
+                                .then(() => {
+                                    window.pendingSharedDriveId = null;
+                                })
+                                .catch(openErr => {
+                                    console.error('Fallback open failed:', openErr);
+                                    if (typeof showStatus === 'function') showStatus('Could not open shared document', { error: true });
+                                });
                         });
                 }
             }
