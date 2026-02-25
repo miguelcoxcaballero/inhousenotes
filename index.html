@@ -2190,7 +2190,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 1000;
+            z-index: 3000;
             opacity: 1;
             transition: opacity 0.2s ease;
         }
@@ -3577,7 +3577,6 @@
             }
 
             const editButtons = [
-                document.getElementById('btn-edit-pages'),
                 document.getElementById('btn-import-pdf'),
                 document.getElementById('btn-undo'),
                 document.getElementById('btn-redo'),
@@ -6376,6 +6375,12 @@
                 const mtb = document.getElementById('mode-toggle-btn');
                 if (mtb) mtb.style.display = 'none';
 
+                const dt = document.getElementById('doc-title');
+                if (dt) {
+                    dt.contentEditable = 'false';
+                    dt.style.pointerEvents = 'none';
+                }
+
                 const shareBtn = document.getElementById('btn-drive-share');
                 if (shareBtn) {
                     shareBtn.style.pointerEvents = 'auto'; // allow sharing view list
@@ -6387,10 +6392,23 @@
 
                 const mtb = document.getElementById('mode-toggle-btn');
                 if (mtb) mtb.style.display = '';
+
+                const dt = document.getElementById('doc-title');
+                if (dt) {
+                    dt.contentEditable = 'true';
+                    dt.style.pointerEvents = 'auto';
+                }
             }
         }
 
         async function makeDriveCopy() {
+            if (!state.driveFileId) return;
+            const input = document.getElementById('folder-picker-name');
+            if (input) input.value = `Copy of ${state.driveFileName || 'Document'}`;
+            openFolderPicker('copy', { id: state.driveFileId, name: state.driveFileName });
+        }
+
+        async function executeDriveCopy(newName, folderId) {
             if (!state.driveFileId) return;
             showLoading('Creating copy...');
             try {
@@ -6398,7 +6416,8 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        name: `Copy of ${state.driveFileName}`
+                        name: newName,
+                        parents: folderId && folderId !== 'root' ? [folderId] : undefined
                     })
                 });
                 const data = await res.json();
@@ -6557,16 +6576,20 @@
                 folderPickerCurrentFolderId = 'root';
             }
             if (folderPickerTitle) {
-                folderPickerTitle.textContent = mode === 'move' ? 'Move file' : 'New PDF';
+                if (mode === 'move') folderPickerTitle.textContent = 'Move file';
+                else if (mode === 'copy') folderPickerTitle.textContent = 'Copy file';
+                else folderPickerTitle.textContent = 'New PDF';
             }
             if (folderPickerSubtitle) {
-                folderPickerSubtitle.textContent = mode === 'move'
-                    ? 'Choose the destination folder.'
-                    : 'Choose a folder and name your file.';
+                if (mode === 'move') folderPickerSubtitle.textContent = 'Choose the destination folder.';
+                else if (mode === 'copy') folderPickerSubtitle.textContent = 'Choose a destination and name your copy.';
+                else folderPickerSubtitle.textContent = 'Choose a folder and name your file.';
             }
             if (folderPickerMeta) {
-                if (mode === 'move' && file) {
+                if ((mode === 'move' || mode === 'copy') && file) {
                     folderPickerMeta.classList.remove('hidden');
+                    const label = folderPickerMeta.querySelector('.folder-picker-meta-label');
+                    if (label) label.textContent = mode === 'move' ? 'Moving' : 'Copying';
                     if (folderPickerFileName) {
                         folderPickerFileName.textContent = file.name || 'Untitled';
                     }
@@ -6574,7 +6597,7 @@
                         folderPickerFilePath.textContent = 'Current: loading...';
                     }
                     resolveDrivePathForFile(file).then((path) => {
-                        if (folderPickerMode === 'move' && folderPickerTargetFile?.id === file.id && folderPickerFilePath) {
+                        if ((folderPickerMode === 'move' || folderPickerMode === 'copy') && folderPickerTargetFile?.id === file.id && folderPickerFilePath) {
                             folderPickerFilePath.textContent = `Current: ${path}`;
                         }
                     });
@@ -6587,10 +6610,18 @@
             }
             if (folderPickerNameInput) {
                 const defaultName = normalizeDocTitleInput(state.exportName || 'Untitled');
-                folderPickerNameInput.value = mode === 'move' ? '' : defaultName;
+                if (mode === 'move') {
+                    folderPickerNameInput.value = '';
+                } else if (mode === 'copy') {
+                    // Handled inside makeDriveCopy
+                } else {
+                    folderPickerNameInput.value = defaultName;
+                }
             }
             if (folderPickerConfirm) {
-                folderPickerConfirm.textContent = mode === 'move' ? 'Move' : 'Create';
+                if (mode === 'move') folderPickerConfirm.textContent = 'Move';
+                else if (mode === 'copy') folderPickerConfirm.textContent = 'Copy';
+                else folderPickerConfirm.textContent = 'Create';
             }
             updateFolderPickerConfirmState();
             renderFolderPickerBreadcrumbs();
@@ -6699,6 +6730,13 @@
                 if (target) {
                     await moveDriveFileToFolder(target, folderPickerCurrentFolderId);
                 }
+                return;
+            }
+            if (folderPickerMode === 'copy') {
+                const copyName = folderPickerNameInput ? folderPickerNameInput.value.trim() : '';
+                if (!copyName) return;
+                closeFolderPicker();
+                await executeDriveCopy(copyName, folderPickerCurrentFolderId);
                 return;
             }
             const name = folderPickerNameInput ? folderPickerNameInput.value.trim() : '';
