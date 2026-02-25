@@ -5912,7 +5912,6 @@
             updateHistoryButtons();
             renderAllPages();
             centerViewOnTop();
-            setReadOnlyMode(false);
             state.exportName = safeBase;
             state.driveFileId = null;
             state.driveFileName = fileName;
@@ -5920,6 +5919,7 @@
             state.driveAutosave = true;
             updateDocTitle();
             saveDriveSession();
+            setReadOnlyMode(false);
             scheduleSave(true, 0);
 
             try {
