@@ -12387,13 +12387,29 @@
                 // Build ID sets
                 const remoteStrokeIds = new Set(remoteStrokes.map(s => s.id));
                 const remoteImageIds = new Set(remoteImages.map(img => img.id));
+                const remoteContentIds = new Set([...remoteStrokeIds, ...remoteImageIds]);
                 const localStrokeIds = new Set(currentPage.strokes.map(s => s.id));
                 const localImageIds = new Set((currentPage.images || []).map(img => img.id));
+                const localContentIds = new Set([...localStrokeIds, ...localImageIds]);
 
-                // Use explicit deletion lists instead of inferring from absence
-                const remoteDeleted = new Set(Array.isArray(remotePageData.deletedStrokeIds) ? remotePageData.deletedStrokeIds : []);
-                const localDeleted = new Set(Array.isArray(currentPage.deletedStrokeIds) ? currentPage.deletedStrokeIds : []);
-                const allDeleted = new Set([...remoteDeleted, ...localDeleted]);
+                // Normalize tombstones: if an item exists in content, it should not remain "deleted".
+                const remoteDeletedRaw = Array.isArray(remotePageData.deletedStrokeIds) ? remotePageData.deletedStrokeIds : [];
+                const localDeletedRaw = Array.isArray(currentPage.deletedStrokeIds) ? currentPage.deletedStrokeIds : [];
+                const remoteDeleted = new Set(remoteDeletedRaw.filter(id => id && !remoteContentIds.has(id)));
+                const localDeleted = new Set(localDeletedRaw.filter(id => id && !localContentIds.has(id)));
+
+                // Infer local deletions from the last synced baseline.
+                // This prevents remote pull from resurrecting content removed locally (e.g. undo/delete).
+                const syncedIds = lastSyncedStrokeIds.get(i) || new Set();
+                const localDeletedSinceBaseline = new Set();
+                for (const syncedId of syncedIds) {
+                    if (syncedId && !localContentIds.has(syncedId)) {
+                        localDeletedSinceBaseline.add(syncedId);
+                    }
+                }
+
+                const localDeletionSet = new Set([...localDeleted, ...localDeletedSinceBaseline]);
+                const allDeleted = new Set([...remoteDeleted, ...localDeletionSet]);
 
                 // Additive merge: keep ALL local strokes not in remote (fixes race condition)
                 const localOnlyStrokes = currentPage.strokes.filter(s => !remoteStrokeIds.has(s.id));
@@ -12403,8 +12419,22 @@
                 const mergedStrokes = [...remoteStrokes, ...localOnlyStrokes].filter(s => !allDeleted.has(s.id));
                 const mergedImages = [...remoteImages, ...localOnlyImages].filter(img => !allDeleted.has(img.id));
 
-                // Merge deletion lists (union)
-                currentPage.deletedStrokeIds = [...allDeleted];
+                // Merge deletion lists (union) and dedupe.
+                const previousDeletedIds = new Set(localDeletedRaw.filter(id => !!id));
+                const mergedDeletedIds = new Set(allDeleted);
+                currentPage.deletedStrokeIds = [...mergedDeletedIds];
+
+                // Local content that exists only here or local deletions that suppress remote content
+                // should be pushed back to Drive so all collaborators converge.
+                let localSuppressedRemoteCount = 0;
+                for (const remoteId of remoteContentIds) {
+                    if (localDeletionSet.has(remoteId)) {
+                        localSuppressedRemoteCount += 1;
+                    }
+                }
+                if (localOnlyStrokes.length > 0 || localOnlyImages.length > 0 || localSuppressedRemoteCount > 0) {
+                    hasLocalMerges = true;
+                }
 
                 // Check if anything actually changed
                 const strokeCountChanged = mergedStrokes.length !== currentPage.strokes.length;
@@ -12413,8 +12443,9 @@
                 const mergedImageIds = new Set(mergedImages.map(img => img.id));
                 const strokeIdsChanged = !setsEqual(mergedStrokeIds, localStrokeIds);
                 const imageIdsChanged = !setsEqual(mergedImageIds, localImageIds);
+                const deletedIdsChanged = !setsEqual(mergedDeletedIds, previousDeletedIds);
 
-                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged) {
+                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged) {
                     currentPage.strokes = mergedStrokes;
                     currentPage.images = mergedImages;
                     currentPage.backgroundSource = remotePageData.backgroundSource || currentPage.backgroundSource;
@@ -12432,12 +12463,8 @@
                         currentPage.preview = renderPagePreview(i);
                         applyPagePreview(i);
                     }
-                    // Track if local-only content was merged (means Drive needs updating)
-                    if (localOnlyStrokes.length > 0 || localOnlyImages.length > 0) {
-                        hasLocalMerges = true;
-                    }
                     changed = true;
-                    console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
+                    console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${localSuppressedRemoteCount} local-deleted-remote, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
                 }
 
                 // Update last synced IDs to the combined set
