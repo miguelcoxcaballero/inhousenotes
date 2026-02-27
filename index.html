@@ -4070,6 +4070,11 @@
             pdfRenderActive = false;
             pdfBackgroundCache.clear();
             pdfRenderToken += 1;
+
+            if (state.activePdfObjectUrl) {
+                URL.revokeObjectURL(state.activePdfObjectUrl);
+                state.activePdfObjectUrl = null;
+            }
         }
 
         function cancelPdfRenderResume() {
@@ -6851,7 +6856,7 @@
                 // Launch both requests simultaneously
                 const [metaResult, mediaResult] = await Promise.allSettled([
                     driveFetch(metaUrl.toString()).then(r => r.json()),
-                    driveFetch(mediaUrl.toString()).then(r => r.arrayBuffer())
+                    driveFetch(mediaUrl.toString()).then(r => r.blob())
                 ]);
 
                 // Process metadata (capabilities, revision)
@@ -6895,12 +6900,13 @@
                 state.driveOwnerPhoto = ownerPhoto;
                 state.driveResourceKey = resolvedResourceKey || '';
 
-                // Process file content
+                // Process file content using Blob to avoid V8 ArrayBuffer heap limits
                 if (mediaResult.status === 'rejected') {
                     throw mediaResult.reason;
                 }
-                const arrayBuffer = mediaResult.value;
-                await importPDFArrayBuffer(arrayBuffer);
+                const blob = mediaResult.value;
+                const objectUrl = URL.createObjectURL(blob);
+                await importPDFData(objectUrl, true);
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
                 state.driveAutosave = canEdit;
@@ -13148,18 +13154,24 @@
         }
 
         // Import PDF - detect embedded strokes or treat as background
-        async function importPDFArrayBuffer(arrayBuffer) {
-            if (!arrayBuffer) return;
+        async function importPDFData(pdfData, isUrl = false) {
+            if (!pdfData) return;
             showLoading('Analyzing PDF...');
 
             try {
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const pdfParams = isUrl ? { url: pdfData } : { data: pdfData };
+                const pdf = await pdfjsLib.getDocument(pdfParams).promise;
                 const numPages = pdf.numPages;
 
                 resetPdfState();
                 activePdfDocument = pdf;
                 activePdfPageCount = numPages;
                 pdfBackgroundScale = getPdfBackgroundScale(numPages);
+
+                // Track object url for cleanup
+                if (isUrl && pdfData.startsWith('blob:')) {
+                    state.activePdfObjectUrl = pdfData;
+                }
 
                 // Try to extract embedded stroke data from PDF metadata
                 let embeddedStrokes = null;
@@ -13274,8 +13286,9 @@
             }
             const file = e.target.files[0];
             if (!file) return;
-            const arrayBuffer = await file.arrayBuffer();
-            await importPDFArrayBuffer(arrayBuffer);
+            // Use object URL instead of ArrayBuffer to avoid V8 memory limit on large PDFs
+            const objectUrl = URL.createObjectURL(file);
+            await importPDFData(objectUrl, true);
             pdfInput.value = '';
         }
 
