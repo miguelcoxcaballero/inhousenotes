@@ -3003,7 +3003,7 @@
         const VISIBLE_PAGE_BUFFER_ACTIVE = 0;
         const MAX_ACTIVE_PAGES = 3;
         const MAX_PDF_BACKGROUND_CACHE = 6;
-        const MAX_IMAGE_CACHE = 30;
+        const MAX_IMAGE_CACHE = 50;
         const PAGE_PREVIEW_SCALE = 0.18;
         const PDF_RENDER_SCALE_LARGE = 1.5;
         const PDF_RENDER_SCALE_HUGE = 1.2;
@@ -3318,7 +3318,7 @@
         }
 
         // Memory-limited history with stroke count estimation
-        const MAX_HISTORY_MEMORY = 50000; // Approximate max points in history
+        const MAX_HISTORY_MEMORY = 25000; // Approximate max points in history
 
         function estimateHistoryMemory() {
             let totalPoints = 0;
@@ -3379,7 +3379,65 @@
                 state.history.shift();
                 state.historyIndex = Math.max(-1, state.historyIndex - 1);
             }
+            // Evict PDF backgrounds for non-active pages
+            pdfBackgroundCache.forEach((entry, pageIndex) => {
+                if (!activePageIndices.has(pageIndex)) {
+                    if (entry?.dataUrl && entry.dataUrl.startsWith('blob:')) {
+                        URL.revokeObjectURL(entry.dataUrl);
+                    }
+                    pdfBackgroundCache.delete(pageIndex);
+                    const page = state.pages[pageIndex];
+                    if (page && page.backgroundSource === 'pdf') {
+                        page.backgroundImage = null;
+                    }
+                }
+            });
         }
+
+        // Periodic memory pressure check (Chrome only, graceful fallback)
+        function checkMemoryPressure() {
+            try {
+                const mem = performance?.memory;
+                if (!mem) return;
+                const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
+                if (usedRatio > 0.6) {
+                    console.warn(`Memory pressure: ${(usedRatio * 100).toFixed(0)}% heap used — running cleanup`);
+                    // Aggressive image cache prune
+                    const aggressiveTarget = Math.floor(MAX_IMAGE_CACHE * 0.4);
+                    const cands = Array.from(imageCacheUsage.entries())
+                        .sort((a, b) => a[1] - b[1]);
+                    while (imageCache.size > aggressiveTarget && cands.length > 0) {
+                        const [src] = cands.shift();
+                        imageCache.delete(src);
+                        imageCacheUsage.delete(src);
+                    }
+                    // Aggressive history trim
+                    const reducedTarget = Math.floor(MAX_HISTORY_MEMORY * 0.4);
+                    while (state.history.length > 1 && estimateHistoryMemory() > reducedTarget) {
+                        state.history.shift();
+                        state.historyIndex = Math.max(-1, state.historyIndex - 1);
+                    }
+                    // Evict PDF backgrounds for non-active pages
+                    pdfBackgroundCache.forEach((entry, pageIndex) => {
+                        if (!activePageIndices.has(pageIndex)) {
+                            if (entry?.dataUrl && entry.dataUrl.startsWith('blob:')) {
+                                URL.revokeObjectURL(entry.dataUrl);
+                            }
+                            pdfBackgroundCache.delete(pageIndex);
+                            const page = state.pages[pageIndex];
+                            if (page && page.backgroundSource === 'pdf') {
+                                page.backgroundImage = null;
+                            }
+                        }
+                    });
+                }
+            } catch (err) {
+                // performance.memory not available — ignore silently
+            }
+        }
+
+        // Run memory check every 30 seconds
+        setInterval(checkMemoryPressure, 30000);
 
         // ============= END MEMORY OPTIMIZATION UTILITIES =============
 
@@ -3985,10 +4043,6 @@
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (wrapper) {
                 wrapper.querySelectorAll('canvas.page-canvas, canvas.lasso-overlay, canvas.cursor-overlay, .selection-box').forEach(el => {
-                    if (el.tagName === 'CANVAS') {
-                        el.width = 0;
-                        el.height = 0;
-                    }
                     el.remove();
                 });
             }
@@ -8099,17 +8153,25 @@
             };
         }
 
+        let lastPruneTime = 0;
+
         function touchImageCache(src) {
             if (!src) return;
             imageCacheUsage.set(src, Date.now());
-            pruneImageCache();
+            // Debounce pruning — avoid expensive sort on every image access
+            const now = Date.now();
+            if (imageCache.size > MAX_IMAGE_CACHE && now - lastPruneTime > 2000) {
+                lastPruneTime = now;
+                pruneImageCache();
+            }
         }
 
         function pruneImageCache() {
             if (imageCache.size <= MAX_IMAGE_CACHE) return;
             const candidates = Array.from(imageCacheUsage.entries())
                 .sort((a, b) => a[1] - b[1]);
-            while (imageCache.size > MAX_IMAGE_CACHE && candidates.length > 0) {
+            const target = Math.floor(MAX_IMAGE_CACHE * 0.75);
+            while (imageCache.size > target && candidates.length > 0) {
                 const [src] = candidates.shift();
                 imageCache.delete(src);
                 imageCacheUsage.delete(src);
@@ -12144,6 +12206,9 @@
                 // Bug fix: record the time of the last successful Drive upload
                 state.lastDriveSaveAt = Date.now();
                 updateSaveTimestamp();
+                // Proactive cleanup: free memory accumulated during PDF build
+                pruneImageCache();
+                trimHistoryByMemory();
                 // Update sync baseline — these strokes are now the "last synced" set
                 updateSyncBaseline();
                 startCollabPolling();
