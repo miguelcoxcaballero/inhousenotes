@@ -3003,7 +3003,7 @@
         const VISIBLE_PAGE_BUFFER_ACTIVE = 0;
         const MAX_ACTIVE_PAGES = 3;
         const MAX_PDF_BACKGROUND_CACHE = 6;
-        const MAX_IMAGE_CACHE = 80;
+        const MAX_IMAGE_CACHE = 30;
         const PAGE_PREVIEW_SCALE = 0.18;
         const PDF_RENDER_SCALE_LARGE = 1.5;
         const PDF_RENDER_SCALE_HUGE = 1.2;
@@ -3985,6 +3985,10 @@
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (wrapper) {
                 wrapper.querySelectorAll('canvas.page-canvas, canvas.lasso-overlay, canvas.cursor-overlay, .selection-box').forEach(el => {
+                    if (el.tagName === 'CANVAS') {
+                        el.width = 0;
+                        el.height = 0;
+                    }
                     el.remove();
                 });
             }
@@ -4190,6 +4194,11 @@
                 if (pdfPage.cleanup) {
                     pdfPage.cleanup();
                 }
+                // Release temp canvas backing stores
+                tempCanvas.width = 0;
+                tempCanvas.height = 0;
+                a4Canvas.width = 0;
+                a4Canvas.height = 0;
             } catch (err) {
                 console.error('Failed to render PDF page background:', err);
             }
@@ -6772,21 +6781,34 @@
             try {
                 await ensureDriveToken(false);
 
-                // Fetch metadata (capabilities, revision)
+                // Start metadata and file content downloads in parallel
+                const metaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
+                metaUrl.searchParams.set('fields', 'capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),resourceKey,headRevisionId,modifiedTime');
+                if (requestedResourceKey) {
+                    metaUrl.searchParams.set('resourceKey', requestedResourceKey);
+                }
+
+                const mediaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
+                mediaUrl.searchParams.set('alt', 'media');
+                if (requestedResourceKey) {
+                    mediaUrl.searchParams.set('resourceKey', requestedResourceKey);
+                }
+
+                // Launch both requests simultaneously
+                const [metaResult, mediaResult] = await Promise.allSettled([
+                    driveFetch(metaUrl.toString()).then(r => r.json()),
+                    driveFetch(mediaUrl.toString()).then(r => r.arrayBuffer())
+                ]);
+
+                // Process metadata (capabilities, revision)
                 let canEdit = true;
                 let ownedByMe = true;
                 let ownerName = '';
                 let ownerEmail = '';
                 let ownerPhoto = '';
                 let resolvedResourceKey = requestedResourceKey;
-                try {
-                    const metaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
-                    metaUrl.searchParams.set('fields', 'capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),resourceKey,headRevisionId,modifiedTime');
-                    if (requestedResourceKey) {
-                        metaUrl.searchParams.set('resourceKey', requestedResourceKey);
-                    }
-                    const metaRes = await driveFetch(metaUrl.toString());
-                    const metaData = await metaRes.json();
+                if (metaResult.status === 'fulfilled') {
+                    const metaData = metaResult.value;
                     if (metaData.capabilities && metaData.capabilities.canEdit === false) {
                         canEdit = false;
                     }
@@ -6808,8 +6830,8 @@
                     if (typeof metaData.resourceKey === 'string' && metaData.resourceKey) {
                         resolvedResourceKey = metaData.resourceKey;
                     }
-                } catch (metaErr) {
-                    console.warn('Failed to fetch file metadata:', metaErr);
+                } else {
+                    console.warn('Failed to fetch file metadata:', metaResult.reason);
                 }
 
                 state.driveCanEdit = canEdit;
@@ -6819,13 +6841,11 @@
                 state.driveOwnerPhoto = ownerPhoto;
                 state.driveResourceKey = resolvedResourceKey || '';
 
-                const mediaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
-                mediaUrl.searchParams.set('alt', 'media');
-                if (state.driveResourceKey) {
-                    mediaUrl.searchParams.set('resourceKey', state.driveResourceKey);
+                // Process file content
+                if (mediaResult.status === 'rejected') {
+                    throw mediaResult.reason;
                 }
-                const res = await driveFetch(mediaUrl.toString());
-                const arrayBuffer = await res.arrayBuffer();
+                const arrayBuffer = mediaResult.value;
                 await importPDFArrayBuffer(arrayBuffer);
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
@@ -13151,9 +13171,11 @@
                 }
 
                 await migrateLegacyPayload({ pages: importedPages });
+                await yieldToMainThread();
                 renderAllPages();
                 state.activePageIndex = 0;
                 scheduleSave(true);
+                await yieldToMainThread();
                 updateVisiblePages(true);
 
                 const isNonAppPdf = !embeddedStrokes;
@@ -13254,8 +13276,6 @@
             throwIfAborted();
 
             const pageCount = state.pages.length;
-            const strokeData = new Array(pageCount);
-            const backgroundImages = new Array(pageCount);
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = A4_WIDTH * CANVAS_SCALE;
             tempCanvas.height = A4_HEIGHT * CANVAS_SCALE;
@@ -13263,18 +13283,20 @@
             const pdfCanvas = document.createElement('canvas');
             const pdfCtx = pdfCanvas.getContext('2d');
 
+            // Single-pass: collect metadata + render each page, releasing memory per page
+            const metadataParts = [];
+
             for (let i = 0; i < pageCount; i++) {
                 throwIfAborted();
-                if (i > 0 && i % 2 === 0) {
-                    await yieldForResponsiveness(true);
-                }
+                await yieldForResponsiveness(true);
+
+                // Load page data (from memory or IndexedDB)
                 const pageData = await loadPageDataForExport(i);
                 throwIfAborted();
                 const backgroundSource = pageData.backgroundSource
                     || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
                 const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
-                backgroundImages[i] = backgroundImage;
-                strokeData[i] = {
+                const pageStrokeEntry = {
                     strokes: Array.isArray(pageData.strokes) ? pageData.strokes : [],
                     images: Array.isArray(pageData.images) ? pageData.images : [],
                     deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
@@ -13282,35 +13304,13 @@
                     backgroundSource,
                     pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null
                 };
-            }
 
-            // Embed stroke data as PDF metadata (custom property)
-            const metadataParts = [];
-            for (let i = 0; i < strokeData.length; i++) {
-                throwIfAborted();
-                metadataParts.push(JSON.stringify(strokeData[i] || {}));
-                if (i > 0 && i % 2 === 0) {
-                    await yieldForResponsiveness(true);
-                }
-            }
-            const metadataString = `[${metadataParts.join(',')}]`;
-            await yieldForResponsiveness(true);
-            const encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
+                // Accumulate lightweight metadata for embedding (JSON string only)
+                metadataParts.push(JSON.stringify(pageStrokeEntry));
 
-            // Add as PDF property
-            pdf.setProperties({
-                title: 'Cuaderno Digital',
-                subject: 'Notas con S-Pen',
-                creator: 'Cuaderno Digital App',
-                keywords: `STROKES_DATA:${encodedMetadata}`
-            });
-
-            for (let i = 0; i < pageCount; i++) {
-                throwIfAborted();
-                await yieldForResponsiveness(true);
+                // Render this page to canvas
                 if (i > 0) pdf.addPage();
 
-                const page = strokeData[i];
                 tempCtx.setTransform(1, 0, 0, 1, 0, 0);
                 tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
 
@@ -13318,15 +13318,14 @@
                 tempCtx.fillStyle = 'white';
                 tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-                const bgImage = backgroundImages[i];
-                if (bgImage) {
-                    const img = await loadImage(bgImage, { abortSignal });
+                if (backgroundImage) {
+                    const img = await loadImage(backgroundImage, { abortSignal });
                     if (img) {
                         tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
                     }
                     throwIfAborted();
-                } else if (page.pdfPageIndex && activePdfDocument) {
-                    const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
+                } else if (pageStrokeEntry.pdfPageIndex && activePdfDocument) {
+                    const pdfPage = await activePdfDocument.getPage(pageStrokeEntry.pdfPageIndex);
                     const baseViewport = pdfPage.getViewport({ scale: 1 });
                     const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
                     const viewport = pdfPage.getViewport({ scale });
@@ -13361,6 +13360,9 @@
                     if (pdfPage.cleanup) {
                         pdfPage.cleanup();
                     }
+                    // Release pdfCanvas backing store between pages
+                    pdfCanvas.width = 0;
+                    pdfCanvas.height = 0;
                 } else {
                     const img = await loadImage(SVG_BACKGROUND, { abortSignal });
                     if (img) {
@@ -13373,13 +13375,13 @@
                 tempCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
                 tempCtx.lineCap = 'round';
                 tempCtx.lineJoin = 'round';
-                await drawImagesOnCanvas(tempCtx, page, {
+                await drawImagesOnCanvas(tempCtx, pageStrokeEntry, {
                     abortSignal,
                     yieldFn: () => yieldForResponsiveness(false)
                 });
                 let strokeCheckCounter = 0;
                 let pointCheckCounter = 0;
-                for (const stroke of page.strokes) {
+                for (const stroke of pageStrokeEntry.strokes) {
                     const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
                     if (!stroke.points || stroke.points.length < minPoints) continue;
                     if (stroke.tool === 'eraser-stroke') continue;
@@ -13396,10 +13398,30 @@
 
                 await yieldForResponsiveness(true);
                 throwIfAborted();
-                const imgData = tempCanvas.toDataURL('image/jpeg', 0.72);
+                let imgData = tempCanvas.toDataURL('image/jpeg', 0.72);
                 throwIfAborted();
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+                // Release JPEG data URL immediately
+                imgData = null;
             }
+
+            // Embed stroke data as PDF metadata
+            const metadataString = `[${metadataParts.join(',')}]`;
+            await yieldForResponsiveness(true);
+            const encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
+
+            pdf.setProperties({
+                title: 'Cuaderno Digital',
+                subject: 'Notas con S-Pen',
+                creator: 'Cuaderno Digital App',
+                keywords: `STROKES_DATA:${encodedMetadata}`
+            });
+
+            // Release temp canvas backing stores
+            tempCanvas.width = 0;
+            tempCanvas.height = 0;
+            pdfCanvas.width = 0;
+            pdfCanvas.height = 0;
 
             throwIfAborted();
             return pdf.output('blob');
