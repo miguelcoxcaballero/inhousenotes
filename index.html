@@ -5995,7 +5995,7 @@
                 const blob = await res.blob();
                 const objectUrl = URL.createObjectURL(blob);
                 try {
-                    const pdf = await pdfjsLib.getDocument({ url: objectUrl }).promise;
+                    const pdf = await pdfjsLib.getDocument({ url: objectUrl, disableAutoFetch: true, disableStream: false }).promise;
                     resetPdfState();
                     activePdfDocument = pdf;
                     activePdfPageCount = pdf.numPages;
@@ -6008,6 +6008,12 @@
                 }
             } catch (err) {
                 console.error('Failed to restore PDF backgrounds:', err);
+                // Schedule retry so queueDriveSave doesn't get permanently stuck waiting for activePdfDocument
+                setTimeout(() => {
+                    if (state.driveFileId && !activePdfDocument) {
+                        scheduleDriveSync();
+                    }
+                }, 30000);
             } finally {
                 pdfRestoreInProgress = false;
             }
@@ -6990,6 +6996,12 @@
                 const blob = mediaResult.value;
                 const objectUrl = URL.createObjectURL(blob);
                 await importPDFData(objectUrl, true);
+                // Migration: if PDF used old uncompressed format, re-save with compression
+                if (state.needsMigrationResave && canEdit) {
+                    state.needsMigrationResave = false;
+                    showStatus('Optimizando tamaño del PDF...', { preserveState: true });
+                    setTimeout(() => queueDriveSave(true), 4000);
+                }
                 state.driveFileId = file.id;
                 state.driveFileName = file.name || 'Untitled';
                 state.driveAutosave = canEdit;
@@ -12412,11 +12424,15 @@
                 let pdf;
                 let remoteStrokeData = null;
                 try {
-                    pdf = await pdfjsLib.getDocument({ url: objectUrl }).promise;
+                    pdf = await pdfjsLib.getDocument({ url: objectUrl, disableAutoFetch: true, disableStream: false }).promise;
                     try {
                         const metadata = await pdf.getMetadata();
                         const keywords = metadata?.info?.Keywords || '';
-                        if (keywords.startsWith('STROKES_DATA:')) {
+                        if (keywords.startsWith('STROKES_Z:')) {
+                            const encodedData = keywords.substring('STROKES_Z:'.length);
+                            const decodedString = await decompressFromBase64(encodedData);
+                            remoteStrokeData = JSON.parse(decodedString);
+                        } else if (keywords.startsWith('STROKES_DATA:')) {
                             const encodedData = keywords.substring('STROKES_DATA:'.length);
                             const decodedString = decodeURIComponent(escape(atob(encodedData)));
                             remoteStrokeData = JSON.parse(decodedString);
@@ -13244,7 +13260,9 @@
             showLoading('Analyzing PDF...');
 
             try {
-                const pdfParams = isUrl ? { url: pdfData } : { data: pdfData };
+                const pdfParams = isUrl
+                    ? { url: pdfData, disableAutoFetch: true, disableStream: false }
+                    : { data: pdfData };
                 const pdf = await pdfjsLib.getDocument(pdfParams).promise;
                 const numPages = pdf.numPages;
 
@@ -13264,11 +13282,18 @@
                     const metadata = await pdf.getMetadata();
                     const keywords = metadata?.info?.Keywords || '';
 
-                    if (keywords.startsWith('STROKES_DATA:')) {
+                    if (keywords.startsWith('STROKES_Z:')) {
+                        const encodedData = keywords.substring('STROKES_Z:'.length);
+                        const decodedString = await decompressFromBase64(encodedData);
+                        embeddedStrokes = JSON.parse(decodedString);
+                        showLoading('PDF with strokes detected...');
+                    } else if (keywords.startsWith('STROKES_DATA:')) {
                         const encodedData = keywords.substring('STROKES_DATA:'.length);
                         const decodedString = decodeURIComponent(escape(atob(encodedData)));
                         embeddedStrokes = JSON.parse(decodedString);
                         showLoading('PDF with strokes detected...');
+                        // Old uncompressed format: schedule migration re-save
+                        state.needsMigrationResave = true;
                     }
                 } catch (metaErr) {
                     console.log('No embedded stroke data found:', metaErr);
@@ -13409,6 +13434,49 @@
             return merged;
         }
 
+        async function compressToBase64(str) {
+            const stream = new CompressionStream('deflate');
+            const writer = stream.writable.getWriter();
+            writer.write(new TextEncoder().encode(str));
+            writer.close();
+            const chunks = [];
+            const reader = stream.readable.getReader();
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+            const totalLength = chunks.reduce((n, c) => n + c.length, 0);
+            const combined = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.length; }
+            let binary = '';
+            for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
+            return btoa(binary);
+        }
+
+        async function decompressFromBase64(b64) {
+            const binary = atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const stream = new DecompressionStream('deflate');
+            const writer = stream.writable.getWriter();
+            writer.write(bytes);
+            writer.close();
+            const chunks = [];
+            const reader = stream.readable.getReader();
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+            const totalLength = chunks.reduce((n, c) => n + c.length, 0);
+            const combined = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.length; }
+            return new TextDecoder().decode(combined);
+        }
+
         async function buildPdfBlob(options = {}) {
             const abortSignal = options.signal || null;
             const throwIfAborted = () => {
@@ -13440,9 +13508,9 @@
 
             const pageCount = state.pages.length;
             let exportScale = CANVAS_SCALE;
-            if (pageCount >= 30) {
+            if (pageCount >= 10) {
                 exportScale = 1.0;
-            } else if (pageCount >= 10) {
+            } else if (pageCount >= 3) {
                 exportScale = 1.5;
             }
 
@@ -13565,7 +13633,8 @@
 
                 await yieldForResponsiveness(true);
                 throwIfAborted();
-                let imgData = tempCanvas.toDataURL('image/jpeg', 0.60);
+                const jpegQuality = pageCount >= 10 ? 0.50 : 0.60;
+                let imgData = tempCanvas.toDataURL('image/jpeg', jpegQuality);
                 throwIfAborted();
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
                 // Release JPEG data URL immediately
@@ -13575,13 +13644,21 @@
             // Embed stroke data as PDF metadata
             const metadataString = `[${metadataParts.join(',')}]`;
             await yieldForResponsiveness(true);
-            const encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
+            let encodedMetadata, metaPrefix;
+            try {
+                encodedMetadata = await compressToBase64(metadataString);
+                metaPrefix = 'STROKES_Z:';
+            } catch (compressErr) {
+                console.warn('Metadata compression failed, using uncompressed fallback:', compressErr);
+                encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
+                metaPrefix = 'STROKES_DATA:';
+            }
 
             pdf.setProperties({
                 title: 'Cuaderno Digital',
                 subject: 'Notas con S-Pen',
                 creator: 'Cuaderno Digital App',
-                keywords: `STROKES_DATA:${encodedMetadata}`
+                keywords: `${metaPrefix}${encodedMetadata}`
             });
 
             // Release temp canvas backing stores
