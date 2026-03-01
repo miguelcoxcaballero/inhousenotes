@@ -3003,7 +3003,7 @@
         const VISIBLE_PAGE_BUFFER_ACTIVE = 0;
         const MAX_ACTIVE_PAGES = 3;
         const MAX_PDF_BACKGROUND_CACHE = 6;
-        const MAX_IMAGE_CACHE = 50;
+        const MAX_IMAGE_CACHE = 30;
         const PAGE_PREVIEW_SCALE = 0.18;
         const PDF_RENDER_SCALE_LARGE = 1.5;
         const PDF_RENDER_SCALE_HUGE = 1.2;
@@ -3400,7 +3400,7 @@
                 const mem = performance?.memory;
                 if (!mem) return;
                 const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
-                if (usedRatio > 0.6) {
+                if (usedRatio > 0.5) {
                     console.warn(`Memory pressure: ${(usedRatio * 100).toFixed(0)}% heap used — running cleanup`);
                     // Aggressive image cache prune
                     const aggressiveTarget = Math.floor(MAX_IMAGE_CACHE * 0.4);
@@ -3436,8 +3436,8 @@
             }
         }
 
-        // Run memory check every 30 seconds
-        setInterval(checkMemoryPressure, 30000);
+        // Run memory check every 15 seconds
+        setInterval(checkMemoryPressure, 15000);
 
         // ============= END MEMORY OPTIMIZATION UTILITIES =============
 
@@ -4050,9 +4050,11 @@
             void unloadPageData(pageIndex);
         }
 
-        function getPdfBackgroundScale(pageCount) {
+        function getPdfBackgroundScale(pageCount, fileSize = 0) {
             if (pageCount >= 500) return PDF_RENDER_SCALE_HUGE;
             if (pageCount >= 200) return PDF_RENDER_SCALE_LARGE;
+            // Heavy files (>50MB) with fewer pages = very high-res images per page
+            if (fileSize > 50 * 1024 * 1024) return 1.0;
             return Math.min(2, CANVAS_SCALE);
         }
 
@@ -5917,14 +5919,21 @@
             if (pdfRestoreInProgress) return;
             pdfRestoreInProgress = true;
             try {
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`);
-                const arrayBuffer = await res.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                resetPdfState();
-                activePdfDocument = pdf;
-                activePdfPageCount = pdf.numPages;
-                pdfBackgroundScale = getPdfBackgroundScale(activePdfPageCount);
-                scheduleVisiblePageUpdate(true);
+                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`, { timeout: 300000 });
+                const blob = await res.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                try {
+                    const pdf = await pdfjsLib.getDocument({ url: objectUrl }).promise;
+                    resetPdfState();
+                    activePdfDocument = pdf;
+                    activePdfPageCount = pdf.numPages;
+                    state.activePdfObjectUrl = objectUrl;
+                    pdfBackgroundScale = getPdfBackgroundScale(activePdfPageCount, blob.size);
+                    scheduleVisiblePageUpdate(true);
+                } catch (pdfErr) {
+                    URL.revokeObjectURL(objectUrl);
+                    throw pdfErr;
+                }
             } catch (err) {
                 console.error('Failed to restore PDF backgrounds:', err);
             } finally {
@@ -6123,14 +6132,16 @@
                     }
                     const contentDisposition = res.headers.get('content-disposition') || '';
                     const contentType = (res.headers.get('content-type') || '').toLowerCase();
-                    const arrayBuffer = await res.arrayBuffer();
-                    if (!isPdfArrayBuffer(arrayBuffer)) {
+                    const blob = await res.blob();
+                    // Check PDF header using only the first 1024 bytes (avoids full ArrayBuffer in heap)
+                    const headerSlice = await blob.slice(0, 1024).arrayBuffer();
+                    if (!isPdfArrayBuffer(headerSlice)) {
                         if (contentType.includes('text/html') || contentType.includes('text/plain') || !contentDisposition) {
                             try {
-                                const maxDecode = Math.min(arrayBuffer.byteLength, 220000);
-                                const text = new TextDecoder().decode(new Uint8Array(arrayBuffer.slice(0, maxDecode)));
-                                queueParsedDownloadUrls(text, endpoint, queue, visited);
-                                const tokenMatch = text.match(/[?&]confirm=([0-9A-Za-z_-]+)/i) || text.match(/name=\"confirm\"[^>]*value=\"([^\"]+)\"/i);
+                                const maxDecode = Math.min(blob.size, 220000);
+                                const textSlice = await blob.slice(0, maxDecode).text();
+                                queueParsedDownloadUrls(textSlice, endpoint, queue, visited);
+                                const tokenMatch = textSlice.match(/[?&]confirm=([0-9A-Za-z_-]+)/i) || textSlice.match(/name=\"confirm\"[^>]*value=\"([^\"]+)\"/i);
                                 if (tokenMatch && tokenMatch[1]) {
                                     const url = new URL(endpoint);
                                     url.searchParams.set('confirm', tokenMatch[1]);
@@ -6152,7 +6163,7 @@
                         continue;
                     }
                     const fileName = parseFilenameFromContentDisposition(contentDisposition) || '';
-                    return { arrayBuffer, fileName };
+                    return { blob, fileName };
                 } catch (err) {
                     lastError = err;
                 }
@@ -6176,8 +6187,8 @@
             showLoading('Opening shared document...');
             try {
                 const publicPdf = await fetchPublicSharedPdf(fileId, resourceKey);
-                const arrayBuffer = publicPdf.arrayBuffer;
-                await importPDFArrayBuffer(arrayBuffer);
+                const objectUrl = URL.createObjectURL(publicPdf.blob);
+                await importPDFData(objectUrl, true);
 
                 state.driveFileId = fileId;
                 state.driveFileName = publicPdf.fileName || 'Shared Document';
@@ -12320,30 +12331,35 @@
             try {
                 showStatus('Syncing...', { saving: true });
 
-                // 1. Download the PDF content
+                // 1. Download the PDF content as Blob to avoid ArrayBuffer in JS heap
                 const res = await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`,
-                    { method: 'GET' }
+                    { method: 'GET', timeout: 300000 }
                 );
-                const arrayBuffer = await res.arrayBuffer();
+                const blob = await res.blob();
+                const objectUrl = URL.createObjectURL(blob);
 
                 // 2. Extract stroke data from PDF metadata
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let pdf;
                 let remoteStrokeData = null;
                 try {
-                    const metadata = await pdf.getMetadata();
-                    const keywords = metadata?.info?.Keywords || '';
-                    if (keywords.startsWith('STROKES_DATA:')) {
-                        const encodedData = keywords.substring('STROKES_DATA:'.length);
-                        const decodedString = decodeURIComponent(escape(atob(encodedData)));
-                        remoteStrokeData = JSON.parse(decodedString);
+                    pdf = await pdfjsLib.getDocument({ url: objectUrl }).promise;
+                    try {
+                        const metadata = await pdf.getMetadata();
+                        const keywords = metadata?.info?.Keywords || '';
+                        if (keywords.startsWith('STROKES_DATA:')) {
+                            const encodedData = keywords.substring('STROKES_DATA:'.length);
+                            const decodedString = decodeURIComponent(escape(atob(encodedData)));
+                            remoteStrokeData = JSON.parse(decodedString);
+                        }
+                    } catch (metaErr) {
+                        console.warn('Failed to extract remote stroke data:', metaErr);
                     }
-                } catch (metaErr) {
-                    console.warn('Failed to extract remote stroke data:', metaErr);
-                }
-
-                if (pdf.cleanup) {
-                    try { pdf.cleanup(); } catch (e) { }
+                    if (pdf.cleanup) {
+                        try { pdf.cleanup(); } catch (e) { }
+                    }
+                } finally {
+                    URL.revokeObjectURL(objectUrl);
                 }
 
                 if (!remoteStrokeData || !Array.isArray(remoteStrokeData)) {
@@ -13354,9 +13370,16 @@
             throwIfAborted();
 
             const pageCount = state.pages.length;
+            let exportScale = CANVAS_SCALE;
+            if (pageCount >= 30) {
+                exportScale = 1.0;
+            } else if (pageCount >= 10) {
+                exportScale = 1.5;
+            }
+
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = A4_WIDTH * CANVAS_SCALE;
-            tempCanvas.height = A4_HEIGHT * CANVAS_SCALE;
+            tempCanvas.width = A4_WIDTH * exportScale;
+            tempCanvas.height = A4_HEIGHT * exportScale;
             const tempCtx = tempCanvas.getContext('2d');
             const pdfCanvas = document.createElement('canvas');
             const pdfCtx = pdfCanvas.getContext('2d');
@@ -13450,7 +13473,7 @@
                 }
 
                 // Draw strokes
-                tempCtx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+                tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
                 tempCtx.lineCap = 'round';
                 tempCtx.lineJoin = 'round';
                 await drawImagesOnCanvas(tempCtx, pageStrokeEntry, {
@@ -13476,7 +13499,7 @@
 
                 await yieldForResponsiveness(true);
                 throwIfAborted();
-                let imgData = tempCanvas.toDataURL('image/jpeg', 0.72);
+                let imgData = tempCanvas.toDataURL('image/jpeg', 0.60);
                 throwIfAborted();
                 pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
                 // Release JPEG data URL immediately
