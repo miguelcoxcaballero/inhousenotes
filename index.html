@@ -2599,6 +2599,10 @@
                                 <span>Night mode</span>
                                 <input type="checkbox" id="theme-toggle-editor" aria-label="Night mode">
                             </label>
+                            <label class="theme-toggle" for="touch-draw-toggle">
+                                <span>Draw with finger</span>
+                                <input type="checkbox" id="touch-draw-toggle" aria-label="Draw with finger">
+                            </label>
                             <div class="drive-profile-actions">
                                 <button class="btn btn-secondary" id="btn-drive-menu-refresh-editor"
                                     type="button">Refresh</button>
@@ -2971,23 +2975,24 @@
             const spacing = 0.5 * cm;
             const dotR = 0.035 * cm;
 
-            // Optional: for performance, bake the pattern once to a tiny offscreen canvas
-            if (!window._dotPattern) {
+            // Bake dot pattern tile at current scale (re-create if scale changed)
+            if (!window._dotPatternCanvas || window._dotPatternScale !== scale) {
                 const pCanvas = document.createElement('canvas');
                 pCanvas.width = spacing;
                 pCanvas.height = spacing;
                 const pCtx = pCanvas.getContext('2d');
                 pCtx.fillStyle = '#a8a8a8';
                 pCtx.beginPath();
-                // The dot is exactly in the center of the 0.5x0.5 cell based on SVG (cx: 0.25, cy: 0.25)
                 pCtx.arc(spacing / 2, spacing / 2, dotR, 0, Math.PI * 2);
                 pCtx.fill();
                 window._dotPatternCanvas = pCanvas;
-                window._dotPattern = ctx.createPattern(pCanvas, 'repeat');
+                window._dotPatternScale = scale;
             }
+            // Always create pattern from current context (patterns are context-bound)
+            const dotPattern = ctx.createPattern(window._dotPatternCanvas, 'repeat');
 
             ctx.save();
-            ctx.fillStyle = window._dotPattern;
+            ctx.fillStyle = dotPattern;
             // Align the pattern to the grid start
             ctx.translate(gridX, gridY);
             ctx.fillRect(0, 0, gridW, gridH);
@@ -3674,12 +3679,14 @@
         let isGestureInteracting = false;
         let penWritingIdleTimer = null;
         let lastPenEventTime = 0;
+        let touchDrawEnabled = false;
 
         function shouldAcceptDrawInput(e) {
             if (e.pointerType === 'pen') {
                 lastPenEventTime = Date.now();
                 return true;
             }
+            if (!touchDrawEnabled) return false;
             if (e.pointerType === 'mouse') return true;
             if (e.pointerType === 'touch') {
                 return (Date.now() - lastPenEventTime) > 2000;
@@ -7030,9 +7037,8 @@
 
                 updateViewerModeUI();
 
-                if (canEdit) {
-                    startCollabPolling();
-                }
+                // Start polling for all users (including read-only viewers)
+                startCollabPolling();
 
                 // Set the sync baseline so merge can track changes
                 updateSyncBaseline();
@@ -9147,6 +9153,15 @@
                 themeToggleEditor.addEventListener('change', () => {
                     const next = themeToggleEditor.checked ? 'dark' : 'light';
                     applyTheme(next, true);
+                });
+            }
+            const touchDrawToggle = document.getElementById('touch-draw-toggle');
+            if (touchDrawToggle) {
+                touchDrawEnabled = localStorage.getItem('touchDrawEnabled') === 'true';
+                touchDrawToggle.checked = touchDrawEnabled;
+                touchDrawToggle.addEventListener('change', () => {
+                    touchDrawEnabled = touchDrawToggle.checked;
+                    localStorage.setItem('touchDrawEnabled', touchDrawEnabled ? 'true' : 'false');
                 });
             }
             if (driveHomeBtn) {
@@ -12375,7 +12390,7 @@
 
         function startCollabPolling() {
             if (state.collabPollInterval) return; // Already polling
-            if (!state.driveFileId || !state.driveAutosave) return;
+            if (!state.driveFileId) return;
             state.collabEnabled = true;
             state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
             console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
@@ -13331,6 +13346,28 @@
                     console.log('No embedded stroke data found:', metaErr);
                 }
 
+                // Deduplicate strokes within each page
+                if (embeddedStrokes) {
+                    for (const pageData of embeddedStrokes) {
+                        if (pageData && Array.isArray(pageData.strokes) && pageData.strokes.length > 1) {
+                            const seen = new Set();
+                            const unique = [];
+                            for (const s of pageData.strokes) {
+                                const key = s.id || JSON.stringify(s.points);
+                                if (!seen.has(key)) {
+                                    seen.add(key);
+                                    unique.push(s);
+                                }
+                            }
+                            if (unique.length < pageData.strokes.length) {
+                                console.log(`Deduplicated: ${pageData.strokes.length} → ${unique.length} strokes`);
+                                pageData.strokes = unique;
+                                state.needsMigrationResave = true;
+                            }
+                        }
+                    }
+                }
+
                 await clearPageStore();
                 pageDirty.clear();
                 pageDirtyMode.clear();
@@ -13546,11 +13583,6 @@
 
             const pageCount = state.pages.length;
             let exportScale = CANVAS_SCALE;
-            if (pageCount >= 10) {
-                exportScale = 1.0;
-            } else if (pageCount >= 3) {
-                exportScale = 1.5;
-            }
 
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = A4_WIDTH * exportScale;
@@ -13572,8 +13604,19 @@
                 const backgroundSource = pageData.backgroundSource
                     || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
                 const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
+                // Deduplicate strokes before export
+                let exportStrokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
+                if (exportStrokes.length > 1) {
+                    const seen = new Set();
+                    exportStrokes = exportStrokes.filter(s => {
+                        const key = s.id || JSON.stringify(s.points);
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+                }
                 const pageStrokeEntry = {
-                    strokes: Array.isArray(pageData.strokes) ? pageData.strokes : [],
+                    strokes: exportStrokes,
                     images: Array.isArray(pageData.images) ? pageData.images : [],
                     deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
@@ -13671,12 +13714,11 @@
 
                 await yieldForResponsiveness(true);
                 throwIfAborted();
-                const jpegQuality = pageCount >= 10 ? 0.50 : 0.60;
-                let imgData = tempCanvas.toDataURL('image/jpeg', jpegQuality);
+                const jpegQuality = pageCount >= 20 ? 0.75 : 0.85;
+                const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
                 throwIfAborted();
-                pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-                // Release JPEG data URL immediately
-                imgData = null;
+                const arrayBuf = await pageBlob.arrayBuffer();
+                pdf.addImage(new Uint8Array(arrayBuf), 'JPEG', 0, 0, 210, 297);
             }
 
             // Embed stroke data as PDF metadata
