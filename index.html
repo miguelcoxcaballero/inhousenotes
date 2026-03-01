@@ -3673,6 +3673,19 @@
         let isPenWriting = false;
         let isGestureInteracting = false;
         let penWritingIdleTimer = null;
+        let lastPenEventTime = 0;
+
+        function shouldAcceptDrawInput(e) {
+            if (e.pointerType === 'pen') {
+                lastPenEventTime = Date.now();
+                return true;
+            }
+            if (e.pointerType === 'mouse') return true;
+            if (e.pointerType === 'touch') {
+                return (Date.now() - lastPenEventTime) > 2000;
+            }
+            return false;
+        }
         let gestureInteractionIdleTimer = null;
         let deferredDriveSave = false;
         let activeLocalSaveController = null;
@@ -4117,8 +4130,12 @@
         function getPdfBackgroundScale(pageCount, fileSize = 0) {
             if (pageCount >= 500) return PDF_RENDER_SCALE_HUGE;
             if (pageCount >= 200) return PDF_RENDER_SCALE_LARGE;
-            // Heavy files (>50MB) with fewer pages = very high-res images per page
-            if (fileSize > 50 * 1024 * 1024) return 1.0;
+            // Very heavy files (>80MB) - minimal rendering to survive first open
+            if (fileSize > 80 * 1024 * 1024) return 0.75;
+            // Heavy files (>30MB) with fewer pages
+            if (fileSize > 30 * 1024 * 1024) return 1.0;
+            // Medium files (>10MB)
+            if (fileSize > 10 * 1024 * 1024 || pageCount >= 30) return 1.2;
             return Math.min(2, CANVAS_SCALE);
         }
 
@@ -4464,7 +4481,7 @@
                     return;
                 }
                 if (state.currentTool === 'lasso') {
-                    if (e.pointerType === 'touch') return;
+                    if (!shouldAcceptDrawInput(e)) return;
                     if (!lassoCanvas) return;
                     noteInteractionActivity();
                     isLassoing = true;
@@ -4479,11 +4496,12 @@
                     return;
                 }
 
-                // Only pen draws
-                if (e.pointerType !== 'pen') return;
+                // Accept pen, mouse, and touch (with palm rejection)
+                if (!shouldAcceptDrawInput(e)) return;
                 clearSelection();
 
                 e.preventDefault();
+                e.stopPropagation();
                 canvas.setPointerCapture(e.pointerId);
 
                 const pos = getCanvasPos(canvas, e);
@@ -4523,7 +4541,7 @@
                     return;
                 }
 
-                if (!isDrawing || e.pointerType !== 'pen') return;
+                if (!isDrawing || !shouldAcceptDrawInput(e)) return;
 
                 notePenActivity();
 
@@ -6266,7 +6284,7 @@
             try {
                 const publicPdf = await fetchPublicSharedPdf(fileId, resourceKey);
                 const objectUrl = URL.createObjectURL(publicPdf.blob);
-                await importPDFData(objectUrl, true);
+                await importPDFData(objectUrl, true, { fileSize: publicPdf.blob.size });
 
                 state.driveFileId = fileId;
                 state.driveFileName = publicPdf.fileName || 'Shared Document';
@@ -6995,7 +7013,7 @@
                 }
                 const blob = mediaResult.value;
                 const objectUrl = URL.createObjectURL(blob);
-                await importPDFData(objectUrl, true);
+                await importPDFData(objectUrl, true, { fileSize: blob.size });
                 // Migration: if PDF used old uncompressed format, re-save with compression
                 if (state.needsMigrationResave && canEdit) {
                     state.needsMigrationResave = false;
@@ -9991,6 +10009,13 @@
                     e.stopPropagation();
                 }
                 return;
+            }
+            // Mouse/touch on canvas with drawing tool → let canvas handle it
+            if (e.target && e.target.closest && e.target.closest('canvas.page-canvas')) {
+                const drawingTools = ['pen', 'highlighter', 'eraser-stroke', 'eraser-area', 'lasso'];
+                if (drawingTools.includes(state.currentTool) && shouldAcceptDrawInput(e)) {
+                    return;
+                }
             }
             noteInteractionActivity();
             stopInertia();
@@ -13255,7 +13280,7 @@
         }
 
         // Import PDF - detect embedded strokes or treat as background
-        async function importPDFData(pdfData, isUrl = false) {
+        async function importPDFData(pdfData, isUrl = false, options = {}) {
             if (!pdfData) return;
             showLoading('Analyzing PDF...');
 
@@ -13269,11 +13294,18 @@
                 resetPdfState();
                 activePdfDocument = pdf;
                 activePdfPageCount = numPages;
-                pdfBackgroundScale = getPdfBackgroundScale(numPages);
+                pdfBackgroundScale = getPdfBackgroundScale(numPages, options.fileSize || 0);
 
                 // Track object url for cleanup
                 if (isUrl && pdfData.startsWith('blob:')) {
-                    state.activePdfObjectUrl = pdfData;
+                    // For large files (>50MB), release blob immediately after PDF.js loaded it
+                    // PDF.js worker keeps its own internal copy; releasing the blob frees memory
+                    if (options.fileSize > 50 * 1024 * 1024) {
+                        URL.revokeObjectURL(pdfData);
+                        state.activePdfObjectUrl = null;
+                    } else {
+                        state.activePdfObjectUrl = pdfData;
+                    }
                 }
 
                 // Try to extract embedded stroke data from PDF metadata
@@ -13375,8 +13407,14 @@
                 }
 
                 if (isNonAppPdf) {
-                    ensurePageCanvas(0);
-                    await renderPdfPageToBackground(0, pdfRenderToken);
+                    // Render first visible pages explicitly (queue may pause during interaction)
+                    // For large files, limit eager rendering to reduce memory pressure
+                    const isLargeFile = (options.fileSize || 0) > 50 * 1024 * 1024;
+                    const eagerCount = isLargeFile ? 1 : Math.min(numPages, MAX_ACTIVE_PAGES);
+                    for (let pi = 0; pi < eagerCount; pi++) {
+                        ensurePageCanvas(pi);
+                        await renderPdfPageToBackground(pi, pdfRenderToken);
+                    }
                 }
 
                 hideLoading();
@@ -13398,7 +13436,7 @@
             if (!file) return;
             // Use object URL instead of ArrayBuffer to avoid V8 memory limit on large PDFs
             const objectUrl = URL.createObjectURL(file);
-            await importPDFData(objectUrl, true);
+            await importPDFData(objectUrl, true, { fileSize: file.size });
             pdfInput.value = '';
         }
 
