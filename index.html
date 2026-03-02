@@ -4115,8 +4115,10 @@
             if (page) {
                 page.pendingUnload = false;
             }
-            attachPageCanvases(wrapper, pageIndex, options);
+            // Add to activePageIndices BEFORE attachPageCanvases so that
+            // queuePdfPageRender → processPdfRenderQueue doesn't skip this page
             activePageIndices.add(pageIndex);
+            attachPageCanvases(wrapper, pageIndex, options);
             touchPageAccess(pageIndex);
             if (!options.defer) {
                 ensurePageDataLoaded(pageIndex);
@@ -7014,16 +7016,16 @@
 
             setReadOnlyMode(true, { force: true });
 
-            // Show current doc's thumbnail as loading preview
+            // Show current doc's thumbnail as loading preview (matching page-wrapper layout)
             const thumbUrl = file.thumbnailLink ? file.thumbnailLink.replace(/=s\d+/, '=s800') : '';
             if (thumbUrl && canvasContainer) {
                 const previewDiv = document.createElement('div');
-                previewDiv.className = 'loading-doc-preview';
-                previewDiv.style.cssText = 'display:flex;justify-content:center;padding-top:40px;';
+                previewDiv.className = 'page-wrapper loading-doc-preview';
+                previewDiv.style.cssText = `width:${A4_WIDTH}px;height:${A4_HEIGHT}px;overflow:hidden;opacity:0.5;`;
                 const previewImg = document.createElement('img');
                 previewImg.src = thumbUrl;
-                previewImg.style.cssText = 'max-width:90%;max-height:80vh;border-radius:8px;box-shadow:0 2px 16px rgba(0,0,0,0.15);opacity:0.6;';
-                previewImg.onerror = () => previewDiv.remove();
+                previewImg.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+                previewImg.onerror = () => { previewDiv.style.background = 'white'; previewImg.remove(); };
                 previewDiv.appendChild(previewImg);
                 canvasContainer.appendChild(previewDiv);
             }
@@ -13594,6 +13596,10 @@
                 }
 
                 if (isNonAppPdf) {
+                    // Clear any queued renders to avoid racing with eager rendering
+                    // (updateVisiblePages may have queued renders that compete with our direct calls)
+                    pdfRenderQueue = [];
+
                     // Render first visible pages explicitly
                     const isLargeFile = (options.fileSize || 0) > 50 * 1024 * 1024;
                     const eagerCount = isLargeFile ? 1 : Math.min(numPages, MAX_ACTIVE_PAGES);
@@ -13608,6 +13614,22 @@
                             applyPagePreview(pi);
                         }
                     }
+
+                    // Re-apply backgrounds to visible canvases after eager rendering
+                    activePageIndices.forEach(pi => {
+                        const pg = state.pages[pi];
+                        if (pg && pg.backgroundImage) {
+                            const c = document.querySelector(`canvas.page-canvas[data-page="${pi}"]`);
+                            if (c) {
+                                c.style.backgroundImage = `url("${pg.backgroundImage}")`;
+                                c.style.backgroundSize = 'cover';
+                                c.style.backgroundRepeat = 'no-repeat';
+                                c.style.backgroundPosition = 'center';
+                                c.style.backgroundColor = 'transparent';
+                            }
+                        }
+                    });
+
                     // Queue remaining pages for background rendering + preview generation
                     if (numPages > eagerCount) {
                         (async () => {
