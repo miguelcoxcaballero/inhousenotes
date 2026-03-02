@@ -6088,7 +6088,14 @@
                 const blob = await res.blob();
                 const objectUrl = URL.createObjectURL(blob);
                 try {
-                    const pdf = await pdfjsLib.getDocument({ url: objectUrl, disableAutoFetch: true, disableStream: false }).promise;
+                    const pdf = await pdfjsLib.getDocument({
+                        url: objectUrl,
+                        disableAutoFetch: true,
+                        disableStream: false,
+                        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                        cMapPacked: true,
+                        standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+                    }).promise;
                     resetPdfState();
                     activePdfDocument = pdf;
                     activePdfPageCount = pdf.numPages;
@@ -12640,7 +12647,14 @@
                 let pdf;
                 let remoteStrokeData = null;
                 try {
-                    pdf = await pdfjsLib.getDocument({ url: objectUrl, disableAutoFetch: true, disableStream: false }).promise;
+                    pdf = await pdfjsLib.getDocument({
+                        url: objectUrl,
+                        disableAutoFetch: true,
+                        disableStream: false,
+                        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                        cMapPacked: true,
+                        standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+                    }).promise;
                     try {
                         const metadata = await pdf.getMetadata();
                         const keywords = metadata?.info?.Keywords || '';
@@ -13479,6 +13493,12 @@
                 const pdfParams = isUrl
                     ? { url: pdfData, disableAutoFetch: true, disableStream: false }
                     : { data: pdfData };
+
+                // Add required font map parameters so PDF.js can render regular PDFs without embedded fonts
+                pdfParams.cMapUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/';
+                pdfParams.cMapPacked = true;
+                pdfParams.standardFontDataUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/';
+
                 const pdf = await pdfjsLib.getDocument(pdfParams).promise;
                 const numPages = pdf.numPages;
 
