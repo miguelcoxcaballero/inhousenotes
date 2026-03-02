@@ -1585,6 +1585,10 @@
             background: #1f1f1f;
             border-color: rgba(255, 255, 255, 0.08);
         }
+        [data-theme="dark"] .doc-stats {
+            color: #999;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
 
         .drive-profile-meta {
             display: flex;
@@ -2603,6 +2607,8 @@
                                 <span>Draw with finger</span>
                                 <input type="checkbox" id="touch-draw-toggle" aria-label="Draw with finger">
                             </label>
+                            <div class="doc-stats" id="doc-stats" style="padding:4px 0;font-size:12px;color:#888;border-top:1px solid #eee;margin-top:4px;">
+                            </div>
                             <div class="drive-profile-actions">
                                 <button class="btn btn-secondary" id="btn-drive-menu-refresh-editor"
                                     type="button">Refresh</button>
@@ -4147,6 +4153,7 @@
         }
 
         function resetPdfState() {
+            pdfExportCache.clear();
             cancelPdfRenderResume();
             pdfBackgroundCache.forEach(entry => {
                 if (entry?.dataUrl && entry.dataUrl.startsWith('blob:')) {
@@ -4225,11 +4232,18 @@
                 return;
             }
 
-            if (page.pdfPageIndex && activePdfDocument) {
-                canvas.style.backgroundImage = '';
-                canvas.style.backgroundColor = 'white';
-                if (!deferPdfRender) {
-                    queuePdfPageRender(pageIndex);
+            if (page.pdfPageIndex) {
+                if (activePdfDocument) {
+                    canvas.style.backgroundImage = '';
+                    canvas.style.backgroundColor = 'white';
+                    if (!deferPdfRender) {
+                        queuePdfPageRender(pageIndex);
+                    }
+                } else {
+                    // PDF document not loaded yet - show white and trigger restore
+                    canvas.style.backgroundImage = '';
+                    canvas.style.backgroundColor = 'white';
+                    restorePdfBackgroundsIfNeeded();
                 }
                 return;
             }
@@ -4383,7 +4397,11 @@
             const pageCount = state.pages.length;
             if (!pageCount) return;
             const deferHeavy = !force && isViewportInteracting();
-            const buffer = deferHeavy ? VISIBLE_PAGE_BUFFER_ACTIVE : VISIBLE_PAGE_BUFFER;
+
+            // During active interaction (scroll/pinch), skip all DOM work
+            if (deferHeavy) return;
+
+            const buffer = VISIBLE_PAGE_BUFFER;
             const range = getVisiblePageRange(buffer);
             if (range.end < range.start) return;
             const visibleIndices = [];
@@ -4422,21 +4440,18 @@
 
             activeSet.forEach(index => {
                 if (index < range.start || index > range.end) return;
-                ensurePageCanvas(index, { defer: deferHeavy, deferPdfRender: deferHeavy });
-                // Bug fix: keep preview visible while strokes load (cleared in redrawPage instead).
+                ensurePageCanvas(index, { defer: false, deferPdfRender: false });
                 const page = state.pages[index];
-                if (page && page.needsRedraw && !deferHeavy) {
+                if (page && page.needsRedraw) {
                     redrawPage(index);
                 }
-                if (page && page.backgroundSource === 'pdf' && !page.backgroundImage && activePdfDocument && !deferHeavy) {
+                if (page && page.backgroundSource === 'pdf' && !page.backgroundImage && activePdfDocument) {
                     const canvas = document.querySelector(`canvas.page-canvas[data-page="${index}"]`);
                     if (canvas) {
                         applyPageBackground(index, canvas);
                     }
                 }
-                if (!deferHeavy) {
-                    ensurePageDataLoaded(index);
-                }
+                ensurePageDataLoaded(index);
             });
 
             visibleIndices.forEach(index => {
@@ -4445,13 +4460,11 @@
                 }
             });
 
-            if (!deferHeavy) {
-                activePageIndices.forEach(index => {
-                    if (!activeSet.has(index)) {
-                        releasePageCanvas(index);
-                    }
-                });
-            }
+            activePageIndices.forEach(index => {
+                if (!activeSet.has(index)) {
+                    releasePageCanvas(index);
+                }
+            });
 
             prunePdfBackgroundCache();
         }
@@ -5994,6 +6007,34 @@
             if (btnEl) {
                 btnEl.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
             }
+            if (shouldOpen && menuEl === driveProfileMenuEditor) {
+                updateDocStats();
+            }
+        }
+
+        function updateDocStats() {
+            const el = document.getElementById('doc-stats');
+            if (!el) return;
+            let totalStrokes = 0;
+            for (const page of state.pages) {
+                if (page && Array.isArray(page.strokes)) {
+                    totalStrokes += page.strokes.filter(s => s.tool !== 'eraser-stroke').length;
+                } else if (page && typeof page.strokeCount === 'number') {
+                    totalStrokes += page.strokeCount;
+                }
+            }
+            const pageCount = state.pages.length;
+            const parts = [`${pageCount} page${pageCount !== 1 ? 's' : ''}`, `${totalStrokes} stroke${totalStrokes !== 1 ? 's' : ''}`];
+            if (state.lastExportSize) {
+                parts.push(formatFileSize(state.lastExportSize));
+            }
+            el.textContent = parts.join(' · ');
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
         function closeDriveProfileMenu(menuEl, btnEl) {
@@ -6970,7 +7011,27 @@
                 // Launch both requests simultaneously
                 const [metaResult, mediaResult] = await Promise.allSettled([
                     driveFetch(metaUrl.toString()).then(r => r.json()),
-                    driveFetch(mediaUrl.toString()).then(r => r.blob())
+                    driveFetch(mediaUrl.toString(), { timeout: 300000 }).then(async r => {
+                        const contentLength = parseInt(r.headers.get('content-length') || '0', 10);
+                        if (!contentLength || contentLength < 2 * 1024 * 1024) {
+                            // Small files: simple blob conversion
+                            return { blob: await r.blob(), size: contentLength };
+                        }
+                        // Large files: stream with progress
+                        const reader = r.body.getReader();
+                        const chunks = [];
+                        let received = 0;
+                        for (;;) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            chunks.push(value);
+                            received += value.length;
+                            const pct = contentLength ? Math.round(received / contentLength * 100) : 0;
+                            showLoading(`Downloading... ${pct}%`);
+                        }
+                        const blob = new Blob(chunks, { type: 'application/pdf' });
+                        return { blob, size: blob.size };
+                    })
                 ]);
 
                 // Process metadata (capabilities, revision)
@@ -7018,9 +7079,11 @@
                 if (mediaResult.status === 'rejected') {
                     throw mediaResult.reason;
                 }
-                const blob = mediaResult.value;
+                const { blob, size: fileSize } = mediaResult.value;
+                state.lastExportSize = fileSize || blob.size;
+                showLoading('Processing PDF...');
                 const objectUrl = URL.createObjectURL(blob);
-                await importPDFData(objectUrl, true, { fileSize: blob.size });
+                await importPDFData(objectUrl, true, { fileSize: fileSize || blob.size });
                 // Migration: if PDF used old uncompressed format, re-save with compression
                 if (state.needsMigrationResave && canEdit) {
                     state.needsMigrationResave = false;
@@ -8595,11 +8658,48 @@
         function renderAllPages() {
             clearSelection();
             canvasContainer.innerHTML = '';
-            canvasContainer.appendChild(addPageIndicator);
             activePageIndices.clear();
+            // Batch DOM operations using DocumentFragment
+            const fragment = document.createDocumentFragment();
             state.pages.forEach((_, index) => {
-                createPageElement(index, false, false);
+                const wrapper = document.createElement('div');
+                wrapper.className = 'page-wrapper';
+                wrapper.dataset.page = index;
+                wrapper.style.width = `${A4_WIDTH}px`;
+                wrapper.style.height = `${A4_HEIGHT}px`;
+                const pageNumber = document.createElement('div');
+                pageNumber.className = 'page-number';
+                pageNumber.textContent = `${index + 1}`;
+                wrapper.appendChild(pageNumber);
+                fragment.appendChild(wrapper);
+
+                const page = state.pages[index];
+                if (page && page.preview) {
+                    wrapper.style.backgroundImage = `url("${page.preview}")`;
+                    wrapper.style.backgroundSize = 'cover';
+                    wrapper.style.backgroundRepeat = 'no-repeat';
+                    wrapper.style.backgroundPosition = 'center';
+                } else if (page && page.backgroundSource !== 'pdf' && window._templateBackgroundUrl) {
+                    wrapper.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
+                    wrapper.style.backgroundSize = '100% 100%';
+                    wrapper.style.backgroundRepeat = 'no-repeat';
+                    wrapper.style.backgroundPosition = 'center';
+                }
+
+                wrapper.addEventListener('pointerdown', (e) => {
+                    if (state.isReadOnly) return;
+                    state.activePageIndex = index;
+                    if (!activePageIndices.has(index)) {
+                        if (!e.target || !e.target.closest || !e.target.closest('canvas.page-canvas')) {
+                            ensurePageCanvas(index);
+                            ensurePageDataLoaded(index);
+                            scheduleVisiblePageUpdate(true);
+                        }
+                    }
+                });
             });
+            canvasContainer.appendChild(fragment);
+            canvasContainer.appendChild(addPageIndicator);
             updateAddPageIndicator();
             const maxIndex = Math.max(0, state.pages.length - 1);
             state.activePageIndex = Math.min(Math.max(0, state.activePageIndex || 0), maxIndex);
@@ -10322,12 +10422,6 @@
                         <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${isPdfBackground ? ' - PDF' : ''}</p>
                     </div>
                     <div class="page-actions">
-                        <button class="page-action-btn" data-action="goto" data-page="${index}" title="Go to page">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="11" cy="11" r="8"/>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                            </svg>
-                        </button>
                         <button class="page-action-btn delete" data-action="delete" data-page="${index}" title="Delete" ${canDeletePages ? '' : 'disabled aria-disabled="true"'}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polyline points="3 6 5 6 21 6"/>
@@ -10336,11 +10430,14 @@
                         </button>
                     </div>
                 `;
+                item.style.cursor = 'pointer';
                 pagesList.appendChild(item);
 
                 generateThumbnail(index);
 
-                item.querySelector('[data-action="goto"]').addEventListener('click', () => {
+                // Click anywhere on the item (except delete button) to navigate
+                item.addEventListener('click', (e) => {
+                    if (e.target.closest('[data-action="delete"]')) return;
                     goToPage(index);
                     closePagesPanel();
                 });
@@ -11064,7 +11161,8 @@
                 backgroundImage: page.backgroundSource === 'pdf' ? null : (page.backgroundImage || null),
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
                 pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
-                strokeCount
+                strokeCount,
+                preview: page.preview || null
             };
         }
 
@@ -11316,6 +11414,16 @@
                 wrapper.style.backgroundSize = 'cover';
                 wrapper.style.backgroundRepeat = 'no-repeat';
                 wrapper.style.backgroundPosition = 'center';
+            } else if (page && page.backgroundSource !== 'pdf') {
+                // Show template background as fallback while loading
+                if (window._templateBackgroundUrl) {
+                    wrapper.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
+                    wrapper.style.backgroundSize = '100% 100%';
+                    wrapper.style.backgroundRepeat = 'no-repeat';
+                    wrapper.style.backgroundPosition = 'center';
+                } else {
+                    wrapper.style.backgroundImage = '';
+                }
             } else {
                 wrapper.style.backgroundImage = '';
             }
@@ -11341,10 +11449,11 @@
                 if (img.complete) {
                     ctx.drawImage(img, 0, 0, A4_WIDTH, A4_HEIGHT);
                 }
-            } else if (backgroundSource === 'template') {
+            } else if (backgroundSource === 'template' || backgroundSource === undefined) {
                 // Draw template background natively for preview
                 drawTemplateBackground(ctx, A4_WIDTH, A4_HEIGHT, 1);
             }
+            // For PDF background pages with no image loaded yet, white fill is already done above
 
             if (page.bakedBackground) {
                 const bakedImg = getCachedImage(page.bakedBackground);
@@ -11936,6 +12045,7 @@
             const prevMode = pageDirtyMode.get(pageIndex) || 'stroke';
             pageDirtyMode.set(pageIndex, (prevMode === 'full' || mode === 'full') ? 'full' : 'stroke');
             pageDirty.add(pageIndex);
+            pdfExportCache.delete(pageIndex);
             scheduleDriveSync();
         }
 
@@ -11999,6 +12109,7 @@
             gestureInteractionIdleTimer = setTimeout(() => {
                 isGestureInteracting = false;
                 flushDeferredSavesAfterInteraction();
+                scheduleVisiblePageUpdate(true);
             }, INTERACTION_IDLE_MS);
         }
 
@@ -13353,7 +13464,7 @@
                             const seen = new Set();
                             const unique = [];
                             for (const s of pageData.strokes) {
-                                const key = s.id || JSON.stringify(s.points);
+                                const key = s.id || (s.points ? `${s.points.length}:${s.points[0]?.x},${s.points[0]?.y}` : '');
                                 if (!seen.has(key)) {
                                     seen.add(key);
                                     unique.push(s);
@@ -13444,13 +13555,35 @@
                 }
 
                 if (isNonAppPdf) {
-                    // Render first visible pages explicitly (queue may pause during interaction)
-                    // For large files, limit eager rendering to reduce memory pressure
+                    // Render first visible pages explicitly
                     const isLargeFile = (options.fileSize || 0) > 50 * 1024 * 1024;
                     const eagerCount = isLargeFile ? 1 : Math.min(numPages, MAX_ACTIVE_PAGES);
+                    const savedToken = pdfRenderToken;
                     for (let pi = 0; pi < eagerCount; pi++) {
                         ensurePageCanvas(pi);
-                        await renderPdfPageToBackground(pi, pdfRenderToken);
+                        await renderPdfPageToBackground(pi, savedToken);
+                        // Generate preview after background is rendered
+                        const pg = state.pages[pi];
+                        if (pg && pg.backgroundImage && !pg.preview) {
+                            pg.preview = renderPagePreview(pi);
+                            applyPagePreview(pi);
+                        }
+                    }
+                    // Queue remaining pages for background rendering + preview generation
+                    if (numPages > eagerCount) {
+                        (async () => {
+                            for (let pi = eagerCount; pi < numPages; pi++) {
+                                if (pdfRenderToken !== savedToken) break;
+                                await renderPdfPageToBackground(pi, savedToken);
+                                const pg = state.pages[pi];
+                                if (pg && pg.backgroundImage && !pg.preview) {
+                                    pg.preview = renderPagePreview(pi);
+                                    applyPagePreview(pi);
+                                }
+                                // Yield periodically to keep UI responsive
+                                if (pi % 3 === 0) await new Promise(requestAnimationFrame);
+                            }
+                        })();
                     }
                 }
 
@@ -13552,6 +13685,21 @@
             return new TextDecoder().decode(combined);
         }
 
+        // Cache rendered JPEG pages for incremental PDF builds
+        const pdfExportCache = new Map(); // pageIndex -> { hash, jpegData (Uint8Array), metaJson }
+
+        function computePageHash(pageData) {
+            const strokeIds = Array.isArray(pageData.strokes)
+                ? pageData.strokes.map(s => s.id || '').join(',')
+                : '';
+            const imageIds = Array.isArray(pageData.images)
+                ? pageData.images.map(img => img.id || img.src || '').join(',')
+                : '';
+            const bg = pageData.backgroundSource || '';
+            const pdfIdx = pageData.pdfPageIndex || '';
+            return `${strokeIds}|${imageIds}|${bg}|${pdfIdx}|${pageData.strokes?.length || 0}`;
+        }
+
         async function buildPdfBlob(options = {}) {
             const abortSignal = options.signal || null;
             const throwIfAborted = () => {
@@ -13609,7 +13757,7 @@
                 if (exportStrokes.length > 1) {
                     const seen = new Set();
                     exportStrokes = exportStrokes.filter(s => {
-                        const key = s.id || JSON.stringify(s.points);
+                        const key = s.id || (s.points ? `${s.points.length}:${s.points[0]?.x},${s.points[0]?.y}` : '');
                         if (seen.has(key)) return false;
                         seen.add(key);
                         return true;
@@ -13625,100 +13773,113 @@
                 };
 
                 // Accumulate lightweight metadata for embedding (JSON string only)
-                metadataParts.push(JSON.stringify(pageStrokeEntry));
+                const metaJson = JSON.stringify(pageStrokeEntry);
+                metadataParts.push(metaJson);
 
-                // Render this page to canvas
+                // Check cache for this page
+                const pageHash = computePageHash(pageData);
+                const cached = pdfExportCache.get(i);
+
                 if (i > 0) pdf.addPage();
 
-                tempCtx.setTransform(1, 0, 0, 1, 0, 0);
-                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-                // Draw background
-                tempCtx.fillStyle = 'white';
-                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-                if (backgroundImage) {
-                    const img = await loadImage(backgroundImage, { abortSignal });
-                    if (img) {
-                        tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
-                    }
-                    throwIfAborted();
-                } else if (pageStrokeEntry.pdfPageIndex && activePdfDocument) {
-                    const pdfPage = await activePdfDocument.getPage(pageStrokeEntry.pdfPageIndex);
-                    const baseViewport = pdfPage.getViewport({ scale: 1 });
-                    const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
-                    const viewport = pdfPage.getViewport({ scale });
-                    pdfCanvas.width = viewport.width;
-                    pdfCanvas.height = viewport.height;
-                    const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport });
-                    let abortHandler = null;
-                    if (abortSignal) {
-                        abortHandler = () => {
-                            try {
-                                renderTask.cancel();
-                            } catch (err) { }
-                        };
-                        abortSignal.addEventListener('abort', abortHandler, { once: true });
-                    }
-                    try {
-                        await renderTask.promise;
-                    } catch (err) {
-                        if (abortSignal?.aborted || err?.name === 'RenderingCancelledException') {
-                            throw createAbortError('Drive save aborted');
-                        }
-                        throw err;
-                    } finally {
-                        if (abortHandler && abortSignal) {
-                            abortSignal.removeEventListener('abort', abortHandler);
-                        }
-                    }
-                    throwIfAborted();
-                    const offsetX = (tempCanvas.width - viewport.width) / 2;
-                    const offsetY = (tempCanvas.height - viewport.height) / 2;
-                    tempCtx.drawImage(pdfCanvas, offsetX, offsetY, viewport.width, viewport.height);
-                    if (pdfPage.cleanup) {
-                        pdfPage.cleanup();
-                    }
-                    // Release pdfCanvas backing store between pages
-                    pdfCanvas.width = 0;
-                    pdfCanvas.height = 0;
+                if (cached && cached.hash === pageHash) {
+                    // Use cached JPEG — no re-render needed
+                    pdf.addImage(cached.jpegData, 'JPEG', 0, 0, 210, 297);
                 } else {
-                    drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
-                    throwIfAborted();
-                }
+                    // Render this page to canvas
+                    tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+                    tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-                // Draw strokes
-                tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
-                tempCtx.lineCap = 'round';
-                tempCtx.lineJoin = 'round';
-                await drawImagesOnCanvas(tempCtx, pageStrokeEntry, {
-                    abortSignal,
-                    yieldFn: () => yieldForResponsiveness(false)
-                });
-                let strokeCheckCounter = 0;
-                let pointCheckCounter = 0;
-                for (const stroke of pageStrokeEntry.strokes) {
-                    const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
-                    if (!stroke.points || stroke.points.length < minPoints) continue;
-                    if (stroke.tool === 'eraser-stroke') continue;
+                    // Draw background
+                    tempCtx.fillStyle = 'white';
+                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-                    drawSmoothStroke(tempCtx, stroke);
-                    strokeCheckCounter += 1;
-                    pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
-                    if (strokeCheckCounter % 10 === 0 || pointCheckCounter >= 1500) {
-                        pointCheckCounter = 0;
-                        await yieldForResponsiveness(false);
+                    if (backgroundImage) {
+                        const img = await loadImage(backgroundImage, { abortSignal });
+                        if (img) {
+                            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                        }
+                        throwIfAborted();
+                    } else if (pageStrokeEntry.pdfPageIndex && activePdfDocument) {
+                        const pdfPage = await activePdfDocument.getPage(pageStrokeEntry.pdfPageIndex);
+                        const baseViewport = pdfPage.getViewport({ scale: 1 });
+                        const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
+                        const viewport = pdfPage.getViewport({ scale });
+                        pdfCanvas.width = viewport.width;
+                        pdfCanvas.height = viewport.height;
+                        const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport });
+                        let abortHandler = null;
+                        if (abortSignal) {
+                            abortHandler = () => {
+                                try {
+                                    renderTask.cancel();
+                                } catch (err) { }
+                            };
+                            abortSignal.addEventListener('abort', abortHandler, { once: true });
+                        }
+                        try {
+                            await renderTask.promise;
+                        } catch (err) {
+                            if (abortSignal?.aborted || err?.name === 'RenderingCancelledException') {
+                                throw createAbortError('Drive save aborted');
+                            }
+                            throw err;
+                        } finally {
+                            if (abortHandler && abortSignal) {
+                                abortSignal.removeEventListener('abort', abortHandler);
+                            }
+                        }
+                        throwIfAborted();
+                        const offsetX = (tempCanvas.width - viewport.width) / 2;
+                        const offsetY = (tempCanvas.height - viewport.height) / 2;
+                        tempCtx.drawImage(pdfCanvas, offsetX, offsetY, viewport.width, viewport.height);
+                        if (pdfPage.cleanup) {
+                            pdfPage.cleanup();
+                        }
+                        pdfCanvas.width = 0;
+                        pdfCanvas.height = 0;
+                    } else {
+                        drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
                         throwIfAborted();
                     }
-                }
 
-                await yieldForResponsiveness(true);
-                throwIfAborted();
-                const jpegQuality = pageCount >= 20 ? 0.75 : 0.85;
-                const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
-                throwIfAborted();
-                const arrayBuf = await pageBlob.arrayBuffer();
-                pdf.addImage(new Uint8Array(arrayBuf), 'JPEG', 0, 0, 210, 297);
+                    // Draw strokes
+                    tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
+                    tempCtx.lineCap = 'round';
+                    tempCtx.lineJoin = 'round';
+                    await drawImagesOnCanvas(tempCtx, pageStrokeEntry, {
+                        abortSignal,
+                        yieldFn: () => yieldForResponsiveness(false)
+                    });
+                    let strokeCheckCounter = 0;
+                    let pointCheckCounter = 0;
+                    for (const stroke of pageStrokeEntry.strokes) {
+                        const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                        if (!stroke.points || stroke.points.length < minPoints) continue;
+                        if (stroke.tool === 'eraser-stroke') continue;
+
+                        drawSmoothStroke(tempCtx, stroke);
+                        strokeCheckCounter += 1;
+                        pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
+                        if (strokeCheckCounter % 10 === 0 || pointCheckCounter >= 1500) {
+                            pointCheckCounter = 0;
+                            await yieldForResponsiveness(false);
+                            throwIfAborted();
+                        }
+                    }
+
+                    await yieldForResponsiveness(true);
+                    throwIfAborted();
+                    const jpegQuality = pageCount >= 20 ? 0.75 : 0.85;
+                    const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
+                    throwIfAborted();
+                    const arrayBuf = await pageBlob.arrayBuffer();
+                    const jpegData = new Uint8Array(arrayBuf);
+                    pdf.addImage(jpegData, 'JPEG', 0, 0, 210, 297);
+
+                    // Cache for next save
+                    pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson });
+                }
             }
 
             // Embed stroke data as PDF metadata
@@ -13748,7 +13909,9 @@
             pdfCanvas.height = 0;
 
             throwIfAborted();
-            return pdf.output('blob');
+            const pdfResult = pdf.output('blob');
+            state.lastExportSize = pdfResult.size;
+            return pdfResult;
         }
 
         // Export PDF with embedded stroke data
