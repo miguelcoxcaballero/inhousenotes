@@ -3120,8 +3120,8 @@
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 24;
-        const DRIVE_SYNC_IDLE_DELAY = 2000;
-        const DRIVE_SYNC_MAX_DELAY = 20000;
+        const DRIVE_SYNC_IDLE_DELAY = 1000;
+        const DRIVE_SYNC_MAX_DELAY = 15000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -14158,7 +14158,7 @@
             throwIfAborted();
 
             const pageCount = state.pages.length;
-            let exportScale = options.highQuality ? CANVAS_SCALE : Math.min(CANVAS_SCALE, 1.5);
+            let exportScale = options.highQuality ? CANVAS_SCALE : 1;
             let shouldResolvePdfSourceSizes = false;
             const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
             const hasStoredNonA4PdfPage = state.pages.some(
@@ -14217,10 +14217,21 @@
                         return true;
                     });
                 }
+                // Round stroke points to 1 decimal to reduce metadata size
+                const compactStrokes = exportStrokes.map(s => ({
+                    ...s,
+                    points: s.points ? s.points.map(p => ({
+                        x: Math.round(p.x * 10) / 10,
+                        y: Math.round(p.y * 10) / 10,
+                        p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
+                    })) : s.points
+                }));
+                const images = Array.isArray(pageData.images) && pageData.images.length > 0 ? pageData.images : undefined;
+                const deletedStrokeIds = Array.isArray(pageData.deletedStrokeIds) && pageData.deletedStrokeIds.length > 0 ? pageData.deletedStrokeIds : undefined;
                 const pageStrokeEntry = {
-                    strokes: exportStrokes,
-                    images: Array.isArray(pageData.images) ? pageData.images : [],
-                    deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
+                    strokes: compactStrokes,
+                    ...(images && { images }),
+                    ...(deletedStrokeIds && { deletedStrokeIds }),
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
                     backgroundSource,
                     pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null,
@@ -14242,7 +14253,8 @@
                     pdf = new jsPDF({
                         orientation: getPageOrientation(pageMmWidth, pageMmHeight),
                         unit: 'mm',
-                        format: [pageMmWidth, pageMmHeight]
+                        format: [pageMmWidth, pageMmHeight],
+                        compress: true
                     });
                 } else {
                     pdf.addPage([pageMmWidth, pageMmHeight], getPageOrientation(pageMmWidth, pageMmHeight));
@@ -14311,7 +14323,15 @@
                         pdfCanvas.width = 0;
                         pdfCanvas.height = 0;
                     } else {
-                        drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
+                        // Cache template as ImageBitmap to avoid re-rendering 1785 dots per page
+                        const tplKey = `${tempCanvas.width}x${tempCanvas.height}`;
+                        if (!buildPdfBlob._tplCache || buildPdfBlob._tplCacheKey !== tplKey) {
+                            drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
+                            buildPdfBlob._tplCache = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                            buildPdfBlob._tplCacheKey = tplKey;
+                        } else {
+                            tempCtx.putImageData(buildPdfBlob._tplCache, 0, 0);
+                        }
                         throwIfAborted();
                     }
 
