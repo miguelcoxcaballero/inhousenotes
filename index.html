@@ -10694,7 +10694,7 @@
         function renderPagesList() {
             const pagesList = document.getElementById('pages-list');
             pagesList.innerHTML = '';
-            const canDeletePages = !state.isReadOnly && state.driveOwnedByMe !== false && state.pages.length > 1;
+            const canDeletePages = !state.isReadOnly && state.pages.length > 1;
 
             state.pages.forEach((page, index) => {
                 const item = document.createElement('div');
@@ -10846,7 +10846,7 @@
         let pageToDelete = null;
 
         function openDeleteModal(pageIndex) {
-            if (state.isReadOnly || state.driveOwnedByMe === false || state.pages.length <= 1) return;
+            if (state.isReadOnly || state.pages.length <= 1) return;
             pageToDelete = pageIndex;
             document.getElementById('delete-page-number').textContent = pageIndex + 1;
             document.getElementById('modal-delete-page').classList.add('visible');
@@ -10858,7 +10858,7 @@
         }
 
         async function confirmDeletePage() {
-            if (state.isReadOnly || state.driveOwnedByMe === false) {
+            if (state.isReadOnly) {
                 closeDeleteModal();
                 return;
             }
@@ -13801,6 +13801,24 @@
                 }
                 syncLoadingDocPreviewLayout(firstPageWidth, firstPageHeight);
 
+                const pdfPageSizeCache = new Map();
+                const getPdfPageSize = async (pageNumber) => {
+                    const pageNo = Math.max(1, Math.min(numPages, Number(pageNumber) || 1));
+                    const cached = pdfPageSizeCache.get(pageNo);
+                    if (cached) return cached;
+                    const pdfPage = await pdf.getPage(pageNo);
+                    const viewport = pdfPage.getViewport({ scale: 1 });
+                    const size = {
+                        width: Math.max(1, Math.round(viewport.width)),
+                        height: Math.max(1, Math.round(viewport.height))
+                    };
+                    if (pdfPage.cleanup) {
+                        pdfPage.cleanup();
+                    }
+                    pdfPageSizeCache.set(pageNo, size);
+                    return size;
+                };
+
                 resetPdfState();
                 activePdfDocument = pdf;
                 activePdfPageCount = numPages;
@@ -13877,6 +13895,9 @@
 
                 const importedPages = [];
                 for (let i = 1; i <= numPages; i++) {
+                    if (i % 4 === 0) {
+                        await yieldToMainThread();
+                    }
                     const pageData = embeddedStrokes ? embeddedStrokes[i - 1] : null;
                     if (pageData) {
                         const hasImagesKey = Object.prototype.hasOwnProperty.call(pageData, 'images');
@@ -13889,6 +13910,14 @@
                             || (pageData.hasCustomBackground ? 'pdf' : 'template');
                         const needsPdfBackground = useLegacyRaster || backgroundSource !== 'template';
                         const pagePdfIndex = Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : i;
+                        let pageSizeFallback = { width: A4_WIDTH, height: A4_HEIGHT };
+                        if (needsPdfBackground && Number.isFinite(pagePdfIndex)) {
+                            try {
+                                pageSizeFallback = await getPdfPageSize(pagePdfIndex);
+                            } catch (sizeErr) {
+                                console.warn(`Failed to read PDF size for page ${pagePdfIndex}:`, sizeErr);
+                            }
+                        }
 
                         if (needsPdfBackground) {
                             importedPages.push({
@@ -13896,8 +13925,8 @@
                                 backgroundImage: null,
                                 backgroundSource: 'pdf',
                                 pdfPageIndex: pagePdfIndex,
-                                pageWidth: normalizePageDimension(pageData.pageWidth, A4_WIDTH),
-                                pageHeight: normalizePageDimension(pageData.pageHeight, A4_HEIGHT),
+                                pageWidth: normalizePageDimension(pageData.pageWidth, pageSizeFallback.width),
+                                pageHeight: normalizePageDimension(pageData.pageHeight, pageSizeFallback.height),
                                 images: useLegacyRaster ? [] : restoredImages,
                                 needsRedraw: true
                             });
@@ -13914,13 +13943,19 @@
                             });
                         }
                     } else {
+                        let pageSize = { width: A4_WIDTH, height: A4_HEIGHT };
+                        try {
+                            pageSize = await getPdfPageSize(i);
+                        } catch (sizeErr) {
+                            console.warn(`Failed to read PDF size for page ${i}:`, sizeErr);
+                        }
                         importedPages.push({
                             strokes: [],
                             backgroundImage: null,
                             backgroundSource: 'pdf',
                             pdfPageIndex: i, // 1-based index required by PDF.js since loop starts at 1
-                            pageWidth: A4_WIDTH,
-                            pageHeight: A4_HEIGHT,
+                            pageWidth: pageSize.width,
+                            pageHeight: pageSize.height,
                             images: [],
                             needsRedraw: true
                         });
@@ -14101,11 +14136,34 @@
 
             throwIfAborted();
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            });
+            const pxToMm = (px, fallbackPx) => {
+                const normalizedPx = normalizePageDimension(px, fallbackPx);
+                return Math.max(10, Math.round((normalizedPx * 25.4 / 96) * 1000) / 1000);
+            };
+            const getPageOrientation = (wMm, hMm) => (wMm > hMm ? 'landscape' : 'portrait');
+            const isA4Dimensions = (width, height) => (
+                normalizePageDimension(width, A4_WIDTH) === A4_WIDTH
+                && normalizePageDimension(height, A4_HEIGHT) === A4_HEIGHT
+            );
+            const pdfSourceSizeCache = new Map();
+            const getSourcePdfPageSize = async (pdfPageIndex) => {
+                if (!activePdfDocument || !Number.isFinite(pdfPageIndex)) return null;
+                const pageNo = Math.max(1, Math.round(pdfPageIndex));
+                const cached = pdfSourceSizeCache.get(pageNo);
+                if (cached) return cached;
+                const pdfPage = await activePdfDocument.getPage(pageNo);
+                const viewport = pdfPage.getViewport({ scale: 1 });
+                const size = {
+                    width: Math.max(1, Math.round(viewport.width)),
+                    height: Math.max(1, Math.round(viewport.height))
+                };
+                if (pdfPage.cleanup) {
+                    pdfPage.cleanup();
+                }
+                pdfSourceSizeCache.set(pageNo, size);
+                return size;
+            };
+            let pdf = null;
 
             const dirtyFlushed = await flushDirtyPages({ abortSignal });
             if (!dirtyFlushed && abortSignal?.aborted) {
@@ -14115,10 +14173,25 @@
 
             const pageCount = state.pages.length;
             let exportScale = CANVAS_SCALE;
+            let shouldResolvePdfSourceSizes = false;
+            const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
+            const hasStoredNonA4PdfPage = state.pages.some(
+                page => Number.isFinite(page?.pdfPageIndex) && !isA4Dimensions(page?.pageWidth, page?.pageHeight)
+            );
+            if (firstPdfBackedPage && !hasStoredNonA4PdfPage && activePdfDocument) {
+                try {
+                    const probeSize = await getSourcePdfPageSize(firstPdfBackedPage.pdfPageIndex);
+                    if (probeSize && !isA4Dimensions(probeSize.width, probeSize.height)) {
+                        shouldResolvePdfSourceSizes = true;
+                    }
+                } catch (probeErr) {
+                    console.warn('Failed to probe PDF source dimensions before export:', probeErr);
+                }
+            }
 
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = A4_WIDTH * exportScale;
-            tempCanvas.height = A4_HEIGHT * exportScale;
+            tempCanvas.width = Math.max(1, Math.round(A4_WIDTH * exportScale));
+            tempCanvas.height = Math.max(1, Math.round(A4_HEIGHT * exportScale));
             const tempCtx = tempCanvas.getContext('2d');
             const pdfCanvas = document.createElement('canvas');
             const pdfCtx = pdfCanvas.getContext('2d');
@@ -14136,6 +14209,17 @@
                 const backgroundSource = pageData.backgroundSource
                     || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
                 const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
+                let sourcePdfSize = null;
+                const hasNumericDimensions = Number.isFinite(pageData.pageWidth) && Number.isFinite(pageData.pageHeight);
+                const needsSourceSizeFallback = !hasNumericDimensions
+                    || (shouldResolvePdfSourceSizes && isA4Dimensions(pageData.pageWidth, pageData.pageHeight));
+                if (needsSourceSizeFallback && backgroundSource === 'pdf' && Number.isFinite(pageData.pdfPageIndex)) {
+                    try {
+                        sourcePdfSize = await getSourcePdfPageSize(pageData.pdfPageIndex);
+                    } catch (sizeErr) {
+                        console.warn(`Failed to resolve source PDF size for page ${pageData.pdfPageIndex}:`, sizeErr);
+                    }
+                }
                 // Deduplicate strokes before export
                 let exportStrokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
                 if (exportStrokes.length > 1) {
@@ -14154,25 +14238,41 @@
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
                     backgroundSource,
                     pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null,
-                    pageWidth: normalizePageDimension(pageData.pageWidth, A4_WIDTH),
-                    pageHeight: normalizePageDimension(pageData.pageHeight, A4_HEIGHT)
+                    pageWidth: normalizePageDimension(pageData.pageWidth, sourcePdfSize?.width || A4_WIDTH),
+                    pageHeight: normalizePageDimension(pageData.pageHeight, sourcePdfSize?.height || A4_HEIGHT)
                 };
+                const pageMmWidth = pxToMm(pageStrokeEntry.pageWidth, A4_WIDTH);
+                const pageMmHeight = pxToMm(pageStrokeEntry.pageHeight, A4_HEIGHT);
 
                 // Accumulate lightweight metadata for embedding (JSON string only)
                 const metaJson = JSON.stringify(pageStrokeEntry);
                 metadataParts.push(metaJson);
 
                 // Check cache for this page
-                const pageHash = computePageHash(pageData);
+                const pageHash = `${computePageHash(pageData)}|exp:${pageStrokeEntry.pageWidth}x${pageStrokeEntry.pageHeight}`;
                 const cached = pdfExportCache.get(i);
 
-                if (i > 0) pdf.addPage();
+                if (!pdf) {
+                    pdf = new jsPDF({
+                        orientation: getPageOrientation(pageMmWidth, pageMmHeight),
+                        unit: 'mm',
+                        format: [pageMmWidth, pageMmHeight]
+                    });
+                } else {
+                    pdf.addPage([pageMmWidth, pageMmHeight], getPageOrientation(pageMmWidth, pageMmHeight));
+                }
 
                 if (cached && cached.hash === pageHash) {
                     // Use cached JPEG — no re-render needed
-                    pdf.addImage(cached.jpegData, 'JPEG', 0, 0, 210, 297);
+                    pdf.addImage(cached.jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
                 } else {
                     // Render this page to canvas
+                    const targetCanvasWidth = Math.max(1, Math.round(pageStrokeEntry.pageWidth * exportScale));
+                    const targetCanvasHeight = Math.max(1, Math.round(pageStrokeEntry.pageHeight * exportScale));
+                    if (tempCanvas.width !== targetCanvasWidth || tempCanvas.height !== targetCanvasHeight) {
+                        tempCanvas.width = targetCanvasWidth;
+                        tempCanvas.height = targetCanvasHeight;
+                    }
                     tempCtx.setTransform(1, 0, 0, 1, 0, 0);
                     tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
 
@@ -14261,11 +14361,19 @@
                     throwIfAborted();
                     const arrayBuf = await pageBlob.arrayBuffer();
                     const jpegData = new Uint8Array(arrayBuf);
-                    pdf.addImage(jpegData, 'JPEG', 0, 0, 210, 297);
+                    pdf.addImage(jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
 
                     // Cache for next save
                     pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson });
                 }
+            }
+
+            if (!pdf) {
+                pdf = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'mm',
+                    format: 'a4'
+                });
             }
 
             // Embed stroke data as PDF metadata
