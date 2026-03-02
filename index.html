@@ -2949,8 +2949,13 @@
         </div>
     </div>
     <script>
-        // Configure PDF.js worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        // Configure PDF.js worker + external assets
+        const PDFJS_VERSION = '3.11.174';
+        const PDFJS_WORKER_URL = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
+        const PDFJS_ASSETS_BASE_URL = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}`;
+        const PDFJS_CMAP_URL = `${PDFJS_ASSETS_BASE_URL}/cmaps/`;
+        const PDFJS_STANDARD_FONT_URL = `${PDFJS_ASSETS_BASE_URL}/standard_fonts/`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
 
         // Native Canvas Template Render (replaces previous heavy SVG_BACKGROUND)
         function drawTemplateBackground(ctx, width, height, scale = 1) {
@@ -6092,9 +6097,9 @@
                         url: objectUrl,
                         disableAutoFetch: true,
                         disableStream: false,
-                        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                        cMapUrl: PDFJS_CMAP_URL,
                         cMapPacked: true,
-                        standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+                        standardFontDataUrl: PDFJS_STANDARD_FONT_URL
                     }).promise;
                     resetPdfState();
                     activePdfDocument = pdf;
@@ -12651,9 +12656,9 @@
                         url: objectUrl,
                         disableAutoFetch: true,
                         disableStream: false,
-                        cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                        cMapUrl: PDFJS_CMAP_URL,
                         cMapPacked: true,
-                        standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+                        standardFontDataUrl: PDFJS_STANDARD_FONT_URL
                     }).promise;
                     try {
                         const metadata = await pdf.getMetadata();
@@ -13495,9 +13500,9 @@
                     : { data: pdfData };
 
                 // Add required font map parameters so PDF.js can render regular PDFs without embedded fonts
-                pdfParams.cMapUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/';
+                pdfParams.cMapUrl = PDFJS_CMAP_URL;
                 pdfParams.cMapPacked = true;
-                pdfParams.standardFontDataUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/';
+                pdfParams.standardFontDataUrl = PDFJS_STANDARD_FONT_URL;
 
                 const pdf = await pdfjsLib.getDocument(pdfParams).promise;
                 const numPages = pdf.numPages;
