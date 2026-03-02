@@ -2462,6 +2462,7 @@
                             <button class="btn btn-secondary" id="btn-drive-menu-refresh" type="button">Refresh</button>
                             <button class="btn btn-secondary" id="btn-drive-menu-logout" type="button">Sign out</button>
                         </div>
+                        <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.2</div>
                     </div>
                 </div>
             </div>
@@ -2615,6 +2616,7 @@
                                 <button class="btn btn-secondary" id="btn-drive-menu-logout-editor" type="button">Sign
                                     out</button>
                             </div>
+                            <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.2</div>
                         </div>
                     </div>
                 </div>
@@ -4168,6 +4170,11 @@
             pdfBackgroundCache.clear();
             pdfRenderToken += 1;
 
+            // Reset cached template/dot pattern so they get regenerated fresh
+            window._templateBackgroundUrl = null;
+            window._dotPatternCanvas = null;
+            window._dotPatternScale = null;
+
             if (state.activePdfObjectUrl) {
                 URL.revokeObjectURL(state.activePdfObjectUrl);
                 state.activePdfObjectUrl = null;
@@ -5701,6 +5708,8 @@
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
             closeDriveProfileMenus();
+            stopCollabPolling();
+            clearDriveSyncTimers();
             saveViewMode('drive');
         }
 
@@ -6989,7 +6998,36 @@
             state.panX = 0;
             state.panY = 0;
             state.overscrollY = 0;
+
+            // Clean up old document state before showing editor
+            clearDriveSyncTimers();
+            driveDirty = false;
+            deferredDriveSave = false;
+            state.driveFileId = null;
+            state.driveAutosave = false;
+            state.pages = [];
+            activePageIndices.clear();
+            if (canvasContainer) canvasContainer.innerHTML = '';
+            window._templateBackgroundUrl = null;
+            window._dotPatternCanvas = null;
+            window._dotPatternScale = null;
+
             setReadOnlyMode(true, { force: true });
+
+            // Show current doc's thumbnail as loading preview
+            const thumbUrl = file.thumbnailLink ? file.thumbnailLink.replace(/=s\d+/, '=s800') : '';
+            if (thumbUrl && canvasContainer) {
+                const previewDiv = document.createElement('div');
+                previewDiv.className = 'loading-doc-preview';
+                previewDiv.style.cssText = 'display:flex;justify-content:center;padding-top:40px;';
+                const previewImg = document.createElement('img');
+                previewImg.src = thumbUrl;
+                previewImg.style.cssText = 'max-width:90%;max-height:80vh;border-radius:8px;box-shadow:0 2px 16px rgba(0,0,0,0.15);opacity:0.6;';
+                previewImg.onerror = () => previewDiv.remove();
+                previewDiv.appendChild(previewImg);
+                canvasContainer.appendChild(previewDiv);
+            }
+
             showEditorView();
             showLoading('Opening PDF...');
             try {
@@ -9307,15 +9345,13 @@
                                 await new Promise(r => setTimeout(r, 100));
                             }
 
-                            // Check final state
+                            // Check final state - warn but proceed regardless
                             if (driveDirty || driveSaveInProgress || driveSaveQueued) {
                                 console.warn('goHome: save incomplete - dirty:', driveDirty, 'inProgress:', driveSaveInProgress, 'queued:', driveSaveQueued);
-                                hideLoading();
-                                showStatus('Could not save to Drive', { error: true });
-                                goHomeInProgress = false;
-                                return;
+                                showStatus('Changes may not be saved to Drive', { error: true });
+                            } else {
+                                console.log('goHome: Drive save completed successfully');
                             }
-                            console.log('goHome: Drive save completed successfully');
                         }
 
                         hideLoading();
@@ -12276,7 +12312,10 @@
         function scheduleDriveSync() {
             if (state.isReadOnly || !state.driveAutosave) return;
             driveDirty = true;
-            if (hasSmoothInteraction()) return;
+            if (hasSmoothInteraction()) {
+                deferredDriveSave = true;
+                return;
+            }
             if (!driveAccessToken) return;
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
