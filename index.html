@@ -2996,7 +2996,7 @@
             const spacing = 0.5 * u;
             const dotR = 0.035 * u;
 
-            if (!window._dotPatternCanvas || window._dotPatternScale !== scale) {
+            if (!window._dotPatternCanvas || window._dotPatternWidth !== width) {
                 const pCanvas = document.createElement('canvas');
                 pCanvas.width = Math.max(1, Math.round(spacing));
                 pCanvas.height = Math.max(1, Math.round(spacing));
@@ -3014,16 +3014,14 @@
                 pCtx.restore();
 
                 window._dotPatternCanvas = pCanvas;
-                window._dotPatternScale = scale;
+                window._dotPatternWidth = width;
             }
 
             const dotPattern = ctx.createPattern(window._dotPatternCanvas, 'repeat');
             if (dotPattern) {
-                ctx.save();
-                ctx.translate(gridX, gridY);
+                dotPattern.setTransform(new DOMMatrix().translateSelf(gridX, gridY));
                 ctx.fillStyle = dotPattern;
-                ctx.fillRect(0, 0, gridW, gridH);
-                ctx.restore();
+                ctx.fillRect(gridX, gridY, gridW, gridH);
             }
 
             // Footer rectangles + ticks:
@@ -3130,8 +3128,8 @@
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 24;
-        const DRIVE_SYNC_IDLE_DELAY = 15000;
-        const DRIVE_SYNC_MAX_DELAY = 120000;
+        const DRIVE_SYNC_IDLE_DELAY = 3000;
+        const DRIVE_SYNC_MAX_DELAY = 30000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -4335,7 +4333,7 @@
             // Reset cached template/dot pattern so they get regenerated fresh
             window._templateBackgroundUrl = null;
             window._dotPatternCanvas = null;
-            window._dotPatternScale = null;
+            window._dotPatternWidth = null;
 
             if (state.activePdfObjectUrl) {
                 URL.revokeObjectURL(state.activePdfObjectUrl);
@@ -7203,7 +7201,7 @@
             if (canvasContainer) canvasContainer.innerHTML = '';
             window._templateBackgroundUrl = null;
             window._dotPatternCanvas = null;
-            window._dotPatternScale = null;
+            window._dotPatternWidth = null;
 
             setReadOnlyMode(true, { force: true });
 
@@ -12415,11 +12413,8 @@
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
             }
-            if (driveSaveInProgress && activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
-                activeDriveSaveController.abort();
-                deferredDriveSave = true;
-                driveDirty = true;
-            }
+            // Don't abort Drive saves — the PDF build is expensive and cooperative
+            // (it already yields via yieldForResponsiveness). Let it finish in background.
         }
 
         function flushDeferredSavesAfterInteraction() {
@@ -12617,6 +12612,11 @@
                 return;
             }
             if (!driveAccessToken) return;
+            // If a Drive save is already running, just mark dirty and let it queue the next one
+            if (driveSaveInProgress) {
+                driveSaveQueued = true;
+                return;
+            }
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
                 queueDriveSave(false);
