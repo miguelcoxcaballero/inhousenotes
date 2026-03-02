@@ -2988,41 +2988,24 @@
             ctx.roundRect(1.5 * u, 1.43 * u, 18 * u, 27 * u, cornerR);
             ctx.stroke();
 
-            // Dot grid: <rect x="1.75" y="1.68" width="17.5" height="25.5" fill="url(#dotGrid)"/>
-            const gridX = 1.75 * u;
-            const gridY = 1.68 * u;
-            const gridW = 17.5 * u;
-            const gridH = 25.5 * u;
-            const spacing = 0.5 * u;
+            // Dot grid: <pattern x="1.75" y="1.68" width="0.5" height="0.5"> circle cx=0.25 cy=0.25
+            // Draw each dot at exact SVG coordinates to avoid accumulated rounding error
             const dotR = 0.035 * u;
-
-            if (!window._dotPatternCanvas || window._dotPatternWidth !== width) {
-                const pCanvas = document.createElement('canvas');
-                pCanvas.width = Math.max(1, Math.round(spacing));
-                pCanvas.height = Math.max(1, Math.round(spacing));
-                const pCtx = pCanvas.getContext('2d');
-
-                // Approximate SVG soft blur filter.
-                pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
-                pCtx.save();
-                pCtx.shadowColor = '#a8a8a8';
-                pCtx.shadowBlur = 0.08 * u;
-                pCtx.fillStyle = '#a8a8a8';
-                pCtx.beginPath();
-                pCtx.arc(pCanvas.width / 2, pCanvas.height / 2, dotR, 0, Math.PI * 2);
-                pCtx.fill();
-                pCtx.restore();
-
-                window._dotPatternCanvas = pCanvas;
-                window._dotPatternWidth = width;
+            ctx.save();
+            ctx.shadowColor = '#a8a8a8';
+            ctx.shadowBlur = 0.02 * u;
+            ctx.fillStyle = '#a8a8a8';
+            ctx.beginPath();
+            for (let col = 0; col < 35; col++) {
+                const cx = (2.0 + col * 0.5) * u;
+                for (let row = 0; row < 51; row++) {
+                    const cy = (1.93 + row * 0.5) * u;
+                    ctx.moveTo(cx + dotR, cy);
+                    ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+                }
             }
-
-            const dotPattern = ctx.createPattern(window._dotPatternCanvas, 'repeat');
-            if (dotPattern) {
-                dotPattern.setTransform(new DOMMatrix().translateSelf(gridX, gridY));
-                ctx.fillStyle = dotPattern;
-                ctx.fillRect(gridX, gridY, gridW, gridH);
-            }
+            ctx.fill();
+            ctx.restore();
 
             // Footer rectangles + ticks:
             // <rect x="2.0" y="27.43" width="8.0" height="0.5".../>
@@ -4332,8 +4315,6 @@
 
             // Reset cached template/dot pattern so they get regenerated fresh
             window._templateBackgroundUrl = null;
-            window._dotPatternCanvas = null;
-            window._dotPatternWidth = null;
 
             if (state.activePdfObjectUrl) {
                 URL.revokeObjectURL(state.activePdfObjectUrl);
@@ -7200,8 +7181,6 @@
             activePageIndices.clear();
             if (canvasContainer) canvasContainer.innerHTML = '';
             window._templateBackgroundUrl = null;
-            window._dotPatternCanvas = null;
-            window._dotPatternWidth = null;
 
             setReadOnlyMode(true, { force: true });
 
