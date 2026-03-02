@@ -1308,6 +1308,15 @@
             transition: all 0.2s;
         }
 
+        .page-item-main {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+            cursor: pointer;
+        }
+
         .page-item:hover {
             background: rgba(0, 0, 0, 0.06);
         }
@@ -1347,6 +1356,9 @@
         .page-actions {
             display: flex;
             gap: 4px;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 1;
         }
 
         .page-action-btn {
@@ -4030,22 +4042,37 @@
             scheduleVisiblePageUpdate(true);
         }
         function centerViewOnTop() {
+            alignViewportTopToWidth(getMaxPageWidth());
+            updateAddPageIndicator();
+        }
+
+        function alignViewportTopToWidth(pageWidth) {
             const viewportRect = canvasViewport.getBoundingClientRect();
-            const pageWidth = getMaxPageWidth() * state.zoom;
+            const normalizedWidth = normalizePageDimension(pageWidth, A4_WIDTH);
+            const scaledWidth = normalizedWidth * state.zoom;
             const padding = PAGE_PADDING * state.zoom;
 
-            // Center horizontally
-            state.panX = (viewportRect.width - pageWidth) / 2 - padding;
-            // Show top with some margin
+            // Center horizontally using the same formula used for page navigation
+            state.panX = (viewportRect.width - scaledWidth) / 2 - padding;
+            // Keep top alignment consistent between loading preview and real pages
             state.panY = 20;
             state.overscrollY = 0;
             if (overscrollResetTimeout) {
                 clearTimeout(overscrollResetTimeout);
                 overscrollResetTimeout = null;
             }
-            updateAddPageIndicator();
-
             updateTransform();
+        }
+
+        function syncLoadingDocPreviewLayout(pageWidth, pageHeight) {
+            if (!canvasContainer) return;
+            const preview = canvasContainer.querySelector('.loading-doc-preview');
+            if (!preview) return;
+            const width = normalizePageDimension(pageWidth, A4_WIDTH);
+            const height = normalizePageDimension(pageHeight, A4_HEIGHT);
+            preview.style.width = `${width}px`;
+            preview.style.height = `${height}px`;
+            alignViewportTopToWidth(width);
         }
 
         // Add a new blank page
@@ -7191,16 +7218,21 @@
             if (thumbUrl && canvasContainer) {
                 const previewDiv = document.createElement('div');
                 previewDiv.className = 'page-wrapper loading-doc-preview';
-                previewDiv.style.cssText = `width:${A4_WIDTH}px;height:${A4_HEIGHT}px;overflow:hidden;opacity:0.5;`;
+                previewDiv.style.cssText = `width:${A4_WIDTH}px;height:${A4_HEIGHT}px;overflow:hidden;opacity:0.5;background:white;`;
                 const previewImg = document.createElement('img');
                 previewImg.src = thumbUrl;
-                previewImg.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+                previewImg.style.cssText = 'width:100%;height:100%;object-fit:contain;';
                 previewImg.onerror = () => { previewDiv.style.background = 'white'; previewImg.remove(); };
                 previewDiv.appendChild(previewImg);
                 canvasContainer.appendChild(previewDiv);
             }
 
             showEditorView();
+            if (thumbUrl && canvasContainer) {
+                syncLoadingDocPreviewLayout(A4_WIDTH, A4_HEIGHT);
+            } else {
+                alignViewportTopToWidth(A4_WIDTH);
+            }
             showLoading('Opening PDF...');
             try {
                 await ensureDriveToken(false);
@@ -10670,12 +10702,14 @@
                 const strokeCount = getVisibleStrokeCount(page);
                 const isPdfBackground = page.backgroundSource === 'pdf' || Number.isFinite(page.pdfPageIndex);
                 item.innerHTML = `
-                    <div class="page-thumbnail">
-                        <canvas id="thumb-${index}" width="50" height="70"></canvas>
-                    </div>
-                    <div class="page-info">
-                        <h3>Page ${index + 1}</h3>
-                        <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${isPdfBackground ? ' - PDF' : ''}</p>
+                    <div class="page-item-main" data-action="open">
+                        <div class="page-thumbnail">
+                            <canvas id="thumb-${index}" width="50" height="70"></canvas>
+                        </div>
+                        <div class="page-info">
+                            <h3>Page ${index + 1}</h3>
+                            <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${isPdfBackground ? ' - PDF' : ''}</p>
+                        </div>
                     </div>
                     <div class="page-actions">
                         <button class="page-action-btn delete" data-action="delete" data-page="${index}" title="Delete" ${canDeletePages ? '' : 'disabled aria-disabled="true"'}>
@@ -10691,16 +10725,22 @@
 
                 generateThumbnail(index);
 
-                // Click anywhere on the item (except delete button) to navigate
-                item.addEventListener('click', (e) => {
-                    if (e.target.closest('[data-action="delete"]')) return;
+                const openBtn = item.querySelector('[data-action="open"]');
+                openBtn.addEventListener('click', () => {
                     goToPage(index);
                     closePagesPanel();
                 });
 
                 const deleteBtn = item.querySelector('[data-action="delete"]');
                 if (canDeletePages) {
-                    deleteBtn.addEventListener('click', () => openDeleteModal(index));
+                    deleteBtn.addEventListener('pointerdown', (e) => {
+                        e.stopPropagation();
+                    });
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openDeleteModal(index);
+                    });
                 }
             });
         }
@@ -13743,6 +13783,23 @@
 
                 const pdf = await pdfjsLib.getDocument(pdfParams).promise;
                 const numPages = pdf.numPages;
+
+                let firstPageWidth = A4_WIDTH;
+                let firstPageHeight = A4_HEIGHT;
+                if (numPages > 0) {
+                    try {
+                        const firstPdfPage = await pdf.getPage(1);
+                        const firstViewport = firstPdfPage.getViewport({ scale: 1 });
+                        firstPageWidth = Math.max(1, Math.round(firstViewport.width));
+                        firstPageHeight = Math.max(1, Math.round(firstViewport.height));
+                        if (firstPdfPage.cleanup) {
+                            firstPdfPage.cleanup();
+                        }
+                    } catch (firstPageErr) {
+                        console.warn('Could not read first page dimensions for loading preview:', firstPageErr);
+                    }
+                }
+                syncLoadingDocPreviewLayout(firstPageWidth, firstPageHeight);
 
                 resetPdfState();
                 activePdfDocument = pdf;
