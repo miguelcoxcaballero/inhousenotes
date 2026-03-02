@@ -1585,6 +1585,7 @@
             background: #1f1f1f;
             border-color: rgba(255, 255, 255, 0.08);
         }
+
         [data-theme="dark"] .doc-stats {
             color: #999;
             border-color: rgba(255, 255, 255, 0.1);
@@ -2608,7 +2609,8 @@
                                 <span>Draw with finger</span>
                                 <input type="checkbox" id="touch-draw-toggle" aria-label="Draw with finger">
                             </label>
-                            <div class="doc-stats" id="doc-stats" style="padding:4px 0;font-size:12px;color:#888;border-top:1px solid #eee;margin-top:4px;">
+                            <div class="doc-stats" id="doc-stats"
+                                style="padding:4px 0;font-size:12px;color:#888;border-top:1px solid #eee;margin-top:4px;">
                             </div>
                             <div class="drive-profile-actions">
                                 <button class="btn btn-secondary" id="btn-drive-menu-refresh-editor"
@@ -3900,6 +3902,20 @@
         }
 
         // Center view on top of first page
+        function centerViewport() {
+            const viewportRect = canvasViewport.getBoundingClientRect();
+            const padding = 20;
+            const availableWidth = viewportRect.width - padding * 2;
+            const pageWidth = A4_WIDTH;
+            const targetZoom = Math.min(2, Math.max(0.2, availableWidth / pageWidth));
+            state.zoom = targetZoom;
+
+            // PAGE_PADDING on the container is scaled by zoom
+            state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - (PAGE_PADDING * state.zoom);
+            state.panY = 0;
+            updateTransform();
+            scheduleVisiblePageUpdate(true);
+        }
         function centerViewOnTop() {
             const viewportRect = canvasViewport.getBoundingClientRect();
             const pageWidth = A4_WIDTH * state.zoom;
@@ -7016,6 +7032,12 @@
 
             setReadOnlyMode(true, { force: true });
 
+            // Set the document title immediately upon clicking
+            state.driveFileName = file.name || 'Untitled';
+            const baseName = state.driveFileName.replace(/\.pdf$/i, '');
+            state.exportName = baseName || state.exportName;
+            updateDocTitle();
+
             // Show current doc's thumbnail as loading preview (matching page-wrapper layout)
             const thumbUrl = file.thumbnailLink ? file.thumbnailLink.replace(/=s\d+/, '=s800') : '';
             if (thumbUrl && canvasContainer) {
@@ -7061,7 +7083,7 @@
                         const reader = r.body.getReader();
                         const chunks = [];
                         let received = 0;
-                        for (;;) {
+                        for (; ;) {
                             const { done, value } = await reader.read();
                             if (done) break;
                             chunks.push(value);
@@ -7131,11 +7153,7 @@
                     setTimeout(() => queueDriveSave(true), 4000);
                 }
                 state.driveFileId = file.id;
-                state.driveFileName = file.name || 'Untitled';
                 state.driveAutosave = canEdit;
-                const baseName = state.driveFileName.replace(/\.pdf$/i, '');
-                state.exportName = baseName || state.exportName;
-                updateDocTitle();
                 saveDriveSession();
 
                 updateViewerModeUI();
@@ -10575,7 +10593,7 @@
                 const rect = pageWrapper.getBoundingClientRect();
                 const viewportRect = canvasViewport.getBoundingClientRect();
                 state.panY = -(pageIndex * (A4_HEIGHT + PAGE_GAP) * state.zoom) + viewportRect.height / 2 - (A4_HEIGHT * state.zoom) / 2;
-                state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - PAGE_PADDING;
+                state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - (PAGE_PADDING * state.zoom);
                 updateTransform();
                 state.activePageIndex = pageIndex;
                 scheduleVisiblePageUpdate(true);
@@ -11869,7 +11887,11 @@
                 const next = {
                     ...page,
                     ...data,
-                    preview: page.preview || null,
+                    // Preserve in-memory backgroundImage from PDF rendering over
+                    // the null value stored in IndexedDB (PDF backgrounds are rendered
+                    // on-demand and never persisted to IndexedDB)
+                    backgroundImage: page.backgroundImage || data.backgroundImage || null,
+                    preview: page.preview || data.preview || null,
                     strokeCount: typeof page.strokeCount === 'number' ? page.strokeCount : getVisibleStrokeCount(data),
                     missingData: false,
                     unloaded: false,
@@ -11886,8 +11908,10 @@
                 if (canvas) {
                     applyPageBackground(pageIndex, canvas);
                     redrawPage(pageIndex);
-                    // Clear preview only after strokes are drawn on canvas
-                    clearPagePreview(pageIndex);
+                    // Clear preview only after strokes and background are visually painted
+                    setTimeout(() => {
+                        clearPagePreview(pageIndex);
+                    }, 100);
                 }
                 return next;
             })();
@@ -13571,7 +13595,7 @@
                             strokes: [],
                             backgroundImage: null,
                             backgroundSource: 'pdf',
-                            pdfPageIndex: i,
+                            pdfPageIndex: i, // 1-based index required by PDF.js since loop starts at 1
                             images: [],
                             needsRedraw: true
                         });
@@ -13710,7 +13734,7 @@
             writer.close();
             const chunks = [];
             const reader = stream.readable.getReader();
-            for (;;) {
+            for (; ;) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 chunks.push(value);
@@ -13734,7 +13758,7 @@
             writer.close();
             const chunks = [];
             const reader = stream.readable.getReader();
-            for (;;) {
+            for (; ;) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 chunks.push(value);
