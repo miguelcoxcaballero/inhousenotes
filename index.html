@@ -14158,7 +14158,7 @@
             throwIfAborted();
 
             const pageCount = state.pages.length;
-            let exportScale = options.highQuality ? CANVAS_SCALE : 1;
+            let exportScale = options.highQuality ? CANVAS_SCALE : 1.5;
             let shouldResolvePdfSourceSizes = false;
             const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
             const hasStoredNonA4PdfPage = state.pages.some(
@@ -14364,7 +14364,7 @@
                     throwIfAborted();
                     const jpegQuality = options.highQuality
                         ? (pageCount >= 20 ? 0.75 : 0.85)
-                        : (pageCount >= 20 ? 0.55 : 0.65);
+                        : (pageCount >= 20 ? 0.35 : 0.42);
                     const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
                     throwIfAborted();
                     const arrayBuf = await pageBlob.arrayBuffer();
