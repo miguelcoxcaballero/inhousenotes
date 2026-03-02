@@ -3907,23 +3907,131 @@
         }
 
         // Center view on top of first page
+        function normalizePageDimension(value, fallback) {
+            if (!Number.isFinite(value)) return fallback;
+            return Math.max(64, Math.round(value));
+        }
+
+        function getPageDimensions(pageOrIndex) {
+            const page = typeof pageOrIndex === 'number'
+                ? state.pages[pageOrIndex]
+                : pageOrIndex;
+            const width = normalizePageDimension(page?.pageWidth, A4_WIDTH);
+            const height = normalizePageDimension(page?.pageHeight, A4_HEIGHT);
+            return { width, height };
+        }
+
+        function getMaxPageWidth() {
+            if (!Array.isArray(state.pages) || state.pages.length === 0) return A4_WIDTH;
+            let maxWidth = A4_WIDTH;
+            for (let i = 0; i < state.pages.length; i++) {
+                const { width } = getPageDimensions(i);
+                if (width > maxWidth) maxWidth = width;
+            }
+            return maxWidth;
+        }
+
+        function getPageTopOffset(pageIndex) {
+            const idx = Math.max(0, Math.min(state.pages.length, pageIndex));
+            let y = PAGE_PADDING;
+            for (let i = 0; i < idx; i++) {
+                const { height } = getPageDimensions(i);
+                y += height + PAGE_GAP;
+            }
+            return y;
+        }
+
+        function getPageHeight(pageIndex) {
+            return getPageDimensions(pageIndex).height;
+        }
+
+        function getPageCenterOffset(pageIndex) {
+            const top = getPageTopOffset(pageIndex);
+            const height = getPageHeight(pageIndex);
+            return top + (height / 2);
+        }
+
+        function resizeOverlayCanvas(canvas, width, height, scaleFactor) {
+            if (!canvas) return false;
+            const targetW = Math.max(1, Math.round(width * scaleFactor));
+            const targetH = Math.max(1, Math.round(height * scaleFactor));
+            if (canvas.width === targetW && canvas.height === targetH) return false;
+            canvas.width = targetW;
+            canvas.height = targetH;
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            return true;
+        }
+
+        function applyPageDimensionsToWrapper(pageIndex, options = {}) {
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (!wrapper) return false;
+            const { width, height } = getPageDimensions(pageIndex);
+            wrapper.style.width = `${width}px`;
+            wrapper.style.height = `${height}px`;
+
+            let canvasResized = false;
+            const pageCanvas = wrapper.querySelector('canvas.page-canvas');
+            if (pageCanvas && resizeOverlayCanvas(pageCanvas, width, height, CANVAS_SCALE)) {
+                const ctx = pageCanvas.getContext('2d');
+                ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                canvasResized = true;
+            }
+
+            const lassoOverlay = wrapper.querySelector('canvas.lasso-overlay');
+            if (lassoOverlay) {
+                resizeOverlayCanvas(lassoOverlay, width, height, OVERLAY_SCALE);
+            }
+            const cursorOverlay = wrapper.querySelector('canvas.cursor-overlay');
+            if (cursorOverlay) {
+                resizeOverlayCanvas(cursorOverlay, width, height, OVERLAY_SCALE);
+            }
+
+            if (canvasResized) {
+                const page = state.pages[pageIndex];
+                if (page) page.needsRedraw = true;
+                if (!options.skipRedraw && activePageIndices.has(pageIndex)) {
+                    redrawPage(pageIndex);
+                }
+            }
+            return canvasResized;
+        }
+
+        function setPageDimensions(pageIndex, pageWidth, pageHeight, options = {}) {
+            const page = state.pages[pageIndex];
+            if (!page) return false;
+            const nextW = normalizePageDimension(pageWidth, A4_WIDTH);
+            const nextH = normalizePageDimension(pageHeight, A4_HEIGHT);
+            if (page.pageWidth === nextW && page.pageHeight === nextH) return false;
+            page.pageWidth = nextW;
+            page.pageHeight = nextH;
+            applyPageDimensionsToWrapper(pageIndex, { skipRedraw: !!options.skipRedraw });
+            if (!options.skipLayoutRefresh) {
+                updateAddPageIndicator();
+                scheduleVisiblePageUpdate(true);
+            }
+            return true;
+        }
+
         function centerViewport() {
             const viewportRect = canvasViewport.getBoundingClientRect();
             const padding = 20;
             const availableWidth = viewportRect.width - padding * 2;
-            const pageWidth = A4_WIDTH;
+            const pageWidth = getMaxPageWidth();
             const targetZoom = Math.min(2, Math.max(0.2, availableWidth / pageWidth));
             state.zoom = targetZoom;
 
             // PAGE_PADDING on the container is scaled by zoom
-            state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - (PAGE_PADDING * state.zoom);
+            state.panX = viewportRect.width / 2 - (pageWidth * state.zoom) / 2 - (PAGE_PADDING * state.zoom);
             state.panY = 0;
             updateTransform();
             scheduleVisiblePageUpdate(true);
         }
         function centerViewOnTop() {
             const viewportRect = canvasViewport.getBoundingClientRect();
-            const pageWidth = A4_WIDTH * state.zoom;
+            const pageWidth = getMaxPageWidth() * state.zoom;
             const padding = PAGE_PADDING * state.zoom;
 
             // Center horizontally
@@ -3949,6 +4057,8 @@
                 images: [],
                 backgroundSource: backgroundImage ? 'custom' : 'template',
                 pdfPageIndex: null,
+                pageWidth: A4_WIDTH,
+                pageHeight: A4_HEIGHT,
                 needsRedraw: true,
                 preview: null,
                 strokeCount: 0,
@@ -3966,8 +4076,9 @@
             const wrapper = document.createElement('div');
             wrapper.className = 'page-wrapper';
             wrapper.dataset.page = pageIndex;
-            wrapper.style.width = `${A4_WIDTH}px`;
-            wrapper.style.height = `${A4_HEIGHT}px`;
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+            wrapper.style.width = `${pageWidth}px`;
+            wrapper.style.height = `${pageHeight}px`;
             if (animate) {
                 wrapper.classList.add('new-page');
                 setTimeout(() => wrapper.classList.remove('new-page'), 600);
@@ -4016,8 +4127,9 @@
 
             const canvas = document.createElement('canvas');
             canvas.className = 'page-canvas';
-            canvas.width = A4_WIDTH * CANVAS_SCALE;
-            canvas.height = A4_HEIGHT * CANVAS_SCALE;
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+            canvas.width = pageWidth * CANVAS_SCALE;
+            canvas.height = pageHeight * CANVAS_SCALE;
             canvas.style.width = '100%';
             canvas.style.height = '100%';
             canvas.dataset.page = pageIndex;
@@ -4025,8 +4137,8 @@
             const lassoOverlay = document.createElement('canvas');
             lassoOverlay.className = 'lasso-overlay';
             lassoOverlay.dataset.page = pageIndex;
-            lassoOverlay.width = A4_WIDTH * OVERLAY_SCALE;
-            lassoOverlay.height = A4_HEIGHT * OVERLAY_SCALE;
+            lassoOverlay.width = pageWidth * OVERLAY_SCALE;
+            lassoOverlay.height = pageHeight * OVERLAY_SCALE;
             lassoOverlay.style.width = '100%';
             lassoOverlay.style.height = '100%';
 
@@ -4034,8 +4146,8 @@
             cursorOverlay.className = 'cursor-overlay';
             cursorOverlay.dataset.page = pageIndex;
             // Use lower resolution for cursor overlay (eraser preview only)
-            cursorOverlay.width = A4_WIDTH * OVERLAY_SCALE;
-            cursorOverlay.height = A4_HEIGHT * OVERLAY_SCALE;
+            cursorOverlay.width = pageWidth * OVERLAY_SCALE;
+            cursorOverlay.height = pageHeight * OVERLAY_SCALE;
             cursorOverlay.style.width = '100%';
             cursorOverlay.style.height = '100%';
 
@@ -4252,7 +4364,7 @@
                     page.backgroundSource = page.pdfPageIndex ? 'pdf' : 'custom';
                 }
                 canvas.style.backgroundImage = `url("${page.backgroundImage}")`;
-                canvas.style.backgroundSize = 'cover';
+                canvas.style.backgroundSize = page.backgroundSource === 'pdf' ? '100% 100%' : 'cover';
                 canvas.style.backgroundRepeat = 'no-repeat';
                 canvas.style.backgroundPosition = 'center';
                 canvas.style.backgroundColor = 'transparent';
@@ -4350,29 +4462,23 @@
             try {
                 const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
                 const baseViewport = pdfPage.getViewport({ scale: 1 });
-                const targetWidth = A4_WIDTH * pdfBackgroundScale;
-                const targetHeight = A4_HEIGHT * pdfBackgroundScale;
-                const scale = Math.min(targetWidth / baseViewport.width, targetHeight / baseViewport.height);
-                const viewport = pdfPage.getViewport({ scale });
+                const sourceWidth = Math.max(1, Math.round(baseViewport.width));
+                const sourceHeight = Math.max(1, Math.round(baseViewport.height));
+                setPageDimensions(pageIndex, sourceWidth, sourceHeight, { skipRedraw: true });
+
+                const renderScale = Math.max(0.6, pdfBackgroundScale);
+                const viewport = pdfPage.getViewport({ scale: renderScale });
 
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = viewport.width;
                 tempCanvas.height = viewport.height;
                 const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
                 await pdfPage.render({ canvasContext: tempCtx, viewport }).promise;
 
-                const a4Canvas = document.createElement('canvas');
-                a4Canvas.width = targetWidth;
-                a4Canvas.height = targetHeight;
-                const a4Ctx = a4Canvas.getContext('2d');
-                a4Ctx.fillStyle = 'white';
-                a4Ctx.fillRect(0, 0, targetWidth, targetHeight);
-                const offsetX = (targetWidth - viewport.width) / 2;
-                const offsetY = (targetHeight - viewport.height) / 2;
-                a4Ctx.drawImage(tempCanvas, offsetX, offsetY, viewport.width, viewport.height);
-
-                const blob = await new Promise(resolve => a4Canvas.toBlob(resolve, 'image/jpeg', 0.7));
+                const blob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', 0.7));
                 let objectUrl = '';
                 if (blob) {
                     if (page.backgroundImage && page.backgroundImage.startsWith('blob:')) {
@@ -4380,7 +4486,7 @@
                     }
                     objectUrl = URL.createObjectURL(blob);
                 } else {
-                    objectUrl = a4Canvas.toDataURL('image/jpeg', 0.85);
+                    objectUrl = tempCanvas.toDataURL('image/jpeg', 0.85);
                 }
                 page.backgroundImage = objectUrl;
                 page.backgroundSource = 'pdf';
@@ -4389,7 +4495,7 @@
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
                 if (canvas) {
                     canvas.style.backgroundImage = `url("${objectUrl}")`;
-                    canvas.style.backgroundSize = 'cover';
+                    canvas.style.backgroundSize = '100% 100%';
                     canvas.style.backgroundRepeat = 'no-repeat';
                     canvas.style.backgroundPosition = 'center';
                     canvas.style.backgroundColor = 'transparent';
@@ -4404,8 +4510,6 @@
                 // Release temp canvas backing stores
                 tempCanvas.width = 0;
                 tempCanvas.height = 0;
-                a4Canvas.width = 0;
-                a4Canvas.height = 0;
             } catch (err) {
                 console.error('Failed to render PDF page background:', err);
             }
@@ -4420,12 +4524,34 @@
             if (!rect.height) return { start: 0, end: -1 };
             const viewTop = (-state.panY) / state.zoom;
             const viewBottom = (rect.height - state.panY) / state.zoom;
-            const pageSpan = A4_HEIGHT + PAGE_GAP;
-            let start = Math.floor((viewTop - PAGE_PADDING) / pageSpan);
-            let end = Math.floor((viewBottom - PAGE_PADDING) / pageSpan);
+            let firstVisible = -1;
+            let lastVisible = -1;
+            let y = PAGE_PADDING;
+            for (let i = 0; i < state.pages.length; i++) {
+                const pageHeight = getPageHeight(i);
+                const top = y;
+                const bottom = y + pageHeight;
+                if (bottom >= viewTop && top <= viewBottom) {
+                    if (firstVisible === -1) firstVisible = i;
+                    lastVisible = i;
+                } else if (firstVisible !== -1 && top > viewBottom) {
+                    break;
+                }
+                y = bottom + PAGE_GAP;
+            }
+            if (firstVisible === -1) {
+                if (state.pages.length === 0) return { start: 0, end: -1 };
+                if (viewTop < PAGE_PADDING) {
+                    firstVisible = 0;
+                    lastVisible = 0;
+                } else {
+                    firstVisible = state.pages.length - 1;
+                    lastVisible = state.pages.length - 1;
+                }
+            }
             const buffer = Number.isFinite(bufferOverride) ? bufferOverride : VISIBLE_PAGE_BUFFER;
-            start = Math.max(0, Math.min(state.pages.length - 1, start - buffer));
-            end = Math.max(0, Math.min(state.pages.length - 1, end + buffer));
+            let start = Math.max(0, firstVisible - buffer);
+            let end = Math.min(state.pages.length - 1, lastVisible + buffer);
             return { start, end };
         }
 
@@ -4447,8 +4573,7 @@
 
             const rect = canvasViewport.getBoundingClientRect();
             const viewCenterY = (-state.panY + rect.height / 2) / state.zoom;
-            const pageSpan = A4_HEIGHT + PAGE_GAP;
-            const pageCenterY = (index) => PAGE_PADDING + (index * pageSpan) + (A4_HEIGHT / 2);
+            const pageCenterY = (index) => getPageCenterOffset(index);
 
             const activeSet = new Set();
             if (Number.isFinite(state.selection.pageIndex)
@@ -4778,7 +4903,9 @@
             if (!lassoCanvas || points.length === 0) return;
             const ctx = lassoCanvas.getContext('2d');
             ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
-            ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            const logicalW = lassoCanvas.width / OVERLAY_SCALE;
+            const logicalH = lassoCanvas.height / OVERLAY_SCALE;
+            ctx.clearRect(0, 0, logicalW, logicalH);
             ctx.strokeStyle = '#002FD9';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([6, 4]);
@@ -4857,7 +4984,9 @@
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
             ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
-            ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            const logicalW = previewCanvas.width / OVERLAY_SCALE;
+            const logicalH = previewCanvas.height / OVERLAY_SCALE;
+            ctx.clearRect(0, 0, logicalW, logicalH);
 
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
             if (stroke.tool === 'highlighter') {
@@ -4940,7 +5069,9 @@
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
             ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
-            ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            const logicalW = previewCanvas.width / OVERLAY_SCALE;
+            const logicalH = previewCanvas.height / OVERLAY_SCALE;
+            ctx.clearRect(0, 0, logicalW, logicalH);
             const radius = state.eraserWidth / 2;
             ctx.strokeStyle = 'rgba(0,0,0,0.45)';
             ctx.lineWidth = 1.2;
@@ -7309,6 +7440,8 @@
                 backgroundImage: null,
                 backgroundSource: 'template',
                 pdfPageIndex: null,
+                pageWidth: A4_WIDTH,
+                pageHeight: A4_HEIGHT,
                 images: [],
                 needsRedraw: true,
                 preview: null,
@@ -8480,9 +8613,9 @@
             }
         }
 
-        function ensureHighlighterMask() {
-            const width = A4_WIDTH * CANVAS_SCALE;
-            const height = A4_HEIGHT * CANVAS_SCALE;
+        function ensureHighlighterMask(logicalWidth = A4_WIDTH, logicalHeight = A4_HEIGHT) {
+            const width = Math.max(1, Math.round(logicalWidth * CANVAS_SCALE));
+            const height = Math.max(1, Math.round(logicalHeight * CANVAS_SCALE));
             if (highlighterMaskCanvas.width !== width || highlighterMaskCanvas.height !== height) {
                 highlighterMaskCanvas.width = width;
                 highlighterMaskCanvas.height = height;
@@ -8505,7 +8638,9 @@
 
         function drawFixedHighlighterStroke(ctx, stroke) {
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
-            ensureHighlighterMask();
+            const logicalWidth = (ctx?.canvas?.width || (A4_WIDTH * CANVAS_SCALE)) / CANVAS_SCALE;
+            const logicalHeight = (ctx?.canvas?.height || (A4_HEIGHT * CANVAS_SCALE)) / CANVAS_SCALE;
+            ensureHighlighterMask(logicalWidth, logicalHeight);
 
             const maskCtx = highlighterMaskCtx;
             maskCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -8553,7 +8688,7 @@
             ctx.save();
             ctx.globalCompositeOperation = 'source-over';
             ctx.globalAlpha = 0.35;
-            ctx.drawImage(highlighterMaskCanvas, 0, 0, A4_WIDTH, A4_HEIGHT);
+            ctx.drawImage(highlighterMaskCanvas, 0, 0, logicalWidth, logicalHeight);
             ctx.restore();
         }
 
@@ -8685,43 +8820,23 @@
             }
         }
 
-        function drawImageContained(ctx, img, targetWidth, targetHeight) {
-            if (!img) return;
-            const srcWidth = img.naturalWidth || img.width || targetWidth;
-            const srcHeight = img.naturalHeight || img.height || targetHeight;
-            if (!srcWidth || !srcHeight) {
-                ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-                return;
-            }
-            const scale = Math.min(targetWidth / srcWidth, targetHeight / srcHeight);
-            const drawWidth = srcWidth * scale;
-            const drawHeight = srcHeight * scale;
-            const offsetX = (targetWidth - drawWidth) / 2;
-            const offsetY = (targetHeight - drawHeight) / 2;
-            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-        }
-
         function drawPageBackgroundLayer(ctx, page, pageIndex) {
             const backgroundSource = page.backgroundSource
                 || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template'));
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
 
             if (backgroundSource === 'template' && !page.backgroundImage) {
-                drawTemplateBackground(ctx, A4_WIDTH, A4_HEIGHT, 1);
+                drawTemplateBackground(ctx, pageWidth, pageHeight, pageWidth / A4_WIDTH);
                 return;
             }
 
             ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            ctx.fillRect(0, 0, pageWidth, pageHeight);
 
             if (page.backgroundImage) {
                 const bgImg = getCachedImage(page.backgroundImage, () => redrawPage(pageIndex));
                 if (bgImg && bgImg.complete) {
-                    if (backgroundSource === 'pdf') {
-                        // Imported PDF pages can be non-A4. Keep aspect ratio inside A4 canvas.
-                        drawImageContained(ctx, bgImg, A4_WIDTH, A4_HEIGHT);
-                    } else {
-                        ctx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
-                    }
+                    ctx.drawImage(bgImg, 0, 0, pageWidth, pageHeight);
                 }
                 return;
             }
@@ -8752,9 +8867,10 @@
             }
 
             const ctx = canvas.getContext('2d');
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
             ctx.save();
             ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
-            ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            ctx.clearRect(0, 0, pageWidth, pageHeight);
             ctx.globalCompositeOperation = 'source-over';
             ctx.globalAlpha = 1;
 
@@ -8764,7 +8880,7 @@
             if (page.bakedBackground) {
                 const bakedImg = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex));
                 if (bakedImg.complete) {
-                    ctx.drawImage(bakedImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                    ctx.drawImage(bakedImg, 0, 0, pageWidth, pageHeight);
                 }
             }
 
@@ -8794,8 +8910,9 @@
                 const wrapper = document.createElement('div');
                 wrapper.className = 'page-wrapper';
                 wrapper.dataset.page = index;
-                wrapper.style.width = `${A4_WIDTH}px`;
-                wrapper.style.height = `${A4_HEIGHT}px`;
+                const { width: pageWidth, height: pageHeight } = getPageDimensions(index);
+                wrapper.style.width = `${pageWidth}px`;
+                wrapper.style.height = `${pageHeight}px`;
                 const pageNumber = document.createElement('div');
                 pageNumber.className = 'page-number';
                 pageNumber.textContent = `${index + 1}`;
@@ -9780,18 +9897,31 @@
             const gap = PAGE_GAP;
             const padding = PAGE_PADDING;
             if (pageCount === 0) return 0;
-            return padding * 2 + pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
+            let totalPageHeight = 0;
+            for (let i = 0; i < pageCount; i++) {
+                totalPageHeight += getPageHeight(i);
+            }
+            return padding * 2 + totalPageHeight + Math.max(0, pageCount - 1) * gap;
         }
 
         function getPageBounds() {
             const pageCount = state.pages.length || 1;
             const gap = PAGE_GAP;
             const padding = PAGE_PADDING;
-            const height = pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
+            let pageHeight = 0;
+            if (state.pages.length === 0) {
+                pageHeight = A4_HEIGHT;
+            } else {
+                for (let i = 0; i < state.pages.length; i++) {
+                    pageHeight += getPageHeight(i);
+                }
+            }
+            const maxWidth = getMaxPageWidth();
+            const height = pageHeight + Math.max(0, pageCount - 1) * gap;
             return {
                 left: padding,
                 top: padding,
-                right: padding + A4_WIDTH,
+                right: padding + maxWidth,
                 bottom: padding + height
             };
         }
@@ -9836,9 +9966,8 @@
                 addPageIndicator.style.opacity = 0;
                 return;
             }
-            const gap = PAGE_GAP;
             const padding = PAGE_PADDING;
-            const bottom = padding + pageCount * A4_HEIGHT + Math.max(0, pageCount - 1) * gap;
+            const bottom = getContentHeight() - padding;
             addPageIndicator.style.left = '50%';
             addPageIndicator.style.top = (bottom + 20) + 'px';
             addPageIndicator.style.transform = 'translateX(-50%)';
@@ -10623,8 +10752,9 @@
         }
 
         function drawThumbnailStrokes(ctx, page, pageIndex) {
-            const scaleX = 50 / A4_WIDTH;
-            const scaleY = 70 / A4_HEIGHT;
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+            const scaleX = 50 / pageWidth;
+            const scaleY = 70 / pageHeight;
 
             ctx.save();
             ctx.scale(scaleX, scaleY);
@@ -10661,10 +10791,11 @@
         function goToPage(pageIndex) {
             const pageWrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (pageWrapper) {
-                const rect = pageWrapper.getBoundingClientRect();
                 const viewportRect = canvasViewport.getBoundingClientRect();
-                state.panY = -(pageIndex * (A4_HEIGHT + PAGE_GAP) * state.zoom) + viewportRect.height / 2 - (A4_HEIGHT * state.zoom) / 2;
-                state.panX = viewportRect.width / 2 - (A4_WIDTH * state.zoom) / 2 - (PAGE_PADDING * state.zoom);
+                const pageTop = getPageTopOffset(pageIndex);
+                const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+                state.panY = -(pageTop * state.zoom) + viewportRect.height / 2 - (pageHeight * state.zoom) / 2;
+                state.panX = viewportRect.width / 2 - (pageWidth * state.zoom) / 2 - (PAGE_PADDING * state.zoom);
                 updateTransform();
                 state.activePageIndex = pageIndex;
                 scheduleVisiblePageUpdate(true);
@@ -10750,6 +10881,8 @@
                 backgroundImage: null,
                 backgroundSource: 'template',
                 pdfPageIndex: null,
+                pageWidth: A4_WIDTH,
+                pageHeight: A4_HEIGHT,
                 images: [],
                 needsRedraw: true,
                 preview: null,
@@ -11270,13 +11403,16 @@
         }
 
         function sanitizePageForStorage(page) {
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(page);
             return {
                 strokes: Array.isArray(page.strokes) ? page.strokes : [],
                 images: Array.isArray(page.images) ? page.images : [],
                 deletedStrokeIds: Array.isArray(page.deletedStrokeIds) ? page.deletedStrokeIds : [],
                 backgroundImage: page.backgroundSource === 'pdf' ? null : (page.backgroundImage || null),
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
-                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null
+                pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                pageWidth,
+                pageHeight
             };
         }
 
@@ -11284,10 +11420,13 @@
             const strokeCount = typeof page.strokeCount === 'number'
                 ? page.strokeCount
                 : getVisibleStrokeCount(page);
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(page);
             return {
                 backgroundImage: page.backgroundSource === 'pdf' ? null : (page.backgroundImage || null),
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
                 pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                pageWidth,
+                pageHeight,
                 strokeCount,
                 preview: page.preview || null
             };
@@ -11559,14 +11698,15 @@
         function renderPagePreview(pageIndex) {
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.strokes)) return null;
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
             const scale = PAGE_PREVIEW_SCALE;
             const previewCanvas = document.createElement('canvas');
-            previewCanvas.width = Math.max(1, Math.floor(A4_WIDTH * scale));
-            previewCanvas.height = Math.max(1, Math.floor(A4_HEIGHT * scale));
+            previewCanvas.width = Math.max(1, Math.floor(pageWidth * scale));
+            previewCanvas.height = Math.max(1, Math.floor(pageHeight * scale));
             const ctx = previewCanvas.getContext('2d');
             ctx.scale(scale, scale);
             ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            ctx.fillRect(0, 0, pageWidth, pageHeight);
 
             // Draw appropriate background
             const backgroundSource = page.backgroundSource || 'template';
@@ -11574,22 +11714,18 @@
                 const img = new Image();
                 img.src = page.backgroundImage;
                 if (img.complete) {
-                    if (backgroundSource === 'pdf') {
-                        drawImageContained(ctx, img, A4_WIDTH, A4_HEIGHT);
-                    } else {
-                        ctx.drawImage(img, 0, 0, A4_WIDTH, A4_HEIGHT);
-                    }
+                    ctx.drawImage(img, 0, 0, pageWidth, pageHeight);
                 }
             } else if (backgroundSource === 'template' || backgroundSource === undefined) {
                 // Draw template background natively for preview
-                drawTemplateBackground(ctx, A4_WIDTH, A4_HEIGHT, 1);
+                drawTemplateBackground(ctx, pageWidth, pageHeight, pageWidth / A4_WIDTH);
             }
             // For PDF background pages with no image loaded yet, white fill is already done above
 
             if (page.bakedBackground) {
                 const bakedImg = getCachedImage(page.bakedBackground);
                 if (bakedImg.complete) {
-                    ctx.drawImage(bakedImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                    ctx.drawImage(bakedImg, 0, 0, pageWidth, pageHeight);
                 }
             }
             drawImagesOnContext(ctx, page, pageIndex);
@@ -11798,6 +11934,8 @@
                         backgroundImage: page?.backgroundImage || null,
                         backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template')),
                         pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
+                        pageWidth: normalizePageDimension(page?.pageWidth, A4_WIDTH),
+                        pageHeight: normalizePageDimension(page?.pageHeight, A4_HEIGHT),
                         preview: page?.preview || null,
                         strokeCount: typeof page?.strokeCount === 'number' ? page.strokeCount : 0,
                         unloaded: true,
@@ -11824,6 +11962,8 @@
                 backgroundImage,
                 backgroundSource,
                 pdfPageIndex,
+                pageWidth: normalizePageDimension(page?.pageWidth, A4_WIDTH),
+                pageHeight: normalizePageDimension(page?.pageHeight, A4_HEIGHT),
                 needsRedraw: true,
                 unloaded: false
             };
@@ -11846,6 +11986,8 @@
                     backgroundImage: meta.backgroundImage,
                     backgroundSource: meta.backgroundSource,
                     pdfPageIndex: meta.pdfPageIndex,
+                    pageWidth: meta.pageWidth,
+                    pageHeight: meta.pageHeight,
                     preview: meta.preview || null,
                     strokeCount: meta.strokeCount || 0,
                     unloaded: true,
@@ -11953,6 +12095,8 @@
                         backgroundImage: page.backgroundImage || null,
                         backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
                         pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                        pageWidth: normalizePageDimension(page.pageWidth, A4_WIDTH),
+                        pageHeight: normalizePageDimension(page.pageHeight, A4_HEIGHT),
                         needsRedraw: true
                     };
                 }
@@ -11981,6 +12125,7 @@
                 }
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
                 if (canvas) {
+                    applyPageDimensionsToWrapper(pageIndex, { skipRedraw: true });
                     applyPageBackground(pageIndex, canvas);
                     redrawPage(pageIndex);
                     // Clear preview only after strokes and background are visually painted
@@ -12166,6 +12311,8 @@
                     backgroundImage: null,
                     backgroundSource: 'template',
                     pdfPageIndex: null,
+                    pageWidth: A4_WIDTH,
+                    pageHeight: A4_HEIGHT,
                     preview: null,
                     strokeCount: 0,
                     unloaded: true,
@@ -12849,6 +12996,8 @@
                     backgroundImage: remotePageData.backgroundSource === 'pdf' ? null : (remotePageData.backgroundImage || null),
                     backgroundSource: remotePageData.backgroundSource || 'template',
                     pdfPageIndex: Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null,
+                    pageWidth: normalizePageDimension(remotePageData.pageWidth, A4_WIDTH),
+                    pageHeight: normalizePageDimension(remotePageData.pageHeight, A4_HEIGHT),
                     needsRedraw: true,
                     preview: null,
                     strokeCount: 0,
@@ -12950,16 +13099,23 @@
                 const strokeIdsChanged = !setsEqual(mergedStrokeIds, localStrokeIds);
                 const imageIdsChanged = !setsEqual(mergedImageIds, localImageIds);
                 const deletedIdsChanged = !setsEqual(mergedDeletedIds, previousDeletedIds);
+                const remoteWidth = normalizePageDimension(remotePageData.pageWidth, currentPage.pageWidth || A4_WIDTH);
+                const remoteHeight = normalizePageDimension(remotePageData.pageHeight, currentPage.pageHeight || A4_HEIGHT);
+                const dimensionChanged = remoteWidth !== normalizePageDimension(currentPage.pageWidth, A4_WIDTH)
+                    || remoteHeight !== normalizePageDimension(currentPage.pageHeight, A4_HEIGHT);
 
-                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged) {
+                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || dimensionChanged) {
                     currentPage.strokes = mergedStrokes;
                     currentPage.images = mergedImages;
                     currentPage.backgroundSource = remotePageData.backgroundSource || currentPage.backgroundSource;
                     if (remotePageData.pdfPageIndex !== undefined) {
                         currentPage.pdfPageIndex = Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null;
                     }
+                    currentPage.pageWidth = remoteWidth;
+                    currentPage.pageHeight = remoteHeight;
                     currentPage.strokeCount = getVisibleStrokeCount(currentPage);
                     currentPage.needsRedraw = true;
+                    applyPageDimensionsToWrapper(i, { skipRedraw: true });
                     await savePageToIndexedDb(i, currentPage);
                     if (activePageIndices.has(i)) {
                         redrawPage(i);
@@ -13683,6 +13839,8 @@
                                 backgroundImage: null,
                                 backgroundSource: 'pdf',
                                 pdfPageIndex: pagePdfIndex,
+                                pageWidth: normalizePageDimension(pageData.pageWidth, A4_WIDTH),
+                                pageHeight: normalizePageDimension(pageData.pageHeight, A4_HEIGHT),
                                 images: useLegacyRaster ? [] : restoredImages,
                                 needsRedraw: true
                             });
@@ -13692,6 +13850,8 @@
                                 backgroundImage: null,
                                 backgroundSource: 'template',
                                 pdfPageIndex: null,
+                                pageWidth: normalizePageDimension(pageData.pageWidth, A4_WIDTH),
+                                pageHeight: normalizePageDimension(pageData.pageHeight, A4_HEIGHT),
                                 images: restoredImages,
                                 needsRedraw: true
                             });
@@ -13702,6 +13862,8 @@
                             backgroundImage: null,
                             backgroundSource: 'pdf',
                             pdfPageIndex: i, // 1-based index required by PDF.js since loop starts at 1
+                            pageWidth: A4_WIDTH,
+                            pageHeight: A4_HEIGHT,
                             images: [],
                             needsRedraw: true
                         });
@@ -13779,7 +13941,9 @@
                     images: [],
                     backgroundImage: null,
                     backgroundSource: 'template',
-                    pdfPageIndex: null
+                    pdfPageIndex: null,
+                    pageWidth: A4_WIDTH,
+                    pageHeight: A4_HEIGHT
                 };
             }
             if (isPageLoaded(page)) {
@@ -13858,7 +14022,9 @@
                 : '';
             const bg = pageData.backgroundSource || '';
             const pdfIdx = pageData.pdfPageIndex || '';
-            return `${strokeIds}|${imageIds}|${bg}|${pdfIdx}|${pageData.strokes?.length || 0}`;
+            const pageW = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
+            const pageH = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
+            return `${strokeIds}|${imageIds}|${bg}|${pdfIdx}|${pageW}x${pageH}|${pageData.strokes?.length || 0}`;
         }
 
         async function buildPdfBlob(options = {}) {
@@ -13930,7 +14096,9 @@
                     deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
                     backgroundSource,
-                    pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null
+                    pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null,
+                    pageWidth: normalizePageDimension(pageData.pageWidth, A4_WIDTH),
+                    pageHeight: normalizePageDimension(pageData.pageHeight, A4_HEIGHT)
                 };
 
                 // Accumulate lightweight metadata for embedding (JSON string only)
