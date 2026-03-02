@@ -4391,6 +4391,9 @@
                     canvas.style.backgroundPosition = 'center';
                     canvas.style.backgroundColor = 'transparent';
                 }
+                if (activePageIndices.has(pageIndex)) {
+                    redrawPage(pageIndex);
+                }
 
                 if (pdfPage.cleanup) {
                     pdfPage.cleanup();
@@ -4682,7 +4685,6 @@
                             strokes: erasedStrokes
                         });
                         scheduleSave(false, pageIndex);
-                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (state.currentTool === 'eraser-area') {
@@ -4702,7 +4704,6 @@
                             after
                         });
                         scheduleSave(false, pageIndex);
-                        requestImmediateDriveSave();
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
@@ -4739,7 +4740,6 @@
                         stroke: persistedStroke
                     });
                     scheduleSave(false, pageIndex, 'stroke');
-                    requestImmediateDriveSave();
 
                     // Check if we need to bake old strokes
                     if (shouldBakeStrokes(pageIndex)) {
@@ -6099,7 +6099,9 @@
                         disableStream: false,
                         cMapUrl: PDFJS_CMAP_URL,
                         cMapPacked: true,
-                        standardFontDataUrl: PDFJS_STANDARD_FONT_URL
+                        standardFontDataUrl: PDFJS_STANDARD_FONT_URL,
+                        useSystemFonts: true,
+                        disableFontFace: false
                     }).promise;
                     resetPdfState();
                     activePdfDocument = pdf;
@@ -8680,9 +8682,38 @@
             }
         }
 
+        function drawPageBackgroundLayer(ctx, page, pageIndex) {
+            const backgroundSource = page.backgroundSource
+                || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template'));
+
+            if (backgroundSource === 'template' && !page.backgroundImage) {
+                drawTemplateBackground(ctx, A4_WIDTH, A4_HEIGHT, 1);
+                return;
+            }
+
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
+
+            if (page.backgroundImage) {
+                const bgImg = getCachedImage(page.backgroundImage, () => redrawPage(pageIndex));
+                if (bgImg && bgImg.complete) {
+                    ctx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                }
+                return;
+            }
+
+            if ((backgroundSource === 'pdf' || page.pdfPageIndex) && page.pdfPageIndex) {
+                if (activePdfDocument) {
+                    queuePdfPageRender(pageIndex);
+                } else {
+                    restorePdfBackgroundsIfNeeded();
+                }
+            }
+        }
+
         // Redraw page with smooth quadratic curves
         function redrawPage(pageIndex) {
-            const canvas = document.querySelector(`canvas[data-page="${pageIndex}"]`);
+            const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
             const page = state.pages[pageIndex];
             if (!page) return;
             if (!canvas) {
@@ -8700,6 +8731,10 @@
             ctx.save();
             ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
             ctx.clearRect(0, 0, A4_WIDTH, A4_HEIGHT);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+
+            drawPageBackgroundLayer(ctx, page, pageIndex);
 
             // Draw baked background if available (contains old strokes)
             if (page.bakedBackground) {
@@ -12170,7 +12205,7 @@
             }
             if (deferredDriveSave) {
                 deferredDriveSave = false;
-                requestImmediateDriveSave({ fromIdle: true });
+                scheduleDriveSync();
             }
         }
 
@@ -12658,7 +12693,9 @@
                         disableStream: false,
                         cMapUrl: PDFJS_CMAP_URL,
                         cMapPacked: true,
-                        standardFontDataUrl: PDFJS_STANDARD_FONT_URL
+                        standardFontDataUrl: PDFJS_STANDARD_FONT_URL,
+                        useSystemFonts: true,
+                        disableFontFace: false
                     }).promise;
                     try {
                         const metadata = await pdf.getMetadata();
@@ -13503,6 +13540,8 @@
                 pdfParams.cMapUrl = PDFJS_CMAP_URL;
                 pdfParams.cMapPacked = true;
                 pdfParams.standardFontDataUrl = PDFJS_STANDARD_FONT_URL;
+                pdfParams.useSystemFonts = true;
+                pdfParams.disableFontFace = false;
 
                 const pdf = await pdfjsLib.getDocument(pdfParams).promise;
                 const numPages = pdf.numPages;
@@ -13663,38 +13702,8 @@
                             applyPagePreview(pi);
                         }
                     }
-
-                    // Re-apply backgrounds to visible canvases after eager rendering
-                    activePageIndices.forEach(pi => {
-                        const pg = state.pages[pi];
-                        if (pg && pg.backgroundImage) {
-                            const c = document.querySelector(`canvas.page-canvas[data-page="${pi}"]`);
-                            if (c) {
-                                c.style.backgroundImage = `url("${pg.backgroundImage}")`;
-                                c.style.backgroundSize = 'cover';
-                                c.style.backgroundRepeat = 'no-repeat';
-                                c.style.backgroundPosition = 'center';
-                                c.style.backgroundColor = 'transparent';
-                            }
-                        }
-                    });
-
-                    // Queue remaining pages for background rendering + preview generation
-                    if (numPages > eagerCount) {
-                        (async () => {
-                            for (let pi = eagerCount; pi < numPages; pi++) {
-                                if (pdfRenderToken !== savedToken) break;
-                                await renderPdfPageToBackground(pi, savedToken);
-                                const pg = state.pages[pi];
-                                if (pg && pg.backgroundImage && !pg.preview) {
-                                    pg.preview = renderPagePreview(pi);
-                                    applyPagePreview(pi);
-                                }
-                                // Yield periodically to keep UI responsive
-                                if (pi % 3 === 0) await new Promise(requestAnimationFrame);
-                            }
-                        })();
-                    }
+                    // Keep the rest lazy to avoid UI stalls on large/non-template PDFs.
+                    scheduleVisiblePageUpdate(true);
                 }
 
                 hideLoading();
