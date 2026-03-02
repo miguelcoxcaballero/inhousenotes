@@ -2988,24 +2988,33 @@
             ctx.roundRect(1.5 * u, 1.43 * u, 18 * u, 27 * u, cornerR);
             ctx.stroke();
 
-            // Dot grid: <pattern x="1.75" y="1.68" width="0.5" height="0.5"> circle cx=0.25 cy=0.25
-            // Draw each dot at exact SVG coordinates to avoid accumulated rounding error
+            // Dot grid: SVG feGaussianBlur stdDeviation=0.02 on circle r=0.035
+            // Pre-render a single soft dot (radial gradient = inward fade) then stamp it
             const dotR = 0.035 * u;
-            ctx.save();
-            ctx.shadowColor = '#a8a8a8';
-            ctx.shadowBlur = 0.08 * u;
-            ctx.fillStyle = '#a8a8a8';
-            ctx.beginPath();
+            const blurSigma = 0.02 * u;
+            const stampR = dotR + blurSigma;
+            const stampSize = Math.ceil(stampR * 2) + 2;
+            const stampCanvas = document.createElement('canvas');
+            stampCanvas.width = stampSize;
+            stampCanvas.height = stampSize;
+            const sCtx = stampCanvas.getContext('2d');
+            const sc = stampSize / 2;
+            const grad = sCtx.createRadialGradient(sc, sc, 0, sc, sc, stampR);
+            grad.addColorStop(0, '#a8a8a8');
+            grad.addColorStop(Math.max(0, (dotR - blurSigma) / stampR), '#a8a8a8');
+            grad.addColorStop(1, 'rgba(168,168,168,0)');
+            sCtx.fillStyle = grad;
+            sCtx.beginPath();
+            sCtx.arc(sc, sc, stampR, 0, Math.PI * 2);
+            sCtx.fill();
+
             for (let col = 0; col < 35; col++) {
                 const cx = (2.0 + col * 0.5) * u;
                 for (let row = 0; row < 51; row++) {
                     const cy = (1.93 + row * 0.5) * u;
-                    ctx.moveTo(cx + dotR, cy);
-                    ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+                    ctx.drawImage(stampCanvas, cx - sc, cy - sc);
                 }
             }
-            ctx.fill();
-            ctx.restore();
 
             // Footer rectangles + ticks:
             // <rect x="2.0" y="27.43" width="8.0" height="0.5".../>
@@ -3111,8 +3120,8 @@
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 24;
-        const DRIVE_SYNC_IDLE_DELAY = 3000;
-        const DRIVE_SYNC_MAX_DELAY = 30000;
+        const DRIVE_SYNC_IDLE_DELAY = 2000;
+        const DRIVE_SYNC_MAX_DELAY = 20000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -3332,7 +3341,7 @@
                 // Convert baked strokes to background image
                 let bakedDataUrl;
                 try {
-                    bakedDataUrl = offscreen.toDataURL('image/png', 0.9);
+                    bakedDataUrl = offscreen.toDataURL('image/jpeg', 0.7);
                 } catch (e) {
                     console.warn('Baking failed: toDataURL error', e);
                     bakingInProgress.delete(pageIndex);
@@ -4402,7 +4411,7 @@
                 tCanvas.height = A4_HEIGHT * CANVAS_SCALE;
                 const tCtx = tCanvas.getContext('2d');
                 drawTemplateBackground(tCtx, tCanvas.width, tCanvas.height, CANVAS_SCALE);
-                window._templateBackgroundUrl = tCanvas.toDataURL('image/jpeg', 0.8);
+                window._templateBackgroundUrl = tCanvas.toDataURL('image/jpeg', 0.6);
             }
             canvas.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
             canvas.style.backgroundSize = '100% 100%';
@@ -14149,7 +14158,7 @@
             throwIfAborted();
 
             const pageCount = state.pages.length;
-            let exportScale = CANVAS_SCALE;
+            let exportScale = options.highQuality ? CANVAS_SCALE : Math.min(CANVAS_SCALE, 1.5);
             let shouldResolvePdfSourceSizes = false;
             const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
             const hasStoredNonA4PdfPage = state.pages.some(
@@ -14226,7 +14235,7 @@
                 metadataParts.push(metaJson);
 
                 // Check cache for this page
-                const pageHash = `${computePageHash(pageData)}|exp:${pageStrokeEntry.pageWidth}x${pageStrokeEntry.pageHeight}`;
+                const pageHash = `${computePageHash(pageData)}|exp:${pageStrokeEntry.pageWidth}x${pageStrokeEntry.pageHeight}|s${exportScale}|hq${options.highQuality ? 1 : 0}`;
                 const cached = pdfExportCache.get(i);
 
                 if (!pdf) {
@@ -14333,7 +14342,9 @@
 
                     await yieldForResponsiveness(true);
                     throwIfAborted();
-                    const jpegQuality = pageCount >= 20 ? 0.75 : 0.85;
+                    const jpegQuality = options.highQuality
+                        ? (pageCount >= 20 ? 0.75 : 0.85)
+                        : (pageCount >= 20 ? 0.55 : 0.65);
                     const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
                     throwIfAborted();
                     const arrayBuf = await pageBlob.arrayBuffer();
@@ -14391,7 +14402,7 @@
             showLoading('Generando PDF...');
 
             try {
-                const pdfBlob = await buildPdfBlob();
+                const pdfBlob = await buildPdfBlob({ highQuality: true });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(pdfBlob);
                 link.download = safeName;
