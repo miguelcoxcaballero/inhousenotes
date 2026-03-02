@@ -9544,61 +9544,59 @@
             }
             if (driveHomeBtn) {
                 let goHomeInProgress = false;
+                const waitForDriveSaveCompletion = async (timeoutMs = 30000) => {
+                    const start = Date.now();
+                    while ((driveSaveInProgress || driveSaveQueued) && (Date.now() - start < timeoutMs)) {
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                    return !(driveSaveInProgress || driveSaveQueued);
+                };
                 const goHome = async () => {
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
-                    const needsSave = !state.isReadOnly && (hasPendingLocalSave() || hasPendingDriveSave() || driveDirty);
-                    if (needsSave) {
-                        showLoading('Saving to Drive...');
-                        clearTimeout(state.saveTimeout);
-                        state.saveTimeout = null;
+                    try {
+                        const needsSave = !state.isReadOnly && (hasPendingLocalSave() || hasPendingDriveSave() || driveDirty);
+                        if (needsSave) {
+                            showLoading('Saving to Drive...');
+                            clearTimeout(state.saveTimeout);
+                            state.saveTimeout = null;
 
-                        // Wait for local save to complete first
-                        await queueSave();
-                        await flushDirtyPages({ force: true });
+                            // Flush local persistence first.
+                            await queueSave();
+                            await flushDirtyPages({ force: true });
 
-                        if (state.driveAutosave && driveAccessToken) {
-                            clearDriveSyncTimers();
+                            if (state.driveAutosave) {
+                                if (!driveAccessToken) {
+                                    showStatus('Drive sign-in required before leaving', { error: true });
+                                    return;
+                                }
+                                clearDriveSyncTimers();
 
-                            // Wait for any in-progress Drive save to finish first (with timeout)
-                            const waitStart = Date.now();
-                            while (driveSaveInProgress && (Date.now() - waitStart < 30000)) {
-                                await new Promise(r => setTimeout(r, 100));
-                            }
-                            if (driveSaveInProgress) {
-                                // Previous save is stuck, proceed anyway
-                                console.warn('goHome: previous Drive save stuck, proceeding');
-                            }
+                                // Wait for any previous save cycle before forcing a final one.
+                                const settledBeforeSave = await waitForDriveSaveCompletion(30000);
+                                if (!settledBeforeSave) {
+                                    showStatus('Drive is still saving. Try again in a moment', { error: true });
+                                    return;
+                                }
 
-                            // Now trigger a fresh save if still needed
-                            if (driveDirty || driveSaveQueued) {
                                 driveDirty = true;
-                                console.log('goHome: starting Drive save');
                                 await queueDriveSave(true, { keepalive: true });
-                                console.log('goHome: Drive save returned, driveDirty=', driveDirty, 'inProgress=', driveSaveInProgress);
-                            }
 
-                            // Wait for completion with timeout
-                            const maxWait = 30000;
-                            const startWait = Date.now();
-                            while ((driveSaveInProgress || driveSaveQueued) && (Date.now() - startWait < maxWait)) {
-                                await new Promise(r => setTimeout(r, 100));
-                            }
-
-                            // Check final state - warn but proceed regardless
-                            if (driveDirty || driveSaveInProgress || driveSaveQueued) {
-                                console.warn('goHome: save incomplete - dirty:', driveDirty, 'inProgress:', driveSaveInProgress, 'queued:', driveSaveQueued);
-                                showStatus('Changes may not be saved to Drive', { error: true });
-                            } else {
-                                console.log('goHome: Drive save completed successfully');
+                                const settledAfterSave = await waitForDriveSaveCompletion(30000);
+                                if (!settledAfterSave || driveDirty || driveSaveInProgress || driveSaveQueued) {
+                                    console.warn('goHome blocked: save incomplete - dirty:', driveDirty, 'inProgress:', driveSaveInProgress, 'queued:', driveSaveQueued);
+                                    showStatus('Drive save failed. Still in editor to avoid data loss', { error: true });
+                                    return;
+                                }
                             }
                         }
 
+                        showDriveHome();
+                        refreshDriveFiles();
+                    } finally {
                         hideLoading();
+                        goHomeInProgress = false;
                     }
-                    showDriveHome();
-                    refreshDriveFiles();
-                    goHomeInProgress = false;
                 };
                 driveHomeBtn.addEventListener('click', (e) => {
                     if (docTitleEl && docTitleEl.contains(e.target)) return;
