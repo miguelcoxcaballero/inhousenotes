@@ -14158,7 +14158,7 @@
             throwIfAborted();
 
             const pageCount = state.pages.length;
-            let exportScale = options.highQuality ? CANVAS_SCALE : 1.5;
+            let exportScale = options.highQuality ? CANVAS_SCALE : 1.75;
             let shouldResolvePdfSourceSizes = false;
             const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
             const hasStoredNonA4PdfPage = state.pages.some(
@@ -14261,8 +14261,8 @@
                 }
 
                 if (cached && cached.hash === pageHash) {
-                    // Use cached JPEG — no re-render needed
-                    pdf.addImage(cached.jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
+                    // Use cached image — no re-render needed
+                    pdf.addImage(cached.jpegData, cached.imgFormat || 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
                 } else {
                     // Render this page to canvas
                     const targetCanvasWidth = Math.max(1, Math.round(pageStrokeEntry.pageWidth * exportScale));
@@ -14362,17 +14362,17 @@
 
                     await yieldForResponsiveness(true);
                     throwIfAborted();
-                    const jpegQuality = options.highQuality
-                        ? (pageCount >= 20 ? 0.75 : 0.85)
-                        : (pageCount >= 20 ? 0.35 : 0.42);
-                    const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
+                    const usesPng = !options.highQuality;
+                    const pageBlob = usesPng
+                        ? await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/png'))
+                        : await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', pageCount >= 20 ? 0.75 : 0.85));
                     throwIfAborted();
                     const arrayBuf = await pageBlob.arrayBuffer();
-                    const jpegData = new Uint8Array(arrayBuf);
-                    pdf.addImage(jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
+                    const imgData = new Uint8Array(arrayBuf);
+                    pdf.addImage(imgData, usesPng ? 'PNG' : 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
 
                     // Cache for next save
-                    pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson });
+                    pdfExportCache.set(i, { hash: pageHash, jpegData: imgData, imgFormat: usesPng ? 'PNG' : 'JPEG', metaJson });
                 }
             }
 
