@@ -4411,7 +4411,7 @@
                 tCanvas.height = A4_HEIGHT * CANVAS_SCALE;
                 const tCtx = tCanvas.getContext('2d');
                 drawTemplateBackground(tCtx, tCanvas.width, tCanvas.height, CANVAS_SCALE);
-                window._templateBackgroundUrl = tCanvas.toDataURL('image/jpeg', 0.6);
+                window._templateBackgroundUrl = tCanvas.toDataURL('image/jpeg', 0.8);
             }
             canvas.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
             canvas.style.backgroundSize = '100% 100%';
@@ -12401,8 +12401,13 @@
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
             }
-            // Don't abort Drive saves — the PDF build is expensive and cooperative
-            // (it already yields via yieldForResponsiveness). Let it finish in background.
+            // Abort Drive saves during interaction to avoid UI jank from canvas rendering.
+            // The pdfExportCache keeps already-rendered pages, so restarts are fast.
+            if (driveSaveInProgress && activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
+                activeDriveSaveController.abort();
+                deferredDriveSave = true;
+                driveDirty = true;
+            }
         }
 
         function flushDeferredSavesAfterInteraction() {
@@ -14158,7 +14163,7 @@
             throwIfAborted();
 
             const pageCount = state.pages.length;
-            let exportScale = options.highQuality ? CANVAS_SCALE : 1.75;
+            let exportScale = options.highQuality ? CANVAS_SCALE : 1.5;
             let shouldResolvePdfSourceSizes = false;
             const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
             const hasStoredNonA4PdfPage = state.pages.some(
@@ -14261,8 +14266,8 @@
                 }
 
                 if (cached && cached.hash === pageHash) {
-                    // Use cached image — no re-render needed
-                    pdf.addImage(cached.jpegData, cached.imgFormat || 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
+                    // Use cached JPEG — no re-render needed
+                    pdf.addImage(cached.jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
                 } else {
                     // Render this page to canvas
                     const targetCanvasWidth = Math.max(1, Math.round(pageStrokeEntry.pageWidth * exportScale));
@@ -14362,17 +14367,17 @@
 
                     await yieldForResponsiveness(true);
                     throwIfAborted();
-                    const usesPng = !options.highQuality;
-                    const pageBlob = usesPng
-                        ? await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/png'))
-                        : await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', pageCount >= 20 ? 0.75 : 0.85));
+                    const jpegQuality = options.highQuality
+                        ? (pageCount >= 20 ? 0.75 : 0.85)
+                        : (pageCount >= 20 ? 0.55 : 0.65);
+                    const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
                     throwIfAborted();
                     const arrayBuf = await pageBlob.arrayBuffer();
-                    const imgData = new Uint8Array(arrayBuf);
-                    pdf.addImage(imgData, usesPng ? 'PNG' : 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
+                    const jpegData = new Uint8Array(arrayBuf);
+                    pdf.addImage(jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
 
                     // Cache for next save
-                    pdfExportCache.set(i, { hash: pageHash, jpegData: imgData, imgFormat: usesPng ? 'PNG' : 'JPEG', metaJson });
+                    pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson });
                 }
             }
 
