@@ -2963,99 +2963,99 @@
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, width, height);
 
-            // The conceptual A4 coordinate system used in the old SVG was 21x29.7
-            // A4_WIDTH = 794. So 1 SVG unit (cm) = 794 / 21 = 37.8095 pixels
-            const cm = (A4_WIDTH / 21) * scale;
+            // SVG viewBox is 21 x 29.7. Keep this mapping exact.
+            const u = width / 21;
+            const strokeColor = '#f0db4c';
+            const strokeW = 0.06 * u;
+            const cornerR = 0.03 * u;
 
-            // 1. Main Yellow Frame
-            ctx.strokeStyle = '#ffde00';
-            ctx.lineWidth = 0.06 * cm;
-            ctx.setLineDash([]);
-            // x="1.5" y="1.43" width="18" height="27" rx="0.03"
-            const fx = 1.5 * cm;
-            const fy = 1.43 * cm;
-            const fw = 18 * cm;
-            const fh = 27 * cm;
-            const r = 0.03 * cm;
+            // Outer frame: <rect x="1.5" y="1.43" width="18" height="27" rx="0.03" ry="0.03" .../>
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeW;
             ctx.beginPath();
-            ctx.roundRect(fx, fy, fw, fh, r);
+            ctx.roundRect(1.5 * u, 1.43 * u, 18 * u, 27 * u, cornerR);
             ctx.stroke();
 
-            // 2. Dot Grid Filter/Pattern
-            // Pattern 0.5x0.5 cm starting at x=1.75, y=1.68
-            const gridX = 1.75 * cm;
-            const gridY = 1.68 * cm;
-            const gridW = 17.5 * cm;
-            const gridH = 25.5 * cm;
-            const spacing = 0.5 * cm;
-            const dotR = 0.035 * cm;
+            // Dot grid: <rect x="1.75" y="1.68" width="17.5" height="25.5" fill="url(#dotGrid)"/>
+            const gridX = 1.75 * u;
+            const gridY = 1.68 * u;
+            const gridW = 17.5 * u;
+            const gridH = 25.5 * u;
+            const spacing = 0.5 * u;
+            const dotR = 0.035 * u;
 
-            // Bake dot pattern tile at current scale (re-create if scale changed)
             if (!window._dotPatternCanvas || window._dotPatternScale !== scale) {
                 const pCanvas = document.createElement('canvas');
-                pCanvas.width = spacing;
-                pCanvas.height = spacing;
+                pCanvas.width = Math.max(1, Math.round(spacing));
+                pCanvas.height = Math.max(1, Math.round(spacing));
                 const pCtx = pCanvas.getContext('2d');
+
+                // Approximate SVG soft blur filter.
+                pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+                pCtx.save();
+                pCtx.shadowColor = '#a8a8a8';
+                pCtx.shadowBlur = 0.08 * u;
                 pCtx.fillStyle = '#a8a8a8';
                 pCtx.beginPath();
-                pCtx.arc(spacing / 2, spacing / 2, dotR, 0, Math.PI * 2);
+                pCtx.arc(pCanvas.width / 2, pCanvas.height / 2, dotR, 0, Math.PI * 2);
                 pCtx.fill();
+                pCtx.restore();
+
                 window._dotPatternCanvas = pCanvas;
                 window._dotPatternScale = scale;
             }
-            // Always create pattern from current context (patterns are context-bound)
+
             const dotPattern = ctx.createPattern(window._dotPatternCanvas, 'repeat');
-
-            ctx.save();
-            ctx.fillStyle = dotPattern;
-            // Align the pattern to the grid start
-            ctx.translate(gridX, gridY);
-            ctx.fillRect(0, 0, gridW, gridH);
-            ctx.restore();
-
-            // 3. Footer lines
-            // Main horizontal lines: x=2.0 width=8.0, x=11.0 width=8.0 at y=27.43
-            const lineY = 27.43 * cm;
-            const lineH = 0.5 * cm;
-            ctx.fillStyle = 'none'; // Stroke only
-            ctx.strokeStyle = '#ffde00';
-            ctx.lineWidth = 0.06 * cm;
-
-            ctx.beginPath();
-            ctx.roundRect(2.0 * cm, lineY, 8.0 * cm, lineH, r);
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.roundRect(11.0 * cm, lineY, 8.0 * cm, lineH, r);
-            ctx.stroke();
-
-            // Vertical tick marks inside the boxes (every 0.5 cm starting at 2.5 and 11.5)
-            ctx.beginPath();
-            for (let i = 2.5; i <= 9.5; i += 0.5) {
-                ctx.moveTo(i * cm, lineY);
-                ctx.lineTo(i * cm, lineY + lineH);
+            if (dotPattern) {
+                ctx.save();
+                ctx.translate(gridX, gridY);
+                ctx.fillStyle = dotPattern;
+                ctx.fillRect(0, 0, gridW, gridH);
+                ctx.restore();
             }
-            for (let i = 11.5; i <= 18.5; i += 0.5) {
-                ctx.moveTo(i * cm, lineY);
-                ctx.lineTo(i * cm, lineY + lineH);
+
+            // Footer rectangles + ticks:
+            // <rect x="2.0" y="27.43" width="8.0" height="0.5".../>
+            // <rect x="11.0" y="27.43" width="8.0" height="0.5".../>
+            const lineY = 27.43 * u;
+            const lineH = 0.5 * u;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeW;
+
+            ctx.beginPath();
+            ctx.roundRect(2.0 * u, lineY, 8.0 * u, lineH, cornerR);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.roundRect(11.0 * u, lineY, 8.0 * u, lineH, cornerR);
+            ctx.stroke();
+
+            ctx.beginPath();
+            for (let x = 2.5; x <= 9.5 + 1e-9; x += 0.5) {
+                ctx.moveTo(x * u, lineY);
+                ctx.lineTo(x * u, lineY + lineH);
+            }
+            for (let x = 11.5; x <= 18.5 + 1e-9; x += 0.5) {
+                ctx.moveTo(x * u, lineY);
+                ctx.lineTo(x * u, lineY + lineH);
             }
             ctx.stroke();
 
-            // 4. Footer Colors
-            // cx="10.125" cy="27.68" r="0.125" -> red, black, blue, green (gap 0.25)
-            const dotY = 27.68 * cm;
-            const colorR = 0.125 * cm;
+            // Footer color circles:
+            // cx="10.125|10.375|10.625|10.875" cy="27.68" r="0.125"
+            const circleY = 27.68 * u;
+            const circleR = 0.125 * u;
             const colors = ['#ff0000', '#000000', '#0000ff', '#6eff12'];
-            let dotX = 10.125 * cm;
-
-            colors.forEach(color => {
+            let circleX = 10.125 * u;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeW;
+            for (const color of colors) {
                 ctx.fillStyle = color;
                 ctx.beginPath();
-                ctx.arc(dotX, dotY, colorR, 0, Math.PI * 2);
+                ctx.arc(circleX, circleY, circleR, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
-                dotX += 0.25 * cm;
-            });
+                circleX += 0.25 * u;
+            }
 
             ctx.restore();
         }
@@ -4295,8 +4295,11 @@
 
         function queuePdfPageRender(pageIndex) {
             if (!activePdfDocument) return;
-            if (pdfRenderQueue.includes(pageIndex)) return;
-            pdfRenderQueue.push(pageIndex);
+            if (!Number.isFinite(pageIndex)) return;
+            if (pageIndex < 0 || pageIndex >= state.pages.length) return;
+            if (!pdfRenderQueue.includes(pageIndex)) {
+                pdfRenderQueue.push(pageIndex);
+            }
             processPdfRenderQueue();
         }
 
@@ -4309,15 +4312,15 @@
             pdfRenderActive = true;
             const token = pdfRenderToken;
             while (pdfRenderQueue.length > 0) {
-                const pageIndex = pdfRenderQueue.shift();
                 if (token !== pdfRenderToken) break;
                 if (isViewportInteracting()) break;
+                const pageIndex = pdfRenderQueue.shift();
                 if (!activePageIndices.has(pageIndex)) continue;
                 await renderPdfPageToBackground(pageIndex, token);
                 await new Promise(requestAnimationFrame);
             }
             pdfRenderActive = false;
-            if (pdfRenderQueue.length > 0 && !isViewportInteracting()) {
+            if (pdfRenderQueue.length > 0) {
                 schedulePdfRenderResume();
             }
         }
@@ -8682,6 +8685,22 @@
             }
         }
 
+        function drawImageContained(ctx, img, targetWidth, targetHeight) {
+            if (!img) return;
+            const srcWidth = img.naturalWidth || img.width || targetWidth;
+            const srcHeight = img.naturalHeight || img.height || targetHeight;
+            if (!srcWidth || !srcHeight) {
+                ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                return;
+            }
+            const scale = Math.min(targetWidth / srcWidth, targetHeight / srcHeight);
+            const drawWidth = srcWidth * scale;
+            const drawHeight = srcHeight * scale;
+            const offsetX = (targetWidth - drawWidth) / 2;
+            const offsetY = (targetHeight - drawHeight) / 2;
+            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        }
+
         function drawPageBackgroundLayer(ctx, page, pageIndex) {
             const backgroundSource = page.backgroundSource
                 || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template'));
@@ -8697,7 +8716,12 @@
             if (page.backgroundImage) {
                 const bgImg = getCachedImage(page.backgroundImage, () => redrawPage(pageIndex));
                 if (bgImg && bgImg.complete) {
-                    ctx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                    if (backgroundSource === 'pdf') {
+                        // Imported PDF pages can be non-A4. Keep aspect ratio inside A4 canvas.
+                        drawImageContained(ctx, bgImg, A4_WIDTH, A4_HEIGHT);
+                    } else {
+                        ctx.drawImage(bgImg, 0, 0, A4_WIDTH, A4_HEIGHT);
+                    }
                 }
                 return;
             }
@@ -11550,7 +11574,11 @@
                 const img = new Image();
                 img.src = page.backgroundImage;
                 if (img.complete) {
-                    ctx.drawImage(img, 0, 0, A4_WIDTH, A4_HEIGHT);
+                    if (backgroundSource === 'pdf') {
+                        drawImageContained(ctx, img, A4_WIDTH, A4_HEIGHT);
+                    } else {
+                        ctx.drawImage(img, 0, 0, A4_WIDTH, A4_HEIGHT);
+                    }
                 }
             } else if (backgroundSource === 'template' || backgroundSource === undefined) {
                 // Draw template background natively for preview
@@ -11971,31 +11999,45 @@
             const page = state.pages[pageIndex];
             if (!isPageLoaded(page)) return;
             await flushStrokeOpsQueue();
-            page.strokeCount = getVisibleStrokeCount(page);
-            if (!page.preview) {
-                const hasImages = Array.isArray(page.images) && page.images.length > 0;
-                const hasStrokes = Array.isArray(page.strokes) && page.strokes.length > 0;
-                const hasBackground = page.backgroundSource === 'pdf'
-                    || !!page.backgroundImage
-                    || !!page.bakedBackground;
+            const currentPage = state.pages[pageIndex];
+            if (!currentPage || currentPage !== page) return;
+            if (activePageIndices.has(pageIndex) || !currentPage.pendingUnload) {
+                currentPage.pendingUnload = false;
+                return;
+            }
+            currentPage.strokeCount = getVisibleStrokeCount(currentPage);
+            if (!currentPage.preview) {
+                const hasImages = Array.isArray(currentPage.images) && currentPage.images.length > 0;
+                const hasStrokes = Array.isArray(currentPage.strokes) && currentPage.strokes.length > 0;
+                const hasBackground = currentPage.backgroundSource === 'pdf'
+                    || !!currentPage.backgroundImage
+                    || !!currentPage.bakedBackground;
                 if (hasImages || hasStrokes || hasBackground) {
-                    page.preview = renderPagePreview(pageIndex);
+                    currentPage.preview = renderPagePreview(pageIndex);
                 }
             }
-            if (page.backgroundSource === 'pdf' && page.backgroundImage && page.backgroundImage.startsWith('blob:')) {
-                const bg = page.backgroundImage;
+            if (currentPage.backgroundSource === 'pdf' && currentPage.backgroundImage && currentPage.backgroundImage.startsWith('blob:')) {
+                const bg = currentPage.backgroundImage;
                 imageCache.delete(bg);
                 imageCacheUsage.delete(bg);
                 URL.revokeObjectURL(bg);
-                page.backgroundImage = null;
+                currentPage.backgroundImage = null;
             }
-            const saved = await savePageToIndexedDb(pageIndex, page);
+            const saved = await savePageToIndexedDb(pageIndex, currentPage);
             if (!saved) {
-                page.pendingUnload = false;
-                page.needsRedraw = true;
+                currentPage.pendingUnload = false;
+                currentPage.needsRedraw = true;
                 markPageDirty(pageIndex, 'full');
                 applyPagePreview(pageIndex);
                 showStatus(`Storage issue on page ${pageIndex + 1}`, { error: true, preserveState: true });
+                return;
+            }
+            // Page may have become active again while saving.
+            const latestPage = state.pages[pageIndex];
+            if (!latestPage || latestPage !== currentPage) return;
+            if (activePageIndices.has(pageIndex) || !latestPage.pendingUnload) {
+                latestPage.pendingUnload = false;
+                latestPage.needsRedraw = true;
                 return;
             }
             const cleared = await clearStrokeOpsForPage(pageIndex);
@@ -12004,15 +12046,15 @@
             }
             pageDirtyMode.delete(pageIndex);
             pageDirty.delete(pageIndex);
-            page.strokes = null;
-            page.images = null;
-            if (page.bakedBackground) {
-                imageCache.delete(page.bakedBackground);
-                imageCacheUsage.delete(page.bakedBackground);
+            latestPage.strokes = null;
+            latestPage.images = null;
+            if (latestPage.bakedBackground) {
+                imageCache.delete(latestPage.bakedBackground);
+                imageCacheUsage.delete(latestPage.bakedBackground);
             }
-            page.bakedBackground = null;
-            page.unloaded = true;
-            page.pendingUnload = false;
+            latestPage.bakedBackground = null;
+            latestPage.unloaded = true;
+            latestPage.pendingUnload = false;
             applyPagePreview(pageIndex);
         }
 
