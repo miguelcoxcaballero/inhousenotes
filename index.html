@@ -309,6 +309,7 @@
             margin-left: -8px;
             flex-shrink: 0;
             cursor: pointer;
+            transition: transform 0.15s ease;
         }
 
         .presence-avatar-wrapper:first-child {
@@ -381,10 +382,16 @@
             z-index: 1;
         }
 
-        .presence-avatar-wrapper:hover {
-            z-index: 10;
-            transform: scale(1.1);
-            transition: transform 0.15s ease;
+        @media (hover: hover) and (pointer: fine) {
+            .presence-avatar-wrapper:hover {
+                z-index: 10;
+                transform: scale(1.1);
+            }
+        }
+
+        .presence-avatars.popup-open .presence-avatar-wrapper {
+            z-index: 1 !important;
+            transform: none !important;
         }
 
         .presence-popup {
@@ -2883,6 +2890,14 @@
                 --header-btn-size: 34px;
             }
 
+            #editor-view {
+                --tool-size: 30.8px;
+                --toolbar-padding: 7px;
+                --handle-width: 30.8px;
+                --handle-height: 16.8px;
+                --icon-size: 14px;
+            }
+
             #editor-view header,
             #drive-home .drive-topbar {
                 padding: 8px 12px;
@@ -2980,6 +2995,8 @@
                 background: transparent !important;
                 border: none;
                 box-shadow: none !important;
+                position: relative;
+                padding-left: 24px;
             }
 
             [data-theme="dark"] #editor-view .mode-toggle-btn {
@@ -3072,19 +3089,34 @@
             }
 
             #editor-view .mode-toggle-status {
-                top: auto;
-                bottom: calc(100% + 2px);
-                transform: translate(-50%, 4px);
+                top: 50%;
+                bottom: auto;
+                left: 22px;
+                transform: translateY(-50%);
+                opacity: 1;
+                gap: 0;
+                pointer-events: none;
+                z-index: 2;
             }
 
             #editor-view .mode-toggle-btn.is-editing+.mode-toggle-status {
-                transform: translate(-50%, 0);
+                transform: translateY(-50%);
+                opacity: 1;
             }
 
             #editor-view .mode-toggle-btn.is-editing {
                 transform: none;
                 min-height: var(--header-btn-size);
                 height: var(--header-btn-size);
+            }
+
+            #editor-view .mode-toggle-status .save-timestamp {
+                display: none !important;
+            }
+
+            #editor-view.read-only .mode-toggle-status .save-indicator {
+                opacity: 1;
+                pointer-events: none;
             }
 
             #readonly-banner {
@@ -3138,6 +3170,11 @@
 
             .tool-btn:hover {
                 background: transparent;
+            }
+
+            .tool-btn.active,
+            .tool-btn.active:hover {
+                background: var(--accent-yellow) !important;
             }
 
             .drive-profile-btn:hover,
@@ -3196,7 +3233,7 @@
                             <button class="btn btn-secondary" id="btn-drive-menu-refresh" type="button">Refresh</button>
                             <button class="btn btn-secondary" id="btn-drive-menu-logout" type="button">Sign out</button>
                         </div>
-                        <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.2</div>
+                        <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4</div>
                     </div>
                 </div>
             </div>
@@ -3352,7 +3389,7 @@
                                 <button class="btn btn-secondary" id="btn-drive-menu-logout-editor" type="button">Sign
                                     out</button>
                             </div>
-                            <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.2</div>
+                            <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4</div>
                         </div>
                     </div>
                 </div>
@@ -3867,8 +3904,10 @@
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 24;
-        const DRIVE_SYNC_IDLE_DELAY = 1000;
-        const DRIVE_SYNC_MAX_DELAY = 15000;
+        const DRIVE_SYNC_IDLE_DELAY = 700;
+        const DRIVE_SYNC_MAX_DELAY = 9000;
+        const DRIVE_POLL_TIMEOUT = 12000;
+        const DRIVE_META_TIMEOUT = 12000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -4442,6 +4481,8 @@
         let driveSaveQueuedForce = false;
         let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
+        let driveContentVersion = 0;
+        let driveUploadedContentVersion = 0;
         let activeDriveSaveController = null;
         let isPenWriting = false;
         let isGestureInteracting = false;
@@ -6862,6 +6903,7 @@
         function signOutDrive() {
             stopCollabPolling();
             state.driveHeadRevisionId = null;
+            resetDriveContentSyncVersion();
             if (driveAccessToken && window.google?.accounts?.oauth2?.revoke) {
                 google.accounts.oauth2.revoke(driveAccessToken, () => { });
             }
@@ -7972,6 +8014,7 @@
             clearDriveSyncTimers();
             driveDirty = false;
             deferredDriveSave = false;
+            resetDriveContentSyncVersion();
             state.driveFileId = null;
             state.driveAutosave = false;
             state.pages = [];
@@ -8105,7 +8148,7 @@
                 if (state.needsMigrationResave && canEdit) {
                     state.needsMigrationResave = false;
                     showStatus('Optimizando tamaño del PDF...', { preserveState: true });
-                    setTimeout(() => queueDriveSave(true), 4000);
+                    setTimeout(() => queueDriveSave(true, { forceUpload: true }), 4000);
                 }
                 state.driveFileId = file.id;
                 state.driveAutosave = canEdit;
@@ -8119,6 +8162,7 @@
 
                 // Set the sync baseline so merge can track changes
                 updateSyncBaseline();
+                resetDriveContentSyncVersion();
                 showStatus(canEdit ? 'PDF loaded' : 'PDF loaded (View Only)', { preserveState: true });
             } catch (err) {
                 showStatus('Failed to load PDF', { preserveState: true });
@@ -8243,6 +8287,7 @@
             legacyPagesCache = null;
             imageCache.clear();
             imageCacheUsage.clear();
+            resetDriveContentSyncVersion();
             state.pages = [{
                 strokes: [],
                 backgroundImage: null,
@@ -8265,7 +8310,7 @@
             state.driveFileId = null;
             state.driveFileName = fileName;
             state.driveFolderId = folderId || null;
-            state.driveAutosave = true;
+            state.driveAutosave = false;
             state.driveCanEdit = true;
             state.driveOwnedByMe = true;
             state.driveOwnerName = driveUserProfile?.name || '';
@@ -8281,14 +8326,22 @@
                 showLoading('Creating PDF...');
                 await ensureDriveToken(false);
                 const pdfBlob = await buildPdfBlob();
-                const createdId = await createDriveFileInFolder(folderId, fileName, pdfBlob);
-                state.driveFileId = createdId;
+                const createdFile = await createDriveFileInFolder(folderId, fileName, pdfBlob);
+                state.driveFileId = createdFile?.id || null;
+                if (createdFile?.headRevisionId) {
+                    state.driveHeadRevisionId = createdFile.headRevisionId;
+                }
+                if (createdFile?.modifiedTime) {
+                    state.driveLastKnownModified = new Date(createdFile.modifiedTime).getTime();
+                }
+                markDriveContentUploaded();
                 saveDriveSession();
                 updateDocTitle();
                 showStatus('PDF created', { preserveState: true });
             } catch (err) {
                 showStatus('Failed to create PDF', { preserveState: true });
             } finally {
+                state.driveAutosave = true;
                 hideLoading();
             }
         }
@@ -13118,6 +13171,7 @@
             if (!Number.isFinite(pageIndex) || !stroke) return;
             const cloned = options.alreadyCloned ? stroke : cloneStroke(stroke);
             if (!cloned) return;
+            bumpDriveContentVersion();
             const existing = pendingStrokeOps.get(pageIndex) || [];
             existing.push(cloned);
             pendingStrokeOps.set(pageIndex, existing);
@@ -13247,6 +13301,9 @@
         function markPageDirty(pageIndex, mode = 'full') {
             if (!Number.isFinite(pageIndex)) return;
             if (pageIndex < 0 || pageIndex >= state.pages.length) return;
+            if (mode !== 'stroke') {
+                bumpDriveContentVersion();
+            }
             const page = state.pages[pageIndex];
             if (page && Array.isArray(page.strokes) && mode !== 'stroke') {
                 page.strokeCount = getVisibleStrokeCount(page);
@@ -13266,6 +13323,9 @@
         }
 
         function markAllPagesDirty(mode = 'full') {
+            if (mode !== 'stroke') {
+                bumpDriveContentVersion();
+            }
             state.pages.forEach((page, index) => {
                 if (page && !page.unloaded) {
                     if (Array.isArray(page.strokes)) {
@@ -13401,6 +13461,20 @@
             return !!(state.driveAutosave && driveAccessToken && (driveDirty || driveSaveInProgress || driveSaveQueued));
         }
 
+        function bumpDriveContentVersion() {
+            driveContentVersion += 1;
+        }
+
+        function markDriveContentUploaded() {
+            driveUploadedContentVersion = driveContentVersion;
+        }
+
+        function resetDriveContentSyncVersion(version = 0) {
+            const safeVersion = Number.isFinite(version) ? Math.max(0, Math.floor(version)) : 0;
+            driveContentVersion = safeVersion;
+            driveUploadedContentVersion = safeVersion;
+        }
+
         function waitForSavesIdle(timeoutMs = 15000) {
             return new Promise((resolve) => {
                 const start = Date.now();
@@ -13435,6 +13509,9 @@
             }
             if (Number.isFinite(pageIndex)) {
                 markPageDirty(pageIndex, mode);
+            } else if (mode !== 'stroke') {
+                // Non-page operations (e.g. add/remove/reorder page) still mutate file content.
+                bumpDriveContentVersion();
             }
             if (hasSmoothInteraction()) {
                 // Defer full save until interaction ends
@@ -13566,6 +13643,7 @@
             state.driveFileName = data.name || fileName;
             if (data.headRevisionId) state.driveHeadRevisionId = data.headRevisionId;
             if (data.modifiedTime) state.driveLastKnownModified = new Date(data.modifiedTime).getTime();
+            markDriveContentUploaded();
             updateDocTitle();
             saveDriveSession();
             return { fileId: state.driveFileId, created: true };
@@ -13620,6 +13698,7 @@
             driveDirty = false;
             clearDriveSyncTimers();
             try {
+                const hasUnsyncedContent = driveContentVersion !== driveUploadedContentVersion;
                 const needsPdf = state.pages.some(page => page?.pdfPageIndex);
                 if (needsPdf && !activePdfDocument) {
                     await restorePdfBackgroundsIfNeeded();
@@ -13631,6 +13710,12 @@
                     scheduleDriveSync();
                     return;
                 }
+                if (state.driveFileId && !hasUnsyncedContent && !options.forceUpload) {
+                    const savedAt = state.driveLastKnownModified || Date.now();
+                    updateSaveTimestamp();
+                    startCollabPolling();
+                    showStatus('Saved', { savedAt });
+                } else {
                 // Phase 1: Build PDF (yellow dot)
                 showStatus('Building PDF...', { phase: 'building' });
                 const driveOptions = {
@@ -13657,7 +13742,7 @@
                         try {
                             const checkRes = await driveFetch(
                                 `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
-                                { signal: controller.signal }
+                                { signal: controller.signal, timeout: DRIVE_META_TIMEOUT }
                             );
                             const checkData = await checkRes.json();
                             let hasRemoteChanges = false;
@@ -13670,7 +13755,7 @@
                                 }
                             }
                             if (hasRemoteChanges) {
-                                await pullRemoteChanges();
+                                await pullRemoteChanges(checkData);
                             }
                         } catch (mergeErr) {
                             if (mergeErr?.name === 'AbortError' || controller.signal.aborted) throw mergeErr;
@@ -13697,6 +13782,7 @@
                     }
                     saveDriveSession();
                 }
+                markDriveContentUploaded();
                 // Use Drive's modifiedTime as the universal timestamp
                 const savedAt = state.driveLastKnownModified || Date.now();
                 updateSaveTimestamp();
@@ -13707,6 +13793,7 @@
                 updateSyncBaseline();
                 startCollabPolling();
                 showStatus('Saved', { savedAt });
+                }
             } catch (err) {
                 const aborted = controller.signal.aborted
                     || err?.name === 'AbortError'
@@ -13774,7 +13861,7 @@
             try {
                 const res = await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime,appProperties`,
-                    { method: 'GET' }
+                    { method: 'GET', timeout: DRIVE_POLL_TIMEOUT }
                 );
                 const data = await res.json();
                 state.driveLastPolledAt = Date.now();
@@ -13784,6 +13871,7 @@
 
                 // Detect changes BEFORE updating local state
                 let hasChanged = false;
+                let shouldRefreshSaveTimestamp = false;
                 if (data.headRevisionId) {
                     if (data.headRevisionId !== state.driveHeadRevisionId) {
                         hasChanged = true;
@@ -13795,18 +13883,21 @@
                     }
                 }
 
-                // Always update modifiedTime from Drive so the timestamp is universal
+                // Refresh timestamp only when Drive reports a newer modifiedTime.
                 if (data.modifiedTime) {
                     const remoteModified = new Date(data.modifiedTime).getTime();
                     if (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified) {
                         state.driveLastKnownModified = remoteModified;
+                        shouldRefreshSaveTimestamp = true;
                     }
+                }
+                if (shouldRefreshSaveTimestamp) {
                     updateSaveTimestamp();
                 }
 
                 if (hasChanged) {
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
-                    await pullRemoteChanges();
+                    await pullRemoteChanges(data);
                     // After a successful pull, poll again immediately to catch
                     // back-to-back updates without waiting for the next interval.
                     collabPollInProgress = false;
@@ -13880,18 +13971,31 @@
             return Math.abs(h).toString(36).slice(0, 8);
         }
 
-        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'h'];
+        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h'];
         const PRESENCE_CLIENT_ID_KEY = 'presence-client-id-v1';
+        let _presenceClientIdMemory = '';
 
         function getPresenceClientId() {
+            if (_presenceClientIdMemory) return _presenceClientIdMemory;
+            let existing = '';
             try {
-                const existing = localStorage.getItem(PRESENCE_CLIENT_ID_KEY);
-                if (existing) return existing;
+                existing = localStorage.getItem(PRESENCE_CLIENT_ID_KEY) || '';
             } catch (e) { }
+            if (!existing) {
+                try {
+                    existing = sessionStorage.getItem(PRESENCE_CLIENT_ID_KEY) || '';
+                } catch (e) { }
+            }
+            if (existing) {
+                _presenceClientIdMemory = existing;
+                try { localStorage.setItem(PRESENCE_CLIENT_ID_KEY, existing); } catch (e) { }
+                try { sessionStorage.setItem(PRESENCE_CLIENT_ID_KEY, existing); } catch (e) { }
+                return existing;
+            }
             const generated = `c${Math.random().toString(36).slice(2, 10)}`;
-            try {
-                localStorage.setItem(PRESENCE_CLIENT_ID_KEY, generated);
-            } catch (e) { }
+            _presenceClientIdMemory = generated;
+            try { localStorage.setItem(PRESENCE_CLIENT_ID_KEY, generated); } catch (e) { }
+            try { sessionStorage.setItem(PRESENCE_CLIENT_ID_KEY, generated); } catch (e) { }
             return generated;
         }
 
@@ -13919,7 +14023,7 @@
         }
 
         function parsePresenceChunkKey(key) {
-            const match = /^((?:p_[a-z0-9]+))_([nedtpvlh])$/i.exec(key || '');
+            const match = /^((?:p_[a-z0-9]+))_([nedtpvlch])$/i.exec(key || '');
             if (!match) return null;
             return { prefix: match[1], field: match[2].toLowerCase() };
         }
@@ -13949,6 +14053,7 @@
                 d: normalizePresenceDeviceType(chunk.d),
                 v: chunk.v || '',
                 l: chunk.l || '',
+                c: String(chunk.c || '').trim(),
                 t: ts,
                 h: Number.isFinite(hb) ? hb : 0
             };
@@ -13971,6 +14076,7 @@
             if (record?.p) score += 1;
             if (record?.v) score += 1;
             if (record?.l) score += 1;
+            if (record?.c) score += 1;
             if (Number.isFinite(Number(record?.t))) score += 1;
             if (Number.isFinite(Number(record?.h))) score += 1;
             return score;
@@ -13991,6 +14097,7 @@
                 d: normalizePresenceDeviceType(primary.d || secondary.d),
                 v: primary.v || secondary.v || '',
                 l: primary.l || secondary.l || '',
+                c: primary.c || secondary.c || '',
                 t: Math.max(Number(baseRecord.t) || 0, Number(incomingRecord.t) || 0),
                 h: Math.max(Number(baseRecord.h) || 0, Number(incomingRecord.h) || 0)
             };
@@ -14031,6 +14138,7 @@
                 [getPresenceFieldKey(keyPrefix, 'd')]: clampPresenceValue(detectDeviceType(), 12),
                 [getPresenceFieldKey(keyPrefix, 'v')]: clampPresenceValue(detectDeviceLabel(), 64),
                 [getPresenceFieldKey(keyPrefix, 'l')]: clampPresenceValue(detectPresenceLocationLabel(), 64),
+                [getPresenceFieldKey(keyPrefix, 'c')]: clampPresenceValue(getPresenceClientId(), 24),
                 [getPresenceFieldKey(keyPrefix, 'h')]: String(now),
                 [legacyKey]: null // cleanup old single-key format for this client
             };
@@ -14165,6 +14273,7 @@
             const now = Date.now();
             const myKey = driveUserProfile ? getPresenceKey() : null;
             const myLegacyKey = driveUserProfile ? getLegacyPresenceKey() : null;
+            const myClientId = getPresenceClientId();
             const active = [];
             const grouped = new Map();
 
@@ -14183,6 +14292,8 @@
                     const data = JSON.parse(v);
                     const ts = Number(data?.t);
                     if (!Number.isFinite(ts) || now - ts > PRESENCE_STALE_MS) continue;
+                    const clientId = String(data?.c || '').trim();
+                    if (myClientId && clientId && clientId === myClientId) continue;
                     active.push({
                         n: data.n || '',
                         e: data.e || '',
@@ -14190,6 +14301,7 @@
                         d: normalizePresenceDeviceType(data.d),
                         v: data.v || '',
                         l: data.l || '',
+                        c: String(data?.c || '').trim(),
                         t: ts,
                         h: Number(data?.h) || 0
                     });
@@ -14197,6 +14309,7 @@
             }
 
             grouped.forEach(chunk => {
+                if (myClientId && String(chunk?.c || '').trim() === myClientId) return;
                 const record = buildPresenceRecordFromChunk(chunk, now);
                 if (!record) return;
                 active.push(record);
@@ -14225,6 +14338,7 @@
             container.innerHTML = '';
             if (!users || users.length === 0) {
                 container.removeAttribute('aria-label');
+                container.classList.remove('popup-open');
                 return;
             }
             container.setAttribute('aria-label', `Actividad reciente: ${users.length} usuario${users.length === 1 ? '' : 's'}`);
@@ -14441,12 +14555,14 @@
         function closePresencePopup() {
             if (!presencePopupEl) return;
             presencePopupEl.classList.add('hidden');
+            if (presenceAvatarsEl) presenceAvatarsEl.classList.remove('popup-open');
         }
 
         function openPresencePopup() {
             if (!presencePopupEl) return;
             renderPresencePopup(latestPresenceUsers);
             presencePopupEl.classList.remove('hidden');
+            if (presenceAvatarsEl) presenceAvatarsEl.classList.add('popup-open');
             requestAnimationFrame(positionPresencePopup);
         }
 
@@ -14484,27 +14600,29 @@
             } catch (err) { /* best effort */ }
         }
 
-        async function pullRemoteChanges() {
+        async function pullRemoteChanges(remoteMetaHint = null) {
             if (!state.driveFileId || !driveAccessToken) return;
             if (collabPullInProgress) return;
             collabPullInProgress = true;
             try {
                 showStatus('Syncing...', { phase: 'syncing' });
 
-                // Fetch content and metadata in parallel to reduce latency
-                const [contentRes, metaRes] = await Promise.all([
+                const hintHasMeta = !!(remoteMetaHint && (remoteMetaHint.headRevisionId || remoteMetaHint.modifiedTime));
+                // Fetch content + metadata in parallel; metadata can come from poll/save hint.
+                const [contentRes, metaData] = await Promise.all([
                     driveFetch(
                         `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`,
                         { method: 'GET', timeout: 300000 }
                     ),
-                    driveFetch(
-                        `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
-                        { method: 'GET' }
-                    )
+                    hintHasMeta
+                        ? Promise.resolve(remoteMetaHint)
+                        : driveFetch(
+                            `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
+                            { method: 'GET', timeout: DRIVE_META_TIMEOUT }
+                        ).then(r => r.json())
                 ]);
 
                 // Update revision tracking immediately from metadata (no extra request later)
-                const metaData = await metaRes.json();
                 if (metaData.headRevisionId) {
                     state.driveHeadRevisionId = metaData.headRevisionId;
                 }
@@ -14559,6 +14677,9 @@
 
                 // Apply remote changes
                 const mergeResult = await applyRemotePages(remoteStrokeData);
+                if (mergeResult && mergeResult.changed) {
+                    bumpDriveContentVersion();
+                }
 
                 // If we merged local-only content, save back to Drive so others get it
                 if (mergeResult && mergeResult.hasLocalMerges && !state.isReadOnly) {
@@ -14566,6 +14687,7 @@
                     showStatus('Syncing merged changes...', { phase: 'syncing' });
                     requestImmediateDriveSave();
                 } else {
+                    markDriveContentUploaded();
                     showStatus('Changes from collaborator', { savedAt: state.driveLastKnownModified || Date.now() });
                 }
                 console.log('Remote changes applied successfully');
@@ -14581,7 +14703,8 @@
             if (!state.driveFileId || !driveAccessToken) return;
             try {
                 const revRes = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
+                    { timeout: DRIVE_META_TIMEOUT }
                 );
                 const revData = await revRes.json();
                 if (revData.headRevisionId) {
