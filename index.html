@@ -12538,15 +12538,24 @@
         function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
             if (mode === 'stroke' && !immediate) {
+                // During active pen/gesture, defer all I/O — it will flush when idle
+                if (!hasSmoothInteraction()) {
+                    flushStrokeOpsQueue();
+                    scheduleDriveSync();
+                }
                 showPendingSaveStatus();
-                clearTimeout(state.saveTimeout);
-                state.saveTimeout = null;
-                flushStrokeOpsQueue();
-                scheduleDriveSync();
                 return;
             }
             if (Number.isFinite(pageIndex)) {
                 markPageDirty(pageIndex, mode);
+            }
+            if (hasSmoothInteraction()) {
+                // Defer full save until interaction ends
+                saveQueued = true;
+                deferredDriveSave = true;
+                driveDirty = true;
+                showPendingSaveStatus();
+                return;
             }
             showPendingSaveStatus();
             clearTimeout(state.saveTimeout);
@@ -14135,9 +14144,7 @@
             };
             const yieldForResponsiveness = async (force = false) => {
                 throwIfAborted();
-                if (!force && !hasSmoothInteraction() && !hasPendingUserInput()) {
-                    return;
-                }
+                // Always yield to keep UI responsive — pen input must never be blocked
                 await yieldToMainThread();
                 throwIfAborted();
             };
@@ -14365,7 +14372,7 @@
                         drawSmoothStroke(tempCtx, stroke);
                         strokeCheckCounter += 1;
                         pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
-                        if (strokeCheckCounter % 10 === 0 || pointCheckCounter >= 1500) {
+                        if (strokeCheckCounter % 5 === 0 || pointCheckCounter >= 800) {
                             pointCheckCounter = 0;
                             await yieldForResponsiveness(false);
                             throwIfAborted();
