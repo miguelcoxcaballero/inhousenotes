@@ -251,7 +251,7 @@
             transition: opacity 0.25s ease, background-color 0.25s ease;
         }
 
-        .save-indicator.idle {
+        .save-indicator.paused {
             background: #aaa;
         }
 
@@ -9575,6 +9575,12 @@
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
                     try {
+                        // Force-end interaction state so paused saves can resume
+                        isPenWriting = false;
+                        isGestureInteracting = false;
+                        if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
+                        if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
+
                         const needsSave = !state.isReadOnly && (hasPendingLocalSave() || hasPendingDriveSave() || driveDirty);
                         if (needsSave) {
                             showLoading('Saving to Drive...');
@@ -12439,20 +12445,15 @@
             return !!(isPenWriting || isGestureInteracting || state.inertiaFrame);
         }
 
-        function pauseSavesDuringInteraction(fromPen = false) {
+        function pauseSavesDuringInteraction() {
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
             }
-            // Only abort Drive saves during PEN writing, not scroll/gestures.
-            // Pen needs ultra-low-latency (canvas rendering competes with PDF build),
-            // but scroll/zoom is handled by CSS transforms and doesn't compete.
-            // buildPdfBlob already yields via yieldForResponsiveness so scroll stays smooth.
-            if (fromPen && driveSaveInProgress && activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
-                activeDriveSaveController.abort();
-                deferredDriveSave = true;
-                driveDirty = true;
-            }
+            // Drive saves are NOT aborted during interaction.
+            // buildPdfBlob pauses itself via yieldForResponsiveness when
+            // hasSmoothInteraction() is true, so it doesn't compete with the UI.
+            // This avoids losing PDF build progress and having to restart from scratch.
         }
 
         function flushDeferredSavesAfterInteraction() {
@@ -12486,10 +12487,14 @@
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
             // Don't downgrade if already showing a more specific phase
-            if (indicator.classList.contains('building') || indicator.classList.contains('uploading')) return;
-            if (indicator.classList.contains('saving')) return;
+            if (indicator.classList.contains('uploading')) return;
             if (state.driveAutosave && !state.isReadOnly) {
-                showStatus('Changes pending...', { saving: true });
+                // If interacting, show grey (paused); otherwise show orange (saving)
+                if (hasSmoothInteraction()) {
+                    showStatus('Save paused...', { phase: 'paused' });
+                } else {
+                    showStatus('Changes pending...', { saving: true });
+                }
             } else {
                 showStatus('Saving...', { saving: true });
             }
@@ -12501,7 +12506,7 @@
             // Only update status indicator on the first pen event of a stroke,
             // not on every pointermove — avoids DOM thrashing during drawing.
             if (!wasWriting) showPendingSaveStatus();
-            pauseSavesDuringInteraction(true);
+            pauseSavesDuringInteraction();
             if (penWritingIdleTimer) {
                 clearTimeout(penWritingIdleTimer);
             }
@@ -13643,8 +13648,7 @@
             }
         }
 
-        const SAVE_STATES = ['idle', 'building', 'uploading', 'saving', 'saved', 'error'];
-        let _idleIndicatorTimeout = null;
+        const SAVE_STATES = ['paused', 'building', 'uploading', 'saving', 'saved', 'error'];
         function showStatus(text, options = {}) {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
@@ -13653,7 +13657,7 @@
             let error = false;
             let preserveState = false;
             let savedAt = null;
-            let phase = null; // 'idle' | 'building' | 'uploading' | 'saved' | 'error'
+            let phase = null; // 'paused' | 'building' | 'uploading' | 'saved' | 'error'
 
             if (typeof options === 'boolean') {
                 saving = options;
@@ -13663,12 +13667,6 @@
                 preserveState = !!options.preserveState;
                 savedAt = typeof options.savedAt === 'number' ? options.savedAt : null;
                 phase = options.phase || null;
-            }
-
-            // Clear any pending idle transition
-            if (_idleIndicatorTimeout) {
-                clearTimeout(_idleIndicatorTimeout);
-                _idleIndicatorTimeout = null;
             }
 
             if (!preserveState) {
@@ -13682,14 +13680,6 @@
                     indicator.classList.add('saving');
                 } else {
                     indicator.classList.add('saved');
-                    // After showing green (saved) for 4 seconds, transition to grey (idle)
-                    _idleIndicatorTimeout = setTimeout(() => {
-                        if (!driveDirty && !driveSaveInProgress && !driveSaveQueued && !deferredDriveSave) {
-                            for (const s of SAVE_STATES) indicator.classList.remove(s);
-                            indicator.classList.add('idle');
-                            indicator.title = 'All changes saved';
-                        }
-                    }, 4000);
                 }
             }
             indicator.title = text;
@@ -14301,7 +14291,22 @@
             };
             const yieldForResponsiveness = async (force = false) => {
                 throwIfAborted();
-                if (force || hasPendingUserInput()) {
+                if (hasSmoothInteraction()) {
+                    // User is writing or scrolling — pause PDF build entirely
+                    // and show grey (paused) indicator. Resume when interaction ends.
+                    showStatus('Save paused...', { phase: 'paused' });
+                    await new Promise(resolve => {
+                        const check = () => {
+                            if (abortSignal?.aborted) { resolve(); return; }
+                            if (!hasSmoothInteraction()) { resolve(); return; }
+                            setTimeout(check, 50);
+                        };
+                        setTimeout(check, 50);
+                    });
+                    throwIfAborted();
+                    // Restore building indicator after pause ends
+                    showStatus('Building PDF...', { phase: 'building' });
+                } else if (force || hasPendingUserInput()) {
                     // Quick yield (~1ms) to let pending input through
                     await new Promise(r => setTimeout(r, 0));
                     throwIfAborted();
