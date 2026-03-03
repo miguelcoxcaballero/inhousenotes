@@ -3904,11 +3904,12 @@
             SELECTION_ALLOWED_COLORS.map(color => [color.toLowerCase(), color])
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
-        const STROKE_OP_FLUSH_BATCH_SIZE = 24;
-        const DRIVE_SYNC_IDLE_DELAY = 450;
-        const DRIVE_SYNC_MAX_DELAY = 5000;
-        const DRIVE_POLL_TIMEOUT = 12000;
-        const DRIVE_META_TIMEOUT = 12000;
+        const STROKE_OP_FLUSH_BATCH_SIZE = 32;
+        const DRIVE_SYNC_IDLE_DELAY = 350;
+        const DRIVE_SYNC_MAX_DELAY = 4000;
+        const DRIVE_POLL_TIMEOUT = 9000;
+        const DRIVE_META_TIMEOUT = 9000;
+        const DRIVE_POST_SAVE_CHECK_TIMEOUT = 3500;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -13698,6 +13699,7 @@
             driveSaveInProgress = true;
             driveDirty = false;
             clearDriveSyncTimers();
+            let driveSaveSucceeded = false;
             try {
                 const hasUnsyncedContent = driveContentVersion !== driveUploadedContentVersion;
                 const needsPdf = state.pages.some(page => page?.pdfPageIndex);
@@ -13716,6 +13718,7 @@
                     updateSaveTimestamp();
                     startCollabPolling();
                     showStatus('Saved', { savedAt });
+                    driveSaveSucceeded = true;
                 } else {
                 // Phase 1: Build PDF (yellow dot)
                 showStatus('Building PDF...', { phase: 'building' });
@@ -13798,6 +13801,7 @@
                 updateSyncBaseline();
                 startCollabPolling();
                 showStatus('Saved', { savedAt });
+                driveSaveSucceeded = true;
                 }
             } catch (err) {
                 const aborted = controller.signal.aborted
@@ -13819,6 +13823,9 @@
             }
             activeDriveSaveController = null;
             driveSaveInProgress = false;
+            if (driveSaveSucceeded) {
+                await checkRemoteUpdateAfterSave();
+            }
             if (driveSaveQueued) {
                 const queuedForce = driveSaveQueuedForce;
                 const queuedKeepalive = driveSaveQueuedKeepalive;
@@ -13826,20 +13833,94 @@
                 driveSaveQueuedForce = false;
                 driveSaveQueuedKeepalive = false;
                 await queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
+                return;
+            }
+            if (driveSaveSucceeded) {
+                scheduleCollabFastCatchup();
             }
         }
 
         // ============================================================
         // Collaborative sync: polling, pulling, and merging
         // ============================================================
-        const COLLAB_POLL_INTERVAL = 1000; // 1 second for faster cross-device detection
+        const COLLAB_POLL_INTERVAL = 850; // 0.85s for faster cross-device detection
         let collabPollInProgress = false;
         let collabPullInProgress = false;
+        let collabFastCatchupTimers = [];
+
+        function clearCollabFastCatchup() {
+            if (!collabFastCatchupTimers || collabFastCatchupTimers.length === 0) return;
+            collabFastCatchupTimers.forEach(timer => clearTimeout(timer));
+            collabFastCatchupTimers = [];
+        }
+
+        function scheduleCollabFastCatchup() {
+            if (!state.driveFileId || !driveAccessToken) return;
+            if (document.visibilityState === 'hidden') return;
+            clearCollabFastCatchup();
+            const delays = [0, 120, 280, 600, 1100];
+            delays.forEach(delay => {
+                const timer = setTimeout(() => {
+                    if (!state.driveFileId || !driveAccessToken) return;
+                    if (document.visibilityState === 'hidden') return;
+                    if (driveSaveInProgress || collabPollInProgress || collabPullInProgress) return;
+                    pollDriveRevision();
+                }, delay);
+                collabFastCatchupTimers.push(timer);
+            });
+        }
+
+        async function checkRemoteUpdateAfterSave() {
+            if (!state.driveFileId || !driveAccessToken) return false;
+            if (document.visibilityState === 'hidden') return false;
+            if (collabPullInProgress) return false;
+            try {
+                const res = await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime,appProperties`,
+                    {
+                        method: 'GET',
+                        timeout: DRIVE_POST_SAVE_CHECK_TIMEOUT,
+                        headers: { 'Cache-Control': 'no-cache' }
+                    }
+                );
+                const data = await res.json();
+                updatePresenceFromProps(data.appProperties || {});
+
+                let hasChanged = false;
+                if (data.headRevisionId) {
+                    if (data.headRevisionId !== state.driveHeadRevisionId) {
+                        hasChanged = true;
+                    }
+                } else if (data.modifiedTime) {
+                    const remoteModified = new Date(data.modifiedTime).getTime();
+                    if (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified) {
+                        hasChanged = true;
+                    }
+                }
+
+                if (hasChanged) {
+                    await pullRemoteChanges(data);
+                    return true;
+                }
+
+                if (data.modifiedTime) {
+                    const remoteModified = new Date(data.modifiedTime).getTime();
+                    if (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified) {
+                        state.driveLastKnownModified = remoteModified;
+                        updateSaveTimestamp();
+                    }
+                }
+            } catch (err) {
+                console.warn('Post-save remote check failed:', err);
+            }
+            return false;
+        }
 
         function startCollabPolling() {
             if (state.collabPollInterval) return; // Already polling
             if (!state.driveFileId) return;
             state.collabEnabled = true;
+            clearCollabFastCatchup();
             state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
             startPresencePing();
             pollDriveRevision();
@@ -13853,6 +13934,7 @@
             }
             state.collabEnabled = false;
             collabPollInProgress = false;
+            clearCollabFastCatchup();
             stopPresencePing();
             console.log('Collab polling stopped');
         }
