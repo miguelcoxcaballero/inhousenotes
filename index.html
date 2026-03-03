@@ -3904,11 +3904,11 @@
             SELECTION_ALLOWED_COLORS.map(color => [color.toLowerCase(), color])
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
-        const STROKE_OP_FLUSH_BATCH_SIZE = 32;
-        const DRIVE_SYNC_IDLE_DELAY = 350;
-        const DRIVE_SYNC_MAX_DELAY = 4000;
-        const DRIVE_POLL_TIMEOUT = 9000;
-        const DRIVE_META_TIMEOUT = 9000;
+        const STROKE_OP_FLUSH_BATCH_SIZE = 40;
+        const DRIVE_SYNC_IDLE_DELAY = 250;
+        const DRIVE_SYNC_MAX_DELAY = 3000;
+        const DRIVE_POLL_TIMEOUT = 7000;
+        const DRIVE_META_TIMEOUT = 7000;
         const DRIVE_POST_SAVE_CHECK_TIMEOUT = 3500;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
@@ -4483,6 +4483,7 @@
         let driveSaveQueuedForce = false;
         let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
+        let driveSavePhase = 'idle';
         let driveContentVersion = 0;
         let driveUploadedContentVersion = 0;
         let activeDriveSaveController = null;
@@ -4506,6 +4507,8 @@
         }
         let gestureInteractionIdleTimer = null;
         let deferredDriveSave = false;
+        let deferredDriveSaveRetryTimer = null;
+        let driveTokenRetryInFlight = false;
         let activeLocalSaveController = null;
         let strokeOpsFlushScheduled = false;
         let strokeOpsFlushInProgress = false;
@@ -10792,6 +10795,7 @@
                         startCollabPolling();
                         // Immediately poll once to catch up on changes
                         pollDriveRevision();
+                        scheduleCollabFastCatchup();
                     }
                 }
             });
@@ -13321,6 +13325,7 @@
             } else {
                 driveDirty = true;
                 deferredDriveSave = true;
+                scheduleDeferredDriveSaveRetry();
             }
         }
 
@@ -13345,7 +13350,7 @@
         let saveQueued = false;
 
         function isDriveSyncPending() {
-            return !!(state.driveAutosave && !state.isReadOnly && (driveDirty || driveSaveInProgress || driveSaveQueued));
+            return !!(state.driveAutosave && !state.isReadOnly && (driveDirty || deferredDriveSave || driveSaveInProgress || driveSaveQueued));
         }
 
         function hasSmoothInteraction() {
@@ -13357,10 +13362,19 @@
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
             }
-            // Drive saves are NOT aborted during interaction.
-            // buildPdfBlob pauses itself via yieldForResponsiveness when
-            // hasSmoothInteraction() is true, so it doesn't compete with the UI.
-            // This avoids losing PDF build progress and having to restart from scratch.
+            // Abort heavy Drive processing while the user is actively writing to avoid UI jank.
+            // Upload phase is network-bound and cheap on main thread, so keep it running.
+            if (
+                driveSaveInProgress
+                && driveSavePhase !== 'uploading'
+                && activeDriveSaveController
+                && !activeDriveSaveController.signal.aborted
+            ) {
+                activeDriveSaveController.abort();
+                driveDirty = true;
+                deferredDriveSave = true;
+                scheduleDeferredDriveSaveRetry();
+            }
         }
 
         function flushDeferredSavesAfterInteraction() {
@@ -13368,12 +13382,10 @@
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
                 queueSave();
             }
-            if (driveDirty && !deferredDriveSave) {
-                scheduleDriveSync();
-            }
-            if (deferredDriveSave) {
+            if (driveDirty || deferredDriveSave || driveSaveQueued) {
                 deferredDriveSave = false;
                 scheduleDriveSync();
+                scheduleDeferredDriveSaveRetry(Math.max(DRIVE_SYNC_IDLE_DELAY + 120, 320));
             }
         }
 
@@ -13439,9 +13451,14 @@
         function requestImmediateDriveSave(options = {}) {
             if (state.isReadOnly || !state.driveAutosave) return;
             driveDirty = true;
-            if (!driveAccessToken) return;
+            if (!driveAccessToken) {
+                deferredDriveSave = true;
+                scheduleDeferredDriveSaveRetry(700);
+                return;
+            }
             if (hasSmoothInteraction() && !options.fromIdle && !options.force) {
                 deferredDriveSave = true;
+                scheduleDeferredDriveSaveRetry();
                 return;
             }
             clearDriveSyncTimers();
@@ -13460,7 +13477,7 @@
         }
 
         function hasPendingDriveSave() {
-            return !!(state.driveAutosave && driveAccessToken && (driveDirty || driveSaveInProgress || driveSaveQueued));
+            return !!(state.driveAutosave && (driveDirty || deferredDriveSave || driveSaveInProgress || driveSaveQueued));
         }
 
         function bumpDriveContentVersion() {
@@ -13502,6 +13519,7 @@
                     // Defer I/O but mark dirty so goHome knows there are unsaved changes
                     driveDirty = true;
                     deferredDriveSave = true;
+                    scheduleDeferredDriveSaveRetry();
                 } else {
                     flushStrokeOpsQueue();
                     scheduleDriveSync();
@@ -13520,6 +13538,7 @@
                 saveQueued = true;
                 deferredDriveSave = true;
                 driveDirty = true;
+                scheduleDeferredDriveSaveRetry();
                 showPendingSaveStatus();
                 return;
             }
@@ -13588,18 +13607,63 @@
             driveSyncMaxTimeout = null;
         }
 
+        function scheduleDeferredDriveSaveRetry(delay = 280) {
+            if (state.isReadOnly || !state.driveAutosave) return;
+            const retryDelay = Math.max(80, Number.isFinite(delay) ? delay : 280);
+            if (deferredDriveSaveRetryTimer) {
+                clearTimeout(deferredDriveSaveRetryTimer);
+            }
+            deferredDriveSaveRetryTimer = setTimeout(async () => {
+                deferredDriveSaveRetryTimer = null;
+                if (state.isReadOnly || !state.driveAutosave) return;
+                if (!(driveDirty || deferredDriveSave || driveSaveQueued)) return;
+                if (hasSmoothInteraction()) {
+                    deferredDriveSave = true;
+                    scheduleDeferredDriveSaveRetry(Math.max(INTERACTION_IDLE_MS + 120, 260));
+                    return;
+                }
+                if (!driveAccessToken) {
+                    deferredDriveSave = true;
+                    if (!driveTokenRetryInFlight) {
+                        driveTokenRetryInFlight = true;
+                        try {
+                            await ensureDriveToken(false);
+                        } catch (err) { } finally {
+                            driveTokenRetryInFlight = false;
+                        }
+                    }
+                    if (!driveAccessToken) {
+                        scheduleDeferredDriveSaveRetry(900);
+                        return;
+                    }
+                }
+                scheduleDriveSync();
+            }, retryDelay);
+        }
+
         function scheduleDriveSync() {
             if (state.isReadOnly || !state.driveAutosave) return;
             driveDirty = true;
             if (hasSmoothInteraction()) {
                 deferredDriveSave = true;
+                scheduleDeferredDriveSaveRetry();
                 return;
             }
-            if (!driveAccessToken) return;
+            if (!driveAccessToken) {
+                deferredDriveSave = true;
+                scheduleDeferredDriveSaveRetry(900);
+                return;
+            }
             // If a Drive save is already running, just mark dirty and let it queue the next one
             if (driveSaveInProgress) {
                 driveSaveQueued = true;
+                scheduleDeferredDriveSaveRetry(Math.max(DRIVE_SYNC_IDLE_DELAY + 120, 320));
                 return;
+            }
+            deferredDriveSave = false;
+            if (deferredDriveSaveRetryTimer) {
+                clearTimeout(deferredDriveSaveRetryTimer);
+                deferredDriveSaveRetryTimer = null;
             }
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = setTimeout(() => {
@@ -13686,19 +13750,24 @@
             if (!driveDirty && !force) return;
             if (hasSmoothInteraction() && !force) {
                 deferredDriveSave = true;
+                scheduleDeferredDriveSaveRetry();
                 return;
             }
             if (driveSaveInProgress) {
                 driveSaveQueued = true;
                 driveSaveQueuedForce = driveSaveQueuedForce || force;
                 driveSaveQueuedKeepalive = driveSaveQueuedKeepalive || !!options.keepalive;
+                scheduleDeferredDriveSaveRetry(Math.max(DRIVE_SYNC_IDLE_DELAY + 120, 320));
                 return;
             }
             const controller = new AbortController();
             activeDriveSaveController = controller;
             driveSaveInProgress = true;
+            driveSavePhase = 'preparing';
             driveDirty = false;
             clearDriveSyncTimers();
+            remoteChangePendingDuringSave = false;
+            remoteChangePendingMeta = null;
             let driveSaveSucceeded = false;
             try {
                 const hasUnsyncedContent = driveContentVersion !== driveUploadedContentVersion;
@@ -13709,6 +13778,7 @@
                 if (needsPdf && !activePdfDocument) {
                     showStatus('Waiting for PDF...', { preserveState: true });
                     driveSaveInProgress = false;
+                    driveSavePhase = 'idle';
                     activeDriveSaveController = null;
                     scheduleDriveSync();
                     return;
@@ -13721,6 +13791,7 @@
                     driveSaveSucceeded = true;
                 } else {
                 // Phase 1: Build PDF (yellow dot)
+                driveSavePhase = 'building';
                 showStatus('Building PDF...', { phase: 'building' });
                 const driveOptions = {
                     ...options,
@@ -13780,6 +13851,7 @@
                         throw new Error('Drive save aborted');
                     }
                     // Phase 2: Upload to Drive (orange dot)
+                    driveSavePhase = 'uploading';
                     showStatus('Uploading to Drive...', { phase: 'uploading' });
                     const updateRes = await updateDriveFile(fileId, pdfBlob, driveOptions);
                     if (updateRes.headRevisionId) {
@@ -13813,6 +13885,8 @@
                     showStatus('Saving to Drive...', { saving: true });
                     if (!hasSmoothInteraction()) {
                         scheduleDriveSync();
+                    } else {
+                        scheduleDeferredDriveSaveRetry();
                     }
                 } else {
                     console.error('queueDriveSave failed:', err);
@@ -13821,9 +13895,16 @@
                     scheduleDriveSync();
                 }
             }
+            driveSavePhase = 'idle';
             activeDriveSaveController = null;
             driveSaveInProgress = false;
             if (driveSaveSucceeded) {
+                if (remoteChangePendingDuringSave) {
+                    const pendingMeta = remoteChangePendingMeta;
+                    remoteChangePendingDuringSave = false;
+                    remoteChangePendingMeta = null;
+                    await pullRemoteChanges(pendingMeta || null);
+                }
                 await checkRemoteUpdateAfterSave();
             }
             if (driveSaveQueued) {
@@ -13835,6 +13916,15 @@
                 await queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
                 return;
             }
+            if (driveDirty || deferredDriveSave) {
+                if (hasSmoothInteraction()) {
+                    deferredDriveSave = true;
+                    scheduleDeferredDriveSaveRetry();
+                } else {
+                    scheduleDriveSync();
+                    scheduleDeferredDriveSaveRetry(Math.max(DRIVE_SYNC_IDLE_DELAY + 120, 320));
+                }
+            }
             if (driveSaveSucceeded) {
                 scheduleCollabFastCatchup();
             }
@@ -13843,10 +13933,12 @@
         // ============================================================
         // Collaborative sync: polling, pulling, and merging
         // ============================================================
-        const COLLAB_POLL_INTERVAL = 850; // 0.85s for faster cross-device detection
+        const COLLAB_POLL_INTERVAL = 600; // 0.6s for faster cross-device detection
         let collabPollInProgress = false;
         let collabPullInProgress = false;
         let collabFastCatchupTimers = [];
+        let remoteChangePendingDuringSave = false;
+        let remoteChangePendingMeta = null;
 
         function clearCollabFastCatchup() {
             if (!collabFastCatchupTimers || collabFastCatchupTimers.length === 0) return;
@@ -13858,7 +13950,7 @@
             if (!state.driveFileId || !driveAccessToken) return;
             if (document.visibilityState === 'hidden') return;
             clearCollabFastCatchup();
-            const delays = [0, 120, 280, 600, 1100];
+            const delays = [0, 80, 180, 350, 700];
             delays.forEach(delay => {
                 const timer = setTimeout(() => {
                     if (!state.driveFileId || !driveAccessToken) return;
@@ -13935,6 +14027,8 @@
             state.collabEnabled = false;
             collabPollInProgress = false;
             clearCollabFastCatchup();
+            remoteChangePendingDuringSave = false;
+            remoteChangePendingMeta = null;
             stopPresencePing();
             console.log('Collab polling stopped');
         }
@@ -13942,7 +14036,6 @@
         async function pollDriveRevision() {
             if (!state.driveFileId || !driveAccessToken) return;
             if (collabPollInProgress || collabPullInProgress) return;
-            if (driveSaveInProgress) return; // Avoid polling only during active upload/build
             if (document.visibilityState === 'hidden') return; // Skip when tab hidden
             collabPollInProgress = true;
             try {
@@ -13988,6 +14081,12 @@
 
                 if (hasChanged) {
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
+                    if (driveSaveInProgress) {
+                        // Save is in flight; defer pull until upload finishes.
+                        remoteChangePendingDuringSave = true;
+                        remoteChangePendingMeta = data;
+                        return;
+                    }
                     await pullRemoteChanges(data);
                     // After a successful pull, poll again immediately to catch
                     // back-to-back updates without waiting for the next interval.
@@ -16193,6 +16292,14 @@
                     throwIfAborted();
                 }
             };
+            const isMobileLike = detectDeviceType() !== 'pc';
+            const maxMainThreadSliceMs = isMobileLike ? 5 : 9;
+            let lastSliceYieldAt = performance.now();
+            const maybeYieldForSlice = async (force = false) => {
+                if (!force && (performance.now() - lastSliceYieldAt) < maxMainThreadSliceMs) return;
+                await yieldForResponsiveness(force);
+                lastSliceYieldAt = performance.now();
+            };
 
             throwIfAborted();
             const pxToMm = (px, fallbackPx) => {
@@ -16261,11 +16368,12 @@
 
             for (let i = 0; i < pageCount; i++) {
                 throwIfAborted();
-                await yieldForResponsiveness(true);
+                await maybeYieldForSlice(true);
 
                 // Load page data (from memory or IndexedDB)
                 const pageData = await loadPageDataForExport(i);
                 throwIfAborted();
+                await maybeYieldForSlice(false);
                 const backgroundSource = pageData.backgroundSource
                     || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
                 const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
@@ -16292,14 +16400,35 @@
                     });
                 }
                 // Round stroke points to 1 decimal to reduce metadata size
-                const compactStrokes = exportStrokes.map(s => ({
-                    ...s,
-                    points: s.points ? s.points.map(p => ({
-                        x: Math.round(p.x * 10) / 10,
-                        y: Math.round(p.y * 10) / 10,
-                        p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
-                    })) : s.points
-                }));
+                const compactStrokes = [];
+                let compactStrokeCounter = 0;
+                let compactPointCounter = 0;
+                for (const stroke of exportStrokes) {
+                    const compactStroke = {
+                        ...stroke,
+                        points: stroke.points
+                    };
+                    if (Array.isArray(stroke.points) && stroke.points.length > 0) {
+                        const compactPoints = new Array(stroke.points.length);
+                        for (let pointIndex = 0; pointIndex < stroke.points.length; pointIndex++) {
+                            const p = stroke.points[pointIndex];
+                            compactPoints[pointIndex] = {
+                                x: Math.round(p.x * 10) / 10,
+                                y: Math.round(p.y * 10) / 10,
+                                p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
+                            };
+                        }
+                        compactStroke.points = compactPoints;
+                        compactPointCounter += stroke.points.length;
+                    }
+                    compactStrokes.push(compactStroke);
+                    compactStrokeCounter += 1;
+                    if (compactStrokeCounter % 6 === 0 || compactPointCounter >= 900) {
+                        compactPointCounter = 0;
+                        await maybeYieldForSlice(false);
+                        throwIfAborted();
+                    }
+                }
                 const pageStrokeEntry = {
                     strokes: compactStrokes,
                     images: Array.isArray(pageData.images) ? pageData.images : [],
@@ -16395,11 +16524,13 @@
                     tempCtx.lineJoin = 'round';
                     await drawImagesOnCanvas(tempCtx, pageStrokeEntry, {
                         abortSignal,
-                        yieldFn: () => yieldForResponsiveness(false)
+                        yieldFn: () => maybeYieldForSlice(false)
                     });
                     let strokeCheckCounter = 0;
                     let pointCheckCounter = 0;
                     for (const stroke of pageStrokeEntry.strokes) {
+                        await maybeYieldForSlice(false);
+                        throwIfAborted();
                         const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
                         if (!stroke.points || stroke.points.length < minPoints) continue;
                         if (stroke.tool === 'eraser-stroke') continue;
@@ -16407,17 +16538,17 @@
                         drawSmoothStroke(tempCtx, stroke);
                         strokeCheckCounter += 1;
                         pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
-                        // Yield every 3 strokes or 500 points during interaction for smoother UI
-                        const yieldInterval = hasSmoothInteraction() ? 1 : 10;
-                        const pointLimit = hasSmoothInteraction() ? 200 : 1500;
+                        // Keep short main-thread slices on mobile to avoid pen/typing stutter.
+                        const yieldInterval = hasSmoothInteraction() ? 1 : (isMobileLike ? 3 : 5);
+                        const pointLimit = hasSmoothInteraction() ? 120 : (isMobileLike ? 450 : 900);
                         if (strokeCheckCounter % yieldInterval === 0 || pointCheckCounter >= pointLimit) {
                             pointCheckCounter = 0;
-                            await yieldForResponsiveness(false);
+                            await maybeYieldForSlice(false);
                             throwIfAborted();
                         }
                     }
 
-                    await yieldForResponsiveness(true);
+                    await maybeYieldForSlice(true);
                     throwIfAborted();
                     const jpegQuality = options.highQuality
                         ? (pageCount >= 20 ? 0.75 : 0.85)
@@ -16448,7 +16579,7 @@
 
             // Compress metadata on main thread (uses streaming CompressionStream — non-blocking)
             const metadataString = `[${metadataParts.join(',')}]`;
-            await yieldForResponsiveness(true);
+            await maybeYieldForSlice(true);
             let encodedMetadata, metaPrefix;
             try {
                 encodedMetadata = await compressToBase64(metadataString);
