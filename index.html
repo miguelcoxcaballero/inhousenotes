@@ -346,6 +346,15 @@
             stroke-width: 2;
         }
 
+        .presence-device-badge.live {
+            background: var(--accent-green);
+            border-color: rgba(0, 0, 0, 0.12);
+        }
+
+        .presence-device-badge.live svg {
+            stroke: #ffffff;
+        }
+
         .presence-overflow {
             width: 28px;
             height: 28px;
@@ -13796,8 +13805,12 @@
 
         // ── Presence / Active Users ──────────────────────────────
         let _presencePingInterval = null;
+        let _presenceHeartbeatInterval = null;
+        let _presenceHeartbeatInFlight = false;
         const PRESENCE_PING_INTERVAL = 120000; // 2 minutes
         const PRESENCE_STALE_MS = 600000; // 10 minutes
+        const PRESENCE_HEARTBEAT_INTERVAL = COLLAB_POLL_INTERVAL; // 2 seconds
+        const PRESENCE_HEARTBEAT_MISS_LIMIT = 3;
 
         function detectDeviceType() {
             const ua = navigator.userAgent || '';
@@ -13843,7 +13856,7 @@
             return Math.abs(h).toString(36).slice(0, 8);
         }
 
-        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l'];
+        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'h'];
         const PRESENCE_CLIENT_ID_KEY = 'presence-client-id-v1';
 
         function getPresenceClientId() {
@@ -13882,14 +13895,25 @@
         }
 
         function parsePresenceChunkKey(key) {
-            const match = /^((?:p_[a-z0-9]+))_([nedtpvl])$/i.exec(key || '');
+            const match = /^((?:p_[a-z0-9]+))_([nedtpvlh])$/i.exec(key || '');
             if (!match) return null;
             return { prefix: match[1], field: match[2].toLowerCase() };
         }
 
+        function getPresenceFreshnessTs(chunk) {
+            const ts = Number(chunk?.t);
+            const hb = Number(chunk?.h);
+            if (Number.isFinite(ts) && Number.isFinite(hb)) return Math.max(ts, hb);
+            if (Number.isFinite(ts)) return ts;
+            if (Number.isFinite(hb)) return hb;
+            return NaN;
+        }
+
         function buildPresenceRecordFromChunk(chunk, now) {
+            const freshnessTs = getPresenceFreshnessTs(chunk);
+            if (!Number.isFinite(freshnessTs) || now - freshnessTs > PRESENCE_STALE_MS) return null;
             const ts = Number(chunk.t);
-            if (!Number.isFinite(ts) || now - ts > PRESENCE_STALE_MS) return null;
+            const hb = Number(chunk.h);
             return {
                 n: chunk.n || '',
                 e: chunk.e || '',
@@ -13897,7 +13921,8 @@
                 d: chunk.d || 'pc',
                 v: chunk.v || '',
                 l: chunk.l || '',
-                t: ts
+                t: Number.isFinite(ts) ? ts : freshnessTs,
+                h: Number.isFinite(hb) ? hb : 0
             };
         }
 
@@ -13914,6 +13939,7 @@
                 [getPresenceFieldKey(keyPrefix, 'd')]: clampPresenceValue(detectDeviceType(), 12),
                 [getPresenceFieldKey(keyPrefix, 'v')]: clampPresenceValue(detectDeviceLabel(), 64),
                 [getPresenceFieldKey(keyPrefix, 'l')]: clampPresenceValue(detectPresenceLocationLabel(), 64),
+                [getPresenceFieldKey(keyPrefix, 'h')]: String(now),
                 [legacyKey]: null // cleanup old single-key format for this client
             };
             try {
@@ -13950,8 +13976,8 @@
                 // Remove stale/corrupt chunked records from other clients.
                 grouped.forEach((chunk, prefix) => {
                     if (prefix === keyPrefix) return;
-                    const ts = Number(chunk.t);
-                    if (Number.isFinite(ts) && now - ts <= PRESENCE_STALE_MS) return;
+                    const freshnessTs = getPresenceFreshnessTs(chunk);
+                    if (Number.isFinite(freshnessTs) && now - freshnessTs <= PRESENCE_STALE_MS) return;
                     PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
                         patch[getPresenceFieldKey(prefix, suffix)] = null;
                     });
@@ -13970,12 +13996,38 @@
             }
         }
 
+        async function pulsePresenceHeartbeat() {
+            if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
+            if (_presenceHeartbeatInFlight) return;
+            _presenceHeartbeatInFlight = true;
+            try {
+                const keyPrefix = getPresenceKey();
+                const now = Date.now();
+                const patch = {
+                    [getPresenceFieldKey(keyPrefix, 'h')]: String(now)
+                };
+                await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
+                    {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ appProperties: patch })
+                    }
+                );
+            } catch (err) {
+                // Best-effort heartbeat; ignore transient errors.
+            } finally {
+                _presenceHeartbeatInFlight = false;
+            }
+        }
+
         function startPresencePing() {
-            if (_presencePingInterval) return;
+            if (_presencePingInterval || _presenceHeartbeatInterval) return;
             // Delay first ping to allow driveUserProfile to load
             const tryFirstPing = () => {
                 if (driveUserProfile) {
                     pingPresence();
+                    pulsePresenceHeartbeat();
                 } else {
                     // Profile not yet loaded, retry in 3s
                     setTimeout(tryFirstPing, 3000);
@@ -13983,6 +14035,7 @@
             };
             setTimeout(tryFirstPing, 1000);
             _presencePingInterval = setInterval(pingPresence, PRESENCE_PING_INTERVAL);
+            _presenceHeartbeatInterval = setInterval(pulsePresenceHeartbeat, PRESENCE_HEARTBEAT_INTERVAL);
         }
 
         function stopPresencePing() {
@@ -13990,6 +14043,18 @@
                 clearInterval(_presencePingInterval);
                 _presencePingInterval = null;
             }
+            if (_presenceHeartbeatInterval) {
+                clearInterval(_presenceHeartbeatInterval);
+                _presenceHeartbeatInterval = null;
+            }
+            _presenceHeartbeatInFlight = false;
+        }
+
+        function isPresenceCurrentlyOnline(record, now = Date.now()) {
+            const hb = Number(record?.h);
+            if (!Number.isFinite(hb) || hb <= 0) return false;
+            const maxOnlineAge = (PRESENCE_HEARTBEAT_INTERVAL * PRESENCE_HEARTBEAT_MISS_LIMIT) + 350;
+            return (now - hb) <= maxOnlineAge;
         }
 
         function updatePresenceFromProps(appProperties) {
@@ -14022,7 +14087,8 @@
                         d: data.d || 'pc',
                         v: data.v || '',
                         l: data.l || '',
-                        t: ts
+                        t: ts,
+                        h: Number(data?.h) || 0
                     });
                 } catch (e) { /* skip corrupt */ }
             }
@@ -14034,6 +14100,9 @@
             });
 
             active.sort((a, b) => b.t - a.t);
+            active.forEach(user => {
+                user.isOnline = isPresenceCurrentlyOnline(user, now);
+            });
             latestPresenceUsers = active;
             renderPresenceAvatars(active);
             if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
@@ -14071,7 +14140,7 @@
 
                 // Device badge
                 const badge = document.createElement('div');
-                badge.className = 'presence-device-badge';
+                badge.className = `presence-device-badge${u.isOnline ? ' live' : ''}`;
                 badge.innerHTML = getDeviceBadgeSvg(u.d || 'pc');
                 wrapper.appendChild(badge);
 
