@@ -251,6 +251,18 @@
             transition: opacity 0.25s ease, background-color 0.25s ease;
         }
 
+        .save-indicator.idle {
+            background: #aaa;
+        }
+
+        .save-indicator.building {
+            background: #e6c619;
+        }
+
+        .save-indicator.uploading {
+            background: var(--accent-orange);
+        }
+
         .save-indicator.saving {
             background: var(--accent-orange);
         }
@@ -10371,7 +10383,9 @@
         // Wheel handler for PC - scroll and zoom
         function handleWheel(e) {
             e.preventDefault();
-            noteInteractionActivity();
+            // Don't call noteInteractionActivity() for wheel — wheel scroll uses
+            // CSS transforms only and doesn't compete with PDF build/saves.
+            // Calling it here would defer saves indefinitely during continuous scroll.
 
             if (e.ctrlKey || e.metaKey) {
                 // Zoom with Ctrl+wheel or pinch on trackpad
@@ -12390,7 +12404,14 @@
             pageDirtyMode.set(pageIndex, (prevMode === 'full' || mode === 'full') ? 'full' : 'stroke');
             pageDirty.add(pageIndex);
             pdfExportCache.delete(pageIndex);
-            scheduleDriveSync();
+            // During interaction, just mark dirty — flushDeferredSavesAfterInteraction
+            // will trigger scheduleDriveSync once the user lifts their finger/pen.
+            if (!hasSmoothInteraction()) {
+                scheduleDriveSync();
+            } else {
+                driveDirty = true;
+                deferredDriveSave = true;
+            }
         }
 
         function markAllPagesDirty(mode = 'full') {
@@ -12418,14 +12439,16 @@
             return !!(isPenWriting || isGestureInteracting || state.inertiaFrame);
         }
 
-        function pauseSavesDuringInteraction() {
+        function pauseSavesDuringInteraction(fromPen = false) {
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
             }
-            // Abort Drive saves during interaction to avoid UI jank from canvas rendering.
-            // The pdfExportCache keeps already-rendered pages, so restarts are fast.
-            if (driveSaveInProgress && activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
+            // Only abort Drive saves during PEN writing, not scroll/gestures.
+            // Pen needs ultra-low-latency (canvas rendering competes with PDF build),
+            // but scroll/zoom is handled by CSS transforms and doesn't compete.
+            // buildPdfBlob already yields via yieldForResponsiveness so scroll stays smooth.
+            if (fromPen && driveSaveInProgress && activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
                 activeDriveSaveController.abort();
                 deferredDriveSave = true;
                 driveDirty = true;
@@ -12461,18 +12484,24 @@
 
         function showPendingSaveStatus() {
             const indicator = document.getElementById('save-indicator');
-            if (indicator && indicator.classList.contains('saving')) return;
+            if (!indicator) return;
+            // Don't downgrade if already showing a more specific phase
+            if (indicator.classList.contains('building') || indicator.classList.contains('uploading')) return;
+            if (indicator.classList.contains('saving')) return;
             if (state.driveAutosave && !state.isReadOnly) {
-                showStatus('Saving to Drive...', { saving: true });
+                showStatus('Changes pending...', { saving: true });
             } else {
                 showStatus('Saving...', { saving: true });
             }
         }
 
         function notePenActivity() {
+            const wasWriting = isPenWriting;
             isPenWriting = true;
-            showPendingSaveStatus();
-            pauseSavesDuringInteraction();
+            // Only update status indicator on the first pen event of a stroke,
+            // not on every pointermove — avoids DOM thrashing during drawing.
+            if (!wasWriting) showPendingSaveStatus();
+            pauseSavesDuringInteraction(true);
             if (penWritingIdleTimer) {
                 clearTimeout(penWritingIdleTimer);
             }
@@ -12587,10 +12616,9 @@
                 saveQueued = true;
                 showStatus('Saving...', { saving: true });
             } else if (result.ok) {
-                if (state.driveAutosave && !state.isReadOnly) {
-                    showStatus('Saving to Drive...', { saving: true, savedAt: result.savedAt });
-                } else if (isDriveSyncPending()) {
-                    showStatus('Saving to Drive...', { saving: true, savedAt: result.savedAt });
+                if (isDriveSyncPending()) {
+                    // Local save done, Drive sync still pending — keep saving indicator
+                    showStatus('Saved locally, syncing to Drive...', { saving: true, savedAt: result.savedAt });
                 } else {
                     showStatus('Saved', { savedAt: result.savedAt });
                 }
@@ -12753,7 +12781,8 @@
                     scheduleDriveSync();
                     return;
                 }
-                showStatus('Saving to Drive...', { saving: true });
+                // Phase 1: Build PDF (yellow dot)
+                showStatus('Building PDF...', { phase: 'building' });
                 const driveOptions = {
                     ...options,
                     signal: controller.signal
@@ -12772,9 +12801,9 @@
                     throw new Error('Drive save aborted');
                 }
                 if (!wasCreated) {
-                    // Pull-before-push: merge remote changes before uploading
-                    // so we don't overwrite a collaborator's strokes
-                    if (state.driveHeadRevisionId || state.driveLastKnownModified) {
+                    // Skip pull-before-push on normal saves — collab polling handles merges.
+                    // Only merge on forced saves (e.g. goHome) to avoid extra HTTP round-trip.
+                    if (force && (state.driveHeadRevisionId || state.driveLastKnownModified)) {
                         try {
                             const checkRes = await driveFetch(
                                 `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
@@ -12791,7 +12820,6 @@
                                 }
                             }
                             if (hasRemoteChanges) {
-                                console.log('Remote changes detected before save — merging first');
                                 await pullRemoteChanges();
                             }
                         } catch (mergeErr) {
@@ -12808,6 +12836,8 @@
                     if (controller.signal.aborted) {
                         throw new Error('Drive save aborted');
                     }
+                    // Phase 2: Upload to Drive (orange dot)
+                    showStatus('Uploading to Drive...', { phase: 'uploading' });
                     const updateRes = await updateDriveFile(fileId, pdfBlob, driveOptions);
                     if (updateRes.headRevisionId) {
                         state.driveHeadRevisionId = updateRes.headRevisionId;
@@ -13613,15 +13643,17 @@
             }
         }
 
+        const SAVE_STATES = ['idle', 'building', 'uploading', 'saving', 'saved', 'error'];
+        let _idleIndicatorTimeout = null;
         function showStatus(text, options = {}) {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
-            const timestampEl = document.getElementById('save-timestamp');
 
             let saving = false;
             let error = false;
             let preserveState = false;
             let savedAt = null;
+            let phase = null; // 'idle' | 'building' | 'uploading' | 'saved' | 'error'
 
             if (typeof options === 'boolean') {
                 saving = options;
@@ -13630,17 +13662,38 @@
                 error = !!options.error;
                 preserveState = !!options.preserveState;
                 savedAt = typeof options.savedAt === 'number' ? options.savedAt : null;
+                phase = options.phase || null;
+            }
+
+            // Clear any pending idle transition
+            if (_idleIndicatorTimeout) {
+                clearTimeout(_idleIndicatorTimeout);
+                _idleIndicatorTimeout = null;
             }
 
             if (!preserveState) {
-                indicator.classList.toggle('saving', saving);
-                indicator.classList.toggle('error', error);
-                indicator.classList.toggle('saved', !saving && !error);
+                // Remove all state classes
+                for (const s of SAVE_STATES) indicator.classList.remove(s);
+                if (phase) {
+                    indicator.classList.add(phase);
+                } else if (error) {
+                    indicator.classList.add('error');
+                } else if (saving) {
+                    indicator.classList.add('saving');
+                } else {
+                    indicator.classList.add('saved');
+                    // After showing green (saved) for 4 seconds, transition to grey (idle)
+                    _idleIndicatorTimeout = setTimeout(() => {
+                        if (!driveDirty && !driveSaveInProgress && !driveSaveQueued && !deferredDriveSave) {
+                            for (const s of SAVE_STATES) indicator.classList.remove(s);
+                            indicator.classList.add('idle');
+                            indicator.title = 'All changes saved';
+                        }
+                    }, 4000);
+                }
             }
             indicator.title = text;
             indicator.setAttribute('aria-label', text);
-            if (timestampEl) {
-            }
 
             if (savedAt) {
                 state.lastSavedAt = savedAt;
@@ -14131,8 +14184,18 @@
         const pdfExportCache = new Map(); // pageIndex -> { hash, jpegData (Uint8Array), metaJson }
 
         // Pre-warm the PDF export cache in background so the first save is fast
+        let _prewarmRunning = false;
         async function prewarmPdfCache() {
             if (!state.driveAutosave) return;
+            if (_prewarmRunning) return;
+            _prewarmRunning = true;
+            try {
+                await _prewarmPdfCacheInner();
+            } finally {
+                _prewarmRunning = false;
+            }
+        }
+        async function _prewarmPdfCacheInner() {
             const exportScale = 1.5;
             const pageCount = state.pages.length;
             if (pageCount === 0) return;
@@ -14148,7 +14211,16 @@
             for (let i = 0; i < pageCount; i++) {
                 // Yield between pages to not block UI
                 await new Promise(r => setTimeout(r, 0));
-                if (hasSmoothInteraction()) return; // stop if user starts interacting
+                // Pause during interaction but don't abort — wait and resume
+                if (hasSmoothInteraction()) {
+                    await new Promise(resolve => {
+                        const check = () => {
+                            if (!hasSmoothInteraction()) { resolve(); return; }
+                            setTimeout(check, 200);
+                        };
+                        setTimeout(check, 200);
+                    });
+                }
 
                 const pageData = state.pages[i];
                 if (!pageData) continue;
@@ -14185,7 +14257,16 @@
                 }
 
                 await new Promise(r => setTimeout(r, 0));
-                if (hasSmoothInteraction()) return;
+                // Pause during interaction, don't abort
+                if (hasSmoothInteraction()) {
+                    await new Promise(resolve => {
+                        const check = () => {
+                            if (!hasSmoothInteraction()) { resolve(); return; }
+                            setTimeout(check, 200);
+                        };
+                        setTimeout(check, 200);
+                    });
+                }
 
                 const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
                 if (!pageBlob) continue;
