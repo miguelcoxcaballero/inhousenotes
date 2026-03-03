@@ -329,20 +329,22 @@
         .presence-device-badge {
             position: absolute;
             bottom: -2px;
-            right: -2px;
-            width: 14px;
-            height: 14px;
+            right: 0;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
             background: var(--bg-primary);
             border: 1.5px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: center;
+            z-index: 3;
+            pointer-events: none;
         }
 
         .presence-device-badge svg {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             stroke: var(--text-secondary);
             fill: none;
             stroke-width: 2;
@@ -2959,13 +2961,14 @@
             }
 
             #editor-view .presence-device-badge {
-                width: 12px;
-                height: 12px;
+                width: 10px;
+                height: 10px;
+                right: 0;
             }
 
             #editor-view .presence-device-badge svg {
-                width: 7px;
-                height: 7px;
+                width: 6px;
+                height: 6px;
             }
 
             #editor-view .presence-overflow {
@@ -13920,6 +13923,8 @@
         const PRESENCE_STALE_MS = 600000; // 10 minutes
         const PRESENCE_HEARTBEAT_INTERVAL = COLLAB_POLL_INTERVAL; // 2 seconds
         const PRESENCE_HEARTBEAT_MISS_LIMIT = 6;
+        const PRESENCE_ONLINE_STICKY_MISS_LIMIT = 3; // extra polls before turning gray
+        let _presenceOnlineStability = new Map();
 
         function detectDeviceType() {
             const ua = navigator.userAgent || '';
@@ -14067,6 +14072,15 @@
             const location = String(record?.l || '').trim().toLowerCase();
             const who = email ? `e:${email}` : `n:${name}`;
             return `${who}|d:${deviceType}|v:${deviceName}|l:${location}`;
+        }
+
+        function getPresenceStabilityKey(record) {
+            const email = String(record?.e || '').trim().toLowerCase();
+            const name = String(record?.n || '').trim().toLowerCase();
+            const deviceType = normalizePresenceDeviceType(record?.d);
+            const deviceName = String(record?.v || '').trim().toLowerCase();
+            const who = email ? `e:${email}` : `n:${name}`;
+            return `${who}|d:${deviceType}|v:${deviceName}`;
         }
 
         function getPresenceRecordScore(record) {
@@ -14259,12 +14273,13 @@
             }
             _presenceHeartbeatInFlight = false;
             _presenceCanHeartbeat = false;
+            _presenceOnlineStability.clear();
         }
 
         function isPresenceCurrentlyOnline(record, now = Date.now()) {
             const hb = Number(record?.h);
             if (!Number.isFinite(hb) || hb <= 0) return false;
-            const maxOnlineAge = (PRESENCE_HEARTBEAT_INTERVAL * PRESENCE_HEARTBEAT_MISS_LIMIT) + 350;
+            const maxOnlineAge = (PRESENCE_HEARTBEAT_INTERVAL * PRESENCE_HEARTBEAT_MISS_LIMIT) + 1200;
             return (now - hb) <= maxOnlineAge;
         }
 
@@ -14316,9 +14331,36 @@
             });
 
             const deduped = dedupePresenceRecords(active);
-
+            const seenKeys = new Set();
             deduped.forEach(user => {
-                user.isOnline = isPresenceCurrentlyOnline(user, now);
+                const stabilityKey = getPresenceStabilityKey(user);
+                seenKeys.add(stabilityKey);
+                const rawOnline = isPresenceCurrentlyOnline(user, now);
+                const prev = _presenceOnlineStability.get(stabilityKey) || { online: false, misses: 0, lastSeen: 0 };
+                const seenTs = Math.max(Number(user.h) || 0, Number(user.t) || 0, prev.lastSeen || 0);
+
+                if (rawOnline) {
+                    prev.online = true;
+                    prev.misses = 0;
+                    prev.lastSeen = seenTs;
+                } else if (prev.online && prev.misses < PRESENCE_ONLINE_STICKY_MISS_LIMIT) {
+                    prev.misses += 1;
+                    prev.lastSeen = seenTs;
+                } else {
+                    prev.online = false;
+                    prev.misses = Math.min(prev.misses + 1, PRESENCE_ONLINE_STICKY_MISS_LIMIT + 8);
+                    prev.lastSeen = seenTs;
+                }
+                _presenceOnlineStability.set(stabilityKey, prev);
+                user.isOnline = prev.online;
+            });
+
+            const forgetAfterMs = PRESENCE_STALE_MS + (PRESENCE_HEARTBEAT_INTERVAL * (PRESENCE_HEARTBEAT_MISS_LIMIT + PRESENCE_ONLINE_STICKY_MISS_LIMIT));
+            _presenceOnlineStability.forEach((value, key) => {
+                if (seenKeys.has(key)) return;
+                if (!value || !Number.isFinite(value.lastSeen) || (now - value.lastSeen) > forgetAfterMs) {
+                    _presenceOnlineStability.delete(key);
+                }
             });
             deduped.sort((a, b) => {
                 const onlineDiff = Number(Boolean(b.isOnline)) - Number(Boolean(a.isOnline));
@@ -14360,6 +14402,7 @@
                 const u = users[i];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'presence-avatar-wrapper';
+                wrapper.style.zIndex = String(100 - i);
                 wrapper.title = `${u.n || u.e || 'Unknown'}${u.d ? ' (' + u.d + ')' : ''}`;
 
                 const img = document.createElement('img');
