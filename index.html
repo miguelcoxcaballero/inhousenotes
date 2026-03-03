@@ -320,6 +320,7 @@
             height: 28px;
             border-radius: 50%;
             border: 2px solid var(--bg-primary);
+            background: var(--bg-secondary);
             object-fit: cover;
             display: block;
         }
@@ -370,6 +371,10 @@
             margin-left: -8px;
             flex-shrink: 0;
             cursor: default;
+        }
+
+        .presence-overflow:first-child {
+            margin-left: 0;
         }
 
         .presence-avatar-wrapper[title] {
@@ -2955,6 +2960,10 @@
                 margin-left: -6px;
             }
 
+            #editor-view .presence-overflow:first-child {
+                margin-left: 0;
+            }
+
             #editor-view .btn-icon-square {
                 border-radius: 11px;
             }
@@ -2968,12 +2977,20 @@
             #editor-view .mode-toggle-btn {
                 min-width: 124px;
                 border-radius: 999px;
-                background: rgba(0, 0, 0, 0.05);
+                background: transparent !important;
+                border: none;
                 box-shadow: none !important;
             }
 
             [data-theme="dark"] #editor-view .mode-toggle-btn {
-                background: rgba(255, 255, 255, 0.08);
+                background: transparent !important;
+            }
+
+            #editor-view .mode-toggle-btn:hover,
+            #editor-view .mode-toggle-btn:active,
+            #editor-view .mode-toggle-btn:focus-visible {
+                background: transparent !important;
+                box-shadow: none !important;
             }
 
             #editor-view .mode-toggle-pill {
@@ -13807,10 +13824,11 @@
         let _presencePingInterval = null;
         let _presenceHeartbeatInterval = null;
         let _presenceHeartbeatInFlight = false;
+        let _presenceCanHeartbeat = false;
         const PRESENCE_PING_INTERVAL = 120000; // 2 minutes
         const PRESENCE_STALE_MS = 600000; // 10 minutes
         const PRESENCE_HEARTBEAT_INTERVAL = COLLAB_POLL_INTERVAL; // 2 seconds
-        const PRESENCE_HEARTBEAT_MISS_LIMIT = 3;
+        const PRESENCE_HEARTBEAT_MISS_LIMIT = 6;
 
         function detectDeviceType() {
             const ua = navigator.userAgent || '';
@@ -13846,6 +13864,12 @@
             if (tz) return tz;
             if (region) return region;
             return 'Unknown';
+        }
+
+        function normalizePresenceDeviceType(value) {
+            const device = String(value || '').trim().toLowerCase();
+            if (device === 'mobile' || device === 'tablet' || device === 'pc') return device;
+            return 'pc';
         }
 
         function simpleHash(str) {
@@ -13913,17 +13937,85 @@
             const freshnessTs = getPresenceFreshnessTs(chunk);
             if (!Number.isFinite(freshnessTs) || now - freshnessTs > PRESENCE_STALE_MS) return null;
             const ts = Number(chunk.t);
+            if (!Number.isFinite(ts)) return null; // ignore heartbeat-only partial records
             const hb = Number(chunk.h);
+            const name = (chunk.n || '').trim();
+            const email = (chunk.e || '').trim();
+            if (!name && !email) return null;
             return {
-                n: chunk.n || '',
-                e: chunk.e || '',
+                n: name,
+                e: email,
                 p: chunk.p || '',
-                d: chunk.d || 'pc',
+                d: normalizePresenceDeviceType(chunk.d),
                 v: chunk.v || '',
                 l: chunk.l || '',
-                t: Number.isFinite(ts) ? ts : freshnessTs,
+                t: ts,
                 h: Number.isFinite(hb) ? hb : 0
             };
+        }
+
+        function getPresenceDedupeKey(record) {
+            const email = String(record?.e || '').trim().toLowerCase();
+            const name = String(record?.n || '').trim().toLowerCase();
+            const deviceType = normalizePresenceDeviceType(record?.d);
+            const deviceName = String(record?.v || '').trim().toLowerCase();
+            const location = String(record?.l || '').trim().toLowerCase();
+            const who = email ? `e:${email}` : `n:${name}`;
+            return `${who}|d:${deviceType}|v:${deviceName}|l:${location}`;
+        }
+
+        function getPresenceRecordScore(record) {
+            let score = 0;
+            if (record?.e) score += 4;
+            if (record?.n) score += 2;
+            if (record?.p) score += 1;
+            if (record?.v) score += 1;
+            if (record?.l) score += 1;
+            if (Number.isFinite(Number(record?.t))) score += 1;
+            if (Number.isFinite(Number(record?.h))) score += 1;
+            return score;
+        }
+
+        function mergePresenceRecords(baseRecord, incomingRecord) {
+            const baseFreshness = getPresenceFreshnessTs(baseRecord);
+            const incomingFreshness = getPresenceFreshnessTs(incomingRecord);
+            const preferIncoming = incomingFreshness > baseFreshness
+                || (incomingFreshness === baseFreshness
+                    && getPresenceRecordScore(incomingRecord) > getPresenceRecordScore(baseRecord));
+            const primary = preferIncoming ? incomingRecord : baseRecord;
+            const secondary = preferIncoming ? baseRecord : incomingRecord;
+            return {
+                n: primary.n || secondary.n || '',
+                e: primary.e || secondary.e || '',
+                p: primary.p || secondary.p || '',
+                d: normalizePresenceDeviceType(primary.d || secondary.d),
+                v: primary.v || secondary.v || '',
+                l: primary.l || secondary.l || '',
+                t: Math.max(Number(baseRecord.t) || 0, Number(incomingRecord.t) || 0),
+                h: Math.max(Number(baseRecord.h) || 0, Number(incomingRecord.h) || 0)
+            };
+        }
+
+        function dedupePresenceRecords(records) {
+            const deduped = new Map();
+            (records || []).forEach(record => {
+                const name = String(record?.n || '').trim();
+                const email = String(record?.e || '').trim();
+                if (!name && !email) return;
+                const normalized = {
+                    ...record,
+                    n: name,
+                    e: email,
+                    d: normalizePresenceDeviceType(record?.d)
+                };
+                const key = getPresenceDedupeKey(normalized);
+                if (!deduped.has(key)) {
+                    deduped.set(key, normalized);
+                    return;
+                }
+                deduped.set(key, mergePresenceRecords(deduped.get(key), normalized));
+            });
+            return Array.from(deduped.values());
         }
 
         async function pingPresence() {
@@ -13976,6 +14068,14 @@
                 // Remove stale/corrupt chunked records from other clients.
                 grouped.forEach((chunk, prefix) => {
                     if (prefix === keyPrefix) return;
+                    const ts = Number(chunk?.t);
+                    const hasIdentity = Boolean(String(chunk?.n || '').trim() || String(chunk?.e || '').trim());
+                    if (!Number.isFinite(ts) || !hasIdentity) {
+                        PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
+                            patch[getPresenceFieldKey(prefix, suffix)] = null;
+                        });
+                        return;
+                    }
                     const freshnessTs = getPresenceFreshnessTs(chunk);
                     if (Number.isFinite(freshnessTs) && now - freshnessTs <= PRESENCE_STALE_MS) return;
                     PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
@@ -13991,6 +14091,7 @@
                         body: JSON.stringify({ appProperties: patch })
                     }
                 );
+                _presenceCanHeartbeat = true;
             } catch (err) {
                 console.warn('Presence ping failed:', err);
             }
@@ -13998,6 +14099,7 @@
 
         async function pulsePresenceHeartbeat() {
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
+            if (!_presenceCanHeartbeat) return;
             if (_presenceHeartbeatInFlight) return;
             _presenceHeartbeatInFlight = true;
             try {
@@ -14048,6 +14150,7 @@
                 _presenceHeartbeatInterval = null;
             }
             _presenceHeartbeatInFlight = false;
+            _presenceCanHeartbeat = false;
         }
 
         function isPresenceCurrentlyOnline(record, now = Date.now()) {
@@ -14084,7 +14187,7 @@
                         n: data.n || '',
                         e: data.e || '',
                         p: data.p || '',
-                        d: data.d || 'pc',
+                        d: normalizePresenceDeviceType(data.d),
                         v: data.v || '',
                         l: data.l || '',
                         t: ts,
@@ -14099,14 +14202,20 @@
                 active.push(record);
             });
 
-            active.sort((a, b) => b.t - a.t);
-            active.forEach(user => {
+            const deduped = dedupePresenceRecords(active);
+
+            deduped.forEach(user => {
                 user.isOnline = isPresenceCurrentlyOnline(user, now);
             });
-            latestPresenceUsers = active;
-            renderPresenceAvatars(active);
+            deduped.sort((a, b) => {
+                const onlineDiff = Number(Boolean(b.isOnline)) - Number(Boolean(a.isOnline));
+                if (onlineDiff !== 0) return onlineDiff;
+                return (Number(b.t) || 0) - (Number(a.t) || 0);
+            });
+            latestPresenceUsers = deduped;
+            renderPresenceAvatars(deduped);
             if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
-                renderPresencePopup(active);
+                renderPresencePopup(deduped);
             }
         }
 
@@ -14124,6 +14233,14 @@
 
             const maxShow = Math.min(3, users.length);
             const overflow = users.length > 3 ? users.length - 3 : 0;
+
+            if (overflow > 0) {
+                const ov = document.createElement('div');
+                ov.className = 'presence-overflow';
+                ov.textContent = `+${overflow}`;
+                ov.title = users.slice(3).map(u => u.n || u.e || 'Unknown').join(', ');
+                container.appendChild(ov);
+            }
 
             for (let i = 0; i < maxShow && i < users.length; i++) {
                 const u = users[i];
@@ -14145,14 +14262,6 @@
                 wrapper.appendChild(badge);
 
                 container.appendChild(wrapper);
-            }
-
-            if (overflow > 0) {
-                const ov = document.createElement('div');
-                ov.className = 'presence-overflow';
-                ov.textContent = `+${overflow}`;
-                ov.title = users.slice(3).map(u => u.n || u.e || 'Unknown').join(', ');
-                container.appendChild(ov);
             }
         }
 
@@ -14192,6 +14301,7 @@
                         email: email,
                         photo: user.p || '',
                         lastActivity: Number(user.t) || 0,
+                        hasOnline: Boolean(user.isOnline),
                         devices: []
                     });
                 }
@@ -14200,19 +14310,29 @@
                 if (!account.email && email) account.email = email;
                 if (!account.photo && user.p) account.photo = user.p;
                 account.lastActivity = Math.max(account.lastActivity, Number(user.t) || 0);
+                account.hasOnline = account.hasOnline || Boolean(user.isOnline);
                 account.devices.push({
                     type: user.d || 'pc',
                     deviceName: user.v || '',
                     location: user.l || '',
-                    lastActivity: Number(user.t) || 0
+                    lastActivity: Number(user.t) || 0,
+                    isOnline: Boolean(user.isOnline)
                 });
             });
 
             const groups = Array.from(grouped.values());
             groups.forEach(group => {
-                group.devices.sort((a, b) => b.lastActivity - a.lastActivity);
+                group.devices.sort((a, b) => {
+                    const onlineDiff = Number(Boolean(b.isOnline)) - Number(Boolean(a.isOnline));
+                    if (onlineDiff !== 0) return onlineDiff;
+                    return b.lastActivity - a.lastActivity;
+                });
             });
-            groups.sort((a, b) => b.lastActivity - a.lastActivity);
+            groups.sort((a, b) => {
+                const onlineDiff = Number(Boolean(b.hasOnline)) - Number(Boolean(a.hasOnline));
+                if (onlineDiff !== 0) return onlineDiff;
+                return b.lastActivity - a.lastActivity;
+            });
             return groups;
         }
 
