@@ -3074,7 +3074,7 @@
                 }
                 _tplCache.set(key, cached);
             }
-            ctx.drawImage(cached, 0, 0);
+            if (ctx) ctx.drawImage(cached, 0, 0);
         }
         const FULLSCREEN_ICON_ENTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 3 21 3 21 9"/>
@@ -3920,6 +3920,8 @@
                 if (state.driveFileId && state.driveAutosave && driveAccessToken) {
                     startCollabPolling();
                 }
+                // Pre-warm PDF cache in background so first save is fast
+                setTimeout(() => prewarmPdfCache().catch(() => {}), 500);
             }, 100);
         }
 
@@ -14122,6 +14124,74 @@
         // Cache rendered JPEG pages for incremental PDF builds
         const pdfExportCache = new Map(); // pageIndex -> { hash, jpegData (Uint8Array), metaJson }
 
+        // Pre-warm the PDF export cache in background so the first save is fast
+        async function prewarmPdfCache() {
+            if (!state.driveAutosave || state.isReadOnly) return;
+            const exportScale = 1.5;
+            const pageCount = state.pages.length;
+            if (pageCount === 0) return;
+            // Pre-render template at the export size
+            const tplW = Math.round(A4_WIDTH * exportScale);
+            const tplH = Math.round(A4_HEIGHT * exportScale);
+            drawTemplateBackground(null, tplW, tplH, exportScale); // warms _tplCache
+
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            const jpegQuality = pageCount >= 20 ? 0.70 : 0.75;
+
+            for (let i = 0; i < pageCount; i++) {
+                // Yield between pages to not block UI
+                await new Promise(r => setTimeout(r, 0));
+                if (hasSmoothInteraction()) return; // stop if user starts interacting
+
+                const pageData = state.pages[i];
+                if (!pageData) continue;
+                if (pdfExportCache.has(i)) continue; // already cached
+
+                const pageW = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
+                const pageH = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
+                const canvasW = Math.max(1, Math.round(pageW * exportScale));
+                const canvasH = Math.max(1, Math.round(pageH * exportScale));
+                if (tempCanvas.width !== canvasW || tempCanvas.height !== canvasH) {
+                    tempCanvas.width = canvasW;
+                    tempCanvas.height = canvasH;
+                }
+                tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+                tempCtx.clearRect(0, 0, canvasW, canvasH);
+
+                const backgroundSource = pageData.backgroundSource
+                    || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
+
+                // Only pre-warm template pages (PDF/custom backgrounds need async loading)
+                if (backgroundSource !== 'template') continue;
+
+                drawTemplateBackground(tempCtx, canvasW, canvasH, exportScale);
+
+                // Draw strokes
+                tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
+                tempCtx.lineCap = 'round';
+                tempCtx.lineJoin = 'round';
+                const strokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
+                for (const stroke of strokes) {
+                    if (!stroke.points || stroke.points.length < 2) continue;
+                    if (stroke.tool === 'eraser-stroke') continue;
+                    drawSmoothStroke(tempCtx, stroke);
+                }
+
+                await new Promise(r => setTimeout(r, 0));
+                if (hasSmoothInteraction()) return;
+
+                const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
+                if (!pageBlob) continue;
+                const jpegData = new Uint8Array(await pageBlob.arrayBuffer());
+
+                const pageHash = `${computePageHash(pageData)}|exp:${pageW}x${pageH}|s${exportScale}|hq0`;
+                pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson: null });
+            }
+            tempCanvas.width = 0;
+            tempCanvas.height = 0;
+        }
+
         function computePageHash(pageData) {
             const strokeIds = Array.isArray(pageData.strokes)
                 ? pageData.strokes.map(s => s.id || '').join(',')
@@ -14144,9 +14214,11 @@
             };
             const yieldForResponsiveness = async (force = false) => {
                 throwIfAborted();
-                // Always yield to keep UI responsive — pen input must never be blocked
-                await yieldToMainThread();
-                throwIfAborted();
+                if (force || hasPendingUserInput()) {
+                    // Quick yield (~1ms) to let pending input through
+                    await new Promise(r => setTimeout(r, 0));
+                    throwIfAborted();
+                }
             };
 
             throwIfAborted();
@@ -14372,7 +14444,7 @@
                         drawSmoothStroke(tempCtx, stroke);
                         strokeCheckCounter += 1;
                         pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
-                        if (strokeCheckCounter % 5 === 0 || pointCheckCounter >= 800) {
+                        if (strokeCheckCounter % 10 === 0 || pointCheckCounter >= 1500) {
                             pointCheckCounter = 0;
                             await yieldForResponsiveness(false);
                             throwIfAborted();
