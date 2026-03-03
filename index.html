@@ -3855,6 +3855,11 @@
                 updateHistoryButtons();
                 updateSaveTimestamp();
                 scheduleVisiblePageUpdate(true);
+                // Pre-warm PDF cache when entering edit mode so first save is fast
+                if (state.driveAutosave && !prewarmPdfCache._running) {
+                    prewarmPdfCache._running = true;
+                    setTimeout(() => prewarmPdfCache().catch(() => {}).finally(() => { prewarmPdfCache._running = false; }), 200);
+                }
             }
         }
 
@@ -3920,8 +3925,6 @@
                 if (state.driveFileId && state.driveAutosave && driveAccessToken) {
                     startCollabPolling();
                 }
-                // Pre-warm PDF cache in background so first save is fast
-                setTimeout(() => prewarmPdfCache().catch(() => {}), 500);
             }, 100);
         }
 
@@ -12540,8 +12543,11 @@
         function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
             if (mode === 'stroke' && !immediate) {
-                // During active pen/gesture, defer all I/O — it will flush when idle
-                if (!hasSmoothInteraction()) {
+                if (hasSmoothInteraction()) {
+                    // Defer I/O but mark dirty so goHome knows there are unsaved changes
+                    driveDirty = true;
+                    deferredDriveSave = true;
+                } else {
                     flushStrokeOpsQueue();
                     scheduleDriveSync();
                 }
@@ -14126,7 +14132,7 @@
 
         // Pre-warm the PDF export cache in background so the first save is fast
         async function prewarmPdfCache() {
-            if (!state.driveAutosave || state.isReadOnly) return;
+            if (!state.driveAutosave) return;
             const exportScale = 1.5;
             const pageCount = state.pages.length;
             if (pageCount === 0) return;
