@@ -267,6 +267,10 @@
             background: var(--accent-orange);
         }
 
+        .save-indicator.syncing {
+            background: #4a90d9;
+        }
+
         .save-indicator.saved {
             background: var(--accent-green);
         }
@@ -3934,7 +3938,7 @@
                     centerViewOnTop();
                 }
                 // Start collaborative polling if we have a Drive session
-                if (state.driveFileId && state.driveAutosave && driveAccessToken) {
+                if (state.driveFileId && driveAccessToken) {
                     startCollabPolling();
                 }
             }, 100);
@@ -6005,8 +6009,8 @@
                 sharedLinkSignInPrompted = false;
                 loadDriveProfile();
                 restorePdfBackgroundsIfNeeded();
-                // Start collab polling if we have a Drive file
-                if (state.driveFileId && state.driveAutosave) {
+                // Start collab polling if we have a Drive file (even in read-only/view mode)
+                if (state.driveFileId) {
                     startCollabPolling();
                 }
 
@@ -6569,7 +6573,9 @@
                 state.driveResourceKey = resourceKey || '';
                 state.driveHeadRevisionId = null;
                 state.driveLastKnownModified = null;
-                stopCollabPolling();
+                // Start polling for updates even in view-only mode.
+                // pollDriveRevision will no-op if driveAccessToken is null.
+                startCollabPolling();
 
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
@@ -9890,7 +9896,7 @@
                     stopCollabPolling();
                 } else if (document.visibilityState === 'visible') {
                     // Resume collab polling when tab becomes visible again
-                    if (state.driveAutosave && state.driveFileId && driveAccessToken) {
+                    if (state.driveFileId && driveAccessToken) {
                         startCollabPolling();
                         // Immediately poll once to catch up on changes
                         pollDriveRevision();
@@ -11373,8 +11379,9 @@
         function updateSaveTimestamp() {
             const timestampEl = document.getElementById('save-timestamp');
             if (!timestampEl) return;
-            // Bug fix: show last Drive save time, fall back to local save time
-            const driveTs = state.lastDriveSaveAt || null;
+            // Use Drive's modifiedTime (universal across all devices),
+            // falling back to local save time when no Drive info is available.
+            const driveTs = state.driveLastKnownModified || null;
             const label = driveTs ? `Last saved: ${formatTime(driveTs)}` : (state.lastSavedAt ? `Last edit: ${formatTime(state.lastSavedAt)}` : 'Last edit: --:--');
             timestampEl.textContent = label;
         }
@@ -12487,7 +12494,7 @@
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
             // Don't downgrade if already showing a more specific phase
-            if (indicator.classList.contains('uploading')) return;
+            if (indicator.classList.contains('uploading') || indicator.classList.contains('syncing')) return;
             if (state.driveAutosave && !state.isReadOnly) {
                 // If interacting, show grey (paused); otherwise show orange (saving)
                 if (hasSmoothInteraction()) {
@@ -12852,9 +12859,8 @@
                     }
                     saveDriveSession();
                 }
-                const savedAt = typeof state.lastSavedAt === 'number' ? state.lastSavedAt : Date.now();
-                // Bug fix: record the time of the last successful Drive upload
-                state.lastDriveSaveAt = Date.now();
+                // Use Drive's modifiedTime as the universal timestamp
+                const savedAt = state.driveLastKnownModified || Date.now();
                 updateSaveTimestamp();
                 // Proactive cleanup: free memory accumulated during PDF build
                 pruneImageCache();
@@ -12896,7 +12902,7 @@
         // ============================================================
         // Collaborative sync: polling, pulling, and merging
         // ============================================================
-        const COLLAB_POLL_INTERVAL = 5000; // 5 seconds
+        const COLLAB_POLL_INTERVAL = 2000; // 2 seconds for faster update detection
         let collabPollInProgress = false;
         let collabPullInProgress = false;
 
@@ -12932,23 +12938,36 @@
                 const data = await res.json();
                 state.driveLastPolledAt = Date.now();
 
-                // Detect changes via headRevisionId or modifiedTime fallback
+                // Detect changes BEFORE updating local state
                 let hasChanged = false;
                 if (data.headRevisionId) {
                     if (data.headRevisionId !== state.driveHeadRevisionId) {
                         hasChanged = true;
                     }
                 } else if (data.modifiedTime) {
-                    // Fallback: use modifiedTime if headRevisionId not available
                     const remoteModified = new Date(data.modifiedTime).getTime();
                     if (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified) {
                         hasChanged = true;
                     }
                 }
 
+                // Always update modifiedTime from Drive so the timestamp is universal
+                if (data.modifiedTime) {
+                    const remoteModified = new Date(data.modifiedTime).getTime();
+                    if (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified) {
+                        state.driveLastKnownModified = remoteModified;
+                    }
+                    updateSaveTimestamp();
+                }
+
                 if (hasChanged) {
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
                     await pullRemoteChanges();
+                    // After a successful pull, poll again immediately to catch
+                    // back-to-back updates without waiting for the next interval.
+                    collabPollInProgress = false;
+                    setTimeout(() => pollDriveRevision(), 500);
+                    return;
                 }
             } catch (err) {
                 console.warn('Collab poll failed:', err);
@@ -12962,21 +12981,37 @@
             if (collabPullInProgress) return;
             collabPullInProgress = true;
             try {
-                showStatus('Syncing...', { saving: true });
+                showStatus('Syncing...', { phase: 'syncing' });
 
-                // 1. Download the PDF content as Blob to avoid ArrayBuffer in JS heap
-                const res = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`,
-                    { method: 'GET', timeout: 300000 }
-                );
-                const blob = await res.blob();
+                // Fetch content and metadata in parallel to reduce latency
+                const [contentRes, metaRes] = await Promise.all([
+                    driveFetch(
+                        `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`,
+                        { method: 'GET', timeout: 300000 }
+                    ),
+                    driveFetch(
+                        `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
+                        { method: 'GET' }
+                    )
+                ]);
+
+                // Update revision tracking immediately from metadata (no extra request later)
+                const metaData = await metaRes.json();
+                if (metaData.headRevisionId) {
+                    state.driveHeadRevisionId = metaData.headRevisionId;
+                }
+                if (metaData.modifiedTime) {
+                    state.driveLastKnownModified = new Date(metaData.modifiedTime).getTime();
+                }
+                saveDriveSession();
+
+                const blob = await contentRes.blob();
                 const objectUrl = URL.createObjectURL(blob);
 
-                // 2. Extract stroke data from PDF metadata
-                let pdf;
+                // Extract stroke data from PDF metadata
                 let remoteStrokeData = null;
                 try {
-                    pdf = await pdfjsLib.getDocument({
+                    const pdf = await pdfjsLib.getDocument({
                         url: objectUrl,
                         disableAutoFetch: true,
                         disableStream: false,
@@ -13010,25 +13045,20 @@
 
                 if (!remoteStrokeData || !Array.isArray(remoteStrokeData)) {
                     console.log('No usable remote stroke data found, skipping merge');
-                    // Still update the revision so we don't keep re-downloading
-                    await updateLocalRevisionId();
-                    showStatus('Synced', { savedAt: Date.now() });
+                    showStatus('Synced', { savedAt: state.driveLastKnownModified || Date.now() });
                     return;
                 }
 
-                // 3. Apply remote changes
+                // Apply remote changes
                 const mergeResult = await applyRemotePages(remoteStrokeData);
 
-                // 4. Update revision tracking
-                await updateLocalRevisionId();
-
-                // 5. If we merged local-only content, save back to Drive so others get it
+                // If we merged local-only content, save back to Drive so others get it
                 if (mergeResult && mergeResult.hasLocalMerges && !state.isReadOnly) {
                     console.log('Local strokes merged into pull — saving back to Drive');
-                    showStatus('Syncing merged changes...', { saving: true });
+                    showStatus('Syncing merged changes...', { phase: 'syncing' });
                     requestImmediateDriveSave();
                 } else {
-                    showStatus('Changes from collaborator', { savedAt: Date.now() });
+                    showStatus('Changes from collaborator', { savedAt: state.driveLastKnownModified || Date.now() });
                 }
                 console.log('Remote changes applied successfully');
             } catch (err) {
@@ -13648,7 +13678,7 @@
             }
         }
 
-        const SAVE_STATES = ['paused', 'building', 'uploading', 'saving', 'saved', 'error'];
+        const SAVE_STATES = ['paused', 'building', 'uploading', 'syncing', 'saving', 'saved', 'error'];
         function showStatus(text, options = {}) {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
