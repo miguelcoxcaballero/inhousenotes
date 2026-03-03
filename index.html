@@ -140,7 +140,88 @@
 
             .doc-title {
                 margin-left: 6px;
-                max-width: min(56vw, 260px);
+                max-width: min(40vw, 180px);
+            }
+
+            header {
+                padding: 8px 12px;
+                min-height: 52px;
+            }
+
+            :root {
+                --header-btn-size: 38px;
+            }
+
+            .drive-profile-btn {
+                width: 32px;
+                height: 32px;
+            }
+
+            .drive-profile-avatar {
+                width: 32px;
+                height: 32px;
+            }
+
+            .presence-avatar-wrapper {
+                width: 24px;
+                height: 24px;
+                margin-left: -6px;
+            }
+
+            .presence-avatar-img {
+                width: 24px;
+                height: 24px;
+            }
+
+            .presence-device-badge {
+                width: 12px;
+                height: 12px;
+            }
+
+            .presence-device-badge svg {
+                width: 7px;
+                height: 7px;
+            }
+
+            .presence-overflow {
+                width: 24px;
+                height: 24px;
+                font-size: 0.58rem;
+                margin-left: -6px;
+            }
+
+            /* Move mode toggle to fixed bottom bar on mobile */
+            .mode-toggle-group {
+                position: fixed;
+                bottom: 16px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 1001;
+                background: var(--bg-secondary);
+                border-radius: var(--radius-lg);
+                padding: 6px 14px;
+                box-shadow: var(--shadow-medium);
+                border: 1px solid rgba(0, 0, 0, 0.06);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+            }
+
+            /* Save indicator goes ABOVE the bottom bar */
+            .mode-toggle-status {
+                top: auto;
+                bottom: calc(100% + 2px);
+                transform: translate(-50%, 4px);
+            }
+
+            .mode-toggle-btn.is-editing + .mode-toggle-status {
+                transform: translate(-50%, 0);
+            }
+
+            /* Don't shrink/shift toggle on mobile — it's already floating */
+            .mode-toggle-btn.is-editing {
+                transform: none;
+                min-height: var(--header-btn-size);
+                height: var(--header-btn-size);
             }
         }
 
@@ -148,6 +229,89 @@
             display: flex;
             gap: clamp(4px, 1.2vw, 8px);
             align-items: center;
+        }
+
+        .presence-avatars {
+            display: flex;
+            align-items: center;
+            flex-direction: row;
+            padding-left: 4px;
+        }
+
+        .presence-avatars:empty {
+            display: none;
+        }
+
+        .presence-avatar-wrapper {
+            position: relative;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            margin-left: -8px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+
+        .presence-avatar-wrapper:first-child {
+            margin-left: 0;
+        }
+
+        .presence-avatar-img {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid var(--bg-primary);
+            object-fit: cover;
+            display: block;
+        }
+
+        .presence-device-badge {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--bg-primary);
+            border: 1.5px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .presence-device-badge svg {
+            width: 8px;
+            height: 8px;
+            stroke: var(--text-secondary);
+            fill: none;
+            stroke-width: 2;
+        }
+
+        .presence-overflow {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--bg-secondary);
+            border: 2px solid var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-left: -8px;
+            flex-shrink: 0;
+            cursor: default;
+        }
+
+        .presence-avatar-wrapper[title] {
+            z-index: 1;
+        }
+
+        .presence-avatar-wrapper:hover {
+            z-index: 10;
+            transform: scale(1.1);
+            transition: transform 0.15s ease;
         }
 
         .mode-toggle-group {
@@ -2574,20 +2738,17 @@
                         contenteditable="true" spellcheck="false">Untitled</span>
                 </div>
                 <div class="header-actions">
-                    <div class="mode-toggle-group">
-                        <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button"
-                            aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
-                            <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
-                            <span class="mode-toggle-pill" aria-hidden="true">
-                                <span class="mode-toggle-knob"></span>
-                            </span>
-                        </button>
-                        <div class="mode-toggle-status">
-                            <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved">
-                            </div>
-                            <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
-                        </div>
-                    </div>
+                    <button class="btn btn-secondary btn-icon-square hidden" id="btn-drive-share" title="Share Document"
+                        aria-label="Share Document">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="8.5" cy="7" r="4" />
+                            <line x1="20" y1="8" x2="20" y2="14" />
+                            <line x1="23" y1="11" x2="17" y2="11" />
+                        </svg>
+                    </button>
+                    <div class="presence-avatars" id="presence-avatars"></div>
                     <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen"
                         aria-label="Fullscreen">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -2606,16 +2767,20 @@
                             <line x1="9" y1="15" x2="15" y2="15" />
                         </svg>
                     </button>
-                    <button class="btn btn-secondary btn-icon-square hidden" id="btn-drive-share" title="Share Document"
-                        aria-label="Share Document">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                            <circle cx="8.5" cy="7" r="4" />
-                            <line x1="20" y1="8" x2="20" y2="14" />
-                            <line x1="23" y1="11" x2="17" y2="11" />
-                        </svg>
-                    </button>
+                    <div class="mode-toggle-group">
+                        <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button"
+                            aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
+                            <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
+                            <span class="mode-toggle-pill" aria-hidden="true">
+                                <span class="mode-toggle-knob"></span>
+                            </span>
+                        </button>
+                        <div class="mode-toggle-status">
+                            <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved">
+                            </div>
+                            <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
+                        </div>
+                    </div>
                     <div class="drive-profile hidden" id="drive-profile-editor">
                         <button class="drive-profile-btn" id="btn-drive-profile-editor" type="button"
                             aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">
@@ -9583,6 +9748,8 @@
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
                     try {
+                        // Clear presence before leaving document
+                        clearPresence();
                         // Force-end interaction state so paused saves can resume
                         isPenWriting = false;
                         isGestureInteracting = false;
@@ -9882,6 +10049,7 @@
             handleFullscreenChange();
 
             window.addEventListener('beforeunload', () => {
+                clearPresence();
                 flushOnClose();
             });
 
@@ -12913,6 +13081,7 @@
             if (!state.driveFileId) return;
             state.collabEnabled = true;
             state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
+            startPresencePing();
             console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
         }
 
@@ -12923,6 +13092,7 @@
             }
             state.collabEnabled = false;
             collabPollInProgress = false;
+            stopPresencePing();
             console.log('Collab polling stopped');
         }
 
@@ -12934,11 +13104,14 @@
             collabPollInProgress = true;
             try {
                 const res = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime,appProperties`,
                     { method: 'GET' }
                 );
                 const data = await res.json();
                 state.driveLastPolledAt = Date.now();
+
+                // Update presence avatars from appProperties (zero extra API calls)
+                if (data.appProperties) updatePresenceFromProps(data.appProperties);
 
                 // Detect changes BEFORE updating local state
                 let hasChanged = false;
@@ -12976,6 +13149,190 @@
             } finally {
                 collabPollInProgress = false;
             }
+        }
+
+        // ── Presence / Active Users ──────────────────────────────
+        let _presencePingInterval = null;
+        const PRESENCE_PING_INTERVAL = 120000; // 2 minutes
+        const PRESENCE_STALE_MS = 600000; // 10 minutes
+
+        function detectDeviceType() {
+            const ua = navigator.userAgent || '';
+            if (/iPad|tablet|PlayBook/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua) && screen.width >= 768)) return 'tablet';
+            if (/Mobi|Android.*Mobile|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return 'mobile';
+            return 'pc';
+        }
+
+        function simpleHash(str) {
+            let h = 0;
+            for (let i = 0; i < str.length; i++) {
+                h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+            }
+            return Math.abs(h).toString(36).slice(0, 8);
+        }
+
+        function getPresenceKey() {
+            const email = driveUserProfile?.email || 'anon';
+            const device = detectDeviceType().charAt(0); // m, t, p
+            return `p_${simpleHash(email)}_${device}`;
+        }
+
+        async function pingPresence() {
+            if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
+            const key = getPresenceKey();
+            const value = JSON.stringify({
+                n: driveUserProfile.name || '',
+                e: driveUserProfile.email || '',
+                p: driveUserProfile.photo || '',
+                t: Date.now(),
+                d: detectDeviceType()
+            });
+            try {
+                // Read current appProperties to clean stale entries
+                const metaRes = await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=appProperties`,
+                    { method: 'GET' }
+                );
+                const metaData = await metaRes.json();
+                const props = metaData.appProperties || {};
+                const patch = { [key]: value };
+                const now = Date.now();
+                // Remove stale presence entries
+                for (const k of Object.keys(props)) {
+                    if (!k.startsWith('p_')) continue;
+                    if (k === key) continue;
+                    try {
+                        const v = JSON.parse(props[k]);
+                        if (now - v.t > PRESENCE_STALE_MS) {
+                            patch[k] = null; // null removes the key
+                        }
+                    } catch (e) {
+                        patch[k] = null; // corrupt entry, remove
+                    }
+                }
+                await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
+                    {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ appProperties: patch })
+                    }
+                );
+            } catch (err) {
+                console.warn('Presence ping failed:', err);
+            }
+        }
+
+        function startPresencePing() {
+            if (_presencePingInterval) return;
+            pingPresence();
+            _presencePingInterval = setInterval(pingPresence, PRESENCE_PING_INTERVAL);
+        }
+
+        function stopPresencePing() {
+            if (_presencePingInterval) {
+                clearInterval(_presencePingInterval);
+                _presencePingInterval = null;
+            }
+        }
+
+        function updatePresenceFromProps(appProperties) {
+            if (!appProperties) return;
+            const now = Date.now();
+            const myKey = driveUserProfile ? getPresenceKey() : null;
+            const active = [];
+            for (const [k, v] of Object.entries(appProperties)) {
+                if (!k.startsWith('p_')) continue;
+                if (k === myKey) continue; // don't show yourself (same device)
+                try {
+                    const data = JSON.parse(v);
+                    if (now - data.t > PRESENCE_STALE_MS) continue;
+                    active.push(data);
+                } catch (e) { /* skip corrupt */ }
+            }
+            active.sort((a, b) => b.t - a.t);
+            renderPresenceAvatars(active);
+        }
+
+        function renderPresenceAvatars(users) {
+            const container = document.getElementById('presence-avatars');
+            if (!container) return;
+            container.innerHTML = '';
+            if (!users || users.length === 0) return;
+
+            const avatarFallback = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+
+            const maxShow = users.length > 3 ? 2 : 3;
+            const overflow = users.length > 3 ? users.length - 2 : 0;
+
+            for (let i = 0; i < maxShow && i < users.length; i++) {
+                const u = users[i];
+                const wrapper = document.createElement('div');
+                wrapper.className = 'presence-avatar-wrapper';
+                wrapper.title = `${u.n || u.e || 'Unknown'}${u.d ? ' (' + u.d + ')' : ''}`;
+
+                const img = document.createElement('img');
+                img.className = 'presence-avatar-img';
+                img.src = u.p || avatarFallback;
+                img.alt = u.n || 'User';
+                img.onerror = () => { img.src = avatarFallback; };
+                wrapper.appendChild(img);
+
+                // Device badge
+                const badge = document.createElement('div');
+                badge.className = 'presence-device-badge';
+                badge.innerHTML = getDeviceBadgeSvg(u.d || 'pc');
+                wrapper.appendChild(badge);
+
+                container.appendChild(wrapper);
+            }
+
+            if (overflow > 0) {
+                const ov = document.createElement('div');
+                ov.className = 'presence-overflow';
+                ov.textContent = `+${overflow}`;
+                ov.title = users.slice(2).map(u => u.n || u.e || 'Unknown').join(', ');
+                container.appendChild(ov);
+            }
+        }
+
+        function getDeviceBadgeSvg(deviceType) {
+            if (deviceType === 'mobile') {
+                return '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>';
+            } else if (deviceType === 'tablet') {
+                return '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>';
+            }
+            // pc
+            return '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+        }
+
+        async function clearPresence() {
+            if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
+            const key = getPresenceKey();
+            try {
+                const body = JSON.stringify({ appProperties: { [key]: null } });
+                if (navigator.sendBeacon) {
+                    // sendBeacon can't set auth headers, use fetch with keepalive
+                    fetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${driveAccessToken}`
+                        },
+                        body: body,
+                        keepalive: true
+                    }).catch(() => { });
+                } else {
+                    await driveFetch(
+                        `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
+                        {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: body
+                        }
+                    );
+                }
+            } catch (err) { /* best effort */ }
         }
 
         async function pullRemoteChanges() {
