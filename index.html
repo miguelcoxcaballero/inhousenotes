@@ -294,6 +294,7 @@
             align-items: center;
             flex-direction: row;
             padding-left: 4px;
+            cursor: pointer;
         }
 
         .presence-avatars:empty {
@@ -370,6 +371,170 @@
             z-index: 10;
             transform: scale(1.1);
             transition: transform 0.15s ease;
+        }
+
+        .header-actions #presence-avatars {
+            order: 10;
+        }
+
+        .header-actions #btn-drive-share {
+            order: 20;
+        }
+
+        .presence-popup {
+            position: fixed;
+            width: min(420px, calc(100vw - 24px));
+            max-height: min(70vh, 560px);
+            background: var(--bg-secondary);
+            border-radius: 14px;
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            box-shadow: var(--shadow-medium);
+            z-index: 2200;
+            overflow: hidden;
+        }
+
+        [data-theme="dark"] .presence-popup {
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .presence-popup-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        [data-theme="dark"] .presence-popup-header {
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .presence-popup-close {
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.05);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .presence-popup-close:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .presence-popup-list {
+            max-height: min(62vh, 500px);
+            overflow: auto;
+            padding: 8px 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .presence-popup-empty {
+            padding: 8px 4px;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+        }
+
+        .presence-account {
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        [data-theme="dark"] .presence-account {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .presence-account-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        [data-theme="dark"] .presence-account-head {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .presence-account-photo {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            flex: 0 0 auto;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .presence-account-name {
+            font-size: 0.84rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .presence-account-email {
+            font-size: 0.76rem;
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+
+        .presence-device-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .presence-device-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 10px;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+        }
+
+        .presence-device-row:first-child {
+            border-top: none;
+        }
+
+        [data-theme="dark"] .presence-device-row {
+            border-top-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .presence-device-icon {
+            width: 22px;
+            height: 22px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+        }
+
+        .presence-device-icon svg {
+            width: 13px;
+            height: 13px;
+            stroke: var(--text-secondary);
+            fill: none;
+            stroke-width: 2;
+        }
+
+        .presence-device-main {
+            font-size: 0.8rem;
+            color: var(--text-primary);
+            line-height: 1.3;
+        }
+
+        .presence-device-meta {
+            font-size: 0.74rem;
+            color: var(--text-secondary);
+            line-height: 1.35;
         }
 
         .mode-toggle-group {
@@ -3061,6 +3226,15 @@
                     </div>
                 </div>
             </header>
+            <div class="presence-popup hidden" id="presence-popup" role="dialog" aria-modal="false"
+                aria-label="Actividad de usuarios">
+                <div class="presence-popup-header">
+                    <span>Actividad del documento</span>
+                    <button type="button" class="presence-popup-close" id="btn-close-presence-popup"
+                        aria-label="Cerrar lista de actividad">×</button>
+                </div>
+                <div class="presence-popup-list" id="presence-popup-list"></div>
+            </div>
 
             <div id="canvas-viewport">
                 <div id="canvas-container"></div>
@@ -4092,6 +4266,10 @@
         const driveHomeBtn = document.getElementById('btn-drive-home');
         const driveBackBtn = document.getElementById('btn-drive-back');
         const docTitleEl = document.getElementById('doc-title');
+        const presenceAvatarsEl = document.getElementById('presence-avatars');
+        const presencePopupEl = document.getElementById('presence-popup');
+        const presencePopupListEl = document.getElementById('presence-popup-list');
+        const presencePopupCloseBtn = document.getElementById('btn-close-presence-popup');
         const modeToggleBtn = document.getElementById('mode-toggle-btn');
         const modeToggleLabel = document.getElementById('mode-toggle-label');
         const folderPickerModal = document.getElementById('modal-folder-picker');
@@ -4173,6 +4351,7 @@
         let driveOpenInProgress = false;
         let driveOpenFileId = null;
         let driveUserProfile = null;
+        let latestPresenceUsers = [];
         let sharedLinkSignInPrompted = false;
         let lastPendingSharedPublicAttemptId = null;
         let pendingSharedDriveResourceKey = null;
@@ -6326,6 +6505,7 @@
         function showDriveHome() {
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
+            closePresencePopup();
             closeDriveProfileMenus();
             stopCollabPolling();
             clearDriveSyncTimers();
@@ -9986,6 +10166,23 @@
                     toggleDriveProfileMenu(driveProfileMenuEditor, driveProfileBtnEditor);
                 });
             }
+            if (presenceAvatarsEl) {
+                presenceAvatarsEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!latestPresenceUsers || latestPresenceUsers.length === 0) return;
+                    if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
+                        closePresencePopup();
+                    } else {
+                        openPresencePopup();
+                    }
+                });
+            }
+            if (presencePopupCloseBtn) {
+                presencePopupCloseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    closePresencePopup();
+                });
+            }
             if (themeToggle) {
                 themeToggle.addEventListener('change', () => {
                     const next = themeToggle.checked ? 'dark' : 'light';
@@ -10147,6 +10344,11 @@
                 if (activeDriveCardMenu && !activeDriveCardMenu.contains(e.target)) {
                     closeDriveCardMenu();
                 }
+                const clickedPresencePopup = presencePopupEl && presencePopupEl.contains(e.target);
+                const clickedPresenceAvatars = presenceAvatarsEl && presenceAvatarsEl.contains(e.target);
+                if (presencePopupEl && !presencePopupEl.classList.contains('hidden') && !clickedPresencePopup && !clickedPresenceAvatars) {
+                    closePresencePopup();
+                }
                 const profileMenus = [driveProfileMenu, driveProfileMenuEditor].filter(Boolean);
                 const profileButtons = [driveProfileBtn, driveProfileBtnEditor].filter(Boolean);
                 const clickedInsideMenu = profileMenus.some(menu => menu.contains(e.target));
@@ -10161,6 +10363,7 @@
                     closeDriveBinModal();
                     closeBinItemMenu();
                     closeDriveProfileMenus();
+                    closePresencePopup();
                 }
             });
             if (driveBackBtn) {
@@ -10219,6 +10422,9 @@
             window.addEventListener('resize', () => {
                 if (eraserMenu && eraserMenu.classList.contains('visible')) {
                     positionEraserMenu();
+                }
+                if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
+                    positionPresencePopup();
                 }
                 resetResetSlider();
                 preserveViewOnResize();
@@ -13437,6 +13643,35 @@
             return 'pc';
         }
 
+        function detectDeviceLabel() {
+            const ua = navigator.userAgent || '';
+            const platform = (navigator.userAgentData && navigator.userAgentData.platform)
+                || navigator.platform
+                || '';
+            if (/iPhone/i.test(ua)) return 'iPhone';
+            if (/iPad/i.test(ua)) return 'iPad';
+            if (/Android/i.test(ua)) return 'Android';
+            if (/Windows/i.test(platform)) return 'Windows PC';
+            if (/Mac/i.test(platform)) return 'Mac';
+            if (/Linux/i.test(platform)) return 'Linux PC';
+            if (platform) return platform;
+            const t = detectDeviceType();
+            return t === 'mobile' ? 'Mobile' : (t === 'tablet' ? 'Tablet' : 'PC');
+        }
+
+        function detectPresenceLocationLabel() {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+            let region = '';
+            try {
+                const locale = new Intl.Locale(navigator.language || '');
+                region = locale.region || '';
+            } catch (e) { }
+            if (region && tz) return `${region} · ${tz}`;
+            if (tz) return tz;
+            if (region) return region;
+            return 'Unknown';
+        }
+
         function simpleHash(str) {
             let h = 0;
             for (let i = 0; i < str.length; i++) {
@@ -13445,7 +13680,7 @@
             return Math.abs(h).toString(36).slice(0, 8);
         }
 
-        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd'];
+        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l'];
         const PRESENCE_CLIENT_ID_KEY = 'presence-client-id-v1';
 
         function getPresenceClientId() {
@@ -13484,7 +13719,7 @@
         }
 
         function parsePresenceChunkKey(key) {
-            const match = /^((?:p_[a-z0-9]+))_([nedtp])$/i.exec(key || '');
+            const match = /^((?:p_[a-z0-9]+))_([nedtpvl])$/i.exec(key || '');
             if (!match) return null;
             return { prefix: match[1], field: match[2].toLowerCase() };
         }
@@ -13497,6 +13732,8 @@
                 e: chunk.e || '',
                 p: chunk.p || '',
                 d: chunk.d || 'pc',
+                v: chunk.v || '',
+                l: chunk.l || '',
                 t: ts
             };
         }
@@ -13512,6 +13749,8 @@
                 [getPresenceFieldKey(keyPrefix, 'p')]: clampPresenceValue(driveUserProfile.photo || '', 120),
                 [getPresenceFieldKey(keyPrefix, 't')]: String(now),
                 [getPresenceFieldKey(keyPrefix, 'd')]: clampPresenceValue(detectDeviceType(), 12),
+                [getPresenceFieldKey(keyPrefix, 'v')]: clampPresenceValue(detectDeviceLabel(), 64),
+                [getPresenceFieldKey(keyPrefix, 'l')]: clampPresenceValue(detectPresenceLocationLabel(), 64),
                 [legacyKey]: null // cleanup old single-key format for this client
             };
             try {
@@ -13618,6 +13857,8 @@
                         e: data.e || '',
                         p: data.p || '',
                         d: data.d || 'pc',
+                        v: data.v || '',
+                        l: data.l || '',
                         t: ts
                     });
                 } catch (e) { /* skip corrupt */ }
@@ -13630,14 +13871,22 @@
             });
 
             active.sort((a, b) => b.t - a.t);
+            latestPresenceUsers = active;
             renderPresenceAvatars(active);
+            if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
+                renderPresencePopup(active);
+            }
         }
 
         function renderPresenceAvatars(users) {
             const container = document.getElementById('presence-avatars');
             if (!container) return;
             container.innerHTML = '';
-            if (!users || users.length === 0) return;
+            if (!users || users.length === 0) {
+                container.removeAttribute('aria-label');
+                return;
+            }
+            container.setAttribute('aria-label', `Actividad reciente: ${users.length} usuario${users.length === 1 ? '' : 's'}`);
 
             const avatarFallback = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
 
@@ -13683,6 +13932,170 @@
             }
             // pc
             return '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+        }
+
+        function formatPresenceLastActivity(timestamp) {
+            const ts = Number(timestamp);
+            if (!Number.isFinite(ts)) return 'desconocida';
+            const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+            if (diffSec < 60) return 'hace menos de 1 min';
+            const diffMin = Math.floor(diffSec / 60);
+            if (diffMin < 60) return `hace ${diffMin} min`;
+            const diffHour = Math.floor(diffMin / 60);
+            if (diffHour < 24) return `hace ${diffHour} h`;
+            const diffDay = Math.floor(diffHour / 24);
+            return `hace ${diffDay} d`;
+        }
+
+        function groupPresenceByAccount(users) {
+            const grouped = new Map();
+            (users || []).forEach((user, idx) => {
+                const email = (user.e || '').trim();
+                const accountKey = email
+                    ? `e:${email.toLowerCase()}`
+                    : `n:${(user.n || 'unknown').trim().toLowerCase()}:${idx}`;
+                if (!grouped.has(accountKey)) {
+                    grouped.set(accountKey, {
+                        name: user.n || email || 'Unknown',
+                        email: email,
+                        photo: user.p || '',
+                        lastActivity: Number(user.t) || 0,
+                        devices: []
+                    });
+                }
+                const account = grouped.get(accountKey);
+                if (!account.name && user.n) account.name = user.n;
+                if (!account.email && email) account.email = email;
+                if (!account.photo && user.p) account.photo = user.p;
+                account.lastActivity = Math.max(account.lastActivity, Number(user.t) || 0);
+                account.devices.push({
+                    type: user.d || 'pc',
+                    deviceName: user.v || '',
+                    location: user.l || '',
+                    lastActivity: Number(user.t) || 0
+                });
+            });
+
+            const groups = Array.from(grouped.values());
+            groups.forEach(group => {
+                group.devices.sort((a, b) => b.lastActivity - a.lastActivity);
+            });
+            groups.sort((a, b) => b.lastActivity - a.lastActivity);
+            return groups;
+        }
+
+        function renderPresencePopup(users = latestPresenceUsers) {
+            if (!presencePopupListEl) return;
+            const avatarFallback = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+            presencePopupListEl.innerHTML = '';
+            const grouped = groupPresenceByAccount(users);
+            if (grouped.length === 0) {
+                const emptyEl = document.createElement('div');
+                emptyEl.className = 'presence-popup-empty';
+                emptyEl.textContent = 'No hay actividad reciente.';
+                presencePopupListEl.appendChild(emptyEl);
+                return;
+            }
+
+            grouped.forEach(account => {
+                const accountEl = document.createElement('div');
+                accountEl.className = 'presence-account';
+
+                const headEl = document.createElement('div');
+                headEl.className = 'presence-account-head';
+
+                const photoEl = document.createElement('img');
+                photoEl.className = 'presence-account-photo';
+                photoEl.src = account.photo || avatarFallback;
+                photoEl.alt = account.name || 'User';
+                photoEl.onerror = () => { photoEl.src = avatarFallback; };
+                headEl.appendChild(photoEl);
+
+                const whoEl = document.createElement('div');
+                const nameEl = document.createElement('div');
+                nameEl.className = 'presence-account-name';
+                nameEl.textContent = account.name || account.email || 'Unknown';
+                whoEl.appendChild(nameEl);
+                const emailEl = document.createElement('div');
+                emailEl.className = 'presence-account-email';
+                emailEl.textContent = account.email || 'No email';
+                whoEl.appendChild(emailEl);
+                headEl.appendChild(whoEl);
+                accountEl.appendChild(headEl);
+
+                const devicesEl = document.createElement('div');
+                devicesEl.className = 'presence-device-list';
+                account.devices.forEach(device => {
+                    const rowEl = document.createElement('div');
+                    rowEl.className = 'presence-device-row';
+
+                    const iconEl = document.createElement('div');
+                    iconEl.className = 'presence-device-icon';
+                    iconEl.innerHTML = getDeviceBadgeSvg(device.type || 'pc');
+                    rowEl.appendChild(iconEl);
+
+                    const contentEl = document.createElement('div');
+                    const mainEl = document.createElement('div');
+                    mainEl.className = 'presence-device-main';
+                    const deviceName = device.deviceName
+                        || (device.type === 'mobile' ? 'Mobile' : (device.type === 'tablet' ? 'Tablet' : 'PC'));
+                    mainEl.textContent = deviceName;
+                    contentEl.appendChild(mainEl);
+
+                    const metaEl = document.createElement('div');
+                    metaEl.className = 'presence-device-meta';
+                    const location = device.location || 'Ubicación desconocida';
+                    const absolute = device.lastActivity
+                        ? new Date(device.lastActivity).toLocaleString()
+                        : 'desconocida';
+                    metaEl.textContent = `${location} · Última actividad ${formatPresenceLastActivity(device.lastActivity)} (${absolute})`;
+                    contentEl.appendChild(metaEl);
+
+                    rowEl.appendChild(contentEl);
+                    devicesEl.appendChild(rowEl);
+                });
+                accountEl.appendChild(devicesEl);
+                presencePopupListEl.appendChild(accountEl);
+            });
+        }
+
+        function positionPresencePopup() {
+            if (!presencePopupEl || presencePopupEl.classList.contains('hidden')) return;
+            const margin = 12;
+            if (!presenceAvatarsEl) {
+                presencePopupEl.style.left = `${margin}px`;
+                presencePopupEl.style.top = `${margin}px`;
+                return;
+            }
+            const anchorRect = presenceAvatarsEl.getBoundingClientRect();
+            const popupRect = presencePopupEl.getBoundingClientRect();
+            let left = anchorRect.left;
+            let top = anchorRect.bottom + 10;
+
+            if (left + popupRect.width > window.innerWidth - margin) {
+                left = window.innerWidth - popupRect.width - margin;
+            }
+            if (left < margin) left = margin;
+
+            if (top + popupRect.height > window.innerHeight - margin) {
+                const topAbove = anchorRect.top - popupRect.height - 10;
+                top = topAbove >= margin ? topAbove : Math.max(margin, window.innerHeight - popupRect.height - margin);
+            }
+
+            presencePopupEl.style.left = `${Math.round(left)}px`;
+            presencePopupEl.style.top = `${Math.round(top)}px`;
+        }
+
+        function closePresencePopup() {
+            if (!presencePopupEl) return;
+            presencePopupEl.classList.add('hidden');
+        }
+
+        function openPresencePopup() {
+            if (!presencePopupEl) return;
+            renderPresencePopup(latestPresenceUsers);
+            presencePopupEl.classList.remove('hidden');
+            requestAnimationFrame(positionPresencePopup);
         }
 
         async function clearPresence() {
