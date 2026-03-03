@@ -14283,6 +14283,82 @@
             return `${strokeIds}|${imageIds}|${bg}|${pdfIdx}|${pageW}x${pageH}|${pageData.strokes?.length || 0}`;
         }
 
+        // Web Worker that assembles jsPDF off the main thread.
+        // All heavy synchronous work (addImage, setProperties, output) runs here
+        // so the main thread stays responsive for pen/touch input.
+        let _pdfWorker = null;
+        let _pdfWorkerIdCounter = 0;
+        function getPdfWorker() {
+            if (_pdfWorker) return _pdfWorker;
+            const workerCode = `
+                importScripts('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+                self.onmessage = function(e) {
+                    const { id, pages, metadata, metaPrefix } = e.data;
+                    try {
+                        const { jsPDF } = self.jspdf;
+                        let pdf = null;
+                        for (let i = 0; i < pages.length; i++) {
+                            const pg = pages[i];
+                            if (!pdf) {
+                                pdf = new jsPDF({
+                                    orientation: pg.orientation,
+                                    unit: 'mm',
+                                    format: [pg.wMm, pg.hMm],
+                                    compress: true
+                                });
+                            } else {
+                                pdf.addPage([pg.wMm, pg.hMm], pg.orientation);
+                            }
+                            pdf.addImage(pg.jpegData, 'JPEG', 0, 0, pg.wMm, pg.hMm);
+                        }
+                        if (!pdf) {
+                            pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                        }
+                        pdf.setProperties({
+                            title: 'Cuaderno Digital',
+                            subject: 'Notas con S-Pen',
+                            creator: 'Cuaderno Digital App',
+                            keywords: metaPrefix + metadata
+                        });
+                        const arrayBuf = pdf.output('arraybuffer');
+                        self.postMessage({ id: id, buf: arrayBuf }, [arrayBuf]);
+                    } catch (err) {
+                        self.postMessage({ id: id, error: err.message || String(err) });
+                    }
+                };
+            `;
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            _pdfWorker = new Worker(URL.createObjectURL(blob));
+            return _pdfWorker;
+        }
+
+        function assemblePdfInWorker(pages, metadata, metaPrefix) {
+            return new Promise((resolve, reject) => {
+                const worker = getPdfWorker();
+                const id = ++_pdfWorkerIdCounter;
+                const handler = (e) => {
+                    if (e.data.id !== id) return;
+                    worker.removeEventListener('message', handler);
+                    worker.removeEventListener('error', errHandler);
+                    if (e.data.error) {
+                        reject(new Error(e.data.error));
+                    } else {
+                        resolve(new Blob([e.data.buf], { type: 'application/pdf' }));
+                    }
+                };
+                const errHandler = (e) => {
+                    worker.removeEventListener('message', handler);
+                    worker.removeEventListener('error', errHandler);
+                    reject(new Error('PDF worker error: ' + (e.message || e)));
+                };
+                worker.addEventListener('message', handler);
+                worker.addEventListener('error', errHandler);
+                // Transfer JPEG ArrayBuffers to worker (zero-copy)
+                const transfers = pages.map(pg => pg.jpegData.buffer);
+                worker.postMessage({ id, pages, metadata, metaPrefix }, transfers);
+            });
+        }
+
         async function buildPdfBlob(options = {}) {
             const abortSignal = options.signal || null;
             const throwIfAborted = () => {
@@ -14314,7 +14390,6 @@
             };
 
             throwIfAborted();
-            const { jsPDF } = window.jspdf;
             const pxToMm = (px, fallbackPx) => {
                 const normalizedPx = normalizePageDimension(px, fallbackPx);
                 return Math.max(10, Math.round((normalizedPx * 25.4 / 96) * 1000) / 1000);
@@ -14342,7 +14417,6 @@
                 pdfSourceSizeCache.set(pageNo, size);
                 return size;
             };
-            let pdf = null;
 
             const dirtyFlushed = await flushDirtyPages({ abortSignal });
             if (!dirtyFlushed && abortSignal?.aborted) {
@@ -14375,8 +14449,10 @@
             const pdfCanvas = document.createElement('canvas');
             const pdfCtx = pdfCanvas.getContext('2d');
 
-            // Single-pass: collect metadata + render each page, releasing memory per page
+            // Phase 1: Render each page to JPEG on the main thread (with pausing).
+            // Collect all data needed for the worker to assemble the PDF.
             const metadataParts = [];
+            const workerPages = []; // { jpegData, wMm, hMm, orientation }
 
             for (let i = 0; i < pageCount; i++) {
                 throwIfAborted();
@@ -14440,20 +14516,10 @@
                 const pageHash = `${computePageHash(pageData)}|exp:${pageStrokeEntry.pageWidth}x${pageStrokeEntry.pageHeight}|s${exportScale}|hq${options.highQuality ? 1 : 0}`;
                 const cached = pdfExportCache.get(i);
 
-                if (!pdf) {
-                    pdf = new jsPDF({
-                        orientation: getPageOrientation(pageMmWidth, pageMmHeight),
-                        unit: 'mm',
-                        format: [pageMmWidth, pageMmHeight],
-                        compress: true
-                    });
-                } else {
-                    pdf.addPage([pageMmWidth, pageMmHeight], getPageOrientation(pageMmWidth, pageMmHeight));
-                }
-
+                let jpegData;
                 if (cached && cached.hash === pageHash) {
                     // Use cached JPEG — no re-render needed
-                    pdf.addImage(cached.jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
+                    jpegData = cached.jpegData;
                 } else {
                     // Render this page to canvas
                     const targetCanvasWidth = Math.max(1, Math.round(pageStrokeEntry.pageWidth * exportScale));
@@ -14536,7 +14602,10 @@
                         drawSmoothStroke(tempCtx, stroke);
                         strokeCheckCounter += 1;
                         pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
-                        if (strokeCheckCounter % 10 === 0 || pointCheckCounter >= 1500) {
+                        // Yield every 3 strokes or 500 points during interaction for smoother UI
+                        const yieldInterval = hasSmoothInteraction() ? 1 : 10;
+                        const pointLimit = hasSmoothInteraction() ? 200 : 1500;
+                        if (strokeCheckCounter % yieldInterval === 0 || pointCheckCounter >= pointLimit) {
                             pointCheckCounter = 0;
                             await yieldForResponsiveness(false);
                             throwIfAborted();
@@ -14551,23 +14620,28 @@
                     const pageBlob = await new Promise(resolve => tempCanvas.toBlob(resolve, 'image/jpeg', jpegQuality));
                     throwIfAborted();
                     const arrayBuf = await pageBlob.arrayBuffer();
-                    const jpegData = new Uint8Array(arrayBuf);
-                    pdf.addImage(jpegData, 'JPEG', 0, 0, pageMmWidth, pageMmHeight);
+                    jpegData = new Uint8Array(arrayBuf);
 
                     // Cache for next save
                     pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson });
                 }
-            }
 
-            if (!pdf) {
-                pdf = new jsPDF({
-                    orientation: 'portrait',
-                    unit: 'mm',
-                    format: 'a4'
+                // Copy jpegData so the cache keeps its own buffer after transfer to worker
+                workerPages.push({
+                    jpegData: new Uint8Array(jpegData),
+                    wMm: pageMmWidth,
+                    hMm: pageMmHeight,
+                    orientation: getPageOrientation(pageMmWidth, pageMmHeight)
                 });
             }
 
-            // Embed stroke data as PDF metadata
+            // Release temp canvas backing stores
+            tempCanvas.width = 0;
+            tempCanvas.height = 0;
+            pdfCanvas.width = 0;
+            pdfCanvas.height = 0;
+
+            // Compress metadata on main thread (uses streaming CompressionStream — non-blocking)
             const metadataString = `[${metadataParts.join(',')}]`;
             await yieldForResponsiveness(true);
             let encodedMetadata, metaPrefix;
@@ -14580,21 +14654,12 @@
                 metaPrefix = 'STROKES_DATA:';
             }
 
-            pdf.setProperties({
-                title: 'Cuaderno Digital',
-                subject: 'Notas con S-Pen',
-                creator: 'Cuaderno Digital App',
-                keywords: `${metaPrefix}${encodedMetadata}`
-            });
-
-            // Release temp canvas backing stores
-            tempCanvas.width = 0;
-            tempCanvas.height = 0;
-            pdfCanvas.width = 0;
-            pdfCanvas.height = 0;
-
             throwIfAborted();
-            const pdfResult = pdf.output('blob');
+
+            // Phase 2: Assemble PDF in Web Worker (jsPDF addImage + output run off main thread)
+            // This is the heaviest synchronous work and would block pen/scroll on the main thread.
+            const pdfResult = await assemblePdfInWorker(workerPages, encodedMetadata, metaPrefix);
+            throwIfAborted();
             state.lastExportSize = pdfResult.size;
             return pdfResult;
         }
