@@ -129,9 +129,29 @@
 
         @media (max-width: 720px) {
 
+            :root {
+                --header-btn-size: 34px;
+            }
+
+            header,
+            .drive-topbar {
+                padding: 8px 12px;
+                min-height: 52px;
+                gap: 8px;
+            }
+
             .logo,
             .drive-brand {
                 gap: 6px;
+                min-width: 0;
+                flex: 1 1 auto;
+            }
+
+            .logo svg,
+            .drive-brand svg {
+                width: 28px;
+                height: 20px;
+                flex: 0 0 auto;
             }
 
             .brand-name {
@@ -140,16 +160,53 @@
 
             .doc-title {
                 margin-left: 6px;
-                max-width: min(40vw, 180px);
+                padding: 3px 6px;
+                font-size: 0.86rem;
+                max-width: clamp(72px, 26vw, 128px);
+                min-width: 0;
+                flex: 1 1 auto;
             }
 
-            header {
-                padding: 8px 12px;
-                min-height: 52px;
+            .doc-title.editing,
+            .doc-title:focus {
+                max-width: min(52vw, 180px);
             }
 
-            :root {
-                --header-btn-size: 38px;
+            .header-actions {
+                gap: 6px;
+                flex: 0 0 auto;
+            }
+
+            .header-actions>* {
+                flex-shrink: 0;
+            }
+
+            .drive-actions {
+                gap: 6px;
+                flex-wrap: nowrap;
+                flex: 0 0 auto;
+            }
+
+            #btn-drive-new,
+            #btn-drive-login {
+                min-height: var(--header-btn-size);
+                padding: 8px 10px;
+                font-size: 0.8rem;
+            }
+
+            .drive-main {
+                padding: 14px 12px 72px;
+            }
+
+            .drive-toolbar {
+                margin-bottom: 14px;
+                gap: 10px;
+            }
+
+            .drive-search {
+                min-width: 0;
+                max-width: none;
+                width: 100%;
             }
 
             .drive-profile-btn {
@@ -162,41 +219,20 @@
                 height: 32px;
             }
 
-            .presence-avatar-wrapper {
-                width: 24px;
-                height: 24px;
-                margin-left: -6px;
-            }
-
-            .presence-avatar-img {
-                width: 24px;
-                height: 24px;
-            }
-
-            .presence-device-badge {
-                width: 12px;
-                height: 12px;
-            }
-
-            .presence-device-badge svg {
-                width: 7px;
-                height: 7px;
-            }
-
-            .presence-overflow {
-                width: 24px;
-                height: 24px;
-                font-size: 0.58rem;
-                margin-left: -6px;
+            .drive-profile-menu {
+                max-width: min(92vw, 280px);
+                right: 0;
+                left: auto;
             }
 
             /* Move mode toggle to fixed bottom bar on mobile */
             .mode-toggle-group {
                 position: fixed;
-                bottom: 16px;
+                bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
                 left: 50%;
                 transform: translateX(-50%);
                 z-index: 1001;
+                max-width: calc(100vw - 24px);
                 background: var(--bg-secondary);
                 border-radius: var(--radius-lg);
                 padding: 6px 14px;
@@ -222,6 +258,28 @@
                 transform: none;
                 min-height: var(--header-btn-size);
                 height: var(--header-btn-size);
+            }
+
+            #readonly-banner {
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+                padding: 8px 10px !important;
+                font-size: 0.82rem !important;
+            }
+
+            #readonly-banner>div:first-child {
+                width: 100%;
+            }
+
+            #readonly-banner>div:last-child {
+                width: 100%;
+                justify-content: flex-end;
+                gap: 8px !important;
+            }
+
+            #readonly-banner button {
+                min-width: 0;
+                flex: 1 1 auto;
             }
         }
 
@@ -2424,14 +2482,14 @@
             align-items: center;
             justify-content: center;
             z-index: 3000;
-            opacity: 1;
+            opacity: 0;
+            pointer-events: none;
             transition: opacity 0.2s ease;
         }
 
-        .modal-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-            display: flex !important;
+        .modal-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         /* Share Modal Styles */
@@ -2445,11 +2503,13 @@
             flex-direction: column;
             overflow: hidden;
             transform: scale(0.95);
-            transition: transform 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+            opacity: 0;
+            transition: transform 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28), opacity 0.2s ease;
         }
 
         .modal-overlay.visible .modal-container {
             transform: scale(1);
+            opacity: 1;
         }
 
         .modal-header {
@@ -2607,6 +2667,191 @@
             margin-right: 8px;
             width: 18px;
             height: 18px;
+        }
+
+        /* Final mobile layout overrides (placed at end to win cascade) */
+        @media (max-width: 720px) {
+            :root {
+                --header-btn-size: 34px;
+            }
+
+            #editor-view header,
+            #drive-home .drive-topbar {
+                padding: 8px 12px;
+                min-height: 52px;
+                gap: 8px;
+            }
+
+            #editor-view .logo,
+            #drive-home .drive-brand {
+                gap: 6px;
+                min-width: 0;
+                flex: 1 1 auto;
+            }
+
+            #editor-view .logo svg,
+            #drive-home .drive-brand svg {
+                width: 28px;
+                height: 20px;
+                flex: 0 0 auto;
+            }
+
+            #editor-view .brand-name,
+            #drive-home .brand-name {
+                display: none;
+            }
+
+            #editor-view .doc-title {
+                margin-left: 6px;
+                padding: 3px 6px;
+                font-size: 0.86rem;
+                max-width: clamp(72px, 26vw, 128px);
+                min-width: 0;
+                flex: 1 1 auto;
+            }
+
+            #editor-view .doc-title.editing,
+            #editor-view .doc-title:focus {
+                max-width: min(52vw, 180px);
+            }
+
+            #editor-view .header-actions {
+                gap: 6px;
+                flex: 0 0 auto;
+            }
+
+            #editor-view .header-actions>* {
+                flex-shrink: 0;
+            }
+
+            #editor-view .presence-avatar-wrapper {
+                width: 24px;
+                height: 24px;
+                margin-left: -6px;
+            }
+
+            #editor-view .presence-avatar-img {
+                width: 24px;
+                height: 24px;
+            }
+
+            #editor-view .presence-device-badge {
+                width: 12px;
+                height: 12px;
+            }
+
+            #editor-view .presence-device-badge svg {
+                width: 7px;
+                height: 7px;
+            }
+
+            #editor-view .presence-overflow {
+                width: 24px;
+                height: 24px;
+                font-size: 0.58rem;
+                margin-left: -6px;
+            }
+
+            #drive-home .drive-actions {
+                gap: 6px;
+                flex-wrap: nowrap;
+                flex: 0 0 auto;
+            }
+
+            #drive-home #btn-drive-new,
+            #drive-home #btn-drive-login {
+                min-height: var(--header-btn-size);
+                padding: 8px 10px;
+                font-size: 0.8rem;
+            }
+
+            #drive-home .drive-main {
+                padding: 14px 12px 72px;
+            }
+
+            #drive-home .drive-toolbar {
+                margin-bottom: 14px;
+                gap: 10px;
+            }
+
+            #drive-home .drive-search {
+                min-width: 0;
+                max-width: none;
+                width: 100%;
+            }
+
+            #drive-home .drive-profile-btn,
+            #editor-view .drive-profile-btn {
+                width: 32px;
+                height: 32px;
+            }
+
+            #drive-home .drive-profile-avatar,
+            #editor-view .drive-profile-avatar {
+                width: 32px;
+                height: 32px;
+            }
+
+            #drive-home .drive-profile-menu,
+            #editor-view .drive-profile-menu {
+                max-width: min(92vw, 280px);
+                right: 0;
+                left: auto;
+            }
+
+            #editor-view .mode-toggle-group {
+                position: fixed;
+                bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 1001;
+                max-width: calc(100vw - 24px);
+                background: var(--bg-secondary);
+                border-radius: var(--radius-lg);
+                padding: 6px 14px;
+                box-shadow: var(--shadow-medium);
+                border: 1px solid rgba(0, 0, 0, 0.06);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+            }
+
+            #editor-view .mode-toggle-status {
+                top: auto;
+                bottom: calc(100% + 2px);
+                transform: translate(-50%, 4px);
+            }
+
+            #editor-view .mode-toggle-btn.is-editing+.mode-toggle-status {
+                transform: translate(-50%, 0);
+            }
+
+            #editor-view .mode-toggle-btn.is-editing {
+                transform: none;
+                min-height: var(--header-btn-size);
+                height: var(--header-btn-size);
+            }
+
+            #readonly-banner {
+                flex-wrap: wrap !important;
+                gap: 8px !important;
+                padding: 8px 10px !important;
+                font-size: 0.82rem !important;
+            }
+
+            #readonly-banner>div:first-child {
+                width: 100%;
+            }
+
+            #readonly-banner>div:last-child {
+                width: 100%;
+                justify-content: flex-end;
+                gap: 8px !important;
+            }
+
+            #readonly-banner button {
+                min-width: 0;
+                flex: 1 1 auto;
+            }
         }
     </style>
 </head>
@@ -6087,14 +6332,41 @@
             saveViewMode('drive');
         }
 
+        function getEditorTopOffset() {
+            const header = document.querySelector('#editor-view header');
+            const headerHeight = header ? header.getBoundingClientRect().height : 60;
+            const readOnlyBanner = document.getElementById('readonly-banner');
+            if (!readOnlyBanner || readOnlyBanner.classList.contains('hidden')) {
+                return headerHeight;
+            }
+            const bannerStyle = window.getComputedStyle(readOnlyBanner);
+            const bannerVisible = bannerStyle.display !== 'none' && bannerStyle.visibility !== 'hidden';
+            const bannerHeight = bannerVisible ? readOnlyBanner.getBoundingClientRect().height : 0;
+            return headerHeight + bannerHeight;
+        }
+
+        function getMobileFloatingControlsInset() {
+            if (!window.matchMedia('(max-width: 720px)').matches) return 0;
+            const modeToggleGroup = document.querySelector('.mode-toggle-group');
+            const modeToggleBtn = document.getElementById('mode-toggle-btn');
+            if (!modeToggleGroup || !modeToggleBtn || modeToggleBtn.style.display === 'none') return 0;
+            const groupStyle = window.getComputedStyle(modeToggleGroup);
+            if (groupStyle.display === 'none' || groupStyle.visibility === 'hidden' || groupStyle.position !== 'fixed') {
+                return 0;
+            }
+            const rect = modeToggleGroup.getBoundingClientRect();
+            const inset = Math.max(0, window.innerHeight - rect.top);
+            if (!Number.isFinite(inset) || inset <= 0) return 0;
+            return inset + 8;
+        }
+
         function clampToolbarPosition() {
             if (!toolbar) return;
-            const header = document.querySelector('header');
-            const headerHeight = header ? header.getBoundingClientRect().height : 60;
             const margin = 12;
             const rect = toolbar.getBoundingClientRect();
-            const minTop = headerHeight + margin;
-            const maxTop = Math.max(minTop, window.innerHeight - rect.height - margin);
+            const minTop = getEditorTopOffset() + margin;
+            const bottomInset = getMobileFloatingControlsInset();
+            const maxTop = Math.max(minTop, window.innerHeight - rect.height - margin - bottomInset);
             const minLeft = margin;
             const maxLeft = Math.max(minLeft, window.innerWidth - rect.width - margin);
             const nextLeft = Math.max(minLeft, Math.min(rect.left, maxLeft));
@@ -9213,8 +9485,8 @@
             const btnRect = eraserButton.getBoundingClientRect();
             const menuRect = eraserMenu.getBoundingClientRect();
             const margin = 12;
-            const header = document.querySelector('header');
-            const headerHeight = header ? header.getBoundingClientRect().height : 60;
+            const editorTopOffset = getEditorTopOffset();
+            const bottomInset = getMobileFloatingControlsInset();
             let left = btnRect.right + 12;
             let top = btnRect.top + (btnRect.height - menuRect.height) / 2;
 
@@ -9224,7 +9496,7 @@
             }
 
             left = Math.max(margin, Math.min(left, window.innerWidth - menuRect.width - margin));
-            top = Math.max(headerHeight + margin, Math.min(top, window.innerHeight - menuRect.height - margin));
+            top = Math.max(editorTopOffset + margin, Math.min(top, window.innerHeight - menuRect.height - margin - bottomInset));
 
             eraserMenu.style.left = `${left}px`;
             eraserMenu.style.top = `${top}px`;
@@ -10349,8 +10621,7 @@
             let snapTimeout = null;
 
             function getHeaderHeight() {
-                const header = document.querySelector('header');
-                return header ? header.getBoundingClientRect().height : 60;
+                return getEditorTopOffset();
             }
 
             function getToolbarSize() {
@@ -10360,8 +10631,9 @@
 
             function getToolbarLimits(toolbarSize, margin) {
                 const headerHeight = getHeaderHeight();
+                const bottomInset = getMobileFloatingControlsInset();
                 const minTop = headerHeight + margin;
-                const maxTop = Math.max(minTop, window.innerHeight - toolbarSize.height - margin);
+                const maxTop = Math.max(minTop, window.innerHeight - toolbarSize.height - margin - bottomInset);
                 const minLeft = margin;
                 const maxLeft = Math.max(minLeft, window.innerWidth - toolbarSize.width - margin);
                 return { minTop, maxTop, minLeft, maxLeft };
@@ -10369,7 +10641,8 @@
 
             function updateToolbarScale(margin) {
                 const headerHeight = getHeaderHeight();
-                const availableHeight = window.innerHeight - headerHeight - margin;
+                const bottomInset = getMobileFloatingControlsInset();
+                const availableHeight = window.innerHeight - headerHeight - margin - bottomInset;
                 const availableWidth = window.innerWidth - margin * 2;
                 const baseWidth = toolbar.offsetWidth;
                 const baseHeight = toolbar.offsetHeight;
@@ -13225,7 +13498,16 @@
 
         function startPresencePing() {
             if (_presencePingInterval) return;
-            pingPresence();
+            // Delay first ping to allow driveUserProfile to load
+            const tryFirstPing = () => {
+                if (driveUserProfile) {
+                    pingPresence();
+                } else {
+                    // Profile not yet loaded, retry in 3s
+                    setTimeout(tryFirstPing, 3000);
+                }
+            };
+            setTimeout(tryFirstPing, 1000);
             _presencePingInterval = setInterval(pingPresence, PRESENCE_PING_INTERVAL);
         }
 
