@@ -2983,6 +2983,7 @@
                         contenteditable="true" spellcheck="false">Untitled</span>
                 </div>
                 <div class="header-actions">
+                    <div class="presence-avatars" id="presence-avatars"></div>
                     <button class="btn btn-secondary btn-icon-square hidden" id="btn-drive-share" title="Share Document"
                         aria-label="Share Document">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -2993,7 +2994,6 @@
                             <line x1="23" y1="11" x2="17" y2="11" />
                         </svg>
                     </button>
-                    <div class="presence-avatars" id="presence-avatars"></div>
                     <button class="btn btn-secondary btn-icon-square" id="btn-fullscreen" title="Fullscreen"
                         aria-label="Fullscreen">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -13355,6 +13355,7 @@
             state.collabEnabled = true;
             state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
             startPresencePing();
+            pollDriveRevision();
             console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
         }
 
@@ -13384,7 +13385,7 @@
                 state.driveLastPolledAt = Date.now();
 
                 // Update presence avatars from appProperties (zero extra API calls)
-                if (data.appProperties) updatePresenceFromProps(data.appProperties);
+                updatePresenceFromProps(data.appProperties || {});
 
                 // Detect changes BEFORE updating local state
                 let hasChanged = false;
@@ -13444,22 +13445,75 @@
             return Math.abs(h).toString(36).slice(0, 8);
         }
 
+        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd'];
+        const PRESENCE_CLIENT_ID_KEY = 'presence-client-id-v1';
+
+        function getPresenceClientId() {
+            try {
+                const existing = localStorage.getItem(PRESENCE_CLIENT_ID_KEY);
+                if (existing) return existing;
+            } catch (e) { }
+            const generated = `c${Math.random().toString(36).slice(2, 10)}`;
+            try {
+                localStorage.setItem(PRESENCE_CLIENT_ID_KEY, generated);
+            } catch (e) { }
+            return generated;
+        }
+
+        function clampPresenceValue(value, maxLen = 120) {
+            if (value === null || value === undefined) return '';
+            const str = String(value).trim();
+            if (!str) return '';
+            return str.length > maxLen ? str.slice(0, maxLen) : str;
+        }
+
         function getPresenceKey() {
+            const email = (driveUserProfile?.email || 'anon').toLowerCase().trim();
+            const clientId = getPresenceClientId();
+            return `p_${simpleHash(`${email}:${clientId}`)}`;
+        }
+
+        function getLegacyPresenceKey() {
             const email = driveUserProfile?.email || 'anon';
             const device = detectDeviceType().charAt(0); // m, t, p
             return `p_${simpleHash(email)}_${device}`;
         }
 
+        function getPresenceFieldKey(prefix, suffix) {
+            return `${prefix}_${suffix}`;
+        }
+
+        function parsePresenceChunkKey(key) {
+            const match = /^((?:p_[a-z0-9]+))_([nedtp])$/i.exec(key || '');
+            if (!match) return null;
+            return { prefix: match[1], field: match[2].toLowerCase() };
+        }
+
+        function buildPresenceRecordFromChunk(chunk, now) {
+            const ts = Number(chunk.t);
+            if (!Number.isFinite(ts) || now - ts > PRESENCE_STALE_MS) return null;
+            return {
+                n: chunk.n || '',
+                e: chunk.e || '',
+                p: chunk.p || '',
+                d: chunk.d || 'pc',
+                t: ts
+            };
+        }
+
         async function pingPresence() {
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
-            const key = getPresenceKey();
-            const value = JSON.stringify({
-                n: driveUserProfile.name || '',
-                e: driveUserProfile.email || '',
-                p: driveUserProfile.photo || '',
-                t: Date.now(),
-                d: detectDeviceType()
-            });
+            const keyPrefix = getPresenceKey();
+            const legacyKey = getLegacyPresenceKey();
+            const now = Date.now();
+            const patch = {
+                [getPresenceFieldKey(keyPrefix, 'n')]: clampPresenceValue(driveUserProfile.name || '', 80),
+                [getPresenceFieldKey(keyPrefix, 'e')]: clampPresenceValue(driveUserProfile.email || '', 120),
+                [getPresenceFieldKey(keyPrefix, 'p')]: clampPresenceValue(driveUserProfile.photo || '', 120),
+                [getPresenceFieldKey(keyPrefix, 't')]: String(now),
+                [getPresenceFieldKey(keyPrefix, 'd')]: clampPresenceValue(detectDeviceType(), 12),
+                [legacyKey]: null // cleanup old single-key format for this client
+            };
             try {
                 // Read current appProperties to clean stale entries
                 const metaRes = await driveFetch(
@@ -13468,21 +13522,39 @@
                 );
                 const metaData = await metaRes.json();
                 const props = metaData.appProperties || {};
-                const patch = { [key]: value };
-                const now = Date.now();
-                // Remove stale presence entries
-                for (const k of Object.keys(props)) {
+                const grouped = new Map();
+
+                for (const [k, v] of Object.entries(props)) {
                     if (!k.startsWith('p_')) continue;
-                    if (k === key) continue;
+                    const chunkKey = parsePresenceChunkKey(k);
+                    if (chunkKey) {
+                        if (!grouped.has(chunkKey.prefix)) grouped.set(chunkKey.prefix, {});
+                        grouped.get(chunkKey.prefix)[chunkKey.field] = v;
+                        continue;
+                    }
+                    // Legacy payloads: remove stale/corrupt entries and keep active ones.
+                    if (k === legacyKey) continue;
                     try {
-                        const v = JSON.parse(props[k]);
-                        if (now - v.t > PRESENCE_STALE_MS) {
-                            patch[k] = null; // null removes the key
+                        const legacy = JSON.parse(v);
+                        const legacyTs = Number(legacy?.t);
+                        if (!Number.isFinite(legacyTs) || now - legacyTs > PRESENCE_STALE_MS) {
+                            patch[k] = null;
                         }
                     } catch (e) {
-                        patch[k] = null; // corrupt entry, remove
+                        patch[k] = null;
                     }
                 }
+
+                // Remove stale/corrupt chunked records from other clients.
+                grouped.forEach((chunk, prefix) => {
+                    if (prefix === keyPrefix) return;
+                    const ts = Number(chunk.t);
+                    if (Number.isFinite(ts) && now - ts <= PRESENCE_STALE_MS) return;
+                    PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
+                        patch[getPresenceFieldKey(prefix, suffix)] = null;
+                    });
+                });
+
                 await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
                     {
@@ -13522,16 +13594,41 @@
             if (!appProperties) return;
             const now = Date.now();
             const myKey = driveUserProfile ? getPresenceKey() : null;
+            const myLegacyKey = driveUserProfile ? getLegacyPresenceKey() : null;
             const active = [];
+            const grouped = new Map();
+
             for (const [k, v] of Object.entries(appProperties)) {
                 if (!k.startsWith('p_')) continue;
-                if (k === myKey) continue; // don't show yourself (same device)
+                const chunkKey = parsePresenceChunkKey(k);
+                if (chunkKey) {
+                    if (myKey && chunkKey.prefix === myKey) continue; // same browser/device
+                    if (!grouped.has(chunkKey.prefix)) grouped.set(chunkKey.prefix, {});
+                    grouped.get(chunkKey.prefix)[chunkKey.field] = v;
+                    continue;
+                }
+                // Legacy single-key payload fallback
+                if (myLegacyKey && k === myLegacyKey) continue;
                 try {
                     const data = JSON.parse(v);
-                    if (now - data.t > PRESENCE_STALE_MS) continue;
-                    active.push(data);
+                    const ts = Number(data?.t);
+                    if (!Number.isFinite(ts) || now - ts > PRESENCE_STALE_MS) continue;
+                    active.push({
+                        n: data.n || '',
+                        e: data.e || '',
+                        p: data.p || '',
+                        d: data.d || 'pc',
+                        t: ts
+                    });
                 } catch (e) { /* skip corrupt */ }
             }
+
+            grouped.forEach(chunk => {
+                const record = buildPresenceRecordFromChunk(chunk, now);
+                if (!record) return;
+                active.push(record);
+            });
+
             active.sort((a, b) => b.t - a.t);
             renderPresenceAvatars(active);
         }
@@ -13544,8 +13641,8 @@
 
             const avatarFallback = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
 
-            const maxShow = users.length > 3 ? 2 : 3;
-            const overflow = users.length > 3 ? users.length - 2 : 0;
+            const maxShow = Math.min(3, users.length);
+            const overflow = users.length > 3 ? users.length - 3 : 0;
 
             for (let i = 0; i < maxShow && i < users.length; i++) {
                 const u = users[i];
@@ -13573,7 +13670,7 @@
                 const ov = document.createElement('div');
                 ov.className = 'presence-overflow';
                 ov.textContent = `+${overflow}`;
-                ov.title = users.slice(2).map(u => u.n || u.e || 'Unknown').join(', ');
+                ov.title = users.slice(3).map(u => u.n || u.e || 'Unknown').join(', ');
                 container.appendChild(ov);
             }
         }
@@ -13590,9 +13687,14 @@
 
         async function clearPresence() {
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
-            const key = getPresenceKey();
+            const keyPrefix = getPresenceKey();
+            const legacyKey = getLegacyPresenceKey();
+            const appProperties = { [legacyKey]: null };
+            PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
+                appProperties[getPresenceFieldKey(keyPrefix, suffix)] = null;
+            });
             try {
-                const body = JSON.stringify({ appProperties: { [key]: null } });
+                const body = JSON.stringify({ appProperties });
                 if (navigator.sendBeacon) {
                     // sendBeacon can't set auth headers, use fetch with keepalive
                     fetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}`, {
