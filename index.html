@@ -2970,26 +2970,31 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
 
         // Native Canvas Template Render (replaces previous heavy SVG_BACKGROUND)
-        function drawTemplateBackground(ctx, width, height, scale = 1) {
-            ctx.save();
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, width, height);
+        // Template background cache: render once, reuse as single drawImage
+        const _tplCache = new Map(); // key "WxH" -> canvas
 
-            // SVG viewBox is 21 x 29.7. Keep this mapping exact.
-            const u = width / 21;
+        function _renderTemplateToCanvas(w, h) {
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = w;
+            offCanvas.height = h;
+            const ctx = offCanvas.getContext('2d');
+
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, w, h);
+
+            const u = w / 21;
             const strokeColor = '#f0db4c';
             const strokeW = 0.06 * u;
             const cornerR = 0.03 * u;
 
-            // Outer frame: <rect x="1.5" y="1.43" width="18" height="27" rx="0.03" ry="0.03" .../>
+            // Outer frame
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth = strokeW;
             ctx.beginPath();
             ctx.roundRect(1.5 * u, 1.43 * u, 18 * u, 27 * u, cornerR);
             ctx.stroke();
 
-            // Dot grid: SVG feGaussianBlur stdDeviation=0.02 on circle r=0.035
-            // Pre-render a single soft dot (radial gradient = inward fade) then stamp it
+            // Dot grid with inward radial gradient per dot
             const dotR = 0.035 * u;
             const blurSigma = 0.02 * u;
             const stampR = dotR + blurSigma;
@@ -3016,21 +3021,17 @@
                 }
             }
 
-            // Footer rectangles + ticks:
-            // <rect x="2.0" y="27.43" width="8.0" height="0.5".../>
-            // <rect x="11.0" y="27.43" width="8.0" height="0.5".../>
+            // Footer rectangles + ticks
             const lineY = 27.43 * u;
             const lineH = 0.5 * u;
             ctx.strokeStyle = strokeColor;
             ctx.lineWidth = strokeW;
-
             ctx.beginPath();
             ctx.roundRect(2.0 * u, lineY, 8.0 * u, lineH, cornerR);
             ctx.stroke();
             ctx.beginPath();
             ctx.roundRect(11.0 * u, lineY, 8.0 * u, lineH, cornerR);
             ctx.stroke();
-
             ctx.beginPath();
             for (let x = 2.5; x <= 9.5 + 1e-9; x += 0.5) {
                 ctx.moveTo(x * u, lineY);
@@ -3042,8 +3043,7 @@
             }
             ctx.stroke();
 
-            // Footer color circles:
-            // cx="10.125|10.375|10.625|10.875" cy="27.68" r="0.125"
+            // Footer color circles
             const circleY = 27.68 * u;
             const circleR = 0.125 * u;
             const colors = ['#ff0000', '#000000', '#0000ff', '#6eff12'];
@@ -3059,7 +3059,22 @@
                 circleX += 0.25 * u;
             }
 
-            ctx.restore();
+            return offCanvas;
+        }
+
+        function drawTemplateBackground(ctx, width, height, scale = 1) {
+            const key = `${width}x${height}`;
+            let cached = _tplCache.get(key);
+            if (!cached) {
+                cached = _renderTemplateToCanvas(width, height);
+                // Keep max 3 sizes cached (display, bake, export)
+                if (_tplCache.size >= 3) {
+                    const firstKey = _tplCache.keys().next().value;
+                    _tplCache.delete(firstKey);
+                }
+                _tplCache.set(key, cached);
+            }
+            ctx.drawImage(cached, 0, 0);
         }
         const FULLSCREEN_ICON_ENTER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 3 21 3 21 9"/>
@@ -4324,6 +4339,7 @@
 
             // Reset cached template/dot pattern so they get regenerated fresh
             window._templateBackgroundUrl = null;
+            _tplCache.clear();
 
             if (state.activePdfObjectUrl) {
                 URL.revokeObjectURL(state.activePdfObjectUrl);
@@ -7190,6 +7206,7 @@
             activePageIndices.clear();
             if (canvasContainer) canvasContainer.innerHTML = '';
             window._templateBackgroundUrl = null;
+            _tplCache.clear();
 
             setReadOnlyMode(true, { force: true });
 
@@ -14326,15 +14343,7 @@
                         pdfCanvas.width = 0;
                         pdfCanvas.height = 0;
                     } else {
-                        // Cache template as ImageBitmap to avoid re-rendering 1785 dots per page
-                        const tplKey = `${tempCanvas.width}x${tempCanvas.height}`;
-                        if (!buildPdfBlob._tplCache || buildPdfBlob._tplCacheKey !== tplKey) {
-                            drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
-                            buildPdfBlob._tplCache = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-                            buildPdfBlob._tplCacheKey = tplKey;
-                        } else {
-                            tempCtx.putImageData(buildPdfBlob._tplCache, 0, 0);
-                        }
+                        drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
                         throwIfAborted();
                     }
 
