@@ -381,18 +381,16 @@
         }
 
         .presence-avatar-wrapper[title] {
-            z-index: 1;
+            z-index: var(--presence-z, 1);
         }
 
         @media (hover: hover) and (pointer: fine) {
             .presence-avatar-wrapper:hover {
-                z-index: 10;
                 transform: scale(1.1);
             }
         }
 
         .presence-avatars.popup-open .presence-avatar-wrapper {
-            z-index: 1 !important;
             transform: none !important;
         }
 
@@ -3907,8 +3905,8 @@
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 24;
-        const DRIVE_SYNC_IDLE_DELAY = 700;
-        const DRIVE_SYNC_MAX_DELAY = 9000;
+        const DRIVE_SYNC_IDLE_DELAY = 450;
+        const DRIVE_SYNC_MAX_DELAY = 5000;
         const DRIVE_POLL_TIMEOUT = 12000;
         const DRIVE_META_TIMEOUT = 12000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
@@ -13745,7 +13743,11 @@
                         try {
                             const checkRes = await driveFetch(
                                 `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
-                                { signal: controller.signal, timeout: DRIVE_META_TIMEOUT }
+                                {
+                                    signal: controller.signal,
+                                    timeout: DRIVE_META_TIMEOUT,
+                                    headers: { 'Cache-Control': 'no-cache' }
+                                }
                             );
                             const checkData = await checkRes.json();
                             let hasRemoteChanges = false;
@@ -13830,7 +13832,7 @@
         // ============================================================
         // Collaborative sync: polling, pulling, and merging
         // ============================================================
-        const COLLAB_POLL_INTERVAL = 2000; // 2 seconds for faster update detection
+        const COLLAB_POLL_INTERVAL = 1000; // 1 second for faster cross-device detection
         let collabPollInProgress = false;
         let collabPullInProgress = false;
 
@@ -13858,13 +13860,17 @@
         async function pollDriveRevision() {
             if (!state.driveFileId || !driveAccessToken) return;
             if (collabPollInProgress || collabPullInProgress) return;
-            if (driveSaveInProgress || driveSaveQueued) return; // Don't poll while saving
+            if (driveSaveInProgress) return; // Avoid polling only during active upload/build
             if (document.visibilityState === 'hidden') return; // Skip when tab hidden
             collabPollInProgress = true;
             try {
                 const res = await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime,appProperties`,
-                    { method: 'GET', timeout: DRIVE_POLL_TIMEOUT }
+                    {
+                        method: 'GET',
+                        timeout: DRIVE_POLL_TIMEOUT,
+                        headers: { 'Cache-Control': 'no-cache' }
+                    }
                 );
                 const data = await res.json();
                 state.driveLastPolledAt = Date.now();
@@ -13904,7 +13910,7 @@
                     // After a successful pull, poll again immediately to catch
                     // back-to-back updates without waiting for the next interval.
                     collabPollInProgress = false;
-                    setTimeout(() => pollDriveRevision(), 500);
+                    setTimeout(() => pollDriveRevision(), 120);
                     return;
                 }
             } catch (err) {
@@ -13921,7 +13927,7 @@
         let _presenceCanHeartbeat = false;
         const PRESENCE_PING_INTERVAL = 120000; // 2 minutes
         const PRESENCE_STALE_MS = 600000; // 10 minutes
-        const PRESENCE_HEARTBEAT_INTERVAL = COLLAB_POLL_INTERVAL; // 2 seconds
+        const PRESENCE_HEARTBEAT_INTERVAL = 2000; // 2 seconds
         const PRESENCE_HEARTBEAT_MISS_LIMIT = 6;
         const PRESENCE_ONLINE_STICKY_MISS_LIMIT = 3; // extra polls before turning gray
         let _presenceOnlineStability = new Map();
@@ -14395,14 +14401,16 @@
                 ov.className = 'presence-overflow';
                 ov.textContent = `+${overflow}`;
                 ov.title = users.slice(3).map(u => u.n || u.e || 'Unknown').join(', ');
+                ov.style.zIndex = '0';
                 container.appendChild(ov);
             }
 
-            for (let i = 0; i < maxShow && i < users.length; i++) {
-                const u = users[i];
+            const visibleUsers = users.slice(0, maxShow);
+            for (let i = visibleUsers.length - 1, visualIndex = 0; i >= 0; i--, visualIndex++) {
+                const u = visibleUsers[i];
                 const wrapper = document.createElement('div');
                 wrapper.className = 'presence-avatar-wrapper';
-                wrapper.style.zIndex = String(100 - i);
+                wrapper.style.setProperty('--presence-z', String(visualIndex + 1));
                 wrapper.title = `${u.n || u.e || 'Unknown'}${u.d ? ' (' + u.d + ')' : ''}`;
 
                 const img = document.createElement('img');
@@ -14655,13 +14663,21 @@
                 const [contentRes, metaData] = await Promise.all([
                     driveFetch(
                         `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?alt=media`,
-                        { method: 'GET', timeout: 300000 }
+                        {
+                            method: 'GET',
+                            timeout: 300000,
+                            headers: { 'Cache-Control': 'no-cache' }
+                        }
                     ),
                     hintHasMeta
                         ? Promise.resolve(remoteMetaHint)
                         : driveFetch(
                             `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
-                            { method: 'GET', timeout: DRIVE_META_TIMEOUT }
+                            {
+                                method: 'GET',
+                                timeout: DRIVE_META_TIMEOUT,
+                                headers: { 'Cache-Control': 'no-cache' }
+                            }
                         ).then(r => r.json())
                 ]);
 
@@ -14747,7 +14763,10 @@
             try {
                 const revRes = await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=headRevisionId,modifiedTime`,
-                    { timeout: DRIVE_META_TIMEOUT }
+                    {
+                        timeout: DRIVE_META_TIMEOUT,
+                        headers: { 'Cache-Control': 'no-cache' }
+                    }
                 );
                 const revData = await revRes.json();
                 if (revData.headRevisionId) {
