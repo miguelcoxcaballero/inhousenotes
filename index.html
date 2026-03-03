@@ -4483,7 +4483,6 @@
         let driveSaveQueuedForce = false;
         let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
-        let driveSavePhase = 'idle';
         let driveContentVersion = 0;
         let driveUploadedContentVersion = 0;
         let activeDriveSaveController = null;
@@ -10613,6 +10612,17 @@
                     closePresencePopup();
                 }
             });
+            // Global hard interrupt: any fresh user input should pause ongoing processing.
+            document.addEventListener('pointerdown', () => {
+                interruptProcessingForUserInput();
+            }, { capture: true, passive: true });
+            document.addEventListener('touchstart', () => {
+                interruptProcessingForUserInput();
+            }, { capture: true, passive: true });
+            document.addEventListener('keydown', (e) => {
+                if (e.isComposing) return;
+                interruptProcessingForUserInput();
+            }, { capture: true });
             if (driveBackBtn) {
                 driveBackBtn.addEventListener('click', () => {
                     if (driveFolderStack.length <= 1) return;
@@ -11292,9 +11302,8 @@
         // Wheel handler for PC - scroll and zoom
         function handleWheel(e) {
             e.preventDefault();
-            // Don't call noteInteractionActivity() for wheel — wheel scroll uses
-            // CSS transforms only and doesn't compete with PDF build/saves.
-            // Calling it here would defer saves indefinitely during continuous scroll.
+            // If processing is running, prioritize fluidity and interrupt immediately.
+            interruptProcessingForUserInput();
 
             if (e.ctrlKey || e.metaKey) {
                 // Zoom with Ctrl+wheel or pinch on trackpad
@@ -13357,16 +13366,27 @@
             return !!(isPenWriting || isGestureInteracting || state.inertiaFrame);
         }
 
+        function hasBlockingProcessingInFlight() {
+            return !!(
+                driveSaveInProgress
+                || saveInProgress
+                || strokeOpsFlushInProgress
+            );
+        }
+
+        function interruptProcessingForUserInput() {
+            if (!hasBlockingProcessingInFlight()) return;
+            noteInteractionActivity();
+        }
+
         function pauseSavesDuringInteraction() {
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
             }
-            // Abort heavy Drive processing while the user is actively writing to avoid UI jank.
-            // Upload phase is network-bound and cheap on main thread, so keep it running.
+            // Priority is input fluidity: stop Drive processing as soon as interaction starts.
             if (
                 driveSaveInProgress
-                && driveSavePhase !== 'uploading'
                 && activeDriveSaveController
                 && !activeDriveSaveController.signal.aborted
             ) {
@@ -13763,7 +13783,6 @@
             const controller = new AbortController();
             activeDriveSaveController = controller;
             driveSaveInProgress = true;
-            driveSavePhase = 'preparing';
             driveDirty = false;
             clearDriveSyncTimers();
             remoteChangePendingDuringSave = false;
@@ -13778,7 +13797,6 @@
                 if (needsPdf && !activePdfDocument) {
                     showStatus('Waiting for PDF...', { preserveState: true });
                     driveSaveInProgress = false;
-                    driveSavePhase = 'idle';
                     activeDriveSaveController = null;
                     scheduleDriveSync();
                     return;
@@ -13791,7 +13809,6 @@
                     driveSaveSucceeded = true;
                 } else {
                 // Phase 1: Build PDF (yellow dot)
-                driveSavePhase = 'building';
                 showStatus('Building PDF...', { phase: 'building' });
                 const driveOptions = {
                     ...options,
@@ -13851,7 +13868,6 @@
                         throw new Error('Drive save aborted');
                     }
                     // Phase 2: Upload to Drive (orange dot)
-                    driveSavePhase = 'uploading';
                     showStatus('Uploading to Drive...', { phase: 'uploading' });
                     const updateRes = await updateDriveFile(fileId, pdfBlob, driveOptions);
                     if (updateRes.headRevisionId) {
@@ -13895,7 +13911,6 @@
                     scheduleDriveSync();
                 }
             }
-            driveSavePhase = 'idle';
             activeDriveSaveController = null;
             driveSaveInProgress = false;
             if (driveSaveSucceeded) {
@@ -16417,9 +16432,28 @@
                                 y: Math.round(p.y * 10) / 10,
                                 p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
                             };
+                            if ((pointIndex + 1) % (isMobileLike ? 180 : 260) === 0) {
+                                await maybeYieldForSlice(false);
+                                throwIfAborted();
+                            }
                         }
-                        compactStroke.points = compactPoints;
-                        compactPointCounter += stroke.points.length;
+                        let exportPoints = compactPoints;
+                        if (!options.highQuality && compactPoints.length > 220) {
+                            const stride = compactPoints.length > 2400
+                                ? 8
+                                : (compactPoints.length > 1200 ? 5 : (compactPoints.length > 700 ? 3 : 2));
+                            const reducedPoints = [compactPoints[0]];
+                            for (let idx = stride; idx < compactPoints.length - 1; idx += stride) {
+                                reducedPoints.push(compactPoints[idx]);
+                            }
+                            reducedPoints.push(compactPoints[compactPoints.length - 1]);
+                            exportPoints = simplifyPoints(
+                                reducedPoints,
+                                stroke.tool === 'highlighter' ? 0.75 : 0.58
+                            ) || reducedPoints;
+                        }
+                        compactStroke.points = exportPoints;
+                        compactPointCounter += exportPoints.length;
                     }
                     compactStrokes.push(compactStroke);
                     compactStrokeCounter += 1;
@@ -16535,9 +16569,26 @@
                         if (!stroke.points || stroke.points.length < minPoints) continue;
                         if (stroke.tool === 'eraser-stroke') continue;
 
-                        drawSmoothStroke(tempCtx, stroke);
-                        strokeCheckCounter += 1;
-                        pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
+                        if (!options.highQuality && stroke.points.length > (isMobileLike ? 180 : 260)) {
+                            const chunkSize = isMobileLike ? 130 : 190;
+                            for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
+                                const end = Math.min(stroke.points.length, start + chunkSize);
+                                const segmentPoints = stroke.points.slice(start, end);
+                                if (segmentPoints.length < minPoints) break;
+                                drawSmoothStroke(tempCtx, {
+                                    ...stroke,
+                                    points: segmentPoints
+                                });
+                                strokeCheckCounter += 1;
+                                pointCheckCounter += segmentPoints.length;
+                                await maybeYieldForSlice(false);
+                                throwIfAborted();
+                            }
+                        } else {
+                            drawSmoothStroke(tempCtx, stroke);
+                            strokeCheckCounter += 1;
+                            pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
+                        }
                         // Keep short main-thread slices on mobile to avoid pen/typing stutter.
                         const yieldInterval = hasSmoothInteraction() ? 1 : (isMobileLike ? 3 : 5);
                         const pointLimit = hasSmoothInteraction() ? 120 : (isMobileLike ? 450 : 900);
