@@ -14231,12 +14231,10 @@
                         p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
                     })) : s.points
                 }));
-                const images = Array.isArray(pageData.images) && pageData.images.length > 0 ? pageData.images : undefined;
-                const deletedStrokeIds = Array.isArray(pageData.deletedStrokeIds) && pageData.deletedStrokeIds.length > 0 ? pageData.deletedStrokeIds : undefined;
                 const pageStrokeEntry = {
                     strokes: compactStrokes,
-                    ...(images && { images }),
-                    ...(deletedStrokeIds && { deletedStrokeIds }),
+                    images: Array.isArray(pageData.images) ? pageData.images : [],
+                    deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
                     backgroundSource,
                     pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null,
