@@ -16036,6 +16036,48 @@
             lastSyncedPageCount = state.pages.length;
         }
 
+        function pointFingerprint(point) {
+            if (!point) return '0,0,0';
+            const x = Number.isFinite(point.x) ? Math.round(point.x * 100) / 100 : 0;
+            const y = Number.isFinite(point.y) ? Math.round(point.y * 100) / 100 : 0;
+            const p = Number.isFinite(point.p) ? Math.round(point.p * 100) / 100 : 0;
+            return `${x},${y},${p}`;
+        }
+
+        function strokeSyncFingerprint(stroke) {
+            if (!stroke) return '';
+            const points = Array.isArray(stroke.points) ? stroke.points : [];
+            const len = points.length;
+            if (len === 0) {
+                return `${stroke.id || ''}|${stroke.tool || ''}|${stroke.color || ''}|${stroke.width || 0}|0`;
+            }
+            const idxA = 0;
+            const idxB = Math.max(0, Math.floor(len / 3));
+            const idxC = Math.max(0, Math.floor((len * 2) / 3));
+            const idxD = len - 1;
+            return [
+                stroke.id || '',
+                stroke.tool || '',
+                stroke.color || '',
+                Number.isFinite(stroke.width) ? Math.round(stroke.width * 100) / 100 : 0,
+                len,
+                pointFingerprint(points[idxA]),
+                pointFingerprint(points[idxB]),
+                pointFingerprint(points[idxC]),
+                pointFingerprint(points[idxD])
+            ].join('|');
+        }
+
+        function imageSyncFingerprint(image) {
+            if (!image) return '';
+            const x = Number.isFinite(image.x) ? Math.round(image.x * 100) / 100 : 0;
+            const y = Number.isFinite(image.y) ? Math.round(image.y * 100) / 100 : 0;
+            const width = Number.isFinite(image.width) ? Math.round(image.width * 100) / 100 : 0;
+            const height = Number.isFinite(image.height) ? Math.round(image.height * 100) / 100 : 0;
+            const rotation = Number.isFinite(image.rotation) ? Math.round(image.rotation * 10000) / 10000 : 0;
+            return `${image.id || ''}|${image.src || ''}|${x}|${y}|${width}|${height}|${rotation}`;
+        }
+
         async function applyRemotePages(remoteStrokeData) {
             if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false };
 
@@ -16152,13 +16194,47 @@
                 const localDeletionSet = new Set([...localDeleted, ...localDeletedSinceBaseline]);
                 const allDeleted = new Set([...remoteDeleted, ...localDeletionSet]);
 
-                // Additive merge: keep ALL local strokes not in remote (fixes race condition)
-                const localOnlyStrokes = currentPage.strokes.filter(s => !remoteStrokeIds.has(s.id));
-                const localOnlyImages = (currentPage.images || []).filter(img => !remoteImageIds.has(img.id));
+                const localStrokeById = new Map();
+                currentPage.strokes.forEach(stroke => {
+                    if (stroke?.id) localStrokeById.set(stroke.id, stroke);
+                });
+                const localImageById = new Map();
+                (currentPage.images || []).forEach(image => {
+                    if (image?.id) localImageById.set(image.id, image);
+                });
 
-                // Merge: remote ∪ localOnly, then remove explicitly deleted
-                const mergedStrokes = [...remoteStrokes, ...localOnlyStrokes].filter(s => !allDeleted.has(s.id));
-                const mergedImages = [...remoteImages, ...localOnlyImages].filter(img => !allDeleted.has(img.id));
+                // Additive merge with conflict resolution:
+                // if an item with the same ID differs, prefer local so in-device transforms
+                // are never overwritten by stale remote pulls.
+                const mergedStrokes = [];
+                let localStrokeConflictCount = 0;
+                for (const remoteStroke of remoteStrokes) {
+                    if (!remoteStroke?.id || allDeleted.has(remoteStroke.id)) continue;
+                    const localVersion = localStrokeById.get(remoteStroke.id);
+                    if (localVersion && strokeSyncFingerprint(localVersion) !== strokeSyncFingerprint(remoteStroke)) {
+                        mergedStrokes.push(localVersion);
+                        localStrokeConflictCount += 1;
+                        continue;
+                    }
+                    mergedStrokes.push(remoteStroke);
+                }
+                const localOnlyStrokes = currentPage.strokes.filter(s => s?.id && !remoteStrokeIds.has(s.id) && !allDeleted.has(s.id));
+                mergedStrokes.push(...localOnlyStrokes);
+
+                const mergedImages = [];
+                let localImageConflictCount = 0;
+                for (const remoteImage of remoteImages) {
+                    if (!remoteImage?.id || allDeleted.has(remoteImage.id)) continue;
+                    const localVersion = localImageById.get(remoteImage.id);
+                    if (localVersion && imageSyncFingerprint(localVersion) !== imageSyncFingerprint(remoteImage)) {
+                        mergedImages.push(localVersion);
+                        localImageConflictCount += 1;
+                        continue;
+                    }
+                    mergedImages.push(remoteImage);
+                }
+                const localOnlyImages = (currentPage.images || []).filter(img => img?.id && !remoteImageIds.has(img.id) && !allDeleted.has(img.id));
+                mergedImages.push(...localOnlyImages);
 
                 // Merge deletion lists (union) and dedupe.
                 const previousDeletedIds = new Set(localDeletedRaw.filter(id => !!id));
@@ -16173,7 +16249,13 @@
                         localSuppressedRemoteCount += 1;
                     }
                 }
-                if (localOnlyStrokes.length > 0 || localOnlyImages.length > 0 || localSuppressedRemoteCount > 0) {
+                if (
+                    localOnlyStrokes.length > 0
+                    || localOnlyImages.length > 0
+                    || localSuppressedRemoteCount > 0
+                    || localStrokeConflictCount > 0
+                    || localImageConflictCount > 0
+                ) {
                     hasLocalMerges = true;
                 }
 
@@ -16189,8 +16271,9 @@
                 const remoteHeight = normalizePageDimension(remotePageData.pageHeight, currentPage.pageHeight || A4_HEIGHT);
                 const dimensionChanged = remoteWidth !== normalizePageDimension(currentPage.pageWidth, A4_WIDTH)
                     || remoteHeight !== normalizePageDimension(currentPage.pageHeight, A4_HEIGHT);
+                const sharedContentChanged = localStrokeConflictCount > 0 || localImageConflictCount > 0;
 
-                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || dimensionChanged) {
+                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || dimensionChanged || sharedContentChanged) {
                     currentPage.strokes = mergedStrokes;
                     currentPage.images = mergedImages;
                     currentPage.backgroundSource = remotePageData.backgroundSource || currentPage.backgroundSource;
@@ -16212,7 +16295,7 @@
                         applyPagePreview(i);
                     }
                     changed = true;
-                    console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${localSuppressedRemoteCount} local-deleted-remote, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
+                    console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${localSuppressedRemoteCount} local-deleted-remote, ${localStrokeConflictCount} local-stroke-conflicts, ${localImageConflictCount} local-image-conflicts, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
                 }
 
                 // Update last synced IDs to the combined set
