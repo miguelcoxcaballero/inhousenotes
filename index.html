@@ -3911,7 +3911,6 @@
         const IMAGE_INSERT_MAX_DIM = 960;
         const IMAGE_INSERT_TARGET_BYTES = 130 * 1024;
         const IMAGE_INSERT_MIN_DIM = 320;
-        const IMAGE_INSERT_LONG_PRESS_MS = 550;
         const SELECTION_ALLOWED_COLORS = ['#4D4D4D', '#002FD9', '#E81010'];
         const SELECTION_ALLOWED_COLOR_MAP = new Map(
             SELECTION_ALLOWED_COLORS.map(color => [color.toLowerCase(), color])
@@ -4510,10 +4509,6 @@
         let activeDriveSaveController = null;
         let lastPointerClientX = 0;
         let lastPointerClientY = 0;
-        let imageLongPressTimer = null;
-        let imageLongPressPointerId = null;
-        let imageLongPressStartX = 0;
-        let imageLongPressStartY = 0;
         let isPenWriting = false;
         let isGestureInteracting = false;
         let penWritingIdleTimer = null;
@@ -9076,14 +9071,6 @@
             }
         }
 
-        function clearImageLongPressTimer() {
-            if (imageLongPressTimer) {
-                clearTimeout(imageLongPressTimer);
-                imageLongPressTimer = null;
-            }
-            imageLongPressPointerId = null;
-        }
-
         function rememberPointerClientPoint(clientX, clientY) {
             if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
             lastPointerClientX = clientX;
@@ -9249,24 +9236,6 @@
             }
         }
 
-        async function extractImageBlobsFromClipboardRead() {
-            if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') return [];
-            const items = await navigator.clipboard.read();
-            const blobs = [];
-            for (const item of items) {
-                const imageTypes = Array.from(item.types || []).filter(type => type.startsWith('image/'));
-                for (const type of imageTypes) {
-                    try {
-                        const blob = await item.getType(type);
-                        if (blob && String(blob.type || '').startsWith('image/')) {
-                            blobs.push(blob);
-                        }
-                    } catch (err) { }
-                }
-            }
-            return blobs;
-        }
-
         function extractImageBlobsFromPasteEvent(e) {
             const blobs = [];
             const items = Array.from(e?.clipboardData?.items || []);
@@ -9303,22 +9272,6 @@
                 showStatus('No usable image in clipboard', { preserveState: true });
             }
             return inserted;
-        }
-
-        async function tryInsertClipboardImageAtPoint(clientX, clientY) {
-            try {
-                const blobs = await extractImageBlobsFromClipboardRead();
-                if (!blobs || blobs.length === 0) {
-                    showStatus('Clipboard has no image', { preserveState: true });
-                    return false;
-                }
-                const inserted = await insertImageBlobsAtClientPoint(blobs, clientX, clientY, 'clipboard');
-                return inserted > 0;
-            } catch (err) {
-                console.warn('Clipboard image insert failed:', err);
-                showStatus('Clipboard image not available', { preserveState: true });
-                return false;
-            }
         }
 
         function addImageToPage(pageIndex, src, dropPos, offsetIndex = 0, options = {}) {
@@ -11374,49 +11327,6 @@
             // Drag & drop images
             canvasViewport.addEventListener('dragover', handleImageDragOver);
             canvasViewport.addEventListener('drop', handleImageDrop);
-            canvasViewport.addEventListener('touchstart', (e) => {
-                if (state.isReadOnly) return;
-                if (!e.touches || e.touches.length !== 1) {
-                    clearImageLongPressTimer();
-                    return;
-                }
-                if (isEditableTarget(e.target)) {
-                    clearImageLongPressTimer();
-                    return;
-                }
-                const touch = e.touches[0];
-                rememberPointerClientPoint(touch.clientX, touch.clientY);
-                imageLongPressPointerId = touch.identifier;
-                imageLongPressStartX = touch.clientX;
-                imageLongPressStartY = touch.clientY;
-                clearImageLongPressTimer();
-                imageLongPressPointerId = touch.identifier;
-                imageLongPressTimer = setTimeout(() => {
-                    imageLongPressTimer = null;
-                    noteInteractionActivity();
-                    void tryInsertClipboardImageAtPoint(imageLongPressStartX, imageLongPressStartY);
-                }, IMAGE_INSERT_LONG_PRESS_MS);
-            }, { passive: true });
-            canvasViewport.addEventListener('touchmove', (e) => {
-                if (!imageLongPressTimer) return;
-                const movedTouch = Array.from(e.touches || []).find(t => t.identifier === imageLongPressPointerId) || e.touches[0];
-                if (!movedTouch) {
-                    clearImageLongPressTimer();
-                    return;
-                }
-                rememberPointerClientPoint(movedTouch.clientX, movedTouch.clientY);
-                const dx = Math.abs(movedTouch.clientX - imageLongPressStartX);
-                const dy = Math.abs(movedTouch.clientY - imageLongPressStartY);
-                if (dx > 14 || dy > 14) {
-                    clearImageLongPressTimer();
-                }
-            }, { passive: true });
-            canvasViewport.addEventListener('touchend', () => {
-                clearImageLongPressTimer();
-            }, { passive: true });
-            canvasViewport.addEventListener('touchcancel', () => {
-                clearImageLongPressTimer();
-            }, { passive: true });
 
             // Setup toolbar dragging
             setupToolbarDrag();
