@@ -17519,6 +17519,9 @@
                 };
                 const metaJson = JSON.stringify(pageStrokeEntry);
                 metadataParts.push(metaJson);
+                const sourcePdfPageIndex = Number.isFinite(pageData.pdfPageIndex)
+                    ? pageData.pdfPageIndex
+                    : pageStrokeEntry.pdfPageIndex;
 
                 let jpegData = (cached && cached.hash === pageHash && cached.jpegData) ? cached.jpegData : null;
                 if (jpegData && (!cached.metaJson || cached.metaJson !== metaJson)) {
@@ -17546,8 +17549,8 @@
                         }
                         throwIfAborted();
                         throwIfSessionInvalid();
-                    } else if (pageStrokeEntry.pdfPageIndex && activePdfDocument) {
-                        const pdfPage = await activePdfDocument.getPage(pageStrokeEntry.pdfPageIndex);
+                    } else if (sourcePdfPageIndex && activePdfDocument) {
+                        const pdfPage = await activePdfDocument.getPage(sourcePdfPageIndex);
                         const baseViewport = pdfPage.getViewport({ scale: 1 });
                         const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
                         const viewport = pdfPage.getViewport({ scale });
