@@ -14204,10 +14204,12 @@
         }
 
         function pauseSavesDuringInteraction() {
+            let pausedProcessing = false;
             pausePdfRenderingDuringInteraction();
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
+                pausedProcessing = true;
             }
             // Priority is input fluidity: stop Drive processing as soon as interaction starts.
             if (
@@ -14219,6 +14221,10 @@
                 driveDirty = true;
                 deferredDriveSave = true;
                 scheduleDeferredDriveSaveRetry();
+                pausedProcessing = true;
+            }
+            if (pausedProcessing) {
+                showStatus('Save paused...', { phase: 'paused' });
             }
         }
 
@@ -14255,7 +14261,7 @@
             if (indicator.classList.contains('uploading') || indicator.classList.contains('syncing')) return;
             if (state.driveAutosave && !state.isReadOnly) {
                 // If interacting, show grey (paused); otherwise show orange (saving)
-                if (hasSmoothInteraction()) {
+                if (hasSmoothInteraction() || hasRecentUserActivity()) {
                     showStatus('Save paused...', { phase: 'paused' });
                 } else {
                     showStatus('Changes pending...', { saving: true });
@@ -14472,7 +14478,7 @@
             activeLocalSaveController = null;
             if (result.cancelled) {
                 saveQueued = true;
-                showStatus('Saving...', { saving: true });
+                showPendingSaveStatus();
             } else if (result.ok) {
                 if (isDriveSyncPending()) {
                     // Local save done, Drive sync still pending — keep saving indicator
@@ -14825,7 +14831,11 @@
                 if (aborted) {
                     driveDirty = true;
                     deferredDriveSave = true;
-                    showStatus('Saving to Drive...', { saving: true });
+                    if (hasSmoothInteraction() || hasRecentUserActivity() || deferredDriveSave) {
+                        showStatus('Save paused...', { phase: 'paused' });
+                    } else {
+                        showPendingSaveStatus();
+                    }
                     if (!hasSmoothInteraction()) {
                         scheduleDriveSync();
                     } else {
