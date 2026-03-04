@@ -9516,9 +9516,7 @@
             originalStrokes.forEach(item => {
                 const stroke = item.stroke;
                 const updated = {
-                    tool: stroke.tool,
-                    color: stroke.color,
-                    width: stroke.width,
+                    ...stroke,
                     points: stroke.points.map(pt => {
                         let x = pt.x - center.x;
                         let y = pt.y - center.y;
@@ -9675,58 +9673,60 @@
                 // Moving up to previous page
                 if (newCenterY < -crossPageThreshold && pageIndex > 0) {
                     const targetPage = pageIndex - 1;
-                    // Ensure target page is loaded
-                    ensurePageDataLoaded(targetPage, { keepLoaded: true }).then(() => {
-                        if (!isPageLoaded(state.pages[targetPage])) return;
-                        // Apply current transform first
-                        applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex);
-                        // Move selection to previous page (shift Y by +A4_HEIGHT)
-                        if (moveSelectionToPage(pageIndex, targetPage, A4_HEIGHT)) {
-                            // Update transform state for the new page
-                            const newBounds = getSelectionBounds(targetPage, state.selection.strokeIndices, state.selection.imageIndices);
-                            if (newBounds) {
-                                state.selectionTransform.pageIndex = targetPage;
-                                state.selectionTransform.bounds = newBounds;
-                                state.selectionTransform.center = {
-                                    x: newBounds.minX + newBounds.width / 2,
-                                    y: newBounds.minY + newBounds.height / 2
-                                };
-                                state.selectionTransform.startPos = { x: pos.x, y: pos.y + A4_HEIGHT };
-                                state.selectionTransform.originalStrokes = captureStrokes(targetPage, state.selection.strokeIndices);
-                                state.selectionTransform.originalImages = captureImages(targetPage, state.selection.imageIndices);
-                            }
-                            updateSelectionBox();
+                    if (!isPageLoaded(state.pages[targetPage])) {
+                        ensurePageCanvas(targetPage);
+                        ensurePageDataLoaded(targetPage, { keepLoaded: true });
+                        return;
+                    }
+                    // Apply current transform first
+                    applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex);
+                    // Move selection to previous page (shift Y by +A4_HEIGHT)
+                    if (moveSelectionToPage(pageIndex, targetPage, A4_HEIGHT)) {
+                        // Update transform state for the new page
+                        const newBounds = getSelectionBounds(targetPage, state.selection.strokeIndices, state.selection.imageIndices);
+                        if (newBounds) {
+                            state.selectionTransform.pageIndex = targetPage;
+                            state.selectionTransform.bounds = newBounds;
+                            state.selectionTransform.center = {
+                                x: newBounds.minX + newBounds.width / 2,
+                                y: newBounds.minY + newBounds.height / 2
+                            };
+                            state.selectionTransform.startPos = { x: pos.x, y: pos.y + A4_HEIGHT };
+                            state.selectionTransform.originalStrokes = captureStrokes(targetPage, state.selection.strokeIndices);
+                            state.selectionTransform.originalImages = captureImages(targetPage, state.selection.imageIndices);
                         }
-                    });
+                        updateSelectionBox();
+                    }
                     return;
                 }
 
                 // Moving down to next page
                 if (newCenterY > A4_HEIGHT + crossPageThreshold && pageIndex < state.pages.length - 1) {
                     const targetPage = pageIndex + 1;
-                    // Ensure target page is loaded
-                    ensurePageDataLoaded(targetPage, { keepLoaded: true }).then(() => {
-                        if (!isPageLoaded(state.pages[targetPage])) return;
-                        // Apply current transform first
-                        applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex);
-                        // Move selection to next page (shift Y by -A4_HEIGHT)
-                        if (moveSelectionToPage(pageIndex, targetPage, -A4_HEIGHT)) {
-                            // Update transform state for the new page
-                            const newBounds = getSelectionBounds(targetPage, state.selection.strokeIndices, state.selection.imageIndices);
-                            if (newBounds) {
-                                state.selectionTransform.pageIndex = targetPage;
-                                state.selectionTransform.bounds = newBounds;
-                                state.selectionTransform.center = {
-                                    x: newBounds.minX + newBounds.width / 2,
-                                    y: newBounds.minY + newBounds.height / 2
-                                };
-                                state.selectionTransform.startPos = { x: pos.x, y: pos.y - A4_HEIGHT };
-                                state.selectionTransform.originalStrokes = captureStrokes(targetPage, state.selection.strokeIndices);
-                                state.selectionTransform.originalImages = captureImages(targetPage, state.selection.imageIndices);
-                            }
-                            updateSelectionBox();
+                    if (!isPageLoaded(state.pages[targetPage])) {
+                        ensurePageCanvas(targetPage);
+                        ensurePageDataLoaded(targetPage, { keepLoaded: true });
+                        return;
+                    }
+                    // Apply current transform first
+                    applyTransformToSelection(originalStrokes, originalImages, transform, center, pageIndex);
+                    // Move selection to next page (shift Y by -A4_HEIGHT)
+                    if (moveSelectionToPage(pageIndex, targetPage, -A4_HEIGHT)) {
+                        // Update transform state for the new page
+                        const newBounds = getSelectionBounds(targetPage, state.selection.strokeIndices, state.selection.imageIndices);
+                        if (newBounds) {
+                            state.selectionTransform.pageIndex = targetPage;
+                            state.selectionTransform.bounds = newBounds;
+                            state.selectionTransform.center = {
+                                x: newBounds.minX + newBounds.width / 2,
+                                y: newBounds.minY + newBounds.height / 2
+                            };
+                            state.selectionTransform.startPos = { x: pos.x, y: pos.y - A4_HEIGHT };
+                            state.selectionTransform.originalStrokes = captureStrokes(targetPage, state.selection.strokeIndices);
+                            state.selectionTransform.originalImages = captureImages(targetPage, state.selection.imageIndices);
                         }
-                    });
+                        updateSelectionBox();
+                    }
                     return;
                 }
             } else if (mode === 'scale') {
@@ -11374,6 +11374,7 @@
             canvasViewport.addEventListener('pointerleave', handleViewportPointerUp);
             document.addEventListener('pointermove', onSelectionPointerMove);
             document.addEventListener('pointerup', onSelectionPointerUp);
+            document.addEventListener('pointercancel', onSelectionPointerUp);
 
             // Mouse wheel for scroll and zoom
             canvasViewport.addEventListener('wheel', handleWheel, { passive: false });
@@ -14123,7 +14124,7 @@
         }
 
         function hasSmoothInteraction() {
-            return !!(isPenWriting || isGestureInteracting || state.inertiaFrame);
+            return !!(isPenWriting || isGestureInteracting || state.inertiaFrame || state.selectionTransform);
         }
 
         function noteRecentUserActivity() {
@@ -14349,7 +14350,8 @@
                 state.driveAutosave
                 && !state.isReadOnly
                 && (
-                    hasPendingLocalSave()
+                    !!state.selectionTransform
+                    || hasPendingLocalSave()
                     || driveDirty
                     || deferredDriveSave
                     || driveSaveQueued
