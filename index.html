@@ -16889,9 +16889,12 @@
                         const backgroundSource = pageData.backgroundSource
                             || (pageData.hasCustomBackground ? 'pdf' : 'template');
                         const needsPdfBackground = useLegacyRaster || backgroundSource !== 'template';
-                        const pagePdfIndex = Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : i;
+                        // App-generated PDFs are self-contained: when reopened, each non-template
+                        // page background must come from the same page number in the saved PDF,
+                        // not from the original source PDF index that may have changed after deletes.
+                        const pagePdfIndex = needsPdfBackground ? i : null;
                         let pageSizeFallback = { width: A4_WIDTH, height: A4_HEIGHT };
-                        if (needsPdfBackground && Number.isFinite(pagePdfIndex)) {
+                        if (needsPdfBackground) {
                             try {
                                 pageSizeFallback = await getPdfPageSize(pagePdfIndex);
                             } catch (sizeErr) {
@@ -17508,7 +17511,9 @@
                     deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
                     backgroundSource,
-                    pdfPageIndex: Number.isFinite(pageData.pdfPageIndex) ? pageData.pdfPageIndex : null,
+                    // Saved PDFs are reopened using their own rendered pages as the background source.
+                    // Persist the exported page position, not the original source PDF page index.
+                    pdfPageIndex: (backgroundSource === 'pdf' || !!backgroundImage) ? (i + 1) : null,
                     pageWidth: resolvedPageWidth,
                     pageHeight: resolvedPageHeight
                 };
