@@ -8644,7 +8644,7 @@
                 showLoading('Creating PDF...');
                 await ensureDriveToken(false);
                 const uploadedContentVersion = driveContentVersion;
-                const pdfBlob = await buildPdfBlob({ sessionToken });
+                const pdfBlob = await buildPdfBlob({ sessionToken, optimizeForUpload: true });
                 if (!isDocumentSessionTokenValid(sessionToken)) {
                     throw createAbortError('Document creation superseded');
                 }
@@ -14699,7 +14699,8 @@
             }
             const pdfBlob = options.initialPdfBlob || await buildPdfBlob({
                 signal: options.signal,
-                sessionToken: options.sessionToken
+                sessionToken: options.sessionToken,
+                optimizeForUpload: true
             });
             const metadata = {
                 name: fileName,
@@ -14828,7 +14829,8 @@
                     uploadedContentVersion = driveContentVersion;
                     pdfBlob = await buildPdfBlob({
                         signal: controller.signal,
-                        sessionToken
+                        sessionToken,
+                        optimizeForUpload: true
                     });
                 }
                 const ensureResult = await ensureDriveFile({
@@ -14878,7 +14880,8 @@
                         uploadedContentVersion = driveContentVersion;
                         pdfBlob = await buildPdfBlob({
                             signal: controller.signal,
-                            sessionToken
+                            sessionToken,
+                            optimizeForUpload: true
                         });
                     }
                     if (controller.signal.aborted) {
@@ -17210,9 +17213,11 @@
             }
         }
         async function _prewarmPdfCacheInner() {
-            const exportScale = 1.5;
             const pageCount = state.pages.length;
             if (pageCount === 0) return;
+            const exportScale = pageCount >= 20 ? 1.1 : 1.22;
+            const jpegQuality = pageCount >= 20 ? 0.55 : 0.62;
+            const exportProfile = `drv-opt:${exportScale}:q${jpegQuality}`;
             // Pre-render template at the export size
             const tplW = Math.round(A4_WIDTH * exportScale);
             const tplH = Math.round(A4_HEIGHT * exportScale);
@@ -17220,7 +17225,6 @@
 
             const tempCanvas = createProcessingCanvas(1, 1);
             const tempCtx = tempCanvas.getContext('2d');
-            const jpegQuality = pageCount >= 20 ? 0.70 : 0.75;
 
             for (let i = 0; i < pageCount; i++) {
                 // Yield between pages to not block UI
@@ -17286,7 +17290,7 @@
                 if (!pageBlob) continue;
                 const jpegData = new Uint8Array(await pageBlob.arrayBuffer());
 
-                const pageHash = `${computePageHash(pageData)}|exp:${pageW}x${pageH}|s${exportScale}|hq0`;
+                const pageHash = `${computePageHash(pageData)}|exp:${pageW}x${pageH}|${exportProfile}`;
                 pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson: null });
             }
             tempCanvas.width = 0;
@@ -17475,7 +17479,16 @@
             throwIfSessionInvalid();
 
             const pageCount = state.pages.length;
-            let exportScale = options.highQuality ? CANVAS_SCALE : 1.5;
+            const optimizeForUpload = !!options.optimizeForUpload && !options.highQuality;
+            let exportScale = options.highQuality
+                ? CANVAS_SCALE
+                : (optimizeForUpload ? (pageCount >= 20 ? 1.1 : 1.22) : 1.5);
+            const jpegQuality = options.highQuality
+                ? (pageCount >= 20 ? 0.75 : 0.85)
+                : (optimizeForUpload ? (pageCount >= 20 ? 0.55 : 0.62) : (pageCount >= 20 ? 0.70 : 0.75));
+            const exportProfile = options.highQuality
+                ? `hq:${exportScale}:q${jpegQuality}`
+                : `${optimizeForUpload ? 'drv-opt' : 'std'}:${exportScale}:q${jpegQuality}`;
             let shouldResolvePdfSourceSizes = false;
             const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
             const hasStoredNonA4PdfPage = state.pages.some(
@@ -17532,7 +17545,7 @@
                 const resolvedPageHeight = normalizePageDimension(pageData.pageHeight, sourcePdfSize?.height || A4_HEIGHT);
                 const pageMmWidth = pxToMm(resolvedPageWidth, A4_WIDTH);
                 const pageMmHeight = pxToMm(resolvedPageHeight, A4_HEIGHT);
-                const pageHash = `${computePageHash(pageData)}|exp:${resolvedPageWidth}x${resolvedPageHeight}|s${exportScale}|hq${options.highQuality ? 1 : 0}`;
+                const pageHash = `${computePageHash(pageData)}|exp:${resolvedPageWidth}x${resolvedPageHeight}|${exportProfile}`;
                 const cached = pdfExportCache.get(i);
                 if (cached && cached.hash === pageHash && cached.metaJson && cached.jpegData) {
                     metadataParts.push(cached.metaJson);
@@ -17569,8 +17582,8 @@
                         for (let pointIndex = 0; pointIndex < stroke.points.length; pointIndex++) {
                             const p = stroke.points[pointIndex];
                             compactPoints[pointIndex] = {
-                                x: Math.round(p.x * 10) / 10,
-                                y: Math.round(p.y * 10) / 10,
+                                x: Math.round(p.x * 100) / 100,
+                                y: Math.round(p.y * 100) / 100,
                                 p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
                             };
                             if ((pointIndex + 1) % (isMobileLike ? 180 : 260) === 0) {
@@ -17579,23 +17592,8 @@
                                 throwIfSessionInvalid();
                             }
                         }
-                        let exportPoints = compactPoints;
-                        if (!options.highQuality && compactPoints.length > 220) {
-                            const stride = compactPoints.length > 2400
-                                ? 8
-                                : (compactPoints.length > 1200 ? 5 : (compactPoints.length > 700 ? 3 : 2));
-                            const reducedPoints = [compactPoints[0]];
-                            for (let idx = stride; idx < compactPoints.length - 1; idx += stride) {
-                                reducedPoints.push(compactPoints[idx]);
-                            }
-                            reducedPoints.push(compactPoints[compactPoints.length - 1]);
-                            exportPoints = simplifyPoints(
-                                reducedPoints,
-                                stroke.tool === 'highlighter' ? 0.75 : 0.58
-                            ) || reducedPoints;
-                        }
-                        compactStroke.points = exportPoints;
-                        compactPointCounter += exportPoints.length;
+                        compactStroke.points = compactPoints;
+                        compactPointCounter += compactPoints.length;
                     }
                     compactStrokes.push(compactStroke);
                     compactStrokeCounter += 1;
@@ -17623,6 +17621,10 @@
                 const sourcePdfPageIndex = Number.isFinite(pageData.pdfPageIndex)
                     ? pageData.pdfPageIndex
                     : pageStrokeEntry.pdfPageIndex;
+                const renderPageStrokeEntry = {
+                    ...pageStrokeEntry,
+                    strokes: exportStrokes
+                };
 
                 let jpegData = (cached && cached.hash === pageHash && cached.jpegData) ? cached.jpegData : null;
                 if (jpegData && (!cached.metaJson || cached.metaJson !== metaJson)) {
@@ -17698,13 +17700,13 @@
                     tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
                     tempCtx.lineCap = 'round';
                     tempCtx.lineJoin = 'round';
-                    await drawImagesOnCanvas(tempCtx, pageStrokeEntry, {
+                    await drawImagesOnCanvas(tempCtx, renderPageStrokeEntry, {
                         abortSignal,
                         yieldFn: () => maybeYieldForSlice(false)
                     });
                     let strokeCheckCounter = 0;
                     let pointCheckCounter = 0;
-                    for (const stroke of pageStrokeEntry.strokes) {
+                    for (const stroke of renderPageStrokeEntry.strokes) {
                         await maybeYieldForSlice(false);
                         throwIfAborted();
                         throwIfSessionInvalid();
@@ -17748,9 +17750,6 @@
                     await maybeYieldForSlice(true);
                     throwIfAborted();
                     throwIfSessionInvalid();
-                    const jpegQuality = options.highQuality
-                        ? (pageCount >= 20 ? 0.75 : 0.85)
-                        : (pageCount >= 20 ? 0.70 : 0.75);
                     const pageBlob = await canvasToBlobSafe(tempCanvas, 'image/jpeg', jpegQuality);
                     throwIfAborted();
                     throwIfSessionInvalid();
