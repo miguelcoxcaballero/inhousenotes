@@ -4575,6 +4575,7 @@
         let pdfRenderResumeHandle = null;
         let activePdfBackgroundRenderTask = null;
         let pdfRestoreInProgress = false;
+        let pageStructureVersion = 0;
         const pdfBackgroundCache = new Map();
         const activePageIndices = new Set();
         const desiredActivePageIndices = new Set();
@@ -5283,6 +5284,22 @@
             pdfRenderActive = false;
         }
 
+        function bumpPageStructureVersion() {
+            pageStructureVersion += 1;
+            return pageStructureVersion;
+        }
+
+        function invalidatePageStructureAsyncState() {
+            bumpPageStructureVersion();
+            pausePdfRenderingDuringInteraction();
+            activePageIndices.clear();
+            desiredActivePageIndices.clear();
+            pendingPageActivations.clear();
+            cancelPageActivationScheduler();
+            pageLoadQueue.clear();
+            pdfExportCache.clear();
+        }
+
         function touchPdfBackgroundCache(pageIndex, dataUrl) {
             if (!dataUrl) return;
             pdfBackgroundCache.set(pageIndex, {
@@ -5334,14 +5351,14 @@
             if (page.pdfPageIndex) {
                 if (activePdfDocument) {
                     canvas.style.backgroundImage = '';
-                    canvas.style.backgroundColor = 'white';
+                    canvas.style.backgroundColor = 'transparent';
                     if (!deferPdfRender) {
                         queuePdfPageRender(pageIndex);
                     }
                 } else {
                     // PDF document not loaded yet - show white and trigger restore
                     canvas.style.backgroundImage = '';
-                    canvas.style.backgroundColor = 'white';
+                    canvas.style.backgroundColor = 'transparent';
                     restorePdfBackgroundsIfNeeded();
                 }
                 return;
@@ -5409,17 +5426,18 @@
             }
         }
 
-        async function renderPdfPageToBackground(pageIndex, token) {
+        async function renderPdfPageToBackground(pageIndex, token, options = {}) {
             if (!activePdfDocument) return;
             const page = state.pages[pageIndex];
             if (!page || !page.pdfPageIndex) return;
             if (page.backgroundImage) return;
             if (token !== pdfRenderToken) return;
-            if (hasRecentUserActivity(240)) return;
+            const ignoreRecentActivity = !!options.ignoreRecentActivity;
+            if (!ignoreRecentActivity && hasRecentUserActivity(240)) return;
 
             try {
                 const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
-                if (token !== pdfRenderToken || hasRecentUserActivity(240)) {
+                if (token !== pdfRenderToken || (!ignoreRecentActivity && hasRecentUserActivity(240))) {
                     if (pdfPage.cleanup) {
                         pdfPage.cleanup();
                     }
@@ -5454,7 +5472,7 @@
                         activePdfBackgroundRenderTask = null;
                     }
                 }
-                if (token !== pdfRenderToken || hasRecentUserActivity(240)) {
+                if (token !== pdfRenderToken || (!ignoreRecentActivity && hasRecentUserActivity(240))) {
                     if (pdfPage.cleanup) {
                         pdfPage.cleanup();
                     }
@@ -10225,9 +10243,19 @@
             const backgroundSource = page.backgroundSource
                 || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template'));
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+            const hasPendingPdfBackground = (backgroundSource === 'pdf' || page.pdfPageIndex) && page.pdfPageIndex && !page.backgroundImage;
 
             if (backgroundSource === 'template' && !page.backgroundImage) {
                 drawTemplateBackground(ctx, pageWidth, pageHeight, pageWidth / A4_WIDTH);
+                return;
+            }
+
+            if (hasPendingPdfBackground) {
+                if (activePdfDocument) {
+                    queuePdfPageRender(pageIndex);
+                } else {
+                    restorePdfBackgroundsIfNeeded();
+                }
                 return;
             }
 
@@ -10303,8 +10331,8 @@
         // Render all pages
         function renderAllPages() {
             clearSelection();
+            invalidatePageStructureAsyncState();
             canvasContainer.innerHTML = '';
-            activePageIndices.clear();
             // Batch DOM operations using DocumentFragment
             const fragment = document.createDocumentFragment();
             state.pages.forEach((_, index) => {
@@ -12393,6 +12421,7 @@
             await flushDirtyPages({ force: true });
             await clearStrokeOpsStore();
             pageDirtyMode.clear();
+            invalidatePageStructureAsyncState();
             state.pages.splice(pageToDelete, 1);
             reindexLocalCachesAfterDelete(pageToDelete);
             await reindexPagesAfterDelete(pageToDelete, state.pages.length);
@@ -13214,38 +13243,63 @@
             });
         }
 
+        function reindexPageIndexAfterDelete(index, startIndex, totalPages) {
+            if (!Number.isFinite(index)) return null;
+            if (index === startIndex) return null;
+            const nextIndex = index > startIndex ? index - 1 : index;
+            if (nextIndex < 0 || nextIndex >= totalPages) return null;
+            return nextIndex;
+        }
+
         function reindexLocalCachesAfterDelete(startIndex) {
+            const totalPages = state.pages.length;
+
             const nextDirty = new Set();
             pageDirty.forEach(index => {
-                if (index === startIndex) return;
-                nextDirty.add(index > startIndex ? index - 1 : index);
+                const nextIndex = reindexPageIndexAfterDelete(index, startIndex, totalPages);
+                if (nextIndex === null) return;
+                nextDirty.add(nextIndex);
             });
             pageDirty.clear();
             nextDirty.forEach(index => pageDirty.add(index));
 
             const nextDirtyMode = new Map();
             pageDirtyMode.forEach((mode, index) => {
-                if (index === startIndex) return;
-                nextDirtyMode.set(index > startIndex ? index - 1 : index, mode);
+                const nextIndex = reindexPageIndexAfterDelete(index, startIndex, totalPages);
+                if (nextIndex === null) return;
+                nextDirtyMode.set(nextIndex, mode);
             });
             pageDirtyMode.clear();
             nextDirtyMode.forEach((mode, index) => pageDirtyMode.set(index, mode));
 
             const nextPendingOps = new Map();
             pendingStrokeOps.forEach((ops, index) => {
-                if (index === startIndex) return;
-                nextPendingOps.set(index > startIndex ? index - 1 : index, ops);
+                const nextIndex = reindexPageIndexAfterDelete(index, startIndex, totalPages);
+                if (nextIndex === null) return;
+                nextPendingOps.set(nextIndex, ops);
             });
             pendingStrokeOps.clear();
             nextPendingOps.forEach((ops, index) => pendingStrokeOps.set(index, ops));
 
             const nextAccess = new Map();
             pageAccess.forEach((value, index) => {
-                if (index === startIndex) return;
-                nextAccess.set(index > startIndex ? index - 1 : index, value);
+                const nextIndex = reindexPageIndexAfterDelete(index, startIndex, totalPages);
+                if (nextIndex === null) return;
+                nextAccess.set(nextIndex, value);
             });
             pageAccess.clear();
             nextAccess.forEach((value, index) => pageAccess.set(index, value));
+
+            const nextSyncedStrokeIds = new Map();
+            lastSyncedStrokeIds.forEach((ids, index) => {
+                const nextIndex = reindexPageIndexAfterDelete(index, startIndex, totalPages);
+                if (nextIndex === null) return;
+                nextSyncedStrokeIds.set(nextIndex, ids);
+            });
+            lastSyncedStrokeIds.clear();
+            nextSyncedStrokeIds.forEach((ids, index) => lastSyncedStrokeIds.set(index, ids));
+
+            pdfBackgroundCache.clear();
 
             if (Number.isFinite(state.activePageIndex)) {
                 if (state.activePageIndex === startIndex) {
@@ -13255,6 +13309,9 @@
                 }
             }
 
+            state.history = [];
+            state.historyIndex = -1;
+            updateHistoryButtons();
             pageLoadQueue.clear();
         }
 
@@ -13683,15 +13740,27 @@
             return !!(page && !page.unloaded && Array.isArray(page.strokes));
         }
 
-        function clearPagePreview(pageIndex) {
-            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
-            if (wrapper) {
-                wrapper.style.backgroundImage = '';
+        function canClearPagePreview(pageIndex) {
+            const page = state.pages[pageIndex];
+            if (!page) return true;
+            const backgroundSource = page.backgroundSource
+                || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template'));
+            if (backgroundSource === 'pdf') {
+                return !!page.backgroundImage;
             }
+            return true;
+        }
+
+        function clearPagePreview(pageIndex, options = {}) {
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (!wrapper) return;
+            if (!options.force && !canClearPagePreview(pageIndex)) return;
+            wrapper.style.backgroundImage = '';
         }
 
         async function ensurePageDataLoaded(pageIndex, options = {}) {
             const sessionToken = getDocumentSessionToken();
+            const structureVersion = pageStructureVersion;
             const page = state.pages[pageIndex];
             if (!page) return null;
             if (isPageLoaded(page)) {
@@ -13703,7 +13772,7 @@
             }
             const loadPromise = (async () => {
                 let data = await loadPageFromIndexedDb(pageIndex);
-                if (!isDocumentSessionTokenValid(sessionToken)) return null;
+                if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 if (!data && Array.isArray(legacyPagesCache) && legacyPagesCache[pageIndex]) {
                     data = normalizeLegacyPage(legacyPagesCache[pageIndex]);
                     const saved = await savePageToIndexedDb(pageIndex, data);
@@ -13712,7 +13781,7 @@
                         pruneLegacyPagesCache();
                     }
                 }
-                if (!isDocumentSessionTokenValid(sessionToken)) return null;
+                if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 if (!data) {
                     const expectedStrokes = typeof page.strokeCount === 'number' ? page.strokeCount : 0;
                     if (expectedStrokes > 0) {
@@ -13757,11 +13826,12 @@
                     pendingUnload
                 };
                 ensureStrokeIds(next);
-                if (!isDocumentSessionTokenValid(sessionToken)) return null;
+                if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 state.pages[pageIndex] = next;
                 touchPageAccess(pageIndex);
                 if (!options.keepLoaded && (next.pendingUnload || !activePageIndices.has(pageIndex))) {
                     await unloadPageData(pageIndex);
+                    if (structureVersion !== pageStructureVersion) return null;
                     return state.pages[pageIndex];
                 }
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
@@ -13771,13 +13841,18 @@
                     redrawPage(pageIndex);
                     // Clear preview only after strokes and background are visually painted
                     setTimeout(() => {
+                        if (structureVersion !== pageStructureVersion) return;
                         clearPagePreview(pageIndex);
                     }, 100);
                 }
                 return next;
             })();
             pageLoadQueue.set(pageIndex, loadPromise);
-            loadPromise.finally(() => pageLoadQueue.delete(pageIndex));
+            loadPromise.finally(() => {
+                if (pageLoadQueue.get(pageIndex) === loadPromise) {
+                    pageLoadQueue.delete(pageIndex);
+                }
+            });
             return loadPromise;
         }
 
@@ -16899,7 +16974,7 @@
                     for (let pi = 0; pi < eagerCount; pi++) {
                         throwIfSessionInvalid();
                         ensurePageCanvas(pi);
-                        await renderPdfPageToBackground(pi, savedToken);
+                        await renderPdfPageToBackground(pi, savedToken, { ignoreRecentActivity: true });
                         // Generate preview after background is rendered
                         const pg = state.pages[pi];
                         if (pg && pg.backgroundImage && !pg.preview) {
