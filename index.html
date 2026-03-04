@@ -5892,10 +5892,7 @@
                     if (erasedStrokes.length > 0) {
                         // Track deleted stroke IDs for collaborative sync
                         const page = state.pages[pageIndex];
-                        if (!Array.isArray(page.deletedStrokeIds)) page.deletedStrokeIds = [];
-                        for (const es of erasedStrokes) {
-                            if (es.stroke && es.stroke.id) page.deletedStrokeIds.push(es.stroke.id);
-                        }
+                        trackDeletedStrokeIds(page, erasedStrokes);
                         saveToHistory({
                             type: 'erase-strokes',
                             pageIndex: pageIndex,
@@ -5909,11 +5906,8 @@
                         const after = cloneStrokesArray(state.pages[pageIndex].strokes);
                         // Track deleted stroke IDs for collaborative sync
                         const page = state.pages[pageIndex];
-                        if (!Array.isArray(page.deletedStrokeIds)) page.deletedStrokeIds = [];
                         const afterIds = new Set(after.map(s => s.id).filter(Boolean));
-                        for (const bs of areaEraseBefore) {
-                            if (bs.id && !afterIds.has(bs.id)) page.deletedStrokeIds.push(bs.id);
-                        }
+                        trackDeletedStrokeIds(page, areaEraseBefore.filter(bs => bs.id && !afterIds.has(bs.id)));
                         saveToHistory({
                             type: 'erase-area',
                             pageIndex: pageIndex,
@@ -6389,6 +6383,32 @@
             drawSelectionOutlines(state.selection.pageIndex);
         }
 
+        function getStrokeIdsFromItems(items) {
+            if (!Array.isArray(items) || items.length === 0) return [];
+            const ids = [];
+            items.forEach(item => {
+                const id = item?.stroke?.id || item?.id || null;
+                if (id) ids.push(id);
+            });
+            return ids;
+        }
+
+        function trackDeletedStrokeIds(page, items) {
+            if (!page) return;
+            const ids = getStrokeIdsFromItems(items);
+            if (ids.length === 0) return;
+            const next = new Set(Array.isArray(page.deletedStrokeIds) ? page.deletedStrokeIds.filter(Boolean) : []);
+            ids.forEach(id => next.add(id));
+            page.deletedStrokeIds = [...next];
+        }
+
+        function untrackDeletedStrokeIds(page, items) {
+            if (!page || !Array.isArray(page.deletedStrokeIds) || page.deletedStrokeIds.length === 0) return;
+            const ids = new Set(getStrokeIdsFromItems(items));
+            if (ids.size === 0) return;
+            page.deletedStrokeIds = page.deletedStrokeIds.filter(id => id && !ids.has(id));
+        }
+
         function deleteSelectedImages(pageIndex) {
             if (state.isReadOnly) return;
             const page = state.pages[pageIndex];
@@ -6476,6 +6496,8 @@
                         page.images.splice(index, 1);
                     });
             }
+
+            trackDeletedStrokeIds(page, removedStrokes);
 
             saveToHistory({
                 type: 'delete-selection',
@@ -14322,6 +14344,21 @@
             return !!(state.driveAutosave && (driveDirty || deferredDriveSave || driveSaveInProgress || driveSaveQueued));
         }
 
+        function hasUnsyncedLocalDriveChanges() {
+            return !!(
+                state.driveAutosave
+                && !state.isReadOnly
+                && (
+                    hasPendingLocalSave()
+                    || driveDirty
+                    || deferredDriveSave
+                    || driveSaveQueued
+                    || driveSaveInProgress
+                    || driveContentVersion !== driveUploadedContentVersion
+                )
+            );
+        }
+
         function bumpDriveContentVersion() {
             driveContentVersion += 1;
         }
@@ -14358,6 +14395,40 @@
             if (!meta?.modifiedTime) return 0;
             const ts = new Date(meta.modifiedTime).getTime();
             return Number.isFinite(ts) ? ts : 0;
+        }
+
+        function chooseNewerRemoteMeta(currentMeta, incomingMeta) {
+            if (!currentMeta) return incomingMeta || null;
+            if (!incomingMeta) return currentMeta;
+            const currentModified = getRemoteMetaModifiedTime(currentMeta);
+            const incomingModified = getRemoteMetaModifiedTime(incomingMeta);
+            if (incomingModified && currentModified) {
+                return incomingModified >= currentModified ? incomingMeta : currentMeta;
+            }
+            if (incomingModified) return incomingMeta;
+            if (currentModified) return currentMeta;
+            if (incomingMeta.headRevisionId && !currentMeta.headRevisionId) return incomingMeta;
+            return currentMeta;
+        }
+
+        function deferRemotePull(meta = null) {
+            deferredRemotePullPending = true;
+            deferredRemotePullMeta = chooseNewerRemoteMeta(deferredRemotePullMeta, meta);
+        }
+
+        async function flushDeferredRemotePull(options = {}) {
+            if (!deferredRemotePullPending) return false;
+            if (!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges()) {
+                return false;
+            }
+            const pendingMeta = deferredRemotePullMeta;
+            deferredRemotePullPending = false;
+            deferredRemotePullMeta = null;
+            if (pendingMeta && !isRemoteMetaNewerThanTracked(pendingMeta) && !options.force) {
+                return false;
+            }
+            await pullRemoteChanges(pendingMeta || null, { allowWhileLocalPending: true });
+            return true;
         }
 
         function isRemoteMetaNewerThanTracked(meta) {
@@ -14401,7 +14472,7 @@
                     if (!pullIdle) return false;
                     if (!state.driveFileId || state.driveFileId !== fileIdAtStart) return false;
                     if (isDriveHydratedForCurrentFile()) return true;
-                    await pullRemoteChanges();
+                    await pullRemoteChanges(null, { allowWhileLocalPending: true });
                     const hydrated = isDriveHydratedForCurrentFile();
                     if (!hydrated) {
                         driveHydrationRetryAfter = Date.now() + 5000;
@@ -14873,6 +14944,7 @@
                     }
                 }
                 await checkRemoteUpdateAfterSave();
+                await flushDeferredRemotePull();
             }
             if (driveSaveQueued) {
                 const queuedForce = driveSaveQueuedForce;
@@ -14906,6 +14978,8 @@
         let collabFastCatchupTimers = [];
         let remoteChangePendingDuringSave = false;
         let remoteChangePendingMeta = null;
+        let deferredRemotePullPending = false;
+        let deferredRemotePullMeta = null;
 
         function clearCollabFastCatchup() {
             if (!collabFastCatchupTimers || collabFastCatchupTimers.length === 0) return;
@@ -14951,6 +15025,10 @@
                 const hasChanged = isRemoteMetaNewerThanTracked(data);
 
                 if (hasChanged) {
+                    if (hasUnsyncedLocalDriveChanges()) {
+                        deferRemotePull(data);
+                        return false;
+                    }
                     await pullRemoteChanges(data);
                     return true;
                 }
@@ -14987,6 +15065,8 @@
             clearCollabFastCatchup();
             remoteChangePendingDuringSave = false;
             remoteChangePendingMeta = null;
+            deferredRemotePullPending = false;
+            deferredRemotePullMeta = null;
             stopPresencePing();
             console.log('Collab polling stopped');
         }
@@ -15018,19 +15098,12 @@
 
                 // Detect changes BEFORE updating local state
                 const hasChanged = isRemoteMetaNewerThanTracked(data);
-                let shouldRefreshSaveTimestamp = false;
-
-                // Refresh timestamp only when Drive reports a newer modifiedTime.
-                const remoteModified = getRemoteMetaModifiedTime(data);
-                if (remoteModified && (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified)) {
-                    state.driveLastKnownModified = remoteModified;
-                    shouldRefreshSaveTimestamp = true;
-                }
-                if (shouldRefreshSaveTimestamp) {
-                    updateSaveTimestamp();
-                }
 
                 if (hasChanged) {
+                    if (hasUnsyncedLocalDriveChanges()) {
+                        deferRemotePull(data);
+                        return;
+                    }
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
                     if (driveSaveInProgress) {
                         // Save is in flight; defer pull until upload finishes.
@@ -15044,6 +15117,18 @@
                     collabPollInProgress = false;
                     setTimeout(() => pollDriveRevision(), 120);
                     return;
+                }
+
+                let shouldRefreshSaveTimestamp = false;
+
+                // Refresh timestamp only when Drive reports a newer modifiedTime.
+                const remoteModified = getRemoteMetaModifiedTime(data);
+                if (remoteModified && (!state.driveLastKnownModified || remoteModified > state.driveLastKnownModified)) {
+                    state.driveLastKnownModified = remoteModified;
+                    shouldRefreshSaveTimestamp = true;
+                }
+                if (shouldRefreshSaveTimestamp) {
+                    updateSaveTimestamp();
                 }
             } catch (err) {
                 console.warn('Collab poll failed:', err);
@@ -15783,8 +15868,12 @@
             } catch (err) { /* best effort */ }
         }
 
-        async function pullRemoteChanges(remoteMetaHint = null) {
+        async function pullRemoteChanges(remoteMetaHint = null, options = {}) {
             if (!state.driveFileId || !driveAccessToken) return;
+            if (!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges()) {
+                deferRemotePull(remoteMetaHint);
+                return { changed: false, hasLocalMerges: false, deferred: true };
+            }
             if (collabPullInProgress) return;
             collabPullInProgress = true;
             const fileIdAtStart = state.driveFileId;
@@ -16202,7 +16291,8 @@
             if (action.type === 'add-stroke') {
                 // Remove the stroke
                 const page = state.pages[action.pageIndex];
-                page.strokes.pop();
+                const removedStroke = page.strokes.pop();
+                trackDeletedStrokeIds(page, removedStroke ? [removedStroke] : []);
                 redrawPage(action.pageIndex);
             } else if (action.type === 'add-image') {
                 const page = state.pages[action.pageIndex];
@@ -16218,6 +16308,7 @@
                     const item = action.strokes[i];
                     page.strokes.splice(item.index, 0, item.stroke);
                 }
+                untrackDeletedStrokeIds(page, action.strokes);
                 redrawPage(action.pageIndex);
             } else if (action.type === 'transform-strokes') {
                 const page = state.pages[action.pageIndex];
@@ -16242,6 +16333,8 @@
             } else if (action.type === 'erase-area') {
                 const page = state.pages[action.pageIndex];
                 page.strokes = cloneStrokesArray(action.before);
+                const afterIds = new Set((action.after || []).map(stroke => stroke?.id).filter(Boolean));
+                untrackDeletedStrokeIds(page, (action.before || []).filter(stroke => stroke?.id && !afterIds.has(stroke.id)));
                 redrawPage(action.pageIndex);
             } else if (action.type === 'delete-images') {
                 const page = state.pages[action.pageIndex];
@@ -16259,6 +16352,7 @@
                         const insertIndex = Math.min(item.index, page.strokes.length);
                         page.strokes.splice(insertIndex, 0, cloneStroke(item.stroke));
                     });
+                    untrackDeletedStrokeIds(page, action.strokes);
                 }
                 if (Array.isArray(action.images) && action.images.length > 0) {
                     if (!Array.isArray(page.images)) page.images = [];
@@ -16376,6 +16470,7 @@
                 // Re-add the stroke
                 const page = state.pages[action.pageIndex];
                 page.strokes.push(cloneStroke(action.stroke));
+                untrackDeletedStrokeIds(page, [action.stroke]);
                 redrawPage(action.pageIndex);
             } else if (action.type === 'add-image') {
                 const page = state.pages[action.pageIndex];
@@ -16391,6 +16486,7 @@
                 for (const item of sorted) {
                     page.strokes.splice(item.index, 1);
                 }
+                trackDeletedStrokeIds(page, action.strokes);
                 redrawPage(action.pageIndex);
             } else if (action.type === 'transform-strokes') {
                 const page = state.pages[action.pageIndex];
@@ -16415,6 +16511,8 @@
             } else if (action.type === 'erase-area') {
                 const page = state.pages[action.pageIndex];
                 page.strokes = cloneStrokesArray(action.after);
+                const afterIds = new Set((action.after || []).map(stroke => stroke?.id).filter(Boolean));
+                trackDeletedStrokeIds(page, (action.before || []).filter(stroke => stroke?.id && !afterIds.has(stroke.id)));
                 redrawPage(action.pageIndex);
             } else if (action.type === 'delete-images') {
                 const page = state.pages[action.pageIndex];
@@ -16436,6 +16534,7 @@
                             page.strokes.splice(index, 1);
                         }
                     });
+                    trackDeletedStrokeIds(page, action.strokes);
                 }
                 if (Array.isArray(action.images) && action.images.length > 0) {
                     if (!Array.isArray(page.images)) return;
