@@ -3239,7 +3239,7 @@
                             <button class="btn btn-secondary" id="btn-drive-menu-refresh" type="button">Refresh</button>
                             <button class="btn btn-secondary" id="btn-drive-menu-logout" type="button">Sign out</button>
                         </div>
-                        <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4</div>
+                        <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4.2</div>
                     </div>
                 </div>
             </div>
@@ -3395,7 +3395,7 @@
                                 <button class="btn btn-secondary" id="btn-drive-menu-logout-editor" type="button">Sign
                                     out</button>
                             </div>
-                            <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4</div>
+                            <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4.2</div>
                         </div>
                     </div>
                 </div>
@@ -6546,6 +6546,7 @@
                 const stroke = page.strokes[index];
                 if (!stroke) return;
                 const duplicate = cloneStroke(stroke);
+                duplicate.id = generateStrokeId(); // New ID so sync/dedup treats it as distinct
                 duplicate.points = stroke.points.map(pt => ({
                     x: pt.x + dx,
                     y: pt.y + dy,
@@ -6565,6 +6566,7 @@
                     if (!image) return;
                     const duplicate = {
                         ...image,
+                        id: generateStrokeId(), // New ID so sync/dedup treats it as distinct
                         x: image.x + dx,
                         y: image.y + dy
                     };
@@ -17023,16 +17025,28 @@
                     console.log('No embedded stroke data found:', metaErr);
                 }
 
-                // Deduplicate strokes within each page
+                // Fix legacy same-ID strokes and deduplicate truly identical ones
                 if (embeddedStrokes) {
                     for (const pageData of embeddedStrokes) {
                         if (pageData && Array.isArray(pageData.strokes) && pageData.strokes.length > 1) {
+                            // First: assign new IDs to same-ID strokes (legacy bug)
+                            const idSeen = new Set();
+                            for (const s of pageData.strokes) {
+                                if (s.id && idSeen.has(s.id)) {
+                                    s.id = generateStrokeId();
+                                    state.needsMigrationResave = true;
+                                } else if (s.id) {
+                                    idSeen.add(s.id);
+                                }
+                            }
+                            // Then: remove truly identical strokes (same content)
                             const seen = new Set();
                             const unique = [];
                             for (const s of pageData.strokes) {
-                                const key = s.id || (s.points ? `${s.points.length}:${s.points[0]?.x},${s.points[0]?.y}` : '');
-                                if (!seen.has(key)) {
-                                    seen.add(key);
+                                const pts = Array.isArray(s.points) ? s.points : [];
+                                const fp = `${s.tool}|${s.color}|${s.width}|${pts.length}|${pts[0]?.x},${pts[0]?.y}|${pts[pts.length-1]?.x},${pts[pts.length-1]?.y}`;
+                                if (!seen.has(fp)) {
+                                    seen.add(fp);
                                     unique.push(s);
                                 }
                             }
@@ -17641,14 +17655,15 @@
                     continue;
                 }
 
-                // Deduplicate strokes before export only when metadata is actually needed.
+                // Deduplicate truly identical strokes before export (content fingerprint, not just ID).
                 let exportStrokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
                 if (exportStrokes.length > 1) {
                     const seen = new Set();
                     exportStrokes = exportStrokes.filter(s => {
-                        const key = s.id || (s.points ? `${s.points.length}:${s.points[0]?.x},${s.points[0]?.y}` : '');
-                        if (seen.has(key)) return false;
-                        seen.add(key);
+                        const pts = Array.isArray(s.points) ? s.points : [];
+                        const fp = `${s.tool}|${s.color}|${s.width}|${pts.length}|${pts[0]?.x},${pts[0]?.y}|${pts[pts.length-1]?.x},${pts[pts.length-1]?.y}`;
+                        if (seen.has(fp)) return false;
+                        seen.add(fp);
                         return true;
                     });
                 }
