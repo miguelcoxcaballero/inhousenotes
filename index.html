@@ -556,22 +556,19 @@
             align-items: center;
             justify-content: center;
             height: var(--header-btn-size);
-            padding-left: 22px;
         }
 
         .mode-toggle-status {
-            position: absolute;
-            left: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            display: block;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             width: 22px;
             height: 18px;
+            flex: 0 0 22px;
             color: var(--text-secondary);
             pointer-events: none;
             opacity: 1;
-            z-index: 2;
-            overflow: visible;
             transition: opacity 0.2s ease;
         }
 
@@ -579,16 +576,12 @@
             width: 7px;
             height: 7px;
             box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
         }
 
         .mode-toggle-status .save-timestamp {
             position: absolute;
             left: 50%;
-            top: calc(50% + 10px);
+            top: 12px;
             transform: translateX(-50%);
             font-size: 0.38rem;
             line-height: 1;
@@ -599,11 +592,14 @@
         }
 
         .mode-toggle-btn {
+            display: grid;
+            grid-template-columns: 22px minmax(0, 1fr) auto;
+            align-items: center;
+            column-gap: 8px;
             min-width: 132px;
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
-            justify-content: space-between;
-            padding: 0 12px 0 18px;
+            padding: 0 12px;
             transform: none;
             transition: background-color 0.22s ease, box-shadow 0.22s ease, padding 0.22s ease;
         }
@@ -614,9 +610,8 @@
             transform: none;
         }
 
-        .mode-toggle-btn.is-editing+.mode-toggle-status {
+        .mode-toggle-btn.is-editing .mode-toggle-status {
             opacity: 1;
-            transform: translateY(-50%);
         }
 
         .mode-toggle-text {
@@ -3006,8 +3001,7 @@
 
             #editor-view .mode-toggle-group {
                 border-radius: 999px;
-                padding: 4px 4px 4px 24px;
-                overflow: hidden;
+                padding: 4px;
             }
 
             #editor-view .mode-toggle-btn {
@@ -3017,7 +3011,7 @@
                 border: none;
                 box-shadow: none !important;
                 position: relative;
-                padding-left: 16px;
+                padding-left: 12px;
             }
 
             [data-theme="dark"] #editor-view .mode-toggle-btn {
@@ -3110,16 +3104,11 @@
             }
 
             #editor-view .mode-toggle-status {
-                left: 7px;
-                top: 50%;
-                bottom: auto;
                 opacity: 1;
                 pointer-events: none;
-                z-index: 2;
             }
 
-            #editor-view .mode-toggle-btn.is-editing+.mode-toggle-status {
-                transform: translateY(-50%);
+            #editor-view .mode-toggle-btn.is-editing .mode-toggle-status {
                 opacity: 1;
             }
 
@@ -3370,16 +3359,16 @@
                     <div class="mode-toggle-group">
                         <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button"
                             aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
+                            <span class="mode-toggle-status">
+                                <span class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved">
+                                </span>
+                                <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
+                            </span>
                             <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
                             <span class="mode-toggle-pill" aria-hidden="true">
                                 <span class="mode-toggle-knob"></span>
                             </span>
                         </button>
-                        <div class="mode-toggle-status">
-                            <div class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved">
-                            </div>
-                            <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
-                        </div>
                     </div>
                     <div class="drive-profile hidden" id="drive-profile-editor">
                         <button class="drive-profile-btn" id="btn-drive-profile-editor" type="button"
