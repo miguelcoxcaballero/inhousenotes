@@ -3239,7 +3239,7 @@
                             <button class="btn btn-secondary" id="btn-drive-menu-refresh" type="button">Refresh</button>
                             <button class="btn btn-secondary" id="btn-drive-menu-logout" type="button">Sign out</button>
                         </div>
-                        <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4.2</div>
+                        <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4.3</div>
                     </div>
                 </div>
             </div>
@@ -3395,7 +3395,7 @@
                                 <button class="btn btn-secondary" id="btn-drive-menu-logout-editor" type="button">Sign
                                     out</button>
                             </div>
-                            <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4.2</div>
+                            <div style="text-align:center;font-size:11px;color:#bbb;padding-top:4px;">v4.4.3</div>
                         </div>
                     </div>
                 </div>
@@ -3918,7 +3918,7 @@
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 40;
         const DRIVE_SYNC_IDLE_DELAY = 250;
-        const DRIVE_BUILD_IDLE_WINDOW_MS = 950;
+        const DRIVE_BUILD_IDLE_WINDOW_MS = 1500;
         const DRIVE_SYNC_MAX_DELAY = 3000;
         const DRIVE_POLL_TIMEOUT = 7000;
         const DRIVE_META_TIMEOUT = 7000;
@@ -14205,6 +14205,7 @@
                 || strokeOpsFlushInProgress
                 || pdfRenderActive
                 || !!activePdfBackgroundRenderTask
+                || _prewarmRunning
             );
         }
 
@@ -16891,6 +16892,37 @@
             }
         }
 
+        function hasHotUserInteraction(windowMs = DRIVE_BUILD_IDLE_WINDOW_MS) {
+            return hasSmoothInteraction() || hasRecentUserActivity(windowMs) || hasPendingUserInput();
+        }
+
+        async function yieldProcessingForUi(preferAnimationFrame = false) {
+            try {
+                if (typeof scheduler !== 'undefined' && scheduler && typeof scheduler.yield === 'function') {
+                    await scheduler.yield();
+                    return;
+                }
+            } catch (err) { }
+            if (preferAnimationFrame) {
+                await yieldToMainThread();
+                return;
+            }
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        async function waitForHotInteractionToSettle(options = {}) {
+            const abortSignal = options.abortSignal || null;
+            const sessionToken = Number.isFinite(options.sessionToken) ? options.sessionToken : null;
+            const windowMs = Number.isFinite(options.windowMs) ? options.windowMs : DRIVE_BUILD_IDLE_WINDOW_MS;
+            const pollMs = Math.max(12, Number.isFinite(options.pollMs) ? options.pollMs : 24);
+            while (hasHotUserInteraction(windowMs)) {
+                if (abortSignal?.aborted) return false;
+                if (Number.isFinite(sessionToken) && !isDocumentSessionTokenValid(sessionToken)) return false;
+                await new Promise(resolve => setTimeout(resolve, pollMs));
+            }
+            return true;
+        }
+
         async function drawImagesOnCanvas(ctx, page, options = {}) {
             if (!page || !Array.isArray(page.images) || page.images.length === 0) return;
             const abortSignal = options.abortSignal || null;
@@ -17315,6 +17347,13 @@
             const exportScale = pageCount >= 20 ? 1.1 : 1.22;
             const jpegQuality = pageCount >= 20 ? 0.55 : 0.62;
             const exportProfile = `drv-opt:${exportScale}:q${jpegQuality}`;
+            const prewarmInteractionWindowMs = 260;
+            const cleanupPrewarmCanvas = (canvas) => {
+                if (!canvas) return;
+                canvas.width = 0;
+                canvas.height = 0;
+            };
+            const shouldAbortPrewarm = () => hasHotUserInteraction(prewarmInteractionWindowMs);
             // Pre-render template at the export size
             const tplW = Math.round(A4_WIDTH * exportScale);
             const tplH = Math.round(A4_HEIGHT * exportScale);
@@ -17324,17 +17363,10 @@
             const tempCtx = tempCanvas.getContext('2d');
 
             for (let i = 0; i < pageCount; i++) {
-                // Yield between pages to not block UI
-                await new Promise(r => setTimeout(r, 0));
-                // Pause during interaction but don't abort — wait and resume
-                if (hasSmoothInteraction() || hasRecentUserActivity(240)) {
-                    await new Promise(resolve => {
-                        const check = () => {
-                            if (!hasSmoothInteraction() && !hasRecentUserActivity(240)) { resolve(); return; }
-                            setTimeout(check, 200);
-                        };
-                        setTimeout(check, 200);
-                    });
+                await yieldProcessingForUi(true);
+                if (shouldAbortPrewarm()) {
+                    cleanupPrewarmCanvas(tempCanvas);
+                    return;
                 }
 
                 const pageData = state.pages[i];
@@ -17365,33 +17397,65 @@
                 tempCtx.lineCap = 'round';
                 tempCtx.lineJoin = 'round';
                 const strokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
+                let strokeCounter = 0;
+                let pointCounter = 0;
                 for (const stroke of strokes) {
-                    if (!stroke.points || stroke.points.length < 2) continue;
+                    if (shouldAbortPrewarm()) {
+                        cleanupPrewarmCanvas(tempCanvas);
+                        return;
+                    }
+                    const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                    if (!stroke.points || stroke.points.length < minPoints) continue;
                     if (stroke.tool === 'eraser-stroke') continue;
-                    drawSmoothStroke(tempCtx, stroke);
+                    const hotInteraction = shouldAbortPrewarm();
+                    const chunkThreshold = hotInteraction ? 48 : 96;
+                    const chunkSize = hotInteraction ? 36 : 72;
+                    if (stroke.points.length > chunkThreshold) {
+                        for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
+                            const end = Math.min(stroke.points.length, start + chunkSize);
+                            const segmentPoints = stroke.points.slice(start, end);
+                            if (segmentPoints.length < minPoints) break;
+                            drawSmoothStroke(tempCtx, {
+                                ...stroke,
+                                points: segmentPoints
+                            });
+                            strokeCounter += 1;
+                            pointCounter += segmentPoints.length;
+                            await yieldProcessingForUi(hotInteraction);
+                            if (shouldAbortPrewarm()) {
+                                cleanupPrewarmCanvas(tempCanvas);
+                                return;
+                            }
+                        }
+                    } else {
+                        drawSmoothStroke(tempCtx, stroke);
+                        strokeCounter += 1;
+                        pointCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
+                    }
+                    if (strokeCounter % 2 === 0 || pointCounter >= (hotInteraction ? 80 : 240)) {
+                        pointCounter = 0;
+                        await yieldProcessingForUi(hotInteraction);
+                    }
                 }
 
-                await new Promise(r => setTimeout(r, 0));
-                // Pause during interaction, don't abort
-                if (hasSmoothInteraction() || hasRecentUserActivity(240)) {
-                    await new Promise(resolve => {
-                        const check = () => {
-                            if (!hasSmoothInteraction() && !hasRecentUserActivity(240)) { resolve(); return; }
-                            setTimeout(check, 200);
-                        };
-                        setTimeout(check, 200);
-                    });
+                await yieldProcessingForUi(true);
+                if (shouldAbortPrewarm()) {
+                    cleanupPrewarmCanvas(tempCanvas);
+                    return;
                 }
 
                 const pageBlob = await canvasToBlobSafe(tempCanvas, 'image/jpeg', jpegQuality);
+                if (shouldAbortPrewarm()) {
+                    cleanupPrewarmCanvas(tempCanvas);
+                    return;
+                }
                 if (!pageBlob) continue;
                 const jpegData = new Uint8Array(await pageBlob.arrayBuffer());
 
                 const pageHash = `${computePageHash(pageData)}|exp:${pageW}x${pageH}|${exportProfile}`;
                 pdfExportCache.set(i, { hash: pageHash, jpegData, metaJson: null });
             }
-            tempCanvas.width = 0;
-            tempCanvas.height = 0;
+            cleanupPrewarmCanvas(tempCanvas);
         }
 
         function computePageHash(pageData) {
@@ -17495,6 +17559,8 @@
             const sessionToken = Number.isFinite(options.sessionToken)
                 ? options.sessionToken
                 : getDocumentSessionToken();
+            const isMobileLike = detectDeviceType() !== 'pc';
+            const interactionPollMs = isMobileLike ? 16 : 24;
             const throwIfAborted = () => {
                 if (!abortSignal?.aborted) return;
                 throw createAbortError('Drive save aborted');
@@ -17506,36 +17572,32 @@
             const yieldForResponsiveness = async (force = false) => {
                 throwIfAborted();
                 throwIfSessionInvalid();
-                if (hasSmoothInteraction() || hasRecentUserActivity()) {
+                if (hasHotUserInteraction()) {
                     // User is writing or scrolling — pause PDF build entirely
                     // and show grey (paused) indicator. Resume when interaction ends.
                     showStatus('Save paused...', { phase: 'paused' });
-                    await new Promise(resolve => {
-                        const check = () => {
-                            if (abortSignal?.aborted) { resolve(); return; }
-                            if (!isDocumentSessionTokenValid(sessionToken)) { resolve(); return; }
-                            if (!hasSmoothInteraction() && !hasRecentUserActivity()) { resolve(); return; }
-                            setTimeout(check, 50);
-                        };
-                        setTimeout(check, 50);
+                    await waitForHotInteractionToSettle({
+                        abortSignal,
+                        sessionToken,
+                        pollMs: interactionPollMs
                     });
                     throwIfAborted();
                     throwIfSessionInvalid();
                     // Restore building indicator after pause ends
                     showStatus('Building PDF...', { phase: 'building' });
                 } else if (force || hasPendingUserInput()) {
-                    // Quick yield (~1ms) to let pending input through
-                    await new Promise(r => setTimeout(r, 0));
+                    const inputPending = hasPendingUserInput();
+                    await yieldProcessingForUi(force || inputPending || isMobileLike);
                     throwIfAborted();
                     throwIfSessionInvalid();
                 }
             };
-            const isMobileLike = detectDeviceType() !== 'pc';
-            const maxMainThreadSliceMs = isMobileLike ? 3 : 6;
+            const maxMainThreadSliceMs = isMobileLike ? 1.5 : 4;
             let lastSliceYieldAt = performance.now();
             const maybeYieldForSlice = async (force = false) => {
-                if (!force && (performance.now() - lastSliceYieldAt) < maxMainThreadSliceMs) return;
-                await yieldForResponsiveness(force);
+                const userHot = hasHotUserInteraction(isMobileLike ? 240 : 180);
+                if (!force && !userHot && (performance.now() - lastSliceYieldAt) < maxMainThreadSliceMs) return;
+                await yieldForResponsiveness(force || userHot);
                 lastSliceYieldAt = performance.now();
             };
 
@@ -17684,7 +17746,7 @@
                                 y: Math.round(p.y * 100) / 100,
                                 p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
                             };
-                            if ((pointIndex + 1) % (isMobileLike ? 180 : 260) === 0) {
+                            if ((pointIndex + 1) % (isMobileLike ? 96 : 160) === 0) {
                                 await maybeYieldForSlice(false);
                                 throwIfAborted();
                                 throwIfSessionInvalid();
@@ -17695,7 +17757,7 @@
                     }
                     compactStrokes.push(compactStroke);
                     compactStrokeCounter += 1;
-                    if (compactStrokeCounter % 6 === 0 || compactPointCounter >= 900) {
+                    if (compactStrokeCounter % 4 === 0 || compactPointCounter >= (isMobileLike ? 420 : 720)) {
                         compactPointCounter = 0;
                         await maybeYieldForSlice(false);
                         throwIfAborted();
@@ -17812,8 +17874,11 @@
                         if (!stroke.points || stroke.points.length < minPoints) continue;
                         if (stroke.tool === 'eraser-stroke') continue;
 
-                        if (!options.highQuality && stroke.points.length > (isMobileLike ? 180 : 260)) {
-                            const chunkSize = isMobileLike ? 130 : 190;
+                        const userHot = hasHotUserInteraction(isMobileLike ? 240 : 180);
+                        if (!options.highQuality && stroke.points.length > (userHot ? (isMobileLike ? 56 : 88) : (isMobileLike ? 120 : 180))) {
+                            const chunkSize = userHot
+                                ? (isMobileLike ? 40 : 64)
+                                : (isMobileLike ? 92 : 140);
                             for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
                                 const end = Math.min(stroke.points.length, start + chunkSize);
                                 const segmentPoints = stroke.points.slice(start, end);
@@ -17834,9 +17899,8 @@
                             pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
                         }
                         // Keep short main-thread slices on mobile to avoid pen/typing stutter.
-                        const userHot = hasSmoothInteraction() || hasRecentUserActivity();
-                        const yieldInterval = userHot ? 1 : (isMobileLike ? 2 : 4);
-                        const pointLimit = userHot ? 80 : (isMobileLike ? 280 : 700);
+                        const yieldInterval = userHot ? 1 : (isMobileLike ? 2 : 3);
+                        const pointLimit = userHot ? 48 : (isMobileLike ? 180 : 520);
                         if (strokeCheckCounter % yieldInterval === 0 || pointCheckCounter >= pointLimit) {
                             pointCheckCounter = 0;
                             await maybeYieldForSlice(false);
