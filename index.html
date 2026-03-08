@@ -560,20 +560,17 @@
 
         .mode-toggle-status {
             position: absolute;
-            left: 16px;
+            left: 14px;
             top: 50%;
             transform: translateY(-50%);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 2px;
-            font-size: 0.62rem;
+            display: block;
+            width: 12px;
+            height: 12px;
             color: var(--text-secondary);
-            white-space: nowrap;
             pointer-events: none;
-            opacity: 0;
+            opacity: 1;
             z-index: 2;
+            overflow: visible;
             transition: opacity 0.2s ease;
         }
 
@@ -581,14 +578,23 @@
             width: 7px;
             height: 7px;
             box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
         }
 
         .mode-toggle-status .save-timestamp {
-            font-size: 0.52rem;
+            position: absolute;
+            left: 50%;
+            top: calc(50% + 9px);
+            transform: translateX(-50%);
+            font-size: 0.42rem;
             line-height: 1;
-            min-width: 26px;
+            min-width: 22px;
             text-align: center;
-            opacity: 0.68;
+            white-space: nowrap;
+            opacity: 0.58;
         }
 
         .mode-toggle-btn {
@@ -596,7 +602,7 @@
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
             justify-content: space-between;
-            padding: 0 12px 0 34px;
+            padding: 0 12px 0 36px;
             transform: none;
             transition: background-color 0.22s ease, box-shadow 0.22s ease, padding 0.22s ease;
         }
@@ -730,7 +736,7 @@
 
         #editor-view.read-only .save-indicator,
         #editor-view.read-only .save-timestamp {
-            opacity: 0;
+            opacity: 1;
             pointer-events: none;
         }
 
@@ -3010,7 +3016,7 @@
                 border: none;
                 box-shadow: none !important;
                 position: relative;
-                padding-left: 34px;
+                padding-left: 36px;
             }
 
             [data-theme="dark"] #editor-view .mode-toggle-btn {
@@ -3103,12 +3109,10 @@
             }
 
             #editor-view .mode-toggle-status {
+                left: 14px;
                 top: 50%;
                 bottom: auto;
-                left: 14px;
-                transform: translateY(-50%);
                 opacity: 1;
-                gap: 2px;
                 pointer-events: none;
                 z-index: 2;
             }
@@ -3126,9 +3130,9 @@
 
             #editor-view .mode-toggle-status .save-timestamp {
                 display: block;
-                font-size: 0.5rem;
-                min-width: 22px;
-                opacity: 0.62;
+                font-size: 0.42rem;
+                min-width: 20px;
+                opacity: 0.52;
             }
 
             #editor-view.read-only .mode-toggle-status .save-indicator {
