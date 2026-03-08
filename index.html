@@ -560,28 +560,35 @@
 
         .mode-toggle-status {
             position: absolute;
-            left: 50%;
-            top: calc(100% - 4px);
-            transform: translate(-50%, -4px);
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 6px;
-            font-size: 0.68rem;
+            justify-content: center;
+            gap: 2px;
+            font-size: 0.62rem;
             color: var(--text-secondary);
             white-space: nowrap;
             pointer-events: none;
             opacity: 0;
-            transition: opacity 0.2s ease, transform 0.2s ease;
+            z-index: 2;
+            transition: opacity 0.2s ease;
         }
 
         .mode-toggle-status .save-indicator {
-            width: 8px;
-            height: 8px;
+            width: 7px;
+            height: 7px;
             box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
         }
 
         .mode-toggle-status .save-timestamp {
-            font-size: 0.68rem;
+            font-size: 0.52rem;
+            line-height: 1;
+            min-width: 26px;
+            text-align: center;
+            opacity: 0.68;
         }
 
         .mode-toggle-btn {
@@ -589,7 +596,7 @@
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
             justify-content: space-between;
-            padding: 0 12px;
+            padding: 0 12px 0 34px;
             transform: none;
             transition: background-color 0.22s ease, box-shadow 0.22s ease, padding 0.22s ease;
         }
@@ -602,7 +609,7 @@
 
         .mode-toggle-btn.is-editing+.mode-toggle-status {
             opacity: 1;
-            transform: translate(-50%, 0);
+            transform: translateY(-50%);
         }
 
         .mode-toggle-text {
@@ -681,9 +688,9 @@
         }
 
         .save-timestamp {
-            font-size: 0.75rem;
+            font-size: 0.52rem;
             color: var(--text-secondary);
-            opacity: 0.75;
+            opacity: 0.68;
             letter-spacing: 0.01em;
             transition: opacity 0.25s ease;
         }
@@ -3003,7 +3010,7 @@
                 border: none;
                 box-shadow: none !important;
                 position: relative;
-                padding-left: 24px;
+                padding-left: 34px;
             }
 
             [data-theme="dark"] #editor-view .mode-toggle-btn {
@@ -3098,10 +3105,10 @@
             #editor-view .mode-toggle-status {
                 top: 50%;
                 bottom: auto;
-                left: 22px;
+                left: 14px;
                 transform: translateY(-50%);
                 opacity: 1;
-                gap: 0;
+                gap: 2px;
                 pointer-events: none;
                 z-index: 2;
             }
@@ -3118,7 +3125,10 @@
             }
 
             #editor-view .mode-toggle-status .save-timestamp {
-                display: none !important;
+                display: block;
+                font-size: 0.5rem;
+                min-width: 22px;
+                opacity: 0.62;
             }
 
             #editor-view.read-only .mode-toggle-status .save-indicator {
@@ -12934,13 +12944,14 @@
             const now = Date.now();
             const diffMs = Math.max(0, now - timestamp);
             const diffMin = Math.floor(diffMs / 60000);
-            if (diffMin < 15) {
-                if (diffMin < 1) return '<1 min ago';
-                return diffMin === 1 ? '1 min ago' : `${diffMin} mins ago`;
+            if (diffMin < 60) {
+                if (diffMin < 1) return '<1 min';
+                return `${diffMin} min`;
             }
             return new Date(timestamp).toLocaleTimeString(undefined, {
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                hour12: false
             });
         }
 
@@ -12950,8 +12961,13 @@
             // Use Drive's modifiedTime (universal across all devices),
             // falling back to local save time when no Drive info is available.
             const driveTs = state.driveLastKnownModified || null;
-            const label = driveTs ? `Last saved: ${formatTime(driveTs)}` : (state.lastSavedAt ? `Last edit: ${formatTime(state.lastSavedAt)}` : 'Last edit: --:--');
+            const sourceTs = driveTs || state.lastSavedAt || null;
+            const label = sourceTs ? formatTime(sourceTs) : '--:--';
             timestampEl.textContent = label;
+            timestampEl.title = driveTs
+                ? `Last saved ${label}`
+                : (sourceTs ? `Last edit ${label}` : 'Not saved yet');
+            timestampEl.setAttribute('aria-label', timestampEl.title);
         }
 
         function openNotebookDb() {
