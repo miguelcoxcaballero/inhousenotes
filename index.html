@@ -10490,14 +10490,21 @@
             }
         }
 
-        function drawPageBackgroundLayer(ctx, page, pageIndex) {
+        function drawPageBackgroundLayer(ctx, page, pageIndex, renderScale = 1) {
             const backgroundSource = page.backgroundSource
                 || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template'));
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
             const hasPendingPdfBackground = (backgroundSource === 'pdf' || page.pdfPageIndex) && page.pdfPageIndex && !page.backgroundImage;
 
             if (backgroundSource === 'template' && !page.backgroundImage) {
-                drawTemplateBackground(ctx, pageWidth, pageHeight, pageWidth / A4_WIDTH);
+                const safeRenderScale = Number.isFinite(renderScale) ? Math.max(1, renderScale) : 1;
+                const targetWidth = Math.max(1, Math.round(pageWidth * safeRenderScale));
+                const targetHeight = Math.max(1, Math.round(pageHeight * safeRenderScale));
+                // Draw template in backing-pixel space so zoom increases real template detail.
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                drawTemplateBackground(ctx, targetWidth, targetHeight, 1);
+                ctx.restore();
                 return;
             }
 
@@ -10555,7 +10562,7 @@
             ctx.globalCompositeOperation = 'source-over';
             ctx.globalAlpha = 1;
 
-            drawPageBackgroundLayer(ctx, page, pageIndex);
+            drawPageBackgroundLayer(ctx, page, pageIndex, renderScale);
 
             // Draw baked background if available (contains old strokes)
             if (page.bakedBackground) {
