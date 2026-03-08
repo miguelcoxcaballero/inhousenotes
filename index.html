@@ -3888,10 +3888,16 @@
             '</svg>'
         )}`;
 
-        // A4 dimensions - using 2x resolution for crisp drawing
+        // A4 dimensions
         const A4_WIDTH = 794;
         const A4_HEIGHT = 1123;
-        const CANVAS_SCALE = 2; // Fixed at 2x for memory optimization
+        const CANVAS_SCALE = 2; // Base resolution at 100% zoom
+        const CANVAS_SCALE_STEP = 0.25;
+        const CANVAS_MAX_SCALE_PC = 6;
+        const CANVAS_MAX_SCALE_TOUCH = 4.5;
+        const CANVAS_MAX_PIXELS_PC = 28 * 1024 * 1024;
+        const CANVAS_MAX_PIXELS_TOUCH = 16 * 1024 * 1024;
+        const CANVAS_RESYNC_IDLE_MS = 90;
         const PAGE_PADDING = 30;
         const PAGE_GAP = 30;
         const VISIBLE_PAGE_BUFFER = 1;
@@ -4594,6 +4600,7 @@
         let visiblePageUpdateHandle = null;
         let visiblePageUpdateForce = false;
         let pageActivationHandle = null;
+        let canvasResolutionSyncHandle = null;
         const addPageIndicator = document.createElement('div');
         addPageIndicator.id = 'add-page-indicator';
         addPageIndicator.textContent = '+';
@@ -4796,6 +4803,107 @@
             return top + (height / 2);
         }
 
+        function getTargetPageCanvasScale(pageWidth, pageHeight, zoom = state.zoom) {
+            const safeWidth = Math.max(1, normalizePageDimension(pageWidth, A4_WIDTH));
+            const safeHeight = Math.max(1, normalizePageDimension(pageHeight, A4_HEIGHT));
+            const safeZoom = Number.isFinite(zoom) ? Math.max(0.5, zoom) : 1;
+            const desiredScale = CANVAS_SCALE * Math.max(1, safeZoom);
+            const isPc = detectDeviceType() === 'pc';
+            const maxScale = isPc ? CANVAS_MAX_SCALE_PC : CANVAS_MAX_SCALE_TOUCH;
+            const maxPixels = isPc ? CANVAS_MAX_PIXELS_PC : CANVAS_MAX_PIXELS_TOUCH;
+            const pixelBoundScale = Math.sqrt(maxPixels / (safeWidth * safeHeight));
+            const cappedScale = Math.max(CANVAS_SCALE, Math.min(desiredScale, maxScale, pixelBoundScale));
+            const quantized = Math.floor(cappedScale / CANVAS_SCALE_STEP) * CANVAS_SCALE_STEP;
+            return Math.max(CANVAS_SCALE, quantized || CANVAS_SCALE);
+        }
+
+        function getTargetPageCanvasBackingSize(pageWidth, pageHeight, zoom = state.zoom) {
+            const safeWidth = Math.max(1, normalizePageDimension(pageWidth, A4_WIDTH));
+            const safeHeight = Math.max(1, normalizePageDimension(pageHeight, A4_HEIGHT));
+            const desiredScale = getTargetPageCanvasScale(safeWidth, safeHeight, zoom);
+            const targetWidth = Math.max(1, Math.round(safeWidth * desiredScale));
+            const appliedScale = targetWidth / safeWidth;
+            const targetHeight = Math.max(1, Math.round(safeHeight * appliedScale));
+            return { targetWidth, targetHeight, scale: appliedScale };
+        }
+
+        function resizePageCanvas(canvas, pageWidth, pageHeight, zoom = state.zoom) {
+            if (!canvas) return { resized: false, scale: CANVAS_SCALE };
+            const { targetWidth, targetHeight, scale } = getTargetPageCanvasBackingSize(pageWidth, pageHeight, zoom);
+            const resized = canvas.width !== targetWidth || canvas.height !== targetHeight;
+            if (resized) {
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+            }
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            const appliedScale = canvas.width / Math.max(1, normalizePageDimension(pageWidth, A4_WIDTH));
+            canvas.dataset.renderScale = `${appliedScale || scale || CANVAS_SCALE}`;
+            return {
+                resized,
+                scale: appliedScale || scale || CANVAS_SCALE
+            };
+        }
+
+        function getPageCanvasRenderScale(canvas, pageWidth) {
+            if (!canvas) return CANVAS_SCALE;
+            const fromData = parseFloat(canvas.dataset.renderScale || '');
+            if (Number.isFinite(fromData) && fromData > 0) return fromData;
+            const safeWidth = Math.max(1, normalizePageDimension(pageWidth, A4_WIDTH));
+            const computed = canvas.width / safeWidth;
+            return (Number.isFinite(computed) && computed > 0) ? computed : CANVAS_SCALE;
+        }
+
+        function ensurePageCanvasResolution(pageIndex) {
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+            if (!wrapper) return false;
+            const pageCanvas = wrapper.querySelector('canvas.page-canvas');
+            if (!pageCanvas) return false;
+            const { width, height } = getPageDimensions(pageIndex);
+            const { targetWidth, targetHeight } = getTargetPageCanvasBackingSize(width, height, state.zoom);
+            if (pageCanvas.width === targetWidth && pageCanvas.height === targetHeight) return false;
+            return applyPageDimensionsToWrapper(pageIndex);
+        }
+
+        function syncActivePageCanvasResolution(options = {}) {
+            const force = !!options.force;
+            if (activePageIndices.size === 0) return;
+            activePageIndices.forEach(pageIndex => {
+                const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
+                if (!wrapper) return;
+                const pageCanvas = wrapper.querySelector('canvas.page-canvas');
+                if (!pageCanvas) return;
+                const { width, height } = getPageDimensions(pageIndex);
+                const { targetWidth, targetHeight } = getTargetPageCanvasBackingSize(width, height, state.zoom);
+                if (!force && pageCanvas.width === targetWidth && pageCanvas.height === targetHeight) return;
+                applyPageDimensionsToWrapper(pageIndex);
+            });
+        }
+
+        function scheduleCanvasResolutionSync(options = {}) {
+            const immediate = !!options.immediate;
+            const force = !!options.force;
+            if (immediate) {
+                if (canvasResolutionSyncHandle) {
+                    clearTimeout(canvasResolutionSyncHandle);
+                    canvasResolutionSyncHandle = null;
+                }
+                syncActivePageCanvasResolution({ force });
+                return;
+            }
+            if (canvasResolutionSyncHandle) {
+                clearTimeout(canvasResolutionSyncHandle);
+            }
+            canvasResolutionSyncHandle = setTimeout(() => {
+                canvasResolutionSyncHandle = null;
+                if (isViewportInteracting()) {
+                    scheduleCanvasResolutionSync();
+                    return;
+                }
+                syncActivePageCanvasResolution();
+            }, CANVAS_RESYNC_IDLE_MS);
+        }
+
         function resizeOverlayCanvas(canvas, width, height, scaleFactor) {
             if (!canvas) return false;
             const targetW = Math.max(1, Math.round(width * scaleFactor));
@@ -4817,12 +4925,13 @@
 
             let canvasResized = false;
             const pageCanvas = wrapper.querySelector('canvas.page-canvas');
-            if (pageCanvas && resizeOverlayCanvas(pageCanvas, width, height, CANVAS_SCALE)) {
+            if (pageCanvas) {
+                const resizedPageCanvas = resizePageCanvas(pageCanvas, width, height, state.zoom);
                 const ctx = pageCanvas.getContext('2d');
-                ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+                ctx.setTransform(resizedPageCanvas.scale, 0, 0, resizedPageCanvas.scale, 0, 0);
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
-                canvasResized = true;
+                canvasResized = resizedPageCanvas.resized;
             }
 
             const lassoOverlay = wrapper.querySelector('canvas.lasso-overlay');
@@ -4988,10 +5097,7 @@
             const canvas = document.createElement('canvas');
             canvas.className = 'page-canvas';
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
-            canvas.width = pageWidth * CANVAS_SCALE;
-            canvas.height = pageHeight * CANVAS_SCALE;
-            canvas.style.width = '100%';
-            canvas.style.height = '100%';
+            const pageCanvasSizing = resizePageCanvas(canvas, pageWidth, pageHeight, state.zoom);
             canvas.dataset.page = pageIndex;
 
             const lassoOverlay = document.createElement('canvas');
@@ -5062,7 +5168,7 @@
 
             // Setup context with scale
             const ctx = canvas.getContext('2d');
-            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+            ctx.setTransform(pageCanvasSizing.scale, 0, 0, pageCanvasSizing.scale, 0, 0);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
@@ -5755,6 +5861,7 @@
                 if (state.currentTool === 'lasso') {
                     if (!shouldAcceptDrawInput(e)) return;
                     if (!lassoCanvas) return;
+                    ensurePageCanvasResolution(pageIndex);
                     noteInteractionActivity();
                     isLassoing = true;
                     lassoPoints = [];
@@ -5770,6 +5877,7 @@
 
                 // Accept pen, mouse, and touch (with palm rejection)
                 if (!shouldAcceptDrawInput(e)) return;
+                ensurePageCanvasResolution(pageIndex);
                 clearSelection();
 
                 e.preventDefault();
@@ -10042,9 +10150,18 @@
         // Get canvas position accounting for scale
         function getCanvasPos(canvas, e) {
             const rect = canvas.getBoundingClientRect();
+            const pageIndex = parseInt(canvas.dataset.page || '-1', 10);
+            if (Number.isFinite(pageIndex) && pageIndex >= 0) {
+                const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+                return {
+                    x: (e.clientX - rect.left) * (pageWidth / Math.max(1, rect.width)),
+                    y: (e.clientY - rect.top) * (pageHeight / Math.max(1, rect.height))
+                };
+            }
+            const zoom = Number.isFinite(state.zoom) && state.zoom > 0 ? state.zoom : 1;
             return {
-                x: (e.clientX - rect.left) * (canvas.width / rect.width / CANVAS_SCALE),
-                y: (e.clientY - rect.top) * (canvas.height / rect.height / CANVAS_SCALE)
+                x: (e.clientX - rect.left) / zoom,
+                y: (e.clientY - rect.top) / zoom
             };
         }
 
@@ -10358,8 +10475,9 @@
 
             const ctx = canvas.getContext('2d');
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+            const renderScale = getPageCanvasRenderScale(canvas, pageWidth);
             ctx.save();
-            ctx.setTransform(CANVAS_SCALE, 0, 0, CANVAS_SCALE, 0, 0);
+            ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
             ctx.clearRect(0, 0, pageWidth, pageHeight);
             ctx.globalCompositeOperation = 'source-over';
             ctx.globalAlpha = 1;
@@ -12267,6 +12385,7 @@
                 viewportTransformRaf = null;
                 clampPanToVisible();
                 applyViewportTransformStyle();
+                scheduleCanvasResolutionSync();
             });
         }
 
@@ -12277,6 +12396,7 @@
             }
             clampPanToVisible();
             applyViewportTransformStyle();
+            scheduleCanvasResolutionSync({ immediate: true });
             scheduleViewSave();
             scheduleVisiblePageUpdate();
         }
