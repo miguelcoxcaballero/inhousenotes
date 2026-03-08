@@ -3900,6 +3900,8 @@
         const CANVAS_RESYNC_IDLE_MS = 90;
         const CURSOR_OVERLAY_BASE_SCALE = 1.25;
         const CURSOR_OVERLAY_MAX_SCALE = 1.8;
+        const LASSO_OVERLAY_BASE_SCALE = 1.35;
+        const LASSO_OVERLAY_MAX_SCALE = 2.2;
         const TEMPLATE_BG_SCALE_PC = 3.6;
         const TEMPLATE_BG_SCALE_TOUCH = 3;
         const TEMPLATE_BG_SCALE_CAP_PC = 4.8;
@@ -4830,6 +4832,12 @@
             return Math.max(CURSOR_OVERLAY_BASE_SCALE, Math.min(CURSOR_OVERLAY_MAX_SCALE, scaled));
         }
 
+        function getLassoOverlayScale(zoom = state.zoom) {
+            const safeZoom = Number.isFinite(zoom) ? Math.max(1, zoom) : 1;
+            const scaled = LASSO_OVERLAY_BASE_SCALE + (safeZoom - 1) * 0.45;
+            return Math.max(LASSO_OVERLAY_BASE_SCALE, Math.min(LASSO_OVERLAY_MAX_SCALE, scaled));
+        }
+
         function getTargetTemplateBackgroundScale(zoom = state.zoom) {
             const isPc = detectDeviceType() === 'pc';
             const baseScale = isPc ? TEMPLATE_BG_SCALE_PC : TEMPLATE_BG_SCALE_TOUCH;
@@ -5004,7 +5012,10 @@
 
             const lassoOverlay = wrapper.querySelector('canvas.lasso-overlay');
             if (lassoOverlay) {
-                resizeOverlayCanvas(lassoOverlay, width, height, OVERLAY_SCALE);
+                const lassoOverlayScale = getLassoOverlayScale(state.zoom);
+                resizeOverlayCanvas(lassoOverlay, width, height, lassoOverlayScale);
+                const appliedLassoScale = lassoOverlay.width / Math.max(1, width);
+                lassoOverlay.dataset.overlayScale = `${appliedLassoScale || lassoOverlayScale}`;
             }
             const cursorOverlay = wrapper.querySelector('canvas.cursor-overlay');
             if (cursorOverlay) {
@@ -5174,8 +5185,10 @@
             const lassoOverlay = document.createElement('canvas');
             lassoOverlay.className = 'lasso-overlay';
             lassoOverlay.dataset.page = pageIndex;
-            lassoOverlay.width = pageWidth * OVERLAY_SCALE;
-            lassoOverlay.height = pageHeight * OVERLAY_SCALE;
+            const lassoOverlayScale = getLassoOverlayScale(state.zoom);
+            lassoOverlay.width = Math.max(1, Math.round(pageWidth * lassoOverlayScale));
+            lassoOverlay.height = Math.max(1, Math.round(pageHeight * lassoOverlayScale));
+            lassoOverlay.dataset.overlayScale = `${lassoOverlay.width / Math.max(1, pageWidth)}`;
             lassoOverlay.style.width = '100%';
             lassoOverlay.style.height = '100%';
 
@@ -6174,9 +6187,14 @@
         function drawLassoPath(lassoCanvas, points) {
             if (!lassoCanvas || points.length === 0) return;
             const ctx = lassoCanvas.getContext('2d');
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
-            const logicalW = lassoCanvas.width / OVERLAY_SCALE;
-            const logicalH = lassoCanvas.height / OVERLAY_SCALE;
+            const pageIndex = parseInt(lassoCanvas.dataset.page || '-1', 10);
+            const { width: pageWidth } = (Number.isFinite(pageIndex) && pageIndex >= 0)
+                ? getPageDimensions(pageIndex)
+                : { width: A4_WIDTH };
+            const overlayScale = getOverlayCanvasRenderScale(lassoCanvas, pageWidth, getLassoOverlayScale(state.zoom));
+            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
+            const logicalW = lassoCanvas.width / overlayScale;
+            const logicalH = lassoCanvas.height / overlayScale;
             ctx.clearRect(0, 0, logicalW, logicalH);
             ctx.strokeStyle = '#002FD9';
             ctx.lineWidth = 1.5;
@@ -6864,7 +6882,9 @@
             const strokeIndices = state.selection.strokeIndices || [];
             if (strokeIndices.length === 0) return;
 
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
+            const { width: pageWidth } = getPageDimensions(pageIndex);
+            const overlayScale = getOverlayCanvasRenderScale(lassoCanvas, pageWidth, getLassoOverlayScale(state.zoom));
+            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
             ctx.strokeStyle = 'rgba(0, 47, 217, 0.45)';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([3, 3]);
