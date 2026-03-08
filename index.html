@@ -590,13 +590,14 @@
             height: var(--header-btn-size);
             justify-content: space-between;
             padding: 0 12px;
-            transition: height 0.22s ease, min-height 0.22s ease, transform 0.22s ease, padding 0.22s ease;
+            transform: none;
+            transition: background-color 0.22s ease, box-shadow 0.22s ease, padding 0.22s ease;
         }
 
         .mode-toggle-btn.is-editing {
-            min-height: 36px;
-            height: 36px;
-            transform: translateY(-4px);
+            min-height: var(--header-btn-size);
+            height: var(--header-btn-size);
+            transform: none;
         }
 
         .mode-toggle-btn.is-editing+.mode-toggle-status {
@@ -3918,7 +3919,7 @@
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 40;
         const DRIVE_SYNC_IDLE_DELAY = 250;
-        const DRIVE_BUILD_IDLE_WINDOW_MS = 1500;
+        const DRIVE_BUILD_IDLE_WINDOW_MS = 3000;
         const DRIVE_SYNC_MAX_DELAY = 3000;
         const DRIVE_POLL_TIMEOUT = 7000;
         const DRIVE_META_TIMEOUT = 7000;
@@ -4668,7 +4669,7 @@
                 updateSaveTimestamp();
                 scheduleVisiblePageUpdate(true);
                 // Pre-warm PDF cache when entering edit mode so first save is fast
-                if (state.driveAutosave && !prewarmPdfCache._running) {
+                if (state.driveAutosave && detectDeviceType() === 'pc' && !prewarmPdfCache._running) {
                     prewarmPdfCache._running = true;
                     setTimeout(() => prewarmPdfCache().catch(() => {}).finally(() => { prewarmPdfCache._running = false; }), 200);
                 }
@@ -5802,6 +5803,7 @@
                         lastMid: null,
                         finalizedIndex: -1
                     };
+                    updateLiveStroke(pageIndex, canvas, currentStroke);
                 }
             });
 
@@ -6063,6 +6065,23 @@
             ctx.stroke();
         }
 
+        function drawSinglePointStroke(ctx, stroke) {
+            if (!ctx || !stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) return;
+            const point = stroke.points[0];
+            if (!point) return;
+            if (stroke.tool === 'highlighter') {
+                drawFixedHighlighterStroke(ctx, stroke);
+                return;
+            }
+            setupContext(ctx, stroke.tool, stroke.color, stroke.width);
+            setStrokeCaps(ctx, stroke.tool);
+            const radius = Math.max(0.7, getStrokeWidth(stroke) * 0.5);
+            ctx.fillStyle = stroke.color;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         function drawStrokePreviewTail(pageIndex, stroke) {
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
@@ -6073,16 +6092,20 @@
             ctx.clearRect(0, 0, logicalW, logicalH);
 
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
-            if (stroke.tool === 'highlighter') {
-                drawFixedHighlighterStroke(ctx, stroke);
+            if (stroke.points.length === 1) {
+                drawSinglePointStroke(ctx, stroke);
                 return;
             }
             drawStrokeTailSegment(ctx, stroke);
         }
 
         function commitLiveStrokeToCanvas(pageIndex, canvas, stroke) {
-            if (!canvas || !stroke || !stroke.points || stroke.points.length < 2) return;
+            if (!canvas || !stroke || !stroke.points || stroke.points.length === 0) return;
             const ctx = canvas.getContext('2d');
+            if (stroke.points.length === 1) {
+                drawSinglePointStroke(ctx, stroke);
+                return;
+            }
             if (stroke.tool === 'highlighter') {
                 drawSmoothStroke(ctx, stroke);
                 return;
@@ -8646,7 +8669,7 @@
                 showLoading('Creating PDF...');
                 await ensureDriveToken(false);
                 const uploadedContentVersion = driveContentVersion;
-                const pdfBlob = await buildPdfBlob({ sessionToken, optimizeForUpload: true });
+                const pdfBlob = await buildPdfBlob({ sessionToken, highQuality: true });
                 if (!isDocumentSessionTokenValid(sessionToken)) {
                     throw createAbortError('Document creation superseded');
                 }
@@ -10182,6 +10205,10 @@
             ctx.lineWidth = getStrokeWidth(stroke);
 
             const points = stroke.points;
+            if (points.length === 1) {
+                drawSinglePointStroke(ctx, stroke);
+                return;
+            }
             if (points.length === 2) {
                 ctx.beginPath();
                 ctx.moveTo(points[0].x, points[0].y);
@@ -14703,7 +14730,7 @@
             const pdfBlob = options.initialPdfBlob || await buildPdfBlob({
                 signal: options.signal,
                 sessionToken: options.sessionToken,
-                optimizeForUpload: true
+                highQuality: true
             });
             const metadata = {
                 name: fileName,
@@ -14833,7 +14860,7 @@
                     pdfBlob = await buildPdfBlob({
                         signal: controller.signal,
                         sessionToken,
-                        optimizeForUpload: true
+                        highQuality: true
                     });
                 }
                 const ensureResult = await ensureDriveFile({
@@ -14884,7 +14911,7 @@
                         pdfBlob = await buildPdfBlob({
                             signal: controller.signal,
                             sessionToken,
-                            optimizeForUpload: true
+                            highQuality: true
                         });
                     }
                     if (controller.signal.aborted) {
@@ -17283,6 +17310,17 @@
             return merged;
         }
 
+        function getPageCanvasForExport(pageIndex, pageData) {
+            if (!Number.isFinite(pageIndex) || !pageData || pageData.needsRedraw) return null;
+            if (!isPageLoaded(pageData)) return null;
+            const backgroundSource = pageData.backgroundSource
+                || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
+            if (backgroundSource === 'pdf' && !pageData.backgroundImage) return null;
+            const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+            if (!canvas || canvas.width < 2 || canvas.height < 2) return null;
+            return canvas;
+        }
+
         async function compressToBase64(str) {
             const stream = new CompressionStream('deflate');
             const writer = stream.writable.getWriter();
@@ -17801,111 +17839,124 @@
                     tempCtx.setTransform(1, 0, 0, 1, 0, 0);
                     tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-                    // Draw background
-                    tempCtx.fillStyle = 'white';
-                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-                    if (backgroundImage) {
-                        const img = await loadImage(backgroundImage, { abortSignal });
-                        if (img) {
-                            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
-                        }
+                    const pageCanvasCandidate = getPageCanvasForExport(i, pageData);
+                    const pageCanvas = pageCanvasCandidate
+                        && pageCanvasCandidate.width === targetCanvasWidth
+                        && pageCanvasCandidate.height === targetCanvasHeight
+                        ? pageCanvasCandidate
+                        : null;
+                    if (pageCanvas) {
+                        tempCtx.drawImage(pageCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
+                        await maybeYieldForSlice(true);
                         throwIfAborted();
                         throwIfSessionInvalid();
-                    } else if (sourcePdfPageIndex && activePdfDocument) {
-                        const pdfPage = await activePdfDocument.getPage(sourcePdfPageIndex);
-                        const baseViewport = pdfPage.getViewport({ scale: 1 });
-                        const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
-                        const viewport = pdfPage.getViewport({ scale });
-                        pdfCanvas.width = viewport.width;
-                        pdfCanvas.height = viewport.height;
-                        const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport });
-                        let abortHandler = null;
-                        if (abortSignal) {
-                            abortHandler = () => {
-                                try {
-                                    renderTask.cancel();
-                                } catch (err) { }
-                            };
-                            abortSignal.addEventListener('abort', abortHandler, { once: true });
-                        }
-                        try {
-                            await renderTask.promise;
-                        } catch (err) {
-                            if (abortSignal?.aborted || err?.name === 'RenderingCancelledException') {
-                                throw createAbortError('Drive save aborted');
-                            }
-                            throw err;
-                        } finally {
-                            if (abortHandler && abortSignal) {
-                                abortSignal.removeEventListener('abort', abortHandler);
-                            }
-                        }
-                        throwIfAborted();
-                        throwIfSessionInvalid();
-                        const offsetX = (tempCanvas.width - viewport.width) / 2;
-                        const offsetY = (tempCanvas.height - viewport.height) / 2;
-                        tempCtx.drawImage(pdfCanvas, offsetX, offsetY, viewport.width, viewport.height);
-                        if (pdfPage.cleanup) {
-                            pdfPage.cleanup();
-                        }
-                        pdfCanvas.width = 0;
-                        pdfCanvas.height = 0;
                     } else {
-                        drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
-                        throwIfAborted();
-                    }
+                        // Draw background
+                        tempCtx.fillStyle = 'white';
+                        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-                    // Draw strokes
-                    tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
-                    tempCtx.lineCap = 'round';
-                    tempCtx.lineJoin = 'round';
-                    await drawImagesOnCanvas(tempCtx, renderPageStrokeEntry, {
-                        abortSignal,
-                        yieldFn: () => maybeYieldForSlice(false)
-                    });
-                    let strokeCheckCounter = 0;
-                    let pointCheckCounter = 0;
-                    for (const stroke of renderPageStrokeEntry.strokes) {
-                        await maybeYieldForSlice(false);
-                        throwIfAborted();
-                        throwIfSessionInvalid();
-                        const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
-                        if (!stroke.points || stroke.points.length < minPoints) continue;
-                        if (stroke.tool === 'eraser-stroke') continue;
+                        if (backgroundImage) {
+                            const img = await loadImage(backgroundImage, { abortSignal });
+                            if (img) {
+                                tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                            }
+                            throwIfAborted();
+                            throwIfSessionInvalid();
+                        } else if (sourcePdfPageIndex && activePdfDocument) {
+                            const pdfPage = await activePdfDocument.getPage(sourcePdfPageIndex);
+                            const baseViewport = pdfPage.getViewport({ scale: 1 });
+                            const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
+                            const viewport = pdfPage.getViewport({ scale });
+                            pdfCanvas.width = viewport.width;
+                            pdfCanvas.height = viewport.height;
+                            const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport });
+                            let abortHandler = null;
+                            if (abortSignal) {
+                                abortHandler = () => {
+                                    try {
+                                        renderTask.cancel();
+                                    } catch (err) { }
+                                };
+                                abortSignal.addEventListener('abort', abortHandler, { once: true });
+                            }
+                            try {
+                                await renderTask.promise;
+                            } catch (err) {
+                                if (abortSignal?.aborted || err?.name === 'RenderingCancelledException') {
+                                    throw createAbortError('Drive save aborted');
+                                }
+                                throw err;
+                            } finally {
+                                if (abortHandler && abortSignal) {
+                                    abortSignal.removeEventListener('abort', abortHandler);
+                                }
+                            }
+                            throwIfAborted();
+                            throwIfSessionInvalid();
+                            const offsetX = (tempCanvas.width - viewport.width) / 2;
+                            const offsetY = (tempCanvas.height - viewport.height) / 2;
+                            tempCtx.drawImage(pdfCanvas, offsetX, offsetY, viewport.width, viewport.height);
+                            if (pdfPage.cleanup) {
+                                pdfPage.cleanup();
+                            }
+                            pdfCanvas.width = 0;
+                            pdfCanvas.height = 0;
+                        } else {
+                            drawTemplateBackground(tempCtx, tempCanvas.width, tempCanvas.height, exportScale);
+                            throwIfAborted();
+                        }
 
-                        const userHot = hasHotUserInteraction(isMobileLike ? 240 : 180);
-                        if (!options.highQuality && stroke.points.length > (userHot ? (isMobileLike ? 56 : 88) : (isMobileLike ? 120 : 180))) {
-                            const chunkSize = userHot
-                                ? (isMobileLike ? 40 : 64)
-                                : (isMobileLike ? 92 : 140);
-                            for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
-                                const end = Math.min(stroke.points.length, start + chunkSize);
-                                const segmentPoints = stroke.points.slice(start, end);
-                                if (segmentPoints.length < minPoints) break;
-                                drawSmoothStroke(tempCtx, {
-                                    ...stroke,
-                                    points: segmentPoints
-                                });
+                        // Draw strokes
+                        tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
+                        tempCtx.lineCap = 'round';
+                        tempCtx.lineJoin = 'round';
+                        await drawImagesOnCanvas(tempCtx, renderPageStrokeEntry, {
+                            abortSignal,
+                            yieldFn: () => maybeYieldForSlice(false)
+                        });
+                        let strokeCheckCounter = 0;
+                        let pointCheckCounter = 0;
+                        for (const stroke of renderPageStrokeEntry.strokes) {
+                            await maybeYieldForSlice(false);
+                            throwIfAborted();
+                            throwIfSessionInvalid();
+                            const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                            if (!stroke.points || stroke.points.length < minPoints) continue;
+                            if (stroke.tool === 'eraser-stroke') continue;
+
+                            const userHot = hasHotUserInteraction(isMobileLike ? 240 : 180);
+                            if (!options.highQuality && stroke.points.length > (userHot ? (isMobileLike ? 56 : 88) : (isMobileLike ? 120 : 180))) {
+                                const chunkSize = userHot
+                                    ? (isMobileLike ? 40 : 64)
+                                    : (isMobileLike ? 92 : 140);
+                                for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
+                                    const end = Math.min(stroke.points.length, start + chunkSize);
+                                    const segmentPoints = stroke.points.slice(start, end);
+                                    if (segmentPoints.length < minPoints) break;
+                                    drawSmoothStroke(tempCtx, {
+                                        ...stroke,
+                                        points: segmentPoints
+                                    });
+                                    strokeCheckCounter += 1;
+                                    pointCheckCounter += segmentPoints.length;
+                                    await maybeYieldForSlice(false);
+                                    throwIfAborted();
+                                    throwIfSessionInvalid();
+                                }
+                            } else {
+                                drawSmoothStroke(tempCtx, stroke);
                                 strokeCheckCounter += 1;
-                                pointCheckCounter += segmentPoints.length;
+                                pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
+                            }
+                            // Keep short main-thread slices on mobile to avoid pen/typing stutter.
+                            const yieldInterval = userHot ? 1 : (isMobileLike ? 2 : 3);
+                            const pointLimit = userHot ? 48 : (isMobileLike ? 180 : 520);
+                            if (strokeCheckCounter % yieldInterval === 0 || pointCheckCounter >= pointLimit) {
+                                pointCheckCounter = 0;
                                 await maybeYieldForSlice(false);
                                 throwIfAborted();
                                 throwIfSessionInvalid();
                             }
-                        } else {
-                            drawSmoothStroke(tempCtx, stroke);
-                            strokeCheckCounter += 1;
-                            pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
-                        }
-                        // Keep short main-thread slices on mobile to avoid pen/typing stutter.
-                        const yieldInterval = userHot ? 1 : (isMobileLike ? 2 : 3);
-                        const pointLimit = userHot ? 48 : (isMobileLike ? 180 : 520);
-                        if (strokeCheckCounter % yieldInterval === 0 || pointCheckCounter >= pointLimit) {
-                            pointCheckCounter = 0;
-                            await maybeYieldForSlice(false);
-                            throwIfAborted();
-                            throwIfSessionInvalid();
                         }
                     }
 
