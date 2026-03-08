@@ -3898,6 +3898,13 @@
         const CANVAS_MAX_PIXELS_PC = 28 * 1024 * 1024;
         const CANVAS_MAX_PIXELS_TOUCH = 16 * 1024 * 1024;
         const CANVAS_RESYNC_IDLE_MS = 90;
+        const CURSOR_OVERLAY_BASE_SCALE = 1.25;
+        const CURSOR_OVERLAY_MAX_SCALE = 1.8;
+        const TEMPLATE_BG_SCALE_PC = 3.6;
+        const TEMPLATE_BG_SCALE_TOUCH = 3;
+        const TEMPLATE_BG_SCALE_CAP_PC = 4.8;
+        const TEMPLATE_BG_SCALE_CAP_TOUCH = 4.2;
+        const TEMPLATE_BG_QUALITY = 0.86;
         const PAGE_PADDING = 30;
         const PAGE_GAP = 30;
         const VISIBLE_PAGE_BUFFER = 1;
@@ -4817,6 +4824,47 @@
             return Math.max(CANVAS_SCALE, quantized || CANVAS_SCALE);
         }
 
+        function getCursorOverlayScale(zoom = state.zoom) {
+            const safeZoom = Number.isFinite(zoom) ? Math.max(1, zoom) : 1;
+            const scaled = CURSOR_OVERLAY_BASE_SCALE + (safeZoom - 1) * 0.35;
+            return Math.max(CURSOR_OVERLAY_BASE_SCALE, Math.min(CURSOR_OVERLAY_MAX_SCALE, scaled));
+        }
+
+        function getTargetTemplateBackgroundScale(zoom = state.zoom) {
+            const isPc = detectDeviceType() === 'pc';
+            const baseScale = isPc ? TEMPLATE_BG_SCALE_PC : TEMPLATE_BG_SCALE_TOUCH;
+            const maxScale = isPc ? TEMPLATE_BG_SCALE_CAP_PC : TEMPLATE_BG_SCALE_CAP_TOUCH;
+            const safeZoom = Number.isFinite(zoom) ? Math.max(1, zoom) : 1;
+            const zoomBoost = 1 + ((safeZoom - 1) * 0.35);
+            return Math.max(baseScale, Math.min(maxScale, baseScale * zoomBoost));
+        }
+
+        function ensureTemplateBackgroundUrl() {
+            const targetScale = getTargetTemplateBackgroundScale(state.zoom);
+            const cachedScale = parseFloat(window._templateBackgroundScale || '0');
+            if (window._templateBackgroundUrl && Number.isFinite(cachedScale) && cachedScale >= targetScale - 0.01) {
+                return;
+            }
+            const tCanvas = document.createElement('canvas');
+            const targetWidth = Math.max(1, Math.round(A4_WIDTH * targetScale));
+            const targetHeight = Math.max(1, Math.round(A4_HEIGHT * targetScale));
+            tCanvas.width = targetWidth;
+            tCanvas.height = targetHeight;
+            const tCtx = tCanvas.getContext('2d');
+            drawTemplateBackground(tCtx, targetWidth, targetHeight, targetScale);
+            window._templateBackgroundUrl = tCanvas.toDataURL('image/jpeg', TEMPLATE_BG_QUALITY);
+            window._templateBackgroundScale = targetScale;
+        }
+
+        function getOverlayCanvasRenderScale(canvas, logicalWidth, fallbackScale = OVERLAY_SCALE) {
+            if (!canvas) return fallbackScale;
+            const fromData = parseFloat(canvas.dataset.overlayScale || '');
+            if (Number.isFinite(fromData) && fromData > 0) return fromData;
+            const safeLogicalWidth = Math.max(1, normalizePageDimension(logicalWidth, A4_WIDTH));
+            const computed = canvas.width / safeLogicalWidth;
+            return (Number.isFinite(computed) && computed > 0) ? computed : fallbackScale;
+        }
+
         function getTargetPageCanvasBackingSize(pageWidth, pageHeight, zoom = state.zoom) {
             const safeWidth = Math.max(1, normalizePageDimension(pageWidth, A4_WIDTH));
             const safeHeight = Math.max(1, normalizePageDimension(pageHeight, A4_HEIGHT));
@@ -4880,6 +4928,16 @@
             });
         }
 
+        function scheduleCanvasResolutionRetry(options = {}) {
+            const force = !!options.force;
+            requestAnimationFrame(() => {
+                scheduleVisiblePageUpdate(true);
+                requestAnimationFrame(() => {
+                    syncActivePageCanvasResolution({ force });
+                });
+            });
+        }
+
         function scheduleCanvasResolutionSync(options = {}) {
             const immediate = !!options.immediate;
             const force = !!options.force;
@@ -4888,7 +4946,12 @@
                     clearTimeout(canvasResolutionSyncHandle);
                     canvasResolutionSyncHandle = null;
                 }
+                ensureTemplateBackgroundUrl();
+                scheduleVisiblePageUpdate(true);
                 syncActivePageCanvasResolution({ force });
+                if (activePageIndices.size === 0) {
+                    scheduleCanvasResolutionRetry({ force: true });
+                }
                 return;
             }
             if (canvasResolutionSyncHandle) {
@@ -4900,7 +4963,12 @@
                     scheduleCanvasResolutionSync();
                     return;
                 }
+                ensureTemplateBackgroundUrl();
+                scheduleVisiblePageUpdate(true);
                 syncActivePageCanvasResolution();
+                if (activePageIndices.size === 0) {
+                    scheduleCanvasResolutionRetry({ force: true });
+                }
             }, CANVAS_RESYNC_IDLE_MS);
         }
 
@@ -4940,7 +5008,10 @@
             }
             const cursorOverlay = wrapper.querySelector('canvas.cursor-overlay');
             if (cursorOverlay) {
-                resizeOverlayCanvas(cursorOverlay, width, height, OVERLAY_SCALE);
+                const cursorOverlayScale = getCursorOverlayScale(state.zoom);
+                resizeOverlayCanvas(cursorOverlay, width, height, cursorOverlayScale);
+                const appliedCursorScale = cursorOverlay.width / Math.max(1, width);
+                cursorOverlay.dataset.overlayScale = `${appliedCursorScale || cursorOverlayScale}`;
             }
 
             if (canvasResized) {
@@ -5111,9 +5182,10 @@
             const cursorOverlay = document.createElement('canvas');
             cursorOverlay.className = 'cursor-overlay';
             cursorOverlay.dataset.page = pageIndex;
-            // Use lower resolution for cursor overlay (eraser preview only)
-            cursorOverlay.width = pageWidth * OVERLAY_SCALE;
-            cursorOverlay.height = pageHeight * OVERLAY_SCALE;
+            const cursorOverlayScale = getCursorOverlayScale(state.zoom);
+            cursorOverlay.width = Math.max(1, Math.round(pageWidth * cursorOverlayScale));
+            cursorOverlay.height = Math.max(1, Math.round(pageHeight * cursorOverlayScale));
+            cursorOverlay.dataset.overlayScale = `${cursorOverlay.width / Math.max(1, pageWidth)}`;
             cursorOverlay.style.width = '100%';
             cursorOverlay.style.height = '100%';
 
@@ -5367,6 +5439,7 @@
 
             // Reset cached template/dot pattern so they get regenerated fresh
             window._templateBackgroundUrl = null;
+            window._templateBackgroundScale = 0;
             _tplCache.clear();
 
             if (state.activePdfObjectUrl) {
@@ -5481,15 +5554,10 @@
                 return;
             }
 
-            if (!window._templateBackgroundUrl) {
-                const tCanvas = document.createElement('canvas');
-                tCanvas.width = A4_WIDTH * CANVAS_SCALE;
-                tCanvas.height = A4_HEIGHT * CANVAS_SCALE;
-                const tCtx = tCanvas.getContext('2d');
-                drawTemplateBackground(tCtx, tCanvas.width, tCanvas.height, CANVAS_SCALE);
-                window._templateBackgroundUrl = tCanvas.toDataURL('image/jpeg', 0.8);
-            }
-            canvas.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
+            ensureTemplateBackgroundUrl();
+            canvas.style.backgroundImage = window._templateBackgroundUrl
+                ? `url("${window._templateBackgroundUrl}")`
+                : '';
             canvas.style.backgroundSize = '100% 100%';
             canvas.style.backgroundRepeat = 'no-repeat';
             canvas.style.backgroundPosition = 'center';
@@ -6204,9 +6272,11 @@
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
-            const logicalW = previewCanvas.width / OVERLAY_SCALE;
-            const logicalH = previewCanvas.height / OVERLAY_SCALE;
+            const { width: pageWidth } = getPageDimensions(pageIndex);
+            const overlayScale = getOverlayCanvasRenderScale(previewCanvas, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
+            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
+            const logicalW = previewCanvas.width / overlayScale;
+            const logicalH = previewCanvas.height / overlayScale;
             ctx.clearRect(0, 0, logicalW, logicalH);
 
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
@@ -6293,9 +6363,11 @@
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(OVERLAY_SCALE, 0, 0, OVERLAY_SCALE, 0, 0);
-            const logicalW = previewCanvas.width / OVERLAY_SCALE;
-            const logicalH = previewCanvas.height / OVERLAY_SCALE;
+            const { width: pageWidth } = getPageDimensions(pageIndex);
+            const overlayScale = getOverlayCanvasRenderScale(previewCanvas, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
+            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
+            const logicalW = previewCanvas.width / overlayScale;
+            const logicalH = previewCanvas.height / overlayScale;
             ctx.clearRect(0, 0, logicalW, logicalH);
             const radius = state.eraserWidth / 2;
             ctx.strokeStyle = 'rgba(0,0,0,0.45)';
@@ -8466,6 +8538,7 @@
             activePageIndices.clear();
             if (canvasContainer) canvasContainer.innerHTML = '';
             window._templateBackgroundUrl = null;
+            window._templateBackgroundScale = 0;
             _tplCache.clear();
 
             setReadOnlyMode(true, { force: true });
@@ -10533,11 +10606,16 @@
                     wrapper.style.backgroundSize = 'cover';
                     wrapper.style.backgroundRepeat = 'no-repeat';
                     wrapper.style.backgroundPosition = 'center';
-                } else if (page && page.backgroundSource !== 'pdf' && window._templateBackgroundUrl) {
-                    wrapper.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
-                    wrapper.style.backgroundSize = '100% 100%';
-                    wrapper.style.backgroundRepeat = 'no-repeat';
-                    wrapper.style.backgroundPosition = 'center';
+                } else if (page && page.backgroundSource !== 'pdf') {
+                    if (!window._templateBackgroundUrl) {
+                        ensureTemplateBackgroundUrl();
+                    }
+                    if (window._templateBackgroundUrl) {
+                        wrapper.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
+                        wrapper.style.backgroundSize = '100% 100%';
+                        wrapper.style.backgroundRepeat = 'no-repeat';
+                        wrapper.style.backgroundPosition = 'center';
+                    }
                 }
 
                 wrapper.addEventListener('pointerdown', (e) => {
@@ -13564,6 +13642,9 @@
                 wrapper.style.backgroundPosition = 'center';
             } else if (page && page.backgroundSource !== 'pdf') {
                 // Show template background as fallback while loading
+                if (!window._templateBackgroundUrl) {
+                    ensureTemplateBackgroundUrl();
+                }
                 if (window._templateBackgroundUrl) {
                     wrapper.style.backgroundImage = `url("${window._templateBackgroundUrl}")`;
                     wrapper.style.backgroundSize = '100% 100%';
