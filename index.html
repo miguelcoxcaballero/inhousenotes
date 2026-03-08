@@ -561,11 +561,13 @@
         .mode-toggle-status {
             position: relative;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            width: 22px;
-            height: 18px;
-            flex: 0 0 22px;
+            row-gap: 1px;
+            width: 16px;
+            min-width: 16px;
+            flex: 0 0 16px;
             color: var(--text-secondary);
             pointer-events: none;
             opacity: 1;
@@ -579,27 +581,25 @@
         }
 
         .mode-toggle-status .save-timestamp {
-            position: absolute;
-            left: 50%;
-            top: 12px;
-            transform: translateX(-50%);
-            font-size: 0.38rem;
+            position: static;
+            font-size: 0.34rem;
             line-height: 1;
-            min-width: 20px;
             text-align: center;
             white-space: nowrap;
-            opacity: 0.52;
+            letter-spacing: -0.01em;
+            opacity: 0.48;
         }
 
         .mode-toggle-btn {
             display: grid;
-            grid-template-columns: 22px minmax(0, 1fr) auto;
+            grid-template-columns: 16px auto auto;
             align-items: center;
-            column-gap: 8px;
-            min-width: 132px;
+            justify-content: start;
+            column-gap: 4px;
+            min-width: 116px;
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
-            padding: 0 12px;
+            padding: 0 8px;
             transform: none;
             transition: background-color 0.22s ease, box-shadow 0.22s ease, padding 0.22s ease;
         }
@@ -616,7 +616,8 @@
 
         .mode-toggle-text {
             display: inline-block;
-            width: 72px;
+            width: auto;
+            min-width: 0;
             text-align: left;
             font-weight: 600;
             letter-spacing: 0.01em;
@@ -730,9 +731,12 @@
             pointer-events: none;
         }
 
-        #editor-view.read-only .save-indicator,
-        #editor-view.read-only .save-timestamp {
+        #editor-view.read-only .save-indicator {
             opacity: 1;
+            pointer-events: none;
+        }
+
+        #editor-view.read-only .save-timestamp {
             pointer-events: none;
         }
 
@@ -3005,7 +3009,7 @@
             }
 
             #editor-view .mode-toggle-btn {
-                min-width: 124px;
+                min-width: 112px;
                 border-radius: 999px;
                 background: transparent !important;
                 border: none;
@@ -3120,8 +3124,7 @@
 
             #editor-view .mode-toggle-status .save-timestamp {
                 display: block;
-                font-size: 0.36rem;
-                min-width: 18px;
+                font-size: 0.34rem;
                 opacity: 0.48;
             }
 
