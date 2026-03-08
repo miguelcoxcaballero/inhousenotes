@@ -556,16 +556,17 @@
             align-items: center;
             justify-content: center;
             height: var(--header-btn-size);
+            padding-left: 22px;
         }
 
         .mode-toggle-status {
             position: absolute;
-            left: 14px;
+            left: 8px;
             top: 50%;
             transform: translateY(-50%);
             display: block;
-            width: 12px;
-            height: 12px;
+            width: 22px;
+            height: 18px;
             color: var(--text-secondary);
             pointer-events: none;
             opacity: 1;
@@ -587,14 +588,14 @@
         .mode-toggle-status .save-timestamp {
             position: absolute;
             left: 50%;
-            top: calc(50% + 9px);
+            top: calc(50% + 10px);
             transform: translateX(-50%);
-            font-size: 0.42rem;
+            font-size: 0.38rem;
             line-height: 1;
-            min-width: 22px;
+            min-width: 20px;
             text-align: center;
             white-space: nowrap;
-            opacity: 0.58;
+            opacity: 0.52;
         }
 
         .mode-toggle-btn {
@@ -602,7 +603,7 @@
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
             justify-content: space-between;
-            padding: 0 12px 0 36px;
+            padding: 0 12px 0 18px;
             transform: none;
             transition: background-color 0.22s ease, box-shadow 0.22s ease, padding 0.22s ease;
         }
@@ -3005,7 +3006,7 @@
 
             #editor-view .mode-toggle-group {
                 border-radius: 999px;
-                padding: 4px;
+                padding: 4px 4px 4px 24px;
                 overflow: hidden;
             }
 
@@ -3016,7 +3017,7 @@
                 border: none;
                 box-shadow: none !important;
                 position: relative;
-                padding-left: 36px;
+                padding-left: 16px;
             }
 
             [data-theme="dark"] #editor-view .mode-toggle-btn {
@@ -3109,7 +3110,7 @@
             }
 
             #editor-view .mode-toggle-status {
-                left: 14px;
+                left: 7px;
                 top: 50%;
                 bottom: auto;
                 opacity: 1;
@@ -3130,9 +3131,9 @@
 
             #editor-view .mode-toggle-status .save-timestamp {
                 display: block;
-                font-size: 0.42rem;
-                min-width: 20px;
-                opacity: 0.52;
+                font-size: 0.36rem;
+                min-width: 18px;
+                opacity: 0.48;
             }
 
             #editor-view.read-only .mode-toggle-status .save-indicator {
