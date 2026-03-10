@@ -2443,7 +2443,7 @@
             border: 1px solid rgba(0, 0, 0, 0.07);
             padding: 14px;
             display: grid;
-            grid-template-rows: repeat(5, auto);
+            grid-template-rows: repeat(4, auto);
             grid-auto-flow: column;
             gap: 8px;
         }
@@ -8322,10 +8322,11 @@
         }
 
         const DRIVE_FOLDER_COLORS = [
-            '#ac725e', '#d06b64', '#f83a22', '#fa573c', '#ff7537', '#ffad46',
-            '#42d692', '#16a765', '#7bd148', '#b3dc6c', '#fbe983', '#fad165',
-            '#92e1c0', '#9fe1e7', '#9fc5e8', '#4986e7', '#a479e2', '#b99aff',
-            '#f691b2', '#cd74e6', '#cca6ac', '#cabdbf', '#c2c2c2', '#8f8f8f'
+            // Reds           Oranges/Warm     Yellows→Green    Teal/Cyan        Blues/Purple      Neutrals
+            '#f83a22',         '#ff7537',       '#fbe983',       '#42d692',       '#4986e7',        '#cca6ac',
+            '#fa573c',         '#ffad46',       '#b3dc6c',       '#92e1c0',       '#a479e2',        '#cabdbf',
+            '#d06b64',         '#fad165',       '#7bd148',       '#9fe1e7',       '#b99aff',        '#c2c2c2',
+            '#f691b2',         '#ac725e',       '#16a765',       '#9fc5e8',       '#cd74e6',        '#8f8f8f',
         ];
 
         function createDriveItemMenu(item) {
