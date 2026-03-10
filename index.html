@@ -242,15 +242,16 @@
                 -webkit-backdrop-filter: blur(8px);
             }
 
-            /* Save indicator goes ABOVE the bottom bar */
+            /* Keep save indicator inside the bottom bar on mobile */
             .mode-toggle-status {
+                position: relative;
                 top: auto;
-                bottom: calc(100% + 2px);
-                transform: translate(-50%, 4px);
+                bottom: auto;
+                transform: none;
             }
 
             .mode-toggle-btn.is-editing + .mode-toggle-status {
-                transform: translate(-50%, 0);
+                transform: none;
             }
 
             /* Don't shrink/shift toggle on mobile — it's already floating */
@@ -3932,7 +3933,7 @@
         const PEN_DOUBLE_TAP_DIST = 42;
         const TOUCH_INERTIA_DECAY = 0.935;
         const TOUCH_INERTIA_STOP = 0.015;
-        const INTERACTION_IDLE_MS = 140;
+        const INTERACTION_IDLE_MS = 100;
         const ERASER_MIN_STEP_FACTOR = 0.18;
         const IMAGE_INSERT_MAX_DIM = 960;
         const IMAGE_INSERT_TARGET_BYTES = 130 * 1024;
@@ -3944,7 +3945,7 @@
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 40;
         const DRIVE_SYNC_IDLE_DELAY = 250;
-        const DRIVE_BUILD_IDLE_WINDOW_MS = 3000;
+        const DRIVE_BUILD_IDLE_WINDOW_MS = 800;
         const DRIVE_SYNC_MAX_DELAY = 3000;
         const DRIVE_POLL_TIMEOUT = 7000;
         const DRIVE_META_TIMEOUT = 7000;
