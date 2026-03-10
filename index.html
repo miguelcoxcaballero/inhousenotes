@@ -135,7 +135,7 @@
 
             header,
             .drive-topbar {
-                padding: 8px 12px;
+                padding: 10px 14px;
                 min-height: 52px;
                 gap: 8px;
             }
@@ -1975,13 +1975,13 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 14px 28px;
+            padding: 12px 20px;
             min-height: var(--banner-height);
             background: var(--bg-secondary);
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
             gap: 12px;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            position: relative;
+            z-index: 100;
         }
 
         .drive-actions {
@@ -2270,7 +2270,7 @@
             border: 1px solid rgba(0, 0, 0, 0.06);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
             cursor: pointer;
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            transition: box-shadow 0.18s ease;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -2279,13 +2279,7 @@
         }
 
         .drive-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-        }
-
-        .drive-card:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
         }
 
         .drive-card-preview {
@@ -2334,14 +2328,7 @@
             place-items: center;
             cursor: pointer;
             color: var(--text-secondary);
-            opacity: 0;
-            transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
-        }
-
-        .drive-card:hover .drive-card-more,
-        .drive-folder-card:hover .drive-card-more,
-        .drive-card-more:focus {
-            opacity: 1;
+            transition: color 0.15s ease, background 0.15s ease;
         }
 
         .drive-card-more:hover {
@@ -2689,17 +2676,11 @@
             align-items: center;
             gap: 11px;
             position: relative;
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
+            transition: box-shadow 0.18s ease;
         }
 
         .drive-folder-card:hover {
-            transform: translateY(-1px);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
-        }
-
-        .drive-folder-card:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         }
 
         .drive-folder-icon {
@@ -3248,10 +3229,7 @@
                 min-height: 23px;
             }
 
-            /* Always show three-dots on touch devices */
-            #drive-home .drive-card-more {
-                opacity: 1;
-            }
+
 
             #editor-view .mode-toggle-group {
                 position: fixed;
@@ -8447,14 +8425,20 @@
             if (!menuEl) return;
             if (activeDriveCardMenu && activeDriveCardMenu !== menuEl) {
                 activeDriveCardMenu.classList.add('hidden');
+                const prevCard = activeDriveCardMenu.closest('.drive-card, .drive-folder-card');
+                if (prevCard) prevCard.style.zIndex = '';
             }
             const shouldOpen = menuEl.classList.contains('hidden');
             menuEl.classList.toggle('hidden', !shouldOpen);
             activeDriveCardMenu = shouldOpen ? menuEl : null;
+            const card = menuEl.closest('.drive-card, .drive-folder-card');
+            if (card) card.style.zIndex = shouldOpen ? '50' : '';
         }
 
         function closeDriveCardMenu() {
             if (!activeDriveCardMenu) return;
+            const card = activeDriveCardMenu.closest('.drive-card, .drive-folder-card');
+            if (card) card.style.zIndex = '';
             activeDriveCardMenu.classList.add('hidden');
             activeDriveCardMenu = null;
         }
@@ -9385,7 +9369,7 @@
             if (!driveAccessToken || !folderPickerList) return;
             try {
                 const q = encodeURIComponent(`'${folderPickerCurrentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-                const fields = encodeURIComponent('files(id,name)');
+                const fields = encodeURIComponent('files(id,name,folderColorRgb)');
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=name&pageSize=200&fields=${fields}`);
                 const data = await res.json();
                 renderFolderPickerList(data.files || []);
@@ -9405,8 +9389,9 @@
             folders.forEach(folder => {
                 const item = document.createElement('div');
                 item.className = 'folder-picker-item';
+                const iconColor = folder.folderColorRgb ? ` style="color:${folder.folderColorRgb}"` : '';
                 item.innerHTML = `
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"${iconColor}>
                         <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                     </svg>
                     <span>${folder.name || 'Folder'}</span>
