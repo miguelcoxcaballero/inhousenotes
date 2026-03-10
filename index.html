@@ -17218,7 +17218,7 @@
                 );
                 ctx.restore();
                 drawn += 1;
-                if (yieldFn && drawn % 2 === 0) {
+                if (yieldFn) {
                     await yieldFn();
                 }
             }
@@ -17875,11 +17875,19 @@
                     throwIfSessionInvalid();
                 }
             };
-            const maxMainThreadSliceMs = isMobileLike ? 1.5 : 4;
+            const maxMainThreadSliceMs = isMobileLike ? 0.8 : 4;
             let lastSliceYieldAt = performance.now();
             const maybeYieldForSlice = async (force = false) => {
-                const userHot = hasHotUserInteraction(isMobileLike ? 240 : 180);
-                if (!force && !userHot && (performance.now() - lastSliceYieldAt) < maxMainThreadSliceMs) return;
+                const elapsed = performance.now() - lastSliceYieldAt;
+                const inputPending = hasPendingUserInput();
+                const userHot = inputPending || hasHotUserInteraction(isMobileLike ? 160 : 180);
+                if (!force && !userHot && !inputPending && elapsed < maxMainThreadSliceMs) return;
+                if (inputPending || (isMobileLike && elapsed > 1.2)) {
+                    // Immediately yield a full frame so pending input gets processed
+                    await yieldToMainThread();
+                    throwIfAborted();
+                    throwIfSessionInvalid();
+                }
                 await yieldForResponsiveness(force || userHot);
                 lastSliceYieldAt = performance.now();
             };
@@ -18029,7 +18037,7 @@
                                 y: Math.round(p.y * 100) / 100,
                                 p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
                             };
-                            if ((pointIndex + 1) % (isMobileLike ? 96 : 160) === 0) {
+                            if ((pointIndex + 1) % (isMobileLike ? 48 : 160) === 0) {
                                 await maybeYieldForSlice(false);
                                 throwIfAborted();
                                 throwIfSessionInvalid();
@@ -18040,7 +18048,7 @@
                     }
                     compactStrokes.push(compactStroke);
                     compactStrokeCounter += 1;
-                    if (compactStrokeCounter % 4 === 0 || compactPointCounter >= (isMobileLike ? 420 : 720)) {
+                    if (compactStrokeCounter % (isMobileLike ? 2 : 4) === 0 || compactPointCounter >= (isMobileLike ? 160 : 720)) {
                         compactPointCounter = 0;
                         await maybeYieldForSlice(false);
                         throwIfAborted();
@@ -18091,6 +18099,8 @@
                         ? pageCanvasCandidate
                         : null;
                     if (pageCanvas) {
+                        await maybeYieldForSlice(true);
+                        throwIfAborted();
                         tempCtx.drawImage(pageCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                         await maybeYieldForSlice(true);
                         throwIfAborted();
@@ -18169,11 +18179,11 @@
                             if (!stroke.points || stroke.points.length < minPoints) continue;
                             if (stroke.tool === 'eraser-stroke') continue;
 
-                            const userHot = hasHotUserInteraction(isMobileLike ? 240 : 180);
-                            if (!options.highQuality && stroke.points.length > (userHot ? (isMobileLike ? 56 : 88) : (isMobileLike ? 120 : 180))) {
+                            const userHot = hasPendingUserInput() || hasHotUserInteraction(isMobileLike ? 160 : 180);
+                            if (!options.highQuality && stroke.points.length > (userHot ? (isMobileLike ? 28 : 88) : (isMobileLike ? 64 : 180))) {
                                 const chunkSize = userHot
-                                    ? (isMobileLike ? 40 : 64)
-                                    : (isMobileLike ? 92 : 140);
+                                    ? (isMobileLike ? 20 : 64)
+                                    : (isMobileLike ? 48 : 140);
                                 for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
                                     const end = Math.min(stroke.points.length, start + chunkSize);
                                     const segmentPoints = stroke.points.slice(start, end);
@@ -18194,8 +18204,8 @@
                                 pointCheckCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
                             }
                             // Keep short main-thread slices on mobile to avoid pen/typing stutter.
-                            const yieldInterval = userHot ? 1 : (isMobileLike ? 2 : 3);
-                            const pointLimit = userHot ? 48 : (isMobileLike ? 180 : 520);
+                            const yieldInterval = userHot ? 1 : (isMobileLike ? 1 : 3);
+                            const pointLimit = userHot ? 24 : (isMobileLike ? 80 : 520);
                             if (strokeCheckCounter % yieldInterval === 0 || pointCheckCounter >= pointLimit) {
                                 pointCheckCounter = 0;
                                 await maybeYieldForSlice(false);
