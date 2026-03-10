@@ -2374,6 +2374,31 @@
             background: rgba(255, 59, 48, 0.1);
         }
 
+        .drive-color-picker-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 6px 10px 8px;
+        }
+
+        .drive-color-swatch {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: transform 0.15s ease, border-color 0.15s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        }
+
+        .drive-color-swatch:hover {
+            transform: scale(1.2);
+        }
+
+        .drive-color-swatch.active {
+            border-color: var(--text-primary);
+        }
+
         .folder-picker {
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 14px;
@@ -8083,7 +8108,7 @@
 
         function isSharedDriveDoc(file) {
             if (!file) return false;
-            return file.mimeType === 'application/pdf' && file.ownedByMe === false;
+            return file.ownedByMe === false;
         }
 
         function formatDriveCardFileName(name, fallbackName = 'Untitled') {
@@ -8162,6 +8187,13 @@
             return card;
         }
 
+        const DRIVE_FOLDER_COLORS = [
+            '#ac725e', '#d06b64', '#f83a22', '#fa573c', '#ff7537', '#ffad46',
+            '#42d692', '#16a765', '#7bd148', '#b3dc6c', '#fbe983', '#fad165',
+            '#92e1c0', '#9fe1e7', '#9fc5e8', '#4986e7', '#a479e2', '#b99aff',
+            '#f691b2', '#cd74e6', '#cca6ac', '#cabdbf', '#c2c2c2', '#8f8f8f'
+        ];
+
         function createDriveItemMenu(item) {
             const menuWrap = document.createElement('div');
             menuWrap.className = 'drive-card-menu';
@@ -8179,6 +8211,7 @@
                 </svg>
             `;
 
+            const isFolder = item?.mimeType === 'application/vnd.google-apps.folder';
             const menu = document.createElement('div');
             menu.className = 'drive-card-dropdown hidden';
             const isStarred = !!item?.starred;
@@ -8190,6 +8223,15 @@
                     </svg>
                     <span>${starLabel}</span>
                 </button>
+                ${isFolder ? `
+                <button type="button" data-action="color">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <circle cx="12" cy="12" r="9"/>
+                        <circle cx="12" cy="12" r="3.5" fill="currentColor" opacity="0.3"/>
+                    </svg>
+                    <span>Change color</span>
+                </button>
+                ` : ''}
                 <button type="button" data-action="move">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -8205,6 +8247,8 @@
                 </button>
             `;
 
+            let colorPickerEl = null;
+
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 toggleDriveCardMenu(menu);
@@ -8213,8 +8257,43 @@
             menu.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const button = e.target?.closest ? e.target.closest('button[data-action]') : null;
+                const swatch = e.target?.closest ? e.target.closest('.drive-color-swatch') : null;
+
+                if (swatch) {
+                    const color = swatch.dataset.color;
+                    if (color) {
+                        closeDriveCardMenu();
+                        updateDriveFolderColor(item, color);
+                    }
+                    return;
+                }
+
                 const action = button?.dataset?.action;
                 if (!action) return;
+
+                if (action === 'color') {
+                    // Toggle inline color picker
+                    if (colorPickerEl) {
+                        colorPickerEl.remove();
+                        colorPickerEl = null;
+                        return;
+                    }
+                    colorPickerEl = document.createElement('div');
+                    colorPickerEl.className = 'drive-color-picker-row';
+                    const currentColor = (item.folderColorRgb || '').toLowerCase();
+                    DRIVE_FOLDER_COLORS.forEach(color => {
+                        const sw = document.createElement('div');
+                        sw.className = 'drive-color-swatch';
+                        if (color.toLowerCase() === currentColor) sw.classList.add('active');
+                        sw.style.background = color;
+                        sw.dataset.color = color;
+                        sw.title = color;
+                        colorPickerEl.appendChild(sw);
+                    });
+                    button.after(colorPickerEl);
+                    return;
+                }
+
                 closeDriveCardMenu();
                 if (action === 'star') {
                     const nextStar = !item?.starred;
@@ -8265,6 +8344,24 @@
             }
         }
 
+        async function updateDriveFolderColor(folder, color) {
+            if (!folder || !folder.id) return;
+            try {
+                await ensureDriveToken(false);
+                await driveFetch(`https://www.googleapis.com/drive/v3/files/${folder.id}?fields=id,folderColorRgb`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folderColorRgb: color })
+                });
+                folder.folderColorRgb = color;
+                showStatus('Folder color updated', { preserveState: true });
+                refreshDriveFiles();
+            } catch (err) {
+                console.error('Failed to update folder color:', err);
+                showStatus('Failed to update folder color', { preserveState: true });
+            }
+        }
+
         function openStarredFolder(folder) {
             if (!folder || !folder.id) return;
             driveFolderStack = [{ id: 'root', name: 'My Drive' }, { id: folder.id, name: folder.name || 'Folder' }];
@@ -8288,17 +8385,20 @@
                 icon.setAttribute('stroke-width', '1.8');
                 icon.classList.add('drive-card-icon', 'folder');
                 icon.innerHTML = '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>';
+                if (item.folderColorRgb) {
+                    icon.style.color = item.folderColorRgb;
+                }
                 preview.appendChild(icon);
                 card.appendChild(preview);
 
                 const title = document.createElement('div');
                 title.className = 'drive-card-title';
-                title.textContent = item.name || 'Folder';
+                applyDriveTitleWithSharedIcon(title, item, 'Folder');
                 card.appendChild(title);
 
                 const meta = document.createElement('div');
                 meta.className = 'drive-card-meta';
-                meta.textContent = 'Folder';
+                meta.textContent = isSharedDriveDoc(item) ? 'Shared folder' : 'Folder';
                 card.appendChild(meta);
 
                 card.appendChild(createDriveItemMenu(item));
@@ -8324,11 +8424,14 @@
             icon.setAttribute('stroke-width', '1.8');
             icon.classList.add('drive-folder-icon');
             icon.innerHTML = '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>';
+            if (folder.folderColorRgb) {
+                icon.style.color = folder.folderColorRgb;
+            }
             card.appendChild(icon);
 
             const name = document.createElement('div');
             name.className = 'drive-card-title';
-            name.textContent = folder.name || 'Folder';
+            applyDriveTitleWithSharedIcon(name, folder, 'Folder');
             card.appendChild(name);
 
             card.appendChild(createDriveItemMenu(folder));
@@ -8387,7 +8490,51 @@
                 return;
             }
             if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
-            files.forEach(file => driveSharedEl.appendChild(createDriveFileCard(file)));
+            files.forEach(item => {
+                if (item?.mimeType === 'application/vnd.google-apps.folder') {
+                    driveSharedEl.appendChild(createDriveSharedFolderCard(item));
+                } else {
+                    driveSharedEl.appendChild(createDriveFileCard(item));
+                }
+            });
+        }
+
+        function createDriveSharedFolderCard(folder) {
+            const card = document.createElement('div');
+            card.className = 'drive-card';
+
+            const preview = document.createElement('div');
+            preview.className = 'drive-card-preview';
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('fill', 'none');
+            icon.setAttribute('stroke', 'currentColor');
+            icon.setAttribute('stroke-width', '1.8');
+            icon.classList.add('drive-card-icon', 'folder');
+            icon.innerHTML = '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>';
+            if (folder.folderColorRgb) {
+                icon.style.color = folder.folderColorRgb;
+            }
+            preview.appendChild(icon);
+            card.appendChild(preview);
+
+            const title = document.createElement('div');
+            title.className = 'drive-card-title';
+            applyDriveTitleWithSharedIcon(title, folder, 'Folder');
+            card.appendChild(title);
+
+            const meta = document.createElement('div');
+            meta.className = 'drive-card-meta';
+            meta.textContent = 'Shared folder';
+            card.appendChild(meta);
+
+            card.appendChild(createDriveItemMenu(folder));
+
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.drive-card-menu')) return;
+                openStarredFolder(folder);
+            });
+            return card;
         }
 
         function renderDriveFolderContents(folders, files) {
@@ -8447,7 +8594,7 @@
 
         async function refreshDriveStarred() {
             const q = encodeURIComponent(`starred=true and trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`);
-            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred,ownedByMe,resourceKey)');
+            const fields = encodeURIComponent('files(id,name,modifiedTime,createdTime,thumbnailLink,iconLink,mimeType,parents,starred,ownedByMe,resourceKey,folderColorRgb)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveStarredCache = data.files || [];
@@ -8457,7 +8604,7 @@
         async function refreshDriveShared() {
             const search = driveSearchInput ? driveSearchInput.value.trim() : '';
             const queryParts = [
-                `mimeType='application/pdf'`,
+                `(mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`,
                 'sharedWithMe=true',
                 'trashed=false'
             ];
@@ -8466,7 +8613,7 @@
                 queryParts.push(`name contains '${safe}'`);
             }
             const q = encodeURIComponent(queryParts.join(' and '));
-            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey)');
+            const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey,folderColorRgb)');
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=24&fields=${fields}`);
             const data = await res.json();
             driveSharedCache = (data.files || []).filter(file => file && file.ownedByMe === false);
@@ -8487,7 +8634,7 @@
 
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
-                const folderFields = encodeURIComponent('files(id,name,starred)');
+                const folderFields = encodeURIComponent('files(id,name,starred,ownedByMe,folderColorRgb)');
                 const fileFields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey)');
 
                 const [folderRes, fileRes] = await Promise.all([
@@ -14483,6 +14630,7 @@
 
         function interruptProcessingForUserInput() {
             noteRecentUserActivity();
+            if (_prewarmRunning) abortPrewarm();
             if (pdfRenderActive || activePdfBackgroundRenderTask || pdfRenderQueue.length > 0 || pdfRenderResumeHandle) {
                 pausePdfRenderingDuringInteraction();
             }
@@ -17582,9 +17730,19 @@
             const combined = new Uint8Array(totalLength);
             let offset = 0;
             for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.length; }
-            let binary = '';
-            for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
-            return btoa(binary);
+            // Convert to base64 in chunks to avoid blocking the main thread
+            const CHUNK = 8192;
+            const parts = [];
+            for (let i = 0; i < combined.length; i += CHUNK) {
+                const end = Math.min(i + CHUNK, combined.length);
+                let seg = '';
+                for (let j = i; j < end; j++) seg += String.fromCharCode(combined[j]);
+                parts.push(seg);
+                if (i + CHUNK < combined.length) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+            return btoa(parts.join(''));
         }
 
         async function decompressFromBase64(b64) {
@@ -17614,15 +17772,21 @@
 
         // Pre-warm the PDF export cache in background so the first save is fast
         let _prewarmRunning = false;
+        let _prewarmAborted = false;
         async function prewarmPdfCache() {
             if (!state.driveAutosave) return;
             if (_prewarmRunning) return;
             _prewarmRunning = true;
+            _prewarmAborted = false;
             try {
                 await _prewarmPdfCacheInner();
             } finally {
                 _prewarmRunning = false;
+                _prewarmAborted = false;
             }
+        }
+        function abortPrewarm() {
+            if (_prewarmRunning) _prewarmAborted = true;
         }
         async function _prewarmPdfCacheInner() {
             const pageCount = state.pages.length;
@@ -17630,13 +17794,17 @@
             const exportScale = pageCount >= 20 ? 1.1 : 1.22;
             const jpegQuality = pageCount >= 20 ? 0.55 : 0.62;
             const exportProfile = `drv-opt:${exportScale}:q${jpegQuality}`;
-            const prewarmInteractionWindowMs = 260;
+            const isMobile = detectDeviceType() !== 'pc';
             const cleanupPrewarmCanvas = (canvas) => {
                 if (!canvas) return;
                 canvas.width = 0;
                 canvas.height = 0;
             };
-            const shouldAbortPrewarm = () => hasHotUserInteraction(prewarmInteractionWindowMs);
+            const shouldAbortPrewarm = () => _prewarmAborted || hasPendingUserInput() || hasHotUserInteraction(isMobile ? 80 : 200);
+            const yieldPrewarm = async () => {
+                if (shouldAbortPrewarm()) return;
+                await yieldToMainThread();
+            };
             // Pre-render template at the export size
             const tplW = Math.round(A4_WIDTH * exportScale);
             const tplH = Math.round(A4_HEIGHT * exportScale);
@@ -17646,7 +17814,7 @@
             const tempCtx = tempCanvas.getContext('2d');
 
             for (let i = 0; i < pageCount; i++) {
-                await yieldProcessingForUi(true);
+                await yieldPrewarm();
                 if (shouldAbortPrewarm()) {
                     cleanupPrewarmCanvas(tempCanvas);
                     return;
@@ -17682,6 +17850,8 @@
                 const strokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
                 let strokeCounter = 0;
                 let pointCounter = 0;
+                const chunkThreshold = isMobile ? 24 : 64;
+                const chunkSize = isMobile ? 18 : 48;
                 for (const stroke of strokes) {
                     if (shouldAbortPrewarm()) {
                         cleanupPrewarmCanvas(tempCanvas);
@@ -17690,11 +17860,12 @@
                     const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
                     if (!stroke.points || stroke.points.length < minPoints) continue;
                     if (stroke.tool === 'eraser-stroke') continue;
-                    const hotInteraction = shouldAbortPrewarm();
-                    const chunkThreshold = hotInteraction ? 48 : 96;
-                    const chunkSize = hotInteraction ? 36 : 72;
                     if (stroke.points.length > chunkThreshold) {
                         for (let start = 0; start < stroke.points.length - 1; start += (chunkSize - 1)) {
+                            if (shouldAbortPrewarm()) {
+                                cleanupPrewarmCanvas(tempCanvas);
+                                return;
+                            }
                             const end = Math.min(stroke.points.length, start + chunkSize);
                             const segmentPoints = stroke.points.slice(start, end);
                             if (segmentPoints.length < minPoints) break;
@@ -17704,24 +17875,20 @@
                             });
                             strokeCounter += 1;
                             pointCounter += segmentPoints.length;
-                            await yieldProcessingForUi(hotInteraction);
-                            if (shouldAbortPrewarm()) {
-                                cleanupPrewarmCanvas(tempCanvas);
-                                return;
-                            }
+                            await yieldPrewarm();
                         }
                     } else {
                         drawSmoothStroke(tempCtx, stroke);
                         strokeCounter += 1;
                         pointCounter += Array.isArray(stroke.points) ? stroke.points.length : 0;
                     }
-                    if (strokeCounter % 2 === 0 || pointCounter >= (hotInteraction ? 80 : 240)) {
+                    if (strokeCounter % 1 === 0 || pointCounter >= (isMobile ? 40 : 160)) {
                         pointCounter = 0;
-                        await yieldProcessingForUi(hotInteraction);
+                        await yieldPrewarm();
                     }
                 }
 
-                await yieldProcessingForUi(true);
+                await yieldPrewarm();
                 if (shouldAbortPrewarm()) {
                     cleanupPrewarmCanvas(tempCanvas);
                     return;
