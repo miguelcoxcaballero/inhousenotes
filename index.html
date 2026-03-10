@@ -2337,9 +2337,7 @@
         }
 
         .drive-card-dropdown {
-            position: absolute;
-            top: 34px;
-            right: 0;
+            position: fixed;
             background: white;
             border-radius: 12px;
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -2349,7 +2347,7 @@
             flex-direction: column;
             gap: 2px;
             min-width: 168px;
-            z-index: 10;
+            z-index: 9999;
         }
 
         [data-theme="dark"] .drive-card,
@@ -2434,6 +2432,31 @@
             flex-wrap: wrap;
             gap: 6px;
             padding: 6px 10px 8px;
+        }
+
+        .drive-color-popup {
+            position: fixed;
+            z-index: 10001;
+            background: white;
+            border-radius: 14px;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0, 0, 0, 0.07);
+            padding: 14px;
+            display: grid;
+            grid-template-rows: repeat(5, auto);
+            grid-auto-flow: column;
+            gap: 8px;
+        }
+
+        [data-theme="dark"] .drive-color-popup {
+            background: #1f1f1f;
+            border-color: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+        }
+
+        .drive-color-popup .drive-color-swatch {
+            width: 28px;
+            height: 28px;
         }
 
         .drive-color-swatch {
@@ -8358,50 +8381,24 @@
                 </button>
             `;
 
-            let colorPickerEl = null;
-
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                closeColorPopup();
                 toggleDriveCardMenu(menu);
             });
 
             menu.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const button = e.target?.closest ? e.target.closest('button[data-action]') : null;
-                const swatch = e.target?.closest ? e.target.closest('.drive-color-swatch') : null;
+                if (!button) return;
 
-                if (swatch) {
-                    const color = swatch.dataset.color;
-                    if (color) {
-                        closeDriveCardMenu();
-                        updateDriveFolderColor(item, color);
-                    }
-                    return;
-                }
-
-                const action = button?.dataset?.action;
+                const action = button.dataset.action;
                 if (!action) return;
 
                 if (action === 'color') {
-                    // Toggle inline color picker
-                    if (colorPickerEl) {
-                        colorPickerEl.remove();
-                        colorPickerEl = null;
-                        return;
-                    }
-                    colorPickerEl = document.createElement('div');
-                    colorPickerEl.className = 'drive-color-picker-row';
-                    const currentColor = (item.folderColorRgb || '').toLowerCase();
-                    DRIVE_FOLDER_COLORS.forEach(color => {
-                        const sw = document.createElement('div');
-                        sw.className = 'drive-color-swatch';
-                        if (color.toLowerCase() === currentColor) sw.classList.add('active');
-                        sw.style.background = color;
-                        sw.dataset.color = color;
-                        sw.title = color;
-                        colorPickerEl.appendChild(sw);
-                    });
-                    button.after(colorPickerEl);
+                    const btnRect = button.getBoundingClientRect();
+                    closeDriveCardMenu();
+                    openColorPopup(item, btnRect);
                     return;
                 }
 
@@ -8433,6 +8430,25 @@
             activeDriveCardMenu = shouldOpen ? menuEl : null;
             const card = menuEl.closest('.drive-card, .drive-folder-card');
             if (card) card.style.zIndex = shouldOpen ? '50' : '';
+            if (shouldOpen) {
+                const btn = menuEl.previousElementSibling;
+                if (btn) {
+                    const rect = btn.getBoundingClientRect();
+                    menuEl.style.top = (rect.bottom + 4) + 'px';
+                    menuEl.style.right = (window.innerWidth - rect.right) + 'px';
+                    menuEl.style.left = 'auto';
+                    requestAnimationFrame(() => {
+                        const menuRect = menuEl.getBoundingClientRect();
+                        if (menuRect.bottom > window.innerHeight - 8) {
+                            menuEl.style.top = Math.max(8, rect.top - menuRect.height - 4) + 'px';
+                        }
+                        if (menuRect.left < 8) {
+                            menuEl.style.left = '8px';
+                            menuEl.style.right = 'auto';
+                        }
+                    });
+                }
+            }
         }
 
         function closeDriveCardMenu() {
@@ -8441,6 +8457,47 @@
             if (card) card.style.zIndex = '';
             activeDriveCardMenu.classList.add('hidden');
             activeDriveCardMenu = null;
+        }
+
+        let activeColorPopup = null;
+        function openColorPopup(item, anchorRect) {
+            closeColorPopup();
+            const popup = document.createElement('div');
+            popup.className = 'drive-color-popup';
+            const currentColor = (item.folderColorRgb || '').toLowerCase();
+            DRIVE_FOLDER_COLORS.forEach(color => {
+                const sw = document.createElement('div');
+                sw.className = 'drive-color-swatch';
+                if (color.toLowerCase() === currentColor) sw.classList.add('active');
+                sw.style.background = color;
+                sw.dataset.color = color;
+                sw.title = color;
+                sw.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    closeColorPopup();
+                    updateDriveFolderColor(item, color);
+                });
+                popup.appendChild(sw);
+            });
+            document.body.appendChild(popup);
+            activeColorPopup = popup;
+            popup.style.top = (anchorRect.bottom + 6) + 'px';
+            popup.style.left = anchorRect.left + 'px';
+            requestAnimationFrame(() => {
+                const pRect = popup.getBoundingClientRect();
+                if (pRect.right > window.innerWidth - 8) {
+                    popup.style.left = Math.max(8, window.innerWidth - pRect.width - 8) + 'px';
+                }
+                if (pRect.bottom > window.innerHeight - 8) {
+                    popup.style.top = Math.max(8, anchorRect.top - pRect.height - 6) + 'px';
+                }
+            });
+        }
+        function closeColorPopup() {
+            if (activeColorPopup) {
+                activeColorPopup.remove();
+                activeColorPopup = null;
+            }
         }
 
         async function updateDriveStarStatus(item, shouldStar) {
@@ -11719,8 +11776,11 @@
                 if (activeBinMenu && !activeBinMenu.contains(e.target)) {
                     closeBinItemMenu();
                 }
-                if (activeDriveCardMenu && !activeDriveCardMenu.contains(e.target)) {
+                if (activeDriveCardMenu && !activeDriveCardMenu.contains(e.target) && !(e.target.closest && e.target.closest('.drive-card-more'))) {
                     closeDriveCardMenu();
+                }
+                if (activeColorPopup && !activeColorPopup.contains(e.target)) {
+                    closeColorPopup();
                 }
                 const clickedPresencePopup = presencePopupEl && presencePopupEl.contains(e.target);
                 const clickedPresenceAvatars = presenceAvatarsEl && presenceAvatarsEl.contains(e.target);
