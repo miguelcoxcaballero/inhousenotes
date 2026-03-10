@@ -2613,7 +2613,7 @@
         .drive-folder-card {
             background: white;
             border-radius: 14px;
-            padding: 14px 16px;
+            padding: 14px 42px 14px 16px;
             border: 1px solid rgba(0, 0, 0, 0.06);
             box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
             cursor: pointer;
@@ -2630,7 +2630,10 @@
 
         .drive-folder-icon {
             width: 36px;
+            min-width: 36px;
             height: 28px;
+            min-height: 28px;
+            flex: 0 0 auto;
             color: var(--accent-orange);
         }
 
@@ -2641,6 +2644,8 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            flex: 1;
+            min-width: 0;
         }
 
         .drive-card-title.is-shared {
@@ -8634,7 +8639,7 @@
 
                 const folderQuery = encodeURIComponent([...baseParts, `mimeType='application/vnd.google-apps.folder'`].join(' and '));
                 const fileQuery = encodeURIComponent([...baseParts, `mimeType='application/pdf'`].join(' and '));
-                const folderFields = encodeURIComponent('files(id,name,starred,ownedByMe,folderColorRgb)');
+                const folderFields = encodeURIComponent('files(id,name,mimeType,starred,ownedByMe,folderColorRgb)');
                 const fileFields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey)');
 
                 const [folderRes, fileRes] = await Promise.all([
