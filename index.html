@@ -14049,7 +14049,6 @@
                 const item = document.createElement('div');
                 item.className = 'page-item';
                 item.dataset.pageIndex = index;
-                if (canReorder) item.draggable = true;
                 const strokeCount = getVisibleStrokeCount(page);
                 const isPdfBackground = page.backgroundSource === 'pdf' || Number.isFinite(page.pdfPageIndex);
                 item.innerHTML = `
@@ -14100,69 +14099,65 @@
                     });
                 }
 
-                if (canReorder) {
-                    item.addEventListener('dragstart', onPageDragStart);
-                    item.addEventListener('dragover', onPageDragOver);
-                    item.addEventListener('drop', onPageDrop);
-                    item.addEventListener('dragend', onPageDragEnd);
-                    item.addEventListener('dragleave', onPageDragLeave);
-                }
             });
+
+            if (canReorder) {
+                initPageListDrag(pagesList);
+            }
         }
 
-        let _dragFromIndex = null;
-
-        function onPageDragStart(e) {
-            const item = e.currentTarget;
-            // Only start if pointer is on the handle (or descendant of handle)
-            const handle = item.querySelector('.page-drag-handle');
-            if (handle && !handle.contains(e.target) && e.target !== handle) {
+        function initPageListDrag(list) {
+            list.addEventListener('pointerdown', (e) => {
+                const handle = e.target.closest('.page-drag-handle');
+                if (!handle) return;
+                const item = handle.closest('.page-item');
+                if (!item) return;
                 e.preventDefault();
-                return;
-            }
-            _dragFromIndex = parseInt(item.dataset.pageIndex, 10);
-            item.classList.add('is-dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/plain', String(_dragFromIndex));
-        }
 
-        function onPageDragOver(e) {
-            if (_dragFromIndex === null) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            const item = e.currentTarget;
-            const rect = item.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            item.classList.remove('drag-over-above', 'drag-over-below');
-            item.classList.add(e.clientY < midY ? 'drag-over-above' : 'drag-over-below');
-        }
+                const fromIndex = parseInt(item.dataset.pageIndex, 10);
+                item.classList.add('is-dragging');
+                let lastIndicatorItem = null;
 
-        function onPageDragLeave(e) {
-            const item = e.currentTarget;
-            if (!item.contains(e.relatedTarget)) {
-                item.classList.remove('drag-over-above', 'drag-over-below');
-            }
-        }
+                function clearIndicator() {
+                    if (lastIndicatorItem) {
+                        lastIndicatorItem.classList.remove('drag-over-above', 'drag-over-below');
+                        lastIndicatorItem = null;
+                    }
+                }
 
-        function onPageDrop(e) {
-            e.preventDefault();
-            const toItem = e.currentTarget;
-            toItem.classList.remove('drag-over-above', 'drag-over-below');
-            const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
-            _dragFromIndex = null;
-            if (!Number.isFinite(fromIndex)) return;
-            const toIndex = parseInt(toItem.dataset.pageIndex, 10);
-            const rect = toItem.getBoundingClientRect();
-            const insertBefore = e.clientY < rect.top + rect.height / 2;
-            let targetIndex = insertBefore ? toIndex : toIndex + 1;
-            if (targetIndex > fromIndex) targetIndex -= 1;
-            movePage(fromIndex, targetIndex);
-        }
+                function onMove(ev) {
+                    const target = document.elementFromPoint(ev.clientX, ev.clientY);
+                    const targetItem = target ? target.closest('.page-item') : null;
+                    if (targetItem !== lastIndicatorItem) clearIndicator();
+                    if (targetItem) {
+                        const rect = targetItem.getBoundingClientRect();
+                        targetItem.classList.add(ev.clientY < rect.top + rect.height / 2 ? 'drag-over-above' : 'drag-over-below');
+                        lastIndicatorItem = targetItem;
+                    }
+                }
 
-        function onPageDragEnd(e) {
-            _dragFromIndex = null;
-            document.querySelectorAll('.page-item').forEach(el => {
-                el.classList.remove('is-dragging', 'drag-over-above', 'drag-over-below');
+                function onUp(ev) {
+                    document.removeEventListener('pointermove', onMove);
+                    document.removeEventListener('pointerup', onUp);
+                    document.removeEventListener('pointercancel', onUp);
+                    item.classList.remove('is-dragging');
+                    clearIndicator();
+
+                    const target = document.elementFromPoint(ev.clientX, ev.clientY);
+                    const targetItem = target ? target.closest('.page-item') : null;
+                    if (targetItem) {
+                        const toIndex = parseInt(targetItem.dataset.pageIndex, 10);
+                        const rect = targetItem.getBoundingClientRect();
+                        const insertBefore = ev.clientY < rect.top + rect.height / 2;
+                        let targetIndex = insertBefore ? toIndex : toIndex + 1;
+                        if (targetIndex > fromIndex) targetIndex -= 1;
+                        movePage(fromIndex, targetIndex);
+                    }
+                }
+
+                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointerup', onUp);
+                document.addEventListener('pointercancel', onUp);
             });
         }
 
