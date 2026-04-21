@@ -18079,6 +18079,7 @@
                     images: remoteImages,
                     backgroundImage: remotePageData.backgroundSource === 'pdf' ? null : (remotePageData.backgroundImage || null),
                     backgroundSource: remotePageData.backgroundSource || 'template',
+                    templateKind: normalizeTemplateKind(remotePageData.templateKind),
                     pdfPageIndex: Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null,
                     pageWidth: normalizePageDimension(remotePageData.pageWidth, A4_WIDTH),
                     pageHeight: normalizePageDimension(remotePageData.pageHeight, A4_HEIGHT),
@@ -18089,13 +18090,19 @@
                 };
                 newPage.strokeCount = getVisibleStrokeCount(newPage);
                 state.pages.push(newPage);
-                createPageElement(state.pages.length - 1, false, false);
-                await savePageToIndexedDb(state.pages.length - 1, newPage);
+                const newPageIdx = state.pages.length - 1;
+                createPageElement(newPageIdx, false, false);
+                await savePageToIndexedDb(newPageIdx, newPage);
+                if ((newPage.backgroundSource === 'custom' || newPage.backgroundSource === 'pdf')
+                    && Number.isFinite(newPage.pdfPageIndex)
+                    && !newPage.backgroundImage) {
+                    pagesNeedingPdfBackground.push(newPageIdx);
+                }
                 // Track this new page's synced state
                 const newIds = new Set();
                 remoteStrokes.forEach(s => newIds.add(s.id));
                 remoteImages.forEach(img => newIds.add(img.id));
-                lastSyncedStrokeIds.set(state.pages.length - 1, newIds);
+                lastSyncedStrokeIds.set(newPageIdx, newIds);
                 changed = true;
             }
 
@@ -18174,13 +18181,30 @@
                     if (image?.id) localImageById.set(image.id, image);
                 });
 
+                // Detect structural identity change at this position: if the remote page's
+                // background source or template kind differs, this is a different page (likely
+                // reordered). Additive merge is invalid here — it would combine strokes from
+                // two different pages. Use remote content directly instead.
+                const remoteBgSrcEarly = remotePageData.backgroundSource || 'template';
+                const localBgSrcEarly = currentPage.backgroundSource || 'template';
+                const remoteTplKindEarly = normalizeTemplateKind(remotePageData.templateKind);
+                const localTplKindEarly = normalizeTemplateKind(currentPage.templateKind);
+                const structuralIdentityChanged = remoteBgSrcEarly !== localBgSrcEarly || remoteTplKindEarly !== localTplKindEarly;
+
                 // Additive merge with conflict resolution:
                 // if an item with the same ID differs, prefer local so in-device transforms
                 // are never overwritten by stale remote pulls.
                 const mergedStrokes = [];
                 let localStrokeConflictCount = 0;
+                const localOnlyStrokes = structuralIdentityChanged
+                    ? []
+                    : currentPage.strokes.filter(s => s?.id && !remoteStrokeIds.has(s.id) && !allDeleted.has(s.id));
                 for (const remoteStroke of remoteStrokes) {
                     if (!remoteStroke?.id || allDeleted.has(remoteStroke.id)) continue;
+                    if (structuralIdentityChanged) {
+                        mergedStrokes.push(remoteStroke);
+                        continue;
+                    }
                     const localVersion = localStrokeById.get(remoteStroke.id);
                     if (localVersion && strokeSyncFingerprint(localVersion) !== strokeSyncFingerprint(remoteStroke)) {
                         mergedStrokes.push(localVersion);
@@ -18189,13 +18213,19 @@
                     }
                     mergedStrokes.push(remoteStroke);
                 }
-                const localOnlyStrokes = currentPage.strokes.filter(s => s?.id && !remoteStrokeIds.has(s.id) && !allDeleted.has(s.id));
                 mergedStrokes.push(...localOnlyStrokes);
 
                 const mergedImages = [];
                 let localImageConflictCount = 0;
+                const localOnlyImages = structuralIdentityChanged
+                    ? []
+                    : (currentPage.images || []).filter(img => img?.id && !remoteImageIds.has(img.id) && !allDeleted.has(img.id));
                 for (const remoteImage of remoteImages) {
                     if (!remoteImage?.id || allDeleted.has(remoteImage.id)) continue;
+                    if (structuralIdentityChanged) {
+                        mergedImages.push(remoteImage);
+                        continue;
+                    }
                     const localVersion = localImageById.get(remoteImage.id);
                     if (localVersion && imageSyncFingerprint(localVersion) !== imageSyncFingerprint(remoteImage)) {
                         mergedImages.push(localVersion);
@@ -18204,12 +18234,12 @@
                     }
                     mergedImages.push(remoteImage);
                 }
-                const localOnlyImages = (currentPage.images || []).filter(img => img?.id && !remoteImageIds.has(img.id) && !allDeleted.has(img.id));
                 mergedImages.push(...localOnlyImages);
 
-                // Merge deletion lists (union) and dedupe.
+                // Merge deletion lists (union) and dedupe. If identity changed at this
+                // position, tombstones from the old page don't apply — use remote only.
                 const previousDeletedIds = new Set(localDeletedRaw.filter(id => !!id));
-                const mergedDeletedIds = new Set(allDeleted);
+                const mergedDeletedIds = structuralIdentityChanged ? new Set(remoteDeleted) : new Set(allDeleted);
                 currentPage.deletedStrokeIds = [...mergedDeletedIds];
 
                 // Local content that exists only here or local deletions that suppress remote content
@@ -18257,6 +18287,11 @@
                     currentPage.templateKind = remoteTemplateKind;
                     if (remotePageData.pdfPageIndex !== undefined) {
                         currentPage.pdfPageIndex = Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null;
+                    }
+                    // If identity changed, drop the stale local background — it belonged to
+                    // the previous page at this position. The PDF render pass below refills it.
+                    if (structuralIdentityChanged) {
+                        currentPage.backgroundImage = null;
                     }
                     // If the page now needs a PDF/custom background but has no image, queue it for rendering
                     if ((remoteBackgroundSource === 'custom' || remoteBackgroundSource === 'pdf')
