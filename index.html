@@ -17882,8 +17882,9 @@
                 }
                 const objectUrl = URL.createObjectURL(blob);
 
-                // Extract stroke data from PDF metadata
+                // Extract stroke data from PDF metadata; keep PDF alive for background rendering
                 let remoteStrokeData = null;
+                let remotePdfDoc = null;
                 try {
                     const pdf = await pdfjsLib.getDocument({
                         url: objectUrl,
@@ -17910,25 +17911,39 @@
                     } catch (metaErr) {
                         console.warn('Failed to extract remote stroke data:', metaErr);
                     }
-                    if (pdf.cleanup) {
-                        try { pdf.cleanup(); } catch (e) { }
-                    }
+                    remotePdfDoc = pdf; // keep alive until after background rendering
                 } finally {
                     URL.revokeObjectURL(objectUrl);
                 }
 
                 if (!remoteStrokeData || !Array.isArray(remoteStrokeData)) {
                     console.log('No usable remote stroke data found, skipping merge');
+                    if (remotePdfDoc?.cleanup) { try { remotePdfDoc.cleanup(); } catch (e) {} }
                     showStatus('Synced', { savedAt: state.driveLastKnownModified || Date.now() });
                     return;
                 }
                 if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileIdAtStart) {
+                    if (remotePdfDoc?.cleanup) { try { remotePdfDoc.cleanup(); } catch (e) {} }
                     return;
                 }
                 markDriveHydrated(fileIdAtStart);
 
                 // Apply remote changes
                 const mergeResult = await applyRemotePages(remoteStrokeData);
+
+                // Render backgrounds for pages that got a PDF/custom backgroundSource but have no image
+                if (mergeResult?.pagesNeedingPdfBackground?.length > 0 && remotePdfDoc) {
+                    const prevActivePdf = activePdfDocument;
+                    activePdfDocument = remotePdfDoc;
+                    const renderToken = pdfRenderToken;
+                    for (const pageIdx of mergeResult.pagesNeedingPdfBackground) {
+                        await renderPdfPageToBackground(pageIdx, renderToken, { ignoreRecentActivity: true });
+                    }
+                    activePdfDocument = prevActivePdf;
+                }
+                if (remotePdfDoc?.cleanup) { try { remotePdfDoc.cleanup(); } catch (e) {} }
+                remotePdfDoc = null;
+
                 if (mergeResult && mergeResult.changed) {
                     bumpDriveContentVersion();
                 }
@@ -18034,7 +18049,8 @@
         }
 
         async function applyRemotePages(remoteStrokeData) {
-            if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false };
+            if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false, pagesNeedingPdfBackground: [] };
+            const pagesNeedingPdfBackground = [];
 
             let changed = false;
             let hasLocalMerges = false;
@@ -18227,13 +18243,26 @@
                 const dimensionChanged = remoteWidth !== normalizePageDimension(currentPage.pageWidth, A4_WIDTH)
                     || remoteHeight !== normalizePageDimension(currentPage.pageHeight, A4_HEIGHT);
                 const sharedContentChanged = localStrokeConflictCount > 0 || localImageConflictCount > 0;
+                const remoteTemplateKind = normalizeTemplateKind(remotePageData.templateKind);
+                const localTemplateKind = normalizeTemplateKind(currentPage.templateKind);
+                const templateKindChanged = remoteTemplateKind !== localTemplateKind;
+                const remoteBackgroundSource = remotePageData.backgroundSource || 'template';
+                const localBackgroundSource = currentPage.backgroundSource || 'template';
+                const backgroundSourceChanged = remoteBackgroundSource !== localBackgroundSource;
 
-                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || dimensionChanged || sharedContentChanged) {
+                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || dimensionChanged || sharedContentChanged || templateKindChanged || backgroundSourceChanged) {
                     currentPage.strokes = mergedStrokes;
                     currentPage.images = mergedImages;
-                    currentPage.backgroundSource = remotePageData.backgroundSource || currentPage.backgroundSource;
+                    currentPage.backgroundSource = remoteBackgroundSource;
+                    currentPage.templateKind = remoteTemplateKind;
                     if (remotePageData.pdfPageIndex !== undefined) {
                         currentPage.pdfPageIndex = Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null;
+                    }
+                    // If the page now needs a PDF/custom background but has no image, queue it for rendering
+                    if ((remoteBackgroundSource === 'custom' || remoteBackgroundSource === 'pdf')
+                        && Number.isFinite(currentPage.pdfPageIndex)
+                        && !currentPage.backgroundImage) {
+                        pagesNeedingPdfBackground.push(i);
                     }
                     currentPage.pageWidth = remoteWidth;
                     currentPage.pageHeight = remoteHeight;
@@ -18282,7 +18311,7 @@
             if (!hasLocalMerges) {
                 lastSyncedPageCount = state.pages.length;
             }
-            return { changed, hasLocalMerges };
+            return { changed, hasLocalMerges, pagesNeedingPdfBackground };
         }
 
         function setsEqual(a, b) {
