@@ -1669,7 +1669,8 @@
         }
 
         #file-input,
-        #pdf-input {
+        #pdf-input,
+        #cover-image-input {
             display: none;
         }
 
@@ -1745,6 +1746,213 @@
         .pages-panel-actions .btn svg {
             width: 18px;
             height: 18px;
+        }
+
+        .modal-cover {
+            width: min(92vw, 720px);
+            max-width: 720px;
+            max-height: min(92vh, 820px);
+            overflow: auto;
+        }
+
+        .cover-modal-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+            gap: 18px;
+            margin-top: 18px;
+        }
+
+        .cover-upload-dropzone {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            min-height: 260px;
+            padding: 22px;
+            border-radius: 18px;
+            border: 2px dashed rgba(0, 0, 0, 0.14);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 245, 240, 0.94)),
+                radial-gradient(circle at top, rgba(224, 122, 60, 0.1), transparent 55%);
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            outline: none;
+        }
+
+        .cover-upload-dropzone:hover,
+        .cover-upload-dropzone.dragover,
+        .cover-upload-dropzone:focus-visible {
+            border-color: rgba(224, 122, 60, 0.55);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .cover-upload-dropzone svg {
+            width: 42px;
+            height: 42px;
+            color: var(--accent-orange);
+        }
+
+        .cover-upload-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            max-width: 100%;
+            overflow-wrap: anywhere;
+        }
+
+        .cover-upload-subtitle {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.45;
+        }
+
+        .cover-modal-side {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .cover-layout-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .cover-layout-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            cursor: pointer;
+        }
+
+        .cover-layout-option input {
+            margin-top: 3px;
+            accent-color: var(--accent-orange);
+        }
+
+        .cover-layout-option strong {
+            display: block;
+            font-size: 0.95rem;
+            margin-bottom: 3px;
+        }
+
+        .cover-layout-option span {
+            display: block;
+            font-size: 0.82rem;
+            line-height: 1.45;
+            color: var(--text-secondary);
+        }
+
+        .cover-modal-meta {
+            min-height: 42px;
+            font-size: 0.84rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
+
+        .cover-preview-shell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 320px;
+            padding: 14px;
+            border-radius: 18px;
+            background: linear-gradient(160deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.02));
+            border: 1px solid rgba(0, 0, 0, 0.06);
+        }
+
+        .cover-preview-stage {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .cover-preview-empty {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+
+        .cover-preview-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.14);
+            overflow: hidden;
+            transition: width 0.2s ease, height 0.2s ease;
+        }
+
+        .cover-preview-image {
+            display: block;
+            max-width: none;
+            max-height: none;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .cover-preview-stage.is-empty .cover-preview-page {
+            opacity: 0.25;
+        }
+
+        .cover-preview-stage.is-empty .cover-preview-image {
+            display: none;
+        }
+
+        [data-theme="dark"] .cover-upload-dropzone {
+            border-color: rgba(255, 255, 255, 0.1);
+            background:
+                linear-gradient(180deg, rgba(31, 31, 31, 0.96), rgba(22, 22, 22, 0.96)),
+                radial-gradient(circle at top, rgba(224, 122, 60, 0.14), transparent 55%);
+        }
+
+        [data-theme="dark"] .cover-upload-dropzone:hover,
+        [data-theme="dark"] .cover-upload-dropzone.dragover,
+        [data-theme="dark"] .cover-upload-dropzone:focus-visible {
+            border-color: rgba(224, 122, 60, 0.62);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+        }
+
+        [data-theme="dark"] .cover-layout-option,
+        [data-theme="dark"] .cover-preview-shell {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        [data-theme="dark"] .cover-preview-page {
+            background: #ffffff;
+        }
+
+        @media (max-width: 720px) {
+            .cover-modal-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .cover-upload-dropzone {
+                min-height: 200px;
+            }
+
+            .cover-preview-shell {
+                min-height: 240px;
+            }
         }
 
         .pages-list {
@@ -3785,6 +3993,61 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="modal-cover-image">
+        <div class="modal modal-cover">
+            <h2>Add Cover</h2>
+            <p>Choose a photo for page 1. You can keep the regular document page with white margins, or let the cover
+                use the photo ratio while staying within the document bounds.</p>
+            <div class="cover-modal-layout">
+                <div class="cover-upload-dropzone" id="cover-upload-dropzone" tabindex="0" role="button"
+                    aria-label="Choose cover photo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <path d="M8 15l2.5-2.5a1.5 1.5 0 0 1 2.1 0L16 16" />
+                        <path d="M14.5 14.5L16 13a1.5 1.5 0 0 1 2.1 0L20 15" />
+                        <circle cx="9" cy="9" r="1.2" />
+                    </svg>
+                    <div class="cover-upload-title" id="cover-upload-title">Drop a photo here</div>
+                    <div class="cover-upload-subtitle" id="cover-upload-subtitle">or click to browse from your device
+                    </div>
+                    <button class="btn btn-secondary" id="btn-cover-browse" type="button">Choose Photo</button>
+                </div>
+                <div class="cover-modal-side">
+                    <div class="cover-layout-options">
+                        <label class="cover-layout-option" for="cover-layout-fit">
+                            <input type="radio" id="cover-layout-fit" name="cover-layout-mode" value="fit" checked>
+                            <div>
+                                <strong>Document page</strong>
+                                <span>Keeps the normal page size and centers the photo with white margins if needed.</span>
+                            </div>
+                        </label>
+                        <label class="cover-layout-option" for="cover-layout-photo">
+                            <input type="radio" id="cover-layout-photo" name="cover-layout-mode" value="photo">
+                            <div>
+                                <strong>Photo ratio page</strong>
+                                <span>Page 1 adopts the photo ratio, capped by the document width and height.</span>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="cover-modal-meta" id="cover-modal-meta">Select a photo to preview the cover result.</div>
+                    <div class="cover-preview-shell">
+                        <div class="cover-preview-stage is-empty" id="cover-preview-stage">
+                            <div class="cover-preview-empty" id="cover-preview-empty">No photo selected yet.</div>
+                            <div class="cover-preview-page" id="cover-preview-page">
+                                <img class="cover-preview-image" id="cover-preview-image" alt="Cover preview">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="cover-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="cover-modal-confirm" disabled>Apply Cover</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="modal-folder-picker">
         <div class="modal">
             <h2 id="folder-picker-title">New PDF</h2>
@@ -3877,6 +4140,14 @@
                 </svg>
                 Export
             </button>
+            <button class="btn btn-secondary" id="btn-set-cover" title="Add Cover" aria-label="Add Cover">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <circle cx="9" cy="10" r="1.6" />
+                    <path d="M21 16l-5.4-5.4a1.6 1.6 0 0 0-2.2 0L6 18" />
+                </svg>
+                Cover
+            </button>
         </div>
         <div class="pages-list" id="pages-list"></div>
     </div>
@@ -3887,6 +4158,7 @@
     </div>
 
     <input type="file" id="pdf-input" accept=".pdf">
+    <input type="file" id="cover-image-input" accept="image/*">
 
     <div id="share-modal-overlay" class="modal-overlay">
         <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
@@ -4169,6 +4441,9 @@
             `^(?:${Object.values(DRIVE_QUICK_ACCESS_DOCS).map(config => config.filePrefix).join('|')})\\d{4}(?:\\.pdf)?$`,
             'i'
         );
+        const COVER_RENDER_SCALE = 2;
+        const COVER_RENDER_MAX_SIDE = 2200;
+        const COVER_JPEG_QUALITY = 0.9;
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = 'drive-session-v1';
@@ -4655,6 +4930,7 @@
         const statusBar = document.getElementById('status-bar');
         const statusText = document.getElementById('status-text');
         const pdfInput = document.getElementById('pdf-input');
+        const coverImageInput = document.getElementById('cover-image-input');
         const loadingOverlay = document.getElementById('loading-overlay');
         const loadingText = document.getElementById('loading-text');
         const driveHome = document.getElementById('drive-home');
@@ -4726,6 +5002,20 @@
         const driveBinEmpty = document.getElementById('drive-bin-empty');
         const driveBinClose = document.getElementById('drive-bin-close');
         const driveBinLoading = document.getElementById('drive-bin-loading');
+        const setCoverBtn = document.getElementById('btn-set-cover');
+        const coverModal = document.getElementById('modal-cover-image');
+        const coverUploadDropzone = document.getElementById('cover-upload-dropzone');
+        const coverUploadTitle = document.getElementById('cover-upload-title');
+        const coverUploadSubtitle = document.getElementById('cover-upload-subtitle');
+        const coverBrowseBtn = document.getElementById('btn-cover-browse');
+        const coverModalMeta = document.getElementById('cover-modal-meta');
+        const coverModalCancel = document.getElementById('cover-modal-cancel');
+        const coverModalConfirm = document.getElementById('cover-modal-confirm');
+        const coverPreviewStage = document.getElementById('cover-preview-stage');
+        const coverPreviewPage = document.getElementById('cover-preview-page');
+        const coverPreviewImage = document.getElementById('cover-preview-image');
+        const coverPreviewEmpty = document.getElementById('cover-preview-empty');
+        const coverLayoutModeInputs = Array.from(document.querySelectorAll('input[name="cover-layout-mode"]'));
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
@@ -4803,6 +5093,9 @@
         let sharedLinkSignInPrompted = false;
         let lastPendingSharedPublicAttemptId = null;
         let pendingSharedDriveResourceKey = null;
+        let coverModalSelection = null;
+        let coverModalSelectionToken = 0;
+        let coverApplyInProgress = false;
         let docTitleEditing = false;
         let docTitleOriginal = '';
         let activeDriveCardMenu = null;
@@ -9234,13 +9527,14 @@
                 }
             }
 
-            const toolsToDisable = ['btn-pen', 'btn-highlighter', 'btn-eraser', 'btn-image', 'btn-insert-page', 'btn-delete-page', 'btn-clear-page'];
+            const toolsToDisable = ['btn-pen', 'btn-highlighter', 'btn-eraser', 'btn-image', 'btn-insert-page', 'btn-delete-page', 'btn-clear-page', 'btn-set-cover'];
             toolsToDisable.forEach(id => {
                 const btn = document.getElementById(id);
                 if (btn) btn.disabled = isViewer;
             });
 
             if (isViewer) {
+                closeCoverModal();
                 setReadOnlyMode(true, { force: true });
                 const tb = document.getElementById('toolbar');
                 if (tb) tb.style.display = 'none';
@@ -11982,6 +12276,7 @@
             });
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape') {
+                    closeCoverModal();
                     closeFolderPicker();
                     closeTrashModal();
                     closeDriveBinModal();
@@ -12064,6 +12359,9 @@
                 if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
                     positionPresencePopup();
                 }
+                if (coverModal && coverModal.classList.contains('visible')) {
+                    updateCoverModalPreview();
+                }
                 resetResetSlider();
                 preserveViewOnResize();
             });
@@ -12110,6 +12408,78 @@
             document.getElementById('btn-edit-pages').addEventListener('click', openPagesPanel);
             document.getElementById('panel-close').addEventListener('click', closePagesPanel);
             document.getElementById('panel-overlay').addEventListener('click', closePagesPanel);
+            if (setCoverBtn) {
+                setCoverBtn.addEventListener('click', openCoverModal);
+            }
+            if (coverBrowseBtn) {
+                coverBrowseBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openCoverImagePicker();
+                });
+            }
+            if (coverUploadDropzone) {
+                coverUploadDropzone.addEventListener('click', () => {
+                    openCoverImagePicker();
+                });
+                coverUploadDropzone.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openCoverImagePicker();
+                    }
+                });
+                coverUploadDropzone.addEventListener('dragenter', (e) => {
+                    if (coverApplyInProgress) return;
+                    e.preventDefault();
+                    coverUploadDropzone.classList.add('dragover');
+                });
+                coverUploadDropzone.addEventListener('dragover', (e) => {
+                    if (coverApplyInProgress) return;
+                    e.preventDefault();
+                    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+                    coverUploadDropzone.classList.add('dragover');
+                });
+                coverUploadDropzone.addEventListener('dragleave', (e) => {
+                    if (!coverUploadDropzone.contains(e.relatedTarget)) {
+                        coverUploadDropzone.classList.remove('dragover');
+                    }
+                });
+                coverUploadDropzone.addEventListener('drop', (e) => {
+                    if (coverApplyInProgress) return;
+                    e.preventDefault();
+                    coverUploadDropzone.classList.remove('dragover');
+                    const file = Array.from(e.dataTransfer?.files || []).find(item => String(item?.type || '').startsWith('image/'));
+                    if (file) {
+                        void setCoverModalFile(file);
+                    }
+                });
+            }
+            if (coverImageInput) {
+                coverImageInput.addEventListener('change', (e) => {
+                    const file = e.target?.files?.[0];
+                    if (file) {
+                        void setCoverModalFile(file);
+                    }
+                });
+            }
+            coverLayoutModeInputs.forEach(input => {
+                input.addEventListener('change', updateCoverModalPreview);
+            });
+            if (coverModalCancel) {
+                coverModalCancel.addEventListener('click', closeCoverModal);
+            }
+            if (coverModalConfirm) {
+                coverModalConfirm.addEventListener('click', () => {
+                    void confirmCoverModal();
+                });
+            }
+            if (coverModal) {
+                coverModal.addEventListener('click', (e) => {
+                    if (e.target && e.target.id === 'modal-cover-image') {
+                        closeCoverModal();
+                    }
+                });
+            }
 
             // Delete modal
             document.getElementById('modal-delete-cancel').addEventListener('click', closeDeleteModal);
@@ -13026,6 +13396,7 @@
         // Pages Panel
         function openPagesPanel() {
             renderPagesList();
+            if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
             document.getElementById('pages-panel').classList.add('visible');
             document.getElementById('panel-overlay').classList.add('visible');
         }
@@ -13033,6 +13404,428 @@
         function closePagesPanel() {
             document.getElementById('pages-panel').classList.remove('visible');
             document.getElementById('panel-overlay').classList.remove('visible');
+        }
+
+        function createBlankPageData(options = {}) {
+            const backgroundImage = options.backgroundImage || null;
+            return {
+                strokes: [],
+                backgroundImage,
+                images: [],
+                deletedStrokeIds: [],
+                backgroundSource: options.backgroundSource || (backgroundImage ? 'custom' : 'template'),
+                pdfPageIndex: Number.isFinite(options.pdfPageIndex) ? options.pdfPageIndex : null,
+                pageWidth: normalizePageDimension(options.pageWidth, A4_WIDTH),
+                pageHeight: normalizePageDimension(options.pageHeight, A4_HEIGHT),
+                needsRedraw: true,
+                preview: null,
+                strokeCount: 0,
+                unloaded: false
+            };
+        }
+
+        function clonePageSnapshot(page) {
+            const sanitized = sanitizePageForStorage(page || createBlankPageData());
+            return {
+                strokes: cloneStrokesArray(sanitized.strokes || []),
+                images: JSON.parse(JSON.stringify(sanitized.images || [])),
+                deletedStrokeIds: Array.isArray(sanitized.deletedStrokeIds) ? [...sanitized.deletedStrokeIds] : [],
+                backgroundImage: sanitized.backgroundImage || null,
+                backgroundSource: sanitized.backgroundSource || 'template',
+                pdfPageIndex: Number.isFinite(sanitized.pdfPageIndex) ? sanitized.pdfPageIndex : null,
+                pageWidth: normalizePageDimension(sanitized.pageWidth, A4_WIDTH),
+                pageHeight: normalizePageDimension(sanitized.pageHeight, A4_HEIGHT)
+            };
+        }
+
+        function applyPageSnapshot(pageIndex, snapshot) {
+            const currentPage = state.pages[pageIndex] || createBlankPageData();
+            clearSelection();
+            state.selectionTransform = null;
+            releasePageTransientAssets(currentPage);
+            if (currentPage.bakedBackground) {
+                imageCache.delete(currentPage.bakedBackground);
+                imageCacheUsage.delete(currentPage.bakedBackground);
+            }
+            const nextPage = {
+                ...currentPage,
+                ...clonePageSnapshot(snapshot),
+                preview: null,
+                bakedBackground: null,
+                strokeCount: getVisibleStrokeCount(snapshot),
+                unloaded: false,
+                pendingUnload: false,
+                needsRedraw: true
+            };
+            state.pages[pageIndex] = nextPage;
+            applyPageDimensionsToWrapper(pageIndex, { skipRedraw: true });
+            updateAddPageIndicator();
+            scheduleVisiblePageUpdate(true);
+            const pageCanvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+            if (pageCanvas) {
+                applyPageBackground(pageIndex, pageCanvas);
+                redrawPage(pageIndex);
+                clearPagePreview(pageIndex, { force: true });
+            }
+            renderPagesList();
+        }
+
+        function getDocumentBasePageDimensions() {
+            const pages = Array.isArray(state.pages)
+                ? (state.pages.length > 1 ? state.pages.slice(1) : state.pages)
+                : [];
+            if (pages.length === 0) {
+                const fallbackPage = Array.isArray(state.pages) && state.pages.length > 0 ? state.pages[0] : null;
+                return fallbackPage ? getPageDimensions(fallbackPage) : { width: A4_WIDTH, height: A4_HEIGHT };
+            }
+            const sizeCounts = new Map();
+            pages.forEach((page, index) => {
+                const { width, height } = getPageDimensions(page);
+                const key = `${width}x${height}`;
+                const current = sizeCounts.get(key);
+                if (current) {
+                    current.count += 1;
+                } else {
+                    sizeCounts.set(key, { width, height, count: 1, order: index });
+                }
+            });
+            let best = null;
+            sizeCounts.forEach(entry => {
+                if (!best || entry.count > best.count || (entry.count === best.count && entry.order < best.order)) {
+                    best = entry;
+                }
+            });
+            return best ? { width: best.width, height: best.height } : { width: A4_WIDTH, height: A4_HEIGHT };
+        }
+
+        function getContainedRect(sourceWidth, sourceHeight, maxWidth, maxHeight) {
+            const safeSourceWidth = Math.max(1, Number(sourceWidth) || 1);
+            const safeSourceHeight = Math.max(1, Number(sourceHeight) || 1);
+            const safeMaxWidth = Math.max(1, Number(maxWidth) || 1);
+            const safeMaxHeight = Math.max(1, Number(maxHeight) || 1);
+            const scale = Math.min(safeMaxWidth / safeSourceWidth, safeMaxHeight / safeSourceHeight);
+            const width = Math.max(1, Math.round(safeSourceWidth * scale));
+            const height = Math.max(1, Math.round(safeSourceHeight * scale));
+            return {
+                width,
+                height,
+                x: Math.round((safeMaxWidth - width) / 2),
+                y: Math.round((safeMaxHeight - height) / 2),
+                scale
+            };
+        }
+
+        function getCoverLayoutMode() {
+            const selected = coverLayoutModeInputs.find(input => input.checked);
+            return selected?.value === 'photo' ? 'photo' : 'fit';
+        }
+
+        function getCoverResultLayout(imageWidth, imageHeight, mode = getCoverLayoutMode()) {
+            const documentSize = getDocumentBasePageDimensions();
+            const fittedImage = getContainedRect(imageWidth, imageHeight, documentSize.width, documentSize.height);
+            if (mode === 'photo') {
+                const pageWidth = normalizePageDimension(fittedImage.width, documentSize.width);
+                const pageHeight = normalizePageDimension(fittedImage.height, documentSize.height);
+                return {
+                    documentWidth: documentSize.width,
+                    documentHeight: documentSize.height,
+                    pageWidth,
+                    pageHeight,
+                    imageWidth: pageWidth,
+                    imageHeight: pageHeight
+                };
+            }
+            return {
+                documentWidth: documentSize.width,
+                documentHeight: documentSize.height,
+                pageWidth: documentSize.width,
+                pageHeight: documentSize.height,
+                imageWidth: normalizePageDimension(fittedImage.width, documentSize.width),
+                imageHeight: normalizePageDimension(fittedImage.height, documentSize.height)
+            };
+        }
+
+        function formatCoverLengthCm(px) {
+            const safePx = Math.max(1, Number(px) || 1);
+            const cm = safePx * 2.54 / 96;
+            return (Math.round(cm * 10) / 10).toFixed(1);
+        }
+
+        function updateCoverModalConfirmState() {
+            if (coverModalConfirm) {
+                coverModalConfirm.disabled = coverApplyInProgress || !coverModalSelection;
+            }
+        }
+
+        function setCoverModalBusy(isBusy) {
+            coverApplyInProgress = !!isBusy;
+            if (coverBrowseBtn) coverBrowseBtn.disabled = coverApplyInProgress;
+            if (coverModalCancel) coverModalCancel.disabled = coverApplyInProgress;
+            if (coverImageInput) coverImageInput.disabled = coverApplyInProgress;
+            coverLayoutModeInputs.forEach(input => {
+                input.disabled = coverApplyInProgress;
+            });
+            if (coverUploadDropzone) {
+                coverUploadDropzone.setAttribute('aria-disabled', coverApplyInProgress ? 'true' : 'false');
+            }
+            updateCoverModalConfirmState();
+        }
+
+        function updateCoverModalPreview() {
+            if (!coverPreviewStage || !coverPreviewPage || !coverPreviewImage || !coverPreviewEmpty) return;
+            const documentSize = getDocumentBasePageDimensions();
+            const stageRect = getContainedRect(documentSize.width, documentSize.height, 230, 320);
+            coverPreviewStage.style.width = `${stageRect.width}px`;
+            coverPreviewStage.style.height = `${stageRect.height}px`;
+
+            if (!coverModalSelection) {
+                coverPreviewStage.classList.add('is-empty');
+                coverPreviewEmpty.classList.remove('hidden');
+                coverPreviewPage.style.width = `${stageRect.width}px`;
+                coverPreviewPage.style.height = `${stageRect.height}px`;
+                coverPreviewImage.removeAttribute('src');
+                if (coverModalMeta) {
+                    coverModalMeta.textContent = 'Select a photo to preview the cover result.';
+                }
+                if (coverUploadTitle) coverUploadTitle.textContent = 'Drop a photo here';
+                if (coverUploadSubtitle) coverUploadSubtitle.textContent = 'or click to browse from your device';
+                updateCoverModalConfirmState();
+                return;
+            }
+
+            const layout = getCoverResultLayout(coverModalSelection.width, coverModalSelection.height, getCoverLayoutMode());
+            const previewScale = Math.min(stageRect.width / layout.documentWidth, stageRect.height / layout.documentHeight);
+            const previewPageWidth = Math.max(1, Math.round(layout.pageWidth * previewScale));
+            const previewPageHeight = Math.max(1, Math.round(layout.pageHeight * previewScale));
+            const previewImageWidth = Math.max(1, Math.round(layout.imageWidth * previewScale));
+            const previewImageHeight = Math.max(1, Math.round(layout.imageHeight * previewScale));
+            const modeLabel = getCoverLayoutMode() === 'photo'
+                ? 'Photo ratio page'
+                : 'Document page with white margins';
+
+            coverPreviewStage.classList.remove('is-empty');
+            coverPreviewEmpty.classList.add('hidden');
+            coverPreviewPage.style.width = `${previewPageWidth}px`;
+            coverPreviewPage.style.height = `${previewPageHeight}px`;
+            coverPreviewImage.src = coverModalSelection.previewUrl;
+            coverPreviewImage.style.width = `${previewImageWidth}px`;
+            coverPreviewImage.style.height = `${previewImageHeight}px`;
+
+            if (coverModalMeta) {
+                coverModalMeta.textContent = `${coverModalSelection.file.name} · ${coverModalSelection.width}×${coverModalSelection.height}px · Result: ${formatCoverLengthCm(layout.pageWidth)} × ${formatCoverLengthCm(layout.pageHeight)} cm · ${modeLabel}.`;
+            }
+            if (coverUploadTitle) coverUploadTitle.textContent = coverModalSelection.file.name;
+            if (coverUploadSubtitle) coverUploadSubtitle.textContent = 'Drop another photo or click to replace it.';
+            updateCoverModalConfirmState();
+        }
+
+        function clearCoverModalSelection(options = {}) {
+            coverModalSelectionToken += 1;
+            if (coverModalSelection?.previewUrl) {
+                URL.revokeObjectURL(coverModalSelection.previewUrl);
+            }
+            coverModalSelection = null;
+            if (!options.preserveInput && coverImageInput) {
+                coverImageInput.value = '';
+            }
+            if (coverUploadDropzone) {
+                coverUploadDropzone.classList.remove('dragover');
+            }
+            updateCoverModalPreview();
+        }
+
+        async function setCoverModalFile(file) {
+            const imageFile = file && String(file.type || '').startsWith('image/');
+            if (!imageFile) {
+                showStatus('Choose an image file', { preserveState: true, error: true });
+                return;
+            }
+            const token = ++coverModalSelectionToken;
+            if (coverUploadTitle) coverUploadTitle.textContent = 'Loading photo...';
+            if (coverUploadSubtitle) coverUploadSubtitle.textContent = 'Checking image size and preparing preview.';
+            updateCoverModalConfirmState();
+            let decoded = null;
+            try {
+                decoded = await decodeImageSource(file);
+                if (token !== coverModalSelectionToken) return;
+                if (!decoded?.width || !decoded?.height) {
+                    throw new Error('Image dimensions unavailable');
+                }
+                const nextPreviewUrl = URL.createObjectURL(file);
+                if (coverModalSelection?.previewUrl) {
+                    URL.revokeObjectURL(coverModalSelection.previewUrl);
+                }
+                coverModalSelection = {
+                    file,
+                    previewUrl: nextPreviewUrl,
+                    width: Math.max(1, Math.round(decoded.width)),
+                    height: Math.max(1, Math.round(decoded.height))
+                };
+                updateCoverModalPreview();
+            } catch (err) {
+                if (token === coverModalSelectionToken) {
+                    showStatus('Could not read that photo', { preserveState: true, error: true });
+                    updateCoverModalPreview();
+                }
+            } finally {
+                decoded?.cleanup?.();
+            }
+        }
+
+        function openCoverImagePicker() {
+            if (state.isReadOnly || coverApplyInProgress || !coverImageInput) return;
+            coverImageInput.value = '';
+            coverImageInput.click();
+        }
+
+        function openCoverModal() {
+            if (state.isReadOnly || !coverModal) return;
+            coverLayoutModeInputs.forEach(input => {
+                input.checked = input.value === 'fit';
+            });
+            setCoverModalBusy(false);
+            clearCoverModalSelection();
+            coverModal.classList.add('visible');
+            requestAnimationFrame(() => {
+                coverUploadDropzone?.focus?.();
+            });
+        }
+
+        function closeCoverModal() {
+            if (!coverModal || coverApplyInProgress) return;
+            coverModal.classList.remove('visible');
+            clearCoverModalSelection();
+        }
+
+        async function buildCoverImageAsset(file, mode = getCoverLayoutMode()) {
+            const decoded = await decodeImageSource(file);
+            if (!decoded?.source || !decoded?.width || !decoded?.height) {
+                decoded?.cleanup?.();
+                throw new Error('Image decode failed');
+            }
+            const layout = getCoverResultLayout(decoded.width, decoded.height, mode);
+            let renderScale = Math.min(COVER_RENDER_SCALE, COVER_RENDER_MAX_SIDE / Math.max(layout.pageWidth, layout.pageHeight));
+            if (!Number.isFinite(renderScale) || renderScale <= 0) renderScale = 1;
+            renderScale = Math.max(1, renderScale);
+
+            const targetPageWidth = Math.max(1, Math.round(layout.pageWidth * renderScale));
+            const targetPageHeight = Math.max(1, Math.round(layout.pageHeight * renderScale));
+            const targetImageWidth = Math.max(1, Math.round(layout.imageWidth * renderScale));
+            const targetImageHeight = Math.max(1, Math.round(layout.imageHeight * renderScale));
+            const offsetX = Math.round((targetPageWidth - targetImageWidth) / 2);
+            const offsetY = Math.round((targetPageHeight - targetImageHeight) / 2);
+            const canvas = createProcessingCanvas(targetPageWidth, targetPageHeight);
+            const ctx = canvas.getContext('2d', { alpha: false });
+            if (!ctx) {
+                decoded.cleanup?.();
+                throw new Error('Canvas context unavailable');
+            }
+
+            try {
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, targetPageWidth, targetPageHeight);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(decoded.source, offsetX, offsetY, targetImageWidth, targetImageHeight);
+
+                const outBlob = await canvasToBlobSafe(canvas, 'image/jpeg', COVER_JPEG_QUALITY);
+                let dataUrl = outBlob ? await dataUrlFromBlob(outBlob) : null;
+                if (!dataUrl && typeof canvas.toDataURL === 'function') {
+                    dataUrl = canvas.toDataURL('image/jpeg', COVER_JPEG_QUALITY);
+                }
+                if (!dataUrl) {
+                    throw new Error('Cover image export failed');
+                }
+                return {
+                    dataUrl,
+                    pageWidth: layout.pageWidth,
+                    pageHeight: layout.pageHeight
+                };
+            } finally {
+                canvas.width = 0;
+                canvas.height = 0;
+                decoded.cleanup?.();
+            }
+        }
+
+        async function ensureAllPagesLoadedForStructureChange() {
+            const totalPages = Array.isArray(state.pages) ? state.pages.length : 0;
+            for (let index = 0; index < totalPages; index += 1) {
+                const page = await ensurePageDataLoaded(index, { keepLoaded: true });
+                if (!page || !Array.isArray(page.strokes) || !Array.isArray(page.images)) {
+                    throw new Error(`Could not load page ${index + 1}`);
+                }
+                if ((index + 1) % 4 === 0) {
+                    await yieldToMainThread();
+                }
+            }
+        }
+
+        async function insertCoverPageAtStart(coverAsset) {
+            await ensureAllPagesLoadedForStructureChange();
+
+            clearSelection();
+            state.selectionTransform = null;
+
+            const clearedOps = await clearStrokeOpsStore();
+            if (!clearedOps) {
+                throw new Error('Could not reset pending page operations');
+            }
+
+            invalidatePageStructureAsyncState();
+            pageDirty.clear();
+            pageDirtyMode.clear();
+            pageAccess.clear();
+            lastSyncedStrokeIds.clear();
+            lastSyncedPageCount = 0;
+
+            const coverPage = createBlankPageData({
+                backgroundImage: coverAsset.dataUrl,
+                backgroundSource: 'custom',
+                pageWidth: coverAsset.pageWidth,
+                pageHeight: coverAsset.pageHeight
+            });
+            coverPage.preview = null;
+            coverPage.bakedBackground = null;
+            coverPage.strokeCount = 0;
+            coverPage.unloaded = false;
+            coverPage.pendingUnload = false;
+            coverPage.needsRedraw = true;
+
+            state.pages.unshift(coverPage);
+            state.activePageIndex = 0;
+            state.history = [];
+            state.historyIndex = -1;
+            updateHistoryButtons();
+
+            renderAllPages();
+            renderPagesList();
+            markAllPagesDirty('full');
+            scheduleSave(true);
+            goToPage(0);
+        }
+
+        async function confirmCoverModal() {
+            if (!coverModalSelection || coverApplyInProgress || state.isReadOnly) return;
+            let applied = false;
+            setCoverModalBusy(true);
+            showLoading('Preparing cover...');
+            try {
+                const coverAsset = await buildCoverImageAsset(coverModalSelection.file, getCoverLayoutMode());
+                await insertCoverPageAtStart(coverAsset);
+                applied = true;
+                showStatus('Cover added', { preserveState: true });
+            } catch (err) {
+                console.error('Failed to apply cover:', err);
+                showStatus('Failed to apply cover', { preserveState: true, error: true });
+            } finally {
+                hideLoading();
+                setCoverModalBusy(false);
+                if (applied) {
+                    closeCoverModal();
+                }
+            }
         }
 
         function renderPagesList() {
@@ -17205,6 +17998,9 @@
                     }
                 }
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'replace-page') {
+                applyPageSnapshot(action.pageIndex, action.before);
+                goToPage(action.pageIndex);
             } else if (action.type === 'erase-area') {
                 const page = state.pages[action.pageIndex];
                 page.strokes = cloneStrokesArray(action.before);
@@ -17383,6 +18179,9 @@
                     }
                 }
                 redrawPage(action.pageIndex);
+            } else if (action.type === 'replace-page') {
+                applyPageSnapshot(action.pageIndex, action.after);
+                goToPage(action.pageIndex);
             } else if (action.type === 'erase-area') {
                 const page = state.pages[action.pageIndex];
                 page.strokes = cloneStrokesArray(action.after);
