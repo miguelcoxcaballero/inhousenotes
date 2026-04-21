@@ -2094,6 +2094,51 @@
             flex: 1;
         }
 
+        #btn-drive-menu-diary,
+        #btn-drive-menu-agenda {
+            border: 1px solid transparent;
+        }
+
+        #btn-drive-menu-diary {
+            background: #c9bfd8;
+            border-color: #b7abca;
+            color: #362b45;
+        }
+
+        #btn-drive-menu-diary:hover:not(:disabled) {
+            background: #bcaece;
+        }
+
+        #btn-drive-menu-agenda {
+            background: #2f5a3f;
+            border-color: #274a34;
+            color: #f4f8f2;
+        }
+
+        #btn-drive-menu-agenda:hover:not(:disabled) {
+            background: #274d36;
+        }
+
+        [data-theme="dark"] #btn-drive-menu-diary {
+            background: #b39ec7;
+            border-color: #9d89b1;
+            color: #21182d;
+        }
+
+        [data-theme="dark"] #btn-drive-menu-diary:hover:not(:disabled) {
+            background: #a78fbe;
+        }
+
+        [data-theme="dark"] #btn-drive-menu-agenda {
+            background: #2b5b3b;
+            border-color: #3b7a51;
+            color: #f4f8f2;
+        }
+
+        [data-theme="dark"] #btn-drive-menu-agenda:hover:not(:disabled) {
+            background: #356b46;
+        }
+
         .drive-main {
             flex: 1;
             overflow: auto;
@@ -4120,6 +4165,10 @@
             diary: { label: 'Diary', folderName: 'Diary', filePrefix: 'Diary' },
             agenda: { label: 'Agenda', folderName: 'Agenda', filePrefix: 'Agenda' }
         });
+        const DRIVE_QUICK_ACCESS_DOC_RE = new RegExp(
+            `^(?:${Object.values(DRIVE_QUICK_ACCESS_DOCS).map(config => config.filePrefix).join('|')})\\d{4}(?:\\.pdf)?$`,
+            'i'
+        );
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = 'drive-session-v1';
@@ -8209,6 +8258,11 @@
             return Array.isArray(data.files) && data.files.length > 0 ? data.files[0] : null;
         }
 
+        function isQuickAccessDriveFile(file) {
+            const fileName = String(file?.name || '').trim();
+            return !!fileName && DRIVE_QUICK_ACCESS_DOC_RE.test(fileName);
+        }
+
         function setDriveQuickAccessButtonsBusy(isBusy) {
             if (driveMenuDiaryBtn) driveMenuDiaryBtn.disabled = isBusy;
             if (driveMenuAgendaBtn) driveMenuAgendaBtn.disabled = isBusy;
@@ -8880,9 +8934,11 @@
             }
             const q = encodeURIComponent(queryParts.join(' and '));
             const fields = encodeURIComponent('files(id,name,mimeType,modifiedTime,createdTime,thumbnailLink,iconLink,parents,starred,ownedByMe,resourceKey)');
-            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=24&fields=${fields}`);
             const data = await res.json();
-            driveRecentsCache = data.files || [];
+            driveRecentsCache = (data.files || [])
+                .filter(file => !isQuickAccessDriveFile(file))
+                .slice(0, 12);
             renderDriveRecents(driveRecentsCache);
         }
 
