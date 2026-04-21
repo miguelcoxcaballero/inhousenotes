@@ -3407,6 +3407,10 @@
                             <input type="checkbox" id="theme-toggle" aria-label="Night mode">
                         </label>
                         <div class="drive-profile-actions">
+                            <button class="btn btn-secondary" id="btn-drive-menu-diary" type="button">Diary</button>
+                            <button class="btn btn-secondary" id="btn-drive-menu-agenda" type="button">Agenda</button>
+                        </div>
+                        <div class="drive-profile-actions">
                             <button class="btn btn-secondary" id="btn-drive-menu-refresh" type="button">Refresh</button>
                             <button class="btn btn-secondary" id="btn-drive-menu-logout" type="button">Sign out</button>
                         </div>
@@ -4112,6 +4116,10 @@
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
+        const DRIVE_QUICK_ACCESS_DOCS = Object.freeze({
+            diary: { label: 'Diary', folderName: 'Diary', filePrefix: 'Diary' },
+            agenda: { label: 'Agenda', folderName: 'Agenda', filePrefix: 'Agenda' }
+        });
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = 'drive-session-v1';
@@ -4625,6 +4633,8 @@
         const driveProfileName = document.getElementById('drive-profile-name');
         const driveProfileEmail = document.getElementById('drive-profile-email');
         const themeToggle = document.getElementById('theme-toggle');
+        const driveMenuDiaryBtn = document.getElementById('btn-drive-menu-diary');
+        const driveMenuAgendaBtn = document.getElementById('btn-drive-menu-agenda');
         const driveMenuRefreshBtn = document.getElementById('btn-drive-menu-refresh');
         const driveMenuLogoutBtn = document.getElementById('btn-drive-menu-logout');
         const driveProfileWrapEditor = document.getElementById('drive-profile-editor');
@@ -4737,6 +4747,7 @@
         let driveCurrentFolderId = 'root';
         const driveFolderMetaCache = new Map();
         let driveOpenInProgress = false;
+        let driveQuickAccessInProgress = false;
         let driveOpenFileId = null;
         let driveUserProfile = null;
         let latestPresenceUsers = [];
@@ -8124,6 +8135,113 @@
             const created = await createRes.json();
             state.driveFolderId = created.id;
             return state.driveFolderId;
+        }
+
+        function escapeDriveQueryValue(value) {
+            return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        async function ensureNamedDriveFolder(folderName, options = {}) {
+            const safeFolderName = String(folderName || '').trim();
+            if (!safeFolderName) {
+                throw new Error('Drive folder name is required');
+            }
+            const queryParts = [
+                `name='${escapeDriveQueryValue(safeFolderName)}'`,
+                `mimeType='application/vnd.google-apps.folder'`,
+                'trashed=false'
+            ];
+            if (options.parentId === 'root') {
+                queryParts.push(`'root' in parents`);
+            } else if (options.parentId) {
+                queryParts.push(`'${options.parentId}' in parents`);
+            }
+            const query = encodeURIComponent(queryParts.join(' and '));
+            const fields = encodeURIComponent('files(id,name)');
+            const res = await driveFetch(
+                `https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=createdTime&pageSize=1&fields=${fields}`,
+                { signal: options.signal }
+            );
+            const data = await res.json();
+            if (Array.isArray(data.files) && data.files.length > 0) {
+                return data.files[0].id;
+            }
+            const metadata = {
+                name: safeFolderName,
+                mimeType: 'application/vnd.google-apps.folder',
+                parents: options.parentId && options.parentId !== 'root' ? [options.parentId] : undefined
+            };
+            const createRes = await driveFetch('https://www.googleapis.com/drive/v3/files?fields=id,name', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(metadata),
+                signal: options.signal
+            });
+            const created = await createRes.json();
+            if (!created?.id) {
+                throw new Error(`Could not create Drive folder ${safeFolderName}`);
+            }
+            return created.id;
+        }
+
+        async function findDrivePdfInFolder(folderId, fileBaseName, options = {}) {
+            const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
+            const nameQuery = [`${safeBase}.pdf`, safeBase]
+                .map(name => `name='${escapeDriveQueryValue(name)}'`)
+                .join(' or ');
+            const queryParts = [
+                `(${nameQuery})`,
+                `mimeType='application/pdf'`,
+                'trashed=false'
+            ];
+            if (folderId === 'root') {
+                queryParts.push(`'root' in parents`);
+            } else if (folderId) {
+                queryParts.push(`'${folderId}' in parents`);
+            }
+            const query = encodeURIComponent(queryParts.join(' and '));
+            const fields = encodeURIComponent('files(id,name,thumbnailLink,resourceKey,modifiedTime)');
+            const res = await driveFetch(
+                `https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=modifiedTime desc&pageSize=5&fields=${fields}`,
+                { signal: options.signal }
+            );
+            const data = await res.json();
+            return Array.isArray(data.files) && data.files.length > 0 ? data.files[0] : null;
+        }
+
+        function setDriveQuickAccessButtonsBusy(isBusy) {
+            if (driveMenuDiaryBtn) driveMenuDiaryBtn.disabled = isBusy;
+            if (driveMenuAgendaBtn) driveMenuAgendaBtn.disabled = isBusy;
+        }
+
+        async function openQuickAccessDriveDocument(kind) {
+            const config = DRIVE_QUICK_ACCESS_DOCS[kind];
+            if (!config || driveOpenInProgress || driveQuickAccessInProgress) return;
+            driveQuickAccessInProgress = true;
+            setDriveQuickAccessButtonsBusy(true);
+            closeDriveProfileMenus();
+            const year = new Date().getFullYear();
+            const fileBaseName = `${config.filePrefix}${year}`;
+            try {
+                showLoading(`Checking ${config.label} ${year}...`);
+                await ensureDriveToken(false);
+                const folderId = await ensureNamedDriveFolder(config.folderName);
+                const existingFile = await findDrivePdfInFolder(folderId, fileBaseName);
+                hideLoading();
+                if (existingFile?.id) {
+                    await openDriveFile(existingFile);
+                } else {
+                    await createNewDriveDocumentWithFolder(folderId, fileBaseName);
+                    refreshDriveFiles().catch(() => { });
+                }
+            } catch (err) {
+                console.error(`Failed to open ${config.label} ${year}:`, err);
+                showStatus(`Failed to open ${config.label}`, { preserveState: true, error: true });
+            } finally {
+                driveQuickAccessInProgress = false;
+                setDriveQuickAccessButtonsBusy(false);
+                hideLoading();
+            }
         }
 
         async function fetchDrivePermissions(fileId) {
@@ -11521,6 +11639,16 @@
             }
             if (driveNewBtn) {
                 driveNewBtn.addEventListener('click', createNewDriveDocument);
+            }
+            if (driveMenuDiaryBtn) {
+                driveMenuDiaryBtn.addEventListener('click', () => {
+                    openQuickAccessDriveDocument('diary');
+                });
+            }
+            if (driveMenuAgendaBtn) {
+                driveMenuAgendaBtn.addEventListener('click', () => {
+                    openQuickAccessDriveDocument('agenda');
+                });
             }
             if (driveMenuRefreshBtn) {
                 driveMenuRefreshBtn.addEventListener('click', () => {
