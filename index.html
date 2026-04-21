@@ -1693,8 +1693,11 @@
         }
 
         .panel-header {
-            padding: 16px 20px 12px 20px;
-            border-bottom: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
         }
 
         .panel-header h2 {
@@ -1702,24 +1705,16 @@
             font-weight: 600;
         }
 
-        .panel-back-row {
-            padding: 0 20px 8px 20px;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
         .panel-close {
-            width: 100%;
-            height: 36px;
-            border: 1px solid rgba(0, 0, 0, 0.12);
+            width: 40px;
+            height: 40px;
+            border: none;
             background: transparent;
             border-radius: var(--radius-md);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            font-size: 0.9rem;
-            color: var(--text-secondary, #555);
             transition: background 0.2s;
         }
 
@@ -1728,8 +1723,27 @@
         }
 
         .panel-close svg {
-            width: 16px;
-            height: 16px;
+            width: 20px;
+            height: 20px;
+        }
+
+        .panel-cover-row {
+            padding: 12px 20px 0 20px;
+        }
+
+        .panel-cover-row .btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 40px;
+            font-size: 0.95rem;
+        }
+
+        .panel-cover-row .btn svg {
+            width: 18px;
+            height: 18px;
         }
 
         .pages-panel-actions {
@@ -4119,13 +4133,21 @@
     <div id="pages-panel">
         <div class="panel-header">
             <h2>Manage Pages</h2>
-        </div>
-        <div class="panel-back-row">
             <button class="panel-close" id="panel-close">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="15 18 9 12 15 6" />
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
-                Volver
+            </button>
+        </div>
+        <div class="panel-cover-row">
+            <button class="btn btn-secondary" id="btn-set-cover" title="Add Cover" aria-label="Add Cover">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <circle cx="9" cy="10" r="1.6" />
+                    <path d="M21 16l-5.4-5.4a1.6 1.6 0 0 0-2.2 0L6 18" />
+                </svg>
+                Cover
             </button>
         </div>
         <div class="pages-panel-actions">
@@ -4146,14 +4168,6 @@
                     <polyline points="9 15 12 18 15 15" />
                 </svg>
                 Export
-            </button>
-            <button class="btn btn-secondary" id="btn-set-cover" title="Add Cover" aria-label="Add Cover">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="5" width="18" height="14" rx="2" />
-                    <circle cx="9" cy="10" r="1.6" />
-                    <path d="M21 16l-5.4-5.4a1.6 1.6 0 0 0-2.2 0L6 18" />
-                </svg>
-                Cover
             </button>
         </div>
         <div class="pages-list" id="pages-list"></div>
