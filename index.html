@@ -2085,6 +2085,46 @@
             height: 18px;
         }
 
+        .page-drag-handle {
+            width: 28px;
+            height: 44px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            color: var(--text-secondary);
+            opacity: 0.45;
+            border-radius: var(--radius-sm);
+            transition: opacity 0.15s, background 0.15s;
+        }
+
+        .page-drag-handle:hover {
+            opacity: 1;
+            background: rgba(0,0,0,0.06);
+        }
+
+        .page-drag-handle:active {
+            cursor: grabbing;
+        }
+
+        .page-drag-handle svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .page-item.is-dragging {
+            opacity: 0.4;
+        }
+
+        .page-item.drag-over-above {
+            box-shadow: 0 -2px 0 0 var(--color-primary, #4f46e5);
+        }
+
+        .page-item.drag-over-below {
+            box-shadow: 0 2px 0 0 var(--color-primary, #4f46e5);
+        }
+
         .panel-overlay {
             position: fixed;
             inset: 0;
@@ -4014,9 +4054,8 @@
 
     <div class="modal-overlay" id="modal-cover-image">
         <div class="modal modal-cover">
-            <h2>Add Cover</h2>
-            <p>Choose a photo for page 1. You can keep the regular document page with white margins, or let the cover
-                use the photo ratio while staying within the document bounds.</p>
+            <h2>Add Photo Page</h2>
+            <p>Choose a photo. You can keep the regular document page size with the photo centered, or let the page adopt the photo ratio while staying within the document bounds.</p>
             <div class="cover-modal-layout">
                 <div class="cover-upload-dropzone" id="cover-upload-dropzone" tabindex="0" role="button"
                     aria-label="Choose cover photo">
@@ -4045,7 +4084,7 @@
                             <input type="radio" id="cover-layout-photo" name="cover-layout-mode" value="photo">
                             <div>
                                 <strong>Photo ratio page</strong>
-                                <span>Page 1 adopts the photo ratio, capped by the document width and height.</span>
+                                <span>The page adopts the photo ratio, capped by the document width and height.</span>
                             </div>
                         </label>
                     </div>
@@ -4062,7 +4101,7 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="cover-modal-cancel">Cancel</button>
-                <button class="btn btn-primary" id="cover-modal-confirm" disabled>Apply Cover</button>
+                <button class="btn btn-primary" id="cover-modal-confirm" disabled>Add Page</button>
             </div>
         </div>
     </div>
@@ -4141,13 +4180,13 @@
             </button>
         </div>
         <div class="panel-cover-row">
-            <button class="btn btn-secondary" id="btn-set-cover" title="Add Cover" aria-label="Add Cover">
+            <button class="btn btn-secondary" id="btn-set-cover" title="Add Photo Page" aria-label="Add Photo Page">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="5" width="18" height="14" rx="2" />
                     <circle cx="9" cy="10" r="1.6" />
                     <path d="M21 16l-5.4-5.4a1.6 1.6 0 0 0-2.2 0L6 18" />
                 </svg>
-                Cover
+                + Photo
             </button>
         </div>
         <div class="pages-panel-actions">
@@ -13900,7 +13939,7 @@
             }
         }
 
-        async function insertCoverPageAtStart(coverAsset) {
+        async function insertPhotoPageAt(coverAsset, insertAfterIndex) {
             await ensureAllPagesLoadedForStructureChange();
 
             clearSelection();
@@ -13918,45 +13957,79 @@
             lastSyncedStrokeIds.clear();
             lastSyncedPageCount = 0;
 
-            const coverPage = createBlankPageData({
+            const photoPage = createBlankPageData({
                 backgroundImage: coverAsset.dataUrl,
                 backgroundSource: 'custom',
                 pageWidth: coverAsset.pageWidth,
                 pageHeight: coverAsset.pageHeight
             });
-            coverPage.preview = null;
-            coverPage.bakedBackground = null;
-            coverPage.strokeCount = 0;
-            coverPage.unloaded = false;
-            coverPage.pendingUnload = false;
-            coverPage.needsRedraw = true;
+            photoPage.preview = null;
+            photoPage.bakedBackground = null;
+            photoPage.strokeCount = 0;
+            photoPage.unloaded = false;
+            photoPage.pendingUnload = false;
+            photoPage.needsRedraw = true;
 
-            state.pages.unshift(coverPage);
-            state.activePageIndex = 0;
+            const insertAt = Number.isFinite(insertAfterIndex)
+                ? Math.max(0, Math.min(state.pages.length, insertAfterIndex + 1))
+                : state.pages.length;
+
+            state.pages.splice(insertAt, 0, photoPage);
+            state.activePageIndex = insertAt;
             state.history = [];
             state.historyIndex = -1;
             updateHistoryButtons();
+
+            // Reindex PAGE_STORE: shift all pages at insertAt and above up by 1
+            await reindexPagesAfterInsert(insertAt, state.pages.length);
 
             renderAllPages();
             renderPagesList();
             markAllPagesDirty('full');
             scheduleSave(true);
-            goToPage(0);
+            goToPage(insertAt);
+        }
+
+        async function reindexPagesAfterInsert(insertAt, totalPages) {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            const lastIndex = totalPages - 1;
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
+                const store = tx.objectStore(PAGE_STORE);
+                // Shift pages from lastIndex-1 down to insertAt up by one slot (read high to low)
+                let current = lastIndex - 1;
+                const shiftNext = () => {
+                    if (current < insertAt) return;
+                    const req = store.get(current);
+                    req.onsuccess = () => {
+                        if (req.result) store.put(req.result, current + 1);
+                        else store.delete(current + 1);
+                        current -= 1;
+                        shiftNext();
+                    };
+                    req.onerror = () => { current -= 1; shiftNext(); };
+                };
+                shiftNext();
+            });
         }
 
         async function confirmCoverModal() {
             if (!coverModalSelection || coverApplyInProgress || state.isReadOnly) return;
             let applied = false;
             setCoverModalBusy(true);
-            showLoading('Preparing cover...');
+            showLoading('Adding photo page...');
             try {
                 const coverAsset = await buildCoverImageAsset(coverModalSelection.file, getCoverLayoutMode());
-                await insertCoverPageAtStart(coverAsset);
+                const insertAfter = Number.isFinite(state.activePageIndex) ? state.activePageIndex : state.pages.length - 1;
+                await insertPhotoPageAt(coverAsset, insertAfter);
                 applied = true;
-                showStatus('Cover added', { preserveState: true });
+                showStatus('Photo page added', { preserveState: true });
             } catch (err) {
-                console.error('Failed to apply cover:', err);
-                showStatus('Failed to apply cover', { preserveState: true, error: true });
+                console.error('Failed to add photo page:', err);
+                showStatus('Failed to add photo page', { preserveState: true, error: true });
             } finally {
                 hideLoading();
                 setCoverModalBusy(false);
@@ -13970,20 +14043,29 @@
             const pagesList = document.getElementById('pages-list');
             pagesList.innerHTML = '';
             const canDeletePages = !state.isReadOnly && state.pages.length > 1;
+            const canReorder = !state.isReadOnly && state.pages.length > 1;
 
             state.pages.forEach((page, index) => {
                 const item = document.createElement('div');
                 item.className = 'page-item';
+                item.dataset.pageIndex = index;
+                if (canReorder) item.draggable = true;
                 const strokeCount = getVisibleStrokeCount(page);
                 const isPdfBackground = page.backgroundSource === 'pdf' || Number.isFinite(page.pdfPageIndex);
                 item.innerHTML = `
+                    ${canReorder ? `<div class="page-drag-handle" title="Drag to reorder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="4" y1="8" x2="20" y2="8"/>
+                            <line x1="4" y1="16" x2="20" y2="16"/>
+                        </svg>
+                    </div>` : ''}
                     <div class="page-item-main" data-action="open">
                         <div class="page-thumbnail">
                             <canvas id="thumb-${index}" width="50" height="70"></canvas>
                         </div>
                         <div class="page-info">
                             <h3>Page ${index + 1}</h3>
-                            <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${isPdfBackground ? ' - PDF' : ''}</p>
+                            <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${isPdfBackground ? ' · PDF' : ''}</p>
                         </div>
                     </div>
                     <div class="page-actions">
@@ -14016,6 +14098,149 @@
                         e.stopPropagation();
                         openDeleteModal(index);
                     });
+                }
+
+                if (canReorder) {
+                    item.addEventListener('dragstart', onPageDragStart);
+                    item.addEventListener('dragover', onPageDragOver);
+                    item.addEventListener('drop', onPageDrop);
+                    item.addEventListener('dragend', onPageDragEnd);
+                    item.addEventListener('dragleave', onPageDragLeave);
+                }
+            });
+        }
+
+        let _dragFromIndex = null;
+
+        function onPageDragStart(e) {
+            const item = e.currentTarget;
+            // Only start if pointer is on the handle (or descendant of handle)
+            const handle = item.querySelector('.page-drag-handle');
+            if (handle && !handle.contains(e.target) && e.target !== handle) {
+                e.preventDefault();
+                return;
+            }
+            _dragFromIndex = parseInt(item.dataset.pageIndex, 10);
+            item.classList.add('is-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', String(_dragFromIndex));
+        }
+
+        function onPageDragOver(e) {
+            if (_dragFromIndex === null) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const item = e.currentTarget;
+            const rect = item.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            item.classList.remove('drag-over-above', 'drag-over-below');
+            item.classList.add(e.clientY < midY ? 'drag-over-above' : 'drag-over-below');
+        }
+
+        function onPageDragLeave(e) {
+            const item = e.currentTarget;
+            if (!item.contains(e.relatedTarget)) {
+                item.classList.remove('drag-over-above', 'drag-over-below');
+            }
+        }
+
+        function onPageDrop(e) {
+            e.preventDefault();
+            const toItem = e.currentTarget;
+            toItem.classList.remove('drag-over-above', 'drag-over-below');
+            const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            _dragFromIndex = null;
+            if (!Number.isFinite(fromIndex)) return;
+            const toIndex = parseInt(toItem.dataset.pageIndex, 10);
+            const rect = toItem.getBoundingClientRect();
+            const insertBefore = e.clientY < rect.top + rect.height / 2;
+            let targetIndex = insertBefore ? toIndex : toIndex + 1;
+            if (targetIndex > fromIndex) targetIndex -= 1;
+            movePage(fromIndex, targetIndex);
+        }
+
+        function onPageDragEnd(e) {
+            _dragFromIndex = null;
+            document.querySelectorAll('.page-item').forEach(el => {
+                el.classList.remove('is-dragging', 'drag-over-above', 'drag-over-below');
+            });
+        }
+
+        async function movePage(fromIndex, toIndex) {
+            if (state.isReadOnly) return;
+            if (fromIndex === toIndex || !Number.isFinite(fromIndex) || !Number.isFinite(toIndex)) return;
+            if (fromIndex < 0 || fromIndex >= state.pages.length) return;
+            toIndex = Math.max(0, Math.min(state.pages.length - 1, toIndex));
+            if (fromIndex === toIndex) return;
+
+            pendingStrokeOps.forEach((_, index) => markPageDirty(index, 'full'));
+            await flushDirtyPages({ force: true });
+            await clearStrokeOpsStore();
+            pageDirtyMode.clear();
+            invalidatePageStructureAsyncState();
+            pageAccess.clear();
+
+            const [movedPage] = state.pages.splice(fromIndex, 1);
+            state.pages.splice(toIndex, 0, movedPage);
+
+            const prevActive = state.activePageIndex;
+            if (prevActive === fromIndex) {
+                state.activePageIndex = toIndex;
+            } else {
+                const min = Math.min(fromIndex, toIndex);
+                const max = Math.max(fromIndex, toIndex);
+                if (prevActive >= min && prevActive <= max) {
+                    state.activePageIndex = fromIndex < toIndex ? prevActive - 1 : prevActive + 1;
+                }
+            }
+
+            await reindexPagesAfterMove(fromIndex, toIndex);
+            renderAllPages();
+            scheduleSave(true);
+            renderPagesList();
+        }
+
+        async function reindexPagesAfterMove(fromIndex, toIndex) {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            const minIdx = Math.min(fromIndex, toIndex);
+            const maxIdx = Math.max(fromIndex, toIndex);
+            const rangeSize = maxIdx - minIdx + 1;
+
+            const pages = await new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readonly');
+                const store = tx.objectStore(PAGE_STORE);
+                const results = new Array(rangeSize).fill(null);
+                let pending = rangeSize;
+                for (let i = 0; i < rangeSize; i++) {
+                    const key = minIdx + i;
+                    const capturedI = i;
+                    const req = store.get(key);
+                    req.onsuccess = () => {
+                        results[capturedI] = req.result || null;
+                        if (--pending === 0) resolve(results);
+                    };
+                    req.onerror = () => {
+                        if (--pending === 0) resolve(results);
+                    };
+                }
+            });
+
+            const fromRel = fromIndex - minIdx;
+            const toRel = toIndex - minIdx;
+            const [moved] = pages.splice(fromRel, 1);
+            pages.splice(toRel, 0, moved);
+
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
+                const store = tx.objectStore(PAGE_STORE);
+                for (let i = 0; i < pages.length; i++) {
+                    const data = pages[i];
+                    const key = minIdx + i;
+                    if (data) store.put(data, key);
+                    else store.delete(key);
                 }
             });
         }
@@ -14059,9 +14284,8 @@
                 ctx.fillText('PDF', 25, 38);
                 drawThumbnailStrokes(ctx, page, pageIndex);
             } else {
-                ctx.strokeStyle = '#ffde00';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(2, 2, 46, 66);
+                const kind = normalizeTemplateKind(page.templateKind);
+                drawTemplateBackground(ctx, 50, 70, 1, kind);
                 drawThumbnailStrokes(ctx, page, pageIndex);
             }
         }
