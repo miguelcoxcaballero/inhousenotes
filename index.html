@@ -19097,6 +19097,7 @@
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'pdf',
+                                templateKind: normalizeTemplateKind(pageData.templateKind),
                                 pdfPageIndex: pagePdfIndex,
                                 pageWidth: normalizePageDimension(pageData.pageWidth, pageSizeFallback.width),
                                 pageHeight: normalizePageDimension(pageData.pageHeight, pageSizeFallback.height),
@@ -19108,6 +19109,7 @@
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'template',
+                                templateKind: normalizeTemplateKind(pageData.templateKind),
                                 pdfPageIndex: null,
                                 pageWidth: normalizePageDimension(pageData.pageWidth, A4_WIDTH),
                                 pageHeight: normalizePageDimension(pageData.pageHeight, A4_HEIGHT),
@@ -19774,6 +19776,7 @@
                     deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
                     hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
                     backgroundSource,
+                    templateKind: normalizeTemplateKind(pageData.templateKind),
                     // Saved PDFs are reopened using their own rendered pages as the background source.
                     // Persist the exported page position, not the original source PDF page index.
                     pdfPageIndex: (backgroundSource === 'pdf' || !!backgroundImage) ? (i + 1) : null,
