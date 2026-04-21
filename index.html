@@ -2097,6 +2097,9 @@
             opacity: 0.45;
             border-radius: var(--radius-sm);
             transition: opacity 0.15s, background 0.15s;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         .page-drag-handle:hover {
@@ -14113,6 +14116,7 @@
                 const item = handle.closest('.page-item');
                 if (!item) return;
                 e.preventDefault();
+                e.stopPropagation();
 
                 const fromIndex = parseInt(item.dataset.pageIndex, 10);
                 item.classList.add('is-dragging');
@@ -14126,6 +14130,7 @@
                 }
 
                 function onMove(ev) {
+                    ev.preventDefault();
                     const target = document.elementFromPoint(ev.clientX, ev.clientY);
                     const targetItem = target ? target.closest('.page-item') : null;
                     if (targetItem !== lastIndicatorItem) clearIndicator();
@@ -14155,10 +14160,10 @@
                     }
                 }
 
-                document.addEventListener('pointermove', onMove);
+                document.addEventListener('pointermove', onMove, { passive: false });
                 document.addEventListener('pointerup', onUp);
                 document.addEventListener('pointercancel', onUp);
-            });
+            }, { passive: false });
         }
 
         async function movePage(fromIndex, toIndex) {
@@ -14191,6 +14196,7 @@
 
             await reindexPagesAfterMove(fromIndex, toIndex);
             renderAllPages();
+            markAllPagesDirty('full');
             scheduleSave(true);
             renderPagesList();
         }
