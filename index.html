@@ -6378,7 +6378,12 @@
                 }
                 if (!objectUrl) return;
                 page.backgroundImage = objectUrl;
-                page.backgroundSource = 'pdf';
+                // Preserve 'custom' (photo page added via Manage Pages) so subsequent saves
+                // keep the correct semantic. Only default to 'pdf' when no specific source
+                // was set.
+                if (page.backgroundSource !== 'custom') {
+                    page.backgroundSource = 'pdf';
+                }
                 touchPdfBackgroundCache(pageIndex, objectUrl);
 
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
@@ -14366,7 +14371,9 @@
                 closeDeleteModal();
                 return;
             }
-            const removedPage = state.pages[pageToDelete];
+            const deleteIndex = pageToDelete;
+            await ensureAllPagesLoadedForStructureChange();
+            const removedPage = state.pages[deleteIndex];
             if (removedPage?.backgroundSource === 'pdf' && removedPage.backgroundImage && removedPage.backgroundImage.startsWith('blob:')) {
                 URL.revokeObjectURL(removedPage.backgroundImage);
             }
@@ -14375,15 +14382,18 @@
             });
             await flushDirtyPages({ force: true });
             await clearStrokeOpsStore();
+            pageDirty.clear();
             pageDirtyMode.clear();
             invalidatePageStructureAsyncState();
-            state.pages.splice(pageToDelete, 1);
-            reindexLocalCachesAfterDelete(pageToDelete);
-            await reindexPagesAfterDelete(pageToDelete, state.pages.length);
+            pageAccess.clear();
+            state.pages.splice(deleteIndex, 1);
+            reindexLocalCachesAfterDelete(deleteIndex);
+            await reindexPagesAfterDelete(deleteIndex, state.pages.length);
             renderAllPages();
+            markAllPagesDirty('full');
             const lastIndex = state.pages.length - 1;
             if (lastIndex >= 0) {
-                goToPage(lastIndex);
+                goToPage(Math.min(deleteIndex, lastIndex));
             }
             scheduleSave(true);
             renderPagesList();
