@@ -3334,75 +3334,146 @@
         .share-modal-loading {
             display: none;
             flex-direction: column;
-            gap: 16px;
-            padding: 18px 20px 22px 20px;
         }
 
-        .share-modal-loading .skeleton-section-title {
-            height: 11px;
-            width: 38%;
+        /* Block 1 — mirrors #share-owner-info exact paddings + bottom border */
+        .share-modal-loading .skel-owner-info {
+            padding: 16px 20px 16px 20px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        [data-theme="dark"] .share-modal-loading .skel-owner-info {
+            border-bottom-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .share-modal-loading .skel-section-label {
+            height: 13px;
+            width: 35%;
             border-radius: 6px;
+            margin-bottom: 12px;
         }
 
-        .share-modal-loading .skeleton-row {
+        .share-modal-loading .skel-row {
             display: flex;
             align-items: center;
             gap: 12px;
+            margin-bottom: 12px;
         }
 
-        .share-modal-loading .skeleton-avatar {
+        .share-modal-loading .skel-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .share-modal-loading .skel-avatar {
             width: 36px;
             height: 36px;
             border-radius: 50%;
             flex: 0 0 36px;
         }
 
-        .share-modal-loading .skeleton-row-text {
-            flex: 1;
+        .share-modal-loading .skel-bar.name {
+            height: 13px;
+            width: 45%;
+            border-radius: 6px;
+        }
+
+        /* Block 2 — mirrors .modal-content padding 20px, gap 20px */
+        .share-modal-loading .skel-content {
+            padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 20px;
         }
 
-        .share-modal-loading .skeleton-bar.name {
-            height: 11px;
-            width: 55%;
+        .share-modal-loading .skel-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .share-modal-loading .skel-form-label {
+            height: 13px;
+            width: 28%;
             border-radius: 6px;
         }
 
-        .share-modal-loading .skeleton-bar.meta {
-            height: 9px;
-            width: 35%;
+        .share-modal-loading .skel-input-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .share-modal-loading .skel-input {
+            flex: 1;
+            height: 40px;
+            border-radius: var(--radius-sm);
+        }
+
+        .share-modal-loading .skel-select {
+            width: 90px;
+            height: 40px;
+            border-radius: var(--radius-sm);
+        }
+
+        .share-modal-loading .skel-button {
+            width: 78px;
+            height: 40px;
+            border-radius: var(--radius-sm);
+        }
+
+        .share-modal-loading .skel-link-row {
+            background: var(--bg-primary);
+            border-radius: var(--radius-sm);
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: 40px;
+        }
+
+        .share-modal-loading .skel-link-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            flex: 0 0 20px;
+        }
+
+        .share-modal-loading .skel-link-text {
+            height: 13px;
+            width: 50%;
             border-radius: 6px;
         }
 
-        .share-modal-loading .skeleton-divider {
-            height: 1px;
-            background: rgba(0, 0, 0, 0.08);
-            margin: 4px 0;
+        .share-modal-loading .skel-copy-section {
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            display: flex;
+            justify-content: flex-end;
         }
 
-        [data-theme="dark"] .share-modal-loading .skeleton-divider {
-            background: rgba(255, 255, 255, 0.08);
+        [data-theme="dark"] .share-modal-loading .skel-copy-section {
+            border-top-color: rgba(255, 255, 255, 0.08);
         }
 
-        .share-modal-loading .skeleton-input {
+        .share-modal-loading .skel-copy-button {
+            width: 130px;
             height: 38px;
-            width: 100%;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
         }
 
-        .share-modal-loading .skeleton-button {
-            height: 38px;
-            width: 140px;
-            border-radius: 8px;
-        }
-
-        .share-modal-loading .skeleton-section-title,
-        .share-modal-loading .skeleton-avatar,
-        .share-modal-loading .skeleton-bar,
-        .share-modal-loading .skeleton-input,
-        .share-modal-loading .skeleton-button {
+        /* Shared shimmer styling for every animated piece in the share skeleton */
+        .share-modal-loading .skel-section-label,
+        .share-modal-loading .skel-avatar,
+        .share-modal-loading .skel-bar,
+        .share-modal-loading .skel-form-label,
+        .share-modal-loading .skel-input,
+        .share-modal-loading .skel-select,
+        .share-modal-loading .skel-button,
+        .share-modal-loading .skel-link-icon,
+        .share-modal-loading .skel-link-text,
+        .share-modal-loading .skel-copy-button {
             background: linear-gradient(90deg,
                 rgba(0, 0, 0, 0.05) 0%,
                 rgba(0, 0, 0, 0.10) 50%,
@@ -3411,11 +3482,16 @@
             animation: drive-skeleton-shimmer 1.2s infinite linear;
         }
 
-        [data-theme="dark"] .share-modal-loading .skeleton-section-title,
-        [data-theme="dark"] .share-modal-loading .skeleton-avatar,
-        [data-theme="dark"] .share-modal-loading .skeleton-bar,
-        [data-theme="dark"] .share-modal-loading .skeleton-input,
-        [data-theme="dark"] .share-modal-loading .skeleton-button {
+        [data-theme="dark"] .share-modal-loading .skel-section-label,
+        [data-theme="dark"] .share-modal-loading .skel-avatar,
+        [data-theme="dark"] .share-modal-loading .skel-bar,
+        [data-theme="dark"] .share-modal-loading .skel-form-label,
+        [data-theme="dark"] .share-modal-loading .skel-input,
+        [data-theme="dark"] .share-modal-loading .skel-select,
+        [data-theme="dark"] .share-modal-loading .skel-button,
+        [data-theme="dark"] .share-modal-loading .skel-link-icon,
+        [data-theme="dark"] .share-modal-loading .skel-link-text,
+        [data-theme="dark"] .share-modal-loading .skel-copy-button {
             background: linear-gradient(90deg,
                 rgba(255, 255, 255, 0.05) 0%,
                 rgba(255, 255, 255, 0.10) 50%,
@@ -4542,32 +4618,43 @@
                 </button>
             </div>
             <div class="share-modal-loading" id="share-modal-loading" aria-hidden="true">
-                <div class="skeleton-section-title"></div>
-                <div class="skeleton-row">
-                    <div class="skeleton-avatar"></div>
-                    <div class="skeleton-row-text">
-                        <div class="skeleton-bar name"></div>
-                        <div class="skeleton-bar meta"></div>
+                <!-- mirrors #share-owner-info: People with access list -->
+                <div class="skel-owner-info">
+                    <div class="skel-section-label"></div>
+                    <div class="skel-row">
+                        <div class="skel-avatar"></div>
+                        <div class="skel-bar name"></div>
+                    </div>
+                    <div class="skel-row">
+                        <div class="skel-avatar"></div>
+                        <div class="skel-bar name" style="width:55%;"></div>
+                    </div>
+                    <div class="skel-row">
+                        <div class="skel-avatar"></div>
+                        <div class="skel-bar name" style="width:38%;"></div>
                     </div>
                 </div>
-                <div class="skeleton-row">
-                    <div class="skeleton-avatar"></div>
-                    <div class="skeleton-row-text">
-                        <div class="skeleton-bar name" style="width:48%;"></div>
-                        <div class="skeleton-bar meta" style="width:30%;"></div>
+                <!-- mirrors .modal-content: form sections -->
+                <div class="skel-content">
+                    <div class="skel-section">
+                        <div class="skel-form-label"></div>
+                        <div class="skel-input-group">
+                            <div class="skel-input"></div>
+                            <div class="skel-select"></div>
+                            <div class="skel-button"></div>
+                        </div>
+                    </div>
+                    <div class="skel-section">
+                        <div class="skel-form-label" style="width:35%;"></div>
+                        <div class="skel-link-row">
+                            <div class="skel-link-icon"></div>
+                            <div class="skel-link-text"></div>
+                        </div>
+                    </div>
+                    <div class="skel-section skel-copy-section">
+                        <div class="skel-copy-button"></div>
                     </div>
                 </div>
-                <div class="skeleton-row">
-                    <div class="skeleton-avatar"></div>
-                    <div class="skeleton-row-text">
-                        <div class="skeleton-bar name" style="width:60%;"></div>
-                        <div class="skeleton-bar meta" style="width:38%;"></div>
-                    </div>
-                </div>
-                <div class="skeleton-divider"></div>
-                <div class="skeleton-input"></div>
-                <div class="skeleton-input" style="width:60%;"></div>
-                <div class="skeleton-button"></div>
             </div>
 
             <div class="share-owner-info hidden" id="share-owner-info"
