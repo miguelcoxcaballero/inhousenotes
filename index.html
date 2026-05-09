@@ -2241,9 +2241,9 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 32px;
+            gap: 56px;
             z-index: 1300;
-            padding: 24px;
+            padding: 48px 32px;
         }
 
         #welcome-view.hidden {
@@ -2254,25 +2254,26 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 12px;
+            gap: 24px;
         }
 
         #welcome-view .welcome-logo svg {
-            width: 160px;
-            height: 96px;
+            width: 180px;
+            height: 108px;
         }
 
         #welcome-view .welcome-logo .brand-name {
-            font-size: 2rem;
+            font-family: 'Comfortaa', cursive;
+            font-size: 2.25rem;
             font-weight: 600;
             color: var(--text-primary);
             letter-spacing: 0.5px;
         }
 
         #welcome-view #btn-welcome-login {
-            min-height: 44px;
-            padding: 10px 32px;
-            font-size: 1rem;
+            min-height: 48px;
+            padding: 12px 40px;
+            font-size: 1.05rem;
         }
 
         /* Drive home */
@@ -3729,7 +3730,23 @@
 </head>
 
 <body>
-    <div id="welcome-view" class="hidden">
+    <script>
+        // Pre-paint: pick initial visible view based on stored token, before init() runs.
+        (function () {
+            try {
+                var raw = localStorage.getItem('drive-token-v1');
+                var hasToken = false;
+                if (raw) {
+                    var parsed = JSON.parse(raw);
+                    hasToken = !!(parsed && parsed.token && parsed.expiry && Date.now() < parsed.expiry - 60000);
+                }
+                window.__INHOUSE_BOOT_SIGNED_IN__ = hasToken;
+            } catch (e) {
+                window.__INHOUSE_BOOT_SIGNED_IN__ = false;
+            }
+        })();
+    </script>
+    <div id="welcome-view">
         <div class="welcome-logo">
             <svg viewBox="0 0 40 24" fill="none" aria-hidden="true">
                 <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round"
@@ -3739,8 +3756,13 @@
         </div>
         <button class="btn btn-primary" id="btn-welcome-login" type="button">Sign in</button>
     </div>
+    <script>
+        if (window.__INHOUSE_BOOT_SIGNED_IN__) {
+            document.getElementById('welcome-view').classList.add('hidden');
+        }
+    </script>
 
-    <div id="drive-home">
+    <div id="drive-home" class="hidden">
         <div class="drive-topbar">
             <div class="drive-brand">
                 <svg viewBox="0 0 40 24" fill="none">
