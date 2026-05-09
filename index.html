@@ -8070,15 +8070,14 @@
             window.location.assign(url);
         }
 
-        function processDriveOAuthRedirect() {
-            if (!window.location.hash || !window.location.hash.includes('access_token=')) {
-                const oauthError = new URLSearchParams((window.location.hash || '').replace(/^#/, '')).get('error');
+        function completeDriveSignInFromParams(params) {
+            const oauthError = params.get('error');
+            if (oauthError) {
                 if (oauthError && driveStatusEl) {
                     driveStatusEl.textContent = `Sign-in failed: ${oauthError}`;
                 }
                 return false;
             }
-            const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
             const token = params.get('access_token');
             if (!token) return false;
             const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
@@ -8092,6 +8091,24 @@
             } catch (err) {}
             return true;
         }
+
+        function processDriveOAuthRedirect() {
+            const rawHash = (window.location.hash || '').replace(/^#/, '');
+            const rawSearch = (window.location.search || '').replace(/^\?/, '');
+            if (!rawHash.includes('access_token=') && !rawHash.includes('error=') && !rawSearch.includes('error=')) {
+                return false;
+            }
+            return completeDriveSignInFromParams(new URLSearchParams(rawHash || rawSearch));
+        }
+
+        window.handleInhouseNativeOAuth = (fragment) => {
+            const raw = String(fragment || '').replace(/^#/, '');
+            const signedIn = completeDriveSignInFromParams(new URLSearchParams(raw));
+            if (signedIn) {
+                refreshDriveFiles();
+            }
+            return signedIn;
+        };
 
         function updateDriveAuthUI() {
             const signedIn = !!driveAccessToken;
