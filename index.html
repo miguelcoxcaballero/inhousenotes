@@ -3731,6 +3731,29 @@
 
 <body>
     <script>
+        // OAuth2 callback handler (replaces oauth2callback.html).
+        // Triggered when redirect_uri returns to "/?oauth_callback=1#access_token=..." (or with error).
+        (function () {
+            var search = window.location.search || '';
+            var hash = window.location.hash || '';
+            if (search.indexOf('oauth_callback=1') === -1) return;
+            var hasToken = hash.indexOf('access_token=') !== -1;
+            var errorMatch = search.match(/[?&]error=([^&]*)/);
+            if (hasToken) {
+                window.location.replace('inhousenotes://oauth2callback' + hash);
+            } else if (errorMatch) {
+                window.location.replace('inhousenotes://oauth2callback#error=' + errorMatch[1]);
+            }
+            // Fallback for plain web (custom scheme not handled): land on app root with the hash intact.
+            setTimeout(function () {
+                var target = new URL('/', window.location.origin);
+                target.searchParams.set('inhouse_app', '1');
+                target.hash = hash || '';
+                window.location.replace(target.toString());
+            }, 500);
+        })();
+    </script>
+    <script>
         // Pre-paint: pick initial visible view based on stored token, before init() runs.
         (function () {
             try {
@@ -8150,7 +8173,7 @@
         }
 
         function getDriveRedirectUri() {
-            return `${window.location.origin}/oauth2callback.html`;
+            return `${window.location.origin}/?oauth_callback=1`;
         }
 
         function openAndroidAuthUrl(authUrl) {
