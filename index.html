@@ -22,6 +22,11 @@
             display: none !important;
         }
 
+        html[data-inhouse-app="true"] #btn-drive-fullscreen,
+        html[data-inhouse-app="true"] #btn-fullscreen {
+            display: none !important;
+        }
+
         @property --toolbar-rotate {
             syntax: '<angle>';
             inherits: true;
@@ -4301,6 +4306,45 @@
         const PDFJS_CMAP_URL = `${PDFJS_ASSETS_BASE_URL}/cmaps/`;
         const PDFJS_STANDARD_FONT_URL = `${PDFJS_ASSETS_BASE_URL}/standard_fonts/`;
         pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+
+        const INHOUSE_APP_STORAGE_KEY = 'inhouseNotesAppMode';
+
+        function detectInhouseApp() {
+            const params = new URLSearchParams(window.location.search);
+            const explicitAppFlag = params.get('inhouse_app') || params.get('app');
+            const userAgent = navigator.userAgent || '';
+            const fromAppUserAgent = /\bInhouseNotesApp\/\d+(?:\.\d+)?\b/i.test(userAgent);
+            if (explicitAppFlag === '0' || explicitAppFlag === 'false') {
+                try {
+                    localStorage.removeItem(INHOUSE_APP_STORAGE_KEY);
+                } catch (err) {}
+                return false;
+            }
+            if (explicitAppFlag === '1' || explicitAppFlag === 'true' || fromAppUserAgent) {
+                try {
+                    localStorage.setItem(INHOUSE_APP_STORAGE_KEY, '1');
+                } catch (err) {}
+                return true;
+            }
+            try {
+                return localStorage.getItem(INHOUSE_APP_STORAGE_KEY) === '1';
+            } catch (err) {
+                return false;
+            }
+        }
+
+        const isInhouseApp = detectInhouseApp();
+        document.documentElement.dataset.inhouseApp = isInhouseApp ? 'true' : 'false';
+        window.INHOUSE_NOTES_APP = isInhouseApp;
+
+        function applyInhouseAppMode() {
+            if (!isInhouseApp) return;
+            document.querySelectorAll('#btn-drive-fullscreen, #btn-fullscreen').forEach(button => {
+                button.remove();
+            });
+        }
+
+        applyInhouseAppMode();
 
         // Native Canvas Template Render (replaces previous heavy SVG_BACKGROUND)
         // Template background cache: render once, reuse as single drawImage
@@ -12552,7 +12596,10 @@
                 pdfInput.click();
             });
             pdfInput.addEventListener('change', importPDF);
-            document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+            const fullscreenBtn = document.getElementById('btn-fullscreen');
+            if (fullscreenBtn) {
+                fullscreenBtn.addEventListener('click', toggleFullscreen);
+            }
             if (driveFullscreenBtn) {
                 driveFullscreenBtn.addEventListener('click', toggleFullscreen);
             }
