@@ -4753,7 +4753,7 @@
         //   3) Add `inhousenotes://oauth2callback` as an authorized redirect (Android clients accept this implicitly).
         //   4) Rebuild the APK once (MainActivity must forward query params, see android app/html_to_apk_builder.py).
         const ANDROID_OAUTH_CLIENT_ID = '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com';
-        const ANDROID_PKCE_REDIRECT_URI = 'inhousenotes://oauth2callback';
+        const ANDROID_PKCE_REDIRECT_URI = 'com.local.inhousenotes:/oauth2redirect';
         const useAndroidPkceFlow = () => isInhouseApp && !!ANDROID_OAUTH_CLIENT_ID;
         const THEME_KEY = 'inhouse-theme';
         const VIEW_MODE_KEY = 'notebook-view-mode-v1';
