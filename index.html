@@ -2232,6 +2232,49 @@
             font-size: 0.875rem;
         }
 
+        /* Welcome view (signed-out home) */
+        #welcome-view {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 32px;
+            z-index: 1300;
+            padding: 24px;
+        }
+
+        #welcome-view.hidden {
+            display: none;
+        }
+
+        #welcome-view .welcome-logo {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+        }
+
+        #welcome-view .welcome-logo svg {
+            width: 160px;
+            height: 96px;
+        }
+
+        #welcome-view .welcome-logo .brand-name {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: 0.5px;
+        }
+
+        #welcome-view #btn-welcome-login {
+            min-height: 44px;
+            padding: 10px 32px;
+            font-size: 1rem;
+        }
+
         /* Drive home */
         #drive-home {
             position: fixed;
@@ -3687,6 +3730,17 @@
 </head>
 
 <body>
+    <div id="welcome-view" class="hidden">
+        <div class="welcome-logo">
+            <svg viewBox="0 0 40 24" fill="none" aria-hidden="true">
+                <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round"
+                    stroke-linejoin="round" fill="none" />
+            </svg>
+            <span class="brand-name">inhouse notes</span>
+        </div>
+        <button class="btn btn-primary" id="btn-welcome-login" type="button">Sign in</button>
+    </div>
+
     <div id="drive-home">
         <div class="drive-topbar">
             <div class="drive-brand">
@@ -5428,16 +5482,33 @@
             }
 
             const lastView = loadViewMode();
+            const hasStoredDriveToken = (() => {
+                try {
+                    const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
+                    if (!raw) return false;
+                    const parsed = JSON.parse(raw);
+                    return !!(parsed && parsed.token && parsed.expiry && Date.now() < parsed.expiry - 60000);
+                } catch (e) { return false; }
+            })();
+            const isSignedInAtBoot = !!driveAccessToken || hasStoredDriveToken;
             if (window.pendingSharedDriveId) {
                 if (driveAccessToken) {
                     showEditorView();
                 } else {
                     showDriveHome();
                 }
+            } else if (!isSignedInAtBoot) {
+                showWelcomeView();
             } else if (lastView === 'drive') {
                 showDriveHome();
-            } else {
+            } else if (state.driveFileId) {
                 showEditorView();
+            } else {
+                showDriveHome();
+            }
+            const welcomeLoginBtn = document.getElementById('btn-welcome-login');
+            if (welcomeLoginBtn) {
+                welcomeLoginBtn.addEventListener('click', () => signInDrive());
             }
             if (state.driveFileId) {
                 updateViewerModeUI();
@@ -7943,6 +8014,8 @@
         }
 
         function showDriveHome() {
+            const welcomeView = document.getElementById('welcome-view');
+            if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
             closePresencePopup();
@@ -7950,6 +8023,17 @@
             stopCollabPolling();
             clearDriveSyncTimers();
             saveViewMode('drive');
+        }
+
+        function showWelcomeView() {
+            const welcomeView = document.getElementById('welcome-view');
+            if (welcomeView) welcomeView.classList.remove('hidden');
+            if (driveHome) driveHome.classList.add('hidden');
+            if (editorView) editorView.classList.add('hidden');
+            closePresencePopup();
+            closeDriveProfileMenus();
+            stopCollabPolling();
+            clearDriveSyncTimers();
         }
 
         function getEditorTopOffset() {
@@ -7999,6 +8083,8 @@
         }
 
         function showEditorView() {
+            const welcomeView = document.getElementById('welcome-view');
+            if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.remove('hidden');
             requestAnimationFrame(() => {
@@ -8010,6 +8096,14 @@
 
         function initDriveAuth() {
             const hadRedirectToken = processDriveOAuthRedirect();
+            const hasStoredToken = loadDriveTokenFromStorage();
+            if (isInhouseApp) {
+                updateDriveAuthUI();
+                if (hadRedirectToken || hasStoredToken) {
+                    refreshDriveFiles();
+                }
+                return;
+            }
             if (!window.google || !google.accounts || !google.accounts.oauth2) {
                 setTimeout(initDriveAuth, 200);
                 return;
@@ -8020,12 +8114,8 @@
                 callback: () => { },
                 error_callback: (err) => {
                     console.warn('Google popup auth failed:', err);
-                    if (isInhouseApp) {
-                        startDriveRedirectSignIn();
-                    }
                 }
             });
-            const hasStoredToken = loadDriveTokenFromStorage();
             updateDriveAuthUI();
             if (hadRedirectToken) {
                 refreshDriveFiles();
@@ -8060,8 +8150,18 @@
             authUrl.searchParams.set('response_type', 'token');
             authUrl.searchParams.set('scope', DRIVE_SCOPE);
             authUrl.searchParams.set('include_granted_scopes', 'true');
-            authUrl.searchParams.set('prompt', 'consent');
             authUrl.searchParams.set('state', 'inhouse_notes_app');
+            try {
+                const hint = localStorage.getItem('drive-hint-email');
+                if (hint) authUrl.searchParams.set('login_hint', hint);
+            } catch (err) {}
+            const hasFreshConsent = (() => {
+                try { return localStorage.getItem('drive-consent-granted') === '1'; }
+                catch (err) { return false; }
+            })();
+            if (!hasFreshConsent) {
+                authUrl.searchParams.set('prompt', 'consent');
+            }
             const url = authUrl.toString();
             if (isInhouseApp && openAndroidAuthUrl(url)) {
                 if (driveStatusEl) driveStatusEl.textContent = 'Complete sign-in in the Google window.';
@@ -8084,6 +8184,7 @@
             driveAccessToken = token;
             driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
             saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+            try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
             scheduleDriveTokenRefresh();
             updateDriveAuthUI();
             try {
@@ -8144,6 +8245,10 @@
                 }, 500);
             }
             if (signedIn) {
+                const welcomeViewEl = document.getElementById('welcome-view');
+                if (welcomeViewEl && !welcomeViewEl.classList.contains('hidden')) {
+                    showDriveHome();
+                }
                 sharedLinkSignInPrompted = false;
                 loadDriveProfile();
                 restorePdfBackgroundsIfNeeded();
@@ -8296,8 +8401,10 @@
             clearDriveTokenStorage();
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
             try { localStorage.removeItem('drive-hint-email'); } catch (e) { }
+            try { localStorage.removeItem('drive-consent-granted'); } catch (e) { }
             clearDriveSession();
             updateDriveAuthUI();
+            showWelcomeView();
         }
 
         function updateDriveProfileUI(profile) {
