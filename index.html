@@ -8039,10 +8039,7 @@
         }
 
         function getDriveRedirectUri() {
-            const redirectUrl = new URL(window.location.href);
-            redirectUrl.search = '';
-            redirectUrl.hash = '';
-            return redirectUrl.toString();
+            return `${window.location.origin}/oauth2callback.html`;
         }
 
         function startDriveRedirectSignIn() {
