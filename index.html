@@ -3237,6 +3237,31 @@
             border-radius: 6px;
         }
 
+        /* Mirror the mobile sizing applied to real Drive cards on narrow screens */
+        @media (max-width: 720px) {
+            #drive-home .drive-card-skeleton {
+                padding: 10px;
+                gap: 8px;
+                border-radius: 12px;
+                min-height: 110px;
+            }
+
+            #drive-home .drive-card-skeleton .skeleton-preview {
+                border-radius: 8px;
+            }
+
+            #drive-home .drive-recents .drive-card-skeleton {
+                min-width: 156px;
+                flex: 0 0 156px;
+            }
+
+            #drive-home .drive-folder-card-skeleton {
+                padding: 10px 38px 10px 12px;
+                gap: 10px;
+                border-radius: 10px;
+            }
+        }
+
         #editor-view.hidden {
             display: none;
         }
@@ -10321,10 +10346,10 @@
                 return;
             }
             driveStatusEl.textContent = 'Loading your Drive...';
+            renderDriveBreadcrumbs();
             showDriveSkeletons();
             try {
                 await ensureDriveToken(false);
-                renderDriveBreadcrumbs();
                 await Promise.all([refreshDriveRecents(), refreshDriveStarred(), refreshDriveShared(), refreshDriveFolderContents()]);
                 updateDriveStatusCounts();
             } catch (err) {
