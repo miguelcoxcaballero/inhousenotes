@@ -8009,6 +8009,7 @@
         }
 
         function initDriveAuth() {
+            const hadRedirectToken = processDriveOAuthRedirect();
             if (!window.google || !google.accounts || !google.accounts.oauth2) {
                 setTimeout(initDriveAuth, 200);
                 return;
@@ -8016,17 +8017,70 @@
             driveTokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: GOOGLE_CLIENT_ID,
                 scope: DRIVE_SCOPE,
-                callback: () => { }
+                callback: () => { },
+                error_callback: (err) => {
+                    console.warn('Google popup auth failed:', err);
+                    if (isInhouseApp) {
+                        startDriveRedirectSignIn();
+                    }
+                }
             });
             const hasStoredToken = loadDriveTokenFromStorage();
             updateDriveAuthUI();
-            if (hasStoredToken) {
+            if (hadRedirectToken) {
+                refreshDriveFiles();
+            } else if (hasStoredToken) {
                 refreshDriveFiles();
             } else if (localStorage.getItem(DRIVE_REMEMBER_KEY) === '1') {
                 ensureDriveToken(false)
                     .then(() => refreshDriveFiles())
                     .catch(() => updateDriveAuthUI());
             }
+        }
+
+        function getDriveRedirectUri() {
+            const redirectUrl = new URL(window.location.href);
+            redirectUrl.search = '';
+            redirectUrl.hash = '';
+            return redirectUrl.toString();
+        }
+
+        function startDriveRedirectSignIn() {
+            try {
+                localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
+            } catch (err) {}
+            const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+            authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+            authUrl.searchParams.set('redirect_uri', getDriveRedirectUri());
+            authUrl.searchParams.set('response_type', 'token');
+            authUrl.searchParams.set('scope', DRIVE_SCOPE);
+            authUrl.searchParams.set('include_granted_scopes', 'true');
+            authUrl.searchParams.set('prompt', 'consent');
+            authUrl.searchParams.set('state', 'inhouse_notes_app');
+            window.location.assign(authUrl.toString());
+        }
+
+        function processDriveOAuthRedirect() {
+            if (!window.location.hash || !window.location.hash.includes('access_token=')) {
+                const oauthError = new URLSearchParams((window.location.hash || '').replace(/^#/, '')).get('error');
+                if (oauthError && driveStatusEl) {
+                    driveStatusEl.textContent = `Sign-in failed: ${oauthError}`;
+                }
+                return false;
+            }
+            const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+            const token = params.get('access_token');
+            if (!token) return false;
+            const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
+            driveAccessToken = token;
+            driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
+            saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+            scheduleDriveTokenRefresh();
+            updateDriveAuthUI();
+            try {
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+            } catch (err) {}
+            return true;
         }
 
         function updateDriveAuthUI() {
@@ -8160,6 +8214,10 @@
         }
 
         function signInDrive() {
+            if (isInhouseApp) {
+                startDriveRedirectSignIn();
+                return;
+            }
             ensureDriveToken(true)
                 .then(() => refreshDriveFiles())
                 .catch(() => {
