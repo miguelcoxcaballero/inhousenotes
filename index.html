@@ -5,6 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>inhouse notes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer data-auto_prompt="false"></script>
@@ -2268,6 +2271,11 @@
             font-weight: 600;
             color: var(--text-primary);
             letter-spacing: 0.5px;
+            visibility: hidden;
+        }
+
+        #welcome-view.fonts-ready .welcome-logo .brand-name {
+            visibility: visible;
         }
 
         #welcome-view #btn-welcome-login {
@@ -3763,7 +3771,8 @@
                     var parsed = JSON.parse(raw);
                     hasToken = !!(parsed && parsed.token && parsed.expiry && Date.now() < parsed.expiry - 60000);
                 }
-                window.__INHOUSE_BOOT_SIGNED_IN__ = hasToken;
+                var hasRefresh = !!localStorage.getItem('drive-refresh-token-v1');
+                window.__INHOUSE_BOOT_SIGNED_IN__ = hasToken || hasRefresh;
             } catch (e) {
                 window.__INHOUSE_BOOT_SIGNED_IN__ = false;
             }
@@ -3780,9 +3789,20 @@
         <button class="btn btn-primary" id="btn-welcome-login" type="button">Sign in</button>
     </div>
     <script>
-        if (window.__INHOUSE_BOOT_SIGNED_IN__) {
-            document.getElementById('welcome-view').classList.add('hidden');
-        }
+        (function () {
+            var welcome = document.getElementById('welcome-view');
+            if (window.__INHOUSE_BOOT_SIGNED_IN__) {
+                welcome.classList.add('hidden');
+            }
+            var reveal = function () { welcome.classList.add('fonts-ready'); };
+            if (document.fonts && document.fonts.load) {
+                document.fonts.load('600 2.25rem Comfortaa').then(reveal, reveal);
+            } else {
+                reveal();
+            }
+            // Safety net so the text is never permanently invisible on slow networks.
+            setTimeout(reveal, 3000);
+        })();
     </script>
 
     <div id="drive-home" class="hidden">
@@ -4723,6 +4743,18 @@
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = 'drive-session-v1';
+        const DRIVE_REFRESH_TOKEN_KEY = 'drive-refresh-token-v1';
+        const DRIVE_PKCE_VERIFIER_KEY = 'drive-pkce-verifier-v1';
+        // Android OAuth client (type "Android") for PKCE + offline refresh tokens.
+        // Leave empty to keep using the implicit-flow web client.
+        // To enable refresh-token persistence in the Android app:
+        //   1) Create an "Android" OAuth client in Google Cloud Console with the APK package + SHA-1.
+        //   2) Paste the client ID below.
+        //   3) Add `inhousenotes://oauth2callback` as an authorized redirect (Android clients accept this implicitly).
+        //   4) Rebuild the APK once (MainActivity must forward query params, see android app/html_to_apk_builder.py).
+        const ANDROID_OAUTH_CLIENT_ID = '435784295430-9ta7t92s33r25bamvrnbmgt65iihqpfo.apps.googleusercontent.com';
+        const ANDROID_PKCE_REDIRECT_URI = 'inhousenotes://oauth2callback';
+        const useAndroidPkceFlow = () => isInhouseApp && !!ANDROID_OAUTH_CLIENT_ID;
         const THEME_KEY = 'inhouse-theme';
         const VIEW_MODE_KEY = 'notebook-view-mode-v1';
         const DATA_STORAGE_KEY = 'notebook-data-v3';
@@ -5534,7 +5566,11 @@
                     return !!(parsed && parsed.token && parsed.expiry && Date.now() < parsed.expiry - 60000);
                 } catch (e) { return false; }
             })();
-            const isSignedInAtBoot = !!driveAccessToken || hasStoredDriveToken;
+            const hasStoredRefreshToken = (() => {
+                try { return !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY); }
+                catch (e) { return false; }
+            })();
+            const isSignedInAtBoot = !!driveAccessToken || hasStoredDriveToken || hasStoredRefreshToken;
             if (window.pendingSharedDriveId) {
                 if (driveAccessToken) {
                     showEditorView();
@@ -8145,6 +8181,17 @@
                 updateDriveAuthUI();
                 if (hadRedirectToken || hasStoredToken) {
                     refreshDriveFiles();
+                } else if (useAndroidPkceFlow()) {
+                    let hasRefresh = false;
+                    try { hasRefresh = !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
+                    if (hasRefresh) {
+                        refreshDriveAccessTokenWithRefreshToken()
+                            .then(() => refreshDriveFiles())
+                            .catch(err => {
+                                console.warn('Silent token refresh failed:', err);
+                                updateDriveAuthUI();
+                            });
+                    }
                 }
                 return;
             }
@@ -8184,7 +8231,136 @@
             return false;
         }
 
+        // ---- PKCE + refresh-token flow (Android client only) ----
+        function generatePkceVerifier() {
+            const bytes = new Uint8Array(32);
+            crypto.getRandomValues(bytes);
+            return base64UrlEncodeBytes(bytes);
+        }
+
+        function base64UrlEncodeBytes(bytes) {
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        async function pkceChallengeFromVerifier(verifier) {
+            const data = new TextEncoder().encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return base64UrlEncodeBytes(new Uint8Array(digest));
+        }
+
+        async function startAndroidPkceSignIn() {
+            try {
+                localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
+            } catch (err) {}
+            const verifier = generatePkceVerifier();
+            try { localStorage.setItem(DRIVE_PKCE_VERIFIER_KEY, verifier); } catch (err) {}
+            const challenge = await pkceChallengeFromVerifier(verifier);
+            const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+            authUrl.searchParams.set('client_id', ANDROID_OAUTH_CLIENT_ID);
+            authUrl.searchParams.set('redirect_uri', ANDROID_PKCE_REDIRECT_URI);
+            authUrl.searchParams.set('response_type', 'code');
+            authUrl.searchParams.set('scope', DRIVE_SCOPE);
+            authUrl.searchParams.set('access_type', 'offline');
+            authUrl.searchParams.set('include_granted_scopes', 'true');
+            authUrl.searchParams.set('code_challenge', challenge);
+            authUrl.searchParams.set('code_challenge_method', 'S256');
+            authUrl.searchParams.set('state', 'inhouse_notes_pkce');
+            try {
+                const hint = localStorage.getItem('drive-hint-email');
+                if (hint) authUrl.searchParams.set('login_hint', hint);
+            } catch (err) {}
+            const hasFreshConsent = (() => {
+                try { return localStorage.getItem('drive-consent-granted') === '1'; }
+                catch (e) { return false; }
+            })();
+            if (!hasFreshConsent) {
+                authUrl.searchParams.set('prompt', 'consent');
+            }
+            const url = authUrl.toString();
+            if (!openAndroidAuthUrl(url)) {
+                console.warn('PKCE sign-in: Android bridge unavailable, falling back to web flow.');
+                window.location.assign(url);
+                return;
+            }
+            if (driveStatusEl) driveStatusEl.textContent = 'Complete sign-in in the Google window.';
+        }
+
+        async function exchangeAuthCodeForTokens(code) {
+            let verifier = '';
+            try { verifier = localStorage.getItem(DRIVE_PKCE_VERIFIER_KEY) || ''; } catch (err) {}
+            if (!verifier) throw new Error('Missing PKCE verifier');
+            const body = new URLSearchParams();
+            body.set('client_id', ANDROID_OAUTH_CLIENT_ID);
+            body.set('code', code);
+            body.set('code_verifier', verifier);
+            body.set('grant_type', 'authorization_code');
+            body.set('redirect_uri', ANDROID_PKCE_REDIRECT_URI);
+            const res = await fetch('https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+            if (!res.ok) {
+                const text = await res.text().catch(() => '');
+                throw new Error(`Token exchange failed: ${res.status} ${text}`);
+            }
+            const data = await res.json();
+            try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (err) {}
+            applyTokenResponse(data, /*isRefresh*/ false);
+            return data;
+        }
+
+        async function refreshDriveAccessTokenWithRefreshToken() {
+            let refreshToken = '';
+            try { refreshToken = localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY) || ''; } catch (err) {}
+            if (!refreshToken) throw new Error('No refresh token stored');
+            if (!ANDROID_OAUTH_CLIENT_ID) throw new Error('Android OAuth client ID not configured');
+            const body = new URLSearchParams();
+            body.set('client_id', ANDROID_OAUTH_CLIENT_ID);
+            body.set('grant_type', 'refresh_token');
+            body.set('refresh_token', refreshToken);
+            const res = await fetch('https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+            if (!res.ok) {
+                const text = await res.text().catch(() => '');
+                if (res.status === 400 || res.status === 401) {
+                    // Refresh token revoked or invalid — drop it so user re-auths.
+                    try { localStorage.removeItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
+                }
+                throw new Error(`Refresh failed: ${res.status} ${text}`);
+            }
+            const data = await res.json();
+            applyTokenResponse(data, /*isRefresh*/ true);
+            return driveAccessToken;
+        }
+
+        function applyTokenResponse(data, isRefresh) {
+            if (!data || !data.access_token) throw new Error('Token response missing access_token');
+            const expiresIn = parseInt(data.expires_in || '3600', 10);
+            driveAccessToken = data.access_token;
+            driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
+            saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+            if (data.refresh_token) {
+                try { localStorage.setItem(DRIVE_REFRESH_TOKEN_KEY, data.refresh_token); } catch (err) {}
+            }
+            try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
+            scheduleDriveTokenRefresh();
+            updateDriveAuthUI();
+        }
+
         function startDriveRedirectSignIn() {
+            if (useAndroidPkceFlow()) {
+                startAndroidPkceSignIn().catch(err => {
+                    console.error('PKCE sign-in failed:', err);
+                    if (driveStatusEl) driveStatusEl.textContent = 'Sign-in failed. Try again.';
+                });
+                return;
+            }
             try {
                 localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
             } catch (err) {}
@@ -8246,9 +8422,22 @@
             return completeDriveSignInFromParams(new URLSearchParams(rawHash || rawSearch));
         }
 
-        window.handleInhouseNativeOAuth = (fragment) => {
-            const raw = String(fragment || '').replace(/^#/, '');
-            const signedIn = completeDriveSignInFromParams(new URLSearchParams(raw));
+        window.handleInhouseNativeOAuth = (payload) => {
+            const raw = String(payload || '').replace(/^[#?]/, '');
+            const params = new URLSearchParams(raw);
+            // PKCE flow: redirect carries ?code=...
+            const code = params.get('code');
+            if (code && useAndroidPkceFlow()) {
+                exchangeAuthCodeForTokens(code)
+                    .then(() => refreshDriveFiles())
+                    .catch(err => {
+                        console.error('Auth code exchange failed:', err);
+                        if (driveStatusEl) driveStatusEl.textContent = 'Sign-in failed. Try again.';
+                    });
+                return true;
+            }
+            // Implicit flow fallback: #access_token=...
+            const signedIn = completeDriveSignInFromParams(params);
             if (signedIn) {
                 refreshDriveFiles();
             }
@@ -8360,6 +8549,18 @@
             if (driveAccessToken && Date.now() < driveTokenExpiry - 60000) {
                 return Promise.resolve(driveAccessToken);
             }
+            // Android PKCE path: silently refresh using stored refresh_token, no popup ever.
+            if (useAndroidPkceFlow()) {
+                let hasRefresh = false;
+                try { hasRefresh = !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
+                if (hasRefresh) {
+                    return refreshDriveAccessTokenWithRefreshToken();
+                }
+                if (interactive) {
+                    startAndroidPkceSignIn().catch(() => { });
+                }
+                return Promise.reject(new Error('No refresh token; user must sign in'));
+            }
             if (!driveTokenClient) {
                 return Promise.reject(new Error('Drive auth not ready'));
             }
@@ -8446,6 +8647,8 @@
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
             try { localStorage.removeItem('drive-hint-email'); } catch (e) { }
             try { localStorage.removeItem('drive-consent-granted'); } catch (e) { }
+            try { localStorage.removeItem(DRIVE_REFRESH_TOKEN_KEY); } catch (e) { }
+            try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (e) { }
             clearDriveSession();
             updateDriveAuthUI();
             showWelcomeView();
