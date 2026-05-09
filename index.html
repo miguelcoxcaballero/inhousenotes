@@ -3137,6 +3137,106 @@
             opacity: 0.75;
         }
 
+        /* Skeleton placeholders shown while Drive content is loading */
+        @keyframes drive-skeleton-shimmer {
+            0% { background-position: -240px 0; }
+            100% { background-position: 240px 0; }
+        }
+
+        .drive-skeleton-shimmer,
+        .drive-card-skeleton .skeleton-bar,
+        .drive-card-skeleton .skeleton-preview,
+        .drive-folder-card-skeleton .skeleton-bar,
+        .drive-folder-card-skeleton .skeleton-icon {
+            background: linear-gradient(90deg,
+                rgba(0, 0, 0, 0.05) 0%,
+                rgba(0, 0, 0, 0.10) 50%,
+                rgba(0, 0, 0, 0.05) 100%);
+            background-size: 480px 100%;
+            animation: drive-skeleton-shimmer 1.2s infinite linear;
+            border-radius: 6px;
+        }
+
+        [data-theme="dark"] .drive-card-skeleton .skeleton-bar,
+        [data-theme="dark"] .drive-card-skeleton .skeleton-preview,
+        [data-theme="dark"] .drive-folder-card-skeleton .skeleton-bar,
+        [data-theme="dark"] .drive-folder-card-skeleton .skeleton-icon {
+            background: linear-gradient(90deg,
+                rgba(255, 255, 255, 0.05) 0%,
+                rgba(255, 255, 255, 0.10) 50%,
+                rgba(255, 255, 255, 0.05) 100%);
+            background-size: 480px 100%;
+            animation: drive-skeleton-shimmer 1.2s infinite linear;
+        }
+
+        .drive-card-skeleton {
+            background: white;
+            border-radius: 14px;
+            padding: 12px;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 128px;
+            pointer-events: none;
+        }
+
+        [data-theme="dark"] .drive-card-skeleton,
+        [data-theme="dark"] .drive-folder-card-skeleton {
+            background: var(--bg-secondary);
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .drive-card-skeleton .skeleton-preview {
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            border-radius: 10px;
+        }
+
+        .drive-card-skeleton .skeleton-bar.title {
+            height: 12px;
+            width: 78%;
+            border-radius: 6px;
+        }
+
+        .drive-card-skeleton .skeleton-bar.meta {
+            height: 9px;
+            width: 50%;
+            border-radius: 6px;
+        }
+
+        .drive-recents .drive-card-skeleton {
+            min-width: 176px;
+            flex: 0 0 176px;
+        }
+
+        .drive-folder-card-skeleton {
+            background: white;
+            border-radius: 12px;
+            padding: 12px 42px 12px 14px;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            min-height: 56px;
+            pointer-events: none;
+        }
+
+        .drive-folder-card-skeleton .skeleton-icon {
+            width: 36px;
+            min-width: 36px;
+            height: 28px;
+            border-radius: 6px;
+        }
+
+        .drive-folder-card-skeleton .skeleton-bar {
+            height: 12px;
+            width: 70%;
+            border-radius: 6px;
+        }
+
         #editor-view.hidden {
             display: none;
         }
@@ -3233,12 +3333,95 @@
 
         .share-modal-loading {
             display: none;
+            flex-direction: column;
+            gap: 16px;
+            padding: 18px 20px 22px 20px;
+        }
+
+        .share-modal-loading .skeleton-section-title {
+            height: 11px;
+            width: 38%;
+            border-radius: 6px;
+        }
+
+        .share-modal-loading .skeleton-row {
+            display: flex;
             align-items: center;
-            justify-content: center;
-            min-height: 200px;
-            padding: 22px;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
+            gap: 12px;
+        }
+
+        .share-modal-loading .skeleton-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            flex: 0 0 36px;
+        }
+
+        .share-modal-loading .skeleton-row-text {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .share-modal-loading .skeleton-bar.name {
+            height: 11px;
+            width: 55%;
+            border-radius: 6px;
+        }
+
+        .share-modal-loading .skeleton-bar.meta {
+            height: 9px;
+            width: 35%;
+            border-radius: 6px;
+        }
+
+        .share-modal-loading .skeleton-divider {
+            height: 1px;
+            background: rgba(0, 0, 0, 0.08);
+            margin: 4px 0;
+        }
+
+        [data-theme="dark"] .share-modal-loading .skeleton-divider {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .share-modal-loading .skeleton-input {
+            height: 38px;
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        .share-modal-loading .skeleton-button {
+            height: 38px;
+            width: 140px;
+            border-radius: 8px;
+        }
+
+        .share-modal-loading .skeleton-section-title,
+        .share-modal-loading .skeleton-avatar,
+        .share-modal-loading .skeleton-bar,
+        .share-modal-loading .skeleton-input,
+        .share-modal-loading .skeleton-button {
+            background: linear-gradient(90deg,
+                rgba(0, 0, 0, 0.05) 0%,
+                rgba(0, 0, 0, 0.10) 50%,
+                rgba(0, 0, 0, 0.05) 100%);
+            background-size: 480px 100%;
+            animation: drive-skeleton-shimmer 1.2s infinite linear;
+        }
+
+        [data-theme="dark"] .share-modal-loading .skeleton-section-title,
+        [data-theme="dark"] .share-modal-loading .skeleton-avatar,
+        [data-theme="dark"] .share-modal-loading .skeleton-bar,
+        [data-theme="dark"] .share-modal-loading .skeleton-input,
+        [data-theme="dark"] .share-modal-loading .skeleton-button {
+            background: linear-gradient(90deg,
+                rgba(255, 255, 255, 0.05) 0%,
+                rgba(255, 255, 255, 0.10) 50%,
+                rgba(255, 255, 255, 0.05) 100%);
+            background-size: 480px 100%;
+            animation: drive-skeleton-shimmer 1.2s infinite linear;
         }
 
         #share-modal-overlay.loading #share-owner-info,
@@ -4358,7 +4541,34 @@
                     </svg>
                 </button>
             </div>
-            <div class="share-modal-loading" id="share-modal-loading">Loading sharing options...</div>
+            <div class="share-modal-loading" id="share-modal-loading" aria-hidden="true">
+                <div class="skeleton-section-title"></div>
+                <div class="skeleton-row">
+                    <div class="skeleton-avatar"></div>
+                    <div class="skeleton-row-text">
+                        <div class="skeleton-bar name"></div>
+                        <div class="skeleton-bar meta"></div>
+                    </div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton-avatar"></div>
+                    <div class="skeleton-row-text">
+                        <div class="skeleton-bar name" style="width:48%;"></div>
+                        <div class="skeleton-bar meta" style="width:30%;"></div>
+                    </div>
+                </div>
+                <div class="skeleton-row">
+                    <div class="skeleton-avatar"></div>
+                    <div class="skeleton-row-text">
+                        <div class="skeleton-bar name" style="width:60%;"></div>
+                        <div class="skeleton-bar meta" style="width:38%;"></div>
+                    </div>
+                </div>
+                <div class="skeleton-divider"></div>
+                <div class="skeleton-input"></div>
+                <div class="skeleton-input" style="width:60%;"></div>
+                <div class="skeleton-button"></div>
+            </div>
 
             <div class="share-owner-info hidden" id="share-owner-info"
                 style="border-bottom:1px solid rgba(0,0,0,0.1);padding-bottom:16px;flex-direction:column;align-items:stretch;">
@@ -9969,6 +10179,54 @@
             driveStatusEl.textContent = `Recents: ${recentCount} | Starred: ${starredCount} | Shared: ${sharedCount} | This folder: ${folderCount} PDF${folderCount !== 1 ? 's' : ''}.`;
         }
 
+        function buildDriveCardSkeleton() {
+            const card = document.createElement('div');
+            card.className = 'drive-card-skeleton';
+            card.setAttribute('aria-hidden', 'true');
+            const preview = document.createElement('div');
+            preview.className = 'skeleton-preview';
+            const title = document.createElement('div');
+            title.className = 'skeleton-bar title';
+            const meta = document.createElement('div');
+            meta.className = 'skeleton-bar meta';
+            card.appendChild(preview);
+            card.appendChild(title);
+            card.appendChild(meta);
+            return card;
+        }
+
+        function buildDriveFolderSkeleton() {
+            const card = document.createElement('div');
+            card.className = 'drive-folder-card-skeleton';
+            card.setAttribute('aria-hidden', 'true');
+            const icon = document.createElement('div');
+            icon.className = 'skeleton-icon';
+            const bar = document.createElement('div');
+            bar.className = 'skeleton-bar';
+            card.appendChild(icon);
+            card.appendChild(bar);
+            return card;
+        }
+
+        function fillSkeletons(container, count, builder) {
+            if (!container) return;
+            container.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                container.appendChild(builder());
+            }
+        }
+
+        function showDriveSkeletons() {
+            fillSkeletons(driveRecentsEl, 6, buildDriveCardSkeleton);
+            fillSkeletons(driveStarredEl, 6, buildDriveCardSkeleton);
+            fillSkeletons(driveSharedEl, 6, buildDriveCardSkeleton);
+            fillSkeletons(driveFoldersEl, 4, buildDriveFolderSkeleton);
+            fillSkeletons(driveFolderFilesEl, 8, buildDriveCardSkeleton);
+            if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
+            if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
+            if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
+        }
+
         async function refreshDriveFiles() {
             if (!driveStatusEl) return;
             if (!driveAccessToken) {
@@ -9976,6 +10234,7 @@
                 return;
             }
             driveStatusEl.textContent = 'Loading your Drive...';
+            showDriveSkeletons();
             try {
                 await ensureDriveToken(false);
                 renderDriveBreadcrumbs();
