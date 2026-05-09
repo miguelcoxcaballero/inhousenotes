@@ -2526,6 +2526,43 @@
             font-size: 0.78rem;
             color: var(--text-secondary);
             opacity: 0.7;
+            line-height: 1.45;
+            min-height: calc(0.78rem * 1.45);
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        @media (max-width: 720px) {
+            /* On narrow screens the post-load counts text wraps to 2 lines.
+               Reserve that height during loading so nothing shifts when data arrives. */
+            .drive-status {
+                min-height: calc(0.78rem * 1.45 * 2);
+                align-items: flex-start;
+            }
+        }
+
+        .drive-status-skeleton {
+            display: inline-block;
+            height: 11px;
+            width: 240px;
+            max-width: 100%;
+            border-radius: 6px;
+            background: linear-gradient(90deg,
+                rgba(0, 0, 0, 0.05) 0%,
+                rgba(0, 0, 0, 0.10) 50%,
+                rgba(0, 0, 0, 0.05) 100%);
+            background-size: 480px 100%;
+            animation: drive-skeleton-shimmer 1.2s infinite linear;
+        }
+
+        [data-theme="dark"] .drive-status-skeleton {
+            background: linear-gradient(90deg,
+                rgba(255, 255, 255, 0.05) 0%,
+                rgba(255, 255, 255, 0.10) 50%,
+                rgba(255, 255, 255, 0.05) 100%);
+            background-size: 480px 100%;
         }
 
         .drive-section {
@@ -10288,6 +10325,7 @@
             const starredCount = driveStarredCache.length;
             const sharedCount = driveSharedCache.length;
             const folderCount = driveFolderCache.files.length;
+            driveStatusEl.removeAttribute('aria-label');
             driveStatusEl.textContent = `Recents: ${recentCount} | Starred: ${starredCount} | Shared: ${sharedCount} | This folder: ${folderCount} PDF${folderCount !== 1 ? 's' : ''}.`;
         }
 
@@ -10345,7 +10383,8 @@
                 updateDriveAuthUI();
                 return;
             }
-            driveStatusEl.textContent = 'Loading your Drive...';
+            driveStatusEl.innerHTML = '<span class="drive-status-skeleton" aria-hidden="true"></span>';
+            driveStatusEl.setAttribute('aria-label', 'Loading your Drive');
             renderDriveBreadcrumbs();
             showDriveSkeletons();
             try {
