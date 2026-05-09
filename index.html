@@ -8042,6 +8042,14 @@
             return `${window.location.origin}/oauth2callback.html`;
         }
 
+        function openAndroidAuthUrl(authUrl) {
+            if (window.InhouseNative && typeof window.InhouseNative.openAuthUrl === 'function') {
+                window.InhouseNative.openAuthUrl(authUrl);
+                return true;
+            }
+            return false;
+        }
+
         function startDriveRedirectSignIn() {
             try {
                 localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
@@ -8054,7 +8062,12 @@
             authUrl.searchParams.set('include_granted_scopes', 'true');
             authUrl.searchParams.set('prompt', 'consent');
             authUrl.searchParams.set('state', 'inhouse_notes_app');
-            window.location.assign(authUrl.toString());
+            const url = authUrl.toString();
+            if (isInhouseApp && openAndroidAuthUrl(url)) {
+                if (driveStatusEl) driveStatusEl.textContent = 'Complete sign-in in the Google window.';
+                return;
+            }
+            window.location.assign(url);
         }
 
         function processDriveOAuthRedirect() {
