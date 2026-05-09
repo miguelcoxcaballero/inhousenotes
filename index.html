@@ -2535,9 +2535,12 @@
         }
 
         @media (max-width: 720px) {
-            /* On narrow screens the post-load counts text wraps to 2 lines.
-               Reserve that height during loading so nothing shifts when data arrives. */
+            /* On narrow screens force the file-count row onto its own line below the
+               search bar, and reserve the height of two lines of text so the layout
+               doesn't shift when the loading skeleton is replaced by the real counts. */
             .drive-status {
+                width: 100%;
+                flex-basis: 100%;
                 min-height: calc(0.78rem * 1.45 * 2);
                 align-items: flex-start;
             }
