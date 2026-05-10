@@ -9329,6 +9329,27 @@
                             }
                         }
                         state.hasLegacyBakedOverlay = false;
+                    } else {
+                        // No clean original recoverable — this doc was saved by an older
+                        // build whose output baked strokes into the page raster. Seed
+                        // legacy white covers (and re-seed in case strokes changed) so
+                        // the eraser can still wipe burnt-in pixels.
+                        const hasBakedStrokes = state.pages.some(p =>
+                            p && p.backgroundSource === 'pdf'
+                            && Array.isArray(p.strokes) && p.strokes.length > 0
+                        );
+                        if (hasBakedStrokes) {
+                            state.hasLegacyBakedOverlay = true;
+                            for (const pg of state.pages) {
+                                if (!pg || pg.backgroundSource !== 'pdf') continue;
+                                if (!Array.isArray(pg.strokes) || pg.strokes.length === 0) continue;
+                                pg.legacyCoverStrokes = pg.strokes.map(s => ({
+                                    ...s,
+                                    points: Array.isArray(s.points) ? s.points.map(p => ({ ...p })) : []
+                                }));
+                                pg.needsRedraw = true;
+                            }
+                        }
                     }
                 } catch (pdfErr) {
                     URL.revokeObjectURL(objectUrl);
@@ -9594,7 +9615,7 @@
             try {
                 const publicPdf = await fetchPublicSharedPdf(fileId, resourceKey);
                 const objectUrl = URL.createObjectURL(publicPdf.blob);
-                await importPDFData(objectUrl, true, { fileSize: publicPdf.blob.size });
+                await importPDFData(objectUrl, true, { fileSize: publicPdf.blob.size, driveFileId: fileId });
 
                 state.driveFileId = fileId;
                 markDriveHydrated(fileId);
@@ -10726,7 +10747,8 @@
                 const objectUrl = URL.createObjectURL(blob);
                 await importPDFData(objectUrl, true, {
                     fileSize: fileSize || blob.size,
-                    sessionToken
+                    sessionToken,
+                    driveFileId: file.id
                 });
                 if (!isDocumentSessionTokenValid(sessionToken) || driveOpenFileId !== file.id) {
                     throw createAbortError('Drive open superseded');
@@ -20244,10 +20266,14 @@
                 state.cleanOriginalPdfBytes = null;
                 state.hasLegacyBakedOverlay = false;
                 let needsCleanOriginalSwap = false;
+                // Drive file ID is set by openDriveFile *after* importPDFData returns,
+                // so prefer the option passed in via options.driveFileId for IDB cache
+                // operations; fall back to state.driveFileId for non-Drive flows.
+                const idbCacheKey = options.driveFileId || state.driveFileId || null;
                 if (!embeddedStrokes && capturedOriginalBytes) {
                     state.cleanOriginalPdfBytes = capturedOriginalBytes;
-                    if (state.driveFileId) {
-                        saveOriginalPdfBytes(state.driveFileId, capturedOriginalBytes).catch(() => { });
+                    if (idbCacheKey) {
+                        saveOriginalPdfBytes(idbCacheKey, capturedOriginalBytes).catch(() => { });
                     }
                 } else if (embeddedStrokes) {
                     // Saved-by-this-app document. Recover clean original via, in order:
@@ -20264,14 +20290,14 @@
                             );
                             needsCleanOriginalSwap = true;
                             // Cache for future opens (avoids re-stripping each time).
-                            if (state.driveFileId) {
-                                saveOriginalPdfBytes(state.driveFileId, state.cleanOriginalPdfBytes).catch(() => { });
+                            if (idbCacheKey) {
+                                saveOriginalPdfBytes(idbCacheKey, state.cleanOriginalPdfBytes).catch(() => { });
                             }
                         }
                     }
-                    if (!state.cleanOriginalPdfBytes && state.driveFileId) {
+                    if (!state.cleanOriginalPdfBytes && idbCacheKey) {
                         try {
-                            const cached = await loadOriginalPdfBytes(state.driveFileId);
+                            const cached = await loadOriginalPdfBytes(idbCacheKey);
                             if (cached && cached.byteLength > 0) {
                                 state.cleanOriginalPdfBytes = cached;
                                 needsCleanOriginalSwap = true;
@@ -20860,9 +20886,14 @@
                 const eq = entry.indexOf('=');
                 if (eq < 0) continue;
                 const pageIdx = parseInt(entry.substring(0, eq), 10);
-                const refNum = parseInt(entry.substring(eq + 1), 10);
-                if (Number.isFinite(pageIdx) && Number.isFinite(refNum)) {
-                    refs.set(pageIdx, refNum);
+                const value = entry.substring(eq + 1).trim();
+                if (!Number.isFinite(pageIdx) || !value) continue;
+                // Pure-digit values are pdf-lib object numbers; anything else is the
+                // XObject name pdf-lib assigned in the page Resources dict.
+                if (/^\d+$/.test(value)) {
+                    refs.set(pageIdx, { refNum: parseInt(value, 10) });
+                } else {
+                    refs.set(pageIdx, { name: value });
                 }
             }
             return refs.size > 0 ? refs : null;
@@ -20886,7 +20917,7 @@
                 const PDFName = PDFLib.PDFName;
                 const pages = doc.getPages();
                 let removedCount = 0;
-                for (const [pageIdx, refNum] of refsMap.entries()) {
+                for (const [pageIdx, info] of refsMap.entries()) {
                     if (pageIdx < 0 || pageIdx >= pages.length) continue;
                     const page = pages[pageIdx];
                     const pageDict = page?.node;
@@ -20894,26 +20925,47 @@
                     const resources = pageDict.lookup(PDFName.of('Resources'));
                     if (!resources || typeof resources.lookup !== 'function') continue;
                     const xobjects = resources.lookup(PDFName.of('XObject'));
-                    if (!xobjects || typeof xobjects.entries !== 'function') continue;
-                    let nameToRemove = null;
-                    for (const [name, value] of xobjects.entries()) {
-                        if (!value) continue;
-                        const candidateRef = (typeof value.objectNumber === 'number')
-                            ? value.objectNumber
-                            : (value.tag && typeof value.tag.objectNumber === 'number' ? value.tag.objectNumber : null);
-                        if (candidateRef === refNum) {
-                            nameToRemove = name;
-                            break;
-                        }
-                    }
-                    if (nameToRemove) {
+                    if (!xobjects || typeof xobjects.delete !== 'function') continue;
+
+                    let removedThisPage = false;
+
+                    // Preferred path: direct lookup by stored XObject name.
+                    if (info.name) {
                         try {
-                            xobjects.delete(nameToRemove);
-                            removedCount += 1;
-                        } catch (delErr) {
-                            // ignore — try next page
+                            const wasPresent = typeof xobjects.has === 'function'
+                                ? xobjects.has(PDFName.of(info.name))
+                                : true;
+                            if (wasPresent) {
+                                xobjects.delete(PDFName.of(info.name));
+                                removedThisPage = true;
+                            }
+                        } catch (delErr) { /* fall through to refNum path */ }
+                    }
+
+                    // Fallback: scan entries for a ref objectNumber match.
+                    if (!removedThisPage && Number.isFinite(info.refNum)
+                        && typeof xobjects.entries === 'function') {
+                        let nameToRemove = null;
+                        for (const [name, value] of xobjects.entries()) {
+                            if (!value) continue;
+                            const candidateRef = (typeof value.objectNumber === 'number')
+                                ? value.objectNumber
+                                : (value.tag && typeof value.tag.objectNumber === 'number'
+                                    ? value.tag.objectNumber : null);
+                            if (candidateRef === info.refNum) {
+                                nameToRemove = name;
+                                break;
+                            }
+                        }
+                        if (nameToRemove) {
+                            try {
+                                xobjects.delete(nameToRemove);
+                                removedThisPage = true;
+                            } catch (delErr) { /* ignore */ }
                         }
                     }
+
+                    if (removedThisPage) removedCount += 1;
                 }
                 if (removedCount === 0) return null;
                 const cleanedBytes = await doc.save({
@@ -21233,9 +21285,48 @@
                     x: 0, y: 0,
                     width: pageWidthPt, height: pageHeightPt
                 });
-                const refNum = overlayImg?.ref?.objectNumber;
-                if (Number.isFinite(refNum)) {
-                    overlayRefs.push({ pageIdx: i, refNum });
+                // Capture the XObject NAME pdf-lib assigned for our overlay so the
+                // reopen path can surgically strip it via Resources/XObject delete.
+                // Names round-trip through save/load cleanly (object numbers don't).
+                let capturedName = null;
+                let capturedRefNum = null;
+                try {
+                    const PDFName = PDFLib.PDFName;
+                    const targetRef = overlayImg?.ref;
+                    capturedRefNum = (targetRef && typeof targetRef.objectNumber === 'number')
+                        ? targetRef.objectNumber
+                        : null;
+                    const pageDict = outPage.node;
+                    const resources = (pageDict && typeof pageDict.lookup === 'function')
+                        ? pageDict.lookup(PDFName.of('Resources'))
+                        : null;
+                    const xobjects = (resources && typeof resources.lookup === 'function')
+                        ? resources.lookup(PDFName.of('XObject'))
+                        : null;
+                    if (xobjects && typeof xobjects.entries === 'function') {
+                        for (const [name, value] of xobjects.entries()) {
+                            const sameRef = value === targetRef;
+                            const sameNum = !sameRef && value && typeof value === 'object'
+                                && capturedRefNum !== null
+                                && (value.objectNumber === capturedRefNum
+                                    || (value.tag && value.tag.objectNumber === capturedRefNum));
+                            if (sameRef || sameNum) {
+                                let nameStr = (name && typeof name.toString === 'function')
+                                    ? name.toString()
+                                    : null;
+                                if (nameStr && nameStr.startsWith('/')) nameStr = nameStr.slice(1);
+                                if (nameStr) capturedName = nameStr;
+                                break;
+                            }
+                        }
+                    }
+                } catch (refCaptureErr) {
+                    console.warn('Could not capture overlay XObject name:', refCaptureErr);
+                }
+                if (capturedName) {
+                    overlayRefs.push({ pageIdx: i, name: capturedName });
+                } else if (Number.isFinite(capturedRefNum)) {
+                    overlayRefs.push({ pageIdx: i, refNum: capturedRefNum });
                 }
             }
 
@@ -21257,8 +21348,11 @@
             }
             let keywordsPayload = metaPrefix + encodedMetadata;
             if (overlayRefs.length > 0) {
-                const refsStr = overlayRefs.map(r => `${r.pageIdx}=${r.refNum}`).join(',');
-                keywordsPayload += `;IH_OVERLAY_REFS:${refsStr}`;
+                const refsStr = overlayRefs
+                    .map(r => `${r.pageIdx}=${r.name || r.refNum || ''}`)
+                    .filter(s => /=[^=]+$/.test(s))
+                    .join(',');
+                if (refsStr) keywordsPayload += `;IH_OVERLAY_REFS:${refsStr}`;
             }
             try {
                 outDoc.setKeywords([keywordsPayload]);
