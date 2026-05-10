@@ -2763,7 +2763,7 @@
             border-radius: 8px;
             border: none;
             background: rgba(255, 255, 255, 0.85);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: none;
             display: grid;
             place-items: center;
             cursor: pointer;
@@ -2818,6 +2818,7 @@
             background: rgba(30, 30, 30, 0.85);
             color: var(--text-primary);
             border: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
         }
 
         [data-theme="dark"] .drive-card-dropdown,
@@ -5854,9 +5855,24 @@
             return Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9);
         }
 
+        // Stable per-page identifier used to track pages across reorders, deletes,
+        // and concurrent edits between devices. Backwards-compat: legacy pages
+        // without `pageId` get one assigned the first time they're touched.
+        function generatePageId() {
+            return 'pg_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 11);
+        }
+
+        function ensurePageIds(pages) {
+            if (!Array.isArray(pages)) return;
+            for (const page of pages) {
+                if (page && !page.pageId) page.pageId = generatePageId();
+            }
+        }
+
         // Assign IDs to strokes/images that don't have one (backward compat)
         function ensureStrokeIds(page) {
             if (!page) return;
+            if (page && !page.pageId) page.pageId = generatePageId();
             if (Array.isArray(page.strokes)) {
                 for (const stroke of page.strokes) {
                     if (!stroke.id) stroke.id = generateStrokeId();
@@ -5871,6 +5887,7 @@
 
         // Track last synced stroke/image IDs per page for merge operations
         const lastSyncedStrokeIds = new Map(); // pageIndex -> Set<id>
+        const lastSyncedPageIds = new Set(); // pageIds known to exist on the remote at last sync
         let lastSyncedPageCount = 0;
         const strokeBoundsCache = new WeakMap();
         // Efficient deep clone without JSON.parse/stringify
@@ -7061,6 +7078,7 @@
             const inheritedKind = normalizeTemplateKind(prev && prev.templateKind);
             const kindDefaults = getTemplateKindDefaults(inheritedKind);
             const pageData = {
+                pageId: generatePageId(),
                 strokes: [],
                 backgroundImage: backgroundImage, // Base64 image for PDF pages
                 images: [],
@@ -13508,6 +13526,7 @@
         function buildPagesFromSnapshot(snapshotPages) {
             if (!Array.isArray(snapshotPages)) return [];
             return snapshotPages.map((p) => ({
+                pageId: p?.pageId || generatePageId(),
                 strokes: Array.isArray(p?.strokes) ? JSON.parse(JSON.stringify(p.strokes)) : [],
                 images: Array.isArray(p?.images) ? JSON.parse(JSON.stringify(p.images)) : [],
                 deletedStrokeIds: Array.isArray(p?.deletedStrokeIds) ? p.deletedStrokeIds.slice() : [],
@@ -16986,16 +17005,23 @@
         // Delete page
         let pageToDelete = null;
 
-        function openDeleteModal(pageIndex) {
+        async function openDeleteModal(pageIndex) {
             if (state.isReadOnly || state.pages.length <= 1) return;
             pageToDelete = pageIndex;
-            document.getElementById('delete-page-number').textContent = pageIndex + 1;
-            document.getElementById('modal-delete-page').classList.add('visible');
+            const ok = await showConfirmSlider({
+                title: 'Delete page?',
+                message: `This will delete page ${pageIndex + 1} and all its strokes. This cannot be undone.`,
+                sliderText: 'Slide to delete'
+            });
+            if (ok) {
+                await confirmDeletePage();
+            } else {
+                pageToDelete = null;
+            }
         }
 
         function closeDeleteModal() {
             pageToDelete = null;
-            document.getElementById('modal-delete-page').classList.remove('visible');
         }
 
         async function confirmDeletePage() {
@@ -17731,7 +17757,9 @@
 
         function sanitizePageForStorage(page) {
             const { width: pageWidth, height: pageHeight } = getPageDimensions(page);
+            if (!page.pageId) page.pageId = generatePageId();
             return {
+                pageId: page.pageId,
                 strokes: Array.isArray(page.strokes) ? page.strokes : [],
                 images: Array.isArray(page.images) ? page.images : [],
                 deletedStrokeIds: Array.isArray(page.deletedStrokeIds) ? page.deletedStrokeIds : [],
@@ -20777,6 +20805,7 @@
 
         function updateSyncBaseline() {
             lastSyncedStrokeIds.clear();
+            lastSyncedPageIds.clear();
             for (let i = 0; i < state.pages.length; i++) {
                 const page = state.pages[i];
                 if (!page) continue;
@@ -20788,6 +20817,7 @@
                     page.images.forEach(img => { if (img.id) ids.add(img.id); });
                 }
                 lastSyncedStrokeIds.set(i, ids);
+                if (page.pageId) lastSyncedPageIds.add(page.pageId);
             }
             lastSyncedPageCount = state.pages.length;
         }
@@ -20840,9 +20870,151 @@
 
             let changed = false;
             let hasLocalMerges = false;
+            let structureChanged = false;
+
+            // ---- pageId-aware reorder + delete pre-pass ----
+            // Bring local page order in line with remote BEFORE the positional
+            // stroke merge runs. Without this, when device A reorders pages and
+            // device B was concurrently writing on what was page N locally,
+            // B's strokes would land on whatever new page now occupies index N
+            // because the merge matches by index. With stable pageIds we:
+            //   1. Match local pages to remote by pageId, not position.
+            //   2. Drop local pages whose pageId no longer exists remotely AND
+            //      that we previously knew were synced (= deleted on remote).
+            //   3. Insert remote-only pages.
+            //   4. Append local-only pages (not yet synced) at the end.
+            // Strokes per page travel with their owning page across reorders,
+            // so the existing positional merge logic below stays correct.
+            ensurePageIds(state.pages);
+            const remoteHasAllPageIds = remoteStrokeData.every(p => p && typeof p.pageId === 'string' && p.pageId);
+            if (remoteHasAllPageIds) {
+                const localById = new Map();
+                state.pages.forEach((page, oldIdx) => {
+                    if (page?.pageId) localById.set(page.pageId, { page, oldIdx });
+                });
+                const remoteIdsSeen = new Set();
+                remoteStrokeData.forEach(d => { if (d?.pageId) remoteIdsSeen.add(d.pageId); });
+
+                // Snapshot stroke baselines by pageId BEFORE we mutate state.pages,
+                // so we can rebuild lastSyncedStrokeIds with the new indices.
+                const baselineByPageId = new Map();
+                state.pages.forEach((page, oldIdx) => {
+                    if (page?.pageId && lastSyncedStrokeIds.has(oldIdx)) {
+                        baselineByPageId.set(page.pageId, lastSyncedStrokeIds.get(oldIdx));
+                    }
+                });
+
+                const newPagesOrder = [];
+                const placedIds = new Set();
+                const newlyAddedFromRemote = []; // pageId list (need IDB save + bg render)
+
+                for (const remoteData of remoteStrokeData) {
+                    if (!remoteData?.pageId) continue;
+                    if (localById.has(remoteData.pageId)) {
+                        newPagesOrder.push(localById.get(remoteData.pageId).page);
+                    } else {
+                        // Brand-new remote page. Build a shell; the per-page merge
+                        // pass below will fill in strokes/images from remoteData.
+                        const newPage = {
+                            pageId: remoteData.pageId,
+                            strokes: [],
+                            images: [],
+                            backgroundImage: null,
+                            backgroundSource: remoteData.backgroundSource || (remoteData.pdfPageIndex ? 'pdf' : 'template'),
+                            templateKind: normalizeTemplateKind(remoteData.templateKind),
+                            pdfPageIndex: Number.isFinite(remoteData.pdfPageIndex) ? remoteData.pdfPageIndex : null,
+                            pageWidth: normalizePageDimension(remoteData.pageWidth, A4_WIDTH),
+                            pageHeight: normalizePageDimension(remoteData.pageHeight, A4_HEIGHT),
+                            needsRedraw: true,
+                            preview: null,
+                            strokeCount: 0,
+                            unloaded: false
+                        };
+                        newPagesOrder.push(newPage);
+                        newlyAddedFromRemote.push(remoteData.pageId);
+                    }
+                    placedIds.add(remoteData.pageId);
+                }
+
+                // Local-only pages: keep them if they're brand-new locally (not yet
+                // synced — pageId not in lastSyncedPageIds). Drop them if they were
+                // previously synced and are now absent on remote (= deleted there).
+                let droppedLocalCount = 0;
+                for (const page of state.pages) {
+                    if (!page?.pageId) {
+                        // Legacy page with no ID: keep as-is at end.
+                        newPagesOrder.push(page);
+                        continue;
+                    }
+                    if (placedIds.has(page.pageId)) continue;
+                    if (lastSyncedPageIds.has(page.pageId)) {
+                        // Was synced, now gone remotely → deleted on remote.
+                        droppedLocalCount += 1;
+                        continue;
+                    }
+                    // Local-only addition that hasn't been synced yet.
+                    newPagesOrder.push(page);
+                    hasLocalMerges = true;
+                }
+
+                // Apply only if anything actually changed (avoid unnecessary churn).
+                const orderChanged = newPagesOrder.length !== state.pages.length
+                    || newPagesOrder.some((p, i) => p !== state.pages[i]);
+                if (orderChanged) {
+                    // Drop pages that disappeared (release their assets first).
+                    if (droppedLocalCount > 0 || newlyAddedFromRemote.length > 0) {
+                        for (const oldPage of state.pages) {
+                            if (oldPage && !newPagesOrder.includes(oldPage)) {
+                                releasePageTransientAssets(oldPage);
+                            }
+                        }
+                    }
+                    state.pages = newPagesOrder;
+                    structureChanged = true;
+                    changed = true;
+
+                    // Index-based caches are now stale — rebuild what we can,
+                    // clear what we can't.
+                    lastSyncedStrokeIds.clear();
+                    state.pages.forEach((page, newIdx) => {
+                        if (page?.pageId && baselineByPageId.has(page.pageId)) {
+                            lastSyncedStrokeIds.set(newIdx, baselineByPageId.get(page.pageId));
+                        }
+                    });
+                    pageDirty.clear();
+                    pageDirtyMode.clear();
+                    pageAccess.clear();
+                    pageLoadQueue.clear();
+                    activePageIndices.clear();
+                    desiredActivePageIndices.clear();
+                    pendingPageActivations.clear();
+                    cancelPageActivationScheduler();
+                    pdfBackgroundCache.clear();
+                    pdfExportCache.clear();
+                    pdfLibOverlayCache.clear();
+
+                    // Persist new page order to IDB so background-loaded reads
+                    // don't fetch stale data at the old indices.
+                    try { await clearPageStore(); } catch (e) {}
+                    for (let i = 0; i < state.pages.length; i++) {
+                        await savePageToIndexedDb(i, state.pages[i]);
+                    }
+
+                    // Newly-injected pages with PDF backgrounds need their bg rendered.
+                    state.pages.forEach((page, idx) => {
+                        if (newlyAddedFromRemote.includes(page.pageId)
+                            && (page.backgroundSource === 'custom' || page.backgroundSource === 'pdf')
+                            && Number.isFinite(page.pdfPageIndex)
+                            && !page.backgroundImage) {
+                            pagesNeedingPdfBackground.push(idx);
+                        }
+                    });
+                }
+            }
+            // ---- end pre-pass ----
+
             const localPageCount = state.pages.length;
             const remotePageCount = remoteStrokeData.length;
-            let structureChanged = false;
 
             const localHasUnsyncedDeletedPages = localPageCount < lastSyncedPageCount;
             const localHasUnsyncedAddedPages = localPageCount > lastSyncedPageCount;
@@ -21131,6 +21303,12 @@
             }
             if (!hasLocalMerges) {
                 lastSyncedPageCount = state.pages.length;
+                // Refresh the pageId baseline so subsequent merges know which
+                // pageIds are confirmed-on-remote.
+                lastSyncedPageIds.clear();
+                for (const page of state.pages) {
+                    if (page?.pageId) lastSyncedPageIds.add(page.pageId);
+                }
             }
             return { changed, hasLocalMerges, pagesNeedingPdfBackground };
         }
@@ -22071,8 +22249,10 @@
                                 points: Array.isArray(s.points) ? s.points.map(p => ({ ...p })) : []
                             }))
                             : null;
+                        const restoredPageId = pageData.pageId || generatePageId();
                         if (needsPdfBackground) {
                             importedPages.push({
+                                pageId: restoredPageId,
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'pdf',
@@ -22086,6 +22266,7 @@
                             });
                         } else {
                             importedPages.push({
+                                pageId: restoredPageId,
                                 strokes: restoredStrokes,
                                 backgroundImage: null,
                                 backgroundSource: 'template',
@@ -22105,6 +22286,7 @@
                             console.warn(`Failed to read PDF size for page ${i}:`, sizeErr);
                         }
                         importedPages.push({
+                            pageId: generatePageId(),
                             strokes: [],
                             backgroundImage: null,
                             backgroundSource: 'pdf',
@@ -23047,7 +23229,9 @@
                         }))
                         : []
                 }));
+                if (!pageData.pageId) pageData.pageId = generatePageId();
                 const pageStrokeEntry = {
+                    pageId: pageData.pageId,
                     strokes: compactStrokes,
                     images: Array.isArray(pageData.images) ? pageData.images : [],
                     deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
@@ -23469,7 +23653,9 @@
                         throwIfSessionInvalid();
                     }
                 }
+                if (!pageData.pageId) pageData.pageId = generatePageId();
                 const pageStrokeEntry = {
+                    pageId: pageData.pageId,
                     strokes: compactStrokes,
                     images: Array.isArray(pageData.images) ? pageData.images : [],
                     deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
