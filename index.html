@@ -1736,6 +1736,18 @@
             height: 20px;
         }
 
+        .panel-timeline-row {
+            padding: 12px 20px 0 20px;
+        }
+
+        .panel-timeline-row .btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
         .panel-cover-row {
             padding: 12px 20px 0 20px;
         }
@@ -3176,6 +3188,153 @@
             border-radius: 14px;
             background: rgba(0, 0, 0, 0.015);
             opacity: 0.75;
+        }
+
+        /* Version timeline modal */
+        .timeline-modal-body {
+            padding: 16px 20px 20px 20px;
+            max-height: 70vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .timeline-empty {
+            padding: 24px 12px;
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .timeline-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .timeline-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-radius: 12px;
+            transition: box-shadow 0.18s ease;
+        }
+
+        [data-theme="dark"] .timeline-entry {
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .timeline-entry.is-current {
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 0 1px var(--accent-orange) inset;
+        }
+
+        .timeline-entry-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: rgba(0, 0, 0, 0.06);
+            flex: 0 0 auto;
+        }
+
+        .timeline-entry-body {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .timeline-entry-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .timeline-entry-user {
+            font-weight: 600;
+            font-size: 0.92rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .timeline-entry-when {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+        }
+
+        .timeline-entry-current-tag {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--accent-orange);
+        }
+
+        .timeline-entry-milestone-tag {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            background: rgba(0, 0, 0, 0.06);
+            padding: 2px 6px;
+            border-radius: 999px;
+        }
+
+        [data-theme="dark"] .timeline-entry-milestone-tag {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .timeline-entry-summary {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            line-height: 1.35;
+        }
+
+        .timeline-entry-actions {
+            display: flex;
+            gap: 6px;
+            flex: 0 0 auto;
+            align-items: center;
+        }
+
+        .timeline-entry-restore {
+            padding: 6px 10px;
+            font-size: 0.8rem;
+        }
+
+        .timeline-footer {
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            padding-top: 14px;
+            display: flex;
+            justify-content: center;
+        }
+
+        [data-theme="dark"] .timeline-footer {
+            border-top-color: rgba(255, 255, 255, 0.08);
+        }
+
+        #btn-revert-original {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #btn-revert-original svg {
+            width: 16px;
+            height: 16px;
         }
 
         /* Skeleton placeholders shown while Drive content is loading */
@@ -4630,6 +4789,16 @@
                 </svg>
             </button>
         </div>
+        <div class="panel-timeline-row">
+            <button class="btn btn-secondary" id="btn-open-timeline" title="Version Timeline" aria-label="Open version timeline">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <polyline points="12 7 12 12 15 14"></polyline>
+                </svg>
+                Timeline
+            </button>
+        </div>
         <div class="panel-cover-row">
             <button class="btn btn-secondary" id="btn-set-cover" title="Add Photo Page" aria-label="Add Photo Page">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -4670,6 +4839,37 @@
 
     <input type="file" id="pdf-input" accept=".pdf">
     <input type="file" id="cover-image-input" accept="image/*">
+
+    <div id="timeline-modal-overlay" class="modal-overlay">
+        <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="timeline-modal-title">
+            <div class="modal-header">
+                <h2 id="timeline-modal-title">Version timeline</h2>
+                <button type="button" class="btn btn-secondary btn-icon-square" id="btn-close-timeline-modal"
+                    aria-label="Close" style="border:none;background:transparent;box-shadow:none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="timeline-modal-body" id="timeline-modal-body">
+                <div class="timeline-empty" id="timeline-empty" hidden>
+                    <p>No saved versions yet. Edits will appear here after the next autosave.</p>
+                </div>
+                <ol class="timeline-list" id="timeline-list"></ol>
+                <div class="timeline-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-revert-original" title="Discard all edits and restore the clean original PDF">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="1 4 1 10 7 10"></polyline>
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                        </svg>
+                        Revert to original PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="share-modal-overlay" class="modal-overlay">
         <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
@@ -9291,6 +9491,15 @@
                     //   1. IH_OVERLAY_REFS in keywords -> surgically strip overlay.
                     //   2. IndexedDB cache.
                     state.cleanOriginalPdfBytes = null;
+                    // Restore version history from this freshly-fetched copy.
+                    try {
+                        const meta0 = await pdf.getMetadata();
+                        const kw0 = meta0?.info?.Keywords || '';
+                        const decodedHistory = await decodeVersionHistoryFromKeywords(kw0);
+                        state.versionHistory = Array.isArray(decodedHistory) ? decodedHistory : [];
+                    } catch (vhErr) {
+                        state.versionHistory = state.versionHistory || [];
+                    }
                     // Recovery order: 1) attached clean original, 2) IH_OVERLAY_REFS
                     // strip, 3) IndexedDB cache.
                     const attachedClean = await extractCleanOriginalAttachment(pdf);
@@ -12850,6 +13059,281 @@
             }
         }
 
+        function formatTimelineRelativeTime(ts) {
+            if (!Number.isFinite(ts)) return '';
+            const diff = Date.now() - ts;
+            if (diff < 60_000) return 'just now';
+            if (diff < 60 * 60_000) {
+                const m = Math.floor(diff / 60_000);
+                return `${m} min${m !== 1 ? 's' : ''} ago`;
+            }
+            if (diff < 24 * 60 * 60_000) {
+                const h = Math.floor(diff / (60 * 60_000));
+                return `${h} hour${h !== 1 ? 's' : ''} ago`;
+            }
+            if (diff < 30 * 24 * 60 * 60_000) {
+                const d = Math.floor(diff / (24 * 60 * 60_000));
+                return `${d} day${d !== 1 ? 's' : ''} ago`;
+            }
+            try {
+                return new Date(ts).toLocaleDateString();
+            } catch (e) { return ''; }
+        }
+
+        function buildPagesFromSnapshot(snapshotPages) {
+            if (!Array.isArray(snapshotPages)) return [];
+            return snapshotPages.map((p) => ({
+                strokes: Array.isArray(p?.strokes) ? JSON.parse(JSON.stringify(p.strokes)) : [],
+                images: Array.isArray(p?.images) ? JSON.parse(JSON.stringify(p.images)) : [],
+                deletedStrokeIds: Array.isArray(p?.deletedStrokeIds) ? p.deletedStrokeIds.slice() : [],
+                backgroundImage: null,
+                backgroundSource: p?.backgroundSource || (p?.pdfPageIndex ? 'pdf' : 'template'),
+                templateKind: normalizeTemplateKind(p?.templateKind),
+                pdfPageIndex: Number.isFinite(p?.pdfPageIndex) ? p.pdfPageIndex : null,
+                pageWidth: normalizePageDimension(p?.pageWidth, A4_WIDTH),
+                pageHeight: normalizePageDimension(p?.pageHeight, A4_HEIGHT),
+                needsRedraw: true
+            }));
+        }
+
+        async function applyRestoredPages(newPages) {
+            if (!Array.isArray(newPages) || newPages.length === 0) return false;
+            // Clear per-page IDB so stale page records don't leak in.
+            try { await clearPageStore(); } catch (e) {}
+            pageDirty.clear();
+            pageDirtyMode.clear();
+            pageAccess.clear();
+            pageLoadQueue.clear();
+            pdfBackgroundCache.clear();
+            pdfExportCache.clear();
+            pdfLibOverlayCache.clear();
+            imageCache.clear();
+            imageCacheUsage.clear();
+            state.history = [];
+            state.historyIndex = -1;
+            updateHistoryButtons();
+            state.pages = newPages;
+            state.activePageIndex = 0;
+            for (let i = 0; i < newPages.length; i++) {
+                pageDirty.add(i);
+                pageDirtyMode.set(i, 'full');
+            }
+            renderAllPages();
+            try { centerViewOnTop(); } catch (e) {}
+            scheduleSave(true);
+            if (state.driveFileId && state.driveAutosave !== false) {
+                try { scheduleDriveSync(); } catch (e) {}
+            }
+            return true;
+        }
+
+        async function restoreVersion(versionId) {
+            if (!Array.isArray(state.versionHistory)) return false;
+            const entry = state.versionHistory.find(v => v.id === versionId);
+            if (!entry || !Array.isArray(entry.pages) || entry.pages.length === 0) {
+                showStatus('Could not restore: version data unavailable.', { error: true });
+                return false;
+            }
+            const ok = window.confirm(
+                `Restore document to the version saved by ${entry.author?.name || 'unknown'} on ${new Date(entry.ts).toLocaleString()}?\n\nA new milestone entry will be added so you can roll forward again later.`
+            );
+            if (!ok) return false;
+            const whenStr = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
+            // Mark the upcoming snapshot as a milestone so it gets its own entry and
+            // doesn't replace the most-recent autosave (preserves complete history).
+            state.pendingVersionHint = {
+                milestone: true,
+                kind: 'restore',
+                summary: `Restored version from ${whenStr}${entry.author?.name ? ` (${entry.author.name})` : ''}`
+            };
+            const newPages = buildPagesFromSnapshot(entry.pages);
+            const applied = await applyRestoredPages(newPages);
+            if (applied) {
+                showStatus('Document restored to selected version.', { autoClose: true });
+            } else {
+                // Save didn't go through — discard the hint so a future autosave isn't mislabeled.
+                state.pendingVersionHint = null;
+            }
+            return applied;
+        }
+
+        async function revertToOriginalPdf() {
+            if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) {
+                showStatus('Original PDF not available for this document.', { error: true });
+                return false;
+            }
+            const ok = window.confirm(
+                'Discard ALL annotations and revert this document to the clean original PDF?\n\nThis cannot be undone (a new version entry will be added so you can roll back if needed).'
+            );
+            if (!ok) return false;
+            // Build a fresh, empty page-set matching the clean original PDF page count.
+            // activePdfDocument is the clean source after swapDisplayDocToCleanOriginal.
+            let numPages = activePdfDocument?.numPages || 0;
+            if (!numPages && state.pages?.length) numPages = state.pages.length;
+            if (!numPages) {
+                showStatus('Could not determine original page count.', { error: true });
+                return false;
+            }
+            const newPages = [];
+            for (let i = 1; i <= numPages; i++) {
+                let pageSize = { width: A4_WIDTH, height: A4_HEIGHT };
+                if (activePdfDocument) {
+                    try {
+                        const pdfPage = await activePdfDocument.getPage(i);
+                        const vp = pdfPage.getViewport({ scale: 1 });
+                        pageSize = { width: Math.round(vp.width), height: Math.round(vp.height) };
+                        if (pdfPage.cleanup) pdfPage.cleanup();
+                    } catch (e) { /* ignore — fallback to A4 */ }
+                }
+                newPages.push({
+                    strokes: [],
+                    images: [],
+                    deletedStrokeIds: [],
+                    backgroundImage: null,
+                    backgroundSource: 'pdf',
+                    pdfPageIndex: i,
+                    pageWidth: pageSize.width,
+                    pageHeight: pageSize.height,
+                    needsRedraw: true
+                });
+            }
+            // Mark the upcoming save as a milestone — preserves the version we're
+            // reverting AWAY from so the user can roll forward to it later.
+            state.pendingVersionHint = {
+                milestone: true,
+                kind: 'revert-original',
+                summary: 'Reverted to clean original PDF'
+            };
+            const applied = await applyRestoredPages(newPages);
+            if (applied) {
+                showStatus('Reverted to original PDF.', { autoClose: true });
+            } else {
+                state.pendingVersionHint = null;
+            }
+            return applied;
+        }
+
+        function renderTimelineModal() {
+            const listEl = document.getElementById('timeline-list');
+            const emptyEl = document.getElementById('timeline-empty');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            const history = Array.isArray(state.versionHistory) ? state.versionHistory : [];
+            if (history.length === 0) {
+                if (emptyEl) emptyEl.hidden = false;
+                return;
+            }
+            if (emptyEl) emptyEl.hidden = true;
+            // Newest first.
+            const reversed = history.slice().reverse();
+            const fallbackAvatar = 'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"%23ccc\"><path d=\"M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\"/></svg>';
+            reversed.forEach((entry, idx) => {
+                const isCurrent = idx === 0;
+                const li = document.createElement('li');
+                li.className = 'timeline-entry' + (isCurrent ? ' is-current' : '');
+
+                const avatar = document.createElement('img');
+                avatar.className = 'timeline-entry-avatar';
+                avatar.alt = '';
+                avatar.src = entry.author?.photo || fallbackAvatar;
+                avatar.onerror = () => { avatar.src = fallbackAvatar; };
+                li.appendChild(avatar);
+
+                const body = document.createElement('div');
+                body.className = 'timeline-entry-body';
+
+                const row = document.createElement('div');
+                row.className = 'timeline-entry-row';
+                const userEl = document.createElement('span');
+                userEl.className = 'timeline-entry-user';
+                userEl.textContent = entry.author?.name || entry.author?.email || 'Unknown';
+                const whenEl = document.createElement('span');
+                whenEl.className = 'timeline-entry-when';
+                const absolute = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
+                whenEl.textContent = formatTimelineRelativeTime(entry.ts);
+                whenEl.title = absolute;
+                row.appendChild(userEl);
+                row.appendChild(whenEl);
+                if (isCurrent) {
+                    const tag = document.createElement('span');
+                    tag.className = 'timeline-entry-current-tag';
+                    tag.textContent = 'Current';
+                    row.appendChild(tag);
+                }
+                if (entry.kind === 'restore' || entry.kind === 'revert-original') {
+                    const tag = document.createElement('span');
+                    tag.className = 'timeline-entry-milestone-tag';
+                    tag.textContent = entry.kind === 'revert-original' ? 'Reverted' : 'Restored';
+                    row.appendChild(tag);
+                }
+                body.appendChild(row);
+
+                const summaryEl = document.createElement('div');
+                summaryEl.className = 'timeline-entry-summary';
+                summaryEl.textContent = entry.summary || 'Saved';
+                body.appendChild(summaryEl);
+
+                li.appendChild(body);
+
+                if (!isCurrent) {
+                    const actions = document.createElement('div');
+                    actions.className = 'timeline-entry-actions';
+                    const restoreBtn = document.createElement('button');
+                    restoreBtn.type = 'button';
+                    restoreBtn.className = 'btn btn-secondary timeline-entry-restore';
+                    restoreBtn.textContent = 'Restore';
+                    restoreBtn.addEventListener('click', async () => {
+                        restoreBtn.disabled = true;
+                        const ok = await restoreVersion(entry.id);
+                        restoreBtn.disabled = false;
+                        if (ok) closeTimelineModal();
+                    });
+                    actions.appendChild(restoreBtn);
+                    li.appendChild(actions);
+                }
+
+                listEl.appendChild(li);
+            });
+        }
+
+        function openTimelineModal() {
+            const overlay = document.getElementById('timeline-modal-overlay');
+            if (!overlay) return;
+            renderTimelineModal();
+            overlay.classList.add('visible');
+        }
+
+        function closeTimelineModal() {
+            const overlay = document.getElementById('timeline-modal-overlay');
+            if (!overlay) return;
+            overlay.classList.remove('visible');
+        }
+
+        function setupTimelineModalEvents() {
+            const openBtn = document.getElementById('btn-open-timeline');
+            const overlay = document.getElementById('timeline-modal-overlay');
+            const closeBtn = document.getElementById('btn-close-timeline-modal');
+            const revertBtn = document.getElementById('btn-revert-original');
+            if (!overlay) return;
+            if (openBtn) {
+                openBtn.addEventListener('click', () => openTimelineModal());
+            }
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => closeTimelineModal());
+            }
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) closeTimelineModal();
+            });
+            if (revertBtn) {
+                revertBtn.addEventListener('click', async () => {
+                    revertBtn.disabled = true;
+                    const ok = await revertToOriginalPdf();
+                    revertBtn.disabled = false;
+                    if (ok) closeTimelineModal();
+                });
+            }
+        }
+
         function setupShareModalEvents() {
             const shareBtn = document.getElementById('btn-drive-share');
             const shareModal = document.getElementById('share-modal-overlay');
@@ -13221,6 +13705,7 @@
         // Setup event listeners
         function setupEventListeners() {
             setupShareModalEvents();
+            setupTimelineModalEvents();
 
             const clearTouchPressedState = (eventTarget, pointerType = '') => {
                 const isTouchLike = pointerType === 'touch' || pointerType === 'pen' || pointerType === '';
@@ -20269,6 +20754,14 @@
                     console.log('No embedded stroke data found:', metaErr);
                 }
 
+                // Restore the version timeline embedded in the PDF (if any).
+                try {
+                    const decodedHistory = await decodeVersionHistoryFromKeywords(pdfKeywordsString);
+                    state.versionHistory = Array.isArray(decodedHistory) ? decodedHistory : [];
+                } catch (vhErr) {
+                    state.versionHistory = [];
+                }
+
                 // Clean-original tracking for text-preserving export (pdf-lib path).
                 // If the PDF has no app stroke metadata, treat its bytes as the canonical
                 // clean original and cache them in IndexedDB keyed by the Drive file ID
@@ -20890,6 +21383,141 @@
             });
         }
 
+        // ----- Version history (timeline) -----
+        const VERSION_HISTORY_MAX = 50;
+        const VERSION_HISTORY_COALESCE_MS = 5 * 60 * 1000; // 5 min same-user collapse
+        const VERSION_HISTORY_KEYWORD = 'IH_VERSIONS:';
+
+        function generateVersionId() {
+            return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        }
+
+        function getCurrentVersionAuthor() {
+            const profile = driveUserProfile || {};
+            return {
+                email: profile.email || '',
+                name: profile.name || profile.email || 'You',
+                photo: profile.photo || ''
+            };
+        }
+
+        function summarizeVersionDelta(prevPagesJson, newPagesJson) {
+            try {
+                const prev = Array.isArray(prevPagesJson) ? prevPagesJson : [];
+                const next = Array.isArray(newPagesJson) ? newPagesJson : [];
+                const pageDiff = next.length - prev.length;
+                let strokeAdded = 0, strokeRemoved = 0;
+                const minLen = Math.min(prev.length, next.length);
+                for (let i = 0; i < minLen; i++) {
+                    const ps = (prev[i]?.strokes || []).length;
+                    const ns = (next[i]?.strokes || []).length;
+                    if (ns > ps) strokeAdded += ns - ps;
+                    else if (ps > ns) strokeRemoved += ps - ns;
+                }
+                for (let i = prev.length; i < next.length; i++) {
+                    strokeAdded += (next[i]?.strokes || []).length;
+                }
+                for (let i = next.length; i < prev.length; i++) {
+                    strokeRemoved += (prev[i]?.strokes || []).length;
+                }
+                const parts = [];
+                if (pageDiff > 0) parts.push(`+${pageDiff} page${pageDiff !== 1 ? 's' : ''}`);
+                if (pageDiff < 0) parts.push(`${pageDiff} page${pageDiff !== -1 ? 's' : ''}`);
+                if (strokeAdded > 0) parts.push(`+${strokeAdded} stroke${strokeAdded !== 1 ? 's' : ''}`);
+                if (strokeRemoved > 0) parts.push(`-${strokeRemoved} stroke${strokeRemoved !== 1 ? 's' : ''}`);
+                if (parts.length === 0) return 'Saved';
+                return parts.join(', ');
+            } catch (e) {
+                return 'Saved';
+            }
+        }
+
+        // Update the in-memory version history with the current snapshot.
+        // Coalesces autosaves by the same author within VERSION_HISTORY_COALESCE_MS
+        // into a single entry to prevent spam, BUT never coalesces away a milestone
+        // entry (manual restores, reverts, etc.) so reverts don't destroy history.
+        function captureVersionSnapshot(pagesJsonArray) {
+            const author = getCurrentVersionAuthor();
+            const ts = Date.now();
+            if (!Array.isArray(state.versionHistory)) state.versionHistory = [];
+            // Read & clear the one-shot hint left by restoreVersion / revertToOriginal.
+            const hint = state.pendingVersionHint || null;
+            state.pendingVersionHint = null;
+            const isMilestone = !!(hint && hint.milestone);
+            const last = state.versionHistory[state.versionHistory.length - 1];
+            const sameAuthor = last
+                && last.author?.email === author.email
+                && last.author?.name === author.name;
+            const recentEnough = last && (ts - last.ts) < VERSION_HISTORY_COALESCE_MS;
+            // Never coalesce when:
+            //   - this snapshot is a milestone (restore/revert) — must be its own entry
+            //   - the previous entry is a milestone — must not be replaced
+            const canCoalesce = !isMilestone
+                && sameAuthor
+                && recentEnough
+                && last
+                && !last.isMilestone;
+
+            const summary = (hint && hint.summary)
+                || summarizeVersionDelta(last?.pages, pagesJsonArray);
+            const entry = {
+                id: canCoalesce ? last.id : generateVersionId(),
+                ts,
+                author,
+                summary,
+                kind: hint?.kind || 'autosave',
+                isMilestone,
+                pages: pagesJsonArray
+            };
+            if (canCoalesce) {
+                state.versionHistory[state.versionHistory.length - 1] = entry;
+            } else {
+                state.versionHistory.push(entry);
+            }
+            // Cap entries — but try hard to keep milestones. Drop the oldest non-milestone
+            // first, only fall back to dropping the oldest entry overall when nothing else
+            // can be evicted.
+            while (state.versionHistory.length > VERSION_HISTORY_MAX) {
+                const dropIdx = state.versionHistory.findIndex(e => !e?.isMilestone);
+                if (dropIdx >= 0) {
+                    state.versionHistory.splice(dropIdx, 1);
+                } else {
+                    state.versionHistory.shift();
+                }
+            }
+            return state.versionHistory;
+        }
+
+        // Encode the version history for embedding in the PDF Keywords field.
+        async function encodeVersionHistoryForKeywords(history) {
+            if (!Array.isArray(history) || history.length === 0) return '';
+            try {
+                const json = JSON.stringify(history);
+                const compressed = await compressToBase64(json);
+                return compressed;
+            } catch (err) {
+                console.warn('Could not encode version history:', err);
+                return '';
+            }
+        }
+
+        async function decodeVersionHistoryFromKeywords(keywordsStr) {
+            if (!keywordsStr) return null;
+            const idx = keywordsStr.indexOf(VERSION_HISTORY_KEYWORD);
+            if (idx < 0) return null;
+            let payload = keywordsStr.substring(idx + VERSION_HISTORY_KEYWORD.length);
+            const semi = payload.indexOf(';');
+            if (semi >= 0) payload = payload.substring(0, semi);
+            try {
+                const json = await decompressFromBase64(payload);
+                const parsed = JSON.parse(json);
+                return Array.isArray(parsed) ? parsed : null;
+            } catch (err) {
+                console.warn('Could not decode version history:', err);
+                return null;
+            }
+        }
+
         // Try to extract the embedded clean-original PDF via PDF.js attachments API.
         // pdf-lib writes it under the filename `IH_CLEAN_ORIGINAL.pdf` on every save.
         // Returns an ArrayBuffer of the clean original bytes, or null.
@@ -21400,6 +22028,19 @@
                     .filter(s => /=[^=]+$/.test(s))
                     .join(',');
                 if (refsStr) keywordsPayload += `;IH_OVERLAY_REFS:${refsStr}`;
+            }
+            // Capture this save as a version-history snapshot. The pages JSON we just
+            // serialized into STROKES_Z is what gets embedded in the snapshot too, so
+            // restoring is a matter of replacing state.pages with that snapshot's data.
+            try {
+                const pagesParsed = metadataParts.map(s => JSON.parse(s));
+                const updatedHistory = captureVersionSnapshot(pagesParsed);
+                const encodedHistory = await encodeVersionHistoryForKeywords(updatedHistory);
+                if (encodedHistory) {
+                    keywordsPayload += `;${VERSION_HISTORY_KEYWORD}${encodedHistory}`;
+                }
+            } catch (versionErr) {
+                console.warn('Failed to capture version snapshot:', versionErr);
             }
             try {
                 outDoc.setKeywords([keywordsPayload]);
