@@ -9291,20 +9291,31 @@
                     //   1. IH_OVERLAY_REFS in keywords -> surgically strip overlay.
                     //   2. IndexedDB cache.
                     state.cleanOriginalPdfBytes = null;
-                    let restoredKeywords = '';
-                    try {
-                        const meta = await pdf.getMetadata();
-                        restoredKeywords = meta?.info?.Keywords || '';
-                    } catch (mErr) { /* ignore */ }
-                    const overlayRefs = parseOverlayRefsFromKeywords(restoredKeywords);
-                    if (overlayRefs) {
-                        const cleaned = await stripOverlaysFromPdfBytes(arrayBuffer, overlayRefs);
-                        if (cleaned && cleaned.byteLength > 0) {
-                            state.cleanOriginalPdfBytes = cleaned.buffer.slice(
-                                cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
-                            );
-                            if (state.driveFileId) {
-                                saveOriginalPdfBytes(state.driveFileId, state.cleanOriginalPdfBytes).catch(() => { });
+                    // Recovery order: 1) attached clean original, 2) IH_OVERLAY_REFS
+                    // strip, 3) IndexedDB cache.
+                    const attachedClean = await extractCleanOriginalAttachment(pdf);
+                    if (attachedClean && attachedClean.byteLength > 0) {
+                        state.cleanOriginalPdfBytes = attachedClean;
+                        if (state.driveFileId) {
+                            saveOriginalPdfBytes(state.driveFileId, attachedClean).catch(() => { });
+                        }
+                    }
+                    if (!state.cleanOriginalPdfBytes) {
+                        let restoredKeywords = '';
+                        try {
+                            const meta = await pdf.getMetadata();
+                            restoredKeywords = meta?.info?.Keywords || '';
+                        } catch (mErr) { /* ignore */ }
+                        const overlayRefs = parseOverlayRefsFromKeywords(restoredKeywords);
+                        if (overlayRefs) {
+                            const cleaned = await stripOverlaysFromPdfBytes(arrayBuffer, overlayRefs);
+                            if (cleaned && cleaned.byteLength > 0) {
+                                state.cleanOriginalPdfBytes = cleaned.buffer.slice(
+                                    cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
+                                );
+                                if (state.driveFileId) {
+                                    saveOriginalPdfBytes(state.driveFileId, state.cleanOriginalPdfBytes).catch(() => { });
+                                }
                             }
                         }
                     }
@@ -20277,21 +20288,30 @@
                     }
                 } else if (embeddedStrokes) {
                     // Saved-by-this-app document. Recover clean original via, in order:
-                    //   1. IH_OVERLAY_REFS in keywords (preferred — surgical removal of
-                    //      the overlay XObject from each page restores the clean PDF).
-                    //   2. IndexedDB cache (older saves that didn't tag overlay refs).
-                    const overlayRefs = parseOverlayRefsFromKeywords(pdfKeywordsString);
-                    if (overlayRefs && capturedOriginalBytes) {
-                        const cleaned = await stripOverlaysFromPdfBytes(capturedOriginalBytes, overlayRefs);
-                        if (cleaned && cleaned.byteLength > 0) {
-                            // pdf-lib returns a Uint8Array; copy to its own ArrayBuffer.
-                            state.cleanOriginalPdfBytes = cleaned.buffer.slice(
-                                cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
-                            );
-                            needsCleanOriginalSwap = true;
-                            // Cache for future opens (avoids re-stripping each time).
-                            if (idbCacheKey) {
-                                saveOriginalPdfBytes(idbCacheKey, state.cleanOriginalPdfBytes).catch(() => { });
+                    //   1. IH_CLEAN_ORIGINAL.pdf embedded attachment (most reliable —
+                    //      first-class PDF object that survives any toolchain).
+                    //   2. IH_OVERLAY_REFS in keywords (surgical strip via XObject ref).
+                    //   3. IndexedDB cache (older saves that didn't tag refs/attach).
+                    const attachedClean = await extractCleanOriginalAttachment(pdf);
+                    if (attachedClean && attachedClean.byteLength > 0) {
+                        state.cleanOriginalPdfBytes = attachedClean;
+                        needsCleanOriginalSwap = true;
+                        if (idbCacheKey) {
+                            saveOriginalPdfBytes(idbCacheKey, attachedClean).catch(() => { });
+                        }
+                    }
+                    if (!state.cleanOriginalPdfBytes) {
+                        const overlayRefs = parseOverlayRefsFromKeywords(pdfKeywordsString);
+                        if (overlayRefs && capturedOriginalBytes) {
+                            const cleaned = await stripOverlaysFromPdfBytes(capturedOriginalBytes, overlayRefs);
+                            if (cleaned && cleaned.byteLength > 0) {
+                                state.cleanOriginalPdfBytes = cleaned.buffer.slice(
+                                    cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
+                                );
+                                needsCleanOriginalSwap = true;
+                                if (idbCacheKey) {
+                                    saveOriginalPdfBytes(idbCacheKey, state.cleanOriginalPdfBytes).catch(() => { });
+                                }
                             }
                         }
                     }
@@ -20870,6 +20890,33 @@
             });
         }
 
+        // Try to extract the embedded clean-original PDF via PDF.js attachments API.
+        // pdf-lib writes it under the filename `IH_CLEAN_ORIGINAL.pdf` on every save.
+        // Returns an ArrayBuffer of the clean original bytes, or null.
+        async function extractCleanOriginalAttachment(pdf) {
+            if (!pdf || typeof pdf.getAttachments !== 'function') return null;
+            try {
+                const atts = await pdf.getAttachments();
+                if (!atts) return null;
+                const target = 'IH_CLEAN_ORIGINAL.pdf';
+                const entry = atts[target] || Object.values(atts).find(a => a?.filename === target);
+                if (!entry) return null;
+                const content = entry.content;
+                if (!content) return null;
+                // content is typically a Uint8Array.
+                if (content instanceof Uint8Array && content.byteLength > 0) {
+                    return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
+                }
+                if (content instanceof ArrayBuffer && content.byteLength > 0) {
+                    return content.slice(0);
+                }
+                return null;
+            } catch (err) {
+                console.warn('extractCleanOriginalAttachment failed:', err);
+                return null;
+            }
+        }
+
         // Parse the IH_OVERLAY_REFS section out of a PDF Keywords string.
         // Format: `STROKES_Z:<base64>;IH_OVERLAY_REFS:p<idx>=<refNum>,...`
         // Returns Map<pageIndex, refNumber> or null if not present.
@@ -21361,6 +21408,29 @@
                 outDoc.setCreator('Cuaderno Digital App');
             } catch (metaErr) {
                 console.warn('Failed to set output metadata:', metaErr);
+            }
+
+            // Embed the clean original bytes as an attachment so reopens can ALWAYS
+            // recover an editable clean baseline — no matter the device, no matter
+            // what XObject-stripping heuristics may or may not work. Attached files
+            // are first-class PDF objects and round-trip reliably through any PDF
+            // toolchain. Cost: ~doubles the saved file size, but eliminates the
+            // class of bugs where strokes get visually stuck after save+reopen.
+            if (typeof outDoc.attach === 'function') {
+                try {
+                    // Slice from the persisted ArrayBuffer so we always have a fresh,
+                    // non-detached buffer (cleanBytesCopy may have been transferred
+                    // when pdf-lib loaded it earlier in this function).
+                    const attachBytes = state.cleanOriginalPdfBytes.slice(0);
+                    await outDoc.attach(attachBytes, 'IH_CLEAN_ORIGINAL.pdf', {
+                        mimeType: 'application/pdf',
+                        description: 'Clean source PDF used for editable strokes (do not delete)',
+                        creationDate: new Date(),
+                        modificationDate: new Date()
+                    });
+                } catch (attachErr) {
+                    console.warn('Failed to attach clean original:', attachErr);
+                }
             }
 
             await yieldToUI(true);
