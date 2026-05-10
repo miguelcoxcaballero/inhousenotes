@@ -3190,18 +3190,119 @@
             opacity: 0.75;
         }
 
-        /* Version timeline modal */
-        .timeline-modal-body {
-            padding: 16px 20px 20px 20px;
-            max-height: 70vh;
-            overflow-y: auto;
+        /* Version timeline side panel */
+        #timeline-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 720px;
+            max-width: 92vw;
+            height: 100%;
+            background: var(--bg-secondary);
+            box-shadow: -4px 0 30px rgba(0, 0, 0, 0.18);
+            z-index: 1500;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+        }
+
+        #timeline-panel.visible {
+            transform: translateX(0);
+        }
+
+        .timeline-body {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .timeline-preview-col {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 12px;
+            border-right: 1px solid rgba(0, 0, 0, 0.08);
+            min-height: 0;
+        }
+
+        [data-theme="dark"] .timeline-preview-col {
+            border-right-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .timeline-preview-canvas-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            background: rgba(0, 0, 0, 0.04);
+            border-radius: 10px;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+        }
+
+        [data-theme="dark"] .timeline-preview-canvas-wrap {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .timeline-preview-canvas-wrap canvas {
+            display: block;
+            max-width: 100%;
+            max-height: 100%;
+            background: white;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+            border-radius: 4px;
+        }
+
+        .timeline-preview-empty {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 24px 16px;
+        }
+
+        .timeline-preview-meta {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        .timeline-revert-btn {
+            background: var(--accent-orange);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.18s ease, opacity 0.18s ease;
+            width: 100%;
+        }
+
+        .timeline-revert-btn:hover:not(:disabled) {
+            background: var(--accent-hover, #d06a2c);
+        }
+
+        .timeline-revert-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .timeline-list-col {
+            width: 280px;
+            flex: 0 0 280px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
         }
 
         .timeline-empty {
-            padding: 24px 12px;
+            padding: 24px 16px;
             text-align: center;
             font-size: 0.9rem;
             color: var(--text-secondary);
@@ -3209,11 +3310,88 @@
 
         .timeline-list {
             list-style: none;
-            padding: 0;
+            padding: 12px 14px;
             margin: 0;
             display: flex;
             flex-direction: column;
             gap: 10px;
+            flex: 1 1 auto;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .timeline-list-footer {
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            padding: 12px 14px;
+        }
+
+        [data-theme="dark"] .timeline-list-footer {
+            border-top-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .timeline-revert-original-btn {
+            width: 100%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .timeline-revert-original-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        @media (max-width: 720px) {
+            #timeline-panel {
+                top: auto;
+                bottom: -100%;
+                right: 0;
+                width: 100%;
+                max-width: 100%;
+                height: 92vh;
+                border-radius: 16px 16px 0 0;
+                transform: none;
+                transition: bottom 0.3s ease;
+                box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.2);
+            }
+            #timeline-panel.visible {
+                bottom: 0;
+                transform: none;
+            }
+            .timeline-body {
+                flex-direction: column;
+            }
+            .timeline-preview-col {
+                border-right: none;
+                border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+                flex: 0 0 auto;
+                max-height: 55%;
+                padding: 12px;
+            }
+            [data-theme="dark"] .timeline-preview-col {
+                border-bottom-color: rgba(255, 255, 255, 0.08);
+            }
+            .timeline-list-col {
+                width: 100%;
+                flex: 1 1 auto;
+            }
+            /* Manage Pages panel: also slide up from bottom on narrow screens. */
+            #pages-panel {
+                top: auto;
+                bottom: -100%;
+                right: 0;
+                width: 100%;
+                max-width: 100%;
+                height: 92vh;
+                border-radius: 16px 16px 0 0;
+                transition: bottom 0.3s ease;
+                box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.2);
+            }
+            #pages-panel.visible {
+                bottom: 0;
+                right: 0;
+            }
         }
 
         .timeline-entry {
@@ -3231,9 +3409,22 @@
             border-color: rgba(255, 255, 255, 0.06);
         }
 
+        .timeline-entry {
+            cursor: pointer;
+        }
+
+        .timeline-entry:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
         .timeline-entry.is-current {
             border-color: var(--accent-orange);
             box-shadow: 0 0 0 1px var(--accent-orange) inset;
+        }
+
+        .timeline-entry.is-selected {
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 0 2px var(--accent-orange) inset;
         }
 
         .timeline-entry-avatar {
@@ -4840,33 +5031,34 @@
     <input type="file" id="pdf-input" accept=".pdf">
     <input type="file" id="cover-image-input" accept="image/*">
 
-    <div id="timeline-modal-overlay" class="modal-overlay">
-        <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="timeline-modal-title">
-            <div class="modal-header">
-                <h2 id="timeline-modal-title">Version timeline</h2>
-                <button type="button" class="btn btn-secondary btn-icon-square" id="btn-close-timeline-modal"
-                    aria-label="Close" style="border:none;background:transparent;box-shadow:none;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
+    <div id="timeline-panel" aria-hidden="true">
+        <div class="panel-header">
+            <h2 id="timeline-panel-title">Version timeline</h2>
+            <button class="panel-close" id="btn-close-timeline" aria-label="Close timeline panel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+            </button>
+        </div>
+        <div class="timeline-body">
+            <div class="timeline-preview-col">
+                <div class="timeline-preview-canvas-wrap" id="timeline-preview-wrap">
+                    <canvas id="timeline-preview-canvas" hidden></canvas>
+                    <div class="timeline-preview-empty" id="timeline-preview-empty">
+                        Select a version on the right to preview it.
+                    </div>
+                </div>
+                <div class="timeline-preview-meta" id="timeline-preview-meta" hidden></div>
+                <button type="button" class="btn timeline-revert-btn" id="btn-revert-to-version" disabled>
+                    Revert to this version
                 </button>
             </div>
-            <div class="timeline-modal-body" id="timeline-modal-body">
+            <div class="timeline-list-col">
                 <div class="timeline-empty" id="timeline-empty" hidden>
                     <p>No saved versions yet. Edits will appear here after the next autosave.</p>
                 </div>
                 <ol class="timeline-list" id="timeline-list"></ol>
-                <div class="timeline-footer">
-                    <button type="button" class="btn btn-secondary" id="btn-revert-original" title="Discard all edits and restore the clean original PDF">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polyline points="1 4 1 10 7 10"></polyline>
-                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-                        </svg>
-                        Revert to original PDF
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -13120,9 +13312,23 @@
             }
             renderAllPages();
             try { centerViewOnTop(); } catch (e) {}
+            // Local save first so IDB has the new pages.
             scheduleSave(true);
-            if (state.driveFileId && state.driveAutosave !== false) {
-                try { scheduleDriveSync(); } catch (e) {}
+            // Then push to Drive immediately so the restored state propagates to other
+            // devices instead of waiting for the autosave debounce to fire.
+            if (state.driveFileId && state.driveAutosave !== false && driveAccessToken) {
+                driveDirty = true;
+                try {
+                    bumpDriveContentVersion();
+                } catch (e) { /* helper may be defined later in load order */ }
+                try {
+                    clearDriveSyncTimers();
+                } catch (e) {}
+                try {
+                    await queueDriveSave(true, { forceUpload: true });
+                } catch (e) {
+                    console.warn('Failed to push restore to Drive:', e);
+                }
             }
             return true;
         }
@@ -13213,24 +13419,210 @@
             return applied;
         }
 
-        function renderTimelineModal() {
+        let _selectedTimelineVersionId = null;
+        let _timelinePreviewToken = 0;
+        const ORIGINAL_VERSION_ID = '__original__';
+
+        // Build a synthetic timeline entry representing the clean original PDF (no
+        // edits). It always appears as the oldest entry in the list so the user can
+        // "revert to this version" all the way back to the unmodified document.
+        function buildOriginalVersionEntry() {
+            if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) return null;
+            const numPages = activePdfDocument?.numPages || state.pages.length || 0;
+            if (!numPages) return null;
+            const pages = [];
+            for (let i = 1; i <= numPages; i++) {
+                let pageWidth = A4_WIDTH;
+                let pageHeight = A4_HEIGHT;
+                const localPage = state.pages[i - 1];
+                if (localPage) {
+                    pageWidth = normalizePageDimension(localPage.pageWidth, A4_WIDTH);
+                    pageHeight = normalizePageDimension(localPage.pageHeight, A4_HEIGHT);
+                }
+                pages.push({
+                    strokes: [],
+                    images: [],
+                    deletedStrokeIds: [],
+                    backgroundSource: 'pdf',
+                    pdfPageIndex: i,
+                    pageWidth,
+                    pageHeight
+                });
+            }
+            return {
+                id: ORIGINAL_VERSION_ID,
+                ts: 0,
+                author: { name: 'Original document', email: '', photo: '' },
+                summary: 'Unmodified PDF without any annotations',
+                kind: 'original',
+                isMilestone: true,
+                isOriginal: true,
+                pages
+            };
+        }
+
+        // Returns the version history with the synthetic "original" entry at the
+        // beginning (so newest-first iteration places it last).
+        function getDisplayVersionHistory() {
+            const hist = Array.isArray(state.versionHistory) ? state.versionHistory.slice() : [];
+            const originalEntry = buildOriginalVersionEntry();
+            if (originalEntry) hist.unshift(originalEntry);
+            return hist;
+        }
+
+        function getCurrentVersionId() {
+            const hist = Array.isArray(state.versionHistory) ? state.versionHistory : [];
+            return hist.length > 0 ? hist[hist.length - 1].id : null;
+        }
+
+        function findVersionById(versionId) {
+            if (versionId === ORIGINAL_VERSION_ID) return buildOriginalVersionEntry();
+            if (!versionId) return null;
+            const hist = Array.isArray(state.versionHistory) ? state.versionHistory : [];
+            return hist.find(v => v.id === versionId) || null;
+        }
+
+        async function renderTimelinePreview(entry) {
+            const wrap = document.getElementById('timeline-preview-wrap');
+            const canvas = document.getElementById('timeline-preview-canvas');
+            const emptyEl = document.getElementById('timeline-preview-empty');
+            const metaEl = document.getElementById('timeline-preview-meta');
+            if (!wrap || !canvas || !emptyEl) return;
+
+            // Bump token so any in-flight render gets canceled.
+            const token = ++_timelinePreviewToken;
+
+            if (!entry || !Array.isArray(entry.pages) || entry.pages.length === 0) {
+                emptyEl.hidden = false;
+                canvas.hidden = true;
+                if (metaEl) metaEl.hidden = true;
+                return;
+            }
+
+            emptyEl.hidden = true;
+            canvas.hidden = false;
+            if (metaEl) {
+                const whenStr = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
+                const author = entry.author?.name || entry.author?.email || 'Unknown';
+                const pageCount = entry.pages.length;
+                metaEl.hidden = false;
+                metaEl.textContent = `${author} · ${whenStr} · ${pageCount} page${pageCount !== 1 ? 's' : ''}`;
+            }
+
+            const firstSnapshotPage = entry.pages[0];
+            const pageWidth = normalizePageDimension(firstSnapshotPage?.pageWidth, A4_WIDTH);
+            const pageHeight = normalizePageDimension(firstSnapshotPage?.pageHeight, A4_HEIGHT);
+            const pdfPageIdx = Number.isFinite(firstSnapshotPage?.pdfPageIndex) ? firstSnapshotPage.pdfPageIndex : null;
+
+            // Choose a preview scale that fits the wrapper without exploding memory.
+            const wrapRect = wrap.getBoundingClientRect();
+            const targetWidth = Math.max(160, (wrapRect.width || 480) - 24);
+            const targetHeight = Math.max(160, (wrapRect.height || 480) - 24);
+            const scaleByWidth = targetWidth / pageWidth;
+            const scaleByHeight = targetHeight / pageHeight;
+            const previewScale = Math.max(0.4, Math.min(1.5, Math.min(scaleByWidth, scaleByHeight)));
+
+            canvas.width = Math.round(pageWidth * previewScale);
+            canvas.height = Math.round(pageHeight * previewScale);
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Background: render the original PDF page (if available).
+            if (activePdfDocument && pdfPageIdx) {
+                try {
+                    const pdfPage = await activePdfDocument.getPage(
+                        Math.max(1, Math.min(activePdfDocument.numPages, pdfPageIdx))
+                    );
+                    if (token !== _timelinePreviewToken) {
+                        if (pdfPage.cleanup) pdfPage.cleanup();
+                        return;
+                    }
+                    const baseViewport = pdfPage.getViewport({ scale: 1 });
+                    const fitScale = Math.min(canvas.width / baseViewport.width, canvas.height / baseViewport.height);
+                    const viewport = pdfPage.getViewport({ scale: fitScale });
+                    const offsetX = (canvas.width - viewport.width) / 2;
+                    const offsetY = (canvas.height - viewport.height) / 2;
+                    ctx.save();
+                    ctx.translate(offsetX, offsetY);
+                    await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+                    ctx.restore();
+                    if (pdfPage.cleanup) pdfPage.cleanup();
+                } catch (err) {
+                    // Fall through — leave white background.
+                }
+                if (token !== _timelinePreviewToken) return;
+            }
+
+            // 2. Draw the snapshot's first-page strokes on top, scaled to preview.
+            ctx.save();
+            ctx.setTransform(previewScale, 0, 0, previewScale, 0, 0);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            const strokes = Array.isArray(firstSnapshotPage?.strokes) ? firstSnapshotPage.strokes : [];
+            for (const stroke of strokes) {
+                if (!stroke || stroke.tool === 'eraser-stroke') continue;
+                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                if (!Array.isArray(stroke.points) || stroke.points.length < minPoints) continue;
+                drawSmoothStroke(ctx, stroke);
+            }
+            ctx.restore();
+        }
+
+        function updateTimelineRevertButtonState() {
+            const btn = document.getElementById('btn-revert-to-version');
+            if (!btn) return;
+            const selectedId = _selectedTimelineVersionId;
+            const currentId = getCurrentVersionId();
+            const entry = findVersionById(selectedId);
+            // Disabled if nothing selected, selection equals current state, or has no pages.
+            const canRevert = !!entry
+                && Array.isArray(entry.pages)
+                && entry.pages.length > 0
+                && selectedId !== currentId;
+            btn.disabled = !canRevert;
+        }
+
+        function selectTimelineVersion(versionId) {
+            _selectedTimelineVersionId = versionId || null;
+            // Update list highlight.
+            const list = document.getElementById('timeline-list');
+            if (list) {
+                list.querySelectorAll('.timeline-entry').forEach(el => {
+                    el.classList.toggle('is-selected', el.dataset.versionId === versionId);
+                });
+            }
+            const entry = findVersionById(versionId);
+            renderTimelinePreview(entry);
+            updateTimelineRevertButtonState();
+        }
+
+        function renderTimelineList() {
             const listEl = document.getElementById('timeline-list');
             const emptyEl = document.getElementById('timeline-empty');
             if (!listEl) return;
             listEl.innerHTML = '';
-            const history = Array.isArray(state.versionHistory) ? state.versionHistory : [];
+            const history = getDisplayVersionHistory();
             if (history.length === 0) {
                 if (emptyEl) emptyEl.hidden = false;
                 return;
             }
             if (emptyEl) emptyEl.hidden = true;
-            // Newest first.
             const reversed = history.slice().reverse();
             const fallbackAvatar = 'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"%23ccc\"><path d=\"M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\"/></svg>';
-            reversed.forEach((entry, idx) => {
-                const isCurrent = idx === 0;
+            const currentSavedId = getCurrentVersionId();
+            reversed.forEach((entry) => {
+                const isCurrent = entry.id === currentSavedId;
+                const isOriginal = !!entry.isOriginal;
                 const li = document.createElement('li');
-                li.className = 'timeline-entry' + (isCurrent ? ' is-current' : '');
+                li.className = 'timeline-entry'
+                    + (isCurrent ? ' is-current' : '')
+                    + (isOriginal ? ' is-original' : '');
+                li.dataset.versionId = entry.id;
+                li.tabIndex = 0;
+                li.setAttribute('role', 'button');
+                li.setAttribute('aria-label', `Preview version by ${entry.author?.name || 'unknown'}`);
 
                 const avatar = document.createElement('img');
                 avatar.className = 'timeline-entry-avatar';
@@ -13247,13 +13639,15 @@
                 const userEl = document.createElement('span');
                 userEl.className = 'timeline-entry-user';
                 userEl.textContent = entry.author?.name || entry.author?.email || 'Unknown';
-                const whenEl = document.createElement('span');
-                whenEl.className = 'timeline-entry-when';
-                const absolute = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
-                whenEl.textContent = formatTimelineRelativeTime(entry.ts);
-                whenEl.title = absolute;
                 row.appendChild(userEl);
-                row.appendChild(whenEl);
+                if (!isOriginal) {
+                    const whenEl = document.createElement('span');
+                    whenEl.className = 'timeline-entry-when';
+                    const absolute = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
+                    whenEl.textContent = formatTimelineRelativeTime(entry.ts);
+                    whenEl.title = absolute;
+                    row.appendChild(whenEl);
+                }
                 if (isCurrent) {
                     const tag = document.createElement('span');
                     tag.className = 'timeline-entry-current-tag';
@@ -13266,6 +13660,12 @@
                     tag.textContent = entry.kind === 'revert-original' ? 'Reverted' : 'Restored';
                     row.appendChild(tag);
                 }
+                if (isOriginal) {
+                    const tag = document.createElement('span');
+                    tag.className = 'timeline-entry-milestone-tag';
+                    tag.textContent = 'Original';
+                    row.appendChild(tag);
+                }
                 body.appendChild(row);
 
                 const summaryEl = document.createElement('div');
@@ -13275,61 +13675,65 @@
 
                 li.appendChild(body);
 
-                if (!isCurrent) {
-                    const actions = document.createElement('div');
-                    actions.className = 'timeline-entry-actions';
-                    const restoreBtn = document.createElement('button');
-                    restoreBtn.type = 'button';
-                    restoreBtn.className = 'btn btn-secondary timeline-entry-restore';
-                    restoreBtn.textContent = 'Restore';
-                    restoreBtn.addEventListener('click', async () => {
-                        restoreBtn.disabled = true;
-                        const ok = await restoreVersion(entry.id);
-                        restoreBtn.disabled = false;
-                        if (ok) closeTimelineModal();
-                    });
-                    actions.appendChild(restoreBtn);
-                    li.appendChild(actions);
-                }
+                li.addEventListener('click', () => selectTimelineVersion(entry.id));
+                li.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectTimelineVersion(entry.id);
+                    }
+                });
 
                 listEl.appendChild(li);
             });
         }
 
-        function openTimelineModal() {
-            const overlay = document.getElementById('timeline-modal-overlay');
-            if (!overlay) return;
-            renderTimelineModal();
-            overlay.classList.add('visible');
+        function openTimelinePanel() {
+            const panel = document.getElementById('timeline-panel');
+            if (!panel) return;
+            renderTimelineList();
+            // Default selection: the most recent (current) version, so the user
+            // sees a preview straight away. The Revert button will be disabled
+            // because that version equals current state.
+            const currentId = getCurrentVersionId();
+            if (currentId) {
+                selectTimelineVersion(currentId);
+            } else {
+                _selectedTimelineVersionId = null;
+                renderTimelinePreview(null);
+                updateTimelineRevertButtonState();
+            }
+            panel.setAttribute('aria-hidden', 'false');
+            panel.classList.add('visible');
         }
 
-        function closeTimelineModal() {
-            const overlay = document.getElementById('timeline-modal-overlay');
-            if (!overlay) return;
-            overlay.classList.remove('visible');
+        function closeTimelinePanel() {
+            const panel = document.getElementById('timeline-panel');
+            if (!panel) return;
+            panel.classList.remove('visible');
+            panel.setAttribute('aria-hidden', 'true');
+            _selectedTimelineVersionId = null;
         }
 
         function setupTimelineModalEvents() {
             const openBtn = document.getElementById('btn-open-timeline');
-            const overlay = document.getElementById('timeline-modal-overlay');
-            const closeBtn = document.getElementById('btn-close-timeline-modal');
-            const revertBtn = document.getElementById('btn-revert-original');
-            if (!overlay) return;
+            const panel = document.getElementById('timeline-panel');
+            const closeBtn = document.getElementById('btn-close-timeline');
+            const revertSelectedBtn = document.getElementById('btn-revert-to-version');
+            if (!panel) return;
             if (openBtn) {
-                openBtn.addEventListener('click', () => openTimelineModal());
+                openBtn.addEventListener('click', () => openTimelinePanel());
             }
             if (closeBtn) {
-                closeBtn.addEventListener('click', () => closeTimelineModal());
+                closeBtn.addEventListener('click', () => closeTimelinePanel());
             }
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) closeTimelineModal();
-            });
-            if (revertBtn) {
-                revertBtn.addEventListener('click', async () => {
-                    revertBtn.disabled = true;
-                    const ok = await revertToOriginalPdf();
-                    revertBtn.disabled = false;
-                    if (ok) closeTimelineModal();
+            if (revertSelectedBtn) {
+                revertSelectedBtn.addEventListener('click', async () => {
+                    if (!_selectedTimelineVersionId) return;
+                    revertSelectedBtn.disabled = true;
+                    const ok = await restoreVersion(_selectedTimelineVersionId);
+                    revertSelectedBtn.disabled = false;
+                    if (ok) closeTimelinePanel();
+                    else updateTimelineRevertButtonState();
                 });
             }
         }
@@ -19536,12 +19940,19 @@
                     try {
                         const metadata = await pdf.getMetadata();
                         const keywords = metadata?.info?.Keywords || '';
+                        // Strip optional `;IH_OVERLAY_REFS:...` / `;IH_VERSIONS:...`
+                        // suffixes appended by the pdf-lib export so the base64
+                        // payload is parsed cleanly.
+                        const stripExtras = (str) => {
+                            const semi = str.indexOf(';');
+                            return semi >= 0 ? str.substring(0, semi) : str;
+                        };
                         if (keywords.startsWith('STROKES_Z:')) {
-                            const encodedData = keywords.substring('STROKES_Z:'.length);
+                            const encodedData = stripExtras(keywords.substring('STROKES_Z:'.length));
                             const decodedString = await decompressFromBase64(encodedData);
                             remoteStrokeData = JSON.parse(decodedString);
                         } else if (keywords.startsWith('STROKES_DATA:')) {
-                            const encodedData = keywords.substring('STROKES_DATA:'.length);
+                            const encodedData = stripExtras(keywords.substring('STROKES_DATA:'.length));
                             const decodedString = decodeURIComponent(escape(atob(encodedData)));
                             remoteStrokeData = JSON.parse(decodedString);
                         }
