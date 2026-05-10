@@ -21026,6 +21026,14 @@
                         } catch (vhErr) {
                             console.warn('Failed to extract remote version history:', vhErr);
                         }
+                        if ((!Array.isArray(state.versionHistory) || state.versionHistory.length === 0)
+                            && Array.isArray(remoteStrokeData)) {
+                            ensureTimelineBaselineFromPages(remoteStrokeData, {
+                                id: 'remote-legacy-baseline',
+                                summary: 'Remote legacy version',
+                                kind: 'legacy-baseline'
+                            });
+                        }
                     } catch (metaErr) {
                         console.warn('Failed to extract remote stroke data:', metaErr);
                     }
@@ -22660,6 +22668,14 @@
                     }
                 }
 
+                if (embeddedStrokes) {
+                    ensureTimelineBaselineFromPages(importedPages, {
+                        id: 'legacy-import-baseline',
+                        summary: 'Imported legacy version',
+                        kind: 'legacy-baseline'
+                    });
+                }
+
                 throwIfSessionInvalid();
                 await migrateLegacyPayload({ pages: importedPages });
                 await yieldToMainThread();
@@ -23122,6 +23138,37 @@
             } catch (e) {
                 return 'Saved';
             }
+        }
+
+        function buildTimelineSnapshotFromPages(pages) {
+            if (!Array.isArray(pages)) return [];
+            return pages.map((page, index) => ({
+                pageId: page?.pageId || `legacy-page-${index + 1}`,
+                strokes: Array.isArray(page?.strokes) ? JSON.parse(JSON.stringify(page.strokes)) : [],
+                images: Array.isArray(page?.images) ? JSON.parse(JSON.stringify(page.images)) : [],
+                deletedStrokeIds: Array.isArray(page?.deletedStrokeIds) ? page.deletedStrokeIds.slice() : [],
+                backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : 'template'),
+                templateKind: normalizeTemplateKind(page?.templateKind),
+                pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
+                pageWidth: normalizePageDimension(page?.pageWidth, A4_WIDTH),
+                pageHeight: normalizePageDimension(page?.pageHeight, A4_HEIGHT)
+            }));
+        }
+
+        function ensureTimelineBaselineFromPages(pages, options = {}) {
+            if (Array.isArray(state.versionHistory) && state.versionHistory.length > 0) return false;
+            const snapshot = buildTimelineSnapshotFromPages(pages);
+            if (snapshot.length === 0) return false;
+            state.versionHistory = [{
+                id: options.id || `baseline_${Date.now().toString(36)}`,
+                ts: Number.isFinite(options.ts) ? options.ts : Math.max(1, Date.now() - 1),
+                author: options.author || { name: 'Imported document', email: '', photo: '' },
+                summary: options.summary || 'Starting version',
+                kind: options.kind || 'baseline',
+                isMilestone: true,
+                pages: snapshot
+            }];
+            return true;
         }
 
         // Update the in-memory version history with the current snapshot.
