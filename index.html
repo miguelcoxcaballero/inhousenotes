@@ -5847,7 +5847,7 @@
         let trashTargetFile = null;
         let activePdfDocument = null;
         let activePdfPageCount = 0;
-        let pdfBackgroundScale = Math.min(2, CANVAS_SCALE);
+        let pdfBackgroundScale = Math.min(3, CANVAS_SCALE * 1.5);
         let pdfRenderQueue = [];
         let pdfRenderActive = false;
         let pdfRenderToken = 0;
@@ -6742,12 +6742,13 @@
             if (pageCount >= 500) return PDF_RENDER_SCALE_HUGE;
             if (pageCount >= 200) return PDF_RENDER_SCALE_LARGE;
             // Very heavy files (>80MB) - minimal rendering to survive first open
-            if (fileSize > 80 * 1024 * 1024) return 0.75;
+            if (fileSize > 80 * 1024 * 1024) return 0.9;
             // Heavy files (>30MB) with fewer pages
-            if (fileSize > 30 * 1024 * 1024) return 1.0;
+            if (fileSize > 30 * 1024 * 1024) return 1.25;
             // Medium files (>10MB)
-            if (fileSize > 10 * 1024 * 1024 || pageCount >= 30) return 1.2;
-            return Math.min(2, CANVAS_SCALE);
+            if (fileSize > 10 * 1024 * 1024 || pageCount >= 30) return 1.6;
+            // Bumped from 2 -> ~3x so the editor background stays sharp on zoom.
+            return Math.min(3, CANVAS_SCALE * 1.5);
         }
 
         function resetPdfState() {
@@ -6765,7 +6766,7 @@
             });
             activePdfDocument = null;
             activePdfPageCount = 0;
-            pdfBackgroundScale = Math.min(2, CANVAS_SCALE);
+            pdfBackgroundScale = Math.min(3, CANVAS_SCALE * 1.5);
             pdfRenderQueue = [];
             pdfRenderActive = false;
             pdfBackgroundCache.clear();
@@ -6997,7 +6998,7 @@
                     return;
                 }
 
-                const blob = await canvasToBlobSafe(tempCanvas, 'image/jpeg', 0.7);
+                const blob = await canvasToBlobSafe(tempCanvas, 'image/jpeg', 0.92);
                 let objectUrl = '';
                 if (blob) {
                     if (page.backgroundImage && page.backgroundImage.startsWith('blob:')) {
@@ -9204,6 +9205,52 @@
             closeDriveProfileMenu(driveProfileMenuEditor, driveProfileBtnEditor);
         }
 
+        // When a saved doc is reopened that has stroke metadata (STROKES_Z), the
+        // bytes in Drive carry an overlay PNG with the strokes already burnt into
+        // the page raster. If we render that PDF for display, the user sees the
+        // strokes twice (image + restored vector) and the eraser only removes the
+        // vector copy. To prevent this we swap the PDF.js document used for
+        // background rendering to the *clean original* whenever those bytes are
+        // available (cached in IndexedDB or captured this session).
+        async function swapDisplayDocToCleanOriginal() {
+            if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) return false;
+            try {
+                const cleanPdfDoc = await pdfjsLib.getDocument({
+                    data: state.cleanOriginalPdfBytes.slice(0),
+                    disableAutoFetch: true,
+                    disableStream: false,
+                    cMapUrl: PDFJS_CMAP_URL,
+                    cMapPacked: true,
+                    standardFontDataUrl: PDFJS_STANDARD_FONT_URL,
+                    useSystemFonts: true,
+                    disableFontFace: false
+                }).promise;
+                const previous = activePdfDocument;
+                activePdfDocument = cleanPdfDoc;
+                activePdfPageCount = cleanPdfDoc.numPages;
+                // Existing rendered backgrounds (if any) came from the saved file
+                // and have the overlay burnt in — drop them so they re-render from
+                // the clean source.
+                pdfBackgroundCache.clear();
+                for (const page of state.pages) {
+                    if (page && page.backgroundSource === 'pdf' && page.backgroundImage) {
+                        if (page.backgroundImage.startsWith('blob:')) {
+                            try { URL.revokeObjectURL(page.backgroundImage); } catch (e) {}
+                        }
+                        page.backgroundImage = null;
+                    }
+                }
+                if (previous && previous !== cleanPdfDoc && typeof previous.destroy === 'function') {
+                    try { previous.destroy(); } catch (e) {}
+                }
+                scheduleVisiblePageUpdate(true);
+                return true;
+            } catch (cleanErr) {
+                console.warn('Could not load clean original PDF for display:', cleanErr);
+                return false;
+            }
+        }
+
         async function restorePdfBackgroundsIfNeeded() {
             if (!driveAccessToken || activePdfDocument || !state.driveFileId) return;
             const needsPdf = state.pages.some(page => page?.pdfPageIndex);
@@ -9239,11 +9286,29 @@
 
                     // restorePdfBackgroundsIfNeeded only fires when the doc was already
                     // opened in this app (state.pages has pdfPageIndex entries), so the
-                    // Drive bytes are the most-recent app-saved version. Try IDB for the
-                    // clean original — if we never cached one, pdf-lib export will simply
-                    // be unavailable for this doc and the existing raster path is used.
+                    // Drive bytes are the most-recent app-saved version.
+                    // Recovery order, same as importPDFData:
+                    //   1. IH_OVERLAY_REFS in keywords -> surgically strip overlay.
+                    //   2. IndexedDB cache.
                     state.cleanOriginalPdfBytes = null;
-                    if (state.driveFileId) {
+                    let restoredKeywords = '';
+                    try {
+                        const meta = await pdf.getMetadata();
+                        restoredKeywords = meta?.info?.Keywords || '';
+                    } catch (mErr) { /* ignore */ }
+                    const overlayRefs = parseOverlayRefsFromKeywords(restoredKeywords);
+                    if (overlayRefs) {
+                        const cleaned = await stripOverlaysFromPdfBytes(arrayBuffer, overlayRefs);
+                        if (cleaned && cleaned.byteLength > 0) {
+                            state.cleanOriginalPdfBytes = cleaned.buffer.slice(
+                                cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
+                            );
+                            if (state.driveFileId) {
+                                saveOriginalPdfBytes(state.driveFileId, state.cleanOriginalPdfBytes).catch(() => { });
+                            }
+                        }
+                    }
+                    if (!state.cleanOriginalPdfBytes && state.driveFileId) {
                         try {
                             const cached = await loadOriginalPdfBytes(state.driveFileId);
                             if (cached && cached.byteLength > 0) {
@@ -9252,6 +9317,18 @@
                         } catch (idbErr) {
                             console.warn('Failed to load cached original PDF bytes:', idbErr);
                         }
+                    }
+                    if (state.cleanOriginalPdfBytes) {
+                        await swapDisplayDocToCleanOriginal();
+                        // Clear any leftover white covers from a prior legacy session —
+                        // we now have the real clean original so strokes are pure vector.
+                        for (const pg of state.pages) {
+                            if (pg && pg.legacyCoverStrokes) {
+                                pg.legacyCoverStrokes = null;
+                                pg.needsRedraw = true;
+                            }
+                        }
+                        state.hasLegacyBakedOverlay = false;
                     }
                 } catch (pdfErr) {
                     URL.revokeObjectURL(objectUrl);
@@ -12526,6 +12603,35 @@
         }
 
         // Redraw page with smooth quadratic curves
+        // Backwards-compat layer: for documents previously app-saved with the
+        // overlay-PNG approach where we no longer have the clean original, the
+        // page raster has strokes burnt in. Painting an opaque-white version of
+        // each known stroke (slightly thicker to cover anti-aliasing) hides the
+        // baked pixels so the renderer can re-draw editable vectors on top.
+        // The covers persist independently of the editable strokes array, so
+        // erasing a stroke leaves the white cover behind — making the baked
+        // pixels effectively erased.
+        function drawLegacyCoverStrokes(ctx, page) {
+            if (!Array.isArray(page?.legacyCoverStrokes) || page.legacyCoverStrokes.length === 0) return;
+            ctx.save();
+            for (const stroke of page.legacyCoverStrokes) {
+                if (!stroke || stroke.tool === 'eraser-stroke') continue;
+                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                if (!Array.isArray(stroke.points) || stroke.points.length < minPoints) continue;
+                // Inflate width and use opaque white so the burnt-in stroke is
+                // fully covered by the cover even at high zoom levels.
+                const widenFactor = stroke.tool === 'highlighter' ? 1.05 : 1.35;
+                drawSmoothStroke(ctx, {
+                    ...stroke,
+                    color: '#ffffff',
+                    width: Math.max(1, (stroke.width || 1) * widenFactor),
+                    opacity: 1,
+                    tool: stroke.tool === 'highlighter' ? 'highlighter' : 'pen'
+                });
+            }
+            ctx.restore();
+        }
+
         function redrawPage(pageIndex) {
             const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
             const page = state.pages[pageIndex];
@@ -12559,6 +12665,10 @@
                     ctx.drawImage(bakedImg, 0, 0, pageWidth, pageHeight);
                 }
             }
+
+            // Hide strokes burnt into the page raster (legacy app-saved files
+            // without a clean-original cache) before drawing user content.
+            drawLegacyCoverStrokes(ctx, page);
 
             drawImagesOnContext(ctx, page, pageIndex, redrawPage);
 
@@ -15969,6 +16079,7 @@
                 backgroundSource: page.backgroundSource || (page.pdfPageIndex ? 'pdf' : (page.backgroundImage ? 'custom' : 'template')),
                 templateKind: normalizeTemplateKind(page.templateKind),
                 pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
+                legacyCoverStrokes: Array.isArray(page.legacyCoverStrokes) ? page.legacyCoverStrokes : null,
                 pageWidth,
                 pageHeight
             };
@@ -20095,17 +20206,26 @@
 
                 // Try to extract embedded stroke data from PDF metadata
                 let embeddedStrokes = null;
+                let pdfKeywordsString = '';
                 try {
                     const metadata = await pdf.getMetadata();
                     const keywords = metadata?.info?.Keywords || '';
+                    pdfKeywordsString = keywords;
+
+                    // Strip the IH_OVERLAY_REFS suffix (added by newer saves) before
+                    // base64-decoding, so the suffix doesn't corrupt the stroke payload.
+                    const stripExtras = (str) => {
+                        const semi = str.indexOf(';');
+                        return semi >= 0 ? str.substring(0, semi) : str;
+                    };
 
                     if (keywords.startsWith('STROKES_Z:')) {
-                        const encodedData = keywords.substring('STROKES_Z:'.length);
+                        const encodedData = stripExtras(keywords.substring('STROKES_Z:'.length));
                         const decodedString = await decompressFromBase64(encodedData);
                         embeddedStrokes = JSON.parse(decodedString);
                         showLoading('PDF with strokes detected...');
                     } else if (keywords.startsWith('STROKES_DATA:')) {
-                        const encodedData = keywords.substring('STROKES_DATA:'.length);
+                        const encodedData = stripExtras(keywords.substring('STROKES_DATA:'.length));
                         const decodedString = decodeURIComponent(escape(atob(encodedData)));
                         embeddedStrokes = JSON.parse(decodedString);
                         showLoading('PDF with strokes detected...');
@@ -20122,21 +20242,57 @@
                 // (so subsequent saves of THIS document always start from the clean version
                 // and the stroke overlay never doubles).
                 state.cleanOriginalPdfBytes = null;
+                state.hasLegacyBakedOverlay = false;
+                let needsCleanOriginalSwap = false;
                 if (!embeddedStrokes && capturedOriginalBytes) {
                     state.cleanOriginalPdfBytes = capturedOriginalBytes;
                     if (state.driveFileId) {
                         saveOriginalPdfBytes(state.driveFileId, capturedOriginalBytes).catch(() => { });
                     }
-                } else if (embeddedStrokes && state.driveFileId) {
-                    // Previously app-saved file: try to recover the clean original from IDB.
-                    try {
-                        const cached = await loadOriginalPdfBytes(state.driveFileId);
-                        if (cached && cached.byteLength > 0) {
-                            state.cleanOriginalPdfBytes = cached;
+                } else if (embeddedStrokes) {
+                    // Saved-by-this-app document. Recover clean original via, in order:
+                    //   1. IH_OVERLAY_REFS in keywords (preferred — surgical removal of
+                    //      the overlay XObject from each page restores the clean PDF).
+                    //   2. IndexedDB cache (older saves that didn't tag overlay refs).
+                    const overlayRefs = parseOverlayRefsFromKeywords(pdfKeywordsString);
+                    if (overlayRefs && capturedOriginalBytes) {
+                        const cleaned = await stripOverlaysFromPdfBytes(capturedOriginalBytes, overlayRefs);
+                        if (cleaned && cleaned.byteLength > 0) {
+                            // pdf-lib returns a Uint8Array; copy to its own ArrayBuffer.
+                            state.cleanOriginalPdfBytes = cleaned.buffer.slice(
+                                cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
+                            );
+                            needsCleanOriginalSwap = true;
+                            // Cache for future opens (avoids re-stripping each time).
+                            if (state.driveFileId) {
+                                saveOriginalPdfBytes(state.driveFileId, state.cleanOriginalPdfBytes).catch(() => { });
+                            }
                         }
-                    } catch (idbErr) {
-                        console.warn('Failed to load cached original PDF bytes:', idbErr);
                     }
+                    if (!state.cleanOriginalPdfBytes && state.driveFileId) {
+                        try {
+                            const cached = await loadOriginalPdfBytes(state.driveFileId);
+                            if (cached && cached.byteLength > 0) {
+                                state.cleanOriginalPdfBytes = cached;
+                                needsCleanOriginalSwap = true;
+                            }
+                        } catch (idbErr) {
+                            console.warn('Failed to load cached original PDF bytes:', idbErr);
+                        }
+                    }
+                }
+                // If we have the clean original AND the loaded file is an app-saved
+                // version (has STROKES_Z), swap PDF.js display to the clean source so
+                // the burnt-in overlay doesn't double the visible strokes.
+                if (needsCleanOriginalSwap) {
+                    await swapDisplayDocToCleanOriginal();
+                } else if (embeddedStrokes && !state.cleanOriginalPdfBytes) {
+                    // Legacy doc that was previously saved by this app but we no longer
+                    // have the clean original. The strokes are baked into the saved
+                    // PDF as an overlay PNG AND restored as vectors here. Mark legacy
+                    // so the renderer paints white covers over the baked image — that
+                    // way erasing a stroke visually wipes the baked pixels too.
+                    state.hasLegacyBakedOverlay = true;
                 }
 
                 // Fix legacy same-ID strokes and deduplicate truly identical ones
@@ -20217,6 +20373,16 @@
                             }
                         }
 
+                        // In legacy-baked mode (file has STROKES_Z but no clean
+                        // original cached), seed legacyCoverStrokes with a clone of
+                        // the restored strokes so the renderer paints white covers
+                        // over the burnt-in image — that lets the eraser work.
+                        const legacyCovers = (state.hasLegacyBakedOverlay && needsPdfBackground)
+                            ? restoredStrokes.map(s => ({
+                                ...s,
+                                points: Array.isArray(s.points) ? s.points.map(p => ({ ...p })) : []
+                            }))
+                            : null;
                         if (needsPdfBackground) {
                             importedPages.push({
                                 strokes: restoredStrokes,
@@ -20227,6 +20393,7 @@
                                 pageWidth: normalizePageDimension(pageData.pageWidth, pageSizeFallback.width),
                                 pageHeight: normalizePageDimension(pageData.pageHeight, pageSizeFallback.height),
                                 images: useLegacyRaster ? [] : restoredImages,
+                                legacyCoverStrokes: legacyCovers,
                                 needsRedraw: true
                             });
                         } else {
@@ -20677,6 +20844,89 @@
             });
         }
 
+        // Parse the IH_OVERLAY_REFS section out of a PDF Keywords string.
+        // Format: `STROKES_Z:<base64>;IH_OVERLAY_REFS:p<idx>=<refNum>,...`
+        // Returns Map<pageIndex, refNumber> or null if not present.
+        function parseOverlayRefsFromKeywords(keywordsStr) {
+            if (!keywordsStr || typeof keywordsStr !== 'string') return null;
+            const marker = 'IH_OVERLAY_REFS:';
+            const idx = keywordsStr.indexOf(marker);
+            if (idx < 0) return null;
+            let payload = keywordsStr.substring(idx + marker.length);
+            const semiIdx = payload.indexOf(';');
+            if (semiIdx >= 0) payload = payload.substring(0, semiIdx);
+            const refs = new Map();
+            for (const entry of payload.split(',')) {
+                const eq = entry.indexOf('=');
+                if (eq < 0) continue;
+                const pageIdx = parseInt(entry.substring(0, eq), 10);
+                const refNum = parseInt(entry.substring(eq + 1), 10);
+                if (Number.isFinite(pageIdx) && Number.isFinite(refNum)) {
+                    refs.set(pageIdx, refNum);
+                }
+            }
+            return refs.size > 0 ? refs : null;
+        }
+
+        // Surgically remove the overlay XObject from each page's Resources.
+        // The page's clean original content stream remains intact, so the
+        // saved bytes effectively become the clean original PDF again.
+        // Returns a fresh Uint8Array of the cleaned bytes, or null on failure.
+        async function stripOverlaysFromPdfBytes(bytes, refsMap) {
+            const PDFLib = window.PDFLib;
+            if (!PDFLib || !refsMap || refsMap.size === 0 || !bytes) return null;
+            try {
+                const inputBuf = bytes instanceof ArrayBuffer
+                    ? bytes.slice(0)
+                    : (bytes.buffer ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) : bytes);
+                const doc = await PDFLib.PDFDocument.load(inputBuf, {
+                    ignoreEncryption: true,
+                    updateMetadata: false
+                });
+                const PDFName = PDFLib.PDFName;
+                const pages = doc.getPages();
+                let removedCount = 0;
+                for (const [pageIdx, refNum] of refsMap.entries()) {
+                    if (pageIdx < 0 || pageIdx >= pages.length) continue;
+                    const page = pages[pageIdx];
+                    const pageDict = page?.node;
+                    if (!pageDict || typeof pageDict.lookup !== 'function') continue;
+                    const resources = pageDict.lookup(PDFName.of('Resources'));
+                    if (!resources || typeof resources.lookup !== 'function') continue;
+                    const xobjects = resources.lookup(PDFName.of('XObject'));
+                    if (!xobjects || typeof xobjects.entries !== 'function') continue;
+                    let nameToRemove = null;
+                    for (const [name, value] of xobjects.entries()) {
+                        if (!value) continue;
+                        const candidateRef = (typeof value.objectNumber === 'number')
+                            ? value.objectNumber
+                            : (value.tag && typeof value.tag.objectNumber === 'number' ? value.tag.objectNumber : null);
+                        if (candidateRef === refNum) {
+                            nameToRemove = name;
+                            break;
+                        }
+                    }
+                    if (nameToRemove) {
+                        try {
+                            xobjects.delete(nameToRemove);
+                            removedCount += 1;
+                        } catch (delErr) {
+                            // ignore — try next page
+                        }
+                    }
+                }
+                if (removedCount === 0) return null;
+                const cleanedBytes = await doc.save({
+                    useObjectStreams: false,
+                    addDefaultPage: false
+                });
+                return cleanedBytes;
+            } catch (err) {
+                console.warn('stripOverlaysFromPdfBytes failed:', err);
+                return null;
+            }
+        }
+
         // Cache of overlay PNG bytes per page for the pdf-lib export path.
         // Mirrors `pdfExportCache` so consecutive Drive saves don't re-render
         // unchanged pages. Cleared on document switch / state reset.
@@ -20757,9 +21007,10 @@
 
             const pageCount = state.pages.length;
             const optimizeForUpload = !!options.optimizeForUpload && !options.highQuality;
+            // Higher overlay resolution so strokes stay sharp under PDF zoom.
             const overlayScale = options.highQuality
-                ? Math.min(2, CANVAS_SCALE)
-                : (optimizeForUpload ? 1.2 : 1.5);
+                ? Math.min(3.5, CANVAS_SCALE * 1.75)
+                : (optimizeForUpload ? 2 : 2.5);
             const exportProfile = `pdflib:${overlayScale}:${optimizeForUpload ? 'opt' : (options.highQuality ? 'hq' : 'std')}`;
 
             // PDF user units are points (1pt = 1/72 inch). PDF.js viewports use CSS px @ 96 DPI.
@@ -20804,6 +21055,10 @@
             const overlayCanvas = createProcessingCanvas(1, 1);
             const overlayCtx = overlayCanvas.getContext('2d');
             const metadataParts = [];
+            // Track each overlay XObject's ref number so future reopens can
+            // surgically remove the overlay from page resources (no white
+            // covers, no doubled strokes).
+            const overlayRefs = [];
 
             for (let i = 0; i < pageCount; i++) {
                 await yieldToUI(true);
@@ -20978,6 +21233,10 @@
                     x: 0, y: 0,
                     width: pageWidthPt, height: pageHeightPt
                 });
+                const refNum = overlayImg?.ref?.objectNumber;
+                if (Number.isFinite(refNum)) {
+                    overlayRefs.push({ pageIdx: i, refNum });
+                }
             }
 
             // Release overlay canvas backing store
@@ -20996,8 +21255,13 @@
                 encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
                 metaPrefix = 'STROKES_DATA:';
             }
+            let keywordsPayload = metaPrefix + encodedMetadata;
+            if (overlayRefs.length > 0) {
+                const refsStr = overlayRefs.map(r => `${r.pageIdx}=${r.refNum}`).join(',');
+                keywordsPayload += `;IH_OVERLAY_REFS:${refsStr}`;
+            }
             try {
-                outDoc.setKeywords([metaPrefix + encodedMetadata]);
+                outDoc.setKeywords([keywordsPayload]);
                 outDoc.setTitle('Cuaderno Digital');
                 outDoc.setSubject('Notas con S-Pen');
                 outDoc.setCreator('Cuaderno Digital App');
@@ -21363,6 +21627,7 @@
                         tempCtx.setTransform(exportScale, 0, 0, exportScale, 0, 0);
                         tempCtx.lineCap = 'round';
                         tempCtx.lineJoin = 'round';
+                        drawLegacyCoverStrokes(tempCtx, pageData);
                         await drawImagesOnCanvas(tempCtx, renderPageStrokeEntry, {
                             abortSignal,
                             yieldFn: () => maybeYieldForSlice(false)
