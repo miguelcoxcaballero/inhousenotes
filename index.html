@@ -6660,6 +6660,8 @@
             })();
             const isSignedInAtBoot = !!driveAccessToken || hasStoredDriveToken || hasStoredRefreshToken;
             if (window.pendingSharedDriveId) {
+                // Honour the deep-link share regardless of where the user was
+                // last time — they explicitly opened a shared link.
                 if (driveAccessToken) {
                     showEditorView();
                 } else {
@@ -6667,11 +6669,11 @@
                 }
             } else if (!isSignedInAtBoot) {
                 showWelcomeView();
-            } else if (lastView === 'drive') {
-                showDriveHome();
-            } else if (state.driveFileId) {
-                showEditorView();
             } else {
+                // Default to the Drive home on every cold boot, even if the
+                // last session was inside a document. This avoids dumping the
+                // user back into the editor of a document they may not want
+                // to reopen, and matches the expected "app-style" behaviour.
                 showDriveHome();
             }
             const welcomeLoginBtn = document.getElementById('btn-welcome-login');
@@ -7850,6 +7852,10 @@
         function setupCanvasEvents(canvas, pageIndex) {
             let isDrawing = false;
             let currentStroke = null;
+            // pageId captured at pointerdown so the finalized stroke can be
+            // routed to the correct page even after a concurrent remote sync
+            // reorders state.pages.
+            let currentStrokePageId = null;
             let erasedStrokes = []; // For eraser tools to track what was erased
             let areaEraseBefore = null;
             let areaEraseChanged = false;
@@ -7986,6 +7992,9 @@
                         lastMid: null,
                         finalizedIndex: -1
                     };
+                    // Anchor the stroke to its page identity so it follows the
+                    // page across remote reorders that may land mid-draw.
+                    currentStrokePageId = state.pages[pageIndex]?.pageId || null;
                     updateLiveStroke(pageIndex, canvas, currentStroke);
                 }
             });
@@ -8045,6 +8054,7 @@
                     }
                     clearEraserPreview(pageIndex);
                     currentStroke = null;
+                    currentStrokePageId = null;
                     erasedStrokes = [];
                     areaEraseBefore = null;
                     areaEraseChanged = false;
@@ -8111,7 +8121,29 @@
                             currentStroke.points.push({ x: pos.x, y: pos.y, p: e.pressure || last.p || 0.5 });
                         }
                     }
-                    commitLiveStrokeToCanvas(pageIndex, canvas, currentStroke);
+                    // Resolve the target page by pageId captured when the stroke
+                    // started — if a remote sync reordered the document while the
+                    // user was drawing, the closure's pageIndex is stale and
+                    // pushing the stroke to state.pages[pageIndex] would land it
+                    // on the wrong page (whichever happens to occupy that index
+                    // now). Looking up by pageId follows the page across reorders.
+                    let targetPageIndex = pageIndex;
+                    if (currentStrokePageId) {
+                        const livePage = state.pages[targetPageIndex];
+                        if (!livePage || livePage.pageId !== currentStrokePageId) {
+                            const liveIdx = state.pages.findIndex(p => p?.pageId === currentStrokePageId);
+                            if (liveIdx >= 0) targetPageIndex = liveIdx;
+                        }
+                    }
+                    const targetPage = state.pages[targetPageIndex];
+                    if (!targetPage) {
+                        // Page was deleted while we were drawing — drop the stroke.
+                        currentStroke = null;
+                        currentStrokePageId = null;
+                        return;
+                    }
+
+                    commitLiveStrokeToCanvas(targetPageIndex, canvas, currentStroke);
                     // Simplify stroke points to save memory
                     simplifyStrokePoints(currentStroke);
 
@@ -8122,33 +8154,34 @@
                         width: currentStroke.width,
                         points: currentStroke.points
                     };
-                    state.pages[pageIndex].strokes.push(finalizedStroke);
-                    if (typeof state.pages[pageIndex].strokeCount === 'number') {
-                        state.pages[pageIndex].strokeCount += 1;
+                    targetPage.strokes.push(finalizedStroke);
+                    if (typeof targetPage.strokeCount === 'number') {
+                        targetPage.strokeCount += 1;
                     } else {
-                        state.pages[pageIndex].strokeCount = getVisibleStrokeCount(state.pages[pageIndex]);
+                        targetPage.strokeCount = getVisibleStrokeCount(targetPage);
                     }
                     const persistedStroke = cloneStroke(finalizedStroke);
-                    enqueueStrokeOp(pageIndex, persistedStroke, { alreadyCloned: true });
+                    enqueueStrokeOp(targetPageIndex, persistedStroke, { alreadyCloned: true });
                     saveToHistory({
                         type: 'add-stroke',
-                        pageIndex: pageIndex,
+                        pageIndex: targetPageIndex,
                         stroke: persistedStroke
                     });
-                    scheduleSave(false, pageIndex, 'stroke');
+                    scheduleSave(false, targetPageIndex, 'stroke');
 
                     // Check if we need to bake old strokes
-                    if (shouldBakeStrokes(pageIndex)) {
+                    if (shouldBakeStrokes(targetPageIndex)) {
                         if (isPenWriting) {
-                            deferredBakePages.add(pageIndex);
+                            deferredBakePages.add(targetPageIndex);
                         } else {
-                            setTimeout(() => bakeOldStrokes(pageIndex), 100);
+                            setTimeout(() => bakeOldStrokes(targetPageIndex), 100);
                         }
                     }
                 }
 	                clearEraserPreview(pageIndex);
 
 	                currentStroke = null;
+	                currentStrokePageId = null;
 	                erasedStrokes = [];
 	                areaEraseBefore = null;
 	                areaEraseChanged = false;
@@ -14971,7 +15004,11 @@
                         if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
                         if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
 
-                        const needsSave = !state.isReadOnly && (hasPendingLocalSave() || hasPendingDriveSave() || driveDirty);
+                        // Always flush pending saves, even if the user just
+                        // toggled to read mode — the dirty changes happened
+                        // while editing was on and must be persisted before
+                        // leaving the document.
+                        const needsSave = hasPendingLocalSave() || hasPendingDriveSave() || driveDirty;
                         if (needsSave) {
                             showLoading('Saving to Drive...');
                             clearTimeout(state.saveTimeout);
@@ -19076,7 +19113,8 @@
         }
 
         function requestImmediateDriveSave(options = {}) {
-            if (state.isReadOnly || !state.driveAutosave) return;
+            if (!state.driveAutosave) return;
+            if (state.isReadOnly && !options.force) return;
             driveDirty = true;
             if (!driveAccessToken) {
                 deferredDriveSave = true;
@@ -19520,7 +19558,12 @@
         }
 
         async function queueDriveSave(force = false, options = {}) {
-            if (state.isReadOnly || !state.driveAutosave) return;
+            if (!state.driveAutosave) return;
+            // The local "read-only" toggle is a UI mode (the user disabled the
+            // pen to scroll comfortably). It must not block an explicit force
+            // save (e.g. before leaving the document) — pending dirty changes
+            // happened while editing was on and need to be flushed.
+            if (state.isReadOnly && !force) return;
             if (!driveDirty && !force) return;
             const sessionToken = getDocumentSessionToken();
             if ((hasSmoothInteraction() || hasRecentUserActivity()) && !force) {
@@ -20958,9 +21001,26 @@
             //   4. Append local-only pages (not yet synced) at the end.
             // Strokes per page travel with their owning page across reorders,
             // so the existing positional merge logic below stays correct.
-            ensurePageIds(state.pages);
             const remoteHasAllPageIds = remoteStrokeData.every(p => p && typeof p.pageId === 'string' && p.pageId);
             if (remoteHasAllPageIds) {
+                // First-sync alignment: if local pages don't have pageIds yet
+                // (legacy doc, or this is the first pull after the OTHER device
+                // assigned IDs in its save), ADOPT the remote ID at the same
+                // position instead of generating a random local one. Without
+                // this the localById map wouldn't match anything in remote and
+                // every remote page would be added as a "new" shell, leaving
+                // the un-IDed local pages dangling at the end → the document
+                // would appear duplicated (original pages, then "fresh" ones).
+                for (let i = 0; i < state.pages.length && i < remoteStrokeData.length; i++) {
+                    const localPage = state.pages[i];
+                    const remoteData = remoteStrokeData[i];
+                    if (localPage && !localPage.pageId && remoteData?.pageId) {
+                        localPage.pageId = remoteData.pageId;
+                    }
+                }
+                // Any local pages beyond remote count that still lack a pageId
+                // get a fresh ID — they're brand-new local additions.
+                ensurePageIds(state.pages);
                 const localById = new Map();
                 state.pages.forEach((page, oldIdx) => {
                     if (page?.pageId) localById.set(page.pageId, { page, oldIdx });
