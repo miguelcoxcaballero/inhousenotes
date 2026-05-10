@@ -2805,7 +2805,7 @@
         [data-theme="dark"] .bin-item-more {
             background: rgba(30, 30, 30, 0.85);
             color: var(--text-primary);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: none;
         }
 
         [data-theme="dark"] .drive-card-dropdown,
@@ -3241,13 +3241,13 @@
             min-height: 0;
             background: rgba(0, 0, 0, 0.04);
             border-radius: 10px;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: auto;
             display: flex;
             flex-direction: column;
             align-items: center;
             padding: 16px;
             gap: 16px;
+            touch-action: pan-x pan-y pinch-zoom;
         }
 
         [data-theme="dark"] .timeline-preview-canvas-wrap {
@@ -3264,10 +3264,11 @@
 
         .timeline-preview-page canvas {
             display: block;
-            max-width: 100%;
             background: white;
             box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
             border-radius: 4px;
+            /* width is set inline (canvas.style.width) so pinch/trackpad zoom
+               can scale freely beyond the wrap's content box. */
         }
 
         .timeline-preview-page-label {
@@ -10456,9 +10457,9 @@
             menuBtn.setAttribute('aria-label', 'More actions');
             menuBtn.innerHTML = `
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-                    <circle cx="5" cy="12" r="2"></circle>
                     <circle cx="12" cy="12" r="2"></circle>
-                    <circle cx="19" cy="12" r="2"></circle>
+                    <circle cx="12" cy="5" r="2"></circle>
+                    <circle cx="12" cy="19" r="2"></circle>
                 </svg>
             `;
 
@@ -13426,7 +13427,26 @@
 
         let _selectedTimelineVersionId = null;
         let _timelinePreviewToken = 0;
+        let _timelineZoom = 1;
+        const TIMELINE_ZOOM_MIN = 0.2;
+        const TIMELINE_ZOOM_MAX = 3;
         const ORIGINAL_VERSION_ID = '__original__';
+
+        function applyTimelineZoomToCanvases() {
+            const wrap = document.getElementById('timeline-preview-wrap');
+            if (!wrap) return;
+            wrap.querySelectorAll('.timeline-preview-page canvas').forEach(canvas => {
+                const baseW = parseFloat(canvas.dataset.baseWidth || canvas.width || 0) || canvas.width;
+                if (!baseW) return;
+                canvas.style.width = `${baseW * _timelineZoom}px`;
+                canvas.style.height = 'auto';
+            });
+        }
+
+        function clampTimelineZoom(z) {
+            if (!Number.isFinite(z)) return 1;
+            return Math.max(TIMELINE_ZOOM_MIN, Math.min(TIMELINE_ZOOM_MAX, z));
+        }
 
         // Build a synthetic timeline entry representing the clean original PDF (no
         // edits). It always appears as the oldest entry in the list so the user can
@@ -13515,18 +13535,26 @@
                 metaEl.textContent = `${author} · ${whenStr} · ${pageCount} page${pageCount !== 1 ? 's' : ''}`;
             }
 
-            // Choose a preview scale that fits the wrapper width while staying
-            // within reasonable memory bounds. Same scale applied to every page so
-            // they all look consistent.
+            // Compute a base scale that makes ONE full page fit inside the preview
+            // viewport (both width and height). The user can then pinch / trackpad
+            // zoom in or out from this baseline.
             const wrapRect = wrap.getBoundingClientRect();
             const targetWidth = Math.max(160, (wrapRect.width || 480) - 32);
-            // Use the largest snapshot page width to compute a uniform scale.
+            const targetHeight = Math.max(160, (wrapRect.height || 480) - 32);
             let widestPage = 0;
+            let tallestPage = 0;
             for (const p of entry.pages) {
                 widestPage = Math.max(widestPage, normalizePageDimension(p?.pageWidth, A4_WIDTH));
+                tallestPage = Math.max(tallestPage, normalizePageDimension(p?.pageHeight, A4_HEIGHT));
             }
             if (widestPage <= 0) widestPage = A4_WIDTH;
-            const previewScale = Math.max(0.35, Math.min(1.4, targetWidth / widestPage));
+            if (tallestPage <= 0) tallestPage = A4_HEIGHT;
+            // Render canvas at slightly higher density than the on-screen base size
+            // so light zoom-in stays sharp without re-rendering. CSS width applies
+            // the actual zoom level via _timelineZoom.
+            const fitScale = Math.min(targetWidth / widestPage, targetHeight / tallestPage);
+            const renderScale = Math.max(0.4, Math.min(1.6, fitScale * 1.5));
+            const baseDisplayScale = Math.max(0.25, Math.min(1.4, fitScale));
 
             for (let pageIdx = 0; pageIdx < entry.pages.length; pageIdx++) {
                 if (token !== _timelinePreviewToken) return;
@@ -13538,8 +13566,13 @@
                 const pageContainer = document.createElement('div');
                 pageContainer.className = 'timeline-preview-page';
                 const canvas = document.createElement('canvas');
-                canvas.width = Math.max(1, Math.round(pageWidth * previewScale));
-                canvas.height = Math.max(1, Math.round(pageHeight * previewScale));
+                canvas.width = Math.max(1, Math.round(pageWidth * renderScale));
+                canvas.height = Math.max(1, Math.round(pageHeight * renderScale));
+                // Display size for zoom=1 (one page fits the viewport).
+                const baseDisplayWidth = Math.max(1, Math.round(pageWidth * baseDisplayScale));
+                canvas.dataset.baseWidth = String(baseDisplayWidth);
+                canvas.style.width = `${baseDisplayWidth * _timelineZoom}px`;
+                canvas.style.height = 'auto';
                 pageContainer.appendChild(canvas);
                 const label = document.createElement('div');
                 label.className = 'timeline-preview-page-label';
@@ -13580,7 +13613,7 @@
 
                 // 2. Strokes on top.
                 ctx.save();
-                ctx.setTransform(previewScale, 0, 0, previewScale, 0, 0);
+                ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 const strokes = Array.isArray(snapshotPage?.strokes) ? snapshotPage.strokes : [];
@@ -13615,6 +13648,9 @@
 
         function selectTimelineVersion(versionId) {
             _selectedTimelineVersionId = versionId || null;
+            // Reset zoom whenever the user picks a different version so the new
+            // preview always opens at "one page fits".
+            _timelineZoom = 1;
             // Update list highlight.
             const list = document.getElementById('timeline-list');
             if (list) {
@@ -13748,6 +13784,7 @@
             const panel = document.getElementById('timeline-panel');
             const closeBtn = document.getElementById('btn-close-timeline');
             const revertSelectedBtn = document.getElementById('btn-revert-to-version');
+            const previewWrap = document.getElementById('timeline-preview-wrap');
             if (!panel) return;
             if (openBtn) {
                 openBtn.addEventListener('click', () => openTimelinePanel());
@@ -13763,6 +13800,44 @@
                     revertSelectedBtn.disabled = false;
                     if (ok) closeTimelinePanel();
                     else updateTimelineRevertButtonState();
+                });
+            }
+
+            // Pinch / trackpad zoom on the preview wrap. Browsers send wheel events
+            // with ctrlKey=true for trackpad pinches and ctrl+wheel; we use that as
+            // the gesture signal.
+            if (previewWrap) {
+                previewWrap.addEventListener('wheel', (e) => {
+                    if (!e.ctrlKey) return; // let regular vertical scroll pass through
+                    e.preventDefault();
+                    // Smooth, exponential step so big deltas don't overshoot.
+                    const factor = Math.exp(-e.deltaY * 0.01);
+                    _timelineZoom = clampTimelineZoom(_timelineZoom * factor);
+                    applyTimelineZoomToCanvases();
+                }, { passive: false });
+
+                // Two-finger pinch on touch devices.
+                let pinchStartDist = 0;
+                let pinchStartZoom = 1;
+                const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                previewWrap.addEventListener('touchstart', (e) => {
+                    if (e.touches.length !== 2) return;
+                    pinchStartDist = dist(e.touches[0], e.touches[1]);
+                    pinchStartZoom = _timelineZoom;
+                }, { passive: true });
+                previewWrap.addEventListener('touchmove', (e) => {
+                    if (e.touches.length !== 2 || pinchStartDist <= 0) return;
+                    e.preventDefault();
+                    const d = dist(e.touches[0], e.touches[1]);
+                    if (d <= 0) return;
+                    _timelineZoom = clampTimelineZoom(pinchStartZoom * (d / pinchStartDist));
+                    applyTimelineZoomToCanvases();
+                }, { passive: false });
+                previewWrap.addEventListener('touchend', () => {
+                    pinchStartDist = 0;
+                });
+                previewWrap.addEventListener('touchcancel', () => {
+                    pinchStartDist = 0;
                 });
             }
         }
