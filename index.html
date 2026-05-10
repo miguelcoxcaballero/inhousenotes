@@ -2762,7 +2762,7 @@
             height: 28px;
             border-radius: 8px;
             border: none;
-            background: rgba(255, 255, 255, 0.85);
+            background: transparent;
             box-shadow: none;
             display: grid;
             place-items: center;
@@ -2773,7 +2773,7 @@
 
         .drive-card-more:hover {
             color: var(--text-primary);
-            background: rgba(255, 255, 255, 0.95);
+            background: transparent;
         }
 
         .drive-card-dropdown {
@@ -2815,10 +2815,10 @@
 
         [data-theme="dark"] .drive-card-more,
         [data-theme="dark"] .bin-item-more {
-            background: rgba(30, 30, 30, 0.85);
+            background: transparent;
             color: var(--text-primary);
             border: none;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            box-shadow: none;
         }
 
         [data-theme="dark"] .drive-card-dropdown,
@@ -3054,8 +3054,8 @@
             height: 28px;
             border-radius: 8px;
             border: none;
-            background: rgba(255, 255, 255, 0.9);
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+            background: transparent;
+            box-shadow: none;
             display: grid;
             place-items: center;
             cursor: pointer;
@@ -19559,6 +19559,25 @@
             remoteChangePendingMeta = null;
             let driveSaveSucceeded = false;
             try {
+                // Pre-merge guard against concurrent multi-device edits: if the
+                // collab poller previously detected a remote change but skipped
+                // the pull because we had unsynced local content, flush that
+                // pull NOW (before we upload) so the remote strokes are merged
+                // into local first. Without this, we would push our local-only
+                // state on top of Drive, overwriting the other device's strokes.
+                if (deferredRemotePullPending && state.driveFileId) {
+                    try {
+                        const flushed = await flushDeferredRemotePull({ allowWhileLocalPending: true });
+                        if (flushed) {
+                            // Merge produced a new state — keep it dirty so we still
+                            // upload the merged result.
+                            driveDirty = true;
+                            try { bumpDriveContentVersion(); } catch (e) {}
+                        }
+                    } catch (mergeErr) {
+                        console.warn('Pre-save deferred pull failed:', mergeErr);
+                    }
+                }
                 const hasUnsyncedContent = driveContentVersion !== driveUploadedContentVersion;
                 const needsPdf = state.pages.some(page => page?.pdfPageIndex);
                 if (needsPdf && !activePdfDocument) {
@@ -19605,9 +19624,12 @@
                     throw new Error('Drive save aborted');
                 }
                 if (!wasCreated) {
-                    // Skip pull-before-push on normal saves — collab polling handles merges.
-                    // Only merge on forced saves (e.g. goHome) to avoid extra HTTP round-trip.
-                    if (force && (state.driveHeadRevisionId || state.driveLastKnownModified)) {
+                    // Always pre-merge before uploading: even autosaves need to
+                    // pull any remote changes that landed between our last known
+                    // baseline and now. Otherwise concurrent edits from a second
+                    // device would be silently overwritten by our upload, with
+                    // only the last-writer's strokes surviving on Drive.
+                    if (state.driveHeadRevisionId || state.driveLastKnownModified) {
                         try {
                             const checkRes = await driveFetch(
                                 `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
@@ -20722,6 +20744,19 @@
                             const decodedString = decodeURIComponent(escape(atob(encodedData)));
                             remoteStrokeData = JSON.parse(decodedString);
                         }
+                        // Sync the timeline / version history with the remote
+                        // copy. Without this, when the other device performs a
+                        // restore the milestone entry never appears in our
+                        // timeline and the "Current" preview keeps showing
+                        // stale content from before the revert.
+                        try {
+                            const decodedHistory = await decodeVersionHistoryFromKeywords(keywords);
+                            if (Array.isArray(decodedHistory)) {
+                                state.versionHistory = decodedHistory;
+                            }
+                        } catch (vhErr) {
+                            console.warn('Failed to extract remote version history:', vhErr);
+                        }
                     } catch (metaErr) {
                         console.warn('Failed to extract remote stroke data:', metaErr);
                     }
@@ -20745,21 +20780,59 @@
                 // Apply remote changes
                 const mergeResult = await applyRemotePages(remoteStrokeData);
 
-                // Render backgrounds for pages that got a PDF/custom backgroundSource but have no image
-                if (mergeResult?.pagesNeedingPdfBackground?.length > 0 && remotePdfDoc) {
+                // Render backgrounds for pages that got a PDF/custom backgroundSource but have no image.
+                // Important: when the document has a cached clean-original (no overlay XObjects),
+                // keep activePdfDocument pointed at it. Swapping in the freshly-pulled remote PDF
+                // would render the page WITH the overlay PNG baked in — strokes would then appear
+                // as part of the rasterized background instead of being drawn as vectors on top.
+                if (mergeResult?.pagesNeedingPdfBackground?.length > 0) {
                     const prevActivePdf = activePdfDocument;
-                    activePdfDocument = remotePdfDoc;
+                    const cleanIsActive = !!state.cleanOriginalPdfBytes && !!activePdfDocument;
+                    if (!cleanIsActive && remotePdfDoc) {
+                        activePdfDocument = remotePdfDoc;
+                    }
                     const renderToken = pdfRenderToken;
                     for (const pageIdx of mergeResult.pagesNeedingPdfBackground) {
                         await renderPdfPageToBackground(pageIdx, renderToken, { ignoreRecentActivity: true });
                     }
-                    activePdfDocument = prevActivePdf;
+                    if (!cleanIsActive) {
+                        activePdfDocument = prevActivePdf;
+                    }
                 }
                 if (remotePdfDoc?.cleanup) { try { remotePdfDoc.cleanup(); } catch (e) {} }
                 remotePdfDoc = null;
 
                 if (mergeResult && mergeResult.changed) {
                     bumpDriveContentVersion();
+                }
+
+                // If the timeline panel is open while a sync lands, refresh its
+                // list and the "Current" preview so the user sees the new
+                // restore/edit milestones without having to close & reopen.
+                const tlPanel = document.getElementById('timeline-panel');
+                if (tlPanel && tlPanel.classList.contains('visible')) {
+                    try {
+                        renderTimelineList();
+                        const currentId = getCurrentVersionId();
+                        if (currentId && (!_selectedTimelineVersionId
+                            || _selectedTimelineVersionId === currentId)) {
+                            _timelineZoom = 1;
+                            _selectedTimelineVersionId = currentId;
+                            const list = document.getElementById('timeline-list');
+                            if (list) {
+                                list.querySelectorAll('.timeline-entry').forEach(el => {
+                                    el.classList.toggle('is-selected', el.dataset.versionId === currentId);
+                                });
+                            }
+                            const entry = findVersionById(currentId);
+                            renderTimelinePreview(entry);
+                            updateTimelineRevertButtonState();
+                        } else {
+                            updateTimelineRevertButtonState();
+                        }
+                    } catch (tlErr) {
+                        console.warn('Timeline live-refresh failed:', tlErr);
+                    }
                 }
 
                 // If we merged local-only content, save back to Drive so others get it
