@@ -3343,10 +3343,169 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 14px;
             flex: 1 1 auto;
             overflow-y: auto;
             min-height: 0;
+        }
+
+        .timeline-month-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .timeline-group-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: transparent;
+            border: none;
+            padding: 6px 4px;
+            cursor: pointer;
+            font: inherit;
+            color: var(--text-primary);
+            text-align: left;
+            border-radius: 6px;
+            transition: background 0.15s ease;
+            width: 100%;
+        }
+
+        .timeline-group-header:hover {
+            background: rgba(0, 0, 0, 0.04);
+        }
+
+        [data-theme="dark"] .timeline-group-header:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .timeline-group-header .timeline-group-chevron {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 14px;
+            transition: transform 0.18s ease;
+            color: var(--text-secondary);
+        }
+
+        .timeline-group-header.is-collapsed .timeline-group-chevron {
+            transform: rotate(-90deg);
+        }
+
+        .timeline-month-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            flex: 1 1 auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .timeline-group-count {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            opacity: 0.75;
+        }
+
+        .timeline-cluster-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-left: 14px;
+        }
+
+        .timeline-cluster-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-primary);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            padding: 8px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            font: inherit;
+            color: var(--text-primary);
+            text-align: left;
+            width: 100%;
+            transition: background 0.15s ease;
+        }
+
+        [data-theme="dark"] .timeline-cluster-header {
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .timeline-cluster-header:hover {
+            background: rgba(0, 0, 0, 0.03);
+        }
+
+        [data-theme="dark"] .timeline-cluster-header:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .timeline-cluster-header.is-collapsed .timeline-group-chevron {
+            transform: rotate(-90deg);
+        }
+
+        .timeline-cluster-info {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .timeline-cluster-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .timeline-cluster-meta {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+        }
+
+        .timeline-cluster-avatars {
+            display: flex;
+            align-items: center;
+            margin-right: 4px;
+        }
+
+        .timeline-cluster-avatars img {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--bg-primary);
+            margin-left: -8px;
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .timeline-cluster-avatars img:first-child {
+            margin-left: 0;
+        }
+
+        .timeline-cluster-entries {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-left: 12px;
+            border-left: 2px solid rgba(0, 0, 0, 0.06);
+            margin-left: 4px;
+        }
+
+        [data-theme="dark"] .timeline-cluster-entries {
+            border-left-color: rgba(255, 255, 255, 0.06);
+        }
+
+        .timeline-cluster-entries[hidden],
+        .timeline-cluster-group[hidden] {
+            display: none !important;
         }
 
         .timeline-list-footer {
@@ -13663,6 +13822,96 @@
             updateTimelineRevertButtonState();
         }
 
+        // Persistent UI state for collapsed/expanded groups in the timeline.
+        const _timelineCollapsedMonths = new Set();
+        const _timelineCollapsedClusters = new Set();
+        const TIMELINE_CLUSTER_GAP_MS = 60 * 60 * 1000; // 1h within a cluster
+
+        function getTimelineMonthKey(ts) {
+            if (!Number.isFinite(ts) || ts <= 0) return 'original';
+            const d = new Date(ts);
+            return `${d.getFullYear()}-${d.getMonth()}`;
+        }
+
+        function getTimelineMonthLabel(ts) {
+            if (!Number.isFinite(ts) || ts <= 0) return 'Original';
+            try {
+                return new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'long' });
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function getTimelineDayLabel(ts) {
+            if (!Number.isFinite(ts) || ts <= 0) return '';
+            const d = new Date(ts);
+            const today = new Date();
+            const yesterday = new Date();
+            yesterday.setDate(today.getDate() - 1);
+            const sameDay = (a, b) => a.getFullYear() === b.getFullYear()
+                && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+            if (sameDay(d, today)) return 'Today';
+            if (sameDay(d, yesterday)) return 'Yesterday';
+            try {
+                return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function formatTimelineHourMinute(ts) {
+            if (!Number.isFinite(ts) || ts <= 0) return '';
+            try {
+                return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+            } catch (e) {
+                return '';
+            }
+        }
+
+        // Group sequential entries by calendar month, then within each month by
+        // 1-hour proximity. Iteration order is newest→oldest (matches the visual
+        // order). Returns: [{ key, label, count, clusters: [{ key, headTs, tailTs, entries }] }]
+        function groupTimelineEntriesForDisplay(reversedEntries) {
+            const months = [];
+            let currentMonth = null;
+            let currentCluster = null;
+            let prevClusterTs = null;
+            for (const entry of reversedEntries) {
+                const isOriginal = !!entry.isOriginal;
+                const monthKey = isOriginal ? 'original' : getTimelineMonthKey(entry.ts);
+                if (!currentMonth || currentMonth.key !== monthKey) {
+                    currentMonth = {
+                        key: monthKey,
+                        label: isOriginal ? 'Original' : getTimelineMonthLabel(entry.ts),
+                        count: 0,
+                        clusters: []
+                    };
+                    months.push(currentMonth);
+                    currentCluster = null;
+                    prevClusterTs = null;
+                }
+                // Original entries are always their own single-element cluster.
+                const startNewCluster = isOriginal
+                    || !currentCluster
+                    || prevClusterTs == null
+                    || (prevClusterTs - entry.ts) > TIMELINE_CLUSTER_GAP_MS;
+                if (startNewCluster) {
+                    currentCluster = {
+                        key: `${monthKey}-${entry.id}`,
+                        headTs: entry.ts,
+                        tailTs: entry.ts,
+                        entries: []
+                    };
+                    currentMonth.clusters.push(currentCluster);
+                }
+                currentCluster.entries.push(entry);
+                currentCluster.tailTs = entry.ts;
+                currentMonth.count += 1;
+                prevClusterTs = entry.ts;
+            }
+            return months;
+        }
+
         function renderTimelineList() {
             const listEl = document.getElementById('timeline-list');
             const emptyEl = document.getElementById('timeline-empty');
@@ -13676,8 +13925,10 @@
             if (emptyEl) emptyEl.hidden = true;
             const reversed = history.slice().reverse();
             const fallbackAvatar = 'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"%23ccc\"><path d=\"M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\"/></svg>';
+            const chevronSvg = '<svg class="timeline-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
             const currentSavedId = getCurrentVersionId();
-            reversed.forEach((entry) => {
+
+            const buildEntryLi = (entry) => {
                 const isCurrent = entry.id === currentSavedId;
                 const isOriginal = !!entry.isOriginal;
                 const li = document.createElement('li');
@@ -13709,7 +13960,7 @@
                     const whenEl = document.createElement('span');
                     whenEl.className = 'timeline-entry-when';
                     const absolute = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
-                    whenEl.textContent = formatTimelineRelativeTime(entry.ts);
+                    whenEl.textContent = formatTimelineHourMinute(entry.ts) || formatTimelineRelativeTime(entry.ts);
                     whenEl.title = absolute;
                     row.appendChild(whenEl);
                 }
@@ -13747,8 +13998,143 @@
                         selectTimelineVersion(entry.id);
                     }
                 });
+                return li;
+            };
 
-                listEl.appendChild(li);
+            const months = groupTimelineEntriesForDisplay(reversed);
+            const newestMonthKey = months[0]?.key || null;
+            months.forEach((month, monthIdx) => {
+                const monthGroup = document.createElement('li');
+                monthGroup.className = 'timeline-month-group';
+                monthGroup.dataset.monthKey = month.key;
+
+                const isMonthCollapsed = _timelineCollapsedMonths.has(month.key);
+                const monthHeader = document.createElement('button');
+                monthHeader.type = 'button';
+                monthHeader.className = 'timeline-group-header' + (isMonthCollapsed ? ' is-collapsed' : '');
+                monthHeader.setAttribute('aria-expanded', isMonthCollapsed ? 'false' : 'true');
+                monthHeader.innerHTML = chevronSvg;
+                const monthLabel = document.createElement('span');
+                monthLabel.className = 'timeline-month-label';
+                monthLabel.textContent = month.label;
+                monthHeader.appendChild(monthLabel);
+                const monthCount = document.createElement('span');
+                monthCount.className = 'timeline-group-count';
+                monthCount.textContent = `${month.count} edit${month.count !== 1 ? 's' : ''}`;
+                monthHeader.appendChild(monthCount);
+                monthGroup.appendChild(monthHeader);
+
+                const monthBody = document.createElement('div');
+                monthBody.className = 'timeline-cluster-group';
+                monthBody.hidden = isMonthCollapsed;
+
+                month.clusters.forEach((cluster, clusterIdx) => {
+                    const isOriginalCluster = cluster.entries.length === 1 && cluster.entries[0].isOriginal;
+                    // Default: only the very newest cluster of the newest month is
+                    // expanded; everything else collapsed for a clean overview.
+                    const defaultCollapsed = !(monthIdx === 0 && clusterIdx === 0) && !isOriginalCluster;
+                    const explicit = _timelineCollapsedClusters.has(cluster.key)
+                        ? true
+                        : (_timelineCollapsedClusters.has(`!${cluster.key}`) ? false : null);
+                    const isClusterCollapsed = (explicit === null) ? defaultCollapsed : explicit;
+
+                    if (isOriginalCluster) {
+                        // Show the Original entry as a single bare item — no cluster header.
+                        const directLi = buildEntryLi(cluster.entries[0]);
+                        monthBody.appendChild(directLi);
+                        return;
+                    }
+
+                    const clusterWrap = document.createElement('div');
+                    clusterWrap.dataset.clusterKey = cluster.key;
+
+                    const clusterHeader = document.createElement('button');
+                    clusterHeader.type = 'button';
+                    clusterHeader.className = 'timeline-cluster-header' + (isClusterCollapsed ? ' is-collapsed' : '');
+                    clusterHeader.setAttribute('aria-expanded', isClusterCollapsed ? 'false' : 'true');
+                    clusterHeader.innerHTML = chevronSvg;
+
+                    const clusterInfo = document.createElement('div');
+                    clusterInfo.className = 'timeline-cluster-info';
+                    const dayLabel = getTimelineDayLabel(cluster.headTs);
+                    const fromHm = formatTimelineHourMinute(cluster.tailTs);
+                    const toHm = formatTimelineHourMinute(cluster.headTs);
+                    const titleEl = document.createElement('div');
+                    titleEl.className = 'timeline-cluster-title';
+                    titleEl.textContent = dayLabel
+                        ? (fromHm === toHm ? `${dayLabel}, ${toHm}` : `${dayLabel}, ${fromHm}–${toHm}`)
+                        : (fromHm === toHm ? toHm : `${fromHm}–${toHm}`);
+                    clusterInfo.appendChild(titleEl);
+                    const metaEl = document.createElement('div');
+                    metaEl.className = 'timeline-cluster-meta';
+                    const uniqueAuthors = new Set();
+                    cluster.entries.forEach(e => {
+                        const a = e.author?.name || e.author?.email;
+                        if (a) uniqueAuthors.add(a);
+                    });
+                    const authorList = Array.from(uniqueAuthors);
+                    const authorPart = authorList.length === 0 ? '' : (authorList.length === 1 ? authorList[0] : `${authorList[0]} +${authorList.length - 1}`);
+                    metaEl.textContent = `${cluster.entries.length} edit${cluster.entries.length !== 1 ? 's' : ''}${authorPart ? ` · ${authorPart}` : ''}`;
+                    clusterInfo.appendChild(metaEl);
+                    clusterHeader.appendChild(clusterInfo);
+
+                    // Avatar stack (up to 3 unique authors).
+                    const avatarsEl = document.createElement('div');
+                    avatarsEl.className = 'timeline-cluster-avatars';
+                    const seenAvatars = new Set();
+                    let avatarsAdded = 0;
+                    for (const e of cluster.entries) {
+                        const key = e.author?.email || e.author?.name || '';
+                        if (seenAvatars.has(key)) continue;
+                        seenAvatars.add(key);
+                        const img = document.createElement('img');
+                        img.src = e.author?.photo || fallbackAvatar;
+                        img.onerror = () => { img.src = fallbackAvatar; };
+                        img.alt = '';
+                        avatarsEl.appendChild(img);
+                        avatarsAdded += 1;
+                        if (avatarsAdded >= 3) break;
+                    }
+                    if (avatarsAdded > 0) clusterHeader.appendChild(avatarsEl);
+
+                    clusterWrap.appendChild(clusterHeader);
+
+                    const clusterEntries = document.createElement('ol');
+                    clusterEntries.className = 'timeline-cluster-entries';
+                    clusterEntries.style.listStyle = 'none';
+                    clusterEntries.style.padding = '0';
+                    clusterEntries.style.margin = '0';
+                    clusterEntries.hidden = isClusterCollapsed;
+                    cluster.entries.forEach(entry => {
+                        clusterEntries.appendChild(buildEntryLi(entry));
+                    });
+                    clusterWrap.appendChild(clusterEntries);
+
+                    clusterHeader.addEventListener('click', () => {
+                        const nowCollapsed = !clusterHeader.classList.contains('is-collapsed');
+                        clusterHeader.classList.toggle('is-collapsed', nowCollapsed);
+                        clusterHeader.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
+                        clusterEntries.hidden = nowCollapsed;
+                        // Persist explicit choice (overrides default).
+                        _timelineCollapsedClusters.delete(cluster.key);
+                        _timelineCollapsedClusters.delete(`!${cluster.key}`);
+                        _timelineCollapsedClusters.add(nowCollapsed ? cluster.key : `!${cluster.key}`);
+                    });
+
+                    monthBody.appendChild(clusterWrap);
+                });
+
+                monthHeader.addEventListener('click', () => {
+                    const nowCollapsed = !monthHeader.classList.contains('is-collapsed');
+                    monthHeader.classList.toggle('is-collapsed', nowCollapsed);
+                    monthHeader.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
+                    monthBody.hidden = nowCollapsed;
+                    if (nowCollapsed) _timelineCollapsedMonths.add(month.key);
+                    else _timelineCollapsedMonths.delete(month.key);
+                });
+
+                monthGroup.appendChild(monthBody);
+                listEl.appendChild(monthGroup);
             });
         }
 
