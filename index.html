@@ -5728,6 +5728,8 @@
         const DRIVE_POLL_TIMEOUT = 7000;
         const DRIVE_META_TIMEOUT = 7000;
         const DRIVE_POST_SAVE_CHECK_TIMEOUT = 3500;
+        const DRIVE_REMOTE_META_SKEW_MS = 250;
+        const DRIVE_OWN_WRITE_ECHO_WINDOW_MS = 12000;
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -6313,7 +6315,9 @@
             driveLastKnownModified: null,
             driveLastPolledAt: 0,
             collabEnabled: false,
-            collabPollInterval: null
+            collabPollInterval: null,
+            cleanOriginalPdfBytes: null,
+            cleanOriginalPageSizes: null
         };
 
         // DOM Elements
@@ -6437,6 +6441,7 @@
         let driveHydrationRetryAfter = 0;
         let driveContentVersion = 0;
         let driveUploadedContentVersion = 0;
+        let lastOwnDriveWriteMeta = null;
         let activeDriveSaveController = null;
         let lastPointerClientX = 0;
         let lastPointerClientY = 0;
@@ -7443,6 +7448,7 @@
             state.activePdfBytes = null;
             state.activePdfBytesFileId = null;
             state.cleanOriginalPdfBytes = null;
+            state.cleanOriginalPageSizes = null;
             // Drop the parsed pdf-lib document cached against the previous bytes.
             _pdfLibOriginalCache.bytesRef = null;
             _pdfLibOriginalCache.doc = null;
@@ -9921,6 +9927,7 @@
                 const previous = activePdfDocument;
                 activePdfDocument = cleanPdfDoc;
                 activePdfPageCount = cleanPdfDoc.numPages;
+                state.cleanOriginalPageSizes = await readPdfPageSizes(cleanPdfDoc);
                 // Existing rendered backgrounds (if any) came from the saved file
                 // and have the overlay burnt in — drop them so they re-render from
                 // the clean source.
@@ -9979,12 +9986,13 @@
 
                     // restorePdfBackgroundsIfNeeded only fires when the doc was already
                     // opened in this app (state.pages has pdfPageIndex entries), so the
-                    // Drive bytes are the most-recent app-saved version.
-                    // Recovery order, same as importPDFData:
-                    //   1. IH_OVERLAY_REFS in keywords -> surgically strip overlay.
-                    //   2. IndexedDB cache.
-                    state.cleanOriginalPdfBytes = null;
-                    // Restore version history from this freshly-fetched copy.
+                // Drive bytes are the most-recent app-saved version.
+                // Recovery order, same as importPDFData:
+                //   1. IH_OVERLAY_REFS in keywords -> surgically strip overlay.
+                //   2. IndexedDB cache.
+                state.cleanOriginalPdfBytes = null;
+                state.cleanOriginalPageSizes = null;
+                // Restore version history from this freshly-fetched copy.
                     try {
                         const meta0 = await pdf.getMetadata();
                         const kw0 = meta0?.info?.Keywords || '';
@@ -11660,6 +11668,7 @@
                 if (createdFile?.modifiedTime) {
                     state.driveLastKnownModified = new Date(createdFile.modifiedTime).getTime();
                 }
+                rememberOwnDriveWrite(createdFile || {});
                 markDriveContentUploaded(uploadedContentVersion);
                 if (driveContentVersion === uploadedContentVersion) {
                     updateSyncBaseline();
@@ -13618,6 +13627,45 @@
             return true;
         }
 
+        function addRestoreTombstones(restoredPages, currentPages) {
+            if (!Array.isArray(restoredPages) || restoredPages.length === 0 || !Array.isArray(currentPages)) return;
+            const restoredIds = new Set();
+            restoredPages.forEach(page => {
+                (page?.strokes || []).forEach(s => { if (s?.id) restoredIds.add(s.id); });
+                (page?.images || []).forEach(img => { if (img?.id) restoredIds.add(img.id); });
+            });
+            const purged = [];
+            currentPages.forEach(page => {
+                (page?.strokes || []).forEach(s => {
+                    if (s?.id && !restoredIds.has(s.id)) purged.push(s.id);
+                });
+                (page?.images || []).forEach(img => {
+                    if (img?.id && !restoredIds.has(img.id)) purged.push(img.id);
+                });
+            });
+            if (purged.length === 0) return;
+            const targetByPageId = new Map();
+            restoredPages.forEach(page => {
+                if (page?.pageId) targetByPageId.set(page.pageId, page);
+            });
+            currentPages.forEach(currentPage => {
+                const targetPage = (currentPage?.pageId && targetByPageId.get(currentPage.pageId))
+                    || restoredPages[restoredPages.length - 1];
+                if (!targetPage) return;
+                const pagePurged = [];
+                (currentPage?.strokes || []).forEach(s => {
+                    if (s?.id && !restoredIds.has(s.id)) pagePurged.push(s.id);
+                });
+                (currentPage?.images || []).forEach(img => {
+                    if (img?.id && !restoredIds.has(img.id)) pagePurged.push(img.id);
+                });
+                if (pagePurged.length > 0) {
+                    const existing = Array.isArray(targetPage.deletedStrokeIds) ? targetPage.deletedStrokeIds : [];
+                    targetPage.deletedStrokeIds = Array.from(new Set([...existing, ...pagePurged]));
+                }
+            });
+        }
+
         async function restoreVersion(versionId) {
             // Find the entry in either the real history or the synthetic original.
             const entry = findVersionById(versionId);
@@ -13637,6 +13685,9 @@
             const sliderText = entry.isOriginal ? 'Slide to revert' : 'Slide to restore';
             const ok = await showConfirmSlider({ title: titleText, message, sliderText });
             if (!ok) return false;
+            if (entry.isOriginal) {
+                await swapDisplayDocToCleanOriginal();
+            }
 
             state.pendingVersionHint = {
                 milestone: true,
@@ -13647,46 +13698,7 @@
             };
             const newPages = buildPagesFromSnapshot(entry.pages);
 
-            // Multi-device-safe revert: every stroke / image that exists locally but
-            // is NOT in the snapshot has to be marked as deleted on the corresponding
-            // restored page. Otherwise the merge that runs on other devices when they
-            // pull the new Drive copy will treat those local-only IDs as the other
-            // side's "fresh additions" and re-inject them, undoing the revert.
-            for (let i = 0; i < newPages.length; i++) {
-                const restoredPage = newPages[i];
-                const currentPage = state.pages[i];
-                if (!currentPage) continue;
-                const restoredIds = new Set();
-                (restoredPage.strokes || []).forEach(s => { if (s?.id) restoredIds.add(s.id); });
-                (restoredPage.images || []).forEach(img => { if (img?.id) restoredIds.add(img.id); });
-                const purged = [];
-                (currentPage.strokes || []).forEach(s => {
-                    if (s?.id && !restoredIds.has(s.id)) purged.push(s.id);
-                });
-                (currentPage.images || []).forEach(img => {
-                    if (img?.id && !restoredIds.has(img.id)) purged.push(img.id);
-                });
-                if (purged.length > 0) {
-                    const existing = Array.isArray(restoredPage.deletedStrokeIds) ? restoredPage.deletedStrokeIds : [];
-                    restoredPage.deletedStrokeIds = Array.from(new Set([...existing, ...purged]));
-                }
-            }
-            // Pages dropped entirely by the revert: stash all their IDs in the last
-            // restored page's tombstones so other devices remove them too.
-            if (state.pages.length > newPages.length && newPages.length > 0) {
-                const lastPage = newPages[newPages.length - 1];
-                const purged = [];
-                for (let i = newPages.length; i < state.pages.length; i++) {
-                    const droppedPage = state.pages[i];
-                    if (!droppedPage) continue;
-                    (droppedPage.strokes || []).forEach(s => { if (s?.id) purged.push(s.id); });
-                    (droppedPage.images || []).forEach(img => { if (img?.id) purged.push(img.id); });
-                }
-                if (purged.length > 0) {
-                    const existing = Array.isArray(lastPage.deletedStrokeIds) ? lastPage.deletedStrokeIds : [];
-                    lastPage.deletedStrokeIds = Array.from(new Set([...existing, ...purged]));
-                }
-            }
+            addRestoreTombstones(newPages, state.pages);
 
             const applied = await applyRestoredPages(newPages);
             if (applied) {
@@ -13706,9 +13718,11 @@
                 'Discard ALL annotations and revert this document to the clean original PDF?\n\nThis cannot be undone (a new version entry will be added so you can roll back if needed).'
             );
             if (!ok) return false;
+            await swapDisplayDocToCleanOriginal();
             // Build a fresh, empty page-set matching the clean original PDF page count.
             // activePdfDocument is the clean source after swapDisplayDocToCleanOriginal.
-            let numPages = activePdfDocument?.numPages || 0;
+            const originalSizes = Array.isArray(state.cleanOriginalPageSizes) ? state.cleanOriginalPageSizes : [];
+            let numPages = originalSizes.length || activePdfDocument?.numPages || 0;
             if (!numPages && state.pages?.length) numPages = state.pages.length;
             if (!numPages) {
                 showStatus('Could not determine original page count.', { error: true });
@@ -13716,8 +13730,8 @@
             }
             const newPages = [];
             for (let i = 1; i <= numPages; i++) {
-                let pageSize = { width: A4_WIDTH, height: A4_HEIGHT };
-                if (activePdfDocument) {
+                let pageSize = originalSizes[i - 1] || { width: A4_WIDTH, height: A4_HEIGHT };
+                if (!originalSizes[i - 1] && activePdfDocument) {
                     try {
                         const pdfPage = await activePdfDocument.getPage(i);
                         const vp = pdfPage.getViewport({ scale: 1 });
@@ -13726,6 +13740,7 @@
                     } catch (e) { /* ignore — fallback to A4 */ }
                 }
                 newPages.push({
+                    pageId: `original-page-${i}`,
                     strokes: [],
                     images: [],
                     deletedStrokeIds: [],
@@ -13744,6 +13759,7 @@
                 kind: 'revert-original',
                 summary: 'Reverted to clean original PDF'
             };
+            addRestoreTombstones(newPages, state.pages);
             const applied = await applyRestoredPages(newPages);
             if (applied) {
                 showStatus('Reverted to original PDF.', { autoClose: true });
@@ -13781,18 +13797,16 @@
         // "revert to this version" all the way back to the unmodified document.
         function buildOriginalVersionEntry() {
             if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) return null;
-            const numPages = activePdfDocument?.numPages || state.pages.length || 0;
+            const originalSizes = Array.isArray(state.cleanOriginalPageSizes) ? state.cleanOriginalPageSizes : [];
+            const numPages = originalSizes.length || activePdfDocument?.numPages || state.pages.length || 0;
             if (!numPages) return null;
             const pages = [];
             for (let i = 1; i <= numPages; i++) {
-                let pageWidth = A4_WIDTH;
-                let pageHeight = A4_HEIGHT;
-                const localPage = state.pages[i - 1];
-                if (localPage) {
-                    pageWidth = normalizePageDimension(localPage.pageWidth, A4_WIDTH);
-                    pageHeight = normalizePageDimension(localPage.pageHeight, A4_HEIGHT);
-                }
+                const originalSize = originalSizes[i - 1] || null;
+                const pageWidth = normalizePageDimension(originalSize?.width, A4_WIDTH);
+                const pageHeight = normalizePageDimension(originalSize?.height, A4_HEIGHT);
                 pages.push({
+                    pageId: `original-page-${i}`,
                     strokes: [],
                     images: [],
                     deletedStrokeIds: [],
@@ -13833,6 +13847,151 @@
             if (!versionId) return null;
             const hist = Array.isArray(state.versionHistory) ? state.versionHistory : [];
             return hist.find(v => v.id === versionId) || null;
+        }
+
+        async function readPdfPageSizes(pdfDoc) {
+            const sizes = [];
+            const count = pdfDoc?.numPages || 0;
+            for (let i = 1; i <= count; i++) {
+                try {
+                    const page = await pdfDoc.getPage(i);
+                    const vp = page.getViewport({ scale: 1 });
+                    sizes.push({
+                        width: Math.round(vp.width),
+                        height: Math.round(vp.height)
+                    });
+                    if (page.cleanup) page.cleanup();
+                } catch (e) {
+                    sizes.push({ width: A4_WIDTH, height: A4_HEIGHT });
+                }
+            }
+            return sizes;
+        }
+
+        function findPreviousTimelineEntry(entry) {
+            if (!entry?.id) return null;
+            const history = getDisplayVersionHistory();
+            const idx = history.findIndex(v => v?.id === entry.id);
+            return idx > 0 ? history[idx - 1] : null;
+        }
+
+        function getTimelineItemKey(item, fallbackPrefix, index) {
+            return item?.id || `${fallbackPrefix}:${index}:${getTimelineItemSignature(item)}`;
+        }
+
+        function getTimelineItemSignature(item) {
+            if (!item || typeof item !== 'object') return '';
+            if (Array.isArray(item.points)) {
+                const points = item.points.map(p => [
+                    Math.round((Number(p?.x) || 0) * 10) / 10,
+                    Math.round((Number(p?.y) || 0) * 10) / 10
+                ]);
+                return JSON.stringify({
+                    tool: item.tool || '',
+                    color: item.color || '',
+                    width: Math.round((Number(item.width) || 0) * 10) / 10,
+                    points
+                });
+            }
+            return JSON.stringify({
+                src: item.src || '',
+                x: Math.round((Number(item.x) || 0) * 10) / 10,
+                y: Math.round((Number(item.y) || 0) * 10) / 10,
+                width: Math.round((Number(item.width) || 0) * 10) / 10,
+                height: Math.round((Number(item.height) || 0) * 10) / 10,
+                rotation: Math.round((Number(item.rotation) || 0) * 100) / 100
+            });
+        }
+
+        function getTimelineStrokeBounds(stroke) {
+            const points = Array.isArray(stroke?.points) ? stroke.points : [];
+            if (points.length === 0) return null;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of points) {
+                const x = Number(p?.x);
+                const y = Number(p?.y);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+            }
+            if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return null;
+            const pad = Math.max(10, (Number(stroke.width) || 2) * 1.4);
+            return { x: minX - pad, y: minY - pad, w: (maxX - minX) + pad * 2, h: (maxY - minY) + pad * 2 };
+        }
+
+        function getTimelineImageBounds(image) {
+            if (!image) return null;
+            const cx = Number(image.x);
+            const cy = Number(image.y);
+            const width = Number(image.width);
+            const height = Number(image.height);
+            if (![cx, cy, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+            const angle = Number(image.rotation) || 0;
+            const cos = Math.abs(Math.cos(angle));
+            const sin = Math.abs(Math.sin(angle));
+            const boxW = width * cos + height * sin;
+            const boxH = width * sin + height * cos;
+            const pad = 8;
+            return { x: cx - boxW / 2 - pad, y: cy - boxH / 2 - pad, w: boxW + pad * 2, h: boxH + pad * 2 };
+        }
+
+        function clampTimelineBounds(bounds, pageWidth, pageHeight) {
+            if (!bounds) return null;
+            const x1 = Math.max(0, Math.min(pageWidth, bounds.x));
+            const y1 = Math.max(0, Math.min(pageHeight, bounds.y));
+            const x2 = Math.max(0, Math.min(pageWidth, bounds.x + bounds.w));
+            const y2 = Math.max(0, Math.min(pageHeight, bounds.y + bounds.h));
+            if (x2 <= x1 || y2 <= y1) return null;
+            return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+        }
+
+        function collectTimelineDiffHighlights(prevPage, nextPage, pageWidth, pageHeight) {
+            const highlights = [];
+            const addDiffs = (kind, boundsFor) => {
+                const prevItems = Array.isArray(prevPage?.[kind]) ? prevPage[kind] : [];
+                const nextItems = Array.isArray(nextPage?.[kind]) ? nextPage[kind] : [];
+                const prevMap = new Map();
+                prevItems.forEach((item, index) => {
+                    const key = getTimelineItemKey(item, kind, index);
+                    prevMap.set(key, { item, signature: getTimelineItemSignature(item) });
+                });
+                nextItems.forEach((item, index) => {
+                    const key = getTimelineItemKey(item, kind, index);
+                    const prev = prevMap.get(key);
+                    const signature = getTimelineItemSignature(item);
+                    const changed = !prev || prev.signature !== signature;
+                    if (changed) {
+                        const bounds = clampTimelineBounds(boundsFor(item), pageWidth, pageHeight);
+                        if (bounds) highlights.push({ ...bounds, type: prev ? 'changed' : 'added' });
+                    }
+                    prevMap.delete(key);
+                });
+                for (const { item } of prevMap.values()) {
+                    const bounds = clampTimelineBounds(boundsFor(item), pageWidth, pageHeight);
+                    if (bounds) highlights.push({ ...bounds, type: 'removed' });
+                }
+            };
+            addDiffs('strokes', getTimelineStrokeBounds);
+            addDiffs('images', getTimelineImageBounds);
+            return highlights;
+        }
+
+        function drawTimelineDiffHighlights(ctx, highlights) {
+            if (!ctx || !Array.isArray(highlights) || highlights.length === 0) return;
+            ctx.save();
+            ctx.lineJoin = 'round';
+            for (const h of highlights) {
+                const isRemoved = h.type === 'removed';
+                ctx.strokeStyle = isRemoved ? '#ef4444' : '#f59e0b';
+                ctx.fillStyle = isRemoved ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.12)';
+                ctx.lineWidth = 2.5;
+                ctx.setLineDash(isRemoved ? [8, 5] : []);
+                ctx.fillRect(h.x, h.y, h.w, h.h);
+                ctx.strokeRect(h.x, h.y, h.w, h.h);
+            }
+            ctx.restore();
         }
 
         async function renderTimelinePreview(entry) {
@@ -13877,6 +14036,7 @@
             }
             if (widestPage <= 0) widestPage = A4_WIDTH;
             if (tallestPage <= 0) tallestPage = A4_HEIGHT;
+            const previousEntry = findPreviousTimelineEntry(entry);
             // Render canvas at slightly higher density than the on-screen base size
             // so light zoom-in stays sharp without re-rendering. CSS width applies
             // the actual zoom level via _timelineZoom.
@@ -13939,9 +14099,14 @@
                     if (token !== _timelinePreviewToken) return;
                 }
 
-                // 2. Strokes on top.
+                // 2. Images and strokes on top.
                 ctx.save();
                 ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+                drawImagesOnContext(ctx, snapshotPage, pageIdx, () => {
+                    if (token === _timelinePreviewToken) {
+                        requestAnimationFrame(() => renderTimelinePreview(entry));
+                    }
+                });
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 const strokes = Array.isArray(snapshotPage?.strokes) ? snapshotPage.strokes : [];
@@ -13951,6 +14116,13 @@
                     if (!Array.isArray(stroke.points) || stroke.points.length < minPoints) continue;
                     drawSmoothStroke(ctx, stroke);
                 }
+
+                // 3. Diff overlay compared with the previous version.
+                const previousPage = Array.isArray(previousEntry?.pages) ? previousEntry.pages[pageIdx] : null;
+                const highlights = previousEntry
+                    ? collectTimelineDiffHighlights(previousPage, snapshotPage, pageWidth, pageHeight)
+                    : [];
+                drawTimelineDiffHighlights(ctx, highlights);
                 ctx.restore();
 
                 // Yield every few pages so the UI thread doesn't lock up on long docs.
@@ -18970,6 +19142,7 @@
             driveSaveQueuedKeepalive = false;
             remoteChangePendingDuringSave = false;
             remoteChangePendingMeta = null;
+            lastOwnDriveWriteMeta = null;
             lastSyncedStrokeIds.clear();
             lastSyncedPageCount = 0;
             pageDirty.clear();
@@ -19199,6 +19372,15 @@
             return Number.isFinite(ts) ? ts : 0;
         }
 
+        function rememberOwnDriveWrite(meta = {}) {
+            const modifiedTime = getRemoteMetaModifiedTime(meta);
+            lastOwnDriveWriteMeta = {
+                headRevisionId: meta.headRevisionId || state.driveHeadRevisionId || '',
+                modifiedTime: modifiedTime || state.driveLastKnownModified || Date.now(),
+                at: Date.now()
+            };
+        }
+
         function chooseNewerRemoteMeta(currentMeta, incomingMeta) {
             if (!currentMeta) return incomingMeta || null;
             if (!incomingMeta) return currentMeta;
@@ -19235,13 +19417,32 @@
 
         function isRemoteMetaNewerThanTracked(meta) {
             if (!meta) return false;
-            if (meta.headRevisionId) {
-                return meta.headRevisionId !== state.driveHeadRevisionId;
-            }
             const remoteModified = getRemoteMetaModifiedTime(meta);
+            const localModified = Number.isFinite(state.driveLastKnownModified)
+                ? state.driveLastKnownModified
+                : 0;
+            if (lastOwnDriveWriteMeta && Date.now() - lastOwnDriveWriteMeta.at < DRIVE_OWN_WRITE_ECHO_WINDOW_MS) {
+                const ownRevision = lastOwnDriveWriteMeta.headRevisionId || '';
+                const ownModified = Number.isFinite(lastOwnDriveWriteMeta.modifiedTime)
+                    ? lastOwnDriveWriteMeta.modifiedTime
+                    : 0;
+                if (meta.headRevisionId && ownRevision && meta.headRevisionId === ownRevision) {
+                    return false;
+                }
+                if (remoteModified && ownModified && remoteModified <= ownModified) {
+                    return false;
+                }
+            }
+            if (meta.headRevisionId) {
+                if (meta.headRevisionId === state.driveHeadRevisionId) return false;
+                if (remoteModified && localModified && remoteModified <= localModified + DRIVE_REMOTE_META_SKEW_MS) {
+                    return false;
+                }
+                return true;
+            }
             if (!remoteModified) return false;
             if (!state.driveLastKnownModified) return true;
-            return remoteModified > state.driveLastKnownModified;
+            return remoteModified > state.driveLastKnownModified + DRIVE_REMOTE_META_SKEW_MS;
         }
 
         function isDriveHydratedForCurrentFile() {
@@ -19522,6 +19723,7 @@
             state.driveFileName = data.name || fileName;
             if (data.headRevisionId) state.driveHeadRevisionId = data.headRevisionId;
             if (data.modifiedTime) state.driveLastKnownModified = new Date(data.modifiedTime).getTime();
+            rememberOwnDriveWrite(data || {});
             updateDocTitle();
             saveDriveSession();
             return { fileId: state.driveFileId, created: true };
@@ -19723,6 +19925,7 @@
                     if (updateRes.modifiedTime) {
                         state.driveLastKnownModified = new Date(updateRes.modifiedTime).getTime();
                     }
+                    rememberOwnDriveWrite(updateRes || {});
                     saveDriveSession();
                 }
                 markDriveContentUploaded(uploadedContentVersion);
@@ -19767,16 +19970,21 @@
             activeDriveSaveController = null;
             driveSaveInProgress = false;
             if (driveSaveSucceeded) {
+                let handledPendingRemote = false;
                 if (remoteChangePendingDuringSave) {
                     const pendingMeta = remoteChangePendingMeta;
                     remoteChangePendingDuringSave = false;
                     remoteChangePendingMeta = null;
                     if (isRemoteMetaNewerThanTracked(pendingMeta)) {
                         await pullRemoteChanges(pendingMeta || null);
+                        handledPendingRemote = true;
                     }
                 }
-                await checkRemoteUpdateAfterSave();
-                await flushDeferredRemotePull();
+                const flushedDeferredPull = await flushDeferredRemotePull();
+                handledPendingRemote = handledPendingRemote || flushedDeferredPull;
+                if (!handledPendingRemote && deferredRemotePullPending) {
+                    await checkRemoteUpdateAfterSave();
+                }
             }
             if (driveSaveQueued) {
                 const queuedForce = driveSaveQueuedForce;
@@ -19823,7 +20031,7 @@
             if (!state.driveFileId || !driveAccessToken) return;
             if (document.visibilityState === 'hidden') return;
             clearCollabFastCatchup();
-            const delays = [0, 80, 180, 350, 700];
+            const delays = [900, 1800, 3500];
             delays.forEach(delay => {
                 const timer = setTimeout(() => {
                     if (!state.driveFileId || !driveAccessToken) return;
@@ -22228,6 +22436,7 @@
                 // (so subsequent saves of THIS document always start from the clean version
                 // and the stroke overlay never doubles).
                 state.cleanOriginalPdfBytes = null;
+                state.cleanOriginalPageSizes = null;
                 state.hasLegacyBakedOverlay = false;
                 let needsCleanOriginalSwap = false;
                 // Drive file ID is set by openDriveFile *after* importPDFData returns,
@@ -22236,6 +22445,7 @@
                 const idbCacheKey = options.driveFileId || state.driveFileId || null;
                 if (!embeddedStrokes && capturedOriginalBytes) {
                     state.cleanOriginalPdfBytes = capturedOriginalBytes;
+                    state.cleanOriginalPageSizes = await readPdfPageSizes(pdf);
                     if (idbCacheKey) {
                         saveOriginalPdfBytes(idbCacheKey, capturedOriginalBytes).catch(() => { });
                     }
@@ -23532,12 +23742,22 @@
                 console.warn('Failed to set output metadata:', metaErr);
             }
 
-            // Note: previous versions also embedded the clean original as a PDF
-            // attachment for cross-device recovery, but it doubled save size for no
-            // real benefit — the `IH_OVERLAY_REFS` keyword carries the few bytes of
-            // info needed to reproduce a clean original by stripping overlay
-            // XObjects, and the IndexedDB cache is the fast path on the same
-            // device. Removed to halve per-save bandwidth.
+            // Keep the full clean original inside every app-saved PDF. This is
+            // essential after page deletes/reorders: IH_OVERLAY_REFS can only
+            // clean the current saved page set, while this attachment preserves
+            // the true first version for cross-device revert.
+            try {
+                if (typeof outDoc.attach === 'function'
+                    && state.cleanOriginalPdfBytes
+                    && state.cleanOriginalPdfBytes.byteLength) {
+                    await outDoc.attach(state.cleanOriginalPdfBytes.slice(0), 'IH_CLEAN_ORIGINAL.pdf', {
+                        mimeType: 'application/pdf',
+                        description: 'Clean original PDF used by Inhouse Notes for full revert'
+                    });
+                }
+            } catch (attachErr) {
+                console.warn('Failed to attach clean original PDF:', attachErr);
+            }
 
             await yieldToUI(true);
             const finalBytes = await outDoc.save({
