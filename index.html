@@ -1719,6 +1719,7 @@
             height: 40px;
             border: none;
             background: transparent;
+            color: var(--text-primary);
             border-radius: var(--radius-md);
             cursor: pointer;
             display: flex;
@@ -1731,9 +1732,14 @@
             background: rgba(0, 0, 0, 0.05);
         }
 
+        [data-theme="dark"] .panel-close:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
         .panel-close svg {
             width: 20px;
             height: 20px;
+            stroke: currentColor;
         }
 
         .panel-timeline-row {
@@ -2504,7 +2510,7 @@
             max-width: 460px;
             padding: 10px 14px;
             border-radius: 10px;
-            border: 1px solid rgba(0, 0, 0, 0.09);
+            border: none;
             background: rgba(0, 0, 0, 0.025);
             font-family: inherit;
             font-size: 0.88rem;
@@ -2513,20 +2519,17 @@
         }
 
         .drive-search:focus {
-            border-color: var(--accent-orange);
             box-shadow: 0 0 0 3px rgba(224, 122, 60, 0.12);
             background: white;
         }
 
         [data-theme="dark"] .drive-search {
             background: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
         }
 
         [data-theme="dark"] .drive-search:focus {
             background: #1f1f1f;
-            border-color: var(--accent-orange);
             box-shadow: 0 0 0 3px rgba(224, 122, 60, 0.18);
         }
 
@@ -2692,7 +2695,7 @@
             background: white;
             border-radius: 14px;
             padding: 12px;
-            border: 1px solid rgba(0, 0, 0, 0.06);
+            border: none;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
             cursor: pointer;
             transition: box-shadow 0.18s ease;
@@ -3117,7 +3120,7 @@
             background: white;
             border-radius: 12px;
             padding: 12px 42px 12px 14px;
-            border: 1px solid rgba(0, 0, 0, 0.06);
+            border: none;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
             cursor: pointer;
             display: flex;
@@ -3150,6 +3153,7 @@
             flex: 1;
             min-width: 0;
             line-height: 1.3;
+            padding-right: 34px;
         }
 
         .drive-card-title.is-shared {
@@ -3195,8 +3199,8 @@
             position: fixed;
             top: 0;
             right: 0;
-            width: 720px;
-            max-width: 92vw;
+            width: 100vw;
+            max-width: 100vw;
             height: 100%;
             background: var(--bg-secondary);
             box-shadow: -4px 0 30px rgba(0, 0, 0, 0.18);
@@ -3237,18 +3241,42 @@
             min-height: 0;
             background: rgba(0, 0, 0, 0.04);
             border-radius: 10px;
-            overflow: auto;
+            overflow-y: auto;
+            overflow-x: hidden;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: center;
-            padding: 12px;
+            padding: 16px;
+            gap: 16px;
         }
 
         [data-theme="dark"] .timeline-preview-canvas-wrap {
             background: rgba(255, 255, 255, 0.04);
         }
 
-        .timeline-preview-canvas-wrap canvas {
+        .timeline-preview-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .timeline-preview-page canvas {
+            display: block;
+            max-width: 100%;
+            background: white;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+            border-radius: 4px;
+        }
+
+        .timeline-preview-page-label {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+        }
+
+        /* Empty/single-canvas legacy styling — kept harmless for backward compat. */
+        .timeline-preview-canvas-wrap > canvas {
             display: block;
             max-width: 100%;
             max-height: 100%;
@@ -3564,7 +3592,7 @@
             background: white;
             border-radius: 14px;
             padding: 12px;
-            border: 1px solid rgba(0, 0, 0, 0.06);
+            border: none;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
             display: flex;
             flex-direction: column;
@@ -3576,7 +3604,6 @@
         [data-theme="dark"] .drive-card-skeleton,
         [data-theme="dark"] .drive-folder-card-skeleton {
             background: var(--bg-secondary);
-            border-color: rgba(255, 255, 255, 0.06);
         }
 
         .drive-card-skeleton .skeleton-preview {
@@ -3587,13 +3614,8 @@
 
         .drive-card-skeleton .skeleton-bar.title {
             height: 12px;
-            width: 78%;
-            border-radius: 6px;
-        }
-
-        .drive-card-skeleton .skeleton-bar.meta {
-            height: 9px;
-            width: 50%;
+            width: calc(78% - 34px);
+            max-width: calc(100% - 34px);
             border-radius: 6px;
         }
 
@@ -3606,7 +3628,7 @@
             background: white;
             border-radius: 12px;
             padding: 12px 42px 12px 14px;
-            border: 1px solid rgba(0, 0, 0, 0.06);
+            border: none;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
             display: flex;
             align-items: center;
@@ -10397,17 +10419,13 @@
         function createDriveFileCard(file) {
             const card = document.createElement('div');
             card.className = 'drive-card';
-            card.appendChild(createDrivePreview(file));
 
             const title = document.createElement('div');
             title.className = 'drive-card-title';
             applyDriveTitleWithSharedIcon(title, file, 'Untitled');
             card.appendChild(title);
 
-            const meta = document.createElement('div');
-            meta.className = 'drive-card-meta';
-            meta.textContent = `Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}`;
-            card.appendChild(meta);
+            card.appendChild(createDrivePreview(file));
 
             card.appendChild(createDriveItemMenu(file));
 
@@ -10649,6 +10667,11 @@
                 const card = document.createElement('div');
                 card.className = 'drive-card';
 
+                const title = document.createElement('div');
+                title.className = 'drive-card-title';
+                applyDriveTitleWithSharedIcon(title, item, 'Folder');
+                card.appendChild(title);
+
                 const preview = document.createElement('div');
                 preview.className = 'drive-card-preview';
                 const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -10663,16 +10686,6 @@
                 }
                 preview.appendChild(icon);
                 card.appendChild(preview);
-
-                const title = document.createElement('div');
-                title.className = 'drive-card-title';
-                applyDriveTitleWithSharedIcon(title, item, 'Folder');
-                card.appendChild(title);
-
-                const meta = document.createElement('div');
-                meta.className = 'drive-card-meta';
-                meta.textContent = isSharedDriveDoc(item) ? 'Shared folder' : 'Folder';
-                card.appendChild(meta);
 
                 card.appendChild(createDriveItemMenu(item));
 
@@ -10776,6 +10789,11 @@
             const card = document.createElement('div');
             card.className = 'drive-card';
 
+            const title = document.createElement('div');
+            title.className = 'drive-card-title';
+            applyDriveTitleWithSharedIcon(title, folder, 'Folder');
+            card.appendChild(title);
+
             const preview = document.createElement('div');
             preview.className = 'drive-card-preview';
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -10790,16 +10808,6 @@
             }
             preview.appendChild(icon);
             card.appendChild(preview);
-
-            const title = document.createElement('div');
-            title.className = 'drive-card-title';
-            applyDriveTitleWithSharedIcon(title, folder, 'Folder');
-            card.appendChild(title);
-
-            const meta = document.createElement('div');
-            meta.className = 'drive-card-meta';
-            meta.textContent = 'Shared folder';
-            card.appendChild(meta);
 
             card.appendChild(createDriveItemMenu(folder));
 
@@ -10944,15 +10952,12 @@
             const card = document.createElement('div');
             card.className = 'drive-card-skeleton';
             card.setAttribute('aria-hidden', 'true');
-            const preview = document.createElement('div');
-            preview.className = 'skeleton-preview';
             const title = document.createElement('div');
             title.className = 'skeleton-bar title';
-            const meta = document.createElement('div');
-            meta.className = 'skeleton-bar meta';
-            card.appendChild(preview);
+            const preview = document.createElement('div');
+            preview.className = 'skeleton-preview';
             card.appendChild(title);
-            card.appendChild(meta);
+            card.appendChild(preview);
             return card;
         }
 
@@ -13484,23 +13489,24 @@
 
         async function renderTimelinePreview(entry) {
             const wrap = document.getElementById('timeline-preview-wrap');
-            const canvas = document.getElementById('timeline-preview-canvas');
             const emptyEl = document.getElementById('timeline-preview-empty');
             const metaEl = document.getElementById('timeline-preview-meta');
-            if (!wrap || !canvas || !emptyEl) return;
+            if (!wrap || !emptyEl) return;
 
             // Bump token so any in-flight render gets canceled.
             const token = ++_timelinePreviewToken;
 
+            // Clear out any previously rendered pages (and the legacy single-canvas
+            // node so we always start from a clean slate).
+            wrap.querySelectorAll('.timeline-preview-page, canvas#timeline-preview-canvas').forEach(el => el.remove());
+
             if (!entry || !Array.isArray(entry.pages) || entry.pages.length === 0) {
                 emptyEl.hidden = false;
-                canvas.hidden = true;
                 if (metaEl) metaEl.hidden = true;
                 return;
             }
 
             emptyEl.hidden = true;
-            canvas.hidden = false;
             if (metaEl) {
                 const whenStr = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
                 const author = entry.author?.name || entry.author?.email || 'Unknown';
@@ -13509,65 +13515,88 @@
                 metaEl.textContent = `${author} · ${whenStr} · ${pageCount} page${pageCount !== 1 ? 's' : ''}`;
             }
 
-            const firstSnapshotPage = entry.pages[0];
-            const pageWidth = normalizePageDimension(firstSnapshotPage?.pageWidth, A4_WIDTH);
-            const pageHeight = normalizePageDimension(firstSnapshotPage?.pageHeight, A4_HEIGHT);
-            const pdfPageIdx = Number.isFinite(firstSnapshotPage?.pdfPageIndex) ? firstSnapshotPage.pdfPageIndex : null;
-
-            // Choose a preview scale that fits the wrapper without exploding memory.
+            // Choose a preview scale that fits the wrapper width while staying
+            // within reasonable memory bounds. Same scale applied to every page so
+            // they all look consistent.
             const wrapRect = wrap.getBoundingClientRect();
-            const targetWidth = Math.max(160, (wrapRect.width || 480) - 24);
-            const targetHeight = Math.max(160, (wrapRect.height || 480) - 24);
-            const scaleByWidth = targetWidth / pageWidth;
-            const scaleByHeight = targetHeight / pageHeight;
-            const previewScale = Math.max(0.4, Math.min(1.5, Math.min(scaleByWidth, scaleByHeight)));
+            const targetWidth = Math.max(160, (wrapRect.width || 480) - 32);
+            // Use the largest snapshot page width to compute a uniform scale.
+            let widestPage = 0;
+            for (const p of entry.pages) {
+                widestPage = Math.max(widestPage, normalizePageDimension(p?.pageWidth, A4_WIDTH));
+            }
+            if (widestPage <= 0) widestPage = A4_WIDTH;
+            const previewScale = Math.max(0.35, Math.min(1.4, targetWidth / widestPage));
 
-            canvas.width = Math.round(pageWidth * previewScale);
-            canvas.height = Math.round(pageHeight * previewScale);
-            const ctx = canvas.getContext('2d');
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // 1. Background: render the original PDF page (if available).
-            if (activePdfDocument && pdfPageIdx) {
-                try {
-                    const pdfPage = await activePdfDocument.getPage(
-                        Math.max(1, Math.min(activePdfDocument.numPages, pdfPageIdx))
-                    );
-                    if (token !== _timelinePreviewToken) {
-                        if (pdfPage.cleanup) pdfPage.cleanup();
-                        return;
-                    }
-                    const baseViewport = pdfPage.getViewport({ scale: 1 });
-                    const fitScale = Math.min(canvas.width / baseViewport.width, canvas.height / baseViewport.height);
-                    const viewport = pdfPage.getViewport({ scale: fitScale });
-                    const offsetX = (canvas.width - viewport.width) / 2;
-                    const offsetY = (canvas.height - viewport.height) / 2;
-                    ctx.save();
-                    ctx.translate(offsetX, offsetY);
-                    await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-                    ctx.restore();
-                    if (pdfPage.cleanup) pdfPage.cleanup();
-                } catch (err) {
-                    // Fall through — leave white background.
-                }
+            for (let pageIdx = 0; pageIdx < entry.pages.length; pageIdx++) {
                 if (token !== _timelinePreviewToken) return;
-            }
+                const snapshotPage = entry.pages[pageIdx];
+                const pageWidth = normalizePageDimension(snapshotPage?.pageWidth, A4_WIDTH);
+                const pageHeight = normalizePageDimension(snapshotPage?.pageHeight, A4_HEIGHT);
+                const pdfPageIdx = Number.isFinite(snapshotPage?.pdfPageIndex) ? snapshotPage.pdfPageIndex : null;
 
-            // 2. Draw the snapshot's first-page strokes on top, scaled to preview.
-            ctx.save();
-            ctx.setTransform(previewScale, 0, 0, previewScale, 0, 0);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            const strokes = Array.isArray(firstSnapshotPage?.strokes) ? firstSnapshotPage.strokes : [];
-            for (const stroke of strokes) {
-                if (!stroke || stroke.tool === 'eraser-stroke') continue;
-                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
-                if (!Array.isArray(stroke.points) || stroke.points.length < minPoints) continue;
-                drawSmoothStroke(ctx, stroke);
+                const pageContainer = document.createElement('div');
+                pageContainer.className = 'timeline-preview-page';
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.max(1, Math.round(pageWidth * previewScale));
+                canvas.height = Math.max(1, Math.round(pageHeight * previewScale));
+                pageContainer.appendChild(canvas);
+                const label = document.createElement('div');
+                label.className = 'timeline-preview-page-label';
+                label.textContent = `Page ${pageIdx + 1}`;
+                pageContainer.appendChild(label);
+                wrap.appendChild(pageContainer);
+
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // 1. PDF background (only for pdf-backed pages).
+                if (activePdfDocument && pdfPageIdx) {
+                    try {
+                        const pdfPage = await activePdfDocument.getPage(
+                            Math.max(1, Math.min(activePdfDocument.numPages, pdfPageIdx))
+                        );
+                        if (token !== _timelinePreviewToken) {
+                            if (pdfPage.cleanup) pdfPage.cleanup();
+                            return;
+                        }
+                        const baseViewport = pdfPage.getViewport({ scale: 1 });
+                        const fitScale = Math.min(canvas.width / baseViewport.width, canvas.height / baseViewport.height);
+                        const viewport = pdfPage.getViewport({ scale: fitScale });
+                        const offsetX = (canvas.width - viewport.width) / 2;
+                        const offsetY = (canvas.height - viewport.height) / 2;
+                        ctx.save();
+                        ctx.translate(offsetX, offsetY);
+                        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+                        ctx.restore();
+                        if (pdfPage.cleanup) pdfPage.cleanup();
+                    } catch (err) {
+                        // Fall through — leave white background.
+                    }
+                    if (token !== _timelinePreviewToken) return;
+                }
+
+                // 2. Strokes on top.
+                ctx.save();
+                ctx.setTransform(previewScale, 0, 0, previewScale, 0, 0);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                const strokes = Array.isArray(snapshotPage?.strokes) ? snapshotPage.strokes : [];
+                for (const stroke of strokes) {
+                    if (!stroke || stroke.tool === 'eraser-stroke') continue;
+                    const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                    if (!Array.isArray(stroke.points) || stroke.points.length < minPoints) continue;
+                    drawSmoothStroke(ctx, stroke);
+                }
+                ctx.restore();
+
+                // Yield every few pages so the UI thread doesn't lock up on long docs.
+                if (pageIdx % 3 === 2) {
+                    await new Promise(r => requestAnimationFrame(r));
+                }
             }
-            ctx.restore();
         }
 
         function updateTimelineRevertButtonState() {
@@ -22462,28 +22491,12 @@
                 console.warn('Failed to set output metadata:', metaErr);
             }
 
-            // Embed the clean original bytes as an attachment so reopens can ALWAYS
-            // recover an editable clean baseline — no matter the device, no matter
-            // what XObject-stripping heuristics may or may not work. Attached files
-            // are first-class PDF objects and round-trip reliably through any PDF
-            // toolchain. Cost: ~doubles the saved file size, but eliminates the
-            // class of bugs where strokes get visually stuck after save+reopen.
-            if (typeof outDoc.attach === 'function') {
-                try {
-                    // Slice from the persisted ArrayBuffer so we always have a fresh,
-                    // non-detached buffer (cleanBytesCopy may have been transferred
-                    // when pdf-lib loaded it earlier in this function).
-                    const attachBytes = state.cleanOriginalPdfBytes.slice(0);
-                    await outDoc.attach(attachBytes, 'IH_CLEAN_ORIGINAL.pdf', {
-                        mimeType: 'application/pdf',
-                        description: 'Clean source PDF used for editable strokes (do not delete)',
-                        creationDate: new Date(),
-                        modificationDate: new Date()
-                    });
-                } catch (attachErr) {
-                    console.warn('Failed to attach clean original:', attachErr);
-                }
-            }
+            // Note: previous versions also embedded the clean original as a PDF
+            // attachment for cross-device recovery, but it doubled save size for no
+            // real benefit — the `IH_OVERLAY_REFS` keyword carries the few bytes of
+            // info needed to reproduce a clean original by stripping overlay
+            // XObjects, and the IndexedDB cache is the fast path on the same
+            // device. Removed to halve per-save bandwidth.
 
             await yieldToUI(true);
             const finalBytes = await outDoc.save({
