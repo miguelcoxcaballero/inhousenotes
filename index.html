@@ -3323,11 +3323,15 @@
         }
 
         .timeline-list-col {
-            width: 280px;
-            flex: 0 0 280px;
+            flex: 1 1 50%;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             min-height: 0;
+        }
+
+        .timeline-preview-col {
+            flex: 1 1 50%;
         }
 
         .timeline-empty {
@@ -3379,15 +3383,16 @@
             background: rgba(255, 255, 255, 0.06);
         }
 
-        .timeline-group-header .timeline-group-chevron {
-            width: 14px;
-            height: 14px;
+        .timeline-group-chevron {
+            width: 14px !important;
+            height: 14px !important;
             flex: 0 0 14px;
             transition: transform 0.18s ease;
             color: var(--text-secondary);
         }
 
-        .timeline-group-header.is-collapsed .timeline-group-chevron {
+        .timeline-group-header.is-collapsed .timeline-group-chevron,
+        .timeline-cluster-header.is-collapsed .timeline-group-chevron {
             transform: rotate(-90deg);
         }
 
@@ -5110,6 +5115,26 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="folder-picker-cancel">Cancel</button>
                 <button class="btn btn-primary" id="folder-picker-confirm">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-confirm-slider">
+        <div class="modal modal-danger">
+            <h2 id="confirm-slider-title">Are you sure?</h2>
+            <p id="confirm-slider-message"></p>
+            <div class="confirm-slider" id="confirm-slider" aria-label="Slide to confirm">
+                <div class="confirm-slider-fill" id="confirm-slider-fill"></div>
+                <div class="confirm-slider-text" id="confirm-slider-text">Slide to confirm</div>
+                <div class="confirm-slider-handle" id="confirm-slider-handle" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 6 15 12 9 18" />
+                    </svg>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="confirm-slider-cancel">Cancel</button>
             </div>
         </div>
     </div>
@@ -13499,30 +13524,79 @@
         }
 
         async function restoreVersion(versionId) {
-            if (!Array.isArray(state.versionHistory)) return false;
-            const entry = state.versionHistory.find(v => v.id === versionId);
+            // Find the entry in either the real history or the synthetic original.
+            const entry = findVersionById(versionId);
             if (!entry || !Array.isArray(entry.pages) || entry.pages.length === 0) {
                 showStatus('Could not restore: version data unavailable.', { error: true });
                 return false;
             }
-            const ok = window.confirm(
-                `Restore document to the version saved by ${entry.author?.name || 'unknown'} on ${new Date(entry.ts).toLocaleString()}?\n\nA new milestone entry will be added so you can roll forward again later.`
-            );
+            const whenStr = entry.isOriginal
+                ? 'the unmodified original PDF'
+                : (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
+            const titleText = entry.isOriginal
+                ? 'Revert to the original PDF?'
+                : 'Restore this version?';
+            const message = entry.isOriginal
+                ? 'All annotations across the document will be removed. A milestone entry will be added so you can roll forward to the current state again later.'
+                : `Roll the document back to the version saved by ${entry.author?.name || 'unknown'} on ${whenStr}.\nA new milestone entry will be added so you can roll forward again later.`;
+            const sliderText = entry.isOriginal ? 'Slide to revert' : 'Slide to restore';
+            const ok = await showConfirmSlider({ title: titleText, message, sliderText });
             if (!ok) return false;
-            const whenStr = (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
-            // Mark the upcoming snapshot as a milestone so it gets its own entry and
-            // doesn't replace the most-recent autosave (preserves complete history).
+
             state.pendingVersionHint = {
                 milestone: true,
-                kind: 'restore',
-                summary: `Restored version from ${whenStr}${entry.author?.name ? ` (${entry.author.name})` : ''}`
+                kind: entry.isOriginal ? 'revert-original' : 'restore',
+                summary: entry.isOriginal
+                    ? 'Reverted to clean original PDF'
+                    : `Restored version from ${whenStr}${entry.author?.name ? ` (${entry.author.name})` : ''}`
             };
             const newPages = buildPagesFromSnapshot(entry.pages);
+
+            // Multi-device-safe revert: every stroke / image that exists locally but
+            // is NOT in the snapshot has to be marked as deleted on the corresponding
+            // restored page. Otherwise the merge that runs on other devices when they
+            // pull the new Drive copy will treat those local-only IDs as the other
+            // side's "fresh additions" and re-inject them, undoing the revert.
+            for (let i = 0; i < newPages.length; i++) {
+                const restoredPage = newPages[i];
+                const currentPage = state.pages[i];
+                if (!currentPage) continue;
+                const restoredIds = new Set();
+                (restoredPage.strokes || []).forEach(s => { if (s?.id) restoredIds.add(s.id); });
+                (restoredPage.images || []).forEach(img => { if (img?.id) restoredIds.add(img.id); });
+                const purged = [];
+                (currentPage.strokes || []).forEach(s => {
+                    if (s?.id && !restoredIds.has(s.id)) purged.push(s.id);
+                });
+                (currentPage.images || []).forEach(img => {
+                    if (img?.id && !restoredIds.has(img.id)) purged.push(img.id);
+                });
+                if (purged.length > 0) {
+                    const existing = Array.isArray(restoredPage.deletedStrokeIds) ? restoredPage.deletedStrokeIds : [];
+                    restoredPage.deletedStrokeIds = Array.from(new Set([...existing, ...purged]));
+                }
+            }
+            // Pages dropped entirely by the revert: stash all their IDs in the last
+            // restored page's tombstones so other devices remove them too.
+            if (state.pages.length > newPages.length && newPages.length > 0) {
+                const lastPage = newPages[newPages.length - 1];
+                const purged = [];
+                for (let i = newPages.length; i < state.pages.length; i++) {
+                    const droppedPage = state.pages[i];
+                    if (!droppedPage) continue;
+                    (droppedPage.strokes || []).forEach(s => { if (s?.id) purged.push(s.id); });
+                    (droppedPage.images || []).forEach(img => { if (img?.id) purged.push(img.id); });
+                }
+                if (purged.length > 0) {
+                    const existing = Array.isArray(lastPage.deletedStrokeIds) ? lastPage.deletedStrokeIds : [];
+                    lastPage.deletedStrokeIds = Array.from(new Set([...existing, ...purged]));
+                }
+            }
+
             const applied = await applyRestoredPages(newPages);
             if (applied) {
-                showStatus('Document restored to selected version.', { autoClose: true });
+                showStatus(entry.isOriginal ? 'Reverted to original PDF.' : 'Document restored.', { autoClose: true });
             } else {
-                // Save didn't go through — discard the hint so a future autosave isn't mislabeled.
                 state.pendingVersionHint = null;
             }
             return applied;
@@ -17010,6 +17084,137 @@
             slider.addEventListener('pointerup', endResetSliderDrag);
             slider.addEventListener('pointercancel', endResetSliderDrag);
             slider.addEventListener('lostpointercapture', endResetSliderDrag);
+        }
+
+        // Generic slider-style confirm dialog. Shows the modal with custom title /
+        // message / slider label, and resolves a Promise<boolean> when the user
+        // either drops the slider past the threshold (true) or cancels (false).
+        const _confirmSliderState = {
+            isDragging: false,
+            currentX: 0,
+            maxX: 0,
+            handleWidth: 44,
+            padding: 4,
+            dragOffset: 0,
+            resolver: null
+        };
+        let _confirmSliderEventsBound = false;
+
+        function _confirmSliderUpdateMetrics() {
+            const slider = document.getElementById('confirm-slider');
+            const handle = document.getElementById('confirm-slider-handle');
+            if (!slider || !handle) return;
+            const rect = slider.getBoundingClientRect();
+            const handleRect = handle.getBoundingClientRect();
+            _confirmSliderState.handleWidth = handleRect.width || 44;
+            _confirmSliderState.maxX = Math.max(0, rect.width - _confirmSliderState.handleWidth - _confirmSliderState.padding * 2);
+        }
+        function _confirmSliderSetPos(x, animate = true) {
+            const slider = document.getElementById('confirm-slider');
+            const handle = document.getElementById('confirm-slider-handle');
+            const fill = document.getElementById('confirm-slider-fill');
+            if (!slider || !handle || !fill) return;
+            _confirmSliderUpdateMetrics();
+            const clamped = Math.max(0, Math.min(x, _confirmSliderState.maxX));
+            _confirmSliderState.currentX = clamped;
+            slider.classList.toggle('dragging', !animate);
+            handle.style.transform = `translateX(${clamped}px)`;
+            fill.style.width = `${clamped + _confirmSliderState.handleWidth / 2 + _confirmSliderState.padding}px`;
+        }
+        function _confirmSliderReset() {
+            const slider = document.getElementById('confirm-slider');
+            if (slider) slider.classList.remove('complete');
+            _confirmSliderSetPos(0, true);
+        }
+        function _confirmSliderResolve(value) {
+            const overlay = document.getElementById('modal-confirm-slider');
+            const slider = document.getElementById('confirm-slider');
+            if (slider) slider.classList.remove('dragging');
+            if (overlay) overlay.classList.remove('visible');
+            const r = _confirmSliderState.resolver;
+            _confirmSliderState.resolver = null;
+            _confirmSliderState.isDragging = false;
+            _confirmSliderReset();
+            if (r) r(!!value);
+        }
+        function _confirmSliderBindEvents() {
+            if (_confirmSliderEventsBound) return;
+            const slider = document.getElementById('confirm-slider');
+            const handle = document.getElementById('confirm-slider-handle');
+            const cancelBtn = document.getElementById('confirm-slider-cancel');
+            const overlay = document.getElementById('modal-confirm-slider');
+            if (!slider || !handle || !overlay) return;
+            _confirmSliderEventsBound = true;
+
+            slider.addEventListener('pointerdown', (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                _confirmSliderState.isDragging = true;
+                slider.classList.add('dragging');
+                slider.classList.remove('complete');
+                slider.setPointerCapture(e.pointerId);
+                _confirmSliderUpdateMetrics();
+                const sliderRect = slider.getBoundingClientRect();
+                const handleRect = handle.getBoundingClientRect();
+                const offset = e.clientX - handleRect.left;
+                _confirmSliderState.dragOffset = Math.min(Math.max(offset, 0), handleRect.width);
+                const initialX = e.clientX - sliderRect.left - _confirmSliderState.padding - _confirmSliderState.dragOffset;
+                _confirmSliderSetPos(initialX, false);
+            });
+            slider.addEventListener('pointermove', (e) => {
+                if (!_confirmSliderState.isDragging) return;
+                const sliderRect = slider.getBoundingClientRect();
+                const x = e.clientX - sliderRect.left - _confirmSliderState.padding - _confirmSliderState.dragOffset;
+                _confirmSliderSetPos(x, false);
+            });
+            const release = (e) => {
+                if (!_confirmSliderState.isDragging) return;
+                _confirmSliderState.isDragging = false;
+                try { slider.releasePointerCapture(e.pointerId); } catch (err) {}
+                slider.classList.remove('dragging');
+                _confirmSliderUpdateMetrics();
+                if (_confirmSliderState.currentX >= _confirmSliderState.maxX - 2) {
+                    slider.classList.add('complete');
+                    _confirmSliderSetPos(_confirmSliderState.maxX, true);
+                    setTimeout(() => _confirmSliderResolve(true), 120);
+                } else {
+                    _confirmSliderSetPos(0, true);
+                }
+            };
+            slider.addEventListener('pointerup', release);
+            slider.addEventListener('pointercancel', release);
+            slider.addEventListener('lostpointercapture', release);
+
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => _confirmSliderResolve(false));
+            }
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) _confirmSliderResolve(false);
+            });
+        }
+
+        function showConfirmSlider({ title, message, sliderText } = {}) {
+            const overlay = document.getElementById('modal-confirm-slider');
+            const titleEl = document.getElementById('confirm-slider-title');
+            const messageEl = document.getElementById('confirm-slider-message');
+            const labelEl = document.getElementById('confirm-slider-text');
+            if (!overlay) return Promise.resolve(false);
+            _confirmSliderBindEvents();
+            if (titleEl) titleEl.textContent = title || 'Are you sure?';
+            if (messageEl) messageEl.textContent = message || '';
+            if (labelEl) labelEl.textContent = sliderText || 'Slide to confirm';
+            // Cancel any pending earlier promise.
+            if (_confirmSliderState.resolver) {
+                const prev = _confirmSliderState.resolver;
+                _confirmSliderState.resolver = null;
+                prev(false);
+            }
+            return new Promise((resolve) => {
+                _confirmSliderState.resolver = resolve;
+                _confirmSliderReset();
+                overlay.classList.add('visible');
+                // Defer metrics until layout settles after `display`.
+                requestAnimationFrame(() => _confirmSliderUpdateMetrics());
+            });
         }
 
         function setupTrashSlider() {
