@@ -5730,6 +5730,9 @@
         const DRIVE_POST_SAVE_CHECK_TIMEOUT = 3500;
         const DRIVE_REMOTE_META_SKEW_MS = 250;
         const DRIVE_OWN_WRITE_ECHO_WINDOW_MS = 12000;
+        const DRIVE_UPLOAD_PDF_OPTIONS = Object.freeze({
+            highQuality: true
+        });
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
@@ -11650,7 +11653,7 @@
                 showLoading('Creating PDF...');
                 await ensureDriveToken(false);
                 const uploadedContentVersion = driveContentVersion;
-                const pdfBlob = await buildPdfBlob({ sessionToken, highQuality: true });
+                const pdfBlob = await buildPdfBlob({ sessionToken, ...DRIVE_UPLOAD_PDF_OPTIONS });
                 if (!isDocumentSessionTokenValid(sessionToken)) {
                     throw createAbortError('Document creation superseded');
                 }
@@ -13866,6 +13869,21 @@
                 }
             }
             return sizes;
+        }
+
+        function needsCleanOriginalAttachmentForSave() {
+            if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) return false;
+            const originalCount = Array.isArray(state.cleanOriginalPageSizes) && state.cleanOriginalPageSizes.length > 0
+                ? state.cleanOriginalPageSizes.length
+                : activePdfPageCount;
+            if (!originalCount || state.pages.length !== originalCount) return true;
+            for (let i = 0; i < state.pages.length; i++) {
+                const page = state.pages[i];
+                if (!page) return true;
+                if ((page.backgroundSource || 'template') !== 'pdf') return true;
+                if (!Number.isFinite(page.pdfPageIndex) || page.pdfPageIndex !== i + 1) return true;
+            }
+            return false;
         }
 
         function findPreviousTimelineEntry(entry) {
@@ -19701,7 +19719,7 @@
             const pdfBlob = options.initialPdfBlob || await buildPdfBlob({
                 signal: options.signal,
                 sessionToken: options.sessionToken,
-                highQuality: true
+                ...DRIVE_UPLOAD_PDF_OPTIONS
             });
             const metadata = {
                 name: fileName,
@@ -19856,7 +19874,7 @@
                     pdfBlob = await buildPdfBlob({
                         signal: controller.signal,
                         sessionToken,
-                        highQuality: true
+                        ...DRIVE_UPLOAD_PDF_OPTIONS
                     });
                 }
                 const ensureResult = await ensureDriveFile({
@@ -19910,7 +19928,7 @@
                         pdfBlob = await buildPdfBlob({
                             signal: controller.signal,
                             sessionToken,
-                            highQuality: true
+                            ...DRIVE_UPLOAD_PDF_OPTIONS
                         });
                     }
                     if (controller.signal.aborted) {
@@ -23747,10 +23765,11 @@
             // clean the current saved page set, while this attachment preserves
             // the true first version for cross-device revert.
             try {
-                if (typeof outDoc.attach === 'function'
+                if (needsCleanOriginalAttachmentForSave()
+                    && typeof outDoc.attach === 'function'
                     && state.cleanOriginalPdfBytes
                     && state.cleanOriginalPdfBytes.byteLength) {
-                    await outDoc.attach(state.cleanOriginalPdfBytes.slice(0), 'IH_CLEAN_ORIGINAL.pdf', {
+                    await outDoc.attach(state.cleanOriginalPdfBytes, 'IH_CLEAN_ORIGINAL.pdf', {
                         mimeType: 'application/pdf',
                         description: 'Clean original PDF used by Inhouse Notes for full revert'
                     });
