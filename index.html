@@ -336,7 +336,8 @@
         }
 
         .presence-save-ring.processing,
-        .presence-save-ring.uploading {
+        .presence-save-ring.uploading,
+        .presence-save-ring.syncing {
             opacity: 1;
             background:
                 radial-gradient(farthest-side, transparent calc(100% - 2px), currentColor calc(100% - 1.5px) calc(100% - 0.5px), transparent 100%),
@@ -352,6 +353,10 @@
 
         .presence-save-ring.uploading {
             color: var(--accent-orange);
+        }
+
+        .presence-save-ring.syncing {
+            color: #4a90d9;
         }
 
         .presence-save-ring.saved {
@@ -628,7 +633,7 @@
         .mode-toggle-status .save-indicator {
             position: absolute;
             left: 50%;
-            top: 40%;
+            top: 50%;
             width: 32px;
             height: 32px;
             display: inline-flex;
@@ -750,38 +755,38 @@
         }
 
         .save-debug-orb {
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
             background: var(--accent-green);
-            box-shadow: 0 0 0 5px rgba(75, 181, 67, 0.12);
-            flex: 0 0 28px;
+            box-shadow: 0 0 0 4px rgba(75, 181, 67, 0.12);
+            flex: 0 0 24px;
         }
 
         .save-debug-orb.paused {
             background: #aaa;
-            box-shadow: 0 0 0 6px rgba(160, 160, 160, 0.16);
+            box-shadow: 0 0 0 4px rgba(160, 160, 160, 0.16);
         }
 
         .save-debug-orb.building {
             background: #e6c619;
-            box-shadow: 0 0 0 6px rgba(230, 198, 25, 0.18);
+            box-shadow: 0 0 0 4px rgba(230, 198, 25, 0.18);
         }
 
         .save-debug-orb.uploading,
         .save-debug-orb.saving {
             background: var(--accent-orange);
-            box-shadow: 0 0 0 6px rgba(255, 136, 0, 0.16);
+            box-shadow: 0 0 0 4px rgba(255, 136, 0, 0.16);
         }
 
         .save-debug-orb.syncing {
             background: #4a90d9;
-            box-shadow: 0 0 0 6px rgba(74, 144, 217, 0.16);
+            box-shadow: 0 0 0 4px rgba(74, 144, 217, 0.16);
         }
 
         .save-debug-orb.error {
             background: var(--accent-red);
-            box-shadow: 0 0 0 6px rgba(220, 53, 69, 0.16);
+            box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.16);
         }
 
         .save-debug-hero-title {
@@ -920,9 +925,9 @@
             position: absolute;
             left: 50%;
             top: auto;
-            bottom: 3px;
+            bottom: 1px;
             transform: translateX(-50%);
-            font-size: 0.46rem;
+            font-size: 0.42rem;
             line-height: 1;
             text-align: center;
             white-space: nowrap;
@@ -4900,7 +4905,7 @@
 
             #editor-view .mode-toggle-status .save-timestamp {
                 display: block;
-                font-size: 0.46rem;
+                font-size: 0.42rem;
                 opacity: 0.48;
             }
 
@@ -9600,6 +9605,7 @@
             if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
+            closeSaveDebugPopup();
             closePresencePopup();
             closeDriveProfileMenus();
             stopCollabPolling();
@@ -9612,6 +9618,7 @@
             if (welcomeView) welcomeView.classList.remove('hidden');
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.add('hidden');
+            closeSaveDebugPopup();
             closePresencePopup();
             closeDriveProfileMenus();
             stopCollabPolling();
@@ -19725,8 +19732,8 @@
                 armPausedSaveWatchdog(360);
                 return;
             }
-            recordSaveDebug(`Resuming paused save (${reason})`, { phase: 'saving' });
-            showStatus('Changes pending...', { saving: true });
+            recordSaveDebug(`Resuming paused save (${reason})`, { phase: 'building' });
+            showStatus('Changes pending...', { phase: 'building' });
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
                 queueSave();
             }
@@ -19775,7 +19782,7 @@
                     showStatus('Save paused...', { phase: 'paused' });
                     armPausedSaveWatchdog();
                 } else {
-                    showStatus('Changes pending...', { saving: true });
+                    showStatus('Changes pending...', { phase: 'building' });
                 }
             } else {
                 showStatus('Saving...', { saving: true });
@@ -20096,7 +20103,7 @@
                 recordSaveDebug('Local save finished');
                 if (isDriveSyncPending()) {
                     // Local save done, Drive sync still pending — keep saving indicator
-                    showStatus('Saved locally, syncing to Drive...', { saving: true, savedAt: result.savedAt });
+                    showStatus('Saved locally, preparing Drive save...', { phase: 'building', savedAt: result.savedAt });
                 } else {
                     showStatus('Saved', { savedAt: result.savedAt });
                 }
@@ -20391,7 +20398,8 @@
                     showStatus('Saved', { savedAt });
                     driveSaveSucceeded = true;
                 } else {
-                showStatus('Preparing save...', { saving: true });
+                showStatus('Processing document...', { phase: 'building' });
+                setPresenceSavePhase('processing');
                 recordSaveDebug('Preparing Drive save');
                 const driveOptions = {
                     ...options,
@@ -20831,6 +20839,7 @@
         const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h', 's', 'm'];
         const PRESENCE_SAVE_ACTIVE_MS = 12000;
         const PRESENCE_SAVE_DONE_MS = 2200;
+        const PRESENCE_PROCESSING_MIN_VISIBLE_MS = 900;
         let presenceSavePhase = '';
         let presenceSavePhaseAt = 0;
         let presenceSavePhasePushInFlight = false;
@@ -20936,7 +20945,7 @@
             const syncKey = getPresenceStabilityKey(record);
             const isRemoteSyncSource = syncKey && remotePresenceSyncSourceKeys.has(syncKey);
             if (isRemoteSyncSource && !isOwnPresenceRecord(record)) {
-                if (remotePresenceSyncActive) return 'uploading';
+                if (remotePresenceSyncActive) return 'syncing';
                 if (remotePresenceSyncDoneUntil && now <= remotePresenceSyncDoneUntil) return 'saved';
             }
             const phase = normalizePresenceSavePhase(record?.s);
@@ -20945,6 +20954,7 @@
             const age = now - phaseAt;
             if (phase === 'saved') return age <= PRESENCE_SAVE_DONE_MS ? 'saved' : '';
             if (!record?.isOnline) return '';
+            if (phase === 'uploading' && age < PRESENCE_PROCESSING_MIN_VISIBLE_MS) return 'processing';
             return age <= PRESENCE_SAVE_ACTIVE_MS ? phase : '';
         }
 
@@ -20993,7 +21003,9 @@
             );
             const sourceUsers = recentRemoteUsers.length
                 ? recentRemoteUsers
-                : (latestPresenceUsers || []).filter(user => !isOwnPresenceRecord(user) && user?.isOnline).slice(0, 1);
+                : (latestPresenceUsers || []).filter(user => !isOwnPresenceRecord(user))
+                    .sort((a, b) => (Number(b?.h) || Number(b?.t) || 0) - (Number(a?.h) || Number(a?.t) || 0))
+                    .slice(0, 1);
 
             sourceUsers.forEach(user => {
                 const key = getPresenceStabilityKey(user);
@@ -22897,16 +22909,9 @@
             const hero = backdrop.querySelector('.save-debug-hero');
             const terminal = backdrop.querySelector('.save-debug-terminal');
             const adminToggle = backdrop.querySelector('#save-debug-admin-toggle');
-            const close = () => {
-                backdrop.classList.remove('visible');
-                if (saveDebugRenderInterval) {
-                    clearInterval(saveDebugRenderInterval);
-                    saveDebugRenderInterval = null;
-                }
-            };
-            closeBtn.addEventListener('click', close);
+            closeBtn.addEventListener('click', closeSaveDebugPopup);
             backdrop.addEventListener('click', (event) => {
-                if (event.target === backdrop) close();
+                if (event.target === backdrop) closeSaveDebugPopup();
             });
             adminToggle.addEventListener('change', () => {
                 saveDebugState.admin = adminToggle.checked;
@@ -22920,6 +22925,16 @@
             });
             saveDebugElements = { backdrop, panel, hero, terminal, adminToggle };
             return saveDebugElements;
+        }
+
+        function closeSaveDebugPopup() {
+            if (saveDebugElements?.backdrop) {
+                saveDebugElements.backdrop.classList.remove('visible');
+            }
+            if (saveDebugRenderInterval) {
+                clearInterval(saveDebugRenderInterval);
+                saveDebugRenderInterval = null;
+            }
         }
 
         function renderSaveDebugPopup() {
