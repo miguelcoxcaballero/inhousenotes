@@ -573,21 +573,68 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 15px;
-            min-width: 15px;
-            flex: 0 0 15px;
+            width: 32px;
+            min-width: 32px;
+            height: 32px;
+            flex: 0 0 32px;
             color: var(--text-secondary);
-            pointer-events: none;
+            pointer-events: auto;
             opacity: 1;
             transition: opacity 0.2s ease;
+            cursor: pointer;
         }
 
         .mode-toggle-status .save-indicator {
-            width: 7px;
-            height: 7px;
-            box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
+            position: relative;
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent !important;
+            box-shadow: none;
             pointer-events: auto;
             cursor: pointer;
+        }
+
+        .mode-toggle-status .save-indicator::after {
+            content: "";
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
+            transition: background-color 0.25s ease, transform 0.2s ease;
+        }
+
+        .mode-toggle-status:hover .save-indicator::after,
+        .mode-toggle-status:focus-within .save-indicator::after {
+            transform: scale(1.16);
+        }
+
+        .mode-toggle-status .save-indicator.paused::after {
+            background: #aaa;
+        }
+
+        .mode-toggle-status .save-indicator.building::after {
+            background: #e6c619;
+        }
+
+        .mode-toggle-status .save-indicator.uploading::after,
+        .mode-toggle-status .save-indicator.saving::after {
+            background: var(--accent-orange);
+        }
+
+        .mode-toggle-status .save-indicator.syncing::after {
+            background: #4a90d9;
+        }
+
+        .mode-toggle-status .save-indicator.saved::after {
+            background: var(--accent-green);
+        }
+
+        .mode-toggle-status .save-indicator.error::after {
+            background: var(--accent-red);
         }
 
         .save-debug-backdrop {
@@ -598,7 +645,9 @@
             align-items: center;
             justify-content: center;
             padding: 18px;
-            background: rgba(0, 0, 0, 0.22);
+            background: rgba(20, 20, 20, 0.28);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
         }
 
         .save-debug-backdrop.visible {
@@ -610,7 +659,7 @@
             max-height: min(680px, calc(100vh - 28px));
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 12px;
             padding: 16px;
             border-radius: var(--radius-lg);
             background: var(--bg-primary);
@@ -633,6 +682,12 @@
             line-height: 1.2;
         }
 
+        .save-debug-subtitle {
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+        }
+
         .save-debug-close {
             width: 32px;
             height: 32px;
@@ -651,8 +706,139 @@
             gap: 8px;
         }
 
+        .save-debug-hero {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 12px;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--bg-secondary);
+        }
+
+        .save-debug-orb {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 0 6px rgba(75, 181, 67, 0.12);
+        }
+
+        .save-debug-orb.paused {
+            background: #aaa;
+            box-shadow: 0 0 0 6px rgba(160, 160, 160, 0.16);
+        }
+
+        .save-debug-orb.building {
+            background: #e6c619;
+            box-shadow: 0 0 0 6px rgba(230, 198, 25, 0.18);
+        }
+
+        .save-debug-orb.uploading,
+        .save-debug-orb.saving {
+            background: var(--accent-orange);
+            box-shadow: 0 0 0 6px rgba(255, 136, 0, 0.16);
+        }
+
+        .save-debug-orb.syncing {
+            background: #4a90d9;
+            box-shadow: 0 0 0 6px rgba(74, 144, 217, 0.16);
+        }
+
+        .save-debug-orb.error {
+            background: var(--accent-red);
+            box-shadow: 0 0 0 6px rgba(220, 53, 69, 0.16);
+        }
+
+        .save-debug-hero-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+
+        .save-debug-hero-meta {
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+        }
+
+        .save-debug-rail {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+        }
+
+        .save-debug-step {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 28px;
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            font-weight: 600;
+            border: 1px solid transparent;
+        }
+
+        .save-debug-step.active {
+            color: var(--text-primary);
+            border-color: var(--accent-orange);
+            background: rgba(255, 136, 0, 0.10);
+        }
+
+        .save-debug-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .save-debug-chip {
+            padding: 5px 8px;
+            border-radius: 999px;
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .save-debug-chip.hot {
+            color: var(--text-primary);
+            border-color: var(--accent-orange);
+            background: rgba(255, 136, 0, 0.10);
+        }
+
+        .save-debug-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .save-debug-action {
+            min-height: 32px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 0.76rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .save-debug-action.primary {
+            border-color: var(--accent-orange);
+            background: var(--accent-orange);
+            color: white;
+        }
+
+        .save-debug-action:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
         .save-debug-stat {
-            padding: 8px 10px;
+            padding: 9px 10px;
             border: 1px solid var(--border-color);
             border-radius: 8px;
             background: var(--bg-secondary);
@@ -681,13 +867,42 @@
 
         .save-debug-event {
             display: grid;
-            grid-template-columns: 70px 1fr auto;
+            grid-template-columns: 72px 10px 1fr auto;
             gap: 8px;
             align-items: baseline;
             padding: 7px 8px;
             border-radius: 8px;
             background: var(--bg-secondary);
             font-size: 0.78rem;
+        }
+
+        .save-debug-event-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            align-self: center;
+        }
+
+        .save-debug-event-dot.building {
+            background: #e6c619;
+        }
+
+        .save-debug-event-dot.uploading,
+        .save-debug-event-dot.saving {
+            background: var(--accent-orange);
+        }
+
+        .save-debug-event-dot.paused {
+            background: #aaa;
+        }
+
+        .save-debug-event-dot.syncing {
+            background: #4a90d9;
+        }
+
+        .save-debug-event-dot.error {
+            background: var(--accent-red);
         }
 
         .save-debug-event-time,
@@ -744,12 +959,12 @@
 
         .mode-toggle-btn {
             display: grid;
-            grid-template-columns: 15px 36px auto;
+            grid-template-columns: 32px 36px auto;
             align-items: center;
             justify-content: start;
-            column-gap: 8px;
-            width: 136px;
-            min-width: 136px;
+            column-gap: 5px;
+            width: 150px;
+            min-width: 150px;
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
             padding: 0 12px;
@@ -4512,7 +4727,7 @@
             }
 
             #editor-view .mode-toggle-btn {
-                min-width: 136px;
+                min-width: 150px;
                 border-radius: 999px;
                 background: transparent !important;
                 border: none;
@@ -4581,10 +4796,15 @@
 
             #drive-home #btn-drive-new::before {
                 content: "+";
+                position: absolute;
+                inset: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
                 font-size: 32px;
                 font-weight: 500;
-                line-height: 0.9;
-                display: block;
+                line-height: 1;
+                text-align: center;
                 transform: translateY(-1px);
             }
 
@@ -4692,7 +4912,7 @@
 
             #editor-view .mode-toggle-status {
                 opacity: 1;
-                pointer-events: none;
+                pointer-events: auto;
             }
 
             #editor-view .mode-toggle-btn.is-editing .mode-toggle-status {
@@ -6602,6 +6822,7 @@
             admin: false
         };
         let saveDebugElements = null;
+        let saveDebugRenderInterval = null;
         let lastPointerClientX = 0;
         let lastPointerClientY = 0;
         let isPenWriting = false;
@@ -6763,6 +6984,15 @@
                 updateAddPageIndicator();
                 clearTimeout(state.saveTimeout);
                 clearDriveSyncTimers();
+                if (
+                    state.driveAutosave
+                    && state.driveCanEdit !== false
+                    && (driveDirty || deferredDriveSave || driveSaveQueued || driveContentVersion !== driveUploadedContentVersion)
+                ) {
+                    deferredDriveSave = false;
+                    driveDirty = true;
+                    setTimeout(() => queueDriveSave(true), 0);
+                }
             } else {
                 updateHistoryButtons();
                 updateSaveTimestamp();
@@ -15500,17 +15730,24 @@
                 }
             });
             // Global hard interrupt: any fresh user input should pause ongoing processing.
-            document.addEventListener('pointerdown', () => {
+            const isSaveDebugInteraction = (event) => {
+                return !!event.target?.closest?.('.save-debug-backdrop, .mode-toggle-status, #save-indicator');
+            };
+            document.addEventListener('pointerdown', (e) => {
+                if (isSaveDebugInteraction(e)) return;
                 interruptProcessingForUserInput();
             }, { capture: true, passive: true });
-            document.addEventListener('touchstart', () => {
+            document.addEventListener('touchstart', (e) => {
+                if (isSaveDebugInteraction(e)) return;
                 interruptProcessingForUserInput();
             }, { capture: true, passive: true });
-            document.addEventListener('wheel', () => {
+            document.addEventListener('wheel', (e) => {
+                if (isSaveDebugInteraction(e)) return;
                 interruptProcessingForUserInput();
             }, { capture: true, passive: true });
             document.addEventListener('keydown', (e) => {
                 if (e.isComposing) return;
+                if (isSaveDebugInteraction(e)) return;
                 interruptProcessingForUserInput();
             }, { capture: true });
             if (driveBackBtn) {
@@ -19261,9 +19498,10 @@
 
         let saveInProgress = false;
         let saveQueued = false;
+        let pausedSaveWatchdogTimer = null;
 
         function isDriveSyncPending() {
-            return !!(state.driveAutosave && !state.isReadOnly && (driveDirty || deferredDriveSave || driveSaveInProgress || driveSaveQueued));
+            return !!(state.driveAutosave && (driveDirty || deferredDriveSave || driveSaveInProgress || driveSaveQueued));
         }
 
         function hasSmoothInteraction() {
@@ -19296,6 +19534,7 @@
             noteRecentUserActivity();
             stopCollabPolling();
             clearDriveSyncTimers();
+            clearPausedSaveWatchdog();
             clearTimeout(state.saveTimeout);
             state.saveTimeout = null;
             if (deferredDriveSaveRetryTimer) {
@@ -19383,11 +19622,55 @@
             }
             if (pausedProcessing) {
                 showStatus('Save paused...', { phase: 'paused' });
+                armPausedSaveWatchdog();
+            }
+        }
+
+        function clearPausedSaveWatchdog() {
+            if (!pausedSaveWatchdogTimer) return;
+            clearTimeout(pausedSaveWatchdogTimer);
+            pausedSaveWatchdogTimer = null;
+        }
+
+        function armPausedSaveWatchdog(delay = 900) {
+            clearPausedSaveWatchdog();
+            pausedSaveWatchdogTimer = setTimeout(() => {
+                pausedSaveWatchdogTimer = null;
+                kickPausedSaveIfStale('paused too long');
+            }, Math.max(220, delay));
+        }
+
+        function kickPausedSaveIfStale(reason = 'watchdog') {
+            if (!state.driveAutosave) return;
+            const hasPendingWork = !!(
+                driveDirty
+                || deferredDriveSave
+                || driveSaveQueued
+                || saveQueued
+                || pageDirty.size > 0
+                || strokeOpsQueue.length > 0
+                || driveContentVersion !== driveUploadedContentVersion
+            );
+            if (!hasPendingWork) return;
+            if (hasSmoothInteraction() || hasRecentUserActivity(220)) {
+                armPausedSaveWatchdog(360);
+                return;
+            }
+            recordSaveDebug(`Resuming paused save (${reason})`, { phase: 'saving' });
+            showStatus('Changes pending...', { saving: true });
+            if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
+                queueSave();
+            }
+            if (driveDirty || deferredDriveSave || driveSaveQueued || driveContentVersion !== driveUploadedContentVersion) {
+                deferredDriveSave = false;
+                if (driveContentVersion !== driveUploadedContentVersion) driveDirty = true;
+                queueDriveSave(true);
             }
         }
 
         function flushDeferredSavesAfterInteraction() {
             if (hasSmoothInteraction()) return;
+            clearPausedSaveWatchdog();
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
                 queueSave();
             }
@@ -19417,10 +19700,11 @@
             if (!indicator) return;
             // Don't downgrade if already showing a more specific phase
             if (indicator.classList.contains('uploading') || indicator.classList.contains('syncing')) return;
-            if (state.driveAutosave && !state.isReadOnly) {
+            if (state.driveAutosave) {
                 // If interacting, show grey (paused); otherwise show orange (saving)
                 if (hasSmoothInteraction() || hasRecentUserActivity()) {
                     showStatus('Save paused...', { phase: 'paused' });
+                    armPausedSaveWatchdog();
                 } else {
                     showStatus('Changes pending...', { saving: true });
                 }
@@ -19787,14 +20071,23 @@
         }
 
         function scheduleDeferredDriveSaveRetry(delay = 280) {
-            if (state.isReadOnly || !state.driveAutosave) return;
+            if (!state.driveAutosave) return;
+            if (state.isReadOnly && (driveDirty || deferredDriveSave || driveSaveQueued || driveContentVersion !== driveUploadedContentVersion)) {
+                armPausedSaveWatchdog(Math.max(360, Number.isFinite(delay) ? delay : 360));
+                return;
+            }
+            if (state.isReadOnly) return;
             const retryDelay = Math.max(80, Number.isFinite(delay) ? delay : 280);
             if (deferredDriveSaveRetryTimer) {
                 clearTimeout(deferredDriveSaveRetryTimer);
             }
             deferredDriveSaveRetryTimer = setTimeout(async () => {
                 deferredDriveSaveRetryTimer = null;
-                if (state.isReadOnly || !state.driveAutosave) return;
+                if (!state.driveAutosave) return;
+                if (state.isReadOnly) {
+                    kickPausedSaveIfStale('read-mode retry');
+                    return;
+                }
                 if (!(driveDirty || deferredDriveSave || driveSaveQueued)) return;
                 if (hasSmoothInteraction()) {
                     deferredDriveSave = true;
@@ -19826,8 +20119,12 @@
         }
 
         function scheduleDriveSync() {
-            if (state.isReadOnly || !state.driveAutosave) return;
+            if (!state.driveAutosave) return;
             driveDirty = true;
+            if (state.isReadOnly) {
+                armPausedSaveWatchdog(420);
+                return;
+            }
             if (hasSmoothInteraction()) {
                 deferredDriveSave = true;
                 scheduleDeferredDriveSaveRetry();
@@ -20026,9 +20323,8 @@
                     showStatus('Saved', { savedAt });
                     driveSaveSucceeded = true;
                 } else {
-                // Phase 1: Build PDF (yellow dot)
-                showStatus('Building PDF...', { phase: 'building' });
-                recordSaveDebug('Preparing PDF build');
+                showStatus('Preparing save...', { saving: true });
+                recordSaveDebug('Preparing Drive save');
                 const driveOptions = {
                     ...options,
                     signal: controller.signal,
@@ -20038,6 +20334,7 @@
                 let uploadedContentVersion = driveContentVersion;
                 if (!state.driveFileId) {
                     uploadedContentVersion = driveContentVersion;
+                    showStatus('Building PDF...', { phase: 'building' });
                     recordSaveDebug('Building initial PDF');
                     pdfBlob = await buildPdfBlob({
                         signal: controller.signal,
@@ -20096,6 +20393,7 @@
                     }
                     if (!pdfBlob) {
                         uploadedContentVersion = driveContentVersion;
+                        showStatus('Building PDF...', { phase: 'building' });
                         recordSaveDebug('Building PDF blob');
                         pdfBlob = await buildPdfBlob({
                             signal: controller.signal,
@@ -20192,6 +20490,7 @@
                 driveDirty = true;
                 deferredDriveSave = true;
                 recordSaveDebug('New edits detected during save; scheduling another upload');
+                showPendingSaveStatus();
             }
             if (driveDirty || deferredDriveSave) {
                 if (hasSmoothInteraction()) {
@@ -22343,8 +22642,18 @@
             backdrop.innerHTML = `
                 <div class="save-debug-panel" role="dialog" aria-modal="true" aria-labelledby="save-debug-title">
                     <div class="save-debug-header">
-                        <h3 class="save-debug-title" id="save-debug-title">Save details</h3>
+                        <div>
+                            <h3 class="save-debug-title" id="save-debug-title">Save details</h3>
+                            <div class="save-debug-subtitle">Live Drive and local persistence trace</div>
+                        </div>
                         <button type="button" class="save-debug-close" aria-label="Close save details">&times;</button>
+                    </div>
+                    <div class="save-debug-hero"></div>
+                    <div class="save-debug-rail"></div>
+                    <div class="save-debug-chips"></div>
+                    <div class="save-debug-actions">
+                        <button type="button" class="save-debug-action primary" id="save-debug-resume">Resume now</button>
+                        <button type="button" class="save-debug-action" id="save-debug-refresh">Refresh</button>
                     </div>
                     <div class="save-debug-summary"></div>
                     <div class="save-debug-timeline"></div>
@@ -22361,10 +22670,21 @@
             const panel = backdrop.querySelector('.save-debug-panel');
             const closeBtn = backdrop.querySelector('.save-debug-close');
             const summary = backdrop.querySelector('.save-debug-summary');
+            const hero = backdrop.querySelector('.save-debug-hero');
+            const rail = backdrop.querySelector('.save-debug-rail');
+            const chips = backdrop.querySelector('.save-debug-chips');
             const timeline = backdrop.querySelector('.save-debug-timeline');
             const terminal = backdrop.querySelector('.save-debug-terminal');
             const adminToggle = backdrop.querySelector('#save-debug-admin-toggle');
-            const close = () => backdrop.classList.remove('visible');
+            const resumeBtn = backdrop.querySelector('#save-debug-resume');
+            const refreshBtn = backdrop.querySelector('#save-debug-refresh');
+            const close = () => {
+                backdrop.classList.remove('visible');
+                if (saveDebugRenderInterval) {
+                    clearInterval(saveDebugRenderInterval);
+                    saveDebugRenderInterval = null;
+                }
+            };
             closeBtn.addEventListener('click', close);
             backdrop.addEventListener('click', (event) => {
                 if (event.target === backdrop) close();
@@ -22374,7 +22694,9 @@
                 panel.classList.toggle('admin', saveDebugState.admin);
                 renderSaveDebugPopup();
             });
-            saveDebugElements = { backdrop, panel, summary, timeline, terminal, adminToggle };
+            resumeBtn.addEventListener('click', () => kickPausedSaveIfStale('manual resume'));
+            refreshBtn.addEventListener('click', renderSaveDebugPopup);
+            saveDebugElements = { backdrop, panel, hero, rail, chips, summary, timeline, terminal, adminToggle, resumeBtn };
             return saveDebugElements;
         }
 
@@ -22384,6 +22706,46 @@
             const flags = getSaveDebugFlags();
             const elapsed = Date.now() - saveDebugState.runStartedAt;
             const lastSaved = state.driveLastKnownModified || state.lastSavedAt || null;
+            const phase = saveDebugState.phase || 'saved';
+            const phaseLabel = phase === 'saved' ? 'All saved'
+                : (phase === 'paused' ? 'Waiting for idle'
+                    : (phase === 'building' ? 'Building PDF'
+                        : (phase === 'uploading' ? 'Uploading to Drive'
+                            : (phase === 'syncing' ? 'Syncing remote changes'
+                                : (phase === 'saving' ? 'Saving local state' : phase)))));
+            els.hero.innerHTML = `
+                <span class="save-debug-orb ${escapeSaveDebugText(phase)}"></span>
+                <div>
+                    <div class="save-debug-hero-title">${escapeSaveDebugText(phaseLabel)}</div>
+                    <div class="save-debug-hero-meta">${escapeSaveDebugText(saveDebugState.status)} · ${formatSaveDebugMs(elapsed)}</div>
+                </div>`;
+            const steps = [
+                ['saving', 'Local'],
+                ['building', 'PDF'],
+                ['uploading', 'Drive'],
+                ['saved', 'Done']
+            ];
+            const activeStep = phase === 'paused' ? 'saving' : phase;
+            els.rail.innerHTML = steps.map(([key, label]) => {
+                const active = key === activeStep || (key === 'saved' && phase === 'syncing');
+                return `<span class="save-debug-step ${active ? 'active' : ''}">${label}</span>`;
+            }).join('');
+            const chipData = [
+                ['Drive dirty', flags.driveDirty],
+                ['Deferred', flags.deferredDriveSave],
+                ['Drive queued', flags.driveSaveQueued],
+                ['Drive running', flags.driveSaveInProgress],
+                ['Local queued', flags.localSaveQueued],
+                ['Local running', flags.localSaveInProgress],
+                [`Pages ${flags.pageDirtyCount}`, flags.pageDirtyCount > 0],
+                [`Ops ${flags.strokeOpsQueued}`, flags.strokeOpsQueued > 0]
+            ];
+            els.chips.innerHTML = chipData.map(([label, hot]) => (
+                `<span class="save-debug-chip ${hot ? 'hot' : ''}">${escapeSaveDebugText(label)}</span>`
+            )).join('');
+            if (els.resumeBtn) {
+                els.resumeBtn.disabled = !(flags.driveDirty || flags.deferredDriveSave || flags.driveSaveQueued || flags.localSaveQueued || flags.pageDirtyCount > 0 || flags.strokeOpsQueued > 0);
+            }
             els.summary.innerHTML = `
                 <div class="save-debug-stat"><span class="save-debug-label">Status</span><span class="save-debug-value">${escapeSaveDebugText(saveDebugState.status)}</span></div>
                 <div class="save-debug-stat"><span class="save-debug-label">Current step</span><span class="save-debug-value">${escapeSaveDebugText(saveDebugState.phase)}</span></div>
@@ -22391,12 +22753,14 @@
                 <div class="save-debug-stat"><span class="save-debug-label">Last saved</span><span class="save-debug-value">${escapeSaveDebugText(lastSaved ? formatTime(lastSaved) : '--:--')}</span></div>`;
             els.timeline.innerHTML = saveDebugState.events.slice(0, 24).map(event => {
                 const delta = event.runId === saveDebugState.runId ? formatSaveDebugMs(event.at - saveDebugState.runStartedAt) : 'prev';
+                const eventPhase = escapeSaveDebugText(event.phase || 'saved');
                 return `<div class="save-debug-event">
                     <span class="save-debug-event-time">${new Date(event.at).toLocaleTimeString(undefined, { hour12: false })}</span>
+                    <span class="save-debug-event-dot ${eventPhase}"></span>
                     <span>${escapeSaveDebugText(event.message)}</span>
                     <span class="save-debug-event-delta">${delta}</span>
                 </div>`;
-            }).join('') || '<div class="save-debug-event"><span></span><span>No save activity yet</span><span></span></div>';
+            }).join('') || '<div class="save-debug-event"><span></span><span class="save-debug-event-dot"></span><span>No save activity yet</span><span></span></div>';
             els.terminal.textContent = [
                 `run=${saveDebugState.runId} phase=${saveDebugState.phase} elapsed=${formatSaveDebugMs(elapsed)}`,
                 `drive: dirty=${flags.driveDirty} deferred=${flags.deferredDriveSave} inProgress=${flags.driveSaveInProgress} queued=${flags.driveSaveQueued}`,
@@ -22417,41 +22781,64 @@
             els.panel.classList.toggle('admin', !!saveDebugState.admin);
             renderSaveDebugPopup();
             els.backdrop.classList.add('visible');
+            if (!saveDebugRenderInterval) {
+                saveDebugRenderInterval = setInterval(renderSaveDebugPopup, 500);
+            }
         }
 
-        function initSaveIndicatorDetails() {
-            const indicator = document.getElementById('save-indicator');
-            if (!indicator || indicator.dataset.debugBound === 'true') return;
-            indicator.dataset.debugBound = 'true';
-            indicator.setAttribute('role', 'button');
-            indicator.setAttribute('tabindex', '0');
-            indicator.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                openSaveDebugPopup();
-            });
-            indicator.addEventListener('keydown', (event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                event.stopPropagation();
-                openSaveDebugPopup();
-            });
-        }
-
-        function reconcileSavedIndicator() {
-            if (
+        function hasBlockingSaveState() {
+            return !!(
                 isDriveSyncPending()
                 || saveInProgress
                 || saveQueued
                 || driveDirty
                 || deferredDriveSave
                 || driveContentVersion !== driveUploadedContentVersion
-            ) {
+            );
+        }
+
+        function initSaveIndicatorDetails() {
+            const indicator = document.getElementById('save-indicator');
+            if (!indicator || indicator.dataset.debugBound === 'true') return;
+            const statusTarget = indicator.closest('.mode-toggle-status') || indicator;
+            indicator.dataset.debugBound = 'true';
+            indicator.setAttribute('role', 'button');
+            indicator.setAttribute('tabindex', '0');
+            statusTarget.setAttribute('role', 'button');
+            statusTarget.setAttribute('tabindex', '0');
+            const openFromIndicator = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openSaveDebugPopup();
+            };
+            statusTarget.addEventListener('click', openFromIndicator);
+            statusTarget.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                openFromIndicator(event);
+            });
+        }
+
+        function reconcileSavedIndicator() {
+            if (hasBlockingSaveState()) {
                 showPendingSaveStatus();
                 return;
             }
             const savedAt = state.driveLastKnownModified || state.lastSavedAt || Date.now();
             showStatus('Saved', { savedAt });
+        }
+
+        function confirmSavedIndicatorSoon() {
+            setTimeout(() => {
+                if (hasBlockingSaveState()) return;
+                clearPausedSaveWatchdog();
+                const indicator = document.getElementById('save-indicator');
+                if (!indicator) return;
+                for (const s of SAVE_STATES) indicator.classList.remove(s);
+                indicator.classList.add('saved');
+                saveDebugState.phase = 'saved';
+                saveDebugState.status = 'Saved';
+                renderSaveDebugPopup();
+            }, 350);
         }
 
         function showStatus(text, options = {}) {
@@ -22501,6 +22888,10 @@
                 state.lastSavedAt = savedAt;
             }
             updateSaveTimestamp();
+
+            if (!preserveState && !phase && !saving && !error && (savedAt || /^(saved|synced)$/i.test(text || ''))) {
+                confirmSavedIndicatorSoon();
+            }
         }
 
         function showLoading(text) {
