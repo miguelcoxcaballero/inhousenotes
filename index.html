@@ -328,7 +328,7 @@
 
         .presence-save-ring {
             position: absolute;
-            inset: -4px;
+            inset: -3px;
             border-radius: 50%;
             pointer-events: none;
             opacity: 0;
@@ -338,8 +338,12 @@
         .presence-save-ring.processing,
         .presence-save-ring.uploading {
             opacity: 1;
-            background: conic-gradient(currentColor 0deg 86deg, transparent 88deg 360deg);
-            animation: presence-save-spin 0.8s linear infinite;
+            background:
+                radial-gradient(farthest-side, transparent calc(100% - 2px), currentColor calc(100% - 1.5px) calc(100% - 0.5px), transparent 100%),
+                conic-gradient(from 0deg, transparent 0deg, transparent 28deg, currentColor 34deg 116deg, transparent 122deg 360deg);
+            mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
+            animation: presence-save-spin 0.95s cubic-bezier(.45, 0, .25, 1) infinite;
         }
 
         .presence-save-ring.processing {
@@ -352,7 +356,7 @@
 
         .presence-save-ring.saved {
             opacity: 1;
-            border: 2px solid var(--accent-green);
+            border: 1.5px solid var(--accent-green);
         }
 
         @keyframes presence-save-spin {
@@ -624,7 +628,7 @@
         .mode-toggle-status .save-indicator {
             position: absolute;
             left: 50%;
-            top: 50%;
+            top: 40%;
             width: 32px;
             height: 32px;
             display: inline-flex;
@@ -698,7 +702,7 @@
             max-height: min(420px, calc(100vh - 120px));
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             padding: 12px;
             border-radius: var(--radius-lg);
             background: var(--bg-primary);
@@ -716,10 +720,8 @@
             gap: 12px;
         }
 
-        .save-debug-title {
-            margin: 0;
-            font-size: 0.98rem;
-            line-height: 1.2;
+        .save-debug-header {
+            min-height: 30px;
         }
 
         .save-debug-close {
@@ -741,22 +743,19 @@
         }
 
         .save-debug-hero {
-            display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 12px;
+            display: flex;
+            gap: 10px;
             align-items: center;
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            background: var(--bg-secondary);
+            min-width: 0;
         }
 
         .save-debug-orb {
-            width: 36px;
-            height: 36px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             background: var(--accent-green);
-            box-shadow: 0 0 0 6px rgba(75, 181, 67, 0.12);
+            box-shadow: 0 0 0 5px rgba(75, 181, 67, 0.12);
+            flex: 0 0 28px;
         }
 
         .save-debug-orb.paused {
@@ -789,34 +788,9 @@
             font-size: 0.9rem;
             font-weight: 700;
             line-height: 1.25;
-        }
-
-        .save-debug-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .save-debug-action {
-            min-height: 32px;
-            padding: 0 12px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            font-size: 0.76rem;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        .save-debug-action.primary {
-            border-color: var(--accent-orange);
-            background: var(--accent-orange);
-            color: white;
-        }
-
-        .save-debug-action:disabled {
-            opacity: 0.45;
-            cursor: default;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .save-debug-stat {
@@ -945,13 +919,14 @@
         .mode-toggle-status .save-timestamp {
             position: absolute;
             left: 50%;
-            top: calc(100% + 3px);
+            top: auto;
+            bottom: 3px;
             transform: translateX(-50%);
-            font-size: 0.48rem;
+            font-size: 0.46rem;
             line-height: 1;
             text-align: center;
             white-space: nowrap;
-            letter-spacing: -0.01em;
+            letter-spacing: 0;
             opacity: 0.48;
         }
 
@@ -4925,7 +4900,7 @@
 
             #editor-view .mode-toggle-status .save-timestamp {
                 display: block;
-                font-size: 0.48rem;
+                font-size: 0.46rem;
                 opacity: 0.48;
             }
 
@@ -6795,6 +6770,7 @@
         let driveTokenExpiry = 0;
         let driveTokenRefreshTimer = null;
         let driveSignedOut = false;
+        let driveAuthNeedsReconnect = false;
         let driveSaveTimeout = null;
         let driveSyncMaxTimeout = null;
         let driveSaveInProgress = false;
@@ -9868,6 +9844,7 @@
         function applyTokenResponse(data, isRefresh) {
             if (!data || !data.access_token) throw new Error('Token response missing access_token');
             driveSignedOut = false;
+            driveAuthNeedsReconnect = false;
             const expiresIn = parseInt(data.expires_in || '3600', 10);
             driveAccessToken = data.access_token;
             driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
@@ -9927,6 +9904,8 @@
             }
             const token = params.get('access_token');
             if (!token) return false;
+            driveSignedOut = false;
+            driveAuthNeedsReconnect = false;
             const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
             driveAccessToken = token;
             driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
@@ -9973,23 +9952,27 @@
 
         function updateDriveAuthUI() {
             const signedIn = !!driveAccessToken;
+            const reconnecting = !!driveAuthNeedsReconnect && !!state.driveFileId && !driveSignedOut;
+            const connectedOrRecoverable = signedIn || reconnecting;
             const hasPendingShared = !!window.pendingSharedDriveId;
             const pendingSharedOpenFailed = hasPendingShared && sharedLinkSignInPrompted;
             if (driveLoginBtn) driveLoginBtn.style.display = signedIn ? 'none' : 'inline-flex';
-            if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !signedIn);
-            if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !signedIn);
+            if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !connectedOrRecoverable);
+            if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !connectedOrRecoverable);
             if (driveSearchInput) driveSearchInput.disabled = !signedIn;
             if (driveNewBtn) driveNewBtn.disabled = !signedIn;
             if (driveBinBtn) driveBinBtn.disabled = !signedIn;
             if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
             if (driveStatusEl) {
-                driveStatusEl.textContent = signedIn
+                driveStatusEl.textContent = reconnecting
+                    ? 'Drive connection paused. Sign in again to continue syncing.'
+                    : signedIn
                     ? 'Loading your PDFs...'
                     : (hasPendingShared
                         ? (pendingSharedOpenFailed ? 'Sign in to open shared document.' : 'Opening shared document...')
                         : 'Sign in to browse your Drive.');
             }
-            if (!signedIn) {
+            if (!connectedOrRecoverable) {
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
                 if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
@@ -10004,11 +9987,13 @@
                     scheduleDriveSync();
                 }, 500);
             }
-            if (signedIn) {
+            if (connectedOrRecoverable) {
                 const welcomeViewEl = document.getElementById('welcome-view');
                 if (welcomeViewEl && !welcomeViewEl.classList.contains('hidden')) {
                     showDriveHome();
                 }
+            }
+            if (signedIn) {
                 sharedLinkSignInPrompted = false;
                 loadDriveProfile();
                 restorePdfBackgroundsIfNeeded();
@@ -10072,12 +10057,33 @@
             }, refreshIn);
         }
 
+        function markDriveAuthNeedsReconnect(reason = 'token refresh failed') {
+            if (driveSignedOut) return;
+            driveAuthNeedsReconnect = true;
+            driveAccessToken = null;
+            driveTokenExpiry = 0;
+            if (driveTokenRefreshTimer) {
+                clearTimeout(driveTokenRefreshTimer);
+                driveTokenRefreshTimer = null;
+            }
+            clearDriveTokenStorage();
+            stopPresencePing();
+            if (state.driveAutosave && state.driveFileId) {
+                deferredDriveSave = true;
+                if (driveContentVersion !== driveUploadedContentVersion) driveDirty = true;
+            }
+            updateDriveAuthUI();
+            showStatus('Drive sign-in needed to keep syncing', { phase: 'paused' });
+            recordSaveDebug(`Drive auth paused: ${reason}`, { phase: 'paused' });
+        }
+
         function ensureDriveToken(interactive = false) {
             if (driveSignedOut && !interactive) {
                 return Promise.reject(new Error('Signed out'));
             }
             if (interactive) {
                 driveSignedOut = false;
+                driveAuthNeedsReconnect = false;
             }
             if (driveAccessToken && Date.now() < driveTokenExpiry - 60000) {
                 return Promise.resolve(driveAccessToken);
@@ -10087,22 +10093,39 @@
                 let hasRefresh = false;
                 try { hasRefresh = !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
                 if (hasRefresh) {
-                    return refreshDriveAccessTokenWithRefreshToken();
+                    return refreshDriveAccessTokenWithRefreshToken().catch(err => {
+                        if (!interactive) markDriveAuthNeedsReconnect(err?.message || 'refresh failed');
+                        throw err;
+                    });
                 }
                 if (interactive) {
                     startAndroidPkceSignIn().catch(() => { });
                 }
+                if (!interactive) markDriveAuthNeedsReconnect('missing refresh token');
                 return Promise.reject(new Error('No refresh token; user must sign in'));
             }
             if (!driveTokenClient) {
                 return Promise.reject(new Error('Drive auth not ready'));
             }
             return new Promise((resolve, reject) => {
+                let settled = false;
+                const timeoutId = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    const err = new Error('Silent token refresh timed out');
+                    if (!interactive) markDriveAuthNeedsReconnect(err.message);
+                    reject(err);
+                }, interactive ? 60000 : 9000);
                 driveTokenClient.callback = (resp) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeoutId);
                     if (resp.error) {
+                        if (!interactive) markDriveAuthNeedsReconnect(resp.error);
                         reject(resp);
                         return;
                     }
+                    driveAuthNeedsReconnect = false;
                     driveAccessToken = resp.access_token;
                     driveTokenExpiry = Date.now() + (resp.expires_in || 0) * 1000;
                     saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
@@ -10125,6 +10148,7 @@
 
         function signInDrive() {
             driveSignedOut = false;
+            driveAuthNeedsReconnect = false;
             if (isInhouseApp) {
                 startDriveRedirectSignIn();
                 return;
@@ -10138,6 +10162,7 @@
 
         function signOutDrive() {
             driveSignedOut = true;
+            driveAuthNeedsReconnect = false;
             stopCollabPolling();
             clearDriveSyncTimers();
             clearPausedSaveWatchdog();
@@ -10549,8 +10574,13 @@
                     // Token expired server-side — force refresh and retry once
                     driveAccessToken = null;
                     driveTokenExpiry = 0;
-                    clearDriveTokenStorage();
-                    return driveFetch(url, options, true);
+                    try {
+                        await ensureDriveToken(false);
+                        return driveFetch(url, options, true);
+                    } catch (refreshErr) {
+                        markDriveAuthNeedsReconnect(refreshErr?.message || '401 refresh failed');
+                        throw refreshErr;
+                    }
                 }
                 if (!res.ok) {
                     const message = await res.text().catch(() => '');
@@ -10561,6 +10591,10 @@
                 clearTimeout(timeoutId);
                 if (externalAbortHandler && options.signal) {
                     options.signal.removeEventListener('abort', externalAbortHandler);
+                }
+                if (!driveSignedOut && /auth|token|sign.?in|refresh|No refresh token|Silent token/i.test(String(err?.message || err))) {
+                    markDriveAuthNeedsReconnect(err?.message || 'Drive auth unavailable');
+                    throw err;
                 }
                 if (err.name === 'AbortError') {
                     if (options.signal?.aborted) {
@@ -18294,15 +18328,16 @@
             const now = Date.now();
             const diffMs = Math.max(0, now - timestamp);
             const diffMin = Math.floor(diffMs / 60000);
-            if (diffMin < 60) {
-                if (diffMin < 1) return '<1 min';
-                return `${diffMin} min`;
-            }
-            return new Date(timestamp).toLocaleTimeString(undefined, {
+            const absoluteTime = () => new Date(timestamp).toLocaleTimeString(undefined, {
                 hour: '2-digit',
                 minute: '2-digit',
                 hour12: false
             });
+            if (diffMin < 1) return absoluteTime();
+            if (diffMin < 60) {
+                return `${diffMin} min`;
+            }
+            return absoluteTime();
         }
 
         function updateSaveTimestamp() {
@@ -19903,7 +19938,7 @@
             if (pendingMeta && !isRemoteMetaNewerThanTracked(pendingMeta) && !options.force) {
                 return false;
             }
-            await pullRemoteChanges(pendingMeta || null, { allowWhileLocalPending: true });
+            await pullRemoteChanges(pendingMeta || null, { allowWhileLocalPending: true, visualSync: true });
             return true;
         }
 
@@ -20327,11 +20362,10 @@
                     try {
                         recordSaveDebug('Merging pending remote changes');
                         const flushed = await flushDeferredRemotePull({ allowWhileLocalPending: true });
-                        if (flushed) {
+                        if (flushed?.hasLocalMerges) {
                             // Merge produced a new state — keep it dirty so we still
                             // upload the merged result.
                             driveDirty = true;
-                            try { bumpDriveContentVersion(); } catch (e) {}
                         }
                     } catch (mergeErr) {
                         console.warn('Pre-save deferred pull failed:', mergeErr);
@@ -20417,7 +20451,7 @@
                             }
                             if (hasRemoteChanges) {
                                 recordSaveDebug('Remote changes found, pulling before upload');
-                                await pullRemoteChanges(checkData);
+                                await pullRemoteChanges(checkData, { visualSync: true });
                             }
                         } catch (mergeErr) {
                             if (mergeErr?.name === 'AbortError' || controller.signal.aborted) throw mergeErr;
@@ -20514,12 +20548,12 @@
                     remoteChangePendingDuringSave = false;
                     remoteChangePendingMeta = null;
                     if (isRemoteMetaNewerThanTracked(pendingMeta)) {
-                        await pullRemoteChanges(pendingMeta || null);
+                        await pullRemoteChanges(pendingMeta || null, { visualSync: true });
                         handledPendingRemote = true;
                     }
                 }
                 const flushedDeferredPull = await flushDeferredRemotePull();
-                handledPendingRemote = handledPendingRemote || flushedDeferredPull;
+                handledPendingRemote = handledPendingRemote || !!flushedDeferredPull;
                 if (!handledPendingRemote && deferredRemotePullPending) {
                     await checkRemoteUpdateAfterSave();
                 }
@@ -20533,11 +20567,13 @@
                 await queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
                 return;
             }
-            if (driveContentVersion !== driveUploadedContentVersion) {
+            if (driveContentVersion !== driveUploadedContentVersion && (driveDirty || driveSaveQueued || deferredDriveSave)) {
                 driveDirty = true;
                 deferredDriveSave = true;
                 recordSaveDebug('New edits detected during save; scheduling another upload');
                 showPendingSaveStatus();
+            } else if (driveContentVersion !== driveUploadedContentVersion) {
+                markDriveContentUploaded();
             }
             if (driveDirty || deferredDriveSave) {
                 if (hasSmoothInteraction()) {
@@ -20613,10 +20649,11 @@
 
                 if (hasChanged) {
                     if (hasUnsyncedLocalDriveChanges()) {
+                        markRemotePresenceSyncActive();
                         deferRemotePull(data);
                         return false;
                     }
-                    await pullRemoteChanges(data);
+                    await pullRemoteChanges(data, { visualSync: true });
                     return true;
                 }
 
@@ -20654,6 +20691,9 @@
             remoteChangePendingMeta = null;
             deferredRemotePullPending = false;
             deferredRemotePullMeta = null;
+            remotePresenceSyncActive = false;
+            remotePresenceSyncDoneUntil = 0;
+            remotePresenceSyncSourceKeys.clear();
             stopPresencePing();
             console.log('Collab polling stopped');
         }
@@ -20688,17 +20728,19 @@
 
                 if (hasChanged) {
                     if (hasUnsyncedLocalDriveChanges()) {
+                        markRemotePresenceSyncActive();
                         deferRemotePull(data);
                         return;
                     }
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
                     if (driveSaveInProgress) {
                         // Save is in flight; defer pull until upload finishes.
+                        markRemotePresenceSyncActive();
                         remoteChangePendingDuringSave = true;
                         remoteChangePendingMeta = data;
                         return;
                     }
-                    await pullRemoteChanges(data);
+                    await pullRemoteChanges(data, { visualSync: true });
                     // After a successful pull, poll again immediately to catch
                     // back-to-back updates without waiting for the next interval.
                     collabPollInProgress = false;
@@ -20792,6 +20834,9 @@
         let presenceSavePhase = '';
         let presenceSavePhaseAt = 0;
         let presenceSavePhasePushInFlight = false;
+        let remotePresenceSyncActive = false;
+        let remotePresenceSyncDoneUntil = 0;
+        let remotePresenceSyncSourceKeys = new Set();
         const PRESENCE_CLIENT_ID_KEY = 'presence-client-id-v1';
         let _presenceClientIdMemory = '';
 
@@ -20888,11 +20933,18 @@
         }
 
         function getPresenceVisibleSavePhase(record, now = Date.now()) {
+            const syncKey = getPresenceStabilityKey(record);
+            const isRemoteSyncSource = syncKey && remotePresenceSyncSourceKeys.has(syncKey);
+            if (isRemoteSyncSource && !isOwnPresenceRecord(record)) {
+                if (remotePresenceSyncActive) return 'uploading';
+                if (remotePresenceSyncDoneUntil && now <= remotePresenceSyncDoneUntil) return 'saved';
+            }
             const phase = normalizePresenceSavePhase(record?.s);
             const phaseAt = Number(record?.m);
             if (!phase || !Number.isFinite(phaseAt) || phaseAt <= 0) return '';
             const age = now - phaseAt;
             if (phase === 'saved') return age <= PRESENCE_SAVE_DONE_MS ? 'saved' : '';
+            if (!record?.isOnline) return '';
             return age <= PRESENCE_SAVE_ACTIVE_MS ? phase : '';
         }
 
@@ -20913,6 +20965,56 @@
             const deviceName = String(record?.v || '').trim().toLowerCase();
             const who = email ? `e:${email}` : `n:${name}`;
             return `${who}|d:${deviceType}|v:${deviceName}`;
+        }
+
+        function isOwnPresenceRecord(record) {
+            const clientId = String(record?.c || '').trim();
+            return !!clientId && clientId === getPresenceClientId();
+        }
+
+        function hasRecentPresenceSaveSignal(record, now = Date.now()) {
+            const phase = normalizePresenceSavePhase(record?.s);
+            const phaseAt = Number(record?.m);
+            if (!phase || !Number.isFinite(phaseAt) || phaseAt <= 0) return false;
+            return now - phaseAt <= Math.max(PRESENCE_SAVE_ACTIVE_MS, PRESENCE_SAVE_DONE_MS, 18000);
+        }
+
+        function refreshPresenceViews() {
+            renderPresenceAvatars(latestPresenceUsers);
+            if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
+                renderPresencePopup(latestPresenceUsers);
+            }
+        }
+
+        function markRemotePresenceSyncActive() {
+            const now = Date.now();
+            const recentRemoteUsers = (latestPresenceUsers || []).filter(user =>
+                !isOwnPresenceRecord(user) && hasRecentPresenceSaveSignal(user, now)
+            );
+            const sourceUsers = recentRemoteUsers.length
+                ? recentRemoteUsers
+                : (latestPresenceUsers || []).filter(user => !isOwnPresenceRecord(user) && user?.isOnline).slice(0, 1);
+
+            sourceUsers.forEach(user => {
+                const key = getPresenceStabilityKey(user);
+                if (key) remotePresenceSyncSourceKeys.add(key);
+            });
+            remotePresenceSyncActive = true;
+            remotePresenceSyncDoneUntil = 0;
+            refreshPresenceViews();
+        }
+
+        function markRemotePresenceSyncFinished() {
+            if (!remotePresenceSyncActive && remotePresenceSyncSourceKeys.size === 0) return;
+            remotePresenceSyncActive = false;
+            remotePresenceSyncDoneUntil = Date.now() + PRESENCE_SAVE_DONE_MS;
+            refreshPresenceViews();
+            setTimeout(() => {
+                if (remotePresenceSyncActive || Date.now() < remotePresenceSyncDoneUntil) return;
+                remotePresenceSyncDoneUntil = 0;
+                remotePresenceSyncSourceKeys.clear();
+                refreshPresenceViews();
+            }, PRESENCE_SAVE_DONE_MS + 80);
         }
 
         function getPresenceRecordScore(record) {
@@ -21526,11 +21628,13 @@
         async function pullRemoteChanges(remoteMetaHint = null, options = {}) {
             if (!state.driveFileId || !driveAccessToken) return;
             if (!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges()) {
+                if (options.visualSync) markRemotePresenceSyncActive();
                 deferRemotePull(remoteMetaHint);
                 return { changed: false, hasLocalMerges: false, deferred: true };
             }
             if (collabPullInProgress) return;
             collabPullInProgress = true;
+            if (options.visualSync) markRemotePresenceSyncActive();
             const fileIdAtStart = state.driveFileId;
             const sessionToken = getDocumentSessionToken();
             try {
@@ -21676,8 +21780,9 @@
                 if (remotePdfDoc?.cleanup) { try { remotePdfDoc.cleanup(); } catch (e) {} }
                 remotePdfDoc = null;
 
-                if (mergeResult && mergeResult.changed) {
+                if (mergeResult && mergeResult.hasLocalMerges) {
                     bumpDriveContentVersion();
+                    driveDirty = true;
                 }
 
                 // If the timeline panel is open while a sync lands, refresh its
@@ -21719,11 +21824,17 @@
                     showStatus('Changes from collaborator', { savedAt: state.driveLastKnownModified || Date.now() });
                 }
                 console.log('Remote changes applied successfully');
+                return {
+                    changed: true,
+                    hasLocalMerges: !!(mergeResult && mergeResult.hasLocalMerges)
+                };
             } catch (err) {
                 console.error('pullRemoteChanges failed:', err);
                 showStatus('Sync failed', { error: true });
+                return { changed: false, hasLocalMerges: false, error: true };
             } finally {
                 collabPullInProgress = false;
+                if (options.visualSync) markRemotePresenceSyncFinished();
             }
         }
 
@@ -22740,6 +22851,16 @@
         function setSaveDebugStatus(text, options = {}) {
             const now = Date.now();
             const phase = options.phase || (options.error ? 'error' : (options.saving ? 'saving' : 'saved'));
+            const currentPhase = saveDebugState.phase;
+            if (
+                (currentPhase === 'building' || currentPhase === 'uploading')
+                && phase === 'saving'
+                && (driveSaveInProgress || presenceSavePhase === 'processing' || presenceSavePhase === 'uploading')
+            ) {
+                saveDebugState.status = text || saveDebugState.status;
+                renderSaveDebugPopup();
+                return;
+            }
             const startsRun = phase !== 'saved' && phase !== 'error' && saveDebugState.phase === 'saved';
             if (startsRun) {
                 saveDebugState.runId += 1;
@@ -22758,15 +22879,8 @@
             backdrop.innerHTML = `
                 <div class="save-debug-panel" role="dialog" aria-modal="false" aria-labelledby="save-debug-title">
                     <div class="save-debug-header">
-                        <div>
-                            <h3 class="save-debug-title" id="save-debug-title">Save details</h3>
-                        </div>
+                        <div class="save-debug-hero"></div>
                         <button type="button" class="save-debug-close" aria-label="Close save details">&times;</button>
-                    </div>
-                    <div class="save-debug-hero"></div>
-                    <div class="save-debug-actions">
-                        <button type="button" class="save-debug-action primary" id="save-debug-resume">Resume now</button>
-                        <button type="button" class="save-debug-action" id="save-debug-refresh">Refresh</button>
                     </div>
                     <div class="save-debug-admin-row">
                         <span class="save-debug-label">Diagnostics</span>
@@ -22783,8 +22897,6 @@
             const hero = backdrop.querySelector('.save-debug-hero');
             const terminal = backdrop.querySelector('.save-debug-terminal');
             const adminToggle = backdrop.querySelector('#save-debug-admin-toggle');
-            const resumeBtn = backdrop.querySelector('#save-debug-resume');
-            const refreshBtn = backdrop.querySelector('#save-debug-refresh');
             const close = () => {
                 backdrop.classList.remove('visible');
                 if (saveDebugRenderInterval) {
@@ -22801,9 +22913,12 @@
                 panel.classList.toggle('admin', saveDebugState.admin);
                 renderSaveDebugPopup();
             });
-            resumeBtn.addEventListener('click', () => kickPausedSaveIfStale('manual resume'));
-            refreshBtn.addEventListener('click', renderSaveDebugPopup);
-            saveDebugElements = { backdrop, panel, hero, terminal, adminToggle, resumeBtn };
+            terminal.addEventListener('scroll', () => {
+                const atBottom = terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight < 24;
+                if (atBottom) delete terminal.dataset.userScrolled;
+                else terminal.dataset.userScrolled = 'true';
+            });
+            saveDebugElements = { backdrop, panel, hero, terminal, adminToggle };
             return saveDebugElements;
         }
 
@@ -22821,13 +22936,11 @@
                                 : (phase === 'saving' ? 'Saving local state' : phase)))));
             els.hero.innerHTML = `
                 <span class="save-debug-orb ${escapeSaveDebugText(phase)}"></span>
-                <div>
+                <div id="save-debug-title">
                     <div class="save-debug-hero-title">${escapeSaveDebugText(phaseLabel)}</div>
                 </div>`;
-            if (els.resumeBtn) {
-                els.resumeBtn.disabled = !(flags.driveDirty || flags.deferredDriveSave || flags.driveSaveQueued || flags.localSaveQueued || flags.pageDirtyCount > 0 || flags.strokeOpsQueued > 0);
-            }
             const currentRunEvents = saveDebugState.events.filter(event => event.runId === saveDebugState.runId);
+            const shouldStickToBottom = els.terminal.scrollHeight - els.terminal.scrollTop - els.terminal.clientHeight < 24;
             els.terminal.textContent = [
                 `run=${saveDebugState.runId} phase=${saveDebugState.phase} elapsed=${formatSaveDebugMs(elapsed)}`,
                 `drive: dirty=${flags.driveDirty} deferred=${flags.deferredDriveSave} inProgress=${flags.driveSaveInProgress} queued=${flags.driveSaveQueued}`,
@@ -22840,6 +22953,9 @@
                     return `[${new Date(event.at).toLocaleTimeString(undefined, { hour12: false })}] ${event.phase} ${event.message} dirty=${f.driveDirty} queued=${f.driveSaveQueued} v=${f.contentVersion}/${f.uploadedVersion}`;
                 })
             ].join('\n');
+            if (shouldStickToBottom || !els.terminal.dataset.userScrolled) {
+                els.terminal.scrollTop = els.terminal.scrollHeight;
+            }
         }
 
         function openSaveDebugPopup() {
@@ -22932,7 +23048,9 @@
             const statusLooksSaveRelated = /save|sync|drive|pdf|upload|build|pending|paused|queued/i.test(text || '');
             if (phase || saving || error || savedAt || statusLooksSaveRelated) {
                 const debugPhase = phase || (preserveState && !saving && !error && !savedAt ? saveDebugState.phase : null);
-                setSaveDebugStatus(text, { saving, error, phase: debugPhase });
+                if (!(debugPhase === 'building' && saveDebugState.phase === 'uploading')) {
+                    setSaveDebugStatus(text, { saving, error, phase: debugPhase });
+                }
             }
 
             if (!preserveState) {
