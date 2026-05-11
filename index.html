@@ -326,6 +326,41 @@
             margin-left: 0;
         }
 
+        .presence-save-ring {
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 1;
+        }
+
+        .presence-save-ring.processing,
+        .presence-save-ring.uploading {
+            opacity: 1;
+            background: conic-gradient(currentColor 0deg 86deg, transparent 88deg 360deg);
+            animation: presence-save-spin 0.8s linear infinite;
+        }
+
+        .presence-save-ring.processing {
+            color: #e6c619;
+        }
+
+        .presence-save-ring.uploading {
+            color: var(--accent-orange);
+        }
+
+        .presence-save-ring.saved {
+            opacity: 1;
+            border: 2px solid var(--accent-green);
+        }
+
+        @keyframes presence-save-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
         .presence-avatar-img {
             width: 28px;
             height: 28px;
@@ -334,6 +369,8 @@
             background: var(--bg-secondary);
             object-fit: cover;
             display: block;
+            position: relative;
+            z-index: 2;
         }
 
         .presence-device-badge {
@@ -657,8 +694,8 @@
         }
 
         .save-debug-panel {
-            width: min(390px, calc(100vw - 24px));
-            max-height: min(520px, calc(100vh - 120px));
+            width: min(320px, calc(100vw - 24px));
+            max-height: min(420px, calc(100vh - 120px));
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -683,12 +720,6 @@
             margin: 0;
             font-size: 0.98rem;
             line-height: 1.2;
-        }
-
-        .save-debug-subtitle {
-            margin-top: 3px;
-            color: var(--text-secondary);
-            font-size: 0.72rem;
         }
 
         .save-debug-close {
@@ -758,60 +789,6 @@
             font-size: 0.9rem;
             font-weight: 700;
             line-height: 1.25;
-        }
-
-        .save-debug-hero-meta {
-            margin-top: 3px;
-            color: var(--text-secondary);
-            font-size: 0.72rem;
-        }
-
-        .save-debug-rail {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-        }
-
-        .save-debug-step {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 28px;
-            border-radius: 8px;
-            background: var(--bg-secondary);
-            color: var(--text-secondary);
-            font-size: 0.68rem;
-            font-weight: 600;
-            border: 1px solid transparent;
-        }
-
-        .save-debug-step.active {
-            color: var(--text-primary);
-            border-color: var(--accent-orange);
-            background: rgba(255, 136, 0, 0.10);
-        }
-
-        .save-debug-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            max-height: 58px;
-            overflow: auto;
-        }
-
-        .save-debug-chip {
-            padding: 5px 8px;
-            border-radius: 999px;
-            background: var(--bg-secondary);
-            color: var(--text-secondary);
-            font-size: 0.68rem;
-            border: 1px solid var(--border-color);
-        }
-
-        .save-debug-chip.hot {
-            color: var(--text-primary);
-            border-color: var(--accent-orange);
-            background: rgba(255, 136, 0, 0.10);
         }
 
         .save-debug-actions {
@@ -956,8 +933,8 @@
             }
 
             .save-debug-panel {
-                width: min(360px, calc(100vw - 20px));
-                max-height: min(450px, calc(100vh - 130px));
+                width: min(320px, calc(100vw - 20px));
+                max-height: min(360px, calc(100vh - 130px));
             }
 
             .save-debug-summary {
@@ -10181,6 +10158,9 @@
             driveDirty = false;
             deferredDriveSave = false;
             saveQueued = false;
+            presenceSavePhase = '';
+            presenceSavePhaseAt = 0;
+            presenceSavePhasePushInFlight = false;
             state.driveHeadRevisionId = null;
             resetDriveContentSyncVersion();
             resetDriveHydrationState();
@@ -20389,6 +20369,7 @@
                 if (!state.driveFileId) {
                     uploadedContentVersion = driveContentVersion;
                     showStatus('Building PDF...', { phase: 'building' });
+                    setPresenceSavePhase('processing');
                     recordSaveDebug('Building initial PDF');
                     pdfBlob = await buildPdfBlob({
                         signal: controller.signal,
@@ -20397,6 +20378,7 @@
                     });
                 }
                 recordSaveDebug('Ensuring Drive file');
+                if (pdfBlob) setPresenceSavePhase('uploading');
                 const ensureResult = await ensureDriveFile({
                     ...driveOptions,
                     initialPdfBlob: pdfBlob
@@ -20448,6 +20430,7 @@
                     if (!pdfBlob) {
                         uploadedContentVersion = driveContentVersion;
                         showStatus('Building PDF...', { phase: 'building' });
+                        setPresenceSavePhase('processing');
                         recordSaveDebug('Building PDF blob');
                         pdfBlob = await buildPdfBlob({
                             signal: controller.signal,
@@ -20460,6 +20443,7 @@
                     }
                     // Phase 2: Upload to Drive (orange dot)
                     showStatus('Uploading to Drive...', { phase: 'uploading' });
+                    setPresenceSavePhase('uploading');
                     recordSaveDebug(`Uploading PDF (${Math.round((pdfBlob?.size || 0) / 1024)} KB)`);
                     const updateRes = await updateDriveFile(fileId, pdfBlob, driveOptions);
                     if (updateRes.headRevisionId) {
@@ -20484,6 +20468,7 @@
                 }
                 startCollabPolling();
                 showStatus('Saved', { savedAt });
+                setPresenceSavePhase('saved');
                 recordSaveDebug('Drive save finished');
                 driveSaveSucceeded = true;
                 }
@@ -20801,7 +20786,12 @@
             return Math.abs(h).toString(36).slice(0, 8);
         }
 
-        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h'];
+        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h', 's', 'm'];
+        const PRESENCE_SAVE_ACTIVE_MS = 12000;
+        const PRESENCE_SAVE_DONE_MS = 2200;
+        let presenceSavePhase = '';
+        let presenceSavePhaseAt = 0;
+        let presenceSavePhasePushInFlight = false;
         const PRESENCE_CLIENT_ID_KEY = 'presence-client-id-v1';
         let _presenceClientIdMemory = '';
 
@@ -20853,7 +20843,7 @@
         }
 
         function parsePresenceChunkKey(key) {
-            const match = /^((?:p_[a-z0-9]+))_([nedtpvlch])$/i.exec(key || '');
+            const match = /^((?:p_[a-z0-9]+))_([nedtpvlchsm])$/i.exec(key || '');
             if (!match) return null;
             return { prefix: match[1], field: match[2].toLowerCase() };
         }
@@ -20884,9 +20874,26 @@
                 v: chunk.v || '',
                 l: chunk.l || '',
                 c: String(chunk.c || '').trim(),
+                s: normalizePresenceSavePhase(chunk.s || ''),
+                m: Number(chunk.m) || 0,
                 t: ts,
                 h: Number.isFinite(hb) ? hb : 0
             };
+        }
+
+        function normalizePresenceSavePhase(phase) {
+            const value = String(phase || '').trim().toLowerCase();
+            if (value === 'processing' || value === 'uploading' || value === 'saved') return value;
+            return '';
+        }
+
+        function getPresenceVisibleSavePhase(record, now = Date.now()) {
+            const phase = normalizePresenceSavePhase(record?.s);
+            const phaseAt = Number(record?.m);
+            if (!phase || !Number.isFinite(phaseAt) || phaseAt <= 0) return '';
+            const age = now - phaseAt;
+            if (phase === 'saved') return age <= PRESENCE_SAVE_DONE_MS ? 'saved' : '';
+            return age <= PRESENCE_SAVE_ACTIVE_MS ? phase : '';
         }
 
         function getPresenceDedupeKey(record) {
@@ -20937,6 +20944,8 @@
                 v: primary.v || secondary.v || '',
                 l: primary.l || secondary.l || '',
                 c: primary.c || secondary.c || '',
+                s: primary.s || secondary.s || '',
+                m: Math.max(Number(baseRecord.m) || 0, Number(incomingRecord.m) || 0),
                 t: Math.max(Number(baseRecord.t) || 0, Number(incomingRecord.t) || 0),
                 h: Math.max(Number(baseRecord.h) || 0, Number(incomingRecord.h) || 0)
             };
@@ -20979,6 +20988,8 @@
                 [getPresenceFieldKey(keyPrefix, 'l')]: clampPresenceValue(detectPresenceLocationLabel(), 64),
                 [getPresenceFieldKey(keyPrefix, 'c')]: clampPresenceValue(getPresenceClientId(), 24),
                 [getPresenceFieldKey(keyPrefix, 'h')]: String(now),
+                [getPresenceFieldKey(keyPrefix, 's')]: presenceSavePhase,
+                [getPresenceFieldKey(keyPrefix, 'm')]: presenceSavePhaseAt ? String(presenceSavePhaseAt) : '',
                 [legacyKey]: null // cleanup old single-key format for this client
             };
             try {
@@ -21053,7 +21064,9 @@
                 const keyPrefix = getPresenceKey();
                 const now = Date.now();
                 const patch = {
-                    [getPresenceFieldKey(keyPrefix, 'h')]: String(now)
+                    [getPresenceFieldKey(keyPrefix, 'h')]: String(now),
+                    [getPresenceFieldKey(keyPrefix, 's')]: presenceSavePhase,
+                    [getPresenceFieldKey(keyPrefix, 'm')]: presenceSavePhaseAt ? String(presenceSavePhaseAt) : ''
                 };
                 await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
@@ -21101,6 +21114,36 @@
             _presenceOnlineStability.clear();
         }
 
+        async function setPresenceSavePhase(phase) {
+            const normalized = normalizePresenceSavePhase(phase);
+            const now = Date.now();
+            if (presenceSavePhase === normalized && normalized !== 'saved') return;
+            presenceSavePhase = normalized;
+            presenceSavePhaseAt = normalized ? now : 0;
+            if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
+            presenceSavePhasePushInFlight = true;
+            try {
+                const keyPrefix = getPresenceKey();
+                await driveFetch(
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
+                    {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            appProperties: {
+                                [getPresenceFieldKey(keyPrefix, 's')]: presenceSavePhase,
+                                [getPresenceFieldKey(keyPrefix, 'm')]: presenceSavePhaseAt ? String(presenceSavePhaseAt) : ''
+                            }
+                        })
+                    }
+                );
+            } catch (err) {
+                // Best-effort visual telemetry; the save itself must not depend on it.
+            } finally {
+                presenceSavePhasePushInFlight = false;
+            }
+        }
+
         function isPresenceCurrentlyOnline(record, now = Date.now()) {
             const hb = Number(record?.h);
             if (!Number.isFinite(hb) || hb <= 0) return false;
@@ -21142,6 +21185,8 @@
                         v: data.v || '',
                         l: data.l || '',
                         c: String(data?.c || '').trim(),
+                        s: normalizePresenceSavePhase(data.s || ''),
+                        m: Number(data?.m) || 0,
                         t: ts,
                         h: Number(data?.h) || 0
                     });
@@ -21178,6 +21223,7 @@
                 }
                 _presenceOnlineStability.set(stabilityKey, prev);
                 user.isOnline = prev.online;
+                user.savePhase = getPresenceVisibleSavePhase(user, now);
             });
 
             const forgetAfterMs = PRESENCE_STALE_MS + (PRESENCE_HEARTBEAT_INTERVAL * (PRESENCE_HEARTBEAT_MISS_LIMIT + PRESENCE_ONLINE_STICKY_MISS_LIMIT));
@@ -21231,6 +21277,13 @@
                 wrapper.className = 'presence-avatar-wrapper';
                 wrapper.style.setProperty('--presence-z', String(visualIndex + 1));
                 wrapper.title = `${u.n || u.e || 'Unknown'}${u.d ? ' (' + u.d + ')' : ''}`;
+
+                const savePhase = getPresenceVisibleSavePhase(u);
+                if (savePhase) {
+                    const ring = document.createElement('span');
+                    ring.className = `presence-save-ring ${savePhase}`;
+                    wrapper.appendChild(ring);
+                }
 
                 const img = document.createElement('img');
                 img.className = 'presence-avatar-img';
@@ -22707,19 +22760,14 @@
                     <div class="save-debug-header">
                         <div>
                             <h3 class="save-debug-title" id="save-debug-title">Save details</h3>
-                            <div class="save-debug-subtitle">Live Drive and local persistence trace</div>
                         </div>
                         <button type="button" class="save-debug-close" aria-label="Close save details">&times;</button>
                     </div>
                     <div class="save-debug-hero"></div>
-                    <div class="save-debug-rail"></div>
-                    <div class="save-debug-chips"></div>
                     <div class="save-debug-actions">
                         <button type="button" class="save-debug-action primary" id="save-debug-resume">Resume now</button>
                         <button type="button" class="save-debug-action" id="save-debug-refresh">Refresh</button>
                     </div>
-                    <div class="save-debug-summary"></div>
-                    <div class="save-debug-timeline"></div>
                     <div class="save-debug-admin-row">
                         <span class="save-debug-label">Diagnostics</span>
                         <label class="save-debug-switch">
@@ -22732,11 +22780,7 @@
             document.body.appendChild(backdrop);
             const panel = backdrop.querySelector('.save-debug-panel');
             const closeBtn = backdrop.querySelector('.save-debug-close');
-            const summary = backdrop.querySelector('.save-debug-summary');
             const hero = backdrop.querySelector('.save-debug-hero');
-            const rail = backdrop.querySelector('.save-debug-rail');
-            const chips = backdrop.querySelector('.save-debug-chips');
-            const timeline = backdrop.querySelector('.save-debug-timeline');
             const terminal = backdrop.querySelector('.save-debug-terminal');
             const adminToggle = backdrop.querySelector('#save-debug-admin-toggle');
             const resumeBtn = backdrop.querySelector('#save-debug-resume');
@@ -22759,7 +22803,7 @@
             });
             resumeBtn.addEventListener('click', () => kickPausedSaveIfStale('manual resume'));
             refreshBtn.addEventListener('click', renderSaveDebugPopup);
-            saveDebugElements = { backdrop, panel, hero, rail, chips, summary, timeline, terminal, adminToggle, resumeBtn };
+            saveDebugElements = { backdrop, panel, hero, terminal, adminToggle, resumeBtn };
             return saveDebugElements;
         }
 
@@ -22768,7 +22812,6 @@
             const els = saveDebugElements;
             const flags = getSaveDebugFlags();
             const elapsed = Date.now() - saveDebugState.runStartedAt;
-            const lastSaved = state.driveLastKnownModified || state.lastSavedAt || null;
             const phase = saveDebugState.phase || 'saved';
             const phaseLabel = phase === 'saved' ? 'All saved'
                 : (phase === 'paused' ? 'Waiting for idle'
@@ -22780,51 +22823,11 @@
                 <span class="save-debug-orb ${escapeSaveDebugText(phase)}"></span>
                 <div>
                     <div class="save-debug-hero-title">${escapeSaveDebugText(phaseLabel)}</div>
-                    <div class="save-debug-hero-meta">${escapeSaveDebugText(saveDebugState.status)} · ${formatSaveDebugMs(elapsed)}</div>
                 </div>`;
-            const steps = [
-                ['saving', 'Local'],
-                ['building', 'PDF'],
-                ['uploading', 'Drive'],
-                ['saved', 'Done']
-            ];
-            const activeStep = phase === 'paused' ? 'saving' : phase;
-            els.rail.innerHTML = steps.map(([key, label]) => {
-                const active = key === activeStep || (key === 'saved' && phase === 'syncing');
-                return `<span class="save-debug-step ${active ? 'active' : ''}">${label}</span>`;
-            }).join('');
-            const chipData = [
-                ['Drive dirty', flags.driveDirty],
-                ['Deferred', flags.deferredDriveSave],
-                ['Drive queued', flags.driveSaveQueued],
-                ['Drive running', flags.driveSaveInProgress],
-                ['Local queued', flags.localSaveQueued],
-                ['Local running', flags.localSaveInProgress],
-                [`Pages ${flags.pageDirtyCount}`, flags.pageDirtyCount > 0],
-                [`Ops ${flags.strokeOpsQueued}`, flags.strokeOpsQueued > 0]
-            ];
-            els.chips.innerHTML = chipData.map(([label, hot]) => (
-                `<span class="save-debug-chip ${hot ? 'hot' : ''}">${escapeSaveDebugText(label)}</span>`
-            )).join('');
             if (els.resumeBtn) {
                 els.resumeBtn.disabled = !(flags.driveDirty || flags.deferredDriveSave || flags.driveSaveQueued || flags.localSaveQueued || flags.pageDirtyCount > 0 || flags.strokeOpsQueued > 0);
             }
-            els.summary.innerHTML = `
-                <div class="save-debug-stat"><span class="save-debug-label">Status</span><span class="save-debug-value">${escapeSaveDebugText(saveDebugState.status)}</span></div>
-                <div class="save-debug-stat"><span class="save-debug-label">Current step</span><span class="save-debug-value">${escapeSaveDebugText(saveDebugState.phase)}</span></div>
-                <div class="save-debug-stat"><span class="save-debug-label">Elapsed</span><span class="save-debug-value">${formatSaveDebugMs(elapsed)}</span></div>
-                <div class="save-debug-stat"><span class="save-debug-label">Last saved</span><span class="save-debug-value">${escapeSaveDebugText(lastSaved ? formatTime(lastSaved) : '--:--')}</span></div>`;
             const currentRunEvents = saveDebugState.events.filter(event => event.runId === saveDebugState.runId);
-            els.timeline.innerHTML = currentRunEvents.slice(0, 24).map(event => {
-                const delta = event.runId === saveDebugState.runId ? formatSaveDebugMs(event.at - saveDebugState.runStartedAt) : 'prev';
-                const eventPhase = escapeSaveDebugText(event.phase || 'saved');
-                return `<div class="save-debug-event">
-                    <span class="save-debug-event-time">${new Date(event.at).toLocaleTimeString(undefined, { hour12: false })}</span>
-                    <span class="save-debug-event-dot ${eventPhase}"></span>
-                    <span>${escapeSaveDebugText(event.message)}</span>
-                    <span class="save-debug-event-delta">${delta}</span>
-                </div>`;
-            }).join('') || '<div class="save-debug-event"><span></span><span class="save-debug-event-dot"></span><span>No save activity yet</span><span></span></div>';
             els.terminal.textContent = [
                 `run=${saveDebugState.runId} phase=${saveDebugState.phase} elapsed=${formatSaveDebugMs(elapsed)}`,
                 `drive: dirty=${flags.driveDirty} deferred=${flags.deferredDriveSave} inProgress=${flags.driveSaveInProgress} queued=${flags.driveSaveQueued}`,
