@@ -573,10 +573,10 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 32px;
-            min-width: 32px;
-            height: 32px;
-            flex: 0 0 32px;
+            width: 15px;
+            min-width: 15px;
+            height: var(--header-btn-size);
+            flex: 0 0 15px;
             color: var(--text-secondary);
             pointer-events: auto;
             opacity: 1;
@@ -585,7 +585,9 @@
         }
 
         .mode-toggle-status .save-indicator {
-            position: relative;
+            position: absolute;
+            left: 50%;
+            top: 50%;
             width: 32px;
             height: 32px;
             display: inline-flex;
@@ -595,6 +597,7 @@
             box-shadow: none;
             pointer-events: auto;
             cursor: pointer;
+            transform: translate(-50%, -50%);
         }
 
         .mode-toggle-status .save-indicator::after {
@@ -642,12 +645,11 @@
             inset: 0;
             z-index: 2600;
             display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 18px;
-            background: rgba(20, 20, 20, 0.28);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            align-items: flex-end;
+            justify-content: flex-end;
+            padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 72px) 0;
+            background: transparent;
+            pointer-events: none;
         }
 
         .save-debug-backdrop.visible {
@@ -655,17 +657,18 @@
         }
 
         .save-debug-panel {
-            width: min(520px, calc(100vw - 28px));
-            max-height: min(680px, calc(100vh - 28px));
+            width: min(390px, calc(100vw - 24px));
+            max-height: min(520px, calc(100vh - 120px));
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            padding: 16px;
+            gap: 10px;
+            padding: 12px;
             border-radius: var(--radius-lg);
             background: var(--bg-primary);
             color: var(--text-primary);
             box-shadow: var(--shadow-heavy);
             border: 1px solid var(--border-color);
+            pointer-events: auto;
         }
 
         .save-debug-header,
@@ -703,7 +706,7 @@
         .save-debug-summary {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
+            gap: 6px;
         }
 
         .save-debug-hero {
@@ -711,7 +714,7 @@
             grid-template-columns: auto 1fr;
             gap: 12px;
             align-items: center;
-            padding: 12px;
+            padding: 10px;
             border: 1px solid var(--border-color);
             border-radius: 10px;
             background: var(--bg-secondary);
@@ -792,6 +795,8 @@
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
+            max-height: 58px;
+            overflow: auto;
         }
 
         .save-debug-chip {
@@ -861,7 +866,7 @@
             flex-direction: column;
             gap: 6px;
             overflow: auto;
-            max-height: 220px;
+            max-height: 130px;
             padding-right: 2px;
         }
 
@@ -944,6 +949,22 @@
             display: block;
         }
 
+        @media (max-width: 720px) {
+            .save-debug-backdrop {
+                padding: 0 10px calc(env(safe-area-inset-bottom, 0px) + 74px) 10px;
+                justify-content: center;
+            }
+
+            .save-debug-panel {
+                width: min(360px, calc(100vw - 20px));
+                max-height: min(450px, calc(100vh - 130px));
+            }
+
+            .save-debug-summary {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
         .mode-toggle-status .save-timestamp {
             position: absolute;
             left: 50%;
@@ -959,12 +980,12 @@
 
         .mode-toggle-btn {
             display: grid;
-            grid-template-columns: 32px 36px auto;
+            grid-template-columns: 15px 36px auto;
             align-items: center;
             justify-content: start;
-            column-gap: 5px;
-            width: 150px;
-            min-width: 150px;
+            column-gap: 8px;
+            width: 136px;
+            min-width: 136px;
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
             padding: 0 12px;
@@ -4727,7 +4748,7 @@
             }
 
             #editor-view .mode-toggle-btn {
-                min-width: 150px;
+                min-width: 136px;
                 border-radius: 999px;
                 background: transparent !important;
                 border: none;
@@ -6796,6 +6817,7 @@
         let driveAccessToken = null;
         let driveTokenExpiry = 0;
         let driveTokenRefreshTimer = null;
+        let driveSignedOut = false;
         let driveSaveTimeout = null;
         let driveSyncMaxTimeout = null;
         let driveSaveInProgress = false;
@@ -9868,6 +9890,7 @@
 
         function applyTokenResponse(data, isRefresh) {
             if (!data || !data.access_token) throw new Error('Token response missing access_token');
+            driveSignedOut = false;
             const expiresIn = parseInt(data.expires_in || '3600', 10);
             driveAccessToken = data.access_token;
             driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
@@ -10073,6 +10096,12 @@
         }
 
         function ensureDriveToken(interactive = false) {
+            if (driveSignedOut && !interactive) {
+                return Promise.reject(new Error('Signed out'));
+            }
+            if (interactive) {
+                driveSignedOut = false;
+            }
             if (driveAccessToken && Date.now() < driveTokenExpiry - 60000) {
                 return Promise.resolve(driveAccessToken);
             }
@@ -10118,6 +10147,7 @@
         }
 
         function signInDrive() {
+            driveSignedOut = false;
             if (isInhouseApp) {
                 startDriveRedirectSignIn();
                 return;
@@ -10130,7 +10160,27 @@
         }
 
         function signOutDrive() {
+            driveSignedOut = true;
             stopCollabPolling();
+            clearDriveSyncTimers();
+            clearPausedSaveWatchdog();
+            if (deferredDriveSaveRetryTimer) {
+                clearTimeout(deferredDriveSaveRetryTimer);
+                deferredDriveSaveRetryTimer = null;
+            }
+            if (activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
+                activeDriveSaveController.abort();
+            }
+            if (activeLocalSaveController && !activeLocalSaveController.aborted) {
+                activeLocalSaveController.aborted = true;
+            }
+            driveSaveInProgress = false;
+            driveSaveQueued = false;
+            driveSaveQueuedForce = false;
+            driveSaveQueuedKeepalive = false;
+            driveDirty = false;
+            deferredDriveSave = false;
+            saveQueued = false;
             state.driveHeadRevisionId = null;
             resetDriveContentSyncVersion();
             resetDriveHydrationState();
@@ -10178,6 +10228,7 @@
             try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (e) { }
             clearDriveSession();
             updateDriveAuthUI();
+            if (typeof showStatus === 'function') showStatus('Signed out');
             showWelcomeView();
         }
 
@@ -10512,6 +10563,9 @@
                     options.signal.removeEventListener('abort', externalAbortHandler);
                 }
                 if (res.status === 401 && !_retried) {
+                    if (driveSignedOut) {
+                        throw new Error('Drive API error 401: signed out');
+                    }
                     // Token expired server-side — force refresh and retry once
                     driveAccessToken = null;
                     driveTokenExpiry = 0;
@@ -20434,6 +20488,13 @@
                 driveSaveSucceeded = true;
                 }
             } catch (err) {
+                if (driveSignedOut || !state.driveAutosave) {
+                    recordSaveDebug('Drive save stopped after sign out', { phase: 'saved' });
+                    driveDirty = false;
+                    deferredDriveSave = false;
+                    driveSaveQueued = false;
+                    driveSaveSucceeded = false;
+                } else {
                 const aborted = controller.signal.aborted
                     || err?.name === 'AbortError'
                     || (typeof err?.message === 'string' && err.message.toLowerCase().includes('aborted'));
@@ -20456,6 +20517,7 @@
                     showStatus('Drive save failed', { error: true });
                     driveDirty = true;
                     scheduleDriveSync();
+                }
                 }
             }
             activeDriveSaveController = null;
@@ -22629,6 +22691,7 @@
             if (startsRun) {
                 saveDebugState.runId += 1;
                 saveDebugState.runStartedAt = now;
+                saveDebugState.events = [];
             }
             saveDebugState.phase = phase;
             saveDebugState.status = text || phase;
@@ -22640,7 +22703,7 @@
             const backdrop = document.createElement('div');
             backdrop.className = 'save-debug-backdrop';
             backdrop.innerHTML = `
-                <div class="save-debug-panel" role="dialog" aria-modal="true" aria-labelledby="save-debug-title">
+                <div class="save-debug-panel" role="dialog" aria-modal="false" aria-labelledby="save-debug-title">
                     <div class="save-debug-header">
                         <div>
                             <h3 class="save-debug-title" id="save-debug-title">Save details</h3>
@@ -22751,7 +22814,8 @@
                 <div class="save-debug-stat"><span class="save-debug-label">Current step</span><span class="save-debug-value">${escapeSaveDebugText(saveDebugState.phase)}</span></div>
                 <div class="save-debug-stat"><span class="save-debug-label">Elapsed</span><span class="save-debug-value">${formatSaveDebugMs(elapsed)}</span></div>
                 <div class="save-debug-stat"><span class="save-debug-label">Last saved</span><span class="save-debug-value">${escapeSaveDebugText(lastSaved ? formatTime(lastSaved) : '--:--')}</span></div>`;
-            els.timeline.innerHTML = saveDebugState.events.slice(0, 24).map(event => {
+            const currentRunEvents = saveDebugState.events.filter(event => event.runId === saveDebugState.runId);
+            els.timeline.innerHTML = currentRunEvents.slice(0, 24).map(event => {
                 const delta = event.runId === saveDebugState.runId ? formatSaveDebugMs(event.at - saveDebugState.runStartedAt) : 'prev';
                 const eventPhase = escapeSaveDebugText(event.phase || 'saved');
                 return `<div class="save-debug-event">
@@ -22768,7 +22832,7 @@
                 `versions: content=${flags.contentVersion} uploaded=${flags.uploadedVersion}`,
                 `mode: autosave=${flags.autosave} readOnly=${flags.readOnly}`,
                 '',
-                ...saveDebugState.events.slice(0, 18).map(event => {
+                ...currentRunEvents.slice(0, 18).map(event => {
                     const f = event.flags || {};
                     return `[${new Date(event.at).toLocaleTimeString(undefined, { hour12: false })}] ${event.phase} ${event.message} dirty=${f.driveDirty} queued=${f.driveSaveQueued} v=${f.contentVersion}/${f.uploadedVersion}`;
                 })
