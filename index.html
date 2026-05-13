@@ -5302,14 +5302,17 @@
             try {
                 var raw = localStorage.getItem('drive-token-v1');
                 var hasCurrentScopes = localStorage.getItem('google-scope-version-v1') === 'drive-calendar-v1';
+                var grantedScopes = localStorage.getItem('google-granted-scopes-v1') || '';
+                var hasCalendarScope = grantedScopes.split(/\s+/).indexOf('https://www.googleapis.com/auth/calendar.readonly') !== -1;
                 var hasToken = false;
                 if (raw) {
                     var parsed = JSON.parse(raw);
                     hasToken = !!(hasCurrentScopes && parsed && parsed.token && parsed.expiry
                         && parsed.scopeVersion === 'drive-calendar-v1'
+                        && (parsed.grantedScopes || '').split(/\s+/).indexOf('https://www.googleapis.com/auth/calendar.readonly') !== -1
                         && Date.now() < parsed.expiry - 60000);
                 }
-                var hasRefresh = hasCurrentScopes && !!localStorage.getItem('drive-refresh-token-v1');
+                var hasRefresh = hasCurrentScopes && hasCalendarScope && !!localStorage.getItem('drive-refresh-token-v1');
                 window.__INHOUSE_BOOT_SIGNED_IN__ = hasToken || hasRefresh;
             } catch (e) {
                 window.__INHOUSE_BOOT_SIGNED_IN__ = false;
@@ -6442,6 +6445,7 @@
         const DRIVE_REFRESH_TOKEN_KEY = 'drive-refresh-token-v1';
         const DRIVE_PKCE_VERIFIER_KEY = 'drive-pkce-verifier-v1';
         const GOOGLE_SCOPE_VERSION_KEY = 'google-scope-version-v1';
+        const GOOGLE_GRANTED_SCOPES_KEY = 'google-granted-scopes-v1';
         const GOOGLE_SCOPE_VERSION = 'drive-calendar-v1';
         // Android OAuth client (type "Android") for PKCE + offline refresh tokens.
         // Leave empty to keep using the implicit-flow web client.
@@ -10280,7 +10284,14 @@
             const expiresIn = parseInt(data.expires_in || '3600', 10);
             driveAccessToken = data.access_token;
             driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
-            saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+            const grantedScopes = normalizeGrantedScopes(data.scope);
+            if (!hasGoogleScope(grantedScopes, CALENDAR_SCOPE)) {
+                driveAccessToken = null;
+                driveTokenExpiry = 0;
+                clearDriveTokenStorage();
+                throw new Error('Calendar access was not granted by Google.');
+            }
+            saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry, grantedScopes);
             if (data.refresh_token) {
                 try { localStorage.setItem(DRIVE_REFRESH_TOKEN_KEY, data.refresh_token); } catch (err) {}
             }
@@ -10340,12 +10351,20 @@
             }
             const token = params.get('access_token');
             if (!token) return false;
+            const grantedScopes = normalizeGrantedScopes(params.get('scope'));
+            if (!hasGoogleScope(grantedScopes, CALENDAR_SCOPE)) {
+                clearDriveTokenStorage();
+                if (driveStatusEl) {
+                    driveStatusEl.textContent = 'Calendar access was not granted. Sign in again and accept Calendar access.';
+                }
+                return false;
+            }
             driveSignedOut = false;
             driveAuthNeedsReconnect = false;
             const expiresIn = parseInt(params.get('expires_in') || '3600', 10);
             driveAccessToken = token;
             driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
-            saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+            saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry, grantedScopes);
             try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
             try { localStorage.setItem(GOOGLE_SCOPE_VERSION_KEY, GOOGLE_SCOPE_VERSION); } catch (err) {}
             scheduleDriveTokenRefresh();
@@ -10568,12 +10587,21 @@
                     driveAuthNeedsReconnect = false;
                     driveAccessToken = resp.access_token;
                     driveTokenExpiry = Date.now() + (resp.expires_in || 0) * 1000;
-                    saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+                    const grantedScopes = normalizeGrantedScopes(resp.scope);
+                    if (!hasGoogleScope(grantedScopes, CALENDAR_SCOPE)) {
+                        driveAccessToken = null;
+                        driveTokenExpiry = 0;
+                        reject(new Error('Calendar access was not granted by Google.'));
+                        return;
+                    }
+                    saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry, grantedScopes);
                     scheduleDriveTokenRefresh();
                     updateDriveAuthUI();
                     resolve(driveAccessToken);
                 };
                 const reqOptions = {};
+                reqOptions.scope = GOOGLE_API_SCOPE;
+                reqOptions.include_granted_scopes = true;
                 if (interactive) {
                     reqOptions.prompt = 'consent';
                 } else {
@@ -10671,6 +10699,7 @@
             try { localStorage.removeItem('drive-hint-email'); } catch (e) { }
             try { localStorage.removeItem('drive-consent-granted'); } catch (e) { }
             try { localStorage.removeItem(GOOGLE_SCOPE_VERSION_KEY); } catch (e) { }
+            try { localStorage.removeItem(GOOGLE_GRANTED_SCOPES_KEY); } catch (e) { }
             try { localStorage.removeItem(DRIVE_REFRESH_TOKEN_KEY); } catch (e) { }
             try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (e) { }
             clearDriveSession();
@@ -17562,12 +17591,24 @@
                 await ensureDriveToken(false);
                 return calendarFetch(url, options, true);
             }
-            if (res.status === 403) {
-                throw new Error('Calendar permission is missing. Sign out and sign in again to grant Calendar access with the app login.');
-            }
             if (!res.ok) {
                 const message = await res.text().catch(() => '');
-                throw new Error(`Calendar API error ${res.status}: ${message}`);
+                let detail = message;
+                let reason = '';
+                try {
+                    const parsed = JSON.parse(message);
+                    detail = parsed?.error?.message || message;
+                    reason = parsed?.error?.errors?.[0]?.reason || parsed?.error?.status || '';
+                } catch (err) {}
+                if (res.status === 403 && /insufficient|forbidden/i.test(`${reason} ${detail}`)) {
+                    try { localStorage.removeItem(GOOGLE_SCOPE_VERSION_KEY); } catch (err) {}
+                    clearDriveTokenStorage();
+                    throw new Error('Calendar access was not granted by Google. Sign in again from the app login and accept Calendar access.');
+                }
+                if (res.status === 403 && /not been used|disabled|not enabled|accessNotConfigured/i.test(detail)) {
+                    throw new Error('Google Calendar API is not enabled for this app project.');
+                }
+                throw new Error(`Calendar API error ${res.status}: ${detail}`);
             }
             return res;
         }
@@ -18887,15 +18928,27 @@
             }
         }
 
-        function saveDriveTokenToStorage(token, expiry) {
+        function saveDriveTokenToStorage(token, expiry, grantedScopes = GOOGLE_API_SCOPE) {
             try {
-                const payload = JSON.stringify({ token, expiry, scopeVersion: GOOGLE_SCOPE_VERSION });
+                const payload = JSON.stringify({ token, expiry, scopeVersion: GOOGLE_SCOPE_VERSION, grantedScopes });
                 localStorage.setItem(DRIVE_TOKEN_KEY, payload);
                 localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
                 localStorage.setItem(GOOGLE_SCOPE_VERSION_KEY, GOOGLE_SCOPE_VERSION);
+                localStorage.setItem(GOOGLE_GRANTED_SCOPES_KEY, grantedScopes || '');
             } catch (e) {
                 console.error('Failed to save Drive token:', e);
             }
+        }
+
+        function hasGoogleScope(scopeString, requiredScope) {
+            return String(scopeString || '')
+                .split(/\s+/)
+                .filter(Boolean)
+                .includes(requiredScope);
+        }
+
+        function normalizeGrantedScopes(scopeString) {
+            return String(scopeString || GOOGLE_API_SCOPE);
         }
 
         function clearDriveTokenStorage() {
@@ -18914,6 +18967,11 @@
                 if (!parsed || !parsed.token || !parsed.expiry) return false;
                 if (parsed.scopeVersion !== GOOGLE_SCOPE_VERSION
                     || localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) !== GOOGLE_SCOPE_VERSION) {
+                    clearDriveTokenStorage();
+                    return false;
+                }
+                const grantedScopes = parsed.grantedScopes || localStorage.getItem(GOOGLE_GRANTED_SCOPES_KEY) || '';
+                if (!hasGoogleScope(grantedScopes, CALENDAR_SCOPE)) {
                     clearDriveTokenStorage();
                     return false;
                 }
