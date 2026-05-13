@@ -341,10 +341,11 @@
             opacity: 1;
             background:
                 radial-gradient(farthest-side, transparent calc(100% - 2px), currentColor calc(100% - 1.5px) calc(100% - 0.5px), transparent 100%),
-                conic-gradient(from 0deg, transparent 0deg, transparent 28deg, currentColor 34deg 116deg, transparent 122deg 360deg);
+                conic-gradient(from 0deg, transparent 0deg, transparent 34deg, currentColor 44deg 132deg, transparent 142deg 360deg);
             mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
             -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-            animation: presence-save-spin 0.95s cubic-bezier(.45, 0, .25, 1) infinite;
+            animation: presence-save-spin 1.05s linear infinite;
+            will-change: transform;
         }
 
         .presence-save-ring.processing {
@@ -4702,10 +4703,14 @@
             #editor-view .mode-toggle-group {
                 border-radius: 999px;
                 padding: 4px;
+                width: max-content;
             }
 
             #editor-view .mode-toggle-btn {
-                min-width: 136px;
+                width: max-content;
+                min-width: 0;
+                grid-template-columns: 15px 36px 34px;
+                column-gap: 8px;
                 border-radius: 999px;
                 background: transparent !important;
                 border: none;
@@ -4728,6 +4733,7 @@
             #editor-view .mode-toggle-pill {
                 width: 34px;
                 height: 18px;
+                margin-left: 0;
             }
 
             #editor-view .mode-toggle-knob {
@@ -10274,7 +10280,7 @@
 
         async function loadDriveProfile() {
             if (!driveAccessToken) return;
-            if (driveUserProfile && driveUserProfile.token === driveAccessToken) {
+            if (driveUserProfile && driveUserProfile.token === driveAccessToken && !driveUserProfile.fallback) {
                 updateDriveProfileUI(driveUserProfile);
                 return;
             }
@@ -20405,6 +20411,7 @@
                     updateSaveTimestamp();
                     startCollabPolling();
                     showStatus('Saved', { savedAt });
+                    setPresenceSavePhase('saved');
                     driveSaveSucceeded = true;
                 } else {
                 showStatus('Processing document...', { phase: 'building' });
@@ -20526,6 +20533,7 @@
             } catch (err) {
                 if (driveSignedOut || !state.driveAutosave) {
                     recordSaveDebug('Drive save stopped after sign out', { phase: 'saved' });
+                    setPresenceSavePhase('');
                     driveDirty = false;
                     deferredDriveSave = false;
                     driveSaveQueued = false;
@@ -20535,6 +20543,7 @@
                     || err?.name === 'AbortError'
                     || (typeof err?.message === 'string' && err.message.toLowerCase().includes('aborted'));
                 if (aborted) {
+                    setPresenceSavePhase('');
                     driveDirty = true;
                     deferredDriveSave = true;
                     if (hasSmoothInteraction() || hasRecentUserActivity() || deferredDriveSave) {
@@ -20550,9 +20559,19 @@
                 } else {
                     console.error('queueDriveSave failed:', err);
                     recordSaveDebug(`Drive save failed: ${err?.message || err}`);
+                    setPresenceSavePhase('');
                     showStatus('Drive save failed', { error: true });
-                    driveDirty = true;
-                    scheduleDriveSync();
+                    if (typeof err?.message === 'string' && /missing page data for export/i.test(err.message)) {
+                        driveDirty = true;
+                        deferredDriveSave = false;
+                        driveSaveQueued = false;
+                        driveSaveQueuedForce = false;
+                        driveSaveQueuedKeepalive = false;
+                        showStatus('Drive save failed: page data missing', { error: true });
+                    } else {
+                        driveDirty = true;
+                        scheduleDriveSync();
+                    }
                 }
                 }
             }
@@ -20847,9 +20866,10 @@
         }
 
         const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h', 's', 'm'];
-        const PRESENCE_SAVE_ACTIVE_MS = 12000;
+        const PRESENCE_SAVE_ACTIVE_MS = 6500;
         const PRESENCE_SAVE_DONE_MS = 2200;
         const PRESENCE_PROCESSING_MIN_VISIBLE_MS = 900;
+        const PRESENCE_ACTIVE_PHASES = new Set(['processing', 'uploading']);
         let presenceSavePhase = '';
         let presenceSavePhaseAt = 0;
         let presenceSavePhasePushInFlight = false;
@@ -20965,26 +20985,31 @@
             const age = now - phaseAt;
             if (phase === 'saved') return age <= PRESENCE_SAVE_DONE_MS ? 'saved' : '';
             if (!record?.isOnline) return '';
+            if (age > PRESENCE_SAVE_ACTIVE_MS) return '';
             if (phase === 'uploading' && age < PRESENCE_PROCESSING_MIN_VISIBLE_MS) return 'processing';
-            return age <= PRESENCE_SAVE_ACTIVE_MS ? phase : '';
+            return phase;
         }
 
         function getPresenceDedupeKey(record) {
             const email = String(record?.e || '').trim().toLowerCase();
             const name = String(record?.n || '').trim().toLowerCase();
+            const clientId = String(record?.c || '').trim().toLowerCase();
             const deviceType = normalizePresenceDeviceType(record?.d);
             const deviceName = String(record?.v || '').trim().toLowerCase();
             const location = String(record?.l || '').trim().toLowerCase();
             const who = email ? `e:${email}` : `n:${name}`;
+            if (clientId) return `${who}|c:${clientId}`;
             return `${who}|d:${deviceType}|v:${deviceName}|l:${location}`;
         }
 
         function getPresenceStabilityKey(record) {
             const email = String(record?.e || '').trim().toLowerCase();
             const name = String(record?.n || '').trim().toLowerCase();
+            const clientId = String(record?.c || '').trim().toLowerCase();
             const deviceType = normalizePresenceDeviceType(record?.d);
             const deviceName = String(record?.v || '').trim().toLowerCase();
             const who = email ? `e:${email}` : `n:${name}`;
+            if (clientId) return `${who}|c:${clientId}`;
             return `${who}|d:${deviceType}|v:${deviceName}`;
         }
 
@@ -20997,7 +21022,8 @@
             const phase = normalizePresenceSavePhase(record?.s);
             const phaseAt = Number(record?.m);
             if (!phase || !Number.isFinite(phaseAt) || phaseAt <= 0) return false;
-            return now - phaseAt <= Math.max(PRESENCE_SAVE_ACTIVE_MS, PRESENCE_SAVE_DONE_MS, 18000);
+            const maxAge = phase === 'saved' ? PRESENCE_SAVE_DONE_MS : PRESENCE_SAVE_ACTIVE_MS;
+            return now - phaseAt <= maxAge;
         }
 
         function refreshPresenceViews() {
@@ -21130,6 +21156,7 @@
                 );
                 const metaData = await metaRes.json();
                 const props = metaData.appProperties || {};
+                updatePresenceFromProps(props);
                 const grouped = new Map();
 
                 for (const [k, v] of Object.entries(props)) {
@@ -21193,6 +21220,13 @@
             try {
                 const keyPrefix = getPresenceKey();
                 const now = Date.now();
+                if (PRESENCE_ACTIVE_PHASES.has(presenceSavePhase)
+                    && (driveSaveInProgress || driveSaveQueued || driveDirty || deferredDriveSave)) {
+                    presenceSavePhaseAt = now;
+                } else if (PRESENCE_ACTIVE_PHASES.has(presenceSavePhase)) {
+                    presenceSavePhase = '';
+                    presenceSavePhaseAt = 0;
+                }
                 const patch = {
                     [getPresenceFieldKey(keyPrefix, 'h')]: String(now),
                     [getPresenceFieldKey(keyPrefix, 's')]: presenceSavePhase,
@@ -21221,11 +21255,26 @@
                     pingPresence();
                     pulsePresenceHeartbeat();
                 } else {
-                    // Profile not yet loaded, retry in 3s
-                    setTimeout(tryFirstPing, 3000);
+                    loadDriveProfile()
+                        .catch(() => {})
+                        .finally(() => {
+                            if (!driveUserProfile && driveAccessToken) {
+                                let hintEmail = '';
+                                try { hintEmail = localStorage.getItem('drive-hint-email') || ''; } catch (e) {}
+                                driveUserProfile = {
+                                    name: hintEmail || 'Signed in',
+                                    email: hintEmail,
+                                    photo: DEFAULT_AVATAR,
+                                    token: driveAccessToken,
+                                    fallback: true
+                                };
+                                updateDriveProfileUI(driveUserProfile);
+                            }
+                            setTimeout(tryFirstPing, driveUserProfile ? 250 : 1000);
+                        });
                 }
             };
-            setTimeout(tryFirstPing, 1000);
+            setTimeout(tryFirstPing, 100);
             _presencePingInterval = setInterval(pingPresence, PRESENCE_PING_INTERVAL);
             _presenceHeartbeatInterval = setInterval(pulsePresenceHeartbeat, PRESENCE_HEARTBEAT_INTERVAL);
         }
@@ -23790,6 +23839,10 @@
             }
             if (isPageLoaded(page)) {
                 return page;
+            }
+            const loadedPage = await ensurePageDataLoaded(pageIndex, { keepLoaded: true });
+            if (loadedPage && isPageLoaded(loadedPage) && !loadedPage.missingData) {
+                return loadedPage;
             }
             let data = await loadPageFromIndexedDb(pageIndex);
             if (!data && legacyPagesCache && legacyPagesCache[pageIndex]) {
