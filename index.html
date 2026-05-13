@@ -1404,7 +1404,6 @@
             color: #2a1d14;
             scrollbar-width: thin;
             scrollbar-color: rgba(224, 122, 60, 0.32) transparent;
-            touch-action: pan-y;
             overscroll-behavior: contain;
         }
 
@@ -8140,7 +8139,6 @@
                 addPage();
             } else {
                 renderAllPages();
-                requestAnimationFrame(() => scrollToTodayCalendarPage());
             }
             setupEventListeners();
             syncEraserMenuState();
@@ -8208,8 +8206,11 @@
 
             // Center page after DOM is ready
             setTimeout(() => {
-                if (!applyViewState(pendingViewState)) {
-                    centerViewOnTop();
+                const wentToToday = scrollToTodayCalendarPage();
+                if (!wentToToday) {
+                    if (!applyViewState(pendingViewState)) {
+                        centerViewOnTop();
+                    }
                 }
                 // Start collaborative polling if we have a Drive session
                 if (state.driveFileId && driveAccessToken) {
@@ -17603,23 +17604,24 @@
 
         function scrollToTodayCalendarPage() {
             const cfg = state.calendarPageConfig;
-            if (!cfg || !cfg.startDateKey || typeof cfg.startPage !== 'number') return;
+            if (!cfg || !cfg.startDateKey || typeof cfg.startPage !== 'number') return false;
             const todayKey = formatCalendarDateKey(new Date());
             const [sy, sm, sd] = cfg.startDateKey.split('-').map(Number);
             const [ty, tm, td] = todayKey.split('-').map(Number);
             const startMs = new Date(sy, sm - 1, sd).getTime();
             const todayMs = new Date(ty, tm - 1, td).getTime();
             const daysDiff = Math.round((todayMs - startMs) / 86400000);
-            if (daysDiff < 0) return;
+            if (daysDiff < 0) return false;
             const pageDiff = cfg.mode === 'week' ? Math.floor(daysDiff / 7) : daysDiff;
             const targetPage = cfg.startPage + pageDiff;
-            if (targetPage < 0 || targetPage >= state.pages.length) return;
+            if (targetPage < 0 || targetPage >= state.pages.length) return false;
             const viewportHeight = canvasViewport.getBoundingClientRect().height || window.innerHeight;
             const centerY = getPageCenterOffset(targetPage);
             state.panY = -centerY * state.zoom + viewportHeight / 2;
             state.activePageIndex = targetPage;
             updateTransform();
             scheduleVisiblePageUpdate(true);
+            return true;
         }
 
         function applyVerticalPan(dy) {
@@ -17961,17 +17963,16 @@
 
         // Wheel handler for PC - scroll and zoom
         function handleWheel(e) {
-            // If the pointer is inside a scrollable panel (side panel, modal body),
-            // let the element handle its own scroll rather than panning the viewport.
-            if (e.target && e.target.closest) {
-                const scrollEl = e.target.closest('.page-side-panel-body, .calendar-day-events, .sp-event-form, .modal');
-                if (scrollEl) {
+            // Inside the side-panel body: only intercept a purely vertical scroll
+            // (no horizontal component, no zoom modifier). Anything else falls through
+            // to normal canvas pan/zoom.
+            if (!e.ctrlKey && !e.metaKey && e.target && e.target.closest) {
+                const panelBody = e.target.closest('.page-side-panel-body');
+                if (panelBody && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
                     const dy = e.deltaY;
-                    if (dy !== 0) {
-                        const canScrollUp = scrollEl.scrollTop > 0;
-                        const canScrollDown = scrollEl.scrollTop < scrollEl.scrollHeight - scrollEl.clientHeight - 1;
-                        if ((dy < 0 && canScrollUp) || (dy > 0 && canScrollDown)) return;
-                    }
+                    const canScrollUp = panelBody.scrollTop > 0;
+                    const canScrollDown = panelBody.scrollTop < panelBody.scrollHeight - panelBody.clientHeight - 1;
+                    if ((dy < 0 && canScrollUp) || (dy > 0 && canScrollDown)) return;
                 }
             }
             e.preventDefault();
@@ -18029,10 +18030,6 @@
                     e.stopPropagation();
                 }
                 return;
-            }
-            // Don't initiate viewport pan when touching inside a side panel or modal
-            if (e.target && e.target.closest) {
-                if (e.target.closest('.page-side-panel, .modal-overlay')) return;
             }
             // Mouse/touch on canvas with drawing tool → let canvas handle it
             if (e.target && e.target.closest && e.target.closest('canvas.page-canvas')) {
@@ -21068,7 +21065,8 @@
                 pageWidth,
                 pageHeight,
                 strokeCount,
-                preview: page.preview || null
+                preview: page.preview || null,
+                sidePanel: page.sidePanel || null
             };
         }
 
@@ -21723,6 +21721,7 @@
                             pageHeight: normalizePageDimension(page?.pageHeight, kindDefaults.height),
                             preview: page?.preview || null,
                             strokeCount: typeof page?.strokeCount === 'number' ? page.strokeCount : 0,
+                            sidePanel: page?.sidePanel || null,
                             unloaded: true,
                             needsRedraw: true
                         };
@@ -24627,6 +24626,25 @@
                             const decodedString = decodeURIComponent(escape(atob(encodedData)));
                             remoteStrokeData = JSON.parse(decodedString);
                         }
+                        // Extract optional IH_CAL section (doc-level calendar config)
+                        try {
+                            const calIdx = keywords.indexOf(';IH_CAL:');
+                            if (calIdx >= 0) {
+                                const calStart = calIdx + ';IH_CAL:'.length;
+                                const calEnd = keywords.indexOf(';', calStart);
+                                const calB64 = keywords.substring(calStart, calEnd >= 0 ? calEnd : undefined);
+                                const calStr = decodeURIComponent(escape(atob(calB64)));
+                                const parsedCfg = JSON.parse(calStr);
+                                if (parsedCfg && typeof parsedCfg.mode === 'string') {
+                                    state.calendarPageConfig = {
+                                        mode: parsedCfg.mode,
+                                        startDateKey: parsedCfg.startDateKey || null,
+                                        startPage: typeof parsedCfg.startPage === 'number' ? parsedCfg.startPage : 0,
+                                        nextDateKey: parsedCfg.nextDateKey || null
+                                    };
+                                }
+                            }
+                        } catch (calErr) { console.warn('Failed to parse IH_CAL:', calErr); }
                         // Sync the timeline / version history with the remote
                         // copy. Without this, when the other device performs a
                         // restore the milestone entry never appears in our
@@ -26469,6 +26487,25 @@
                         // Old uncompressed format: schedule migration re-save
                         state.needsMigrationResave = true;
                     }
+                    // Extract optional IH_CAL section (doc-level calendar config)
+                    try {
+                        const calIdx = keywords.indexOf(';IH_CAL:');
+                        if (calIdx >= 0) {
+                            const calStart = calIdx + ';IH_CAL:'.length;
+                            const calEnd = keywords.indexOf(';', calStart);
+                            const calB64 = keywords.substring(calStart, calEnd >= 0 ? calEnd : undefined);
+                            const calStr = decodeURIComponent(escape(atob(calB64)));
+                            const parsedCfg = JSON.parse(calStr);
+                            if (parsedCfg && typeof parsedCfg.mode === 'string') {
+                                state.calendarPageConfig = {
+                                    mode: parsedCfg.mode,
+                                    startDateKey: parsedCfg.startDateKey || null,
+                                    startPage: typeof parsedCfg.startPage === 'number' ? parsedCfg.startPage : 0,
+                                    nextDateKey: parsedCfg.nextDateKey || null
+                                };
+                            }
+                        }
+                    } catch (calErr) { console.warn('Failed to parse IH_CAL:', calErr); }
                 } catch (metaErr) {
                     console.log('No embedded stroke data found:', metaErr);
                 }
@@ -26746,7 +26783,7 @@
                 }
 
                 hideLoading();
-                centerViewOnTop();
+                if (!scrollToTodayCalendarPage()) centerViewOnTop();
 
             } catch (err) {
                 if (err?.name === 'AbortError') {
@@ -27838,6 +27875,13 @@
                     .filter(s => /=[^=]+$/.test(s))
                     .join(',');
                 if (refsStr) keywordsPayload += `;IH_OVERLAY_REFS:${refsStr}`;
+            }
+            if (state.calendarPageConfig) {
+                try {
+                    const calStr = JSON.stringify(state.calendarPageConfig);
+                    const calB64 = btoa(unescape(encodeURIComponent(calStr)));
+                    keywordsPayload += `;IH_CAL:${calB64}`;
+                } catch (e) { /* ignore */ }
             }
             // Capture this save as a version-history snapshot. The pages JSON we just
             // serialized into STROKES_Z is what gets embedded in the snapshot too, so
