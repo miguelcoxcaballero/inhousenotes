@@ -1298,23 +1298,24 @@
             gap: 0;
         }
 
-        /* ─── Calendar side panel ─── */
-        .page-side-panel {
-            width: 220px;
-            min-height: 120px;
+        /* ─── Calendar side panel (white + orange, always — independent of theme) ─── */
+        .page-side-panel,
+        [data-theme="dark"] .page-side-panel {
+            width: 230px;
+            min-height: 160px;
             max-height: calc(100vh - 120px);
-            background: #1e1e2e;
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 0 8px 8px 0;
-            box-shadow: 4px 4px 18px rgba(0,0,0,0.38);
+            background: #ffffff;
+            border: 1px solid rgba(224, 122, 60, 0.22);
+            border-radius: 12px;
+            box-shadow: 0 6px 22px rgba(224, 122, 60, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
             display: flex;
             flex-direction: column;
             overflow: hidden;
             font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
             font-size: 12px;
-            color: #cdd6f4;
+            color: #2a1d14;
             flex-shrink: 0;
-            animation: sidePanelIn 0.22s cubic-bezier(0.22,1,0.36,1);
+            animation: sidePanelIn 0.22s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         @keyframes sidePanelIn {
@@ -1322,21 +1323,25 @@
             to   { opacity: 1; transform: translateX(0); }
         }
 
-        .page-side-panel-header {
+        .page-side-panel-header,
+        [data-theme="dark"] .page-side-panel-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 8px 10px 7px;
-            background: #181825;
-            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 10px 12px;
+            background: linear-gradient(180deg, #fff7f0 0%, #ffffff 100%);
+            border-bottom: 1px solid rgba(224, 122, 60, 0.22);
             gap: 6px;
             flex-shrink: 0;
         }
 
-        .page-side-panel-title {
-            font-size: 11.5px;
-            font-weight: 600;
-            color: #cba6f7;
+        .page-side-panel-title,
+        [data-theme="dark"] .page-side-panel-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            color: #e07a3c;
             flex: 1;
             outline: none;
             min-width: 0;
@@ -1350,83 +1355,347 @@
             white-space: normal;
             overflow: visible;
             text-overflow: clip;
-            color: #f5c2e7;
+            color: #c75c1f;
         }
 
-        .page-side-panel-remove {
-            width: 22px;
-            height: 22px;
+        .page-side-panel-title:empty::before {
+            content: 'Calendario';
+            color: rgba(224, 122, 60, 0.5);
+            font-style: italic;
+        }
+
+        .page-side-panel-remove,
+        [data-theme="dark"] .page-side-panel-remove {
+            width: 24px;
+            height: 24px;
             display: flex;
             align-items: center;
             justify-content: center;
             border: none;
             background: transparent;
-            color: rgba(205,214,244,0.45);
+            color: rgba(224, 122, 60, 0.7);
             cursor: pointer;
-            border-radius: 4px;
+            border-radius: 6px;
             flex-shrink: 0;
             padding: 2px;
             transition: color 0.14s, background 0.14s;
         }
 
         .page-side-panel-remove:hover {
-            color: #f38ba8;
-            background: rgba(243,139,168,0.12);
+            color: #c75c1f;
+            background: rgba(224, 122, 60, 0.12);
         }
 
         .page-side-panel-remove svg {
             width: 14px;
             height: 14px;
-            stroke-width: 2;
+            stroke-width: 2.2;
         }
 
-        .page-side-panel-body {
+        .page-side-panel-body,
+        [data-theme="dark"] .page-side-panel-body {
             flex: 1;
             overflow-y: auto;
-            padding: 8px 10px;
+            padding: 10px 10px 12px;
             outline: none;
-            line-height: 1.5;
+            line-height: 1.45;
+            background: #ffffff;
+            color: #2a1d14;
             scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.12) transparent;
+            scrollbar-color: rgba(224, 122, 60, 0.32) transparent;
         }
 
-        .page-side-panel-body::-webkit-scrollbar { width: 4px; }
-        .page-side-panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 2px; }
+        .page-side-panel-body::-webkit-scrollbar { width: 5px; }
+        .page-side-panel-body::-webkit-scrollbar-thumb { background: rgba(224, 122, 60, 0.32); border-radius: 3px; }
 
-        /* Side panel inner content */
-        .page-side-panel-body .sp-day-section {
+        .page-side-panel-body .sp-day-section,
+        [data-theme="dark"] .page-side-panel-body .sp-day-section {
             margin-bottom: 10px;
+            border-radius: 8px;
+            padding: 6px 8px 7px;
+            background: #fffaf5;
+            border: 1px solid rgba(224, 122, 60, 0.14);
         }
 
-        .page-side-panel-body .sp-day-label {
+        .page-side-panel-body .sp-day-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            margin-bottom: 5px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid rgba(224, 122, 60, 0.18);
+        }
+
+        .page-side-panel-body .sp-day-label,
+        [data-theme="dark"] .page-side-panel-body .sp-day-label {
             font-size: 10.5px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-            color: #89b4fa;
-            margin-bottom: 4px;
-            padding-bottom: 3px;
-            border-bottom: 1px solid rgba(137,180,250,0.18);
+            color: #e07a3c;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .page-side-panel-body .sp-event {
+        .page-side-panel-body .sp-add-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
+            border: none;
+            background: rgba(224, 122, 60, 0.12);
+            color: #e07a3c;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            line-height: 1;
+            padding: 0;
+            flex-shrink: 0;
+            transition: background 0.14s, color 0.14s, transform 0.14s;
+        }
+
+        .page-side-panel-body .sp-add-btn:hover {
+            background: #e07a3c;
+            color: #ffffff;
+            transform: scale(1.06);
+        }
+
+        .page-side-panel-body .sp-events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .page-side-panel-body .sp-event,
+        [data-theme="dark"] .page-side-panel-body .sp-event {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1px;
             font-size: 11.5px;
-            padding: 2px 4px;
-            border-radius: 3px;
-            margin-bottom: 2px;
-            color: #cdd6f4;
-            word-break: break-word;
+            padding: 5px 7px;
+            border-radius: 6px;
+            background: #ffffff;
+            border: 1px solid rgba(224, 122, 60, 0.18);
+            border-left: 3px solid #e07a3c;
+            color: #2a1d14;
+            cursor: pointer;
+            text-align: left;
+            width: 100%;
+            font-family: inherit;
+            transition: background 0.14s, border-color 0.14s, transform 0.14s;
         }
 
         .page-side-panel-body .sp-event:hover {
-            background: rgba(255,255,255,0.05);
+            background: #fff4ea;
+            border-color: rgba(224, 122, 60, 0.45);
+            transform: translateX(1px);
         }
 
-        .page-side-panel-body .sp-no-events {
+        .page-side-panel-body .sp-event-time {
+            font-size: 10px;
+            font-weight: 700;
+            color: #e07a3c;
+            letter-spacing: 0.02em;
+        }
+
+        .page-side-panel-body .sp-event-title {
+            font-size: 11.5px;
+            color: #2a1d14;
+            word-break: break-word;
+            white-space: normal;
+            line-height: 1.3;
+        }
+
+        .page-side-panel-body .sp-no-events,
+        [data-theme="dark"] .page-side-panel-body .sp-no-events {
             font-size: 11px;
-            color: rgba(205,214,244,0.38);
+            color: rgba(42, 29, 20, 0.42);
             font-style: italic;
-            padding: 2px 4px;
+            padding: 3px 4px;
+        }
+
+        /* ─── Side-panel event editor modal (white + orange, always) ─── */
+        .modal.sp-event-modal,
+        [data-theme="dark"] .modal.sp-event-modal {
+            background: #ffffff;
+            color: #2a1d14;
+            max-width: 460px;
+            width: 92%;
+            padding: 20px 22px;
+            border: 1px solid rgba(224, 122, 60, 0.22);
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+        }
+
+        .sp-event-modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .sp-event-modal-head h2 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #e07a3c;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .sp-event-modal-head .panel-close {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            color: rgba(224, 122, 60, 0.7);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .sp-event-modal-head .panel-close:hover {
+            background: rgba(224, 122, 60, 0.12);
+            color: #c75c1f;
+        }
+
+        .sp-event-modal-head .panel-close svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .sp-event-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sp-event-form .sp-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sp-event-form .sp-field label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #c75c1f;
+        }
+
+        .sp-event-form input[type="text"],
+        .sp-event-form input[type="date"],
+        .sp-event-form input[type="time"],
+        .sp-event-form textarea {
+            font: inherit;
+            font-size: 0.92rem;
+            color: #2a1d14;
+            background: #fffaf5;
+            border: 1px solid rgba(224, 122, 60, 0.28);
+            border-radius: 8px;
+            padding: 8px 10px;
+            outline: none;
+            transition: border-color 0.14s, background 0.14s;
+        }
+
+        .sp-event-form input:focus,
+        .sp-event-form textarea:focus {
+            border-color: #e07a3c;
+            background: #ffffff;
+        }
+
+        .sp-event-form textarea {
+            resize: vertical;
+            min-height: 60px;
+            font-family: inherit;
+        }
+
+        .sp-event-times {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        .sp-event-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.88rem;
+            color: #2a1d14;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .sp-event-check input {
+            accent-color: #e07a3c;
+            width: 16px;
+            height: 16px;
+        }
+
+        .sp-event-error {
+            color: #c0392b;
+            font-size: 0.84rem;
+            background: rgba(192, 57, 43, 0.08);
+            border: 1px solid rgba(192, 57, 43, 0.25);
+            border-radius: 6px;
+            padding: 6px 8px;
+        }
+
+        .sp-event-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 18px;
+        }
+
+        .sp-event-actions .sp-event-right {
+            display: flex;
+            gap: 8px;
+        }
+
+        .sp-event-actions .btn.sp-event-delete {
+            background: transparent;
+            color: #c0392b;
+            border: 1px solid rgba(192, 57, 43, 0.35);
+        }
+
+        .sp-event-actions .btn.sp-event-delete:hover:not(:disabled) {
+            background: rgba(192, 57, 43, 0.08);
+        }
+
+        .sp-event-actions .btn.sp-event-delete[hidden] {
+            display: none;
+        }
+
+        .modal.sp-event-modal .btn-primary,
+        [data-theme="dark"] .modal.sp-event-modal .btn-primary {
+            background: #e07a3c;
+            color: #ffffff;
+        }
+
+        .modal.sp-event-modal .btn-primary:hover:not(:disabled) {
+            background: #c75c1f;
+        }
+
+        .modal.sp-event-modal .btn-secondary,
+        [data-theme="dark"] .modal.sp-event-modal .btn-secondary {
+            background: #ffffff;
+            color: #2a1d14;
+            border: 1px solid rgba(224, 122, 60, 0.32);
+        }
+
+        .modal.sp-event-modal .btn-secondary:hover:not(:disabled) {
+            background: #fff4ea;
         }
 
         .page-wrapper {
@@ -2456,147 +2725,8 @@
             flex-shrink: 0;
         }
 
-        /* === Side panel: calendar panel to the right of a page === */
-        .page-side-panel {
-            width: 190px;
-            min-height: 200px;
-            max-height: 1200px;
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.13);
-            border: 1px solid rgba(0,0,0,0.09);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            flex-shrink: 0;
-            position: relative;
-            animation: sidePanelIn 0.22s cubic-bezier(.4,0,.2,1);
-        }
+        /* Side panel: calendar panel to the right of a page — see white/orange block above */
 
-        [data-theme="dark"] .page-side-panel {
-            border-color: rgba(255,255,255,0.1);
-            box-shadow: 0 2px 16px rgba(0,0,0,0.38);
-        }
-
-        @keyframes sidePanelIn {
-            from { opacity: 0; transform: translateX(14px); }
-            to   { opacity: 1; transform: translateX(0); }
-        }
-
-        .page-side-panel-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 10px 12px 8px;
-            border-bottom: 1px solid rgba(0,0,0,0.07);
-            flex-shrink: 0;
-        }
-
-        [data-theme="dark"] .page-side-panel-header {
-            border-bottom-color: rgba(255,255,255,0.08);
-        }
-
-        .page-side-panel-title {
-            font-size: 0.74rem;
-            font-weight: 700;
-            color: var(--accent-blue);
-            letter-spacing: 0.01em;
-            text-transform: uppercase;
-            flex: 1;
-            min-width: 0;
-            outline: none;
-            word-break: break-word;
-            line-height: 1.3;
-        }
-
-        .page-side-panel-title:empty::before {
-            content: 'Calendario';
-            color: var(--text-secondary);
-            font-style: italic;
-        }
-
-        .page-side-panel-remove {
-            width: 22px;
-            height: 22px;
-            flex-shrink: 0;
-            border: none;
-            border-radius: 6px;
-            background: transparent;
-            color: var(--text-secondary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.14s, color 0.14s;
-            margin-left: 4px;
-        }
-
-        .page-side-panel-remove:hover {
-            background: rgba(232,16,16,0.1);
-            color: var(--accent-red);
-        }
-
-        .page-side-panel-remove svg {
-            width: 13px;
-            height: 13px;
-            stroke-width: 2.2;
-        }
-
-        .page-side-panel-body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px 12px;
-            outline: none;
-            font-size: 0.79rem;
-            line-height: 1.5;
-            color: var(--text-primary);
-            word-break: break-word;
-            min-height: 60px;
-        }
-
-        .page-side-panel-body:empty::before {
-            content: 'Sin eventos...';
-            color: var(--text-secondary);
-            font-style: italic;
-            pointer-events: none;
-        }
-
-        /* Editable focus ring */
-        .page-side-panel-title[contenteditable]:focus,
-        .page-side-panel-body[contenteditable]:focus {
-            background: rgba(0,47,217,0.04);
-            border-radius: 4px;
-        }
-
-        /* Calendar day section inside panel body */
-        .sp-day-section {
-            margin-bottom: 8px;
-        }
-
-        .sp-day-label {
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: var(--accent-blue);
-            margin-bottom: 3px;
-            text-transform: uppercase;
-            letter-spacing: 0.02em;
-        }
-
-        .sp-event {
-            font-size: 0.77rem;
-            color: var(--text-primary);
-            padding: 2px 0 2px 8px;
-            border-left: 2px solid rgba(0,47,217,0.28);
-            margin-bottom: 2px;
-            line-height: 1.35;
-        }
-
-        .sp-no-events {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            font-style: italic;
-            padding-left: 8px;
-        }
 
         .calendar-pages-form {
             display: grid;
@@ -5792,15 +5922,15 @@
         (function () {
             try {
                 var raw = localStorage.getItem('drive-token-v1');
-                var hasCurrentScopes = localStorage.getItem('google-scope-version-v1') === 'drive-calendar-v1';
+                var hasCurrentScopes = localStorage.getItem('google-scope-version-v1') === 'drive-calendar-v2';
                 var grantedScopes = localStorage.getItem('google-granted-scopes-v1') || '';
-                var hasCalendarScope = grantedScopes.split(/\s+/).indexOf('https://www.googleapis.com/auth/calendar.readonly') !== -1;
+                var hasCalendarScope = grantedScopes.split(/\s+/).indexOf('https://www.googleapis.com/auth/calendar.events') !== -1;
                 var hasToken = false;
                 if (raw) {
                     var parsed = JSON.parse(raw);
                     hasToken = !!(hasCurrentScopes && parsed && parsed.token && parsed.expiry
-                        && parsed.scopeVersion === 'drive-calendar-v1'
-                        && (parsed.grantedScopes || '').split(/\s+/).indexOf('https://www.googleapis.com/auth/calendar.readonly') !== -1
+                        && parsed.scopeVersion === 'drive-calendar-v2'
+                        && (parsed.grantedScopes || '').split(/\s+/).indexOf('https://www.googleapis.com/auth/calendar.events') !== -1
                         && Date.now() < parsed.expiry - 60000);
                 }
                 var hasRefresh = hasCurrentScopes && hasCalendarScope && !!localStorage.getItem('drive-refresh-token-v1');
@@ -6532,6 +6662,60 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="sp-event-modal">
+        <div class="modal sp-event-modal">
+            <div class="sp-event-modal-head">
+                <h2 id="sp-event-modal-title">Edit event</h2>
+                <button class="panel-close" id="sp-event-modal-close" type="button" aria-label="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="sp-event-form">
+                <div class="sp-field">
+                    <label for="sp-event-summary">Title</label>
+                    <input id="sp-event-summary" type="text" placeholder="Event title" autocomplete="off" />
+                </div>
+                <label class="sp-event-check">
+                    <input id="sp-event-allday" type="checkbox" />
+                    All day
+                </label>
+                <div class="sp-event-times">
+                    <div class="sp-field">
+                        <label for="sp-event-date">Date</label>
+                        <input id="sp-event-date" type="date" />
+                    </div>
+                    <div class="sp-field sp-field-time">
+                        <label for="sp-event-start">Start</label>
+                        <input id="sp-event-start" type="time" />
+                    </div>
+                    <div class="sp-field sp-field-time">
+                        <label for="sp-event-end">End</label>
+                        <input id="sp-event-end" type="time" />
+                    </div>
+                </div>
+                <div class="sp-field">
+                    <label for="sp-event-location">Location</label>
+                    <input id="sp-event-location" type="text" placeholder="Optional" autocomplete="off" />
+                </div>
+                <div class="sp-field">
+                    <label for="sp-event-description">Description</label>
+                    <textarea id="sp-event-description" rows="3" placeholder="Optional"></textarea>
+                </div>
+                <div class="sp-event-error" id="sp-event-error" hidden></div>
+            </div>
+            <div class="sp-event-actions">
+                <button class="btn sp-event-delete" id="sp-event-delete" type="button">Delete</button>
+                <div class="sp-event-right">
+                    <button class="btn btn-secondary" id="sp-event-cancel" type="button">Cancel</button>
+                    <button class="btn btn-primary" id="sp-event-save" type="button">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="loading-overlay">
         <div class="spinner"></div>
         <div id="loading-text">Loading PDF...</div>
@@ -6997,7 +7181,7 @@
         });
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
-        const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+        const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
         const GOOGLE_API_SCOPE = `${DRIVE_SCOPE} ${CALENDAR_SCOPE}`;
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
         const DRIVE_QUICK_ACCESS_DOCS = Object.freeze({
@@ -7019,7 +7203,7 @@
         const DRIVE_PKCE_VERIFIER_KEY = 'drive-pkce-verifier-v1';
         const GOOGLE_SCOPE_VERSION_KEY = 'google-scope-version-v1';
         const GOOGLE_GRANTED_SCOPES_KEY = 'google-granted-scopes-v1';
-        const GOOGLE_SCOPE_VERSION = 'drive-calendar-v1';
+        const GOOGLE_SCOPE_VERSION = 'drive-calendar-v2';
         // Android OAuth client (type "Android") for PKCE + offline refresh tokens.
         // Leave empty to keep using the implicit-flow web client.
         // To enable refresh-token persistence in the Android app:
@@ -18572,6 +18756,7 @@
                             const day = addCalendarDays(weekStart, d);
                             const key = formatCalendarDateKey(day);
                             sections.push({
+                                dateKey: key,
                                 label: day.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
                                 events: eventsByDay.get(key) || []
                             });
@@ -18580,6 +18765,7 @@
                         const day = addCalendarDays(startDate, i);
                         const key = formatCalendarDateKey(day);
                         sections.push({
+                            dateKey: key,
                             label: day.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }),
                             events: eventsByDay.get(key) || []
                         });
@@ -18588,8 +18774,9 @@
                         ? `Semana del ${addCalendarDays(startDate, i * 7).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
                         : addCalendarDays(startDate, i).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
+                    const dateKeys = sections.map(s => s.dateKey);
                     const html = buildSidePanelHtml(sections);
-                    page.sidePanel = { title, html };
+                    page.sidePanel = { title, html, dateKeys };
                     renderPageSidePanel(pageIndex, page.sidePanel);
                     markPageDirty(pageIndex, 'meta');
                     added += 1;
@@ -18608,19 +18795,27 @@
         function buildSidePanelHtml(sections) {
             let html = '';
             for (const section of sections) {
-                html += '<div class="sp-day-section">';
-                html += '<div class="sp-day-label">' + escapeHtmlSafe(section.label) + '</div>';
+                const dayKey = escapeHtmlSafe(section.dateKey || '');
+                html += '<div class="sp-day-section" data-day-key="' + dayKey + '">';
+                html += '<div class="sp-day-header">';
+                html += '<span class="sp-day-label">' + escapeHtmlSafe(section.label) + '</span>';
+                html += '<button type="button" class="sp-add-btn" data-sp-add="' + dayKey + '" title="Añadir evento" aria-label="Añadir evento">+</button>';
+                html += '</div>';
+                html += '<div class="sp-events-list">';
                 if (!section.events || section.events.length === 0) {
                     html += '<div class="sp-no-events">Sin eventos</div>';
                 } else {
                     for (const event of section.events) {
                         const time = formatCalendarEventTime(event);
                         const summary = event.summary || '(Sin título)';
-                        const text = time ? (time + ' ' + summary) : summary;
-                        html += '<div class="sp-event">' + escapeHtmlSafe(text) + '</div>';
+                        const eventId = escapeHtmlSafe(event.id || '');
+                        html += '<button type="button" class="sp-event" data-sp-event="' + eventId + '" data-sp-day="' + dayKey + '">';
+                        if (time) html += '<span class="sp-event-time">' + escapeHtmlSafe(time) + '</span>';
+                        html += '<span class="sp-event-title">' + escapeHtmlSafe(summary) + '</span>';
+                        html += '</button>';
                     }
                 }
-                html += '</div>';
+                html += '</div></div>';
             }
             return html;
         }
@@ -18666,13 +18861,22 @@
 
             const body = document.createElement('div');
             body.className = 'page-side-panel-body';
-            body.contentEditable = 'true';
             body.innerHTML = panelData.html || '';
-            body.addEventListener('input', function() {
-                const page = state.pages[pageIndex];
-                if (page && page.sidePanel) {
-                    page.sidePanel.html = body.innerHTML;
-                    scheduleSave(false);
+            body.addEventListener('click', function(ev) {
+                if (state.isReadOnly) return;
+                const addBtn = ev.target.closest && ev.target.closest('.sp-add-btn');
+                if (addBtn) {
+                    ev.preventDefault();
+                    const dayKey = addBtn.getAttribute('data-sp-add') || '';
+                    if (dayKey) spOpenEventModal({ mode: 'create', pageIndex, dayKey });
+                    return;
+                }
+                const eventBtn = ev.target.closest && ev.target.closest('.sp-event');
+                if (eventBtn) {
+                    ev.preventDefault();
+                    const eventId = eventBtn.getAttribute('data-sp-event') || '';
+                    const dayKey = eventBtn.getAttribute('data-sp-day') || '';
+                    if (eventId) spOpenEventModal({ mode: 'edit', pageIndex, dayKey, eventId });
                 }
             });
 
@@ -18711,6 +18915,295 @@
             }
             showStatus('Calendario eliminado', { preserveState: true });
         }
+
+        // ─── Side-panel event editor ───────────────────────────────────────────
+        const spEventModal = document.getElementById('sp-event-modal');
+        const spEventModalTitleEl = document.getElementById('sp-event-modal-title');
+        const spEventSummaryInput = document.getElementById('sp-event-summary');
+        const spEventAllDayInput = document.getElementById('sp-event-allday');
+        const spEventDateInput = document.getElementById('sp-event-date');
+        const spEventStartInput = document.getElementById('sp-event-start');
+        const spEventEndInput = document.getElementById('sp-event-end');
+        const spEventLocationInput = document.getElementById('sp-event-location');
+        const spEventDescriptionInput = document.getElementById('sp-event-description');
+        const spEventErrorEl = document.getElementById('sp-event-error');
+        const spEventSaveBtn = document.getElementById('sp-event-save');
+        const spEventDeleteBtn = document.getElementById('sp-event-delete');
+        const spEventCancelBtn = document.getElementById('sp-event-cancel');
+        const spEventCloseBtn = document.getElementById('sp-event-modal-close');
+
+        let spEventModalState = null;
+
+        function spSetError(msg) {
+            if (!spEventErrorEl) return;
+            if (!msg) {
+                spEventErrorEl.hidden = true;
+                spEventErrorEl.textContent = '';
+            } else {
+                spEventErrorEl.hidden = false;
+                spEventErrorEl.textContent = msg;
+            }
+        }
+
+        function spCloseEventModal() {
+            if (!spEventModal) return;
+            spEventModal.classList.remove('visible');
+            spEventModalState = null;
+            spSetError('');
+        }
+
+        function spFindEventById(eventId) {
+            if (!eventId) return null;
+            for (const events of calendarEventsCache.values()) {
+                if (!Array.isArray(events)) continue;
+                const found = events.find(e => e && e.id === eventId);
+                if (found) return found;
+            }
+            if (Array.isArray(calendarEvents)) {
+                const found = calendarEvents.find(e => e && e.id === eventId);
+                if (found) return found;
+            }
+            return null;
+        }
+
+        function spApplyAllDayUI() {
+            const isAllDay = !!(spEventAllDayInput && spEventAllDayInput.checked);
+            if (spEventStartInput) spEventStartInput.disabled = isAllDay;
+            if (spEventEndInput) spEventEndInput.disabled = isAllDay;
+        }
+
+        async function spOpenEventModal({ mode, pageIndex, dayKey, eventId }) {
+            if (!spEventModal) return;
+            if (state.isReadOnly) {
+                showStatus('Switch to edit mode to modify events', { preserveState: true });
+                return;
+            }
+            spSetError('');
+            let event = mode === 'edit' ? spFindEventById(eventId) : null;
+            if (mode === 'edit' && !event && dayKey) {
+                try {
+                    const d = dateFromCalendarKey(dayKey);
+                    await fetchCalendarEventsForMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                    event = spFindEventById(eventId);
+                } catch (err) { console.warn('Fetch month for edit failed:', err); }
+            }
+            spEventModalState = { mode, pageIndex, dayKey, eventId, event };
+
+            if (mode === 'edit' && event) {
+                spEventModalTitleEl.textContent = 'Editar evento';
+                spEventSummaryInput.value = event.summary || '';
+                spEventLocationInput.value = event.location || '';
+                spEventDescriptionInput.value = event.description || '';
+                if (event.start && event.start.date) {
+                    spEventAllDayInput.checked = true;
+                    spEventDateInput.value = event.start.date;
+                    spEventStartInput.value = '';
+                    spEventEndInput.value = '';
+                } else if (event.start && event.start.dateTime) {
+                    spEventAllDayInput.checked = false;
+                    const start = new Date(event.start.dateTime);
+                    const end = event.end && event.end.dateTime ? new Date(event.end.dateTime) : null;
+                    spEventDateInput.value = formatCalendarDateKey(start);
+                    spEventStartInput.value = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
+                    spEventEndInput.value = end ? `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}` : '';
+                }
+                spEventDeleteBtn.hidden = false;
+            } else {
+                spEventModalTitleEl.textContent = 'Nuevo evento';
+                spEventSummaryInput.value = '';
+                spEventLocationInput.value = '';
+                spEventDescriptionInput.value = '';
+                spEventAllDayInput.checked = false;
+                spEventDateInput.value = dayKey || formatCalendarDateKey(new Date());
+                spEventStartInput.value = '09:00';
+                spEventEndInput.value = '10:00';
+                spEventDeleteBtn.hidden = true;
+            }
+            spApplyAllDayUI();
+            spEventModal.classList.add('visible');
+            setTimeout(() => spEventSummaryInput && spEventSummaryInput.focus(), 50);
+        }
+
+        function spBuildEventPayload() {
+            const summary = (spEventSummaryInput.value || '').trim();
+            if (!summary) {
+                spSetError('Title is required');
+                return null;
+            }
+            const dateStr = spEventDateInput.value;
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                spSetError('Pick a valid date');
+                return null;
+            }
+            const payload = { summary };
+            const location = (spEventLocationInput.value || '').trim();
+            const description = (spEventDescriptionInput.value || '').trim();
+            if (location) payload.location = location;
+            if (description) payload.description = description;
+            if (spEventAllDayInput.checked) {
+                const [y, m, d] = dateStr.split('-').map(Number);
+                const startDate = new Date(y, m - 1, d);
+                const endDate = new Date(y, m - 1, d + 1);
+                payload.start = { date: formatCalendarDateKey(startDate) };
+                payload.end = { date: formatCalendarDateKey(endDate) };
+            } else {
+                const startTime = spEventStartInput.value || '09:00';
+                const endTime = spEventEndInput.value || startTime;
+                const [sh, sm] = startTime.split(':').map(Number);
+                const [eh, em] = endTime.split(':').map(Number);
+                const [y, m, d] = dateStr.split('-').map(Number);
+                const startDt = new Date(y, m - 1, d, sh || 0, sm || 0, 0);
+                let endDt = new Date(y, m - 1, d, eh || 0, em || 0, 0);
+                if (endDt.getTime() <= startDt.getTime()) {
+                    endDt = new Date(startDt.getTime() + 60 * 60 * 1000);
+                }
+                payload.start = { dateTime: startDt.toISOString() };
+                payload.end = { dateTime: endDt.toISOString() };
+            }
+            return payload;
+        }
+
+        function spGetEventDateKeys(event) {
+            const keys = new Set();
+            const startVal = event && event.start && (event.start.dateTime || event.start.date);
+            if (!startVal) return keys;
+            const start = parseGoogleEventDate(startVal);
+            if (start && !Number.isNaN(start.getTime())) keys.add(formatCalendarDateKey(start));
+            return keys;
+        }
+
+        async function spRefreshPanelsForKeys(dateKeys) {
+            if (!dateKeys || !dateKeys.size) return;
+            const monthKeys = new Set();
+            for (const key of dateKeys) {
+                const d = dateFromCalendarKey(key);
+                monthKeys.add(getCalendarMonthKey(d));
+            }
+            for (const monthKey of monthKeys) {
+                calendarEventsCache.delete(monthKey);
+                calendarEventsInFlight.delete(monthKey);
+            }
+            await Promise.all(Array.from(monthKeys).map(monthKey => {
+                const [y, m] = monthKey.split('-').map(Number);
+                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1)).catch(() => []);
+            }));
+            const eventMap = new Map();
+            for (const events of calendarEventsCache.values()) {
+                if (!Array.isArray(events)) continue;
+                for (const ev of events) {
+                    const startVal = ev && ev.start && (ev.start.dateTime || ev.start.date);
+                    if (!startVal) continue;
+                    const start = parseGoogleEventDate(startVal);
+                    if (!start || Number.isNaN(start.getTime())) continue;
+                    const k = formatCalendarDateKey(start);
+                    if (!eventMap.has(k)) eventMap.set(k, []);
+                    eventMap.get(k).push(ev);
+                }
+            }
+            for (const list of eventMap.values()) {
+                list.sort((a, b) => {
+                    const aS = parseGoogleEventDate(a?.start?.dateTime || a?.start?.date);
+                    const bS = parseGoogleEventDate(b?.start?.dateTime || b?.start?.date);
+                    return (aS?.getTime() || 0) - (bS?.getTime() || 0);
+                });
+            }
+            for (let i = 0; i < state.pages.length; i++) {
+                const page = state.pages[i];
+                if (!page || !page.sidePanel || !Array.isArray(page.sidePanel.dateKeys)) continue;
+                const overlap = page.sidePanel.dateKeys.some(k => dateKeys.has(k));
+                if (!overlap) continue;
+                const sections = page.sidePanel.dateKeys.map(k => {
+                    const date = dateFromCalendarKey(k);
+                    const isWeek = page.sidePanel.dateKeys.length > 1;
+                    return {
+                        dateKey: k,
+                        label: isWeek
+                            ? date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+                            : date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }),
+                        events: eventMap.get(k) || []
+                    };
+                });
+                page.sidePanel.html = buildSidePanelHtml(sections);
+                renderPageSidePanel(i, page.sidePanel);
+                markPageDirty(i, 'meta');
+            }
+            scheduleSave(false);
+        }
+
+        async function spSaveEvent() {
+            if (!spEventModalState) return;
+            const payload = spBuildEventPayload();
+            if (!payload) return;
+            spEventSaveBtn.disabled = true;
+            spEventDeleteBtn.disabled = true;
+            const affectedKeys = new Set();
+            const dateStr = spEventDateInput.value;
+            if (dateStr) affectedKeys.add(dateStr);
+            if (spEventModalState.event) {
+                for (const k of spGetEventDateKeys(spEventModalState.event)) affectedKeys.add(k);
+            }
+            try {
+                if (spEventModalState.mode === 'edit' && spEventModalState.eventId) {
+                    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(spEventModalState.eventId)}`;
+                    await calendarFetch(url, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    showStatus('Evento actualizado', { preserveState: true });
+                } else {
+                    const url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+                    await calendarFetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    showStatus('Evento creado', { preserveState: true });
+                }
+                spCloseEventModal();
+                await spRefreshPanelsForKeys(affectedKeys);
+            } catch (err) {
+                console.error('Save event failed:', err);
+                spSetError(err && err.message ? err.message : 'Could not save event');
+            } finally {
+                spEventSaveBtn.disabled = false;
+                spEventDeleteBtn.disabled = false;
+            }
+        }
+
+        async function spDeleteEvent() {
+            if (!spEventModalState || !spEventModalState.eventId) return;
+            if (!confirm('¿Eliminar este evento?')) return;
+            spEventSaveBtn.disabled = true;
+            spEventDeleteBtn.disabled = true;
+            const affectedKeys = new Set();
+            if (spEventModalState.event) {
+                for (const k of spGetEventDateKeys(spEventModalState.event)) affectedKeys.add(k);
+            }
+            if (spEventModalState.dayKey) affectedKeys.add(spEventModalState.dayKey);
+            try {
+                const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(spEventModalState.eventId)}`;
+                await calendarFetch(url, { method: 'DELETE' });
+                showStatus('Evento eliminado', { preserveState: true });
+                spCloseEventModal();
+                await spRefreshPanelsForKeys(affectedKeys);
+            } catch (err) {
+                console.error('Delete event failed:', err);
+                spSetError(err && err.message ? err.message : 'Could not delete event');
+            } finally {
+                spEventSaveBtn.disabled = false;
+                spEventDeleteBtn.disabled = false;
+            }
+        }
+
+        if (spEventAllDayInput) spEventAllDayInput.addEventListener('change', spApplyAllDayUI);
+        if (spEventSaveBtn) spEventSaveBtn.addEventListener('click', spSaveEvent);
+        if (spEventDeleteBtn) spEventDeleteBtn.addEventListener('click', spDeleteEvent);
+        if (spEventCancelBtn) spEventCancelBtn.addEventListener('click', spCloseEventModal);
+        if (spEventCloseBtn) spEventCloseBtn.addEventListener('click', spCloseEventModal);
+        if (spEventModal) spEventModal.addEventListener('click', (e) => {
+            if (e.target === spEventModal) spCloseEventModal();
+        });
 
         async function calendarFetch(url, options = {}, retried = false) {
             const token = await ensureDriveToken(false);
