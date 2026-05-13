@@ -6652,28 +6652,10 @@
                         <input id="calendar-pages-start-date" type="date">
                     </div>
                     <div class="calendar-pages-field">
-                        <label for="calendar-pages-count">Pages to fill</label>
-                        <input id="calendar-pages-count" type="number" min="1" max="60" step="1" value="7">
-                    </div>
-                </div>
-                <div class="calendar-pages-row">
-                    <div class="calendar-pages-field">
                         <label for="calendar-pages-font">Text size</label>
                         <input id="calendar-pages-font" type="number" min="8" max="18" step="1" value="11">
                     </div>
-                    <div class="calendar-pages-field">
-                        <label for="calendar-pages-width">Card width</label>
-                        <input id="calendar-pages-width" type="number" min="90" max="190" step="1" value="145">
-                    </div>
                 </div>
-                <label class="calendar-pages-check">
-                    <input id="calendar-pages-fill-end" type="checkbox" checked>
-                    Rellenar hasta el final del documento
-                </label>
-                <label class="calendar-pages-check">
-                    <input id="calendar-pages-clear" type="checkbox" checked>
-                    Replace previous calendar cards
-                </label>
                 <div class="calendar-pages-note" id="calendar-pages-summary">
                     Events will be placed on the right side of each target page.
                 </div>
@@ -7919,11 +7901,7 @@
         const calendarPagesMode = document.getElementById('calendar-pages-mode');
         const calendarPagesStartPage = document.getElementById('calendar-pages-start-page');
         const calendarPagesStartDate = document.getElementById('calendar-pages-start-date');
-        const calendarPagesCount = document.getElementById('calendar-pages-count');
         const calendarPagesFont = document.getElementById('calendar-pages-font');
-        const calendarPagesWidth = document.getElementById('calendar-pages-width');
-        const calendarPagesClear = document.getElementById('calendar-pages-clear');
-        const calendarPagesFillEnd = document.getElementById('calendar-pages-fill-end');
         const calendarPagesSummary = document.getElementById('calendar-pages-summary');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
@@ -8162,6 +8140,7 @@
                 addPage();
             } else {
                 renderAllPages();
+                requestAnimationFrame(() => scrollToTodayCalendarPage());
             }
             setupEventListeners();
             syncEraserMenuState();
@@ -17308,16 +17287,10 @@
                     if (e.target === calendarPagesModal) closeCalendarPagesModal();
                 });
             }
-            [calendarPagesMode, calendarPagesStartPage, calendarPagesStartDate, calendarPagesCount, calendarPagesFillEnd].forEach(el => {
+            [calendarPagesMode, calendarPagesStartPage, calendarPagesStartDate].forEach(el => {
                 if (el) el.addEventListener('input', updateCalendarPagesSummary);
                 if (el) el.addEventListener('change', updateCalendarPagesSummary);
             });
-            if (calendarPagesFillEnd) {
-                calendarPagesFillEnd.addEventListener('change', () => {
-                    if (calendarPagesCount) calendarPagesCount.disabled = !!calendarPagesFillEnd.checked;
-                    updateCalendarPagesSummary();
-                });
-            }
             if (setCoverBtn) {
                 setCoverBtn.addEventListener('click', openCoverModal);
             }
@@ -17626,6 +17599,27 @@
             setTimeout(() => {
                 canvasContainer.style.transition = '';
             }, 360);
+        }
+
+        function scrollToTodayCalendarPage() {
+            const cfg = state.calendarPageConfig;
+            if (!cfg || !cfg.startDateKey || typeof cfg.startPage !== 'number') return;
+            const todayKey = formatCalendarDateKey(new Date());
+            const [sy, sm, sd] = cfg.startDateKey.split('-').map(Number);
+            const [ty, tm, td] = todayKey.split('-').map(Number);
+            const startMs = new Date(sy, sm - 1, sd).getTime();
+            const todayMs = new Date(ty, tm - 1, td).getTime();
+            const daysDiff = Math.round((todayMs - startMs) / 86400000);
+            if (daysDiff < 0) return;
+            const pageDiff = cfg.mode === 'week' ? Math.floor(daysDiff / 7) : daysDiff;
+            const targetPage = cfg.startPage + pageDiff;
+            if (targetPage < 0 || targetPage >= state.pages.length) return;
+            const viewportHeight = canvasViewport.getBoundingClientRect().height || window.innerHeight;
+            const centerY = getPageCenterOffset(targetPage);
+            state.panY = -centerY * state.zoom + viewportHeight / 2;
+            state.activePageIndex = targetPage;
+            updateTransform();
+            scheduleVisiblePageUpdate(true);
         }
 
         function applyVerticalPan(dy) {
@@ -18359,17 +18353,14 @@
 
         function openCalendarPagesModal() {
             if (!calendarPagesModal) return;
-            const selected = calendarSelectedDateKey || formatCalendarDateKey(new Date());
+            const cfg = state.calendarPageConfig;
+            const selected = (cfg && cfg.startDateKey) || calendarSelectedDateKey || formatCalendarDateKey(new Date());
             if (calendarPagesStartDate) calendarPagesStartDate.value = selected;
             if (calendarPagesStartPage) {
                 calendarPagesStartPage.max = String(Math.max(1, state.pages.length));
                 calendarPagesStartPage.value = String(Math.max(1, (Number.isFinite(state.activePageIndex) ? state.activePageIndex : 0) + 1));
             }
-            if (calendarPagesMode && !calendarPagesMode.value) calendarPagesMode.value = 'day';
-            if (calendarPagesCount && !calendarPagesCount.value) calendarPagesCount.value = calendarPagesMode?.value === 'week' ? '4' : '7';
-            if (calendarPagesFillEnd) {
-                if (calendarPagesCount) calendarPagesCount.disabled = !!calendarPagesFillEnd.checked;
-            }
+            if (calendarPagesMode) calendarPagesMode.value = (cfg && cfg.mode) || 'day';
             updateCalendarPagesSummary();
             calendarPagesModal.classList.add('visible');
         }
@@ -18395,14 +18386,10 @@
             if (!calendarPagesSummary) return;
             const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
             const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1);
-            const fillEnd = !!(calendarPagesFillEnd && calendarPagesFillEnd.checked);
-            const count = fillEnd
-                ? Math.max(1, state.pages.length - startPage + 1)
-                : Math.max(1, parseInt(calendarPagesCount?.value || '1', 10) || 1);
+            const count = Math.max(1, state.pages.length - startPage + 1);
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const lastDate = addCalendarDays(startDate, mode === 'week' ? (count * 7 - 1) : (count - 1));
-            const suffix = fillEnd ? ' (hasta el final del doc)' : '';
-            calendarPagesSummary.textContent = `${count} página${count === 1 ? '' : 's'} desde pág. ${startPage}${suffix}, cubriendo ${startDate.toLocaleDateString()} – ${lastDate.toLocaleDateString()}. Aparece a la derecha de cada página.`;
+            calendarPagesSummary.textContent = `${count} página${count === 1 ? '' : 's'} desde pág. ${startPage} hasta el final, cubriendo ${startDate.toLocaleDateString()} – ${lastDate.toLocaleDateString()}.`;
         }
 
         function shiftCalendarMonth(delta) {
@@ -18799,16 +18786,11 @@
             const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1) - 1;
-            const fillEnd = !!(calendarPagesFillEnd && calendarPagesFillEnd.checked);
-            const pageCount = fillEnd
-                ? Math.max(1, state.pages.length - startPage)
-                : Math.max(1, parseInt(calendarPagesCount?.value || '1', 10) || 1);
-            const lastPage = startPage + pageCount - 1;
             if (startPage < 0 || startPage >= state.pages.length) {
                 showStatus('Target pages are outside this document', { error: true, preserveState: true });
                 return;
             }
-            const effectiveCount = Math.min(pageCount, state.pages.length - startPage);
+            const effectiveCount = state.pages.length - startPage;
             closeCalendarPagesModal();
             showLoading('Adding calendar events...');
             try {
@@ -18856,7 +18838,12 @@
                 }
                 const nextDayOffset = mode === 'week' ? effectiveCount * 7 : effectiveCount;
                 const nextDate = addCalendarDays(startDate, nextDayOffset);
-                state.calendarPageConfig = { mode, nextDateKey: formatCalendarDateKey(nextDate) };
+                state.calendarPageConfig = {
+                    mode,
+                    startDateKey: formatCalendarDateKey(startDate),
+                    startPage,
+                    nextDateKey: formatCalendarDateKey(nextDate)
+                };
                 scheduleSave(true);
                 showStatus(`Calendario añadido a ${added} página${added === 1 ? '' : 's'}`, { preserveState: true });
             } catch (err) {
@@ -21056,7 +21043,8 @@
                 pdfPageIndex: Number.isFinite(page.pdfPageIndex) ? page.pdfPageIndex : null,
                 legacyCoverStrokes: Array.isArray(page.legacyCoverStrokes) ? page.legacyCoverStrokes : null,
                 pageWidth,
-                pageHeight
+                pageHeight,
+                sidePanel: page.sidePanel || null
             };
         }
 
@@ -21560,7 +21548,8 @@
             return {
                 pages: state.pages.map(page => buildPageMeta(page)),
                 version: 3,
-                savedAt
+                savedAt,
+                calendarPageConfig: state.calendarPageConfig || null
             };
         }
 
@@ -21739,6 +21728,14 @@
                         };
                     });
                     state.lastSavedAt = typeof best.savedAt === 'number' ? best.savedAt : null;
+                }
+                if (best.calendarPageConfig && typeof best.calendarPageConfig.mode === 'string') {
+                    state.calendarPageConfig = {
+                        mode: best.calendarPageConfig.mode,
+                        startDateKey: best.calendarPageConfig.startDateKey || null,
+                        startPage: typeof best.calendarPageConfig.startPage === 'number' ? best.calendarPageConfig.startPage : 0,
+                        nextDateKey: best.calendarPageConfig.nextDateKey || null
+                    };
                 }
             } else {
                 state.pages = [];
@@ -21939,6 +21936,10 @@
                 if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 state.pages[pageIndex] = next;
                 touchPageAccess(pageIndex);
+                // Restore side panel now that full page data is available
+                if (next.sidePanel && !page.sidePanel) {
+                    renderPageSidePanel(pageIndex, next.sidePanel);
+                }
                 if (!options.keepLoaded && (next.pendingUnload || !activePageIndices.has(pageIndex))) {
                     await unloadPageData(pageIndex);
                     if (structureVersion !== pageStructureVersion) return null;
@@ -25399,7 +25400,11 @@
                 if (remotePageData.sidePanel && remotePageData.sidePanel.html) {
                     const prevPanel = currentPage.sidePanel;
                     if (!prevPanel || prevPanel.html !== remotePageData.sidePanel.html || prevPanel.title !== remotePageData.sidePanel.title) {
-                        currentPage.sidePanel = { title: remotePageData.sidePanel.title || '', html: remotePageData.sidePanel.html };
+                        currentPage.sidePanel = {
+                            title: remotePageData.sidePanel.title || '',
+                            html: remotePageData.sidePanel.html,
+                            dateKeys: Array.isArray(remotePageData.sidePanel.dateKeys) ? remotePageData.sidePanel.dateKeys : null
+                        };
                         renderPageSidePanel(i, currentPage.sidePanel);
                     }
                 } else if (remotePageData.sidePanel === null && currentPage.sidePanel) {
