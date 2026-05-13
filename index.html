@@ -2301,6 +2301,68 @@
             min-height: 0;
         }
 
+        .calendar-pages-modal {
+            width: min(92vw, 560px);
+            max-width: 560px;
+            max-height: min(90vh, 680px);
+            overflow: auto;
+        }
+
+        .calendar-pages-form {
+            display: grid;
+            gap: 14px;
+            margin-top: 14px;
+        }
+
+        .calendar-pages-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .calendar-pages-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .calendar-pages-field label {
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .calendar-pages-field input,
+        .calendar-pages-field select {
+            height: 40px;
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            border-radius: 10px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 0 10px;
+            font: inherit;
+            font-size: 0.9rem;
+        }
+
+        [data-theme="dark"] .calendar-pages-field input,
+        [data-theme="dark"] .calendar-pages-field select {
+            border-color: rgba(255, 255, 255, 0.14);
+        }
+
+        .calendar-pages-check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+        }
+
+        .calendar-pages-note {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            line-height: 1.35;
+        }
+
         [data-theme="dark"] .calendar-grid {
             border-color: rgba(255, 255, 255, 0.1);
             background: rgba(255, 255, 255, 0.06);
@@ -2397,14 +2459,14 @@
             display: block;
             width: 100%;
             border: none;
-            border-radius: 8px;
-            padding: 4px 6px;
-            margin-top: 4px;
+            border-radius: 6px;
+            padding: 3px 5px;
+            margin-top: 3px;
             background: rgba(0, 47, 217, 0.1);
             color: var(--text-primary);
             font: inherit;
-            font-size: 0.73rem;
-            line-height: 1.2;
+            font-size: 0.64rem;
+            line-height: 1.12;
             text-align: left;
             overflow: hidden;
         }
@@ -2412,7 +2474,7 @@
         .calendar-event-time {
             display: block;
             color: var(--text-secondary);
-            font-size: 0.68rem;
+            font-size: 0.58rem;
             white-space: nowrap;
         }
 
@@ -2424,8 +2486,8 @@
         }
 
         .calendar-more {
-            margin-top: 5px;
-            font-size: 0.7rem;
+            margin-top: 4px;
+            font-size: 0.62rem;
             color: var(--text-secondary);
         }
 
@@ -4328,11 +4390,14 @@
                 font-size: 0.66rem;
             }
             .calendar-event {
-                padding: 3px 4px;
-                font-size: 0.66rem;
+                padding: 2px 3px;
+                font-size: 0.58rem;
             }
             .calendar-event-time {
                 display: none;
+            }
+            .calendar-pages-row {
+                grid-template-columns: 1fr;
             }
         }
 
@@ -6083,6 +6148,7 @@
                 <div class="calendar-toolbar-group">
                     <button class="btn btn-secondary" id="calendar-today" type="button">Today</button>
                     <button class="btn btn-secondary" id="calendar-refresh" type="button">Refresh</button>
+                    <button class="btn btn-primary" id="calendar-add-pages" type="button">Add to pages</button>
                 </div>
             </div>
             <div class="calendar-loading hidden" id="calendar-loading">
@@ -6113,6 +6179,66 @@
                 </button>
             </div>
             <div class="calendar-day-events" id="calendar-day-events"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-calendar-pages">
+        <div class="modal calendar-pages-modal">
+            <div class="calendar-modal-head">
+                <h2>Add Calendar to Pages</h2>
+                <button class="panel-close" id="calendar-pages-close" type="button" aria-label="Close calendar pages setup">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="calendar-pages-form">
+                <div class="calendar-pages-row">
+                    <div class="calendar-pages-field">
+                        <label for="calendar-pages-mode">Agenda layout</label>
+                        <select id="calendar-pages-mode">
+                            <option value="day">One page per day</option>
+                            <option value="week">One page per week</option>
+                        </select>
+                    </div>
+                    <div class="calendar-pages-field">
+                        <label for="calendar-pages-start-page">Start page</label>
+                        <input id="calendar-pages-start-page" type="number" min="1" step="1" value="1">
+                    </div>
+                </div>
+                <div class="calendar-pages-row">
+                    <div class="calendar-pages-field">
+                        <label for="calendar-pages-start-date">First day / week starts</label>
+                        <input id="calendar-pages-start-date" type="date">
+                    </div>
+                    <div class="calendar-pages-field">
+                        <label for="calendar-pages-count">Pages to fill</label>
+                        <input id="calendar-pages-count" type="number" min="1" max="60" step="1" value="7">
+                    </div>
+                </div>
+                <div class="calendar-pages-row">
+                    <div class="calendar-pages-field">
+                        <label for="calendar-pages-font">Text size</label>
+                        <input id="calendar-pages-font" type="number" min="8" max="18" step="1" value="11">
+                    </div>
+                    <div class="calendar-pages-field">
+                        <label for="calendar-pages-width">Card width</label>
+                        <input id="calendar-pages-width" type="number" min="90" max="190" step="1" value="145">
+                    </div>
+                </div>
+                <label class="calendar-pages-check">
+                    <input id="calendar-pages-clear" type="checkbox" checked>
+                    Replace previous calendar cards
+                </label>
+                <div class="calendar-pages-note" id="calendar-pages-summary">
+                    Events will be placed on the right side of each target page.
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="calendar-pages-cancel" type="button">Cancel</button>
+                <button class="btn btn-primary" id="calendar-pages-apply" type="button">Add to Pages</button>
+            </div>
         </div>
     </div>
 
@@ -7277,6 +7403,7 @@
         const calendarNextBtn = document.getElementById('calendar-next');
         const calendarTodayBtn = document.getElementById('calendar-today');
         const calendarRefreshBtn = document.getElementById('calendar-refresh');
+        const calendarAddPagesBtn = document.getElementById('calendar-add-pages');
         const calendarTitleEl = document.getElementById('calendar-title');
         const calendarGridEl = document.getElementById('calendar-grid');
         const calendarLoadingEl = document.getElementById('calendar-loading');
@@ -7287,6 +7414,18 @@
         const calendarDayTitleEl = document.getElementById('calendar-day-title');
         const calendarDaySubtitleEl = document.getElementById('calendar-day-subtitle');
         const calendarDayEventsEl = document.getElementById('calendar-day-events');
+        const calendarPagesModal = document.getElementById('modal-calendar-pages');
+        const calendarPagesClose = document.getElementById('calendar-pages-close');
+        const calendarPagesCancel = document.getElementById('calendar-pages-cancel');
+        const calendarPagesApply = document.getElementById('calendar-pages-apply');
+        const calendarPagesMode = document.getElementById('calendar-pages-mode');
+        const calendarPagesStartPage = document.getElementById('calendar-pages-start-page');
+        const calendarPagesStartDate = document.getElementById('calendar-pages-start-date');
+        const calendarPagesCount = document.getElementById('calendar-pages-count');
+        const calendarPagesFont = document.getElementById('calendar-pages-font');
+        const calendarPagesWidth = document.getElementById('calendar-pages-width');
+        const calendarPagesClear = document.getElementById('calendar-pages-clear');
+        const calendarPagesSummary = document.getElementById('calendar-pages-summary');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
@@ -16631,6 +16770,19 @@
             if (calendarNextBtn) calendarNextBtn.addEventListener('click', () => shiftCalendarMonth(1));
             if (calendarTodayBtn) calendarTodayBtn.addEventListener('click', jumpCalendarToToday);
             if (calendarRefreshBtn) calendarRefreshBtn.addEventListener('click', () => loadCalendarEventsForVisibleMonth({ force: true }));
+            if (calendarAddPagesBtn) calendarAddPagesBtn.addEventListener('click', openCalendarPagesModal);
+            if (calendarPagesClose) calendarPagesClose.addEventListener('click', closeCalendarPagesModal);
+            if (calendarPagesCancel) calendarPagesCancel.addEventListener('click', closeCalendarPagesModal);
+            if (calendarPagesApply) calendarPagesApply.addEventListener('click', applyCalendarEventsToPages);
+            if (calendarPagesModal) {
+                calendarPagesModal.addEventListener('click', (e) => {
+                    if (e.target === calendarPagesModal) closeCalendarPagesModal();
+                });
+            }
+            [calendarPagesMode, calendarPagesStartPage, calendarPagesStartDate, calendarPagesCount].forEach(el => {
+                if (el) el.addEventListener('input', updateCalendarPagesSummary);
+                if (el) el.addEventListener('change', updateCalendarPagesSummary);
+            });
             if (setCoverBtn) {
                 setCoverBtn.addEventListener('click', openCoverModal);
             }
@@ -17643,6 +17795,47 @@
             if (calendarDayModal) calendarDayModal.classList.remove('visible');
         }
 
+        function openCalendarPagesModal() {
+            if (!calendarPagesModal) return;
+            const selected = calendarSelectedDateKey || formatCalendarDateKey(new Date());
+            if (calendarPagesStartDate) calendarPagesStartDate.value = selected;
+            if (calendarPagesStartPage) {
+                calendarPagesStartPage.max = String(Math.max(1, state.pages.length));
+                calendarPagesStartPage.value = String(Math.max(1, (Number.isFinite(state.activePageIndex) ? state.activePageIndex : 0) + 1));
+            }
+            if (calendarPagesMode && !calendarPagesMode.value) calendarPagesMode.value = 'day';
+            if (calendarPagesCount && !calendarPagesCount.value) calendarPagesCount.value = calendarPagesMode?.value === 'week' ? '4' : '7';
+            updateCalendarPagesSummary();
+            calendarPagesModal.classList.add('visible');
+        }
+
+        function closeCalendarPagesModal() {
+            if (calendarPagesModal) calendarPagesModal.classList.remove('visible');
+        }
+
+        function parseCalendarInputDate(value) {
+            if (!value) return dateFromCalendarKey(formatCalendarDateKey(new Date()));
+            const [y, m, d] = String(value).split('-').map(Number);
+            if (!y || !m || !d) return dateFromCalendarKey(formatCalendarDateKey(new Date()));
+            return new Date(y, m - 1, d);
+        }
+
+        function addCalendarDays(date, days) {
+            const next = new Date(date);
+            next.setDate(next.getDate() + days);
+            return next;
+        }
+
+        function updateCalendarPagesSummary() {
+            if (!calendarPagesSummary) return;
+            const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
+            const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1);
+            const count = Math.max(1, parseInt(calendarPagesCount?.value || '1', 10) || 1);
+            const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
+            const lastDate = addCalendarDays(startDate, mode === 'week' ? (count * 7 - 1) : (count - 1));
+            calendarPagesSummary.textContent = `${count} page${count === 1 ? '' : 's'} from page ${startPage}, covering ${startDate.toLocaleDateString()} to ${lastDate.toLocaleDateString()}. Events will be placed on the right side.`;
+        }
+
         function shiftCalendarMonth(delta) {
             calendarVisibleMonth = new Date(calendarVisibleMonth.getFullYear(), calendarVisibleMonth.getMonth() + delta, 1);
             applyCachedCalendarEventsForVisibleMonth();
@@ -17870,6 +18063,233 @@
             }
             if (calendarEmptyEl) {
                 calendarEmptyEl.classList.toggle('hidden', (calendarEvents || []).length > 0);
+            }
+        }
+
+        function getCalendarMonthsBetween(startDate, endDate) {
+            const months = [];
+            let cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+            const last = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+            while (cursor <= last) {
+                months.push(new Date(cursor));
+                cursor = addCalendarMonths(cursor, 1);
+            }
+            return months;
+        }
+
+        async function getCalendarEventsForDateRange(startDate, endDate) {
+            const monthDates = getCalendarMonthsBetween(startDate, endDate);
+            const monthEventLists = await Promise.all(monthDates.map(monthDate => fetchCalendarEventsForMonth(monthDate)));
+            const byDay = new Map();
+            const startKey = formatCalendarDateKey(startDate);
+            const endKey = formatCalendarDateKey(endDate);
+            for (const events of monthEventLists) {
+                for (const event of events || []) {
+                    const startValue = event?.start?.dateTime || event?.start?.date;
+                    const eventDate = parseGoogleEventDate(startValue);
+                    if (!eventDate || Number.isNaN(eventDate.getTime())) continue;
+                    const key = formatCalendarDateKey(eventDate);
+                    if (key < startKey || key > endKey) continue;
+                    if (!byDay.has(key)) byDay.set(key, []);
+                    byDay.get(key).push(event);
+                }
+            }
+            for (const events of byDay.values()) {
+                events.sort((a, b) => {
+                    const aStart = parseGoogleEventDate(a?.start?.dateTime || a?.start?.date);
+                    const bStart = parseGoogleEventDate(b?.start?.dateTime || b?.start?.date);
+                    return (aStart?.getTime() || 0) - (bStart?.getTime() || 0);
+                });
+            }
+            return byDay;
+        }
+
+        function wrapCanvasText(ctx, text, maxWidth) {
+            const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+            const lines = [];
+            let line = '';
+            for (const word of words) {
+                const test = line ? `${line} ${word}` : word;
+                if (ctx.measureText(test).width <= maxWidth || !line) {
+                    line = test;
+                } else {
+                    lines.push(line);
+                    line = word;
+                }
+            }
+            if (line) lines.push(line);
+            return lines;
+        }
+
+        function renderAgendaEventsCard({ title, sections, width, fontSize }) {
+            const scale = 2;
+            const cardWidth = Math.max(90, Math.min(190, Number(width) || 145));
+            const padding = 10;
+            const lineHeight = Math.max(10, Number(fontSize) || 11) * 1.22;
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.font = `700 ${fontSize}px DM Sans, sans-serif`;
+            const maxTextWidth = cardWidth - padding * 2;
+            let height = padding + lineHeight;
+            const layout = [];
+            for (const section of sections) {
+                const sectionLines = wrapCanvasText(ctx, section.label, maxTextWidth);
+                const eventLines = [];
+                for (const event of section.events || []) {
+                    const prefix = formatCalendarEventTime(event);
+                    const text = `${prefix ? `${prefix} ` : ''}${event.summary || '(No title)'}`;
+                    eventLines.push(wrapCanvasText(ctx, text, maxTextWidth - 8).slice(0, 2));
+                }
+                layout.push({ section, sectionLines, eventLines });
+                height += sectionLines.length * lineHeight + 4;
+                height += Math.max(1, eventLines.length) * lineHeight * 1.95 + 5;
+            }
+            height = Math.min(560, Math.max(80, Math.ceil(height + padding)));
+            canvas.width = Math.round(cardWidth * scale);
+            canvas.height = Math.round(height * scale);
+            ctx.scale(scale, scale);
+            ctx.clearRect(0, 0, cardWidth, height);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(0.5, 0.5, cardWidth - 1, height - 1, 10);
+            } else {
+                ctx.rect(0.5, 0.5, cardWidth - 1, height - 1);
+            }
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#1a1a1a';
+            ctx.font = `700 ${fontSize}px DM Sans, sans-serif`;
+            let y = padding + fontSize;
+            wrapCanvasText(ctx, title, maxTextWidth).slice(0, 2).forEach(line => {
+                ctx.fillText(line, padding, y);
+                y += lineHeight;
+            });
+            y += 3;
+            ctx.font = `600 ${Math.max(8, fontSize - 1)}px DM Sans, sans-serif`;
+            for (const item of layout) {
+                ctx.fillStyle = '#002FD9';
+                item.sectionLines.slice(0, 1).forEach(line => {
+                    if (y > height - padding) return;
+                    ctx.fillText(line, padding, y);
+                    y += lineHeight;
+                });
+                ctx.fillStyle = '#1a1a1a';
+                ctx.font = `500 ${Math.max(8, fontSize - 2)}px DM Sans, sans-serif`;
+                if (!item.eventLines.length) {
+                    if (y <= height - padding) ctx.fillText('No events', padding + 8, y);
+                    y += lineHeight + 4;
+                } else {
+                    for (const lines of item.eventLines) {
+                        if (y > height - padding) break;
+                        for (const line of lines) {
+                            if (y > height - padding) break;
+                            ctx.fillText(line, padding + 8, y);
+                            y += lineHeight;
+                        }
+                        y += 2;
+                    }
+                }
+                ctx.font = `600 ${Math.max(8, fontSize - 1)}px DM Sans, sans-serif`;
+                y += 3;
+            }
+            return { dataUrl: canvas.toDataURL('image/png'), width: cardWidth, height };
+        }
+
+        function makeAgendaCalendarImage(page, dataUrl, width, height) {
+            const pageWidth = normalizePageDimension(page?.pageWidth, A4_WIDTH);
+            const pageHeight = normalizePageDimension(page?.pageHeight, A4_HEIGHT);
+            const x = Math.min(pageWidth - width / 2 - 18, Math.max(width / 2 + 18, pageWidth - width / 2 - 26));
+            const y = Math.min(pageHeight - height / 2 - 22, Math.max(height / 2 + 22, 150 + height / 2));
+            return {
+                id: `cal_${generateStrokeId()}`,
+                calendarImportId: 'google-calendar',
+                src: dataUrl,
+                x,
+                y,
+                width,
+                height,
+                rotation: 0
+            };
+        }
+
+        function removeCalendarImportedImages(page) {
+            if (!page || !Array.isArray(page.images)) return 0;
+            const before = page.images.length;
+            page.images = page.images.filter(image => !(image?.calendarImportId === 'google-calendar' || String(image?.id || '').startsWith('cal_')));
+            return before - page.images.length;
+        }
+
+        async function applyCalendarEventsToPages() {
+            if (state.isReadOnly) {
+                showStatus('Switch to edit mode to add calendar events', { preserveState: true });
+                return;
+            }
+            const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
+            const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
+            const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1) - 1;
+            const pageCount = Math.max(1, Math.min(60, parseInt(calendarPagesCount?.value || '1', 10) || 1));
+            const fontSize = Math.max(8, Math.min(18, parseInt(calendarPagesFont?.value || '11', 10) || 11));
+            const cardWidth = Math.max(90, Math.min(190, parseInt(calendarPagesWidth?.value || '145', 10) || 145));
+            const lastPage = startPage + pageCount - 1;
+            if (startPage < 0 || startPage >= state.pages.length || lastPage >= state.pages.length) {
+                showStatus('Target pages are outside this document', { error: true, preserveState: true });
+                return;
+            }
+            closeCalendarPagesModal();
+            showLoading('Adding calendar events...');
+            try {
+                const totalDays = mode === 'week' ? pageCount * 7 : pageCount;
+                const endDate = addCalendarDays(startDate, totalDays - 1);
+                const eventsByDay = await getCalendarEventsForDateRange(startDate, endDate);
+                await ensureAllPagesLoadedForStructureChange();
+                let added = 0;
+                for (let i = 0; i < pageCount; i++) {
+                    const pageIndex = startPage + i;
+                    const page = state.pages[pageIndex];
+                    if (!page) continue;
+                    if (!Array.isArray(page.images)) page.images = [];
+                    if (calendarPagesClear?.checked) removeCalendarImportedImages(page);
+                    const sections = [];
+                    if (mode === 'week') {
+                        const weekStart = addCalendarDays(startDate, i * 7);
+                        for (let d = 0; d < 7; d++) {
+                            const day = addCalendarDays(weekStart, d);
+                            const key = formatCalendarDateKey(day);
+                            sections.push({
+                                label: day.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
+                                events: eventsByDay.get(key) || []
+                            });
+                        }
+                    } else {
+                        const day = addCalendarDays(startDate, i);
+                        const key = formatCalendarDateKey(day);
+                        sections.push({
+                            label: day.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }),
+                            events: eventsByDay.get(key) || []
+                        });
+                    }
+                    const title = mode === 'week'
+                        ? `Calendar · Week ${addCalendarDays(startDate, i * 7).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                        : 'Calendar';
+                    const card = renderAgendaEventsCard({ title, sections, width: cardWidth, fontSize });
+                    page.images.push(makeAgendaCalendarImage(page, card.dataUrl, card.width, card.height));
+                    page.needsRedraw = true;
+                    markPageDirty(pageIndex, 'full');
+                    redrawPage(pageIndex);
+                    added += 1;
+                    if ((i + 1) % 4 === 0) await yieldToMainThread();
+                }
+                renderPagesList();
+                scheduleSave(true);
+                showStatus(`Calendar added to ${added} page${added === 1 ? '' : 's'}`, { preserveState: true });
+            } catch (err) {
+                console.error('Add calendar to pages failed:', err);
+                showStatus('Could not add calendar events', { error: true, preserveState: true });
+            } finally {
+                hideLoading();
             }
         }
 
