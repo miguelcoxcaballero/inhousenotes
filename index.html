@@ -19879,6 +19879,15 @@
             driveUploadedContentVersion = Math.min(driveContentVersion, safeVersion);
         }
 
+        function reconcileSaveIndicatorIfIdle(delay = 0) {
+            const run = () => {
+                if (hasBlockingSaveState()) return;
+                reconcileSavedIndicator();
+            };
+            if (delay > 0) setTimeout(run, delay);
+            else run();
+        }
+
         function resetDriveContentSyncVersion(version = 0) {
             const safeVersion = Number.isFinite(version) ? Math.max(0, Math.floor(version)) : 0;
             driveContentVersion = safeVersion;
@@ -20657,7 +20666,6 @@
 
                 if (hasChanged) {
                     if (hasUnsyncedLocalDriveChanges()) {
-                        markRemotePresenceSyncActive();
                         deferRemotePull(data);
                         return false;
                     }
@@ -20701,6 +20709,10 @@
             deferredRemotePullMeta = null;
             remotePresenceSyncActive = false;
             remotePresenceSyncDoneUntil = 0;
+            if (remotePresenceSyncTimer) {
+                clearTimeout(remotePresenceSyncTimer);
+                remotePresenceSyncTimer = null;
+            }
             remotePresenceSyncSourceKeys.clear();
             stopPresencePing();
             console.log('Collab polling stopped');
@@ -20736,14 +20748,12 @@
 
                 if (hasChanged) {
                     if (hasUnsyncedLocalDriveChanges()) {
-                        markRemotePresenceSyncActive();
                         deferRemotePull(data);
                         return;
                     }
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
                     if (driveSaveInProgress) {
                         // Save is in flight; defer pull until upload finishes.
-                        markRemotePresenceSyncActive();
                         remoteChangePendingDuringSave = true;
                         remoteChangePendingMeta = data;
                         return;
@@ -20846,6 +20856,7 @@
         let remotePresenceSyncActive = false;
         let remotePresenceSyncDoneUntil = 0;
         let remotePresenceSyncSourceKeys = new Set();
+        let remotePresenceSyncTimer = null;
         const PRESENCE_CLIENT_ID_KEY = 'presence-client-id-v1';
         let _presenceClientIdMemory = '';
 
@@ -20998,26 +21009,31 @@
 
         function markRemotePresenceSyncActive() {
             const now = Date.now();
-            const recentRemoteUsers = (latestPresenceUsers || []).filter(user =>
+            const sourceUsers = (latestPresenceUsers || []).filter(user =>
                 !isOwnPresenceRecord(user) && hasRecentPresenceSaveSignal(user, now)
             );
-            const sourceUsers = recentRemoteUsers.length
-                ? recentRemoteUsers
-                : (latestPresenceUsers || []).filter(user => !isOwnPresenceRecord(user))
-                    .sort((a, b) => (Number(b?.h) || Number(b?.t) || 0) - (Number(a?.h) || Number(a?.t) || 0))
-                    .slice(0, 1);
-
+            if (sourceUsers.length === 0) return false;
             sourceUsers.forEach(user => {
                 const key = getPresenceStabilityKey(user);
                 if (key) remotePresenceSyncSourceKeys.add(key);
             });
             remotePresenceSyncActive = true;
             remotePresenceSyncDoneUntil = 0;
+            if (remotePresenceSyncTimer) clearTimeout(remotePresenceSyncTimer);
+            remotePresenceSyncTimer = setTimeout(() => {
+                remotePresenceSyncTimer = null;
+                markRemotePresenceSyncFinished();
+            }, 30000);
             refreshPresenceViews();
+            return true;
         }
 
         function markRemotePresenceSyncFinished() {
             if (!remotePresenceSyncActive && remotePresenceSyncSourceKeys.size === 0) return;
+            if (remotePresenceSyncTimer) {
+                clearTimeout(remotePresenceSyncTimer);
+                remotePresenceSyncTimer = null;
+            }
             remotePresenceSyncActive = false;
             remotePresenceSyncDoneUntil = Date.now() + PRESENCE_SAVE_DONE_MS;
             refreshPresenceViews();
@@ -21640,18 +21656,15 @@
         async function pullRemoteChanges(remoteMetaHint = null, options = {}) {
             if (!state.driveFileId || !driveAccessToken) return;
             if (!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges()) {
-                if (options.visualSync) markRemotePresenceSyncActive();
                 deferRemotePull(remoteMetaHint);
                 return { changed: false, hasLocalMerges: false, deferred: true };
             }
             if (collabPullInProgress) return;
             collabPullInProgress = true;
-            if (options.visualSync) markRemotePresenceSyncActive();
+            let visualSyncStarted = false;
             const fileIdAtStart = state.driveFileId;
             const sessionToken = getDocumentSessionToken();
             try {
-                showStatus('Syncing...', { phase: 'syncing' });
-
                 const hintHasMeta = !!(remoteMetaHint && (remoteMetaHint.headRevisionId || remoteMetaHint.modifiedTime));
                 // Fetch content + metadata in parallel; metadata can come from poll/save hint.
                 const [contentRes, metaData] = await Promise.all([
@@ -21767,8 +21780,19 @@
                 }
                 markDriveHydrated(fileIdAtStart);
 
-                // Apply remote changes
-                const mergeResult = await applyRemotePages(remoteStrokeData);
+                const likelyRemoteContentChange = remoteStrokeDataLooksDifferent(remoteStrokeData);
+                if (likelyRemoteContentChange) {
+                    showStatus('Syncing...', { phase: 'syncing' });
+                }
+                if (options.visualSync && likelyRemoteContentChange) {
+                    visualSyncStarted = markRemotePresenceSyncActive();
+                }
+
+                // Apply remote changes. Only preserve/re-upload local-only content
+                // when this pull is explicitly merging pending local work.
+                const mergeResult = await applyRemotePages(remoteStrokeData, {
+                    preserveLocalUnsynced: !!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges()
+                });
 
                 // Render backgrounds for pages that got a PDF/custom backgroundSource but have no image.
                 // Important: when the document has a cached clean-original (no overlay XObjects),
@@ -21846,7 +21870,8 @@
                 return { changed: false, hasLocalMerges: false, error: true };
             } finally {
                 collabPullInProgress = false;
-                if (options.visualSync) markRemotePresenceSyncFinished();
+                if (visualSyncStarted) markRemotePresenceSyncFinished();
+                reconcileSaveIndicatorIfIdle(80);
             }
         }
 
@@ -21934,9 +21959,37 @@
             return `${image.id || ''}|${image.src || ''}|${x}|${y}|${width}|${height}|${rotation}`;
         }
 
-        async function applyRemotePages(remoteStrokeData) {
+        function remoteStrokeDataLooksDifferent(remoteStrokeData) {
+            if (!Array.isArray(remoteStrokeData)) return false;
+            if (remoteStrokeData.length !== state.pages.length) return true;
+            for (let i = 0; i < remoteStrokeData.length; i++) {
+                const remotePage = remoteStrokeData[i] || {};
+                const localPage = state.pages[i] || {};
+                if ((remotePage.pageId || '') !== (localPage.pageId || '')) return true;
+                if ((remotePage.backgroundSource || 'template') !== (localPage.backgroundSource || 'template')) return true;
+                if (normalizeTemplateKind(remotePage.templateKind) !== normalizeTemplateKind(localPage.templateKind)) return true;
+                const remoteStrokes = Array.isArray(remotePage.strokes) ? remotePage.strokes : [];
+                const localStrokes = Array.isArray(localPage.strokes) ? localPage.strokes : [];
+                const remoteImages = Array.isArray(remotePage.images) ? remotePage.images : [];
+                const localImages = Array.isArray(localPage.images) ? localPage.images : [];
+                if (!Array.isArray(localPage.strokes) || !Array.isArray(localPage.images)) {
+                    continue;
+                }
+                if (remoteStrokes.length !== localStrokes.length || remoteImages.length !== localImages.length) return true;
+                for (let j = 0; j < remoteStrokes.length; j++) {
+                    if (strokeSyncFingerprint(remoteStrokes[j]) !== strokeSyncFingerprint(localStrokes[j])) return true;
+                }
+                for (let j = 0; j < remoteImages.length; j++) {
+                    if (imageSyncFingerprint(remoteImages[j]) !== imageSyncFingerprint(localImages[j])) return true;
+                }
+            }
+            return false;
+        }
+
+        async function applyRemotePages(remoteStrokeData, options = {}) {
             if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false, pagesNeedingPdfBackground: [] };
             const pagesNeedingPdfBackground = [];
+            const preserveLocalUnsynced = !!options.preserveLocalUnsynced;
 
             let changed = false;
             let hasLocalMerges = false;
@@ -22039,6 +22092,10 @@
                         droppedLocalCount += 1;
                         continue;
                     }
+                    if (!preserveLocalUnsynced) {
+                        droppedLocalCount += 1;
+                        continue;
+                    }
                     // Local-only addition that hasn't been synced yet.
                     newPagesOrder.push(page);
                     hasLocalMerges = true;
@@ -22107,9 +22164,9 @@
             const localHasUnsyncedAddedPages = localPageCount > lastSyncedPageCount;
 
             // Add new pages from remote if they don't exist locally
-            const shouldAppendRemotePages = !localHasUnsyncedDeletedPages || remotePageCount <= localPageCount;
+            const shouldAppendRemotePages = !preserveLocalUnsynced || !localHasUnsyncedDeletedPages || remotePageCount <= localPageCount;
             if (!shouldAppendRemotePages && remotePageCount > localPageCount) {
-                hasLocalMerges = true;
+                hasLocalMerges = preserveLocalUnsynced;
             }
             for (let i = localPageCount; shouldAppendRemotePages && i < remotePageCount; i++) {
                 const remotePageData = remoteStrokeData[i];
@@ -22152,7 +22209,7 @@
             }
 
             if (remotePageCount < localPageCount) {
-                if (localHasUnsyncedAddedPages) {
+                if (localHasUnsyncedAddedPages && preserveLocalUnsynced) {
                     hasLocalMerges = true;
                 } else {
                     for (let idx = localPageCount - 1; idx >= remotePageCount; idx--) {
@@ -22214,7 +22271,9 @@
                     }
                 }
 
-                const localDeletionSet = new Set([...localDeleted, ...localDeletedSinceBaseline]);
+                const localDeletionSet = preserveLocalUnsynced
+                    ? new Set([...localDeleted, ...localDeletedSinceBaseline])
+                    : new Set();
                 const allDeleted = new Set([...remoteDeleted, ...localDeletionSet]);
 
                 const localStrokeById = new Map();
@@ -22243,7 +22302,9 @@
                 let localStrokeConflictCount = 0;
                 const localOnlyStrokes = structuralIdentityChanged
                     ? []
-                    : currentPage.strokes.filter(s => s?.id && !remoteStrokeIds.has(s.id) && !allDeleted.has(s.id));
+                    : (preserveLocalUnsynced
+                        ? currentPage.strokes.filter(s => s?.id && !remoteStrokeIds.has(s.id) && !allDeleted.has(s.id))
+                        : []);
                 for (const remoteStroke of remoteStrokes) {
                     if (!remoteStroke?.id || allDeleted.has(remoteStroke.id)) continue;
                     if (structuralIdentityChanged) {
@@ -22251,7 +22312,7 @@
                         continue;
                     }
                     const localVersion = localStrokeById.get(remoteStroke.id);
-                    if (localVersion && strokeSyncFingerprint(localVersion) !== strokeSyncFingerprint(remoteStroke)) {
+                    if (preserveLocalUnsynced && localVersion && strokeSyncFingerprint(localVersion) !== strokeSyncFingerprint(remoteStroke)) {
                         mergedStrokes.push(localVersion);
                         localStrokeConflictCount += 1;
                         continue;
@@ -22264,7 +22325,9 @@
                 let localImageConflictCount = 0;
                 const localOnlyImages = structuralIdentityChanged
                     ? []
-                    : (currentPage.images || []).filter(img => img?.id && !remoteImageIds.has(img.id) && !allDeleted.has(img.id));
+                    : (preserveLocalUnsynced
+                        ? (currentPage.images || []).filter(img => img?.id && !remoteImageIds.has(img.id) && !allDeleted.has(img.id))
+                        : []);
                 for (const remoteImage of remoteImages) {
                     if (!remoteImage?.id || allDeleted.has(remoteImage.id)) continue;
                     if (structuralIdentityChanged) {
@@ -22272,7 +22335,7 @@
                         continue;
                     }
                     const localVersion = localImageById.get(remoteImage.id);
-                    if (localVersion && imageSyncFingerprint(localVersion) !== imageSyncFingerprint(remoteImage)) {
+                    if (preserveLocalUnsynced && localVersion && imageSyncFingerprint(localVersion) !== imageSyncFingerprint(remoteImage)) {
                         mergedImages.push(localVersion);
                         localImageConflictCount += 1;
                         continue;
@@ -22295,13 +22358,13 @@
                         localSuppressedRemoteCount += 1;
                     }
                 }
-                if (
+                if (preserveLocalUnsynced && (
                     localOnlyStrokes.length > 0
                     || localOnlyImages.length > 0
                     || localSuppressedRemoteCount > 0
                     || localStrokeConflictCount > 0
                     || localImageConflictCount > 0
-                ) {
+                )) {
                     hasLocalMerges = true;
                 }
 
@@ -22992,6 +23055,7 @@
                 || driveDirty
                 || deferredDriveSave
                 || driveContentVersion !== driveUploadedContentVersion
+                || collabPullInProgress
             );
         }
 
@@ -23091,6 +23155,9 @@
 
             if (!preserveState && !phase && !saving && !error && (savedAt || /^(saved|synced)$/i.test(text || ''))) {
                 confirmSavedIndicatorSoon();
+            }
+            if (!preserveState && (phase === 'building' || phase === 'syncing' || saving)) {
+                reconcileSaveIndicatorIfIdle(1800);
             }
         }
 
