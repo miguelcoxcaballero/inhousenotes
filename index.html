@@ -1447,12 +1447,14 @@
         }
 
         .page-side-panel-body .sp-day-header {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 5px;
             margin-bottom: 3px;
             padding-bottom: 2px;
+            padding-right: 18px;
             border-bottom: 1px solid rgba(224, 122, 60, 0.2);
         }
 
@@ -1471,8 +1473,12 @@
         }
 
         .page-side-panel-body .sp-add-btn {
-            width: 16px;
-            height: 16px;
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(calc(-50% - 1px));
+            width: 14px;
+            height: 14px;
             border-radius: 4px;
             border: none;
             background: rgba(224, 122, 60, 0.12);
@@ -1481,21 +1487,20 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 13px;
+            font-size: 11px;
             line-height: 1;
             padding: 0;
-            flex-shrink: 0;
-            transition: background 0.14s, color 0.14s, transform 0.14s;
+            transition: background 0.14s, color 0.14s;
         }
 
         .page-side-panel-body .sp-add-btn:hover {
             background: #e07a3c;
             color: #ffffff;
-            transform: scale(1.06);
         }
 
         /* In viewer/read-only mode, hide write affordances */
         body.read-only .page-side-panel-body .sp-add-btn { display: none; }
+        body.read-only .page-side-panel-body .sp-day-header { padding-right: 0; }
         body.read-only .page-side-panel-body .sp-event { cursor: default; }
         body.read-only .page-side-panel-body .sp-event:hover {
             background: #ffffff;
@@ -19072,15 +19077,7 @@
                 }
             });
 
-            const removeBtn = document.createElement('button');
-            removeBtn.className = 'page-side-panel-remove';
-            removeBtn.type = 'button';
-            removeBtn.title = 'Quitar calendario';
-            removeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-            removeBtn.addEventListener('click', function() { removePageSidePanel(pageIndex); });
-
             header.appendChild(titleEl);
-            header.appendChild(removeBtn);
 
             const body = document.createElement('div');
             body.className = 'page-side-panel-body';
