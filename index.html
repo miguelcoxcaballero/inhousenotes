@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -1285,9 +1285,148 @@
             will-change: transform;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            align-items: flex-start;
             padding: 30px;
             gap: 30px;
+        }
+
+        /* ─── Page row: page + optional side panel sit side by side ─── */
+        .page-row {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 0;
+        }
+
+        /* ─── Calendar side panel ─── */
+        .page-side-panel {
+            width: 220px;
+            min-height: 120px;
+            max-height: calc(100vh - 120px);
+            background: #1e1e2e;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 0 8px 8px 0;
+            box-shadow: 4px 4px 18px rgba(0,0,0,0.38);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+            font-size: 12px;
+            color: #cdd6f4;
+            flex-shrink: 0;
+            animation: sidePanelIn 0.22s cubic-bezier(0.22,1,0.36,1);
+        }
+
+        @keyframes sidePanelIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .page-side-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px 7px;
+            background: #181825;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .page-side-panel-title {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #cba6f7;
+            flex: 1;
+            outline: none;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: text;
+        }
+
+        .page-side-panel-title:focus {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+            color: #f5c2e7;
+        }
+
+        .page-side-panel-remove {
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            background: transparent;
+            color: rgba(205,214,244,0.45);
+            cursor: pointer;
+            border-radius: 4px;
+            flex-shrink: 0;
+            padding: 2px;
+            transition: color 0.14s, background 0.14s;
+        }
+
+        .page-side-panel-remove:hover {
+            color: #f38ba8;
+            background: rgba(243,139,168,0.12);
+        }
+
+        .page-side-panel-remove svg {
+            width: 14px;
+            height: 14px;
+            stroke-width: 2;
+        }
+
+        .page-side-panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 10px;
+            outline: none;
+            line-height: 1.5;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.12) transparent;
+        }
+
+        .page-side-panel-body::-webkit-scrollbar { width: 4px; }
+        .page-side-panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 2px; }
+
+        /* Side panel inner content */
+        .page-side-panel-body .sp-day-section {
+            margin-bottom: 10px;
+        }
+
+        .page-side-panel-body .sp-day-label {
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #89b4fa;
+            margin-bottom: 4px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid rgba(137,180,250,0.18);
+        }
+
+        .page-side-panel-body .sp-event {
+            font-size: 11.5px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-bottom: 2px;
+            color: #cdd6f4;
+            word-break: break-word;
+        }
+
+        .page-side-panel-body .sp-event:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .page-side-panel-body .sp-no-events {
+            font-size: 11px;
+            color: rgba(205,214,244,0.38);
+            font-style: italic;
+            padding: 2px 4px;
         }
 
         .page-wrapper {
@@ -2306,6 +2445,157 @@
             max-width: 560px;
             max-height: min(90vh, 680px);
             overflow: auto;
+        }
+
+        /* === Page-row: wraps page + side panel === */
+        .page-row {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 14px;
+            flex-shrink: 0;
+        }
+
+        /* === Side panel: calendar panel to the right of a page === */
+        .page-side-panel {
+            width: 190px;
+            min-height: 200px;
+            max-height: 1200px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.13);
+            border: 1px solid rgba(0,0,0,0.09);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+            position: relative;
+            animation: sidePanelIn 0.22s cubic-bezier(.4,0,.2,1);
+        }
+
+        [data-theme="dark"] .page-side-panel {
+            border-color: rgba(255,255,255,0.1);
+            box-shadow: 0 2px 16px rgba(0,0,0,0.38);
+        }
+
+        @keyframes sidePanelIn {
+            from { opacity: 0; transform: translateX(14px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .page-side-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px 8px;
+            border-bottom: 1px solid rgba(0,0,0,0.07);
+            flex-shrink: 0;
+        }
+
+        [data-theme="dark"] .page-side-panel-header {
+            border-bottom-color: rgba(255,255,255,0.08);
+        }
+
+        .page-side-panel-title {
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            letter-spacing: 0.01em;
+            text-transform: uppercase;
+            flex: 1;
+            min-width: 0;
+            outline: none;
+            word-break: break-word;
+            line-height: 1.3;
+        }
+
+        .page-side-panel-title:empty::before {
+            content: 'Calendario';
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .page-side-panel-remove {
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.14s, color 0.14s;
+            margin-left: 4px;
+        }
+
+        .page-side-panel-remove:hover {
+            background: rgba(232,16,16,0.1);
+            color: var(--accent-red);
+        }
+
+        .page-side-panel-remove svg {
+            width: 13px;
+            height: 13px;
+            stroke-width: 2.2;
+        }
+
+        .page-side-panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 12px;
+            outline: none;
+            font-size: 0.79rem;
+            line-height: 1.5;
+            color: var(--text-primary);
+            word-break: break-word;
+            min-height: 60px;
+        }
+
+        .page-side-panel-body:empty::before {
+            content: 'Sin eventos...';
+            color: var(--text-secondary);
+            font-style: italic;
+            pointer-events: none;
+        }
+
+        /* Editable focus ring */
+        .page-side-panel-title[contenteditable]:focus,
+        .page-side-panel-body[contenteditable]:focus {
+            background: rgba(0,47,217,0.04);
+            border-radius: 4px;
+        }
+
+        /* Calendar day section inside panel body */
+        .sp-day-section {
+            margin-bottom: 8px;
+        }
+
+        .sp-day-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            margin-bottom: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .sp-event {
+            font-size: 0.77rem;
+            color: var(--text-primary);
+            padding: 2px 0 2px 8px;
+            border-left: 2px solid rgba(0,47,217,0.28);
+            margin-bottom: 2px;
+            line-height: 1.35;
+        }
+
+        .sp-no-events {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            padding-left: 8px;
         }
 
         .calendar-pages-form {
@@ -8144,6 +8434,11 @@
 
         // Create page DOM element shell (canvases are lazy-loaded)
         function createPageElement(pageIndex, animate = false, withCanvas = false) {
+            // Each page lives inside a .page-row so the side panel can sit to the right
+            const row = document.createElement('div');
+            row.className = 'page-row';
+            row.dataset.pageRow = pageIndex;
+
             const wrapper = document.createElement('div');
             wrapper.className = 'page-wrapper';
             wrapper.dataset.page = pageIndex;
@@ -8160,7 +8455,8 @@
             pageNumber.textContent = `${pageIndex + 1}`;
 
             wrapper.appendChild(pageNumber);
-            canvasContainer.appendChild(wrapper);
+            row.appendChild(wrapper);
+            canvasContainer.appendChild(row);
 
             if (withCanvas) {
                 attachPageCanvases(wrapper, pageIndex);
@@ -8187,6 +8483,12 @@
                     }
                 }
             });
+
+            // Restore side panel if the page data has one
+            if (page && page.sidePanel) {
+                renderPageSidePanel(pageIndex, page.sidePanel);
+            }
+
             return wrapper;
         }
 
@@ -14699,6 +15001,13 @@
             // Batch DOM operations using DocumentFragment
             const fragment = document.createDocumentFragment();
             state.pages.forEach((_, index) => {
+                const page = state.pages[index];
+
+                // Wrap each page in a row so the side panel can sit to the right
+                const row = document.createElement('div');
+                row.className = 'page-row';
+                row.dataset.pageRow = index;
+
                 const wrapper = document.createElement('div');
                 wrapper.className = 'page-wrapper';
                 wrapper.dataset.page = index;
@@ -14709,9 +15018,7 @@
                 pageNumber.className = 'page-number';
                 pageNumber.textContent = `${index + 1}`;
                 wrapper.appendChild(pageNumber);
-                fragment.appendChild(wrapper);
 
-                const page = state.pages[index];
                 if (page && page.preview) {
                     wrapper.style.backgroundImage = `url("${page.preview}")`;
                     wrapper.style.backgroundSize = 'cover';
@@ -14738,6 +15045,16 @@
                         }
                     }
                 });
+
+                row.appendChild(wrapper);
+
+                // Restore side panel if saved
+                if (page && page.sidePanel) {
+                    const panel = buildSidePanelElement(index, page.sidePanel);
+                    if (panel) row.appendChild(panel);
+                }
+
+                fragment.appendChild(row);
             });
             canvasContainer.appendChild(fragment);
             canvasContainer.appendChild(addPageIndicator);
@@ -18231,8 +18548,6 @@
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1) - 1;
             const pageCount = Math.max(1, Math.min(60, parseInt(calendarPagesCount?.value || '1', 10) || 1));
-            const fontSize = Math.max(8, Math.min(18, parseInt(calendarPagesFont?.value || '11', 10) || 11));
-            const cardWidth = Math.max(90, Math.min(190, parseInt(calendarPagesWidth?.value || '145', 10) || 145));
             const lastPage = startPage + pageCount - 1;
             if (startPage < 0 || startPage >= state.pages.length || lastPage >= state.pages.length) {
                 showStatus('Target pages are outside this document', { error: true, preserveState: true });
@@ -18250,8 +18565,6 @@
                     const pageIndex = startPage + i;
                     const page = state.pages[pageIndex];
                     if (!page) continue;
-                    if (!Array.isArray(page.images)) page.images = [];
-                    if (calendarPagesClear?.checked) removeCalendarImportedImages(page);
                     const sections = [];
                     if (mode === 'week') {
                         const weekStart = addCalendarDays(startDate, i * 7);
@@ -18272,25 +18585,131 @@
                         });
                     }
                     const title = mode === 'week'
-                        ? `Calendar · Week ${addCalendarDays(startDate, i * 7).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
-                        : 'Calendar';
-                    const card = renderAgendaEventsCard({ title, sections, width: cardWidth, fontSize });
-                    page.images.push(makeAgendaCalendarImage(page, card.dataUrl, card.width, card.height));
-                    page.needsRedraw = true;
-                    markPageDirty(pageIndex, 'full');
-                    redrawPage(pageIndex);
+                        ? `Semana del ${addCalendarDays(startDate, i * 7).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                        : addCalendarDays(startDate, i).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+
+                    const html = buildSidePanelHtml(sections);
+                    page.sidePanel = { title, html };
+                    renderPageSidePanel(pageIndex, page.sidePanel);
+                    markPageDirty(pageIndex, 'meta');
                     added += 1;
                     if ((i + 1) % 4 === 0) await yieldToMainThread();
                 }
-                renderPagesList();
                 scheduleSave(true);
-                showStatus(`Calendar added to ${added} page${added === 1 ? '' : 's'}`, { preserveState: true });
+                showStatus(`Calendario añadido a ${added} página${added === 1 ? '' : 's'}`, { preserveState: true });
             } catch (err) {
                 console.error('Add calendar to pages failed:', err);
                 showStatus('Could not add calendar events', { error: true, preserveState: true });
             } finally {
                 hideLoading();
             }
+        }
+
+        function buildSidePanelHtml(sections) {
+            let html = '';
+            for (const section of sections) {
+                html += '<div class="sp-day-section">';
+                html += '<div class="sp-day-label">' + escapeHtmlSafe(section.label) + '</div>';
+                if (!section.events || section.events.length === 0) {
+                    html += '<div class="sp-no-events">Sin eventos</div>';
+                } else {
+                    for (const event of section.events) {
+                        const time = formatCalendarEventTime(event);
+                        const summary = event.summary || '(Sin título)';
+                        const text = time ? (time + ' ' + summary) : summary;
+                        html += '<div class="sp-event">' + escapeHtmlSafe(text) + '</div>';
+                    }
+                }
+                html += '</div>';
+            }
+            return html;
+        }
+
+        function escapeHtmlSafe(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function buildSidePanelElement(pageIndex, panelData) {
+            if (!panelData) return null;
+            const panel = document.createElement('div');
+            panel.className = 'page-side-panel';
+            panel.dataset.panelPage = pageIndex;
+
+            const header = document.createElement('div');
+            header.className = 'page-side-panel-header';
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'page-side-panel-title';
+            titleEl.contentEditable = 'true';
+            titleEl.textContent = panelData.title || 'Calendario';
+            titleEl.addEventListener('input', function() {
+                const page = state.pages[pageIndex];
+                if (page && page.sidePanel) {
+                    page.sidePanel.title = titleEl.textContent;
+                    scheduleSave(false);
+                }
+            });
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'page-side-panel-remove';
+            removeBtn.type = 'button';
+            removeBtn.title = 'Quitar calendario';
+            removeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+            removeBtn.addEventListener('click', function() { removePageSidePanel(pageIndex); });
+
+            header.appendChild(titleEl);
+            header.appendChild(removeBtn);
+
+            const body = document.createElement('div');
+            body.className = 'page-side-panel-body';
+            body.contentEditable = 'true';
+            body.innerHTML = panelData.html || '';
+            body.addEventListener('input', function() {
+                const page = state.pages[pageIndex];
+                if (page && page.sidePanel) {
+                    page.sidePanel.html = body.innerHTML;
+                    scheduleSave(false);
+                }
+            });
+
+            panel.appendChild(header);
+            panel.appendChild(body);
+            return panel;
+        }
+
+        function renderPageSidePanel(pageIndex, panelData) {
+            const row = canvasContainer.querySelector('.page-row[data-page-row="' + pageIndex + '"]');
+            if (!row) return;
+            const existing = row.querySelector('.page-side-panel');
+            if (existing) existing.remove();
+            if (!panelData) return;
+            const panel = buildSidePanelElement(pageIndex, panelData);
+            if (panel) row.appendChild(panel);
+        }
+
+
+        function removePageSidePanel(pageIndex) {
+            const row = canvasContainer.querySelector('.page-row[data-page-row="' + pageIndex + '"]');
+            if (row) {
+                const panel = row.querySelector('.page-side-panel');
+                if (panel) {
+                    panel.style.transition = 'opacity 0.18s, transform 0.18s';
+                    panel.style.opacity = '0';
+                    panel.style.transform = 'translateX(14px)';
+                    setTimeout(function() { panel.remove(); }, 200);
+                }
+            }
+            const page = state.pages[pageIndex];
+            if (page) {
+                page.sidePanel = null;
+                markPageDirty(pageIndex, 'meta');
+                scheduleSave(false);
+            }
+            showStatus('Calendario eliminado', { preserveState: true });
         }
 
         async function calendarFetch(url, options = {}, retried = false) {
@@ -24321,6 +24740,19 @@
                     console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${localSuppressedRemoteCount} local-deleted-remote, ${localStrokeConflictCount} local-stroke-conflicts, ${localImageConflictCount} local-image-conflicts, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
                 }
 
+                // Restore side panel from remote data if present
+                if (remotePageData.sidePanel && remotePageData.sidePanel.html) {
+                    const prevPanel = currentPage.sidePanel;
+                    if (!prevPanel || prevPanel.html !== remotePageData.sidePanel.html || prevPanel.title !== remotePageData.sidePanel.title) {
+                        currentPage.sidePanel = { title: remotePageData.sidePanel.title || '', html: remotePageData.sidePanel.html };
+                        renderPageSidePanel(i, currentPage.sidePanel);
+                    }
+                } else if (remotePageData.sidePanel === null && currentPage.sidePanel) {
+                    // Remote explicitly removed the panel
+                    currentPage.sidePanel = null;
+                    renderPageSidePanel(i, null);
+                }
+
                 // Keep the baseline as "confirmed on remote". Local-only merge
                 // content stays unconfirmed until the merged PDF upload succeeds.
                 const newSyncedIds = new Set();
@@ -26609,7 +27041,8 @@
                     templateKind: normalizeTemplateKind(pageData.templateKind),
                     pdfPageIndex: (pageData.backgroundSource === 'pdf' || !!pageData.backgroundImage) ? (i + 1) : null,
                     pageWidth: logicalPageWidthPx,
-                    pageHeight: logicalPageHeightPx
+                    pageHeight: logicalPageHeightPx,
+                    sidePanel: pageData.sidePanel || null
                 };
                 metadataParts.push(JSON.stringify(pageStrokeEntry));
 
@@ -26999,7 +27432,8 @@
                     // Persist the exported page position, not the original source PDF page index.
                     pdfPageIndex: (backgroundSource === 'pdf' || !!backgroundImage) ? (i + 1) : null,
                     pageWidth: resolvedPageWidth,
-                    pageHeight: resolvedPageHeight
+                    pageHeight: resolvedPageHeight,
+                    sidePanel: pageData.sidePanel || null
                 };
                 const metaJson = JSON.stringify(pageStrokeEntry);
                 metadataParts.push(metaJson);
