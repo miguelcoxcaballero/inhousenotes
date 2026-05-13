@@ -6157,6 +6157,7 @@
         const DRIVE_POST_SAVE_CHECK_TIMEOUT = 3500;
         const DRIVE_REMOTE_META_SKEW_MS = 250;
         const DRIVE_OWN_WRITE_ECHO_WINDOW_MS = 12000;
+        const DRIVE_HOME_AUTO_REFRESH_MS = 5000;
         const DRIVE_UPLOAD_PDF_OPTIONS = Object.freeze({
             highQuality: true
         });
@@ -6930,6 +6931,8 @@
         let driveFolderCache = { folders: [], files: [] };
         let driveFolderStack = [{ id: 'root', name: 'My Drive' }];
         let driveCurrentFolderId = 'root';
+        let driveHomeAutoRefreshTimer = null;
+        let driveHomeAutoRefreshInProgress = false;
         const driveFolderMetaCache = new Map();
         let driveOpenInProgress = false;
         let driveQuickAccessInProgress = false;
@@ -9749,6 +9752,7 @@
             stopCollabPolling();
             clearDriveSyncTimers();
             saveViewMode('drive');
+            startDriveHomeAutoRefresh();
         }
 
         function showWelcomeView() {
@@ -9761,6 +9765,7 @@
             closeDriveProfileMenus();
             stopCollabPolling();
             clearDriveSyncTimers();
+            stopDriveHomeAutoRefresh();
         }
 
         function getEditorTopOffset() {
@@ -9814,6 +9819,7 @@
             if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.remove('hidden');
+            stopDriveHomeAutoRefresh();
             requestAnimationFrame(() => {
                 clampToolbarPosition();
                 scheduleVisiblePageUpdate(true);
@@ -10308,6 +10314,7 @@
         function signOutDrive() {
             driveSignedOut = true;
             driveAuthNeedsReconnect = false;
+            stopDriveHomeAutoRefresh();
             stopCollabPolling();
             clearDriveSyncTimers();
             clearPausedSaveWatchdog();
@@ -11792,7 +11799,7 @@
             renderDriveShared(driveSharedCache);
         }
 
-        async function refreshDriveFolderContents() {
+        async function refreshDriveFolderContents(options = {}) {
             try {
                 const search = driveSearchInput ? driveSearchInput.value.trim() : '';
                 const baseParts = [
@@ -11823,7 +11830,7 @@
                 renderDriveFolderContents(driveFolderCache.folders, driveFolderCache.files);
                 updateDriveStatusCounts();
             } catch (err) {
-                if (driveStatusEl) driveStatusEl.textContent = 'Unable to load this folder.';
+                if (!options.silent && driveStatusEl) driveStatusEl.textContent = 'Unable to load this folder.';
             }
         }
 
@@ -11899,6 +11906,56 @@
             } catch (err) {
                 driveStatusEl.textContent = 'Unable to load Drive files.';
             }
+        }
+
+        function isDriveHomeVisible() {
+            return !!(driveHome && !driveHome.classList.contains('hidden'));
+        }
+
+        function isDriveHomeAutoRefreshBlocked() {
+            if (!isDriveHomeVisible()) return true;
+            if (!driveAccessToken || driveSignedOut || driveAuthNeedsReconnect) return true;
+            if (document.visibilityState === 'hidden') return true;
+            if (driveOpenInProgress || driveQuickAccessInProgress) return true;
+            if (activeDriveCardMenu || activeColorPopup) return true;
+            if (folderPickerModal && folderPickerModal.classList.contains('visible')) return true;
+            if (driveBinModal && driveBinModal.classList.contains('visible')) return true;
+            if (driveProfileMenu && !driveProfileMenu.classList.contains('hidden')) return true;
+            return false;
+        }
+
+        async function refreshDriveHomeSnapshot(options = {}) {
+            if (driveHomeAutoRefreshInProgress || isDriveHomeAutoRefreshBlocked()) return;
+            driveHomeAutoRefreshInProgress = true;
+            try {
+                await ensureDriveToken(false);
+                if (isDriveHomeAutoRefreshBlocked()) return;
+                await Promise.all([
+                    refreshDriveRecents(),
+                    refreshDriveFolderContents({ silent: !!options.silent })
+                ]);
+                updateDriveStatusCounts();
+            } catch (err) {
+                if (!options.silent && driveStatusEl) {
+                    driveStatusEl.textContent = 'Unable to refresh Drive files.';
+                }
+            } finally {
+                driveHomeAutoRefreshInProgress = false;
+            }
+        }
+
+        function startDriveHomeAutoRefresh() {
+            if (driveHomeAutoRefreshTimer) return;
+            driveHomeAutoRefreshTimer = setInterval(() => {
+                void refreshDriveHomeSnapshot({ silent: true });
+            }, DRIVE_HOME_AUTO_REFRESH_MS);
+        }
+
+        function stopDriveHomeAutoRefresh() {
+            if (!driveHomeAutoRefreshTimer) return;
+            clearInterval(driveHomeAutoRefreshTimer);
+            driveHomeAutoRefreshTimer = null;
+            driveHomeAutoRefreshInProgress = false;
         }
 
         async function openDriveFile(file) {
