@@ -2282,9 +2282,22 @@
         }
 
         .calendar-body {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
-            gap: 14px;
+            min-height: 0;
+            display: block;
+        }
+
+        .calendar-day-modal {
+            width: min(92vw, 520px);
+            max-width: 520px;
+            max-height: min(86vh, 640px);
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .calendar-day-modal .calendar-day-events {
+            max-height: min(62vh, 480px);
             min-height: 0;
         }
 
@@ -2414,35 +2427,6 @@
             margin-top: 5px;
             font-size: 0.7rem;
             color: var(--text-secondary);
-        }
-
-        .calendar-day-panel {
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 12px;
-            background: var(--bg-secondary);
-            min-height: 0;
-            max-height: clamp(420px, 54vh, 520px);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        [data-theme="dark"] .calendar-day-panel {
-            border-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .calendar-day-panel-head {
-            padding: 12px 14px;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
-        [data-theme="dark"] .calendar-day-panel-head {
-            border-bottom-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .calendar-day-panel-title {
-            font-weight: 700;
-            font-size: 0.95rem;
         }
 
         .calendar-day-panel-subtitle {
@@ -4336,10 +4320,6 @@
             .calendar-grid {
                 height: 360px;
             }
-            .calendar-body {
-                grid-template-columns: 1fr;
-                gap: 10px;
-            }
             .calendar-day {
                 padding: 5px;
             }
@@ -4353,9 +4333,6 @@
             }
             .calendar-event-time {
                 display: none;
-            }
-            .calendar-day-panel {
-                max-height: 220px;
             }
         }
 
@@ -6117,14 +6094,25 @@
             <div class="calendar-empty hidden" id="calendar-empty">No events in this month.</div>
             <div class="calendar-body">
                 <div class="calendar-grid" id="calendar-grid" aria-live="polite"></div>
-                <aside class="calendar-day-panel" id="calendar-day-panel">
-                    <div class="calendar-day-panel-head">
-                        <div class="calendar-day-panel-title" id="calendar-day-title">Today</div>
-                        <div class="calendar-day-panel-subtitle" id="calendar-day-subtitle">Select a day</div>
-                    </div>
-                    <div class="calendar-day-events" id="calendar-day-events"></div>
-                </aside>
             </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-calendar-day">
+        <div class="modal calendar-day-modal">
+            <div class="calendar-modal-head">
+                <div>
+                    <h2 id="calendar-day-title">Today</h2>
+                    <div class="calendar-day-panel-subtitle" id="calendar-day-subtitle">No events</div>
+                </div>
+                <button class="panel-close" id="calendar-day-modal-close" type="button" aria-label="Close day events">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="calendar-day-events" id="calendar-day-events"></div>
         </div>
     </div>
 
@@ -7294,6 +7282,8 @@
         const calendarLoadingEl = document.getElementById('calendar-loading');
         const calendarErrorEl = document.getElementById('calendar-error');
         const calendarEmptyEl = document.getElementById('calendar-empty');
+        const calendarDayModal = document.getElementById('modal-calendar-day');
+        const calendarDayModalClose = document.getElementById('calendar-day-modal-close');
         const calendarDayTitleEl = document.getElementById('calendar-day-title');
         const calendarDaySubtitleEl = document.getElementById('calendar-day-subtitle');
         const calendarDayEventsEl = document.getElementById('calendar-day-events');
@@ -16631,6 +16621,12 @@
                     if (e.target === calendarModal) closeCalendarModal();
                 });
             }
+            if (calendarDayModalClose) calendarDayModalClose.addEventListener('click', closeCalendarDayModal);
+            if (calendarDayModal) {
+                calendarDayModal.addEventListener('click', (e) => {
+                    if (e.target === calendarDayModal) closeCalendarDayModal();
+                });
+            }
             if (calendarPrevBtn) calendarPrevBtn.addEventListener('click', () => shiftCalendarMonth(-1));
             if (calendarNextBtn) calendarNextBtn.addEventListener('click', () => shiftCalendarMonth(1));
             if (calendarTodayBtn) calendarTodayBtn.addEventListener('click', jumpCalendarToToday);
@@ -17640,6 +17636,11 @@
 
         function closeCalendarModal() {
             if (calendarModal) calendarModal.classList.remove('visible');
+            closeCalendarDayModal();
+        }
+
+        function closeCalendarDayModal() {
+            if (calendarDayModal) calendarDayModal.classList.remove('visible');
         }
 
         function shiftCalendarMonth(delta) {
@@ -17787,6 +17788,12 @@
             });
         }
 
+        function openCalendarDayModal(dayKey, eventMap = buildCalendarEventMap(calendarEvents)) {
+            calendarSelectedDateKey = dayKey;
+            renderSelectedCalendarDay(eventMap);
+            if (calendarDayModal) calendarDayModal.classList.add('visible');
+        }
+
         function renderCalendarMonth() {
             if (!calendarGridEl || !calendarTitleEl) return;
             const todayKey = formatCalendarDateKey(new Date());
@@ -17825,6 +17832,7 @@
                         return;
                     }
                     renderCalendarMonth();
+                    openCalendarDayModal(key, eventMap);
                 });
                 const number = document.createElement('div');
                 number.className = 'calendar-day-number';
@@ -17863,7 +17871,6 @@
             if (calendarEmptyEl) {
                 calendarEmptyEl.classList.toggle('hidden', (calendarEvents || []).length > 0);
             }
-            renderSelectedCalendarDay(eventMap);
         }
 
         async function calendarFetch(url, options = {}, retried = false) {
