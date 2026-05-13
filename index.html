@@ -5301,12 +5301,15 @@
         (function () {
             try {
                 var raw = localStorage.getItem('drive-token-v1');
+                var hasCurrentScopes = localStorage.getItem('google-scope-version-v1') === 'drive-calendar-v1';
                 var hasToken = false;
                 if (raw) {
                     var parsed = JSON.parse(raw);
-                    hasToken = !!(parsed && parsed.token && parsed.expiry && Date.now() < parsed.expiry - 60000);
+                    hasToken = !!(hasCurrentScopes && parsed && parsed.token && parsed.expiry
+                        && parsed.scopeVersion === 'drive-calendar-v1'
+                        && Date.now() < parsed.expiry - 60000);
                 }
-                var hasRefresh = !!localStorage.getItem('drive-refresh-token-v1');
+                var hasRefresh = hasCurrentScopes && !!localStorage.getItem('drive-refresh-token-v1');
                 window.__INHOUSE_BOOT_SIGNED_IN__ = hasToken || hasRefresh;
             } catch (e) {
                 window.__INHOUSE_BOOT_SIGNED_IN__ = false;
@@ -6438,6 +6441,8 @@
         const DRIVE_SESSION_KEY = 'drive-session-v1';
         const DRIVE_REFRESH_TOKEN_KEY = 'drive-refresh-token-v1';
         const DRIVE_PKCE_VERIFIER_KEY = 'drive-pkce-verifier-v1';
+        const GOOGLE_SCOPE_VERSION_KEY = 'google-scope-version-v1';
+        const GOOGLE_SCOPE_VERSION = 'drive-calendar-v1';
         // Android OAuth client (type "Android") for PKCE + offline refresh tokens.
         // Leave empty to keep using the implicit-flow web client.
         // To enable refresh-token persistence in the Android app:
@@ -10105,7 +10110,10 @@
                     refreshDriveFiles();
                 } else if (useAndroidPkceFlow()) {
                     let hasRefresh = false;
-                    try { hasRefresh = !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
+                    try {
+                        hasRefresh = localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) === GOOGLE_SCOPE_VERSION
+                            && !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY);
+                    } catch (err) {}
                     if (hasRefresh) {
                         refreshDriveAccessTokenWithRefreshToken()
                             .then(() => refreshDriveFiles())
@@ -10123,7 +10131,7 @@
             }
             driveTokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: GOOGLE_CLIENT_ID,
-                scope: DRIVE_SCOPE,
+                scope: GOOGLE_API_SCOPE,
                 include_granted_scopes: true,
                 callback: () => { },
                 error_callback: (err) => {
@@ -10195,7 +10203,10 @@
                 if (hint) authUrl.searchParams.set('login_hint', hint);
             } catch (err) {}
             const hasFreshConsent = (() => {
-                try { return localStorage.getItem('drive-consent-granted') === '1'; }
+                try {
+                    return localStorage.getItem('drive-consent-granted') === '1'
+                        && localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) === GOOGLE_SCOPE_VERSION;
+                }
                 catch (e) { return false; }
             })();
             if (!hasFreshConsent) {
@@ -10274,6 +10285,7 @@
                 try { localStorage.setItem(DRIVE_REFRESH_TOKEN_KEY, data.refresh_token); } catch (err) {}
             }
             try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
+            try { localStorage.setItem(GOOGLE_SCOPE_VERSION_KEY, GOOGLE_SCOPE_VERSION); } catch (err) {}
             scheduleDriveTokenRefresh();
             updateDriveAuthUI();
         }
@@ -10301,7 +10313,10 @@
                 if (hint) authUrl.searchParams.set('login_hint', hint);
             } catch (err) {}
             const hasFreshConsent = (() => {
-                try { return localStorage.getItem('drive-consent-granted') === '1'; }
+                try {
+                    return localStorage.getItem('drive-consent-granted') === '1'
+                        && localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) === GOOGLE_SCOPE_VERSION;
+                }
                 catch (err) { return false; }
             })();
             if (!hasFreshConsent) {
@@ -10332,6 +10347,7 @@
             driveTokenExpiry = Date.now() + Math.max(60, expiresIn) * 1000;
             saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
             try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
+            try { localStorage.setItem(GOOGLE_SCOPE_VERSION_KEY, GOOGLE_SCOPE_VERSION); } catch (err) {}
             scheduleDriveTokenRefresh();
             updateDriveAuthUI();
             try {
@@ -10512,7 +10528,10 @@
             // Android PKCE path: silently refresh using stored refresh_token, no popup ever.
             if (useAndroidPkceFlow()) {
                 let hasRefresh = false;
-                try { hasRefresh = !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
+                try {
+                    hasRefresh = localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) === GOOGLE_SCOPE_VERSION
+                        && !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY);
+                } catch (err) {}
                 if (hasRefresh) {
                     return refreshDriveAccessTokenWithRefreshToken().catch(err => {
                         if (!interactive) markDriveAuthNeedsReconnect(err?.message || 'refresh failed');
@@ -10651,6 +10670,7 @@
             localStorage.removeItem(DRIVE_REMEMBER_KEY);
             try { localStorage.removeItem('drive-hint-email'); } catch (e) { }
             try { localStorage.removeItem('drive-consent-granted'); } catch (e) { }
+            try { localStorage.removeItem(GOOGLE_SCOPE_VERSION_KEY); } catch (e) { }
             try { localStorage.removeItem(DRIVE_REFRESH_TOKEN_KEY); } catch (e) { }
             try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (e) { }
             clearDriveSession();
@@ -17531,76 +17551,19 @@
             }
         }
 
-        async function forceGoogleTokenConsent() {
-            if (useAndroidPkceFlow()) {
-                try { localStorage.removeItem('drive-consent-granted'); } catch (err) {}
-                startAndroidPkceSignIn().catch(() => {});
-                throw new Error('Complete Google sign-in to enable Calendar.');
-            }
-            if (!driveTokenClient) throw new Error('Google auth is not ready.');
-            return new Promise((resolve, reject) => {
-                let settled = false;
-                let timeoutId = null;
-                const calendarTokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: GOOGLE_CLIENT_ID,
-                    scope: GOOGLE_API_SCOPE,
-                    include_granted_scopes: true,
-                    callback: () => { },
-                    error_callback: (err) => {
-                        if (settled) return;
-                        settled = true;
-                        clearTimeout(timeoutId);
-                        reject(err instanceof Error ? err : new Error(err?.message || 'Google sign-in failed.'));
-                    }
-                });
-                timeoutId = setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    reject(new Error('Google sign-in timed out.'));
-                }, 60000);
-                calendarTokenClient.callback = (resp) => {
-                    if (settled) return;
-                    settled = true;
-                    clearTimeout(timeoutId);
-                    if (resp.error) {
-                        reject(new Error(resp.error));
-                        return;
-                    }
-                    driveSignedOut = false;
-                    driveAuthNeedsReconnect = false;
-                    driveAccessToken = resp.access_token;
-                    driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
-                    saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
-                    try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
-                    scheduleDriveTokenRefresh();
-                    updateDriveAuthUI();
-                    resolve(driveAccessToken);
-                };
-                const reqOptions = { prompt: 'consent' };
-                let email = driveUserProfile?.email || '';
-                try { email = email || localStorage.getItem('drive-hint-email') || ''; } catch (err) {}
-                if (email) reqOptions.login_hint = email;
-                calendarTokenClient.requestAccessToken(reqOptions);
-            });
-        }
-
         async function calendarFetch(url, options = {}, retried = false) {
-            let token = null;
-            try {
-                token = await ensureDriveToken(false);
-            } catch (err) {
-                token = await forceGoogleTokenConsent();
-            }
+            const token = await ensureDriveToken(false);
             const headers = new Headers(options.headers || {});
             headers.set('Authorization', `Bearer ${token}`);
             const res = await fetch(url, { ...options, headers });
-            if ((res.status === 401 || res.status === 403) && !retried) {
-                if (res.status === 401) {
-                    driveAccessToken = null;
-                    driveTokenExpiry = 0;
-                }
-                await forceGoogleTokenConsent();
+            if (res.status === 401 && !retried) {
+                driveAccessToken = null;
+                driveTokenExpiry = 0;
+                await ensureDriveToken(false);
                 return calendarFetch(url, options, true);
+            }
+            if (res.status === 403) {
+                throw new Error('Calendar permission is missing. Sign out and sign in again to grant Calendar access with the app login.');
             }
             if (!res.ok) {
                 const message = await res.text().catch(() => '');
@@ -18926,9 +18889,10 @@
 
         function saveDriveTokenToStorage(token, expiry) {
             try {
-                const payload = JSON.stringify({ token, expiry });
+                const payload = JSON.stringify({ token, expiry, scopeVersion: GOOGLE_SCOPE_VERSION });
                 localStorage.setItem(DRIVE_TOKEN_KEY, payload);
                 localStorage.setItem(DRIVE_REMEMBER_KEY, '1');
+                localStorage.setItem(GOOGLE_SCOPE_VERSION_KEY, GOOGLE_SCOPE_VERSION);
             } catch (e) {
                 console.error('Failed to save Drive token:', e);
             }
@@ -18948,6 +18912,11 @@
                 if (!raw) return false;
                 const parsed = JSON.parse(raw);
                 if (!parsed || !parsed.token || !parsed.expiry) return false;
+                if (parsed.scopeVersion !== GOOGLE_SCOPE_VERSION
+                    || localStorage.getItem(GOOGLE_SCOPE_VERSION_KEY) !== GOOGLE_SCOPE_VERSION) {
+                    clearDriveTokenStorage();
+                    return false;
+                }
                 if (Date.now() >= parsed.expiry - 60000) {
                     clearDriveTokenStorage();
                     return false;
