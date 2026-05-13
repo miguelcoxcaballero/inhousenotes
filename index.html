@@ -26791,17 +26791,71 @@
 
             try {
                 const pdfBlob = await buildPdfBlob({ highQuality: true, status: false });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(pdfBlob);
-                link.download = safeName;
-                link.click();
-                URL.revokeObjectURL(link.href);
+                await deliverExportedPdf(pdfBlob, safeName);
                 showStatus('PDF exported', { preserveState: true });
             } catch (err) {
+                console.error('PDF export failed:', err);
                 showStatus('PDF export failed', { preserveState: true });
             }
 
             hideLoading();
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = String(reader.result || '');
+                    resolve(result.includes(',') ? result.split(',')[1] : result);
+                };
+                reader.onerror = () => reject(reader.error || new Error('Failed to read PDF'));
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        async function deliverExportedPdf(pdfBlob, safeName) {
+            if (isInhouseApp && window.InhouseNative
+                && typeof window.InhouseNative.beginPdfExport === 'function'
+                && typeof window.InhouseNative.appendPdfExportChunk === 'function'
+                && typeof window.InhouseNative.finishPdfExport === 'function') {
+                const base64 = await blobToBase64(pdfBlob);
+                window.InhouseNative.beginPdfExport(safeName);
+                const chunkSize = 240000;
+                for (let i = 0; i < base64.length; i += chunkSize) {
+                    window.InhouseNative.appendPdfExportChunk(base64.slice(i, i + chunkSize));
+                    await yieldToMainThread();
+                }
+                window.InhouseNative.finishPdfExport();
+                return;
+            }
+            if (isInhouseApp && window.InhouseNative && typeof window.InhouseNative.savePdf === 'function') {
+                const base64 = await blobToBase64(pdfBlob);
+                window.InhouseNative.savePdf(safeName, base64);
+                return;
+            }
+            if (isInhouseApp && navigator.canShare && navigator.share) {
+                const file = new File([pdfBlob], safeName, { type: 'application/pdf' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: safeName });
+                    return;
+                }
+            }
+            const url = URL.createObjectURL(pdfBlob);
+            try {
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = safeName;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                if (isInhouseApp) {
+                    setTimeout(() => {
+                        try { window.open(url, '_blank'); } catch (err) {}
+                    }, 120);
+                }
+            } finally {
+                setTimeout(() => URL.revokeObjectURL(url), isInhouseApp ? 60000 : 1200);
+            }
         }
 
         // Start
