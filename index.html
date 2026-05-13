@@ -2138,15 +2138,24 @@
         }
 
         .panel-timeline-row {
+            display: flex;
+            gap: 10px;
             padding: 12px 20px 0 20px;
         }
 
         .panel-timeline-row .btn {
-            width: 100%;
+            flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
+            height: 40px;
+            font-size: 0.95rem;
+        }
+
+        .panel-timeline-row .btn svg {
+            width: 18px;
+            height: 18px;
         }
 
         .panel-cover-row {
@@ -2187,6 +2196,163 @@
         .pages-panel-actions .btn svg {
             width: 18px;
             height: 18px;
+        }
+
+        .calendar-modal {
+            width: min(94vw, 920px);
+            max-width: 920px;
+            max-height: min(92vh, 760px);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        .calendar-modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .calendar-modal-head h2 {
+            margin: 0;
+        }
+
+        .calendar-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .calendar-toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .calendar-title {
+            min-width: 180px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        .calendar-loading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.04);
+            min-height: 430px;
+        }
+
+        [data-theme="dark"] .calendar-grid {
+            border-color: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .calendar-weekday,
+        .calendar-day {
+            background: var(--bg-secondary);
+            min-width: 0;
+        }
+
+        .calendar-weekday {
+            padding: 10px 8px;
+            text-align: center;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0;
+        }
+
+        .calendar-day {
+            min-height: 88px;
+            padding: 8px;
+            border-top: 1px solid rgba(0, 0, 0, 0.06);
+            border-left: 1px solid rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+        }
+
+        .calendar-day:nth-child(7n + 1) {
+            border-left: none;
+        }
+
+        [data-theme="dark"] .calendar-day {
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .calendar-day.muted {
+            opacity: 0.48;
+        }
+
+        .calendar-day.today {
+            background: rgba(245, 200, 76, 0.16);
+        }
+
+        .calendar-day-number {
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .calendar-event {
+            display: block;
+            width: 100%;
+            border: none;
+            border-radius: 8px;
+            padding: 4px 6px;
+            margin-top: 4px;
+            background: rgba(0, 47, 217, 0.1);
+            color: var(--text-primary);
+            font: inherit;
+            font-size: 0.73rem;
+            line-height: 1.2;
+            text-align: left;
+            overflow: hidden;
+        }
+
+        .calendar-event-time {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            white-space: nowrap;
+        }
+
+        .calendar-event-title {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .calendar-more {
+            margin-top: 5px;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .calendar-empty,
+        .calendar-error {
+            font-size: 0.86rem;
+            color: var(--text-secondary);
+        }
+
+        .calendar-error {
+            color: var(--accent-red);
         }
 
         .modal-cover {
@@ -2836,7 +3002,8 @@
         }
 
         #btn-drive-menu-diary,
-        #btn-drive-menu-agenda {
+        #btn-drive-menu-agenda,
+        #btn-open-calendar {
             border: 1px solid transparent;
         }
 
@@ -2878,6 +3045,22 @@
 
         [data-theme="dark"] #btn-drive-menu-agenda:hover:not(:disabled) {
             background: #356b46;
+        }
+
+        #btn-open-calendar {
+            background: #f5c84c;
+            border-color: #d9a932;
+            color: #2e250d;
+        }
+
+        #btn-open-calendar:hover:not(:disabled) {
+            background: #edbd3c;
+        }
+
+        [data-theme="dark"] #btn-open-calendar {
+            background: #d9ad38;
+            border-color: #f0c24f;
+            color: #1e1808;
         }
 
         .drive-main {
@@ -3992,6 +4175,28 @@
             #pages-panel.visible {
                 bottom: 0;
                 right: 0;
+            }
+            .calendar-modal {
+                width: 94vw;
+                padding: 18px;
+            }
+            .calendar-grid {
+                min-height: 360px;
+            }
+            .calendar-day {
+                min-height: 72px;
+                padding: 5px;
+            }
+            .calendar-weekday {
+                padding: 8px 4px;
+                font-size: 0.66rem;
+            }
+            .calendar-event {
+                padding: 3px 4px;
+                font-size: 0.66rem;
+            }
+            .calendar-event-time {
+                display: none;
             }
         }
 
@@ -5664,6 +5869,16 @@
                 </svg>
                 Timeline
             </button>
+            <button class="btn btn-secondary" id="btn-open-calendar" title="Calendar" aria-label="Open calendar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                Calendar
+            </button>
         </div>
         <div class="panel-cover-row">
             <button class="btn btn-secondary" id="btn-set-cover" title="Add Photo Page" aria-label="Add Photo Page">
@@ -5696,6 +5911,46 @@
             </button>
         </div>
         <div class="pages-list" id="pages-list"></div>
+    </div>
+
+    <div class="modal-overlay" id="modal-calendar">
+        <div class="modal calendar-modal">
+            <div class="calendar-modal-head">
+                <h2>Calendar</h2>
+                <button class="panel-close" id="calendar-modal-close" type="button" aria-label="Close calendar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="calendar-toolbar">
+                <div class="calendar-toolbar-group">
+                    <button class="btn btn-secondary btn-icon-square" id="calendar-prev" type="button" title="Previous month" aria-label="Previous month">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                    </button>
+                    <div class="calendar-title" id="calendar-title">Calendar</div>
+                    <button class="btn btn-secondary btn-icon-square" id="calendar-next" type="button" title="Next month" aria-label="Next month">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="calendar-toolbar-group">
+                    <button class="btn btn-secondary" id="calendar-today" type="button">Today</button>
+                    <button class="btn btn-secondary" id="calendar-refresh" type="button">Refresh</button>
+                </div>
+            </div>
+            <div class="calendar-loading hidden" id="calendar-loading">
+                <div class="mini-spinner" aria-hidden="true"></div>
+                <span>Loading events...</span>
+            </div>
+            <div class="calendar-error hidden" id="calendar-error"></div>
+            <div class="calendar-empty hidden" id="calendar-empty">No events in this month.</div>
+            <div class="calendar-grid" id="calendar-grid" aria-live="polite"></div>
+        </div>
     </div>
 
     <div id="loading-overlay">
@@ -6163,6 +6418,8 @@
         });
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+        const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+        const GOOGLE_API_SCOPE = `${DRIVE_SCOPE} ${CALENDAR_SCOPE}`;
         const DRIVE_FOLDER_NAME = 'Inhouse Notes';
         const DRIVE_QUICK_ACCESS_DOCS = Object.freeze({
             diary: { label: 'Diary', folderName: 'Diary', filePrefix: 'Diary' },
@@ -6847,6 +7104,18 @@
         const coverPreviewImage = document.getElementById('cover-preview-image');
         const coverPreviewEmpty = document.getElementById('cover-preview-empty');
         const coverLayoutModeInputs = Array.from(document.querySelectorAll('input[name="cover-layout-mode"]'));
+        const openCalendarBtn = document.getElementById('btn-open-calendar');
+        const calendarModal = document.getElementById('modal-calendar');
+        const calendarModalClose = document.getElementById('calendar-modal-close');
+        const calendarPrevBtn = document.getElementById('calendar-prev');
+        const calendarNextBtn = document.getElementById('calendar-next');
+        const calendarTodayBtn = document.getElementById('calendar-today');
+        const calendarRefreshBtn = document.getElementById('calendar-refresh');
+        const calendarTitleEl = document.getElementById('calendar-title');
+        const calendarGridEl = document.getElementById('calendar-grid');
+        const calendarLoadingEl = document.getElementById('calendar-loading');
+        const calendarErrorEl = document.getElementById('calendar-error');
+        const calendarEmptyEl = document.getElementById('calendar-empty');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
@@ -9855,6 +10124,7 @@
             driveTokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: GOOGLE_CLIENT_ID,
                 scope: DRIVE_SCOPE,
+                include_granted_scopes: true,
                 callback: () => { },
                 error_callback: (err) => {
                     console.warn('Google popup auth failed:', err);
@@ -9914,7 +10184,7 @@
             authUrl.searchParams.set('client_id', ANDROID_OAUTH_CLIENT_ID);
             authUrl.searchParams.set('redirect_uri', ANDROID_PKCE_REDIRECT_URI);
             authUrl.searchParams.set('response_type', 'code');
-            authUrl.searchParams.set('scope', DRIVE_SCOPE);
+            authUrl.searchParams.set('scope', GOOGLE_API_SCOPE);
             authUrl.searchParams.set('access_type', 'offline');
             authUrl.searchParams.set('include_granted_scopes', 'true');
             authUrl.searchParams.set('code_challenge', challenge);
@@ -10023,7 +10293,7 @@
             authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
             authUrl.searchParams.set('redirect_uri', getDriveRedirectUri());
             authUrl.searchParams.set('response_type', 'token');
-            authUrl.searchParams.set('scope', DRIVE_SCOPE);
+            authUrl.searchParams.set('scope', GOOGLE_API_SCOPE);
             authUrl.searchParams.set('include_granted_scopes', 'true');
             authUrl.searchParams.set('state', 'inhouse_notes_app');
             try {
@@ -16133,6 +16403,17 @@
             document.getElementById('btn-edit-pages').addEventListener('click', openPagesPanel);
             document.getElementById('panel-close').addEventListener('click', closePagesPanel);
             document.getElementById('panel-overlay').addEventListener('click', closePagesPanel);
+            if (openCalendarBtn) openCalendarBtn.addEventListener('click', openCalendarModal);
+            if (calendarModalClose) calendarModalClose.addEventListener('click', closeCalendarModal);
+            if (calendarModal) {
+                calendarModal.addEventListener('click', (e) => {
+                    if (e.target === calendarModal) closeCalendarModal();
+                });
+            }
+            if (calendarPrevBtn) calendarPrevBtn.addEventListener('click', () => shiftCalendarMonth(-1));
+            if (calendarNextBtn) calendarNextBtn.addEventListener('click', () => shiftCalendarMonth(1));
+            if (calendarTodayBtn) calendarTodayBtn.addEventListener('click', jumpCalendarToToday);
+            if (calendarRefreshBtn) calendarRefreshBtn.addEventListener('click', loadCalendarEventsForVisibleMonth);
             if (setCoverBtn) {
                 setCoverBtn.addEventListener('click', openCoverModal);
             }
@@ -17116,6 +17397,248 @@
         function setZoom(newZoom) {
             state.zoom = Math.max(0.5, Math.min(3, newZoom));
             updateTransform();
+        }
+
+        let calendarVisibleMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        let calendarEvents = [];
+
+        function openCalendarModal() {
+            if (!calendarModal) return;
+            calendarVisibleMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+            calendarModal.classList.add('visible');
+            renderCalendarMonth();
+            loadCalendarEventsForVisibleMonth();
+        }
+
+        function closeCalendarModal() {
+            if (calendarModal) calendarModal.classList.remove('visible');
+        }
+
+        function shiftCalendarMonth(delta) {
+            calendarVisibleMonth = new Date(calendarVisibleMonth.getFullYear(), calendarVisibleMonth.getMonth() + delta, 1);
+            renderCalendarMonth();
+            loadCalendarEventsForVisibleMonth();
+        }
+
+        function jumpCalendarToToday() {
+            calendarVisibleMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+            renderCalendarMonth();
+            loadCalendarEventsForVisibleMonth();
+        }
+
+        function getCalendarGridRange(monthDate) {
+            const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+            const mondayOffset = (first.getDay() + 6) % 7;
+            const start = new Date(first);
+            start.setDate(first.getDate() - mondayOffset);
+            const end = new Date(start);
+            end.setDate(start.getDate() + 42);
+            return { start, end };
+        }
+
+        function formatCalendarDateKey(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function parseGoogleEventDate(value) {
+            if (!value) return null;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                const [y, m, d] = value.split('-').map(Number);
+                return new Date(y, m - 1, d);
+            }
+            return new Date(value);
+        }
+
+        function buildCalendarEventMap(events) {
+            const byDay = new Map();
+            for (const event of events || []) {
+                const startValue = event?.start?.dateTime || event?.start?.date;
+                if (!startValue) continue;
+                const start = parseGoogleEventDate(startValue);
+                if (!start || Number.isNaN(start.getTime())) continue;
+                const key = formatCalendarDateKey(start);
+                if (!byDay.has(key)) byDay.set(key, []);
+                byDay.get(key).push(event);
+            }
+            for (const dayEvents of byDay.values()) {
+                dayEvents.sort((a, b) => {
+                    const aStart = parseGoogleEventDate(a?.start?.dateTime || a?.start?.date);
+                    const bStart = parseGoogleEventDate(b?.start?.dateTime || b?.start?.date);
+                    return (aStart?.getTime() || 0) - (bStart?.getTime() || 0);
+                });
+            }
+            return byDay;
+        }
+
+        function formatCalendarEventTime(event) {
+            if (event?.start?.date) return 'All day';
+            const start = parseGoogleEventDate(event?.start?.dateTime);
+            if (!start || Number.isNaN(start.getTime())) return '';
+            return start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderCalendarMonth() {
+            if (!calendarGridEl || !calendarTitleEl) return;
+            const todayKey = formatCalendarDateKey(new Date());
+            const { start } = getCalendarGridRange(calendarVisibleMonth);
+            const eventMap = buildCalendarEventMap(calendarEvents);
+            calendarTitleEl.textContent = calendarVisibleMonth.toLocaleDateString([], {
+                month: 'long',
+                year: 'numeric'
+            });
+            const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            calendarGridEl.innerHTML = weekdays.map(day => `<div class="calendar-weekday">${day}</div>`).join('');
+            for (let i = 0; i < 42; i++) {
+                const day = new Date(start);
+                day.setDate(start.getDate() + i);
+                const key = formatCalendarDateKey(day);
+                const dayEvents = eventMap.get(key) || [];
+                const cell = document.createElement('div');
+                cell.className = 'calendar-day';
+                if (day.getMonth() !== calendarVisibleMonth.getMonth()) cell.classList.add('muted');
+                if (key === todayKey) cell.classList.add('today');
+                const number = document.createElement('div');
+                number.className = 'calendar-day-number';
+                number.textContent = String(day.getDate());
+                cell.appendChild(number);
+                dayEvents.slice(0, 3).forEach(event => {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'calendar-event';
+                    item.title = event.summary || '(No title)';
+                    const time = document.createElement('span');
+                    time.className = 'calendar-event-time';
+                    time.textContent = formatCalendarEventTime(event);
+                    const title = document.createElement('span');
+                    title.className = 'calendar-event-title';
+                    title.textContent = event.summary || '(No title)';
+                    item.append(time, title);
+                    cell.appendChild(item);
+                });
+                if (dayEvents.length > 3) {
+                    const more = document.createElement('div');
+                    more.className = 'calendar-more';
+                    more.textContent = `+${dayEvents.length - 3} more`;
+                    cell.appendChild(more);
+                }
+                calendarGridEl.appendChild(cell);
+            }
+            if (calendarEmptyEl) {
+                calendarEmptyEl.classList.toggle('hidden', (calendarEvents || []).length > 0);
+            }
+        }
+
+        async function forceGoogleTokenConsent() {
+            if (useAndroidPkceFlow()) {
+                try { localStorage.removeItem('drive-consent-granted'); } catch (err) {}
+                startAndroidPkceSignIn().catch(() => {});
+                throw new Error('Complete Google sign-in to enable Calendar.');
+            }
+            if (!driveTokenClient) throw new Error('Google auth is not ready.');
+            return new Promise((resolve, reject) => {
+                let settled = false;
+                let timeoutId = null;
+                const calendarTokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: GOOGLE_CLIENT_ID,
+                    scope: GOOGLE_API_SCOPE,
+                    include_granted_scopes: true,
+                    callback: () => { },
+                    error_callback: (err) => {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timeoutId);
+                        reject(err instanceof Error ? err : new Error(err?.message || 'Google sign-in failed.'));
+                    }
+                });
+                timeoutId = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    reject(new Error('Google sign-in timed out.'));
+                }, 60000);
+                calendarTokenClient.callback = (resp) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    if (resp.error) {
+                        reject(new Error(resp.error));
+                        return;
+                    }
+                    driveSignedOut = false;
+                    driveAuthNeedsReconnect = false;
+                    driveAccessToken = resp.access_token;
+                    driveTokenExpiry = Date.now() + (resp.expires_in || 3600) * 1000;
+                    saveDriveTokenToStorage(driveAccessToken, driveTokenExpiry);
+                    try { localStorage.setItem('drive-consent-granted', '1'); } catch (err) {}
+                    scheduleDriveTokenRefresh();
+                    updateDriveAuthUI();
+                    resolve(driveAccessToken);
+                };
+                const reqOptions = { prompt: 'consent' };
+                let email = driveUserProfile?.email || '';
+                try { email = email || localStorage.getItem('drive-hint-email') || ''; } catch (err) {}
+                if (email) reqOptions.login_hint = email;
+                calendarTokenClient.requestAccessToken(reqOptions);
+            });
+        }
+
+        async function calendarFetch(url, options = {}, retried = false) {
+            let token = null;
+            try {
+                token = await ensureDriveToken(false);
+            } catch (err) {
+                token = await forceGoogleTokenConsent();
+            }
+            const headers = new Headers(options.headers || {});
+            headers.set('Authorization', `Bearer ${token}`);
+            const res = await fetch(url, { ...options, headers });
+            if ((res.status === 401 || res.status === 403) && !retried) {
+                if (res.status === 401) {
+                    driveAccessToken = null;
+                    driveTokenExpiry = 0;
+                }
+                await forceGoogleTokenConsent();
+                return calendarFetch(url, options, true);
+            }
+            if (!res.ok) {
+                const message = await res.text().catch(() => '');
+                throw new Error(`Calendar API error ${res.status}: ${message}`);
+            }
+            return res;
+        }
+
+        async function loadCalendarEventsForVisibleMonth() {
+            if (!calendarModal?.classList.contains('visible')) return;
+            if (calendarLoadingEl) calendarLoadingEl.classList.remove('hidden');
+            if (calendarErrorEl) {
+                calendarErrorEl.classList.add('hidden');
+                calendarErrorEl.textContent = '';
+            }
+            try {
+                const { start, end } = getCalendarGridRange(calendarVisibleMonth);
+                const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+                url.searchParams.set('timeMin', start.toISOString());
+                url.searchParams.set('timeMax', end.toISOString());
+                url.searchParams.set('singleEvents', 'true');
+                url.searchParams.set('orderBy', 'startTime');
+                url.searchParams.set('maxResults', '2500');
+                const res = await calendarFetch(url.toString());
+                const data = await res.json();
+                calendarEvents = Array.isArray(data.items) ? data.items : [];
+                renderCalendarMonth();
+            } catch (err) {
+                console.error('Calendar load failed:', err);
+                calendarEvents = [];
+                renderCalendarMonth();
+                if (calendarErrorEl) {
+                    calendarErrorEl.textContent = err?.message || 'Could not load calendar events.';
+                    calendarErrorEl.classList.remove('hidden');
+                }
+            } finally {
+                if (calendarLoadingEl) calendarLoadingEl.classList.add('hidden');
+            }
         }
 
         // Pages Panel
