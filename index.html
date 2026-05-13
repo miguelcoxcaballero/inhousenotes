@@ -1316,6 +1316,7 @@
             color: #2a1d14;
             flex-shrink: 0;
             animation: sidePanelIn 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+            overscroll-behavior: contain;
         }
 
         @keyframes sidePanelIn {
@@ -1403,6 +1404,8 @@
             color: #2a1d14;
             scrollbar-width: thin;
             scrollbar-color: rgba(224, 122, 60, 0.32) transparent;
+            touch-action: pan-y;
+            overscroll-behavior: contain;
         }
 
         .page-side-panel-body::-webkit-scrollbar { width: 5px; }
@@ -2836,7 +2839,23 @@
         }
 
         .calendar-day.today {
-            background: rgba(245, 200, 76, 0.16);
+            background: rgba(34, 197, 94, 0.12);
+        }
+
+        .calendar-day.today .calendar-day-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #22c55e;
+            color: #ffffff;
+            font-size: 0.76rem;
+        }
+
+        [data-theme="dark"] .calendar-day.today {
+            background: rgba(34, 197, 94, 0.18);
         }
 
         .calendar-day.selected {
@@ -6648,6 +6667,10 @@
                     </div>
                 </div>
                 <label class="calendar-pages-check">
+                    <input id="calendar-pages-fill-end" type="checkbox" checked>
+                    Rellenar hasta el final del documento
+                </label>
+                <label class="calendar-pages-check">
                     <input id="calendar-pages-clear" type="checkbox" checked>
                     Replace previous calendar cards
                 </label>
@@ -7771,7 +7794,8 @@
             collabEnabled: false,
             collabPollInterval: null,
             cleanOriginalPdfBytes: null,
-            cleanOriginalPageSizes: null
+            cleanOriginalPageSizes: null,
+            calendarPageConfig: null
         };
 
         // DOM Elements
@@ -7899,6 +7923,7 @@
         const calendarPagesFont = document.getElementById('calendar-pages-font');
         const calendarPagesWidth = document.getElementById('calendar-pages-width');
         const calendarPagesClear = document.getElementById('calendar-pages-clear');
+        const calendarPagesFillEnd = document.getElementById('calendar-pages-fill-end');
         const calendarPagesSummary = document.getElementById('calendar-pages-summary');
         let overscrollResetTimeout = null;
         let wheelReleaseTimeout = null;
@@ -8614,6 +8639,9 @@
             scheduleVisiblePageUpdate(true);
             scheduleSave(true, pageIndex);
             showStatus('Page added', { preserveState: true });
+            if (state.calendarPageConfig && !state.isReadOnly) {
+                spAutoAttachCalendarPanel(pageIndex).catch(err => console.warn('Auto-attach calendar panel failed:', err));
+            }
         }
 
         // Create page DOM element shell (canvases are lazy-loaded)
@@ -17280,10 +17308,16 @@
                     if (e.target === calendarPagesModal) closeCalendarPagesModal();
                 });
             }
-            [calendarPagesMode, calendarPagesStartPage, calendarPagesStartDate, calendarPagesCount].forEach(el => {
+            [calendarPagesMode, calendarPagesStartPage, calendarPagesStartDate, calendarPagesCount, calendarPagesFillEnd].forEach(el => {
                 if (el) el.addEventListener('input', updateCalendarPagesSummary);
                 if (el) el.addEventListener('change', updateCalendarPagesSummary);
             });
+            if (calendarPagesFillEnd) {
+                calendarPagesFillEnd.addEventListener('change', () => {
+                    if (calendarPagesCount) calendarPagesCount.disabled = !!calendarPagesFillEnd.checked;
+                    updateCalendarPagesSummary();
+                });
+            }
             if (setCoverBtn) {
                 setCoverBtn.addEventListener('click', openCoverModal);
             }
@@ -17435,8 +17469,12 @@
                         pollDriveRevision();
                         scheduleCollabFastCatchup();
                     }
+                    spStartAutoSync();
+                } else {
+                    spStopAutoSync();
                 }
             });
+            spStartAutoSync();
         }
 
         function isFullscreenActive() {
@@ -17929,6 +17967,19 @@
 
         // Wheel handler for PC - scroll and zoom
         function handleWheel(e) {
+            // If the pointer is inside a scrollable panel (side panel, modal body),
+            // let the element handle its own scroll rather than panning the viewport.
+            if (e.target && e.target.closest) {
+                const scrollEl = e.target.closest('.page-side-panel-body, .calendar-day-events, .sp-event-form, .modal');
+                if (scrollEl) {
+                    const dy = e.deltaY;
+                    if (dy !== 0) {
+                        const canScrollUp = scrollEl.scrollTop > 0;
+                        const canScrollDown = scrollEl.scrollTop < scrollEl.scrollHeight - scrollEl.clientHeight - 1;
+                        if ((dy < 0 && canScrollUp) || (dy > 0 && canScrollDown)) return;
+                    }
+                }
+            }
             e.preventDefault();
             // If processing is running, prioritize fluidity and interrupt immediately.
             interruptProcessingForUserInput();
@@ -17984,6 +18035,10 @@
                     e.stopPropagation();
                 }
                 return;
+            }
+            // Don't initiate viewport pan when touching inside a side panel or modal
+            if (e.target && e.target.closest) {
+                if (e.target.closest('.page-side-panel, .modal-overlay')) return;
             }
             // Mouse/touch on canvas with drawing tool → let canvas handle it
             if (e.target && e.target.closest && e.target.closest('canvas.page-canvas')) {
@@ -18278,13 +18333,19 @@
 
         function openCalendarModal() {
             if (!calendarModal) return;
-            calendarVisibleMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-            calendarSelectedDateKey = formatCalendarDateKey(new Date());
+            const now = new Date();
+            calendarVisibleMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            calendarSelectedDateKey = formatCalendarDateKey(now);
             applyCachedCalendarEventsForVisibleMonth();
             calendarModal.classList.add('visible');
             renderCalendarMonth();
             loadCalendarEventsForVisibleMonth();
             prefetchNeighborCalendarMonths();
+            // Scroll today's cell into view
+            requestAnimationFrame(() => {
+                const todayCell = calendarGridEl && calendarGridEl.querySelector('.calendar-day.today');
+                if (todayCell) todayCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            });
         }
 
         function closeCalendarModal() {
@@ -18306,6 +18367,9 @@
             }
             if (calendarPagesMode && !calendarPagesMode.value) calendarPagesMode.value = 'day';
             if (calendarPagesCount && !calendarPagesCount.value) calendarPagesCount.value = calendarPagesMode?.value === 'week' ? '4' : '7';
+            if (calendarPagesFillEnd) {
+                if (calendarPagesCount) calendarPagesCount.disabled = !!calendarPagesFillEnd.checked;
+            }
             updateCalendarPagesSummary();
             calendarPagesModal.classList.add('visible');
         }
@@ -18331,10 +18395,14 @@
             if (!calendarPagesSummary) return;
             const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
             const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1);
-            const count = Math.max(1, parseInt(calendarPagesCount?.value || '1', 10) || 1);
+            const fillEnd = !!(calendarPagesFillEnd && calendarPagesFillEnd.checked);
+            const count = fillEnd
+                ? Math.max(1, state.pages.length - startPage + 1)
+                : Math.max(1, parseInt(calendarPagesCount?.value || '1', 10) || 1);
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const lastDate = addCalendarDays(startDate, mode === 'week' ? (count * 7 - 1) : (count - 1));
-            calendarPagesSummary.textContent = `${count} page${count === 1 ? '' : 's'} from page ${startPage}, covering ${startDate.toLocaleDateString()} to ${lastDate.toLocaleDateString()}. Events will be placed on the right side.`;
+            const suffix = fillEnd ? ' (hasta el final del doc)' : '';
+            calendarPagesSummary.textContent = `${count} página${count === 1 ? '' : 's'} desde pág. ${startPage}${suffix}, cubriendo ${startDate.toLocaleDateString()} – ${lastDate.toLocaleDateString()}. Aparece a la derecha de cada página.`;
         }
 
         function shiftCalendarMonth(delta) {
@@ -18731,21 +18799,25 @@
             const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1) - 1;
-            const pageCount = Math.max(1, Math.min(60, parseInt(calendarPagesCount?.value || '1', 10) || 1));
+            const fillEnd = !!(calendarPagesFillEnd && calendarPagesFillEnd.checked);
+            const pageCount = fillEnd
+                ? Math.max(1, state.pages.length - startPage)
+                : Math.max(1, parseInt(calendarPagesCount?.value || '1', 10) || 1);
             const lastPage = startPage + pageCount - 1;
-            if (startPage < 0 || startPage >= state.pages.length || lastPage >= state.pages.length) {
+            if (startPage < 0 || startPage >= state.pages.length) {
                 showStatus('Target pages are outside this document', { error: true, preserveState: true });
                 return;
             }
+            const effectiveCount = Math.min(pageCount, state.pages.length - startPage);
             closeCalendarPagesModal();
             showLoading('Adding calendar events...');
             try {
-                const totalDays = mode === 'week' ? pageCount * 7 : pageCount;
+                const totalDays = mode === 'week' ? effectiveCount * 7 : effectiveCount;
                 const endDate = addCalendarDays(startDate, totalDays - 1);
                 const eventsByDay = await getCalendarEventsForDateRange(startDate, endDate);
                 await ensureAllPagesLoadedForStructureChange();
                 let added = 0;
-                for (let i = 0; i < pageCount; i++) {
+                for (let i = 0; i < effectiveCount; i++) {
                     const pageIndex = startPage + i;
                     const page = state.pages[pageIndex];
                     if (!page) continue;
@@ -18782,6 +18854,9 @@
                     added += 1;
                     if ((i + 1) % 4 === 0) await yieldToMainThread();
                 }
+                const nextDayOffset = mode === 'week' ? effectiveCount * 7 : effectiveCount;
+                const nextDate = addCalendarDays(startDate, nextDayOffset);
+                state.calendarPageConfig = { mode, nextDateKey: formatCalendarDateKey(nextDate) };
                 scheduleSave(true);
                 showStatus(`Calendario añadido a ${added} página${added === 1 ? '' : 's'}`, { preserveState: true });
             } catch (err) {
@@ -19194,6 +19269,93 @@
                 spEventSaveBtn.disabled = false;
                 spEventDeleteBtn.disabled = false;
             }
+        }
+
+        async function spAutoAttachCalendarPanel(pageIndex) {
+            if (!state.calendarPageConfig) return;
+            const { mode, nextDateKey } = state.calendarPageConfig;
+            const page = state.pages[pageIndex];
+            if (!page || page.sidePanel) return;
+            const date = dateFromCalendarKey(nextDateKey);
+            if (!date || Number.isNaN(date.getTime())) return;
+            const sections = [];
+            if (mode === 'week') {
+                for (let d = 0; d < 7; d++) {
+                    const day = addCalendarDays(date, d);
+                    const key = formatCalendarDateKey(day);
+                    sections.push({
+                        dateKey: key,
+                        label: day.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
+                        events: []
+                    });
+                }
+            } else {
+                sections.push({
+                    dateKey: nextDateKey,
+                    label: date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }),
+                    events: []
+                });
+            }
+            const title = mode === 'week'
+                ? `Semana del ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                : date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+            const dateKeys = sections.map(s => s.dateKey);
+            const nextAdvance = mode === 'week' ? 7 : 1;
+            state.calendarPageConfig.nextDateKey = formatCalendarDateKey(addCalendarDays(date, nextAdvance));
+            page.sidePanel = { title, html: buildSidePanelHtml(sections), dateKeys };
+            renderPageSidePanel(pageIndex, page.sidePanel);
+            markPageDirty(pageIndex, 'meta');
+            scheduleSave(false);
+            const monthKey = getCalendarMonthKey(date);
+            const monthDate = new Date(date.getFullYear(), date.getMonth(), 1);
+            fetchCalendarEventsForMonth(monthDate, {}).then(() => {
+                spRefreshPanelsForKeys(new Set(dateKeys));
+            }).catch(() => {});
+        }
+
+        async function spSyncAllPanels() {
+            const allDateKeys = new Set();
+            for (const page of state.pages) {
+                if (!page || !page.sidePanel || !Array.isArray(page.sidePanel.dateKeys)) continue;
+                for (const k of page.sidePanel.dateKeys) allDateKeys.add(k);
+            }
+            if (allDateKeys.size === 0) return;
+            const monthKeys = new Set();
+            for (const k of allDateKeys) {
+                const d = dateFromCalendarKey(k);
+                if (d && !Number.isNaN(d.getTime())) monthKeys.add(getCalendarMonthKey(d));
+            }
+            const prevSnapshots = new Map();
+            for (const mk of monthKeys) prevSnapshots.set(mk, JSON.stringify(calendarEventsCache.get(mk) || []));
+            for (const mk of monthKeys) {
+                calendarEventsCache.delete(mk);
+                calendarEventsInFlight.delete(mk);
+            }
+            await Promise.all(Array.from(monthKeys).map(mk => {
+                const [y, m] = mk.split('-').map(Number);
+                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1)).catch(() => []);
+            }));
+            let changed = false;
+            for (const mk of monthKeys) {
+                const after = JSON.stringify(calendarEventsCache.get(mk) || []);
+                if (after !== prevSnapshots.get(mk)) { changed = true; break; }
+            }
+            if (changed) await spRefreshPanelsForKeys(allDateKeys);
+        }
+
+        let spSyncInterval = null;
+        function spStartAutoSync() {
+            if (spSyncInterval) return;
+            spSyncInterval = setInterval(() => {
+                if (state.isReadOnly || driveSignedOut) return;
+                const hasAnyPanel = state.pages.some(p => p && p.sidePanel && Array.isArray(p.sidePanel.dateKeys) && p.sidePanel.dateKeys.length > 0);
+                if (!hasAnyPanel) return;
+                spSyncAllPanels().catch(() => {});
+            }, 5000);
+        }
+
+        function spStopAutoSync() {
+            if (spSyncInterval) { clearInterval(spSyncInterval); spSyncInterval = null; }
         }
 
         if (spEventAllDayInput) spEventAllDayInput.addEventListener('change', spApplyAllDayUI);
