@@ -342,7 +342,8 @@
         .presence-save-ring.uploading,
         .presence-save-ring.syncing {
             opacity: 1;
-            animation: presence-save-spin 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            animation: presence-save-spin var(--presence-ring-duration, 1080ms) linear infinite;
+            animation-delay: var(--presence-ring-delay, 0ms);
             filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18));
             will-change: transform, opacity;
         }
@@ -397,16 +398,12 @@
         }
 
         @keyframes presence-save-spin {
-            0% {
-                transform: translateZ(0) rotate(0deg) scale(1);
-            }
-
-            45% {
-                transform: translateZ(0) rotate(176deg) scale(0.985);
+            from {
+                transform: translateZ(0) rotate(0turn);
             }
 
             to {
-                transform: translateZ(0) rotate(360deg) scale(1);
+                transform: translateZ(0) rotate(1turn);
             }
         }
 
@@ -18757,6 +18754,17 @@
             });
         }
 
+        async function clearPageDataStoreOnly() {
+            const db = await openNotebookDb();
+            if (!db) return false;
+            return new Promise((resolve) => {
+                const tx = db.transaction(PAGE_STORE, 'readwrite');
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
+                tx.objectStore(PAGE_STORE).clear();
+            });
+        }
+
         async function reindexPagesAfterDelete(startIndex, totalPages) {
             const db = await openNotebookDb();
             if (!db) return false;
@@ -19109,6 +19117,14 @@
                 .sort((a, b) => a - b);
             for (const index of indices) {
                 await ensurePageDataLoaded(index, { keepLoaded: true });
+            }
+            for (const index of indices) {
+                if (!pendingStrokeOps.has(index)) continue;
+                pageDirty.add(index);
+                pageDirtyMode.set(index, 'full');
+            }
+            if (indices.length > 0) {
+                await flushDirtyPages({ force: true });
             }
         }
 
@@ -20489,6 +20505,31 @@
             return res.json();
         }
 
+        function hasRemoteActiveSaveSignal(now = Date.now()) {
+            return (latestPresenceUsers || []).some(user => {
+                if (isOwnPresenceRecord(user)) return false;
+                const phase = getPresenceVisibleSavePhase(user, now);
+                return phase === 'processing' || phase === 'uploading' || phase === 'syncing';
+            });
+        }
+
+        async function waitForRemoteSaveQuietBeforeUpload(fileId, controller, timeoutMs = 2600) {
+            if (!fileId || !hasRemoteActiveSaveSignal()) return false;
+            const start = Date.now();
+            let waited = false;
+            recordSaveDebug('Remote device is saving; waiting before upload');
+            while (hasRemoteActiveSaveSignal() && Date.now() - start < timeoutMs) {
+                if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
+                waited = true;
+                await new Promise(resolve => setTimeout(resolve, 220));
+            }
+            if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
+            if (waited) {
+                recordSaveDebug('Remote save wait finished; rechecking revision');
+            }
+            return waited;
+        }
+
         async function mergeLatestRemoteBeforeDriveUpload(fileId, controller, label = 'Checking remote revision') {
             if (!fileId || !state.driveFileId || state.driveFileId !== fileId) {
                 return { changed: false, hasLocalMerges: false };
@@ -20689,6 +20730,7 @@
                         if (controller.signal.aborted) {
                             throw new Error('Drive save aborted');
                         }
+                        await waitForRemoteSaveQuietBeforeUpload(fileId, controller);
                         const latestMerge = await mergeLatestRemoteBeforeDriveUpload(
                             fileId,
                             controller,
@@ -21105,6 +21147,7 @@
         const PRESENCE_SAVE_ACTIVE_MS = 6500;
         const PRESENCE_SAVE_DONE_MS = 2200;
         const PRESENCE_PROCESSING_MIN_VISIBLE_MS = 900;
+        const PRESENCE_RING_SPIN_MS = 1080;
         const PRESENCE_ACTIVE_PHASES = new Set(['processing', 'uploading']);
         let presenceSavePhase = '';
         let presenceSavePhaseAt = 0;
@@ -21708,6 +21751,13 @@
                 if (savePhase) {
                     const ring = document.createElement('span');
                     ring.className = `presence-save-ring ${savePhase}`;
+                    if (savePhase !== 'saved') {
+                        const nowMs = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+                            ? performance.now()
+                            : Date.now();
+                        const phaseOffset = -(nowMs % PRESENCE_RING_SPIN_MS);
+                        ring.style.setProperty('--presence-ring-delay', `${phaseOffset}ms`);
+                    }
                     wrapper.appendChild(ring);
                 }
 
@@ -22415,6 +22465,16 @@
                             }
                         }
                     }
+                    const oldIndexToNewIndex = new Map();
+                    newPagesOrder.forEach((page, newIdx) => {
+                        let oldIdx = -1;
+                        if (page?.pageId && localById.has(page.pageId)) {
+                            oldIdx = localById.get(page.pageId).oldIdx;
+                        } else {
+                            oldIdx = state.pages.indexOf(page);
+                        }
+                        if (oldIdx >= 0) oldIndexToNewIndex.set(oldIdx, newIdx);
+                    });
                     state.pages = newPagesOrder;
                     structureChanged = true;
                     changed = true;
@@ -22427,12 +22487,40 @@
                             lastSyncedStrokeIds.set(newIdx, baselineByPageId.get(page.pageId));
                         }
                     });
-                    pageDirty.clear();
-                    pageDirtyMode.clear();
-                    pageAccess.clear();
+                    const remapIndexSet = (set) => {
+                        const next = new Set();
+                        set.forEach(index => {
+                            const newIdx = oldIndexToNewIndex.get(index);
+                            if (Number.isFinite(newIdx)) next.add(newIdx);
+                        });
+                        set.clear();
+                        next.forEach(index => set.add(index));
+                    };
+                    const remapIndexMap = (map, mergeValues = null) => {
+                        const next = new Map();
+                        map.forEach((value, index) => {
+                            const newIdx = oldIndexToNewIndex.get(index);
+                            if (!Number.isFinite(newIdx)) return;
+                            if (mergeValues && next.has(newIdx)) {
+                                next.set(newIdx, mergeValues(next.get(newIdx), value));
+                            } else {
+                                next.set(newIdx, value);
+                            }
+                        });
+                        map.clear();
+                        next.forEach((value, index) => map.set(index, value));
+                    };
+                    remapIndexSet(pageDirty);
+                    remapIndexMap(pageDirtyMode, (a, b) => (a === 'full' || b === 'full') ? 'full' : 'stroke');
+                    remapIndexMap(pendingStrokeOps, (a, b) => [...(a || []), ...(b || [])]);
+                    for (const op of strokeOpsQueue) {
+                        const newIdx = oldIndexToNewIndex.get(op?.pageIndex);
+                        if (Number.isFinite(newIdx)) op.pageIndex = newIdx;
+                    }
+                    remapIndexMap(pageAccess);
                     pageLoadQueue.clear();
-                    activePageIndices.clear();
-                    desiredActivePageIndices.clear();
+                    remapIndexSet(activePageIndices);
+                    remapIndexSet(desiredActivePageIndices);
                     pendingPageActivations.clear();
                     cancelPageActivationScheduler();
                     pdfBackgroundCache.clear();
@@ -22440,8 +22528,10 @@
                     pdfLibOverlayCache.clear();
 
                     // Persist new page order to IDB so background-loaded reads
-                    // don't fetch stale data at the old indices.
-                    try { await clearPageStore(); } catch (e) {}
+                    // don't fetch stale data at the old indices. Do not clear
+                    // OPS_STORE here: stroke ops are local intent and must not
+                    // be discarded by a remote page-order pull.
+                    try { await clearPageDataStoreOnly(); } catch (e) {}
                     for (let i = 0; i < state.pages.length; i++) {
                         await savePageToIndexedDb(i, state.pages[i]);
                     }
@@ -22565,7 +22655,6 @@
 
                 // Infer local deletions from the last synced baseline.
                 // This prevents remote pull from resurrecting content removed locally (e.g. undo/delete).
-                const hasSyncedBaseline = lastSyncedStrokeIds.has(i);
                 const syncedIds = lastSyncedStrokeIds.get(i) || new Set();
                 const localDeletedSinceBaseline = new Set();
                 for (const syncedId of syncedIds) {
@@ -22573,11 +22662,6 @@
                         localDeletedSinceBaseline.add(syncedId);
                     }
                 }
-                const shouldKeepLocalOnlyContent = (id) => (
-                    preserveLocalUnsynced
-                    || (hasSyncedBaseline && id && !syncedIds.has(id))
-                );
-
                 const localDeletionSet = preserveLocalUnsynced
                     ? new Set([...localDeleted, ...localDeletedSinceBaseline])
                     : new Set();
@@ -22603,8 +22687,12 @@
                 const structuralIdentityChanged = remoteBgSrcEarly !== localBgSrcEarly || remoteTplKindEarly !== localTplKindEarly;
 
                 // Additive merge with conflict resolution:
-                // if an item with the same ID differs, prefer local so in-device transforms
-                // are never overwritten by stale remote pulls.
+                // Missing from the remote snapshot does NOT mean deleted. With
+                // two devices uploading whole PDFs, the newer snapshot may have
+                // been built from an older baseline. Only explicit tombstones
+                // in deletedStrokeIds are allowed to remove local content.
+                // If an item with the same ID differs, prefer local only while
+                // explicitly merging pending local work.
                 const mergedStrokes = [];
                 let localStrokeConflictCount = 0;
                 const localOnlyStrokes = structuralIdentityChanged
@@ -22613,7 +22701,6 @@
                         s?.id
                         && !remoteStrokeIds.has(s.id)
                         && !allDeleted.has(s.id)
-                        && shouldKeepLocalOnlyContent(s.id)
                     ));
                 for (const remoteStroke of remoteStrokes) {
                     if (!remoteStroke?.id || allDeleted.has(remoteStroke.id)) continue;
@@ -22639,7 +22726,6 @@
                         img?.id
                         && !remoteImageIds.has(img.id)
                         && !allDeleted.has(img.id)
-                        && shouldKeepLocalOnlyContent(img.id)
                     ));
                 for (const remoteImage of remoteImages) {
                     if (!remoteImage?.id || allDeleted.has(remoteImage.id)) continue;
@@ -24364,11 +24450,11 @@
         }
 
         function computePageHash(pageData) {
-            const strokeIds = Array.isArray(pageData.strokes)
-                ? pageData.strokes.map(s => s.id || '').join(',')
+            const strokeSig = Array.isArray(pageData.strokes)
+                ? pageData.strokes.map(s => strokeSyncFingerprint(s)).join(',')
                 : '';
-            const imageIds = Array.isArray(pageData.images)
-                ? pageData.images.map(img => img.id || img.src || '').join(',')
+            const imageSig = Array.isArray(pageData.images)
+                ? pageData.images.map(img => imageSyncFingerprint(img)).join(',')
                 : '';
             const deletedIds = Array.isArray(pageData.deletedStrokeIds)
                 ? pageData.deletedStrokeIds.filter(Boolean).join(',')
@@ -24380,7 +24466,7 @@
                 : '';
             const pageW = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
             const pageH = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
-            return `${strokeIds}|${imageIds}|${deletedIds}|${bg}|${pdfIdx}|${bgRef}|${pageW}x${pageH}|${pageData.strokes?.length || 0}`;
+            return `${strokeSig}|${imageSig}|${deletedIds}|${bg}|${pdfIdx}|${bgRef}|${pageW}x${pageH}|${pageData.strokes?.length || 0}`;
         }
 
         // Web Worker that assembles jsPDF off the main thread.
