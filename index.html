@@ -1301,9 +1301,9 @@
         /* ─── Calendar side panel (white + orange, always — independent of theme) ─── */
         .page-side-panel,
         [data-theme="dark"] .page-side-panel {
-            width: 290px;
-            min-height: 180px;
-            max-height: calc(100vh - 100px);
+            width: 270px;
+            min-height: 160px;
+            max-height: calc(100vh - 60px);
             background: #ffffff;
             border: 1px solid rgba(224, 122, 60, 0.22);
             border-radius: 12px;
@@ -1312,7 +1312,7 @@
             flex-direction: column;
             overflow: hidden;
             font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
-            font-size: 13px;
+            font-size: 11px;
             color: #2a1d14;
             flex-shrink: 0;
             animation: sidePanelIn 0.22s cubic-bezier(0.22, 1, 0.36, 1);
@@ -1397,9 +1397,9 @@
         [data-theme="dark"] .page-side-panel-body {
             flex: 1;
             overflow-y: auto;
-            padding: 12px 12px 14px;
+            padding: 6px 7px 7px;
             outline: none;
-            line-height: 1.5;
+            line-height: 1.25;
             background: #ffffff;
             color: #2a1d14;
             scrollbar-width: thin;
@@ -1407,36 +1407,61 @@
             overscroll-behavior: contain;
         }
 
-        .page-side-panel-body::-webkit-scrollbar { width: 6px; }
+        .page-side-panel-body::-webkit-scrollbar { width: 5px; }
         .page-side-panel-body::-webkit-scrollbar-thumb { background: rgba(224, 122, 60, 0.32); border-radius: 3px; }
 
         .page-side-panel-body .sp-day-section,
         [data-theme="dark"] .page-side-panel-body .sp-day-section {
-            margin-bottom: 12px;
-            border-radius: 10px;
-            padding: 9px 10px 10px;
+            margin-bottom: 5px;
+            border-radius: 6px;
+            padding: 4px 6px 5px;
             background: #fffaf5;
             border: 1px solid rgba(224, 122, 60, 0.14);
         }
 
         .page-side-panel-body .sp-day-section:last-child { margin-bottom: 0; }
 
+        /* Today's day section — green accent */
+        .page-side-panel-body .sp-day-section.today,
+        [data-theme="dark"] .page-side-panel-body .sp-day-section.today {
+            background: rgba(34, 197, 94, 0.08);
+            border-color: rgba(34, 197, 94, 0.45);
+        }
+
+        .page-side-panel-body .sp-day-section.today .sp-day-label {
+            color: #16a34a;
+        }
+
+        .page-side-panel-body .sp-day-section.today .sp-day-header {
+            border-bottom-color: rgba(34, 197, 94, 0.32);
+        }
+
+        .page-side-panel-body .sp-day-section.today .sp-add-btn {
+            background: rgba(34, 197, 94, 0.14);
+            color: #16a34a;
+        }
+
+        .page-side-panel-body .sp-day-section.today .sp-add-btn:hover {
+            background: #22c55e;
+            color: #ffffff;
+        }
+
         .page-side-panel-body .sp-day-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
-            margin-bottom: 7px;
-            padding-bottom: 6px;
+            gap: 5px;
+            margin-bottom: 3px;
+            padding-bottom: 2px;
             border-bottom: 1px solid rgba(224, 122, 60, 0.2);
         }
 
         .page-side-panel-body .sp-day-label,
         [data-theme="dark"] .page-side-panel-body .sp-day-label {
-            font-size: 11px;
+            font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.04em;
             color: #e07a3c;
             flex: 1;
             min-width: 0;
@@ -1446,9 +1471,9 @@
         }
 
         .page-side-panel-body .sp-add-btn {
-            width: 22px;
-            height: 22px;
-            border-radius: 6px;
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
             border: none;
             background: rgba(224, 122, 60, 0.12);
             color: #e07a3c;
@@ -1456,7 +1481,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 17px;
+            font-size: 13px;
             line-height: 1;
             padding: 0;
             flex-shrink: 0;
@@ -1469,59 +1494,71 @@
             transform: scale(1.06);
         }
 
+        /* In viewer/read-only mode, hide write affordances */
+        body.read-only .page-side-panel-body .sp-add-btn { display: none; }
+        body.read-only .page-side-panel-body .sp-event { cursor: default; }
+        body.read-only .page-side-panel-body .sp-event:hover {
+            background: #ffffff;
+            box-shadow: none;
+        }
+
         .page-side-panel-body .sp-events-list {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 2px;
         }
 
         .page-side-panel-body .sp-event,
         [data-theme="dark"] .page-side-panel-body .sp-event {
             display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 2px;
-            font-size: 12.5px;
-            padding: 7px 9px;
-            border-radius: 7px;
+            flex-direction: row;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 4px;
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 4px;
             background: #ffffff;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-left: 4px solid var(--sp-event-color, #e07a3c);
+            border: 1px solid rgba(0, 0, 0, 0.07);
+            border-left: 3px solid var(--sp-event-color, #e07a3c);
             color: #2a1d14;
             cursor: pointer;
             text-align: left;
             width: 100%;
             font-family: inherit;
-            transition: background 0.14s, border-color 0.14s, transform 0.14s, box-shadow 0.14s;
+            line-height: 1.2;
+            transition: background 0.14s, border-color 0.14s, box-shadow 0.14s;
         }
 
         .page-side-panel-body .sp-event:hover {
             background: #fafafa;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-            transform: translateX(1px);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
         }
 
         .page-side-panel-body .sp-event-time {
-            font-size: 10.5px;
+            font-size: 9px;
             font-weight: 700;
             color: var(--sp-event-color, #e07a3c);
-            letter-spacing: 0.03em;
+            letter-spacing: 0.02em;
+            flex-shrink: 0;
         }
 
         .page-side-panel-body .sp-event-title {
-            font-size: 12.5px;
+            font-size: 10px;
             color: #2a1d14;
             word-break: break-word;
             white-space: normal;
-            line-height: 1.35;
+            line-height: 1.2;
+            flex: 1;
+            min-width: 0;
         }
 
         .page-side-panel-body .sp-no-events,
         [data-theme="dark"] .page-side-panel-body .sp-no-events {
-            font-size: 12px;
+            font-size: 9.5px;
             color: rgba(42, 29, 20, 0.45);
             font-style: italic;
-            padding: 4px 4px;
+            padding: 1px 3px;
         }
 
         /* ─── Side-panel event editor modal (white + orange, always) ─── */
@@ -1529,11 +1566,22 @@
         [data-theme="dark"] .modal.sp-event-modal {
             background: #ffffff;
             color: #2a1d14;
-            max-width: 460px;
-            width: 92%;
+            max-width: 480px;
+            width: min(94vw, 480px);
             padding: 20px 22px;
             border: 1px solid rgba(224, 122, 60, 0.22);
             box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+            max-height: 92vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        @media (max-width: 480px) {
+            .modal.sp-event-modal,
+            [data-theme="dark"] .modal.sp-event-modal {
+                padding: 16px 14px;
+                width: 96vw;
+            }
         }
 
         .sp-event-modal-head {
@@ -1599,7 +1647,8 @@
         .sp-event-form input[type="text"],
         .sp-event-form input[type="date"],
         .sp-event-form input[type="time"],
-        .sp-event-form textarea {
+        .sp-event-form textarea,
+        .sp-event-form select {
             font: inherit;
             font-size: 0.92rem;
             color: #2a1d14;
@@ -1609,10 +1658,14 @@
             padding: 8px 10px;
             outline: none;
             transition: border-color 0.14s, background 0.14s;
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
         }
 
         .sp-event-form input:focus,
-        .sp-event-form textarea:focus {
+        .sp-event-form textarea:focus,
+        .sp-event-form select:focus {
             border-color: #e07a3c;
             background: #ffffff;
         }
@@ -1627,6 +1680,65 @@
             display: grid;
             grid-template-columns: 1.2fr 1fr 1fr;
             gap: 8px;
+            min-width: 0;
+        }
+
+        .sp-event-times .sp-field { min-width: 0; }
+
+        @media (max-width: 480px) {
+            .sp-event-times {
+                grid-template-columns: 1fr 1fr;
+            }
+            .sp-event-times .sp-field-date {
+                grid-column: 1 / -1;
+            }
+        }
+
+        .sp-event-row-double {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .sp-event-row-double .sp-field { min-width: 0; }
+
+        @media (max-width: 480px) {
+            .sp-event-row-double { grid-template-columns: 1fr; }
+        }
+
+        .sp-color-picker {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .sp-color-swatch {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            padding: 0;
+            position: relative;
+            transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+        }
+
+        .sp-color-swatch:hover {
+            transform: scale(1.1);
+        }
+
+        .sp-color-swatch.selected {
+            border-color: #2a1d14;
+            box-shadow: 0 0 0 2px #ffffff inset;
+        }
+
+        .sp-color-swatch.default-swatch {
+            background: repeating-conic-gradient(#e0e0e0 0% 25%, #ffffff 25% 50%) 50% / 8px 8px;
+        }
+
+        .sp-color-swatch.default-swatch.has-color {
+            background: var(--default-event-color, #039be5);
         }
 
         .sp-event-check {
@@ -6689,7 +6801,7 @@
                     All day
                 </label>
                 <div class="sp-event-times">
-                    <div class="sp-field">
+                    <div class="sp-field sp-field-date">
                         <label for="sp-event-date">Date</label>
                         <input id="sp-event-date" type="date" />
                     </div>
@@ -6700,6 +6812,37 @@
                     <div class="sp-field sp-field-time">
                         <label for="sp-event-end">End</label>
                         <input id="sp-event-end" type="time" />
+                    </div>
+                </div>
+                <div class="sp-field">
+                    <label>Color</label>
+                    <div class="sp-color-picker" id="sp-event-color-picker" role="radiogroup" aria-label="Event color"></div>
+                </div>
+                <div class="sp-event-row-double">
+                    <div class="sp-field">
+                        <label for="sp-event-recurrence">Repetir</label>
+                        <select id="sp-event-recurrence">
+                            <option value="none">No se repite</option>
+                            <option value="daily">Cada día</option>
+                            <option value="weekly">Cada semana</option>
+                            <option value="monthly">Cada mes</option>
+                            <option value="yearly">Cada año</option>
+                            <option value="weekdays">Días laborables (L–V)</option>
+                        </select>
+                    </div>
+                    <div class="sp-field">
+                        <label for="sp-event-reminder">Notificación</label>
+                        <select id="sp-event-reminder">
+                            <option value="none">Sin notificación</option>
+                            <option value="0">A la hora</option>
+                            <option value="5">5 min antes</option>
+                            <option value="10">10 min antes</option>
+                            <option value="15">15 min antes</option>
+                            <option value="30">30 min antes</option>
+                            <option value="60">1 hora antes</option>
+                            <option value="120">2 horas antes</option>
+                            <option value="1440">1 día antes</option>
+                        </select>
                     </div>
                 </div>
                 <div class="sp-field">
@@ -8043,6 +8186,7 @@
             if (editorView) {
                 editorView.classList.toggle('read-only', next);
             }
+            document.body.classList.toggle('read-only', next);
             if (modeToggleBtn) {
                 modeToggleBtn.classList.toggle('is-editing', !next);
                 modeToggleBtn.setAttribute('aria-pressed', next ? 'false' : 'true');
@@ -18870,9 +19014,11 @@
 
         function buildSidePanelHtml(sections) {
             let html = '';
+            const todayKey = formatCalendarDateKey(new Date());
             for (const section of sections) {
                 const dayKey = escapeHtmlSafe(section.dateKey || '');
-                html += '<div class="sp-day-section" data-day-key="' + dayKey + '">';
+                const isToday = section.dateKey === todayKey;
+                html += '<div class="sp-day-section' + (isToday ? ' today' : '') + '" data-day-key="' + dayKey + '">';
                 html += '<div class="sp-day-header">';
                 html += '<span class="sp-day-label">' + escapeHtmlSafe(section.label) + '</span>';
                 html += '<button type="button" class="sp-add-btn" data-sp-add="' + dayKey + '" title="Añadir evento" aria-label="Añadir evento">+</button>';
@@ -18939,6 +19085,15 @@
             const body = document.createElement('div');
             body.className = 'page-side-panel-body';
             body.innerHTML = panelData.html || '';
+            // Refresh the "today" class so it stays correct across date changes
+            // (the html was baked when the panel was created — re-evaluate now).
+            (function applyTodayClass() {
+                const todayKey = formatCalendarDateKey(new Date());
+                body.querySelectorAll('.sp-day-section').forEach(sec => {
+                    const k = sec.getAttribute('data-day-key') || '';
+                    sec.classList.toggle('today', k === todayKey);
+                });
+            })();
             body.addEventListener('click', function(ev) {
                 if (state.isReadOnly) return;
                 const addBtn = ev.target.closest && ev.target.closest('.sp-add-btn');
@@ -19003,6 +19158,9 @@
         const spEventEndInput = document.getElementById('sp-event-end');
         const spEventLocationInput = document.getElementById('sp-event-location');
         const spEventDescriptionInput = document.getElementById('sp-event-description');
+        const spEventColorPickerEl = document.getElementById('sp-event-color-picker');
+        const spEventRecurrenceInput = document.getElementById('sp-event-recurrence');
+        const spEventReminderInput = document.getElementById('sp-event-reminder');
         const spEventErrorEl = document.getElementById('sp-event-error');
         const spEventSaveBtn = document.getElementById('sp-event-save');
         const spEventDeleteBtn = document.getElementById('sp-event-delete');
@@ -19010,6 +19168,45 @@
         const spEventCloseBtn = document.getElementById('sp-event-modal-close');
 
         let spEventModalState = null;
+        let spSelectedColorId = ''; // '' = default (calendar color)
+
+        function spBuildColorPicker() {
+            if (!spEventColorPickerEl) return;
+            spEventColorPickerEl.innerHTML = '';
+            // Default swatch (no colorId — uses calendar's default color)
+            const defSwatch = document.createElement('button');
+            defSwatch.type = 'button';
+            defSwatch.className = 'sp-color-swatch default-swatch has-color';
+            defSwatch.style.setProperty('--default-event-color', '#039be5');
+            defSwatch.dataset.colorId = '';
+            defSwatch.title = 'Color predeterminado';
+            defSwatch.setAttribute('role', 'radio');
+            defSwatch.addEventListener('click', () => spSelectColor(''));
+            spEventColorPickerEl.appendChild(defSwatch);
+            // One swatch per Google Calendar color
+            for (const [colorId, hex] of Object.entries(GOOGLE_EVENT_COLORS)) {
+                const swatch = document.createElement('button');
+                swatch.type = 'button';
+                swatch.className = 'sp-color-swatch';
+                swatch.style.background = hex;
+                swatch.dataset.colorId = colorId;
+                swatch.title = hex;
+                swatch.setAttribute('role', 'radio');
+                swatch.addEventListener('click', () => spSelectColor(colorId));
+                spEventColorPickerEl.appendChild(swatch);
+            }
+        }
+
+        function spSelectColor(colorId) {
+            spSelectedColorId = colorId || '';
+            if (!spEventColorPickerEl) return;
+            spEventColorPickerEl.querySelectorAll('.sp-color-swatch').forEach(sw => {
+                sw.classList.toggle('selected', (sw.dataset.colorId || '') === spSelectedColorId);
+                sw.setAttribute('aria-checked', (sw.dataset.colorId || '') === spSelectedColorId ? 'true' : 'false');
+            });
+        }
+
+        spBuildColorPicker();
 
         function spSetError(msg) {
             if (!spEventErrorEl) return;
@@ -19084,6 +19281,9 @@
                     spEventStartInput.value = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
                     spEventEndInput.value = end ? `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}` : '';
                 }
+                spSelectColor(event.colorId || '');
+                spEventRecurrenceInput.value = spParseRecurrenceRules(event.recurrence);
+                spEventReminderInput.value = spParseEventReminders(event);
                 spEventDeleteBtn.hidden = false;
             } else {
                 spEventModalTitleEl.textContent = 'Nuevo evento';
@@ -19094,6 +19294,9 @@
                 spEventDateInput.value = dayKey || formatCalendarDateKey(new Date());
                 spEventStartInput.value = '09:00';
                 spEventEndInput.value = '10:00';
+                spSelectColor('');
+                spEventRecurrenceInput.value = 'none';
+                spEventReminderInput.value = 'none';
                 spEventDeleteBtn.hidden = true;
             }
             spApplyAllDayUI();
@@ -19137,7 +19340,73 @@
                 payload.start = { dateTime: startDt.toISOString() };
                 payload.end = { dateTime: endDt.toISOString() };
             }
+            // Color: send `null` to clear when default is chosen, otherwise the colorId.
+            // The Google Calendar API accepts colorId as a string; sending null/undefined
+            // on PATCH keeps it unchanged, so we always set it explicitly.
+            payload.colorId = spSelectedColorId || null;
+            // Recurrence
+            const recur = spEventRecurrenceInput.value;
+            const rrule = spBuildRecurrenceRule(recur);
+            payload.recurrence = rrule ? [rrule] : null;
+            // Reminders
+            const reminderVal = spEventReminderInput.value;
+            if (reminderVal === 'none') {
+                payload.reminders = { useDefault: false, overrides: [] };
+            } else {
+                const minutes = parseInt(reminderVal, 10);
+                if (Number.isFinite(minutes) && minutes >= 0) {
+                    payload.reminders = {
+                        useDefault: false,
+                        overrides: [{ method: 'popup', minutes }]
+                    };
+                } else {
+                    payload.reminders = { useDefault: true };
+                }
+            }
             return payload;
+        }
+
+        function spBuildRecurrenceRule(value) {
+            switch (value) {
+                case 'daily':    return 'RRULE:FREQ=DAILY';
+                case 'weekly':   return 'RRULE:FREQ=WEEKLY';
+                case 'monthly':  return 'RRULE:FREQ=MONTHLY';
+                case 'yearly':   return 'RRULE:FREQ=YEARLY';
+                case 'weekdays': return 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+                default: return null;
+            }
+        }
+
+        function spParseRecurrenceRules(recurrence) {
+            if (!Array.isArray(recurrence) || !recurrence.length) return 'none';
+            const rule = recurrence.find(r => typeof r === 'string' && r.startsWith('RRULE:'));
+            if (!rule) return 'none';
+            const body = rule.substring('RRULE:'.length);
+            const parts = Object.fromEntries(body.split(';').map(s => {
+                const i = s.indexOf('=');
+                return i >= 0 ? [s.substring(0, i), s.substring(i + 1)] : [s, ''];
+            }));
+            const freq = (parts.FREQ || '').toUpperCase();
+            const byday = (parts.BYDAY || '').toUpperCase();
+            if (freq === 'WEEKLY' && /^MO,TU,WE,TH,FR$/.test(byday)) return 'weekdays';
+            if (freq === 'DAILY') return 'daily';
+            if (freq === 'WEEKLY') return 'weekly';
+            if (freq === 'MONTHLY') return 'monthly';
+            if (freq === 'YEARLY') return 'yearly';
+            return 'none';
+        }
+
+        function spParseEventReminders(event) {
+            const r = event && event.reminders;
+            if (!r) return 'none';
+            if (r.useDefault && !Array.isArray(r.overrides)) return '30'; // Google's default
+            if (!Array.isArray(r.overrides) || r.overrides.length === 0) return 'none';
+            const popup = r.overrides.find(o => o && o.method === 'popup');
+            const chosen = popup || r.overrides[0];
+            const m = chosen && Number(chosen.minutes);
+            if (!Number.isFinite(m)) return 'none';
+            const allowed = ['0', '5', '10', '15', '30', '60', '120', '1440'];
+            return allowed.includes(String(m)) ? String(m) : 'none';
         }
 
         function spGetEventDateKeys(event) {
@@ -19349,7 +19618,9 @@
         function spStartAutoSync() {
             if (spSyncInterval) return;
             spSyncInterval = setInterval(() => {
-                if (state.isReadOnly || driveSignedOut) return;
+                // Sync runs in both viewer and edit mode (Google Calendar changes
+                // should always be reflected). Only skipped when not signed in.
+                if (driveSignedOut || !driveAccessToken) return;
                 const hasAnyPanel = state.pages.some(p => p && p.sidePanel && Array.isArray(p.sidePanel.dateKeys) && p.sidePanel.dateKeys.length > 0);
                 if (!hasAnyPanel) return;
                 spSyncAllPanels().catch(() => {});
