@@ -670,9 +670,12 @@
             background: #e6c619;
         }
 
-        .mode-toggle-status .save-indicator.uploading::after,
-        .mode-toggle-status .save-indicator.saving::after {
+        .mode-toggle-status .save-indicator.uploading::after {
             background: var(--accent-orange);
+        }
+
+        .mode-toggle-status .save-indicator.saving::after {
+            background: #e6c619;
         }
 
         .mode-toggle-status .save-indicator.syncing::after {
@@ -774,10 +777,14 @@
             box-shadow: 0 0 0 4px rgba(230, 198, 25, 0.18);
         }
 
-        .save-debug-orb.uploading,
-        .save-debug-orb.saving {
+        .save-debug-orb.uploading {
             background: var(--accent-orange);
             box-shadow: 0 0 0 4px rgba(255, 136, 0, 0.16);
+        }
+
+        .save-debug-orb.saving {
+            background: #e6c619;
+            box-shadow: 0 0 0 4px rgba(230, 198, 25, 0.18);
         }
 
         .save-debug-orb.syncing {
@@ -1023,7 +1030,7 @@
         }
 
         .save-indicator.saving {
-            background: var(--accent-orange);
+            background: #e6c619;
         }
 
         .save-indicator.syncing {
@@ -4707,8 +4714,8 @@
             }
 
             #editor-view .mode-toggle-btn {
-                width: max-content;
-                min-width: 0;
+                width: calc(15px + 36px + 34px + 16px + 12px);
+                min-width: 0 !important;
                 grid-template-columns: 15px 36px 34px;
                 column-gap: 8px;
                 border-radius: 999px;
@@ -4716,7 +4723,8 @@
                 border: none;
                 box-shadow: none !important;
                 position: relative;
-                padding: 0 12px;
+                padding: 0 6px;
+                pointer-events: none;
             }
 
             [data-theme="dark"] #editor-view .mode-toggle-btn {
@@ -4734,6 +4742,12 @@
                 width: 34px;
                 height: 18px;
                 margin-left: 0;
+                pointer-events: auto;
+            }
+
+            #editor-view .mode-toggle-text,
+            #editor-view .mode-toggle-status {
+                pointer-events: auto;
             }
 
             #editor-view .mode-toggle-knob {
@@ -6789,6 +6803,7 @@
         let driveSaveQueuedForce = false;
         let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
+        let driveSaveBlockedReason = '';
         let driveHydratedFileId = null;
         let driveHydrationPromise = null;
         let driveHydrationInProgress = false;
@@ -19635,6 +19650,7 @@
             driveSaveQueued = false;
             driveSaveQueuedForce = false;
             driveSaveQueuedKeepalive = false;
+            driveSaveBlockedReason = '';
             remoteChangePendingDuringSave = false;
             remoteChangePendingMeta = null;
             lastOwnDriveWriteMeta = null;
@@ -19780,6 +19796,10 @@
         function showPendingSaveStatus() {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
+            if (driveSaveBlockedReason) {
+                showStatus(driveSaveBlockedReason, { error: true });
+                return;
+            }
             // Don't downgrade if already showing a more specific phase
             if (indicator.classList.contains('uploading') || indicator.classList.contains('syncing')) return;
             if (state.driveAutosave) {
@@ -19828,6 +19848,10 @@
         function requestImmediateDriveSave(options = {}) {
             if (!state.driveAutosave) return;
             if (state.isReadOnly && !options.force) return;
+            if (driveSaveBlockedReason && !options.force) {
+                showStatus(driveSaveBlockedReason, { error: true });
+                return;
+            }
             driveDirty = true;
             if (!driveAccessToken) {
                 deferredDriveSave = true;
@@ -19874,7 +19898,14 @@
             );
         }
 
+        function shouldPreserveLocalUnsyncedForPull(options = {}) {
+            if (options.preserveLocalUnsynced === true) return true;
+            if (options.preserveLocalUnsynced === false) return false;
+            return !!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges();
+        }
+
         function bumpDriveContentVersion() {
+            clearDriveSaveBlocked();
             driveContentVersion += 1;
         }
 
@@ -19883,6 +19914,28 @@
                 ? Math.max(0, Math.floor(version))
                 : driveContentVersion;
             driveUploadedContentVersion = Math.min(driveContentVersion, safeVersion);
+        }
+
+        function setDriveSaveBlocked(reason) {
+            driveSaveBlockedReason = reason || 'Drive save blocked';
+            clearDriveSyncTimers();
+            if (deferredDriveSaveRetryTimer) {
+                clearTimeout(deferredDriveSaveRetryTimer);
+                deferredDriveSaveRetryTimer = null;
+            }
+            driveSaveQueued = false;
+            driveSaveQueuedForce = false;
+            driveSaveQueuedKeepalive = false;
+            deferredDriveSave = false;
+            setPresenceSavePhase('');
+            recordSaveDebug(driveSaveBlockedReason, { phase: 'error' });
+            showStatus(driveSaveBlockedReason, { error: true });
+        }
+
+        function clearDriveSaveBlocked() {
+            if (!driveSaveBlockedReason) return;
+            driveSaveBlockedReason = '';
+            recordSaveDebug('Drive save block cleared');
         }
 
         function reconcileSaveIndicatorIfIdle(delay = 0) {
@@ -19919,6 +19972,17 @@
             if (!meta?.modifiedTime) return 0;
             const ts = new Date(meta.modifiedTime).getTime();
             return Number.isFinite(ts) ? ts : 0;
+        }
+
+        function applyDriveRemoteMeta(meta = {}) {
+            if (meta.headRevisionId) {
+                state.driveHeadRevisionId = meta.headRevisionId;
+            }
+            if (meta.modifiedTime) {
+                const modified = getRemoteMetaModifiedTime(meta);
+                if (modified) state.driveLastKnownModified = modified;
+            }
+            saveDriveSession();
         }
 
         function rememberOwnDriveWrite(meta = {}) {
@@ -19960,8 +20024,12 @@
             if (pendingMeta && !isRemoteMetaNewerThanTracked(pendingMeta) && !options.force) {
                 return false;
             }
-            await pullRemoteChanges(pendingMeta || null, { allowWhileLocalPending: true, visualSync: true });
-            return true;
+            const result = await pullRemoteChanges(pendingMeta || null, {
+                allowWhileLocalPending: true,
+                preserveLocalUnsynced: true,
+                visualSync: true
+            });
+            return result || true;
         }
 
         function isRemoteMetaNewerThanTracked(meta) {
@@ -19978,15 +20046,12 @@
                 if (meta.headRevisionId && ownRevision && meta.headRevisionId === ownRevision) {
                     return false;
                 }
-                if (remoteModified && ownModified && remoteModified <= ownModified) {
+                if (!meta.headRevisionId && remoteModified && ownModified && remoteModified <= ownModified) {
                     return false;
                 }
             }
             if (meta.headRevisionId) {
                 if (meta.headRevisionId === state.driveHeadRevisionId) return false;
-                if (remoteModified && localModified && remoteModified <= localModified + DRIVE_REMOTE_META_SKEW_MS) {
-                    return false;
-                }
                 return true;
             }
             if (!remoteModified) return false;
@@ -20024,7 +20089,10 @@
                     if (!pullIdle) return false;
                     if (!state.driveFileId || state.driveFileId !== fileIdAtStart) return false;
                     if (isDriveHydratedForCurrentFile()) return true;
-                    await pullRemoteChanges(null, { allowWhileLocalPending: true });
+                    await pullRemoteChanges(null, {
+                        allowWhileLocalPending: true,
+                        preserveLocalUnsynced: hasUnsyncedLocalDriveChanges()
+                    });
                     const hydrated = isDriveHydratedForCurrentFile();
                     if (!hydrated) {
                         driveHydrationRetryAfter = Date.now() + 5000;
@@ -20062,6 +20130,7 @@
 
         function scheduleSave(immediate = false, pageIndex = null, mode = 'full') {
             if (state.isReadOnly) return;
+            clearDriveSaveBlocked();
             if (mode === 'stroke' && !immediate) {
                 if (hasSmoothInteraction()) {
                     // Defer I/O but mark dirty so goHome knows there are unsaved changes
@@ -20163,6 +20232,7 @@
 
         function scheduleDeferredDriveSaveRetry(delay = 280) {
             if (!state.driveAutosave) return;
+            if (driveSaveBlockedReason) return;
             if (state.isReadOnly && (driveDirty || deferredDriveSave || driveSaveQueued || driveContentVersion !== driveUploadedContentVersion)) {
                 armPausedSaveWatchdog(Math.max(360, Number.isFinite(delay) ? delay : 360));
                 return;
@@ -20211,6 +20281,10 @@
 
         function scheduleDriveSync() {
             if (!state.driveAutosave) return;
+            if (driveSaveBlockedReason) {
+                showStatus(driveSaveBlockedReason, { error: true });
+                return;
+            }
             driveDirty = true;
             if (state.isReadOnly) {
                 armPausedSaveWatchdog(420);
@@ -20327,6 +20401,49 @@
             return res.json();
         }
 
+        async function mergeLatestRemoteBeforeDriveUpload(fileId, controller, label = 'Checking remote revision') {
+            if (!fileId || !state.driveFileId || state.driveFileId !== fileId) {
+                return { changed: false, hasLocalMerges: false };
+            }
+            if (!(state.driveHeadRevisionId || state.driveLastKnownModified)) {
+                return { changed: false, hasLocalMerges: false };
+            }
+            if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
+            const pullIdle = await waitForCollabPullIdle(12000);
+            if (!pullIdle) {
+                throw new Error('Timed out waiting for remote merge');
+            }
+            if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
+            recordSaveDebug(label);
+            const checkRes = await driveFetch(
+                `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
+                {
+                    signal: controller?.signal,
+                    timeout: DRIVE_META_TIMEOUT,
+                    headers: { 'Cache-Control': 'no-cache' }
+                }
+            );
+            const checkData = await checkRes.json();
+            if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
+            if (!isRemoteMetaNewerThanTracked(checkData)) {
+                return { changed: false, hasLocalMerges: false };
+            }
+            recordSaveDebug('Remote changes found, merging before upload');
+            const mergeResult = await pullRemoteChanges(checkData, {
+                allowWhileLocalPending: true,
+                preserveLocalUnsynced: true,
+                visualSync: true
+            });
+            if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
+            if (mergeResult?.error) {
+                throw new Error('Remote merge before upload failed');
+            }
+            if (!mergeResult && collabPullInProgress) {
+                throw new Error('Remote merge still in progress');
+            }
+            return mergeResult || { changed: false, hasLocalMerges: false };
+        }
+
         async function queueDriveSave(force = false, options = {}) {
             if (!state.driveAutosave) return;
             // The local "read-only" toggle is a UI mode (the user disabled the
@@ -20334,6 +20451,13 @@
             // save (e.g. before leaving the document) — pending dirty changes
             // happened while editing was on and need to be flushed.
             if (state.isReadOnly && !force) return;
+            if (driveSaveBlockedReason && !force) {
+                showStatus(driveSaveBlockedReason, { error: true });
+                return;
+            }
+            if (force && driveSaveBlockedReason) {
+                clearDriveSaveBlocked();
+            }
             if (!driveDirty && !force) return;
             const sessionToken = getDocumentSessionToken();
             if ((hasSmoothInteraction() || hasRecentUserActivity()) && !force) {
@@ -20373,6 +20497,7 @@
             remoteChangePendingDuringSave = false;
             remoteChangePendingMeta = null;
             let driveSaveSucceeded = false;
+            let driveSaveFailedThisRun = false;
             try {
                 // Pre-merge guard against concurrent multi-device edits: if the
                 // collab poller previously detected a remote change but skipped
@@ -20384,6 +20509,9 @@
                     try {
                         recordSaveDebug('Merging pending remote changes');
                         const flushed = await flushDeferredRemotePull({ allowWhileLocalPending: true });
+                        if (flushed?.error) {
+                            throw new Error('Pending remote merge failed');
+                        }
                         if (flushed?.hasLocalMerges) {
                             // Merge produced a new state — keep it dirty so we still
                             // upload the merged result.
@@ -20391,6 +20519,7 @@
                         }
                     } catch (mergeErr) {
                         console.warn('Pre-save deferred pull failed:', mergeErr);
+                        throw mergeErr;
                     }
                 }
                 const hasUnsyncedContent = driveContentVersion !== driveUploadedContentVersion;
@@ -20452,49 +20581,43 @@
                     // baseline and now. Otherwise concurrent edits from a second
                     // device would be silently overwritten by our upload, with
                     // only the last-writer's strokes surviving on Drive.
-                    if (state.driveHeadRevisionId || state.driveLastKnownModified) {
-                        try {
-                            recordSaveDebug('Checking remote revision');
-                            const checkRes = await driveFetch(
-                                `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
-                                {
-                                    signal: controller.signal,
-                                    timeout: DRIVE_META_TIMEOUT,
-                                    headers: { 'Cache-Control': 'no-cache' }
-                                }
-                            );
-                            const checkData = await checkRes.json();
-                            let hasRemoteChanges = false;
-                            if (checkData.headRevisionId && checkData.headRevisionId !== state.driveHeadRevisionId) {
-                                hasRemoteChanges = true;
-                            } else if (checkData.modifiedTime) {
-                                const remoteModified = new Date(checkData.modifiedTime).getTime();
-                                if (state.driveLastKnownModified && remoteModified > state.driveLastKnownModified) {
-                                    hasRemoteChanges = true;
-                                }
-                            }
-                            if (hasRemoteChanges) {
-                                recordSaveDebug('Remote changes found, pulling before upload');
-                                await pullRemoteChanges(checkData, { visualSync: true });
-                            }
-                        } catch (mergeErr) {
-                            if (mergeErr?.name === 'AbortError' || controller.signal.aborted) throw mergeErr;
-                            console.warn('Pre-save merge check failed:', mergeErr);
-                        }
-                    }
+                    await mergeLatestRemoteBeforeDriveUpload(fileId, controller, 'Checking remote revision');
                     if (controller.signal.aborted) {
                         throw new Error('Drive save aborted');
                     }
-                    if (!pdfBlob) {
+                    let finalRemoteCheckAttempts = 0;
+                    while (true) {
+                        if (!pdfBlob) {
+                            uploadedContentVersion = driveContentVersion;
+                            showStatus('Building PDF...', { phase: 'building' });
+                            setPresenceSavePhase('processing');
+                            recordSaveDebug('Building PDF blob');
+                            pdfBlob = await buildPdfBlob({
+                                signal: controller.signal,
+                                sessionToken,
+                                ...DRIVE_UPLOAD_PDF_OPTIONS
+                            });
+                        }
+                        if (controller.signal.aborted) {
+                            throw new Error('Drive save aborted');
+                        }
+                        const latestMerge = await mergeLatestRemoteBeforeDriveUpload(
+                            fileId,
+                            controller,
+                            finalRemoteCheckAttempts
+                                ? 'Rechecking remote revision before upload'
+                                : 'Final remote revision check'
+                        );
+                        if (!(latestMerge?.changed || latestMerge?.hasLocalMerges)) break;
+                        finalRemoteCheckAttempts += 1;
+                        if (finalRemoteCheckAttempts > 3) {
+                            driveDirty = true;
+                            deferredDriveSave = true;
+                            recordSaveDebug('Remote changes still arriving; restarting save');
+                            throw createAbortError('Remote changes still arriving');
+                        }
+                        pdfBlob = null;
                         uploadedContentVersion = driveContentVersion;
-                        showStatus('Building PDF...', { phase: 'building' });
-                        setPresenceSavePhase('processing');
-                        recordSaveDebug('Building PDF blob');
-                        pdfBlob = await buildPdfBlob({
-                            signal: controller.signal,
-                            sessionToken,
-                            ...DRIVE_UPLOAD_PDF_OPTIONS
-                        });
                     }
                     if (controller.signal.aborted) {
                         throw new Error('Drive save aborted');
@@ -20560,23 +20683,30 @@
                     console.error('queueDriveSave failed:', err);
                     recordSaveDebug(`Drive save failed: ${err?.message || err}`);
                     setPresenceSavePhase('');
-                    showStatus('Drive save failed', { error: true });
                     if (typeof err?.message === 'string' && /missing page data for export/i.test(err.message)) {
                         driveDirty = true;
-                        deferredDriveSave = false;
+                        setDriveSaveBlocked('Drive save blocked: missing page data');
+                    } else {
+                        showStatus('Drive save failed', { error: true });
+                        driveDirty = true;
+                        deferredDriveSave = true;
                         driveSaveQueued = false;
                         driveSaveQueuedForce = false;
                         driveSaveQueuedKeepalive = false;
-                        showStatus('Drive save failed: page data missing', { error: true });
-                    } else {
-                        driveDirty = true;
-                        scheduleDriveSync();
+                        driveSaveFailedThisRun = true;
+                        scheduleDeferredDriveSaveRetry(1800);
                     }
                 }
                 }
             }
             activeDriveSaveController = null;
             driveSaveInProgress = false;
+            if (driveSaveBlockedReason) {
+                return;
+            }
+            if (driveSaveFailedThisRun) {
+                return;
+            }
             if (driveSaveSucceeded) {
                 let handledPendingRemote = false;
                 if (remoteChangePendingDuringSave) {
@@ -20639,6 +20769,21 @@
         let remoteChangePendingMeta = null;
         let deferredRemotePullPending = false;
         let deferredRemotePullMeta = null;
+
+        function restartDriveSaveForRemoteChange(meta = null) {
+            remoteChangePendingDuringSave = true;
+            remoteChangePendingMeta = chooseNewerRemoteMeta(remoteChangePendingMeta, meta);
+            deferRemotePull(meta);
+            driveDirty = true;
+            deferredDriveSave = true;
+            driveSaveQueued = true;
+            recordSaveDebug('Remote change detected during save; restarting to merge');
+            showStatus('Syncing remote changes...', { phase: 'syncing' });
+            if (activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
+                activeDriveSaveController.abort();
+            }
+            scheduleDeferredDriveSaveRetry(Math.max(DRIVE_SYNC_IDLE_DELAY + 120, 320));
+        }
 
         function clearCollabFastCatchup() {
             if (!collabFastCatchupTimers || collabFastCatchupTimers.length === 0) return;
@@ -20766,15 +20911,13 @@
                 const hasChanged = isRemoteMetaNewerThanTracked(data);
 
                 if (hasChanged) {
-                    if (hasUnsyncedLocalDriveChanges()) {
-                        deferRemotePull(data);
-                        return;
-                    }
                     console.log('Remote change detected:', data.headRevisionId || data.modifiedTime);
                     if (driveSaveInProgress) {
-                        // Save is in flight; defer pull until upload finishes.
-                        remoteChangePendingDuringSave = true;
-                        remoteChangePendingMeta = data;
+                        restartDriveSaveForRemoteChange(data);
+                        return;
+                    }
+                    if (hasUnsyncedLocalDriveChanges()) {
+                        deferRemotePull(data);
                         return;
                     }
                     await pullRemoteChanges(data, { visualSync: true });
@@ -21183,6 +21326,12 @@
                 // Remove stale/corrupt chunked records from other clients.
                 grouped.forEach((chunk, prefix) => {
                     if (prefix === keyPrefix) return;
+                    if (String(chunk?.c || '').trim() === getPresenceClientId()) {
+                        PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
+                            patch[getPresenceFieldKey(prefix, suffix)] = null;
+                        });
+                        return;
+                    }
                     const ts = Number(chunk?.t);
                     const hasIdentity = Boolean(String(chunk?.n || '').trim() || String(chunk?.e || '').trim());
                     if (!Number.isFinite(ts) || !hasIdentity) {
@@ -21254,6 +21403,11 @@
                 if (driveUserProfile) {
                     pingPresence();
                     pulsePresenceHeartbeat();
+                    if (driveUserProfile.fallback) {
+                        loadDriveProfile()
+                            .then(() => pingPresence())
+                            .catch(() => {});
+                    }
                 } else {
                     loadDriveProfile()
                         .catch(() => {})
@@ -21708,6 +21862,7 @@
                 deferRemotePull(remoteMetaHint);
                 return { changed: false, hasLocalMerges: false, deferred: true };
             }
+            const preserveLocalUnsynced = shouldPreserveLocalUnsyncedForPull(options);
             if (collabPullInProgress) return;
             collabPullInProgress = true;
             let visualSyncStarted = false;
@@ -21739,15 +21894,6 @@
                 if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileIdAtStart) {
                     return;
                 }
-
-                // Update revision tracking immediately from metadata (no extra request later)
-                if (metaData.headRevisionId) {
-                    state.driveHeadRevisionId = metaData.headRevisionId;
-                }
-                if (metaData.modifiedTime) {
-                    state.driveLastKnownModified = new Date(metaData.modifiedTime).getTime();
-                }
-                saveDriveSession();
 
                 const blob = await contentRes.blob();
                 if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileIdAtStart) {
@@ -21820,6 +21966,7 @@
                 if (!remoteStrokeData || !Array.isArray(remoteStrokeData)) {
                     console.log('No usable remote stroke data found, skipping merge');
                     if (remotePdfDoc?.cleanup) { try { remotePdfDoc.cleanup(); } catch (e) {} }
+                    applyDriveRemoteMeta(metaData);
                     showStatus('Synced', { savedAt: state.driveLastKnownModified || Date.now() });
                     return;
                 }
@@ -21840,8 +21987,14 @@
                 // Apply remote changes. Only preserve/re-upload local-only content
                 // when this pull is explicitly merging pending local work.
                 const mergeResult = await applyRemotePages(remoteStrokeData, {
-                    preserveLocalUnsynced: !!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges()
+                    preserveLocalUnsynced
                 });
+                if (!likelyRemoteContentChange && mergeResult?.changed) {
+                    showStatus('Syncing...', { phase: 'syncing' });
+                    if (options.visualSync && !visualSyncStarted) {
+                        visualSyncStarted = markRemotePresenceSyncActive();
+                    }
+                }
 
                 // Render backgrounds for pages that got a PDF/custom backgroundSource but have no image.
                 // Important: when the document has a cached clean-original (no overlay XObjects),
@@ -21899,13 +22052,17 @@
                     }
                 }
 
+                applyDriveRemoteMeta(metaData);
+
                 // If we merged local-only content, save back to Drive so others get it
                 if (mergeResult && mergeResult.hasLocalMerges && !state.isReadOnly) {
                     console.log('Local strokes merged into pull — saving back to Drive');
                     showStatus('Syncing merged changes...', { phase: 'syncing' });
                     requestImmediateDriveSave();
                 } else {
-                    markDriveContentUploaded();
+                    if (!preserveLocalUnsynced) {
+                        markDriveContentUploaded();
+                    }
                     showStatus('Changes from collaborator', { savedAt: state.driveLastKnownModified || Date.now() });
                 }
                 console.log('Remote changes applied successfully');
@@ -22948,6 +23105,7 @@
                 driveSaveQueued: !!driveSaveQueued,
                 driveDirty: !!driveDirty,
                 deferredDriveSave: !!deferredDriveSave,
+                blocked: driveSaveBlockedReason || '',
                 contentVersion: driveContentVersion,
                 uploadedVersion: driveUploadedContentVersion,
                 pageDirtyCount: pageDirty?.size || 0,
@@ -23071,11 +23229,12 @@
             els.terminal.textContent = [
                 `run=${saveDebugState.runId} phase=${saveDebugState.phase} elapsed=${formatSaveDebugMs(elapsed)}`,
                 `drive: dirty=${flags.driveDirty} deferred=${flags.deferredDriveSave} inProgress=${flags.driveSaveInProgress} queued=${flags.driveSaveQueued}`,
+                flags.blocked ? `blocked: ${flags.blocked}` : '',
                 `local: inProgress=${flags.localSaveInProgress} queued=${flags.localSaveQueued} pageDirty=${flags.pageDirtyCount} strokeOps=${flags.strokeOpsQueued}`,
                 `versions: content=${flags.contentVersion} uploaded=${flags.uploadedVersion}`,
                 `mode: autosave=${flags.autosave} readOnly=${flags.readOnly}`,
                 '',
-                ...currentRunEvents.slice(0, 18).map(event => {
+                ...currentRunEvents.slice(0, 18).reverse().map(event => {
                     const f = event.flags || {};
                     return `[${new Date(event.at).toLocaleTimeString(undefined, { hour12: false })}] ${event.phase} ${event.message} dirty=${f.driveDirty} queued=${f.driveSaveQueued} v=${f.contentVersion}/${f.uploadedVersion}`;
                 })
@@ -23130,6 +23289,10 @@
         }
 
         function reconcileSavedIndicator() {
+            if (driveSaveBlockedReason) {
+                showStatus(driveSaveBlockedReason, { error: true });
+                return;
+            }
             if (hasBlockingSaveState()) {
                 showPendingSaveStatus();
                 return;
@@ -24520,6 +24683,7 @@
             const sessionToken = Number.isFinite(options.sessionToken)
                 ? options.sessionToken
                 : getDocumentSessionToken();
+            const updateSaveStatus = options.status !== false;
             const isMobileLike = detectDeviceType() !== 'pc';
             const interactionPollMs = isMobileLike ? 16 : 24;
 
@@ -24535,13 +24699,13 @@
                 throwIfAborted();
                 throwIfSessionInvalid();
                 if (hasHotUserInteraction()) {
-                    showStatus('Save paused...', { phase: 'paused' });
+                    if (updateSaveStatus) showStatus('Save paused...', { phase: 'paused' });
                     await waitForHotInteractionToSettle({
                         abortSignal, sessionToken, pollMs: interactionPollMs
                     });
                     throwIfAborted();
                     throwIfSessionInvalid();
-                    showStatus('Building PDF...', { phase: 'building' });
+                    if (updateSaveStatus) showStatus('Building PDF...', { phase: 'building' });
                 } else if (force || hasPendingUserInput()) {
                     await yieldToMainThread();
                     throwIfAborted();
@@ -24940,6 +25104,7 @@
             const sessionToken = Number.isFinite(options.sessionToken)
                 ? options.sessionToken
                 : getDocumentSessionToken();
+            const updateSaveStatus = options.status !== false;
             const isMobileLike = detectDeviceType() !== 'pc';
             const interactionPollMs = isMobileLike ? 16 : 24;
             const throwIfAborted = () => {
@@ -24956,7 +25121,7 @@
                 if (hasHotUserInteraction()) {
                     // User is writing or scrolling — pause PDF build entirely
                     // and show grey (paused) indicator. Resume when interaction ends.
-                    showStatus('Save paused...', { phase: 'paused' });
+                    if (updateSaveStatus) showStatus('Save paused...', { phase: 'paused' });
                     await waitForHotInteractionToSettle({
                         abortSignal,
                         sessionToken,
@@ -24965,7 +25130,7 @@
                     throwIfAborted();
                     throwIfSessionInvalid();
                     // Restore building indicator after pause ends
-                    showStatus('Building PDF...', { phase: 'building' });
+                    if (updateSaveStatus) showStatus('Building PDF...', { phase: 'building' });
                 } else if (force || hasPendingUserInput()) {
                     const inputPending = hasPendingUserInput();
                     await yieldProcessingForUi(force || inputPending || isMobileLike);
@@ -25379,7 +25544,7 @@
             showLoading('Generando PDF...');
 
             try {
-                const pdfBlob = await buildPdfBlob({ highQuality: true });
+                const pdfBlob = await buildPdfBlob({ highQuality: true, status: false });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(pdfBlob);
                 link.download = safeName;
