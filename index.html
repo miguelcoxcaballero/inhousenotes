@@ -328,24 +328,51 @@
 
         .presence-save-ring {
             position: absolute;
-            inset: -3px;
+            inset: -4px;
             border-radius: 50%;
             pointer-events: none;
             opacity: 0;
             z-index: 1;
+            transform: translateZ(0);
+            transform-origin: center;
+            transition: opacity 0.18s ease;
         }
 
         .presence-save-ring.processing,
         .presence-save-ring.uploading,
         .presence-save-ring.syncing {
             opacity: 1;
-            background:
-                radial-gradient(farthest-side, transparent calc(100% - 2px), currentColor calc(100% - 1.5px) calc(100% - 0.5px), transparent 100%),
-                conic-gradient(from 0deg, transparent 0deg, transparent 34deg, currentColor 44deg 132deg, transparent 142deg 360deg);
-            mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-            animation: presence-save-spin 1.05s linear infinite;
-            will-change: transform;
+            animation: presence-save-spin 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18));
+            will-change: transform, opacity;
+        }
+
+        .presence-save-ring.processing::before,
+        .presence-save-ring.uploading::before,
+        .presence-save-ring.syncing::before,
+        .presence-save-ring.processing::after,
+        .presence-save-ring.uploading::after,
+        .presence-save-ring.syncing::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+        }
+
+        .presence-save-ring.processing::before,
+        .presence-save-ring.uploading::before,
+        .presence-save-ring.syncing::before {
+            border: 1px solid currentColor;
+            opacity: 0.16;
+        }
+
+        .presence-save-ring.processing::after,
+        .presence-save-ring.uploading::after,
+        .presence-save-ring.syncing::after {
+            border: 1.65px solid transparent;
+            border-top-color: currentColor;
+            border-right-color: currentColor;
+            transform: rotate(28deg);
         }
 
         .presence-save-ring.processing {
@@ -362,12 +389,41 @@
 
         .presence-save-ring.saved {
             opacity: 1;
-            border: 1.5px solid var(--accent-green);
+            border: 1.45px solid var(--accent-green);
+            box-shadow:
+                0 0 0 2px rgba(52, 168, 83, 0.12),
+                0 1px 3px rgba(0, 0, 0, 0.14);
+            animation: presence-save-complete 1.8s ease-out both;
         }
 
         @keyframes presence-save-spin {
+            0% {
+                transform: translateZ(0) rotate(0deg) scale(1);
+            }
+
+            45% {
+                transform: translateZ(0) rotate(176deg) scale(0.985);
+            }
+
             to {
-                transform: rotate(360deg);
+                transform: translateZ(0) rotate(360deg) scale(1);
+            }
+        }
+
+        @keyframes presence-save-complete {
+            0% {
+                transform: scale(0.92);
+                opacity: 0;
+            }
+
+            18% {
+                transform: scale(1.04);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
             }
         }
 
@@ -4674,6 +4730,16 @@
                 width: 24px;
                 height: 24px;
                 margin-left: -6px;
+            }
+
+            #editor-view .presence-save-ring {
+                inset: -3.5px;
+            }
+
+            #editor-view .presence-save-ring.processing::after,
+            #editor-view .presence-save-ring.uploading::after,
+            #editor-view .presence-save-ring.syncing::after {
+                border-width: 1.45px;
             }
 
             #editor-view .presence-avatar-img {
@@ -19024,6 +19090,28 @@
             return allSaved;
         }
 
+        async function hydrateLocalPendingPagesForRemoteMerge() {
+            const pendingIndices = new Set();
+            pendingStrokeOps.forEach((_, index) => {
+                if (Number.isFinite(index)) pendingIndices.add(index);
+            });
+            pageDirty.forEach(index => {
+                if (Number.isFinite(index)) pendingIndices.add(index);
+            });
+            strokeOpsQueue.forEach(op => {
+                if (Number.isFinite(op?.pageIndex)) pendingIndices.add(op.pageIndex);
+            });
+            if (strokeOpsQueue.length > 0) {
+                await flushStrokeOpsQueue();
+            }
+            const indices = Array.from(pendingIndices)
+                .filter(index => index >= 0 && index < state.pages.length)
+                .sort((a, b) => a - b);
+            for (const index of indices) {
+                await ensurePageDataLoaded(index, { keepLoaded: true });
+            }
+        }
+
         async function saveToStorage(controller = null) {
             if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             const opsFlushed = await flushStrokeOpsQueue({ abortSignal: controller });
@@ -20645,6 +20733,8 @@
                 trimHistoryByMemory();
                 // Only advance the merge baseline if nothing changed while this PDF was building/uploading.
                 if (driveContentVersion === uploadedContentVersion) {
+                    driveDirty = false;
+                    deferredDriveSave = false;
                     updateSyncBaseline();
                 }
                 startCollabPolling();
@@ -20739,7 +20829,10 @@
                 recordSaveDebug('New edits detected during save; scheduling another upload');
                 showPendingSaveStatus();
             } else if (driveContentVersion !== driveUploadedContentVersion) {
-                markDriveContentUploaded();
+                driveDirty = true;
+                deferredDriveSave = true;
+                recordSaveDebug('Unuploaded local version detected; scheduling upload');
+                showPendingSaveStatus();
             }
             if (driveDirty || deferredDriveSave) {
                 if (hasSmoothInteraction()) {
@@ -22196,6 +22289,9 @@
             if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false, pagesNeedingPdfBackground: [] };
             const pagesNeedingPdfBackground = [];
             const preserveLocalUnsynced = !!options.preserveLocalUnsynced;
+            if (preserveLocalUnsynced) {
+                await hydrateLocalPendingPagesForRemoteMerge();
+            }
 
             let changed = false;
             let hasLocalMerges = false;
@@ -22469,6 +22565,7 @@
 
                 // Infer local deletions from the last synced baseline.
                 // This prevents remote pull from resurrecting content removed locally (e.g. undo/delete).
+                const hasSyncedBaseline = lastSyncedStrokeIds.has(i);
                 const syncedIds = lastSyncedStrokeIds.get(i) || new Set();
                 const localDeletedSinceBaseline = new Set();
                 for (const syncedId of syncedIds) {
@@ -22476,6 +22573,10 @@
                         localDeletedSinceBaseline.add(syncedId);
                     }
                 }
+                const shouldKeepLocalOnlyContent = (id) => (
+                    preserveLocalUnsynced
+                    || (hasSyncedBaseline && id && !syncedIds.has(id))
+                );
 
                 const localDeletionSet = preserveLocalUnsynced
                     ? new Set([...localDeleted, ...localDeletedSinceBaseline])
@@ -22508,9 +22609,12 @@
                 let localStrokeConflictCount = 0;
                 const localOnlyStrokes = structuralIdentityChanged
                     ? []
-                    : (preserveLocalUnsynced
-                        ? currentPage.strokes.filter(s => s?.id && !remoteStrokeIds.has(s.id) && !allDeleted.has(s.id))
-                        : []);
+                    : currentPage.strokes.filter(s => (
+                        s?.id
+                        && !remoteStrokeIds.has(s.id)
+                        && !allDeleted.has(s.id)
+                        && shouldKeepLocalOnlyContent(s.id)
+                    ));
                 for (const remoteStroke of remoteStrokes) {
                     if (!remoteStroke?.id || allDeleted.has(remoteStroke.id)) continue;
                     if (structuralIdentityChanged) {
@@ -22531,9 +22635,12 @@
                 let localImageConflictCount = 0;
                 const localOnlyImages = structuralIdentityChanged
                     ? []
-                    : (preserveLocalUnsynced
-                        ? (currentPage.images || []).filter(img => img?.id && !remoteImageIds.has(img.id) && !allDeleted.has(img.id))
-                        : []);
+                    : (currentPage.images || []).filter(img => (
+                        img?.id
+                        && !remoteImageIds.has(img.id)
+                        && !allDeleted.has(img.id)
+                        && shouldKeepLocalOnlyContent(img.id)
+                    ));
                 for (const remoteImage of remoteImages) {
                     if (!remoteImage?.id || allDeleted.has(remoteImage.id)) continue;
                     if (structuralIdentityChanged) {
@@ -22564,6 +22671,16 @@
                         localSuppressedRemoteCount += 1;
                     }
                 }
+                const pageHasLocalMerges = localOnlyStrokes.length > 0
+                    || localOnlyImages.length > 0
+                    || (preserveLocalUnsynced && (
+                        localSuppressedRemoteCount > 0
+                        || localStrokeConflictCount > 0
+                        || localImageConflictCount > 0
+                    ));
+                if (pageHasLocalMerges) {
+                    hasLocalMerges = true;
+                }
                 if (preserveLocalUnsynced && (
                     localOnlyStrokes.length > 0
                     || localOnlyImages.length > 0
@@ -22571,7 +22688,7 @@
                     || localStrokeConflictCount > 0
                     || localImageConflictCount > 0
                 )) {
-                    hasLocalMerges = true;
+                    recordSaveDebug(`Merged local pending content on page ${i + 1}`);
                 }
 
                 // Check if anything actually changed
@@ -22618,7 +22735,11 @@
                     currentPage.strokeCount = getVisibleStrokeCount(currentPage);
                     currentPage.needsRedraw = true;
                     applyPageDimensionsToWrapper(i, { skipRedraw: true });
-                    await savePageToIndexedDb(i, currentPage);
+                    const savedPage = await savePageToIndexedDb(i, currentPage);
+                    if (savedPage && preserveLocalUnsynced && pendingStrokeOps.has(i)) {
+                        const cleared = await clearStrokeOpsForPage(i);
+                        if (cleared) pendingStrokeOps.delete(i);
+                    }
                     if (activePageIndices.has(i)) {
                         redrawPage(i);
                     }
@@ -22631,10 +22752,13 @@
                     console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${localSuppressedRemoteCount} local-deleted-remote, ${localStrokeConflictCount} local-stroke-conflicts, ${localImageConflictCount} local-image-conflicts, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
                 }
 
-                // Update last synced IDs to the combined set
+                // Keep the baseline as "confirmed on remote". Local-only merge
+                // content stays unconfirmed until the merged PDF upload succeeds.
                 const newSyncedIds = new Set();
-                mergedStrokes.forEach(s => newSyncedIds.add(s.id));
-                mergedImages.forEach(img => newSyncedIds.add(img.id));
+                const baselineStrokes = pageHasLocalMerges ? remoteStrokes : mergedStrokes;
+                const baselineImages = pageHasLocalMerges ? remoteImages : mergedImages;
+                baselineStrokes.forEach(s => { if (s?.id) newSyncedIds.add(s.id); });
+                baselineImages.forEach(img => { if (img?.id) newSyncedIds.add(img.id); });
                 lastSyncedStrokeIds.set(i, newSyncedIds);
 
                 // Unload if it wasn't loaded before
