@@ -6892,6 +6892,7 @@
         let isPenWriting = false;
         let isGestureInteracting = false;
         let penWritingIdleTimer = null;
+        let penWritingIdleDeadline = 0;
         let lastPenEventTime = 0;
         let lastUserInteractionAt = 0;
         let documentSessionId = 1;
@@ -7926,6 +7927,13 @@
         }
 
         function pausePdfRenderingDuringInteraction() {
+            const hasPdfWork = !!(
+                pdfRenderResumeHandle
+                || activePdfBackgroundRenderTask
+                || pdfRenderQueue.length > 0
+                || pdfRenderActive
+            );
+            if (!hasPdfWork) return;
             cancelPdfRenderResume();
             cancelActivePdfBackgroundRender();
             pdfRenderQueue = [];
@@ -8323,13 +8331,44 @@
             let lassoPoints = [];
             const wrapper = canvas.closest('.page-wrapper');
             const lassoCanvas = wrapper ? wrapper.querySelector('.lasso-overlay') : null;
+            const cursorOverlay = wrapper ? wrapper.querySelector('.cursor-overlay') : null;
+            let drawGeometry = null;
+
+            const refreshDrawGeometry = () => {
+                const rect = canvas.getBoundingClientRect();
+                const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
+                const cursorScale = cursorOverlay
+                    ? getOverlayCanvasRenderScale(cursorOverlay, pageWidth, CURSOR_OVERLAY_BASE_SCALE)
+                    : 1;
+                drawGeometry = {
+                    rectLeft: rect.left,
+                    rectTop: rect.top,
+                    scaleX: pageWidth / Math.max(1, rect.width),
+                    scaleY: pageHeight / Math.max(1, rect.height),
+                    pageWidth,
+                    pageHeight,
+                    cursorOverlay,
+                    cursorScale,
+                    cursorLogicalW: cursorOverlay ? cursorOverlay.width / cursorScale : 0,
+                    cursorLogicalH: cursorOverlay ? cursorOverlay.height / cursorScale : 0
+                };
+                return drawGeometry;
+            };
+
+            const getCanvasPointerPos = (event) => {
+                const geom = drawGeometry || refreshDrawGeometry();
+                return {
+                    x: (event.clientX - geom.rectLeft) * geom.scaleX,
+                    y: (event.clientY - geom.rectTop) * geom.scaleY
+                };
+            };
 
             const collectEraserPositions = (events) => {
                 const positions = [];
                 const minStep = Math.max(0.8, state.eraserWidth * ERASER_MIN_STEP_FACTOR);
                 for (let index = 0; index < events.length; index++) {
                     const ev = events[index];
-                    const pos = getCanvasPos(canvas, ev);
+                    const pos = getCanvasPointerPos(ev);
                     const isLast = index === events.length - 1;
                     if (!lastEraserPoint) {
                         positions.push(pos);
@@ -8392,11 +8431,12 @@
                     if (!shouldAcceptDrawInput(e)) return;
                     if (!lassoCanvas) return;
                     ensurePageCanvasResolution(pageIndex);
+                    refreshDrawGeometry();
                     noteInteractionActivity();
                     isLassoing = true;
                     lassoPoints = [];
                     clearSelection();
-                    const pos = getCanvasPos(canvas, e);
+                    const pos = getCanvasPointerPos(e);
                     lassoPoints.push(pos);
                     drawLassoPath(lassoCanvas, lassoPoints);
                     canvas.setPointerCapture(e.pointerId);
@@ -8408,13 +8448,14 @@
                 // Accept pen, mouse, and touch (with palm rejection)
                 if (!shouldAcceptDrawInput(e)) return;
                 ensurePageCanvasResolution(pageIndex);
+                refreshDrawGeometry();
                 clearSelection();
 
                 e.preventDefault();
                 e.stopPropagation();
                 canvas.setPointerCapture(e.pointerId);
 
-                const pos = getCanvasPos(canvas, e);
+                const pos = getCanvasPointerPos(e);
                 const pressure = e.pressure || 0.5;
 
                 isDrawing = true;
@@ -8454,21 +8495,25 @@
                     // Anchor the stroke to its page identity so it follows the
                     // page across remote reorders that may land mid-draw.
                     currentStrokePageId = state.pages[pageIndex]?.pageId || null;
-                    updateLiveStroke(pageIndex, canvas, currentStroke);
+                    updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
                 }
             });
 
             canvas.addEventListener('pointermove', (e) => {
                 if (state.isReadOnly) return;
                 if (isLassoing) {
+                    e.preventDefault();
+                    e.stopPropagation();
                     noteInteractionActivity();
-                    const pos = getCanvasPos(canvas, e);
+                    const pos = getCanvasPointerPos(e);
                     lassoPoints.push(pos);
                     drawLassoPath(lassoCanvas, lassoPoints);
                     return;
                 }
 
                 if (!isDrawing || !shouldAcceptDrawInput(e)) return;
+                e.preventDefault();
+                e.stopPropagation();
 
                 notePenActivity();
 
@@ -8485,7 +8530,7 @@
                 }
 
                 events.forEach(ev => {
-                    const pos = getCanvasPos(canvas, ev);
+                    const pos = getCanvasPointerPos(ev);
                     const pressure = ev.pressure || 0.5;
                     if (currentStroke.tool === 'highlighter') {
                         const lastPoint = currentStroke.points[currentStroke.points.length - 1];
@@ -8500,7 +8545,7 @@
                     }
                     currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
                 });
-                updateLiveStroke(pageIndex, canvas, currentStroke);
+                updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
             });
 
             const endDrawing = (e) => {
@@ -8514,6 +8559,7 @@
                     clearEraserPreview(pageIndex);
                     currentStroke = null;
                     currentStrokePageId = null;
+                    drawGeometry = null;
                     erasedStrokes = [];
                     areaEraseBefore = null;
                     areaEraseChanged = false;
@@ -8535,6 +8581,7 @@
                     if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
                         canvas.releasePointerCapture(e.pointerId);
                     }
+                    drawGeometry = null;
                     return;
                 }
 
@@ -8573,7 +8620,7 @@
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
                     if (e && e.type === 'pointerup' && typeof e.clientX === 'number' && typeof e.clientY === 'number') {
-                        const pos = getCanvasPos(canvas, e);
+                        const pos = getCanvasPointerPos(e);
                         const last = currentStroke.points[currentStroke.points.length - 1];
                         const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
                         if (dist > 0.5) {
@@ -8599,6 +8646,7 @@
                         // Page was deleted while we were drawing — drop the stroke.
                         currentStroke = null;
                         currentStrokePageId = null;
+                        drawGeometry = null;
                         return;
                     }
 
@@ -8641,6 +8689,7 @@
 
 	                currentStroke = null;
 	                currentStrokePageId = null;
+                    drawGeometry = null;
 	                erasedStrokes = [];
 	                areaEraseBefore = null;
 	                areaEraseChanged = false;
@@ -8762,15 +8811,20 @@
             ctx.fill();
         }
 
-        function drawStrokePreviewTail(pageIndex, stroke) {
-            const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
+        function drawStrokePreviewTail(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
+            const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            const { width: pageWidth } = getPageDimensions(pageIndex);
-            const overlayScale = getOverlayCanvasRenderScale(previewCanvas, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
+            const overlayScale = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorScale))
+                ? metrics.cursorScale
+                : getOverlayCanvasRenderScale(previewCanvas, getPageDimensions(pageIndex).width, CURSOR_OVERLAY_BASE_SCALE);
             ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
-            const logicalW = previewCanvas.width / overlayScale;
-            const logicalH = previewCanvas.height / overlayScale;
+            const logicalW = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorLogicalW))
+                ? metrics.cursorLogicalW
+                : previewCanvas.width / overlayScale;
+            const logicalH = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorLogicalH))
+                ? metrics.cursorLogicalH
+                : previewCanvas.height / overlayScale;
             ctx.clearRect(0, 0, logicalW, logicalH);
 
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
@@ -8837,20 +8891,20 @@
             }
         }
 
-        function updateLiveStroke(pageIndex, canvas, stroke) {
+        function updateLiveStroke(pageIndex, canvas, stroke, previewCanvas = null, metrics = null) {
             if (stroke.tool === 'highlighter') {
-                drawStrokePreviewTail(pageIndex, stroke);
+                drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
                 return;
             }
             if (!stroke || stroke.points.length < 2) {
-                drawStrokePreviewTail(pageIndex, stroke);
+                drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
                 return;
             }
             const pending = stroke.points.length - 1 - stroke.finalizedIndex;
             if (pending > LIVE_PREVIEW_POINTS + FINALIZE_STEP_POINTS) {
                 finalizeStrokeSegments(pageIndex, canvas, stroke);
             }
-            drawStrokePreviewTail(pageIndex, stroke);
+            drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
         }
 
         function drawEraserPreview(pageIndex, pos) {
@@ -15736,6 +15790,7 @@
                         // Force-end interaction state so paused saves can resume
                         isPenWriting = false;
                         isGestureInteracting = false;
+                        penWritingIdleDeadline = 0;
                         if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
                         if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
 
@@ -19700,6 +19755,7 @@
         let saveInProgress = false;
         let saveQueued = false;
         let pausedSaveWatchdogTimer = null;
+        let lastPenProcessingPauseAt = 0;
 
         function isDriveSyncPending() {
             return !!(state.driveAutosave && (driveDirty || deferredDriveSave || driveSaveInProgress || driveSaveQueued));
@@ -19760,6 +19816,7 @@
             lastOwnDriveWriteMeta = null;
             lastSyncedStrokeIds.clear();
             lastSyncedPageCount = 0;
+            penWritingIdleDeadline = 0;
             pageDirty.clear();
             pageDirtyMode.clear();
             pendingStrokeOps.clear();
@@ -19792,6 +19849,18 @@
             );
         }
 
+        function hasInterruptibleProcessingInFlight() {
+            return !!(
+                driveSaveInProgress
+                || saveInProgress
+                || pdfRenderActive
+                || !!activePdfBackgroundRenderTask
+                || pdfRenderQueue.length > 0
+                || !!pdfRenderResumeHandle
+                || _prewarmRunning
+            );
+        }
+
         function interruptProcessingForUserInput() {
             noteRecentUserActivity();
             if (_prewarmRunning) abortPrewarm();
@@ -19803,7 +19872,12 @@
         }
 
         function pauseSavesDuringInteraction() {
+            if (!hasInterruptibleProcessingInFlight()) return;
             let pausedProcessing = false;
+            if (_prewarmRunning) {
+                abortPrewarm();
+                pausedProcessing = true;
+            }
             pausePdfRenderingDuringInteraction();
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
@@ -19919,6 +19993,39 @@
             }
         }
 
+        function finishPenWritingIdle() {
+            penWritingIdleTimer = null;
+            isPenWriting = false;
+            flushStrokeOpsQueue();
+            pendingStrokeOps.forEach((ops, pageIndex) => {
+                if (ops.length >= STROKE_OP_COMPACT_THRESHOLD) {
+                    markPageDirty(pageIndex, 'full');
+                }
+            });
+            flushDeferredSavesAfterInteraction();
+            if (deferredBakePages.size > 0) {
+                const pending = Array.from(deferredBakePages);
+                deferredBakePages.clear();
+                pending.forEach((pageIndex) => {
+                    setTimeout(() => bakeOldStrokes(pageIndex), 100);
+                });
+            }
+        }
+
+        function armPenWritingIdleTimer(delay = 120) {
+            penWritingIdleDeadline = Date.now() + delay;
+            if (penWritingIdleTimer) return;
+            const tick = () => {
+                const remaining = penWritingIdleDeadline - Date.now();
+                if (remaining > 0) {
+                    penWritingIdleTimer = setTimeout(tick, Math.max(16, remaining));
+                    return;
+                }
+                finishPenWritingIdle();
+            };
+            penWritingIdleTimer = setTimeout(tick, delay);
+        }
+
         function notePenActivity() {
             const wasWriting = isPenWriting;
             noteRecentUserActivity();
@@ -19926,27 +20033,12 @@
             // Only update status indicator on the first pen event of a stroke,
             // not on every pointermove — avoids DOM thrashing during drawing.
             if (!wasWriting) showPendingSaveStatus();
-            pauseSavesDuringInteraction();
-            if (penWritingIdleTimer) {
-                clearTimeout(penWritingIdleTimer);
+            const now = Date.now();
+            if (!wasWriting || (hasInterruptibleProcessingInFlight() && now - lastPenProcessingPauseAt > 140)) {
+                lastPenProcessingPauseAt = now;
+                pauseSavesDuringInteraction();
             }
-            penWritingIdleTimer = setTimeout(() => {
-                isPenWriting = false;
-                flushStrokeOpsQueue();
-                pendingStrokeOps.forEach((ops, pageIndex) => {
-                    if (ops.length >= STROKE_OP_COMPACT_THRESHOLD) {
-                        markPageDirty(pageIndex, 'full');
-                    }
-                });
-                flushDeferredSavesAfterInteraction();
-                if (deferredBakePages.size > 0) {
-                    const pending = Array.from(deferredBakePages);
-                    deferredBakePages.clear();
-                    pending.forEach((pageIndex) => {
-                        setTimeout(() => bakeOldStrokes(pageIndex), 100);
-                    });
-                }
-            }, 120);
+            armPenWritingIdleTimer(detectDeviceType() === 'pc' ? 120 : 220);
         }
 
         function requestImmediateDriveSave(options = {}) {
@@ -20627,6 +20719,7 @@
             remoteChangePendingMeta = null;
             let driveSaveSucceeded = false;
             let driveSaveFailedThisRun = false;
+            let mergedRemoteBeforeBuild = false;
             try {
                 // Pre-merge guard against concurrent multi-device edits: if the
                 // collab poller previously detected a remote change but skipped
@@ -20645,6 +20738,9 @@
                             // Merge produced a new state — keep it dirty so we still
                             // upload the merged result.
                             driveDirty = true;
+                        }
+                        if (flushed) {
+                            mergedRemoteBeforeBuild = true;
                         }
                     } catch (mergeErr) {
                         console.warn('Pre-save deferred pull failed:', mergeErr);
@@ -20705,12 +20801,13 @@
                     throw new Error('Drive save aborted');
                 }
                 if (!wasCreated) {
-                    // Always pre-merge before uploading: even autosaves need to
-                    // pull any remote changes that landed between our last known
-                    // baseline and now. Otherwise concurrent edits from a second
-                    // device would be silently overwritten by our upload, with
-                    // only the last-writer's strokes surviving on Drive.
-                    await mergeLatestRemoteBeforeDriveUpload(fileId, controller, 'Checking remote revision');
+                    // Avoid a redundant remote metadata round-trip on the common path.
+                    // The final revision check below still runs immediately before upload,
+                    // so concurrent edits are still merged instead of overwritten.
+                    if (!mergedRemoteBeforeBuild && hasRemoteActiveSaveSignal()) {
+                        await mergeLatestRemoteBeforeDriveUpload(fileId, controller, 'Checking remote revision');
+                        mergedRemoteBeforeBuild = true;
+                    }
                     if (controller.signal.aborted) {
                         throw new Error('Drive save aborted');
                     }
@@ -22785,10 +22882,18 @@
                 const strokeIdsChanged = !setsEqual(mergedStrokeIds, localStrokeIds);
                 const imageIdsChanged = !setsEqual(mergedImageIds, localImageIds);
                 const deletedIdsChanged = !setsEqual(mergedDeletedIds, previousDeletedIds);
-                const remoteWidth = normalizePageDimension(remotePageData.pageWidth, currentPage.pageWidth || A4_WIDTH);
-                const remoteHeight = normalizePageDimension(remotePageData.pageHeight, currentPage.pageHeight || A4_HEIGHT);
-                const dimensionChanged = remoteWidth !== normalizePageDimension(currentPage.pageWidth, A4_WIDTH)
-                    || remoteHeight !== normalizePageDimension(currentPage.pageHeight, A4_HEIGHT);
+                const currentWidth = normalizePageDimension(currentPage.pageWidth, A4_WIDTH);
+                const currentHeight = normalizePageDimension(currentPage.pageHeight, A4_HEIGHT);
+                const remoteWidth = normalizePageDimension(remotePageData.pageWidth, currentWidth);
+                const remoteHeight = normalizePageDimension(remotePageData.pageHeight, currentHeight);
+                const rawDimensionChanged = remoteWidth !== currentWidth || remoteHeight !== currentHeight;
+                const localPageHasContent = getVisibleStrokeCount(currentPage) > 0
+                    || (Array.isArray(currentPage.images) && currentPage.images.length > 0)
+                    || (Array.isArray(currentPage.legacyCoverStrokes) && currentPage.legacyCoverStrokes.length > 0);
+                const adoptRemoteDimensions = rawDimensionChanged && (structuralIdentityChanged || !localPageHasContent);
+                const dimensionChanged = adoptRemoteDimensions;
+                const nextPageWidth = adoptRemoteDimensions ? remoteWidth : currentWidth;
+                const nextPageHeight = adoptRemoteDimensions ? remoteHeight : currentHeight;
                 const sharedContentChanged = localStrokeConflictCount > 0 || localImageConflictCount > 0;
                 const remoteTemplateKind = normalizeTemplateKind(remotePageData.templateKind);
                 const localTemplateKind = normalizeTemplateKind(currentPage.templateKind);
@@ -22816,8 +22921,8 @@
                         && !currentPage.backgroundImage) {
                         pagesNeedingPdfBackground.push(i);
                     }
-                    currentPage.pageWidth = remoteWidth;
-                    currentPage.pageHeight = remoteHeight;
+                    currentPage.pageWidth = nextPageWidth;
+                    currentPage.pageHeight = nextPageHeight;
                     currentPage.strokeCount = getVisibleStrokeCount(currentPage);
                     currentPage.needsRedraw = true;
                     applyPageDimensionsToWrapper(i, { skipRedraw: true });
@@ -25003,6 +25108,8 @@
                 throwIfSessionInvalid();
 
                 const sourceIdx = stateToSourceIdx[i];
+                const logicalPageWidthPx = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
+                const logicalPageHeightPx = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
                 let outPage;
                 let pageWidthPt, pageHeightPt;
                 let pageWidthPx, pageHeightPx;
@@ -25015,8 +25122,8 @@
                     pageWidthPx = pageWidthPt / PX_TO_PT;
                     pageHeightPx = pageHeightPt / PX_TO_PT;
                 } else {
-                    pageWidthPx = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
-                    pageHeightPx = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
+                    pageWidthPx = logicalPageWidthPx;
+                    pageHeightPx = logicalPageHeightPx;
                     pageWidthPt = pageWidthPx * PX_TO_PT;
                     pageHeightPt = pageHeightPx * PX_TO_PT;
                     outPage = outDoc.addPage([pageWidthPt, pageHeightPt]);
@@ -25082,16 +25189,37 @@
                         return true;
                     });
                 }
-                const compactStrokes = exportStrokes.map(stroke => ({
-                    ...stroke,
-                    points: Array.isArray(stroke.points)
-                        ? stroke.points.map(p => ({
-                            x: Math.round(p.x * 100) / 100,
-                            y: Math.round(p.y * 100) / 100,
-                            p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
-                        }))
-                        : []
-                }));
+                const compactStrokes = [];
+                let compactStrokeCounter = 0;
+                let compactPointCounter = 0;
+                for (const stroke of exportStrokes) {
+                    const compactStroke = {
+                        ...stroke,
+                        points: []
+                    };
+                    if (Array.isArray(stroke.points) && stroke.points.length > 0) {
+                        compactStroke.points = new Array(stroke.points.length);
+                        for (let pointIndex = 0; pointIndex < stroke.points.length; pointIndex++) {
+                            const p = stroke.points[pointIndex];
+                            compactStroke.points[pointIndex] = {
+                                x: Math.round(p.x * 100) / 100,
+                                y: Math.round(p.y * 100) / 100,
+                                p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
+                            };
+                            if ((pointIndex + 1) % (isMobileLike ? 64 : 220) === 0) {
+                                await yieldToUI();
+                            }
+                        }
+                        compactPointCounter += compactStroke.points.length;
+                    }
+                    compactStrokes.push(compactStroke);
+                    compactStrokeCounter += 1;
+                    if (compactStrokeCounter % (isMobileLike ? 2 : 5) === 0
+                        || compactPointCounter >= (isMobileLike ? 180 : 900)) {
+                        compactPointCounter = 0;
+                        await yieldToUI();
+                    }
+                }
                 if (!pageData.pageId) pageData.pageId = generatePageId();
                 const pageStrokeEntry = {
                     pageId: pageData.pageId,
@@ -25102,8 +25230,8 @@
                     backgroundSource: pageData.backgroundSource || (pageData.pdfPageIndex ? 'pdf' : 'template'),
                     templateKind: normalizeTemplateKind(pageData.templateKind),
                     pdfPageIndex: (pageData.backgroundSource === 'pdf' || !!pageData.backgroundImage) ? (i + 1) : null,
-                    pageWidth: pageWidthPx,
-                    pageHeight: pageHeightPx
+                    pageWidth: logicalPageWidthPx,
+                    pageHeight: logicalPageHeightPx
                 };
                 metadataParts.push(JSON.stringify(pageStrokeEntry));
 
@@ -25113,7 +25241,7 @@
                 if (!hasContent) continue;
 
                 // Try cache: same content hash => reuse the prior PNG bytes.
-                const pageHash = `${computePageHash(pageData)}|${exportProfile}|${pageWidthPx}x${pageHeightPx}`;
+                const pageHash = `${computePageHash(pageData)}|${exportProfile}|logical:${logicalPageWidthPx}x${logicalPageHeightPx}|pdf:${pageWidthPx}x${pageHeightPx}`;
                 const cached = pdfLibOverlayCache.get(i);
                 let pngBytes = null;
                 if (cached && cached.hash === pageHash && cached.pngBytes) {
@@ -25121,8 +25249,8 @@
                 }
 
                 if (!pngBytes) {
-                    const overlayPxW = Math.max(1, Math.round(pageWidthPx * overlayScale));
-                    const overlayPxH = Math.max(1, Math.round(pageHeightPx * overlayScale));
+                    const overlayPxW = Math.max(1, Math.round(logicalPageWidthPx * overlayScale));
+                    const overlayPxH = Math.max(1, Math.round(logicalPageHeightPx * overlayScale));
                     overlayCanvas.width = overlayPxW;
                     overlayCanvas.height = overlayPxH;
                     overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -25371,28 +25499,6 @@
                 return Math.max(10, Math.round((normalizedPx * 25.4 / 96) * 1000) / 1000);
             };
             const getPageOrientation = (wMm, hMm) => (wMm > hMm ? 'landscape' : 'portrait');
-            const isA4Dimensions = (width, height) => (
-                normalizePageDimension(width, A4_WIDTH) === A4_WIDTH
-                && normalizePageDimension(height, A4_HEIGHT) === A4_HEIGHT
-            );
-            const pdfSourceSizeCache = new Map();
-            const getSourcePdfPageSize = async (pdfPageIndex) => {
-                if (!activePdfDocument || !Number.isFinite(pdfPageIndex)) return null;
-                const pageNo = Math.max(1, Math.round(pdfPageIndex));
-                const cached = pdfSourceSizeCache.get(pageNo);
-                if (cached) return cached;
-                const pdfPage = await activePdfDocument.getPage(pageNo);
-                const viewport = pdfPage.getViewport({ scale: 1 });
-                const size = {
-                    width: Math.max(1, Math.round(viewport.width)),
-                    height: Math.max(1, Math.round(viewport.height))
-                };
-                if (pdfPage.cleanup) {
-                    pdfPage.cleanup();
-                }
-                pdfSourceSizeCache.set(pageNo, size);
-                return size;
-            };
 
             const dirtyFlushed = await flushDirtyPages({ abortSignal });
             if (!dirtyFlushed && abortSignal?.aborted) {
@@ -25412,21 +25518,6 @@
             const exportProfile = options.highQuality
                 ? `hq:${exportScale}:q${jpegQuality}`
                 : `${optimizeForUpload ? 'drv-opt' : 'std'}:${exportScale}:q${jpegQuality}`;
-            let shouldResolvePdfSourceSizes = false;
-            const firstPdfBackedPage = state.pages.find(page => Number.isFinite(page?.pdfPageIndex));
-            const hasStoredNonA4PdfPage = state.pages.some(
-                page => Number.isFinite(page?.pdfPageIndex) && !isA4Dimensions(page?.pageWidth, page?.pageHeight)
-            );
-            if (firstPdfBackedPage && !hasStoredNonA4PdfPage && activePdfDocument) {
-                try {
-                    const probeSize = await getSourcePdfPageSize(firstPdfBackedPage.pdfPageIndex);
-                    if (probeSize && !isA4Dimensions(probeSize.width, probeSize.height)) {
-                        shouldResolvePdfSourceSizes = true;
-                    }
-                } catch (probeErr) {
-                    console.warn('Failed to probe PDF source dimensions before export:', probeErr);
-                }
-            }
 
             const tempCanvas = createProcessingCanvas(A4_WIDTH * exportScale, A4_HEIGHT * exportScale);
             tempCanvas.width = Math.max(1, Math.round(A4_WIDTH * exportScale));
@@ -25452,20 +25543,9 @@
                 const backgroundSource = pageData.backgroundSource
                     || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
                 const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
-                let sourcePdfSize = null;
-                const hasNumericDimensions = Number.isFinite(pageData.pageWidth) && Number.isFinite(pageData.pageHeight);
-                const needsSourceSizeFallback = !hasNumericDimensions
-                    || (shouldResolvePdfSourceSizes && isA4Dimensions(pageData.pageWidth, pageData.pageHeight));
-                if (needsSourceSizeFallback && backgroundSource === 'pdf' && Number.isFinite(pageData.pdfPageIndex)) {
-                    try {
-                        sourcePdfSize = await getSourcePdfPageSize(pageData.pdfPageIndex);
-                    } catch (sizeErr) {
-                        console.warn(`Failed to resolve source PDF size for page ${pageData.pdfPageIndex}:`, sizeErr);
-                    }
-                }
                 throwIfSessionInvalid();
-                const resolvedPageWidth = normalizePageDimension(pageData.pageWidth, sourcePdfSize?.width || A4_WIDTH);
-                const resolvedPageHeight = normalizePageDimension(pageData.pageHeight, sourcePdfSize?.height || A4_HEIGHT);
+                const resolvedPageWidth = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
+                const resolvedPageHeight = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
                 const pageMmWidth = pxToMm(resolvedPageWidth, A4_WIDTH);
                 const pageMmHeight = pxToMm(resolvedPageHeight, A4_HEIGHT);
                 const pageHash = `${computePageHash(pageData)}|exp:${resolvedPageWidth}x${resolvedPageHeight}|${exportProfile}`;
@@ -25596,10 +25676,10 @@
                         } else if (sourcePdfPageIndex && activePdfDocument) {
                             const pdfPage = await activePdfDocument.getPage(sourcePdfPageIndex);
                             const baseViewport = pdfPage.getViewport({ scale: 1 });
-                            const scale = Math.min(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
+                            const scale = Math.max(tempCanvas.width / baseViewport.width, tempCanvas.height / baseViewport.height);
                             const viewport = pdfPage.getViewport({ scale });
-                            pdfCanvas.width = viewport.width;
-                            pdfCanvas.height = viewport.height;
+                            pdfCanvas.width = Math.max(1, Math.round(viewport.width));
+                            pdfCanvas.height = Math.max(1, Math.round(viewport.height));
                             const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport });
                             let abortHandler = null;
                             if (abortSignal) {
@@ -25624,9 +25704,7 @@
                             }
                             throwIfAborted();
                             throwIfSessionInvalid();
-                            const offsetX = (tempCanvas.width - viewport.width) / 2;
-                            const offsetY = (tempCanvas.height - viewport.height) / 2;
-                            tempCtx.drawImage(pdfCanvas, offsetX, offsetY, viewport.width, viewport.height);
+                            tempCtx.drawImage(pdfCanvas, 0, 0, tempCanvas.width, tempCanvas.height);
                             if (pdfPage.cleanup) {
                                 pdfPage.cleanup();
                             }
