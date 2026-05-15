@@ -19641,25 +19641,12 @@
             return keys;
         }
 
-        async function spRefreshPanelsForKeys(dateKeys) {
-            if (!dateKeys || !dateKeys.size) return;
-            const monthKeys = new Set();
-            for (const key of dateKeys) {
-                const d = dateFromCalendarKey(key);
-                monthKeys.add(getCalendarMonthKey(d));
-            }
-            // Force-refetch the affected months. On failure the cached value
-            // (if any) is preserved by fetchCalendarEventsForMonth itself,
-            // so panels won't blink to empty.
-            await Promise.all(Array.from(monthKeys).map(monthKey => {
-                const [y, m] = monthKey.split('-').map(Number);
-                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1), { force: true })
-                    .catch(err => { console.warn('Calendar refresh failed:', monthKey, err); });
-            }));
-            // Build the day → events map from ALL cached months. The same
-            // event id appears in multiple months when its date falls in the
-            // 42-day grid overlap between neighbour months, so dedupe by id
-            // (keeping the freshest version) before sorting.
+        // Rebuild ALL panels' html from the current calendar events cache.
+        // Does no network I/O — assumes the cache is already fresh enough.
+        // Deduplicates events (same id present in two neighbour-month caches
+        // due to 42-day grid overlap is kept once, freshest version wins).
+        // Updates in-place — does not mark the doc dirty.
+        function spRebuildAllPanels() {
             const eventMap = new Map();
             for (const events of calendarEventsCache.values()) {
                 if (!Array.isArray(events)) continue;
@@ -19676,18 +19663,19 @@
             for (const [k, list] of eventMap) {
                 eventMap.set(k, sortEventsByStart(dedupeEventsById(list)));
             }
-            // Re-render affected panels. This is a sync (read) from Google
-            // Calendar — the user didn't make a change, so we update the
-            // in-memory html only and do NOT mark the document dirty or
-            // trigger a save. The next time the user actually modifies the
-            // doc, the fresh html will be persisted along with their change.
-            // Until then, on a cold reopen the live API will repopulate the
-            // panel within ~1 sync tick.
             for (let i = 0; i < state.pages.length; i++) {
                 const page = state.pages[i];
                 if (!page || !page.sidePanel || !Array.isArray(page.sidePanel.dateKeys)) continue;
-                const overlap = page.sidePanel.dateKeys.some(k => dateKeys.has(k));
-                if (!overlap) continue;
+                // Only rebuild a panel when every one of its dates is covered
+                // by at least one cached month — otherwise we'd be wiping a
+                // panel's events just because its month isn't loaded yet
+                // (e.g. on cold open before first sync completes).
+                const allCovered = page.sidePanel.dateKeys.every(k => {
+                    const d = dateFromCalendarKey(k);
+                    return d && !Number.isNaN(d.getTime())
+                        && calendarEventsCache.has(getCalendarMonthKey(d));
+                });
+                if (!allCovered) continue;
                 const sections = page.sidePanel.dateKeys.map(k => {
                     const date = dateFromCalendarKey(k);
                     const isWeek = page.sidePanel.dateKeys.length > 1;
@@ -19703,10 +19691,26 @@
                 if (page.sidePanel.html !== nextHtml) {
                     page.sidePanel.html = nextHtml;
                 }
-                // Always re-render: cheap (DOM-diffed in renderPageSidePanel)
-                // and ensures the "today" highlight is up to date.
                 renderPageSidePanel(i, page.sidePanel);
             }
+        }
+
+        async function spRefreshPanelsForKeys(dateKeys) {
+            if (!dateKeys || !dateKeys.size) return;
+            const monthKeys = new Set();
+            for (const key of dateKeys) {
+                const d = dateFromCalendarKey(key);
+                monthKeys.add(getCalendarMonthKey(d));
+            }
+            // Force-refetch the affected months. On failure the cached value
+            // (if any) is preserved by fetchCalendarEventsForMonth itself,
+            // so panels won't blink to empty.
+            await Promise.all(Array.from(monthKeys).map(monthKey => {
+                const [y, m] = monthKey.split('-').map(Number);
+                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1), { force: true })
+                    .catch(err => { console.warn('Calendar refresh failed:', monthKey, err); });
+            }));
+            spRebuildAllPanels();
         }
 
         async function spSaveEvent() {
@@ -19829,12 +19833,6 @@
                 const d = dateFromCalendarKey(k);
                 if (d && !Number.isNaN(d.getTime())) monthKeys.add(getCalendarMonthKey(d));
             }
-            // Snapshot prior state via a stable fingerprint so we can detect
-            // whether anything actually changed and skip re-rendering otherwise.
-            const prevFingerprints = new Map();
-            for (const mk of monthKeys) {
-                prevFingerprints.set(mk, fingerprintEvents(calendarEventsCache.get(mk)));
-            }
             // Force-refetch; failures keep the previous cache (see
             // fetchCalendarEventsForMonth) so panels never blink to empty.
             await Promise.all(Array.from(monthKeys).map(mk => {
@@ -19842,36 +19840,16 @@
                 return fetchCalendarEventsForMonth(new Date(y, m - 1, 1), { force: true })
                     .catch(err => { console.warn('Calendar sync failed:', mk, err); });
             }));
-            let changed = false;
-            for (const mk of monthKeys) {
-                const after = fingerprintEvents(calendarEventsCache.get(mk));
-                if (after !== prevFingerprints.get(mk)) { changed = true; break; }
-            }
-            if (changed) await spRefreshPanelsForKeys(allDateKeys);
+            // Always rebuild after a sync — even when Google returned identical
+            // events. The stored html in `page.sidePanel.html` (restored from
+            // IDB / the PDF metadata) can be stale from before a bugfix or
+            // from a moment when the cache was incomplete; the only way to
+            // guarantee that stale content gets cleaned up is to rebuild from
+            // the fresh, deduped cache. Rebuild is in-place DOM-diffed, so
+            // unchanged panels do zero DOM work.
+            spRebuildAllPanels();
         }
 
-        // Stable fingerprint of an event list — only the fields that affect
-        // panel rendering, so unrelated metadata changes (etag, updated, etc.)
-        // don't trigger a re-render.
-        function fingerprintEvents(events) {
-            if (!Array.isArray(events) || events.length === 0) return '[]';
-            const compact = events
-                .map(e => {
-                    const start = e?.start?.dateTime || e?.start?.date || '';
-                    const end = e?.end?.dateTime || e?.end?.date || '';
-                    return [
-                        e?.id || '',
-                        start,
-                        end,
-                        e?.summary || '',
-                        e?.colorId || '',
-                        e?.location || '',
-                        e?.status || ''
-                    ].join('|');
-                })
-                .sort();
-            return compact.join('\n');
-        }
 
         let spSyncInterval = null;
         function spStartAutoSync() {
