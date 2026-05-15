@@ -17900,23 +17900,15 @@
             const viewportHeight = (rect && rect.height) || window.innerHeight || 800;
             // Guard against zero/uninitialised zoom — fall back to 1.
             if (!Number.isFinite(state.zoom) || state.zoom <= 0) state.zoom = 1;
-            const topY = getPageTopOffset(targetPage);
-            const pageHeight = getPageHeight(targetPage);
-            const pageHeightScaled = pageHeight * state.zoom;
-            // Vertical placement: if the page fits within the viewport, centre
-            // it; otherwise align its top to a small margin below the viewport
-            // top (standard page-navigation behaviour: "jump to page N" puts
-            // the page top near the top of the screen, not its midpoint).
-            const TOP_MARGIN = 24;
-            let panY;
-            if (pageHeightScaled <= viewportHeight - TOP_MARGIN * 2) {
-                const centerY = topY + pageHeight / 2;
-                panY = -centerY * state.zoom + viewportHeight / 2;
-            } else {
-                panY = -topY * state.zoom + TOP_MARGIN;
-            }
-            // Horizontal placement: centre the page (or, more accurately,
-            // the row of pages — the doc's logical centre).
+            // Centre the target page vertically in the viewport. If the page
+            // is taller than the viewport its top/bottom extend outside, which
+            // is fine — the page's midpoint sits at viewport midpoint and the
+            // user sees the middle of the page. For pages near the start/end
+            // of the doc clampPanToVisible inside updateTransform() handles
+            // the edge cases (no content above page 1, none after the last).
+            const centerY = getPageCenterOffset(targetPage);
+            const panY = -centerY * state.zoom + viewportHeight / 2;
+            // Centre horizontally too.
             const maxPageWidth = getMaxPageWidth();
             state.panX = (viewportWidth - maxPageWidth * state.zoom) / 2 - PAGE_PADDING * state.zoom;
             state.panY = panY;
@@ -19302,6 +19294,20 @@
                 if (existing) existing.remove();
                 return;
             }
+            // Sanitize the panel data BEFORE rendering. Older docs (and any
+            // code path that bypassed the dedupe step) can have duplicate
+            // event entries baked into `panelData.html`. We can't trust the
+            // cached html — strip duplicates and persist the cleaned version
+            // back to state so it never re-appears, even on subsequent
+            // renders or saves.
+            const cleaned = sanitizeSidePanelHtmlForDuplicates(panelData.html || '');
+            if (cleaned !== panelData.html) {
+                panelData.html = cleaned;
+                const page = state.pages[pageIndex];
+                if (page && page.sidePanel === panelData) {
+                    page.sidePanel.html = cleaned;
+                }
+            }
             // In-place update path: if a panel with the same dateKeys is
             // already mounted, only swap the body's innerHTML and refresh the
             // header title. This avoids the flicker / re-animation that would
@@ -19313,6 +19319,29 @@
             if (existing) existing.remove();
             const panel = buildSidePanelElement(pageIndex, panelData);
             if (panel) row.appendChild(panel);
+        }
+
+        // Strip duplicate <button class="sp-event" data-sp-event="ID"> nodes
+        // within each day section, keeping the first occurrence per event id.
+        // Returns the original string unchanged when nothing is duplicated.
+        // Cheap: a panel has at most ~50 small DOM nodes; running this on
+        // every render adds no perceptible cost.
+        function sanitizeSidePanelHtmlForDuplicates(html) {
+            if (typeof html !== 'string' || html.indexOf('data-sp-event="') === -1) return html;
+            const container = document.createElement('div');
+            container.innerHTML = html;
+            let removed = 0;
+            container.querySelectorAll('.sp-day-section').forEach(section => {
+                const list = section.querySelector('.sp-events-list') || section;
+                const seen = new Set();
+                list.querySelectorAll('.sp-event[data-sp-event]').forEach(btn => {
+                    const id = btn.getAttribute('data-sp-event') || '';
+                    if (!id) return;
+                    if (seen.has(id)) { btn.remove(); removed += 1; }
+                    else seen.add(id);
+                });
+            });
+            return removed > 0 ? container.innerHTML : html;
         }
 
         function spPanelStructureMatches(panelEl, panelData) {
