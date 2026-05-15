@@ -18075,8 +18075,14 @@
                 totalPageHeight += getPageHeight(i) + getPageCalendarPanelSpace(i);
             }
             const computedHeight = padding * 2 + totalPageHeight + Math.max(0, pageCount - 1) * gap;
-            const domHeight = canvasContainer?.scrollHeight || 0;
-            return Math.max(computedHeight, domHeight);
+            let domPagesHeight = 0;
+            const rows = canvasContainer?.querySelectorAll?.('.page-row[data-page-row]');
+            if (rows && rows.length > 0) {
+                rows.forEach(row => {
+                    domPagesHeight = Math.max(domPagesHeight, row.offsetTop + row.offsetHeight + padding);
+                });
+            }
+            return Math.max(computedHeight, domPagesHeight);
         }
 
         function getPageBounds() {
