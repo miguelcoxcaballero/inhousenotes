@@ -1293,17 +1293,18 @@
         /* ─── Page row: page + optional side panel sit side by side ─── */
         .page-row {
             display: flex;
-            flex-direction: row;
-            align-items: flex-start;
-            gap: 0;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
         }
 
         /* ─── Calendar side panel (white + orange, always — independent of theme) ─── */
         .page-side-panel,
         [data-theme="dark"] .page-side-panel {
-            width: 270px;
-            min-height: 160px;
-            max-height: calc(100vh - 60px);
+            width: 100%;
+            height: 184px;
+            min-height: 184px;
+            max-height: 184px;
             background: #ffffff;
             border: 1px solid rgba(224, 122, 60, 0.22);
             border-radius: 12px;
@@ -1410,6 +1411,14 @@
         .page-side-panel-body::-webkit-scrollbar { width: 5px; }
         .page-side-panel-body::-webkit-scrollbar-thumb { background: rgba(224, 122, 60, 0.32); border-radius: 3px; }
 
+        .page-side-panel.is-week .page-side-panel-body,
+        [data-theme="dark"] .page-side-panel.is-week .page-side-panel-body {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 5px;
+            overflow-x: hidden;
+        }
+
         .page-side-panel-body .sp-day-section,
         [data-theme="dark"] .page-side-panel-body .sp-day-section {
             margin-bottom: 5px;
@@ -1420,6 +1429,13 @@
         }
 
         .page-side-panel-body .sp-day-section:last-child { margin-bottom: 0; }
+
+        .page-side-panel.is-week .sp-day-section,
+        [data-theme="dark"] .page-side-panel.is-week .sp-day-section {
+            min-width: 0;
+            margin-bottom: 0;
+            padding: 4px 4px 5px;
+        }
 
         /* Today's day section — green accent */
         .page-side-panel-body .sp-day-section.today,
@@ -1458,6 +1474,11 @@
             border-bottom: 1px solid rgba(224, 122, 60, 0.2);
         }
 
+        .page-side-panel.is-week .sp-day-header {
+            gap: 3px;
+            padding-right: 15px;
+        }
+
         .page-side-panel-body .sp-day-label,
         [data-theme="dark"] .page-side-panel-body .sp-day-label {
             font-size: 9px;
@@ -1470,6 +1491,10 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+
+        .page-side-panel.is-week .sp-day-label {
+            font-size: 7.5px;
         }
 
         .page-side-panel-body .sp-add-btn {
@@ -1535,6 +1560,16 @@
             transition: background 0.14s, border-color 0.14s, box-shadow 0.14s;
         }
 
+        .page-side-panel.is-week .sp-event,
+        [data-theme="dark"] .page-side-panel.is-week .sp-event {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1px;
+            padding: 2px 3px;
+            font-size: 8px;
+            border-left-width: 2px;
+        }
+
         .page-side-panel-body .sp-event:hover {
             background: #fafafa;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
@@ -1548,6 +1583,10 @@
             flex-shrink: 0;
         }
 
+        .page-side-panel.is-week .sp-event-time {
+            font-size: 7px;
+        }
+
         .page-side-panel-body .sp-event-title {
             font-size: 10px;
             color: #2a1d14;
@@ -1556,6 +1595,11 @@
             line-height: 1.2;
             flex: 1;
             min-width: 0;
+        }
+
+        .page-side-panel.is-week .sp-event-title {
+            font-size: 8px;
+            line-height: 1.15;
         }
 
         .page-side-panel-body .sp-no-events,
@@ -7287,6 +7331,8 @@
         const TEMPLATE_BG_QUALITY = 0.86;
         const PAGE_PADDING = 30;
         const PAGE_GAP = 30;
+        const PAGE_CALENDAR_PANEL_HEIGHT = 184;
+        const PAGE_CALENDAR_PANEL_GAP = 14;
         const VISIBLE_PAGE_BUFFER = 1;
         const VISIBLE_PAGE_BUFFER_ACTIVE = 0;
         const MAX_ACTIVE_PAGES = 3;
@@ -8423,9 +8469,14 @@
             let y = PAGE_PADDING;
             for (let i = 0; i < idx; i++) {
                 const { height } = getPageDimensions(i);
-                y += height + PAGE_GAP;
+                y += height + getPageCalendarPanelSpace(i) + PAGE_GAP;
             }
             return y;
+        }
+
+        function getPageCalendarPanelSpace(pageIndex) {
+            const page = state.pages[pageIndex];
+            return page && page.sidePanel ? PAGE_CALENDAR_PANEL_HEIGHT + PAGE_CALENDAR_PANEL_GAP : 0;
         }
 
         function getPageHeight(pageIndex) {
@@ -9444,7 +9495,7 @@
                 } else if (firstVisible !== -1 && top > viewBottom) {
                     break;
                 }
-                y = bottom + PAGE_GAP;
+                y = bottom + getPageCalendarPanelSpace(i) + PAGE_GAP;
             }
             if (firstVisible === -1) {
                 if (state.pages.length === 0) return { start: 0, end: -1 };
@@ -17746,7 +17797,7 @@
             if (pageCount === 0) return 0;
             let totalPageHeight = 0;
             for (let i = 0; i < pageCount; i++) {
-                totalPageHeight += getPageHeight(i);
+                totalPageHeight += getPageHeight(i) + getPageCalendarPanelSpace(i);
             }
             return padding * 2 + totalPageHeight + Math.max(0, pageCount - 1) * gap;
         }
@@ -17760,7 +17811,7 @@
                 pageHeight = A4_HEIGHT;
             } else {
                 for (let i = 0; i < state.pages.length; i++) {
-                    pageHeight += getPageHeight(i);
+                    pageHeight += getPageHeight(i) + getPageCalendarPanelSpace(i);
                 }
             }
             const maxWidth = getMaxPageWidth();
@@ -19198,6 +19249,10 @@
                     const pageIndex = startPage + i;
                     const page = state.pages[pageIndex];
                     if (!page) continue;
+                    let removedOldCards = 0;
+                    if (calendarPagesClear?.checked) {
+                        removedOldCards = removeCalendarImportedImages(page);
+                    }
                     const sections = [];
                     if (mode === 'week') {
                         const weekStart = addCalendarDays(startDate, i * 7);
@@ -19227,7 +19282,13 @@
                     const html = buildSidePanelHtml(sections);
                     page.sidePanel = { title, html, dateKeys };
                     renderPageSidePanel(pageIndex, page.sidePanel);
-                    markPageDirty(pageIndex, 'meta');
+                    if (removedOldCards > 0) {
+                        page.needsRedraw = true;
+                        redrawPage(pageIndex);
+                        markPageDirty(pageIndex, 'full');
+                    } else {
+                        markPageDirty(pageIndex, 'meta');
+                    }
                     added += 1;
                     if ((i + 1) % 4 === 0) await yieldToMainThread();
                 }
@@ -19307,7 +19368,10 @@
             if (!panelData) return null;
             const panel = document.createElement('div');
             panel.className = 'page-side-panel';
+            panel.classList.toggle('is-week', Array.isArray(panelData.dateKeys) && panelData.dateKeys.length > 1);
             panel.dataset.panelPage = pageIndex;
+            const { width: pageWidth } = getPageDimensions(pageIndex);
+            panel.style.width = `${pageWidth}px`;
 
             const header = document.createElement('div');
             header.className = 'page-side-panel-header';
@@ -19431,6 +19495,7 @@
         }
 
         function spUpdateSidePanelInPlace(panelEl, pageIndex, panelData) {
+            panelEl.classList.toggle('is-week', Array.isArray(panelData.dateKeys) && panelData.dateKeys.length > 1);
             const titleEl = panelEl.querySelector('.page-side-panel-title');
             if (titleEl && !titleEl.matches(':focus')) {
                 const nextTitle = panelData.title || 'Calendario';
