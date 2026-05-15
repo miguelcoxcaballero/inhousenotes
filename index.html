@@ -3710,6 +3710,97 @@
             padding-bottom: 10px;
         }
 
+        /* "APP" download button — web-only. The Android in-app WebView sets
+           html[data-inhouse-app="true"] (see detectInhouseApp), so this rule
+           keeps the button hidden there. */
+        .btn-download-app {
+            min-height: var(--header-btn-size);
+            padding-top: 10px;
+            padding-bottom: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-download-app svg {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        html[data-inhouse-app="true"] .btn-download-app {
+            display: none !important;
+        }
+
+        /* Download-APK modal */
+        .download-app-modal,
+        [data-theme="dark"] .download-app-modal {
+            position: relative;
+            width: min(92vw, 400px);
+            padding: 30px 28px 26px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 18px;
+            background: #ffffff;
+            color: #1a1a1a;
+            border-radius: 16px;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+        }
+
+        .download-app-close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: transparent;
+            border: none;
+            padding: 6px;
+            cursor: pointer;
+            border-radius: 8px;
+            color: inherit;
+            opacity: 0.6;
+            transition: opacity 0.14s, background 0.14s;
+        }
+
+        .download-app-close:hover {
+            opacity: 1;
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .download-app-close svg {
+            width: 18px;
+            height: 18px;
+            display: block;
+        }
+
+        .download-app-icon {
+            width: 92px;
+            height: 92px;
+            display: block;
+        }
+
+        .download-app-title {
+            font-size: 1.05rem;
+            line-height: 1.35;
+            margin: 0;
+            font-weight: 600;
+        }
+
+        .download-app-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 22px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .download-app-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
         .drive-profile {
             position: relative;
             display: flex;
@@ -6169,6 +6260,16 @@
                     </svg>
                 </button>
                 <button class="btn btn-primary" id="btn-drive-new">New PDF</button>
+                <button class="btn btn-secondary btn-download-app" id="btn-download-app" type="button"
+                    title="Descargar la app de Android" aria-label="Descargar la app de Android">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    <span>APP</span>
+                </button>
                 <button class="btn btn-primary" id="btn-drive-login">Sign in</button>
                 <div class="drive-profile hidden" id="drive-profile">
                     <button class="drive-profile-btn" id="btn-drive-profile" type="button" aria-label="Account menu"
@@ -6780,6 +6881,32 @@
                 </button>
             </div>
             <div class="calendar-day-events" id="calendar-day-events"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-download-app">
+        <div class="modal download-app-modal">
+            <button class="panel-close download-app-close" id="download-app-close" type="button" aria-label="Cerrar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+            </button>
+            <svg class="download-app-icon" viewBox="0 0 24 24" fill="#3ddc84" aria-hidden="true">
+                <path d="M17.6 9.48l1.84-3.18a.4.4 0 0 0-.69-.4L16.85 9.1A11.05 11.05 0 0 0 12 8a11.05 11.05 0 0 0-4.85 1.1L5.25 5.9a.4.4 0 0 0-.69.4l1.84 3.18A10.61 10.61 0 0 0 1 18h22a10.61 10.61 0 0 0-5.4-8.52ZM7 15.25a1.05 1.05 0 1 1 1.05-1.05A1.05 1.05 0 0 1 7 15.25Zm10 0a1.05 1.05 0 1 1 1.05-1.05A1.05 1.05 0 0 1 17 15.25Z"/>
+            </svg>
+            <h2 class="download-app-title">Descarga la app de inhouse notes para Android</h2>
+            <a class="btn btn-primary download-app-btn" id="download-app-link"
+                href="https://github.com/miguelcoxcaballero/inhousenotes/raw/main/inhouse-notes-release-v1.0.0.apk"
+                download="inhouse-notes-release-v1.0.0.apk" rel="noopener">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                <span>Descargar APK</span>
+            </a>
         </div>
     </div>
 
@@ -8005,6 +8132,9 @@
         const driveBreadcrumbsEl = document.getElementById('drive-breadcrumbs');
         const driveLoginBtn = document.getElementById('btn-drive-login');
         const driveNewBtn = document.getElementById('btn-drive-new');
+        const downloadAppBtn = document.getElementById('btn-download-app');
+        const downloadAppModal = document.getElementById('modal-download-app');
+        const downloadAppCloseBtn = document.getElementById('download-app-close');
         const driveBinBtn = document.getElementById('btn-drive-bin');
         const driveFullscreenBtn = document.getElementById('btn-drive-fullscreen');
         const driveProfileWrap = document.getElementById('drive-profile');
@@ -17520,6 +17650,28 @@
             }
             if (driveNewBtn) {
                 driveNewBtn.addEventListener('click', createNewDriveDocument);
+            }
+            // "APP" download — only meaningful on the web; the Android in-app
+            // WebView hides the trigger button via CSS (data-inhouse-app).
+            if (downloadAppBtn && downloadAppModal) {
+                const openDownloadAppModal = () => {
+                    downloadAppModal.classList.add('visible');
+                };
+                const closeDownloadAppModal = () => {
+                    downloadAppModal.classList.remove('visible');
+                };
+                downloadAppBtn.addEventListener('click', openDownloadAppModal);
+                if (downloadAppCloseBtn) {
+                    downloadAppCloseBtn.addEventListener('click', closeDownloadAppModal);
+                }
+                downloadAppModal.addEventListener('click', (e) => {
+                    if (e.target === downloadAppModal) closeDownloadAppModal();
+                });
+                // Close the modal after the download click — feels cleaner.
+                const link = document.getElementById('download-app-link');
+                if (link) link.addEventListener('click', () => {
+                    setTimeout(closeDownloadAppModal, 100);
+                });
             }
             if (driveMenuDiaryBtn) {
                 driveMenuDiaryBtn.addEventListener('click', () => {
