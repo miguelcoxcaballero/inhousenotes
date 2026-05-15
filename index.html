@@ -8355,8 +8355,11 @@
                 tryOpenPendingSharedWithoutSignIn();
             }
 
-            // Center page after DOM is ready
-            setTimeout(() => {
+            // Position the viewport once layout is stable. A fixed setTimeout
+            // is unreliable on slower machines (canvasViewport may have 0
+            // height when it fires), so we wait for an actual measurable
+            // viewport before measuring page offsets.
+            whenViewportReady(() => {
                 const wentToToday = scrollToTodayCalendarPage();
                 if (!wentToToday) {
                     if (!applyViewState(pendingViewState)) {
@@ -8367,7 +8370,27 @@
                 if (state.driveFileId && driveAccessToken) {
                     startCollabPolling();
                 }
-            }, 100);
+            });
+        }
+
+        // Run `fn` once the canvas viewport has non-zero dimensions and at
+        // least one page row is laid out. Falls back after `maxFrames` to
+        // avoid waiting forever if the viewport is genuinely empty.
+        function whenViewportReady(fn, maxFrames = 60) {
+            let frames = 0;
+            const tick = () => {
+                const rect = canvasViewport && canvasViewport.getBoundingClientRect();
+                const ready = rect && rect.width > 0 && rect.height > 0
+                    && (state.pages.length === 0
+                        || !!canvasContainer.querySelector('.page-row'));
+                if (ready || frames >= maxFrames) {
+                    try { fn(); } catch (err) { console.error('whenViewportReady fn failed:', err); }
+                    return;
+                }
+                frames += 1;
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
         }
 
         // Center view on top of first page
@@ -12911,8 +12934,36 @@
             if (driveBackBtn) driveBackBtn.disabled = driveFolderStack.length <= 1;
         }
 
+        // Fingerprint a Drive item list — covers the fields that actually
+        // affect rendering. Used to skip re-renders when an auto-refresh
+        // poll returns identical data (which is the common case), avoiding
+        // visible flicker every few seconds.
+        function driveListFingerprint(items) {
+            if (!Array.isArray(items) || items.length === 0) return '0';
+            return items.map(it => [
+                it?.id || '',
+                it?.modifiedTime || '',
+                it?.name || '',
+                it?.starred ? 1 : 0,
+                it?.thumbnailLink ? 1 : 0,
+                it?.folderColorRgb || '',
+                it?.mimeType || ''
+            ].join('|')).join('\n');
+        }
+
+        const driveListLastRenderHash = {
+            recents: '',
+            starred: '',
+            shared: '',
+            folders: '',
+            files: ''
+        };
+
         function renderDriveRecents(files) {
             if (!driveRecentsEl) return;
+            const fp = driveListFingerprint(files);
+            if (driveListLastRenderHash.recents === fp && driveRecentsEl.children.length > 0) return;
+            driveListLastRenderHash.recents = fp;
             driveRecentsEl.innerHTML = '';
             if (!files || files.length === 0) return;
             files.forEach(file => driveRecentsEl.appendChild(createDriveFileCard(file)));
@@ -12920,6 +12971,13 @@
 
         function renderDriveStarred(files) {
             if (!driveStarredEl) return;
+            const fp = driveListFingerprint(files);
+            if (driveListLastRenderHash.starred === fp && (driveStarredEl.children.length > 0 || !files || files.length === 0)) {
+                // Still toggle empty state in case it transitioned
+                if (driveStarredEmptyEl) driveStarredEmptyEl.classList.toggle('hidden', !!files && files.length > 0);
+                return;
+            }
+            driveListLastRenderHash.starred = fp;
             driveStarredEl.innerHTML = '';
             if (!files || files.length === 0) {
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.remove('hidden');
@@ -12931,6 +12989,12 @@
 
         function renderDriveShared(files) {
             if (!driveSharedEl) return;
+            const fp = driveListFingerprint(files);
+            if (driveListLastRenderHash.shared === fp && (driveSharedEl.children.length > 0 || !files || files.length === 0)) {
+                if (driveSharedEmptyEl) driveSharedEmptyEl.classList.toggle('hidden', !!files && files.length > 0);
+                return;
+            }
+            driveListLastRenderHash.shared = fp;
             driveSharedEl.innerHTML = '';
             if (!files || files.length === 0) {
                 if (driveSharedEmptyEl) driveSharedEmptyEl.classList.remove('hidden');
@@ -12980,18 +13044,34 @@
         }
 
         function renderDriveFolderContents(folders, files) {
-            if (driveFoldersEl) driveFoldersEl.innerHTML = '';
-            if (driveFolderFilesEl) driveFolderFilesEl.innerHTML = '';
-
             const hasFolders = Array.isArray(folders) && folders.length > 0;
             const hasFiles = Array.isArray(files) && files.length > 0;
 
-            if (hasFolders && driveFoldersEl) {
-                folders.forEach(folder => driveFoldersEl.appendChild(createDriveFolderCard(folder)));
+            // Skip the folder grid re-render if nothing changed.
+            if (driveFoldersEl) {
+                const fp = driveListFingerprint(folders);
+                const alreadyRendered = driveListLastRenderHash.folders === fp
+                    && (driveFoldersEl.children.length > 0 || !hasFolders);
+                if (!alreadyRendered) {
+                    driveListLastRenderHash.folders = fp;
+                    driveFoldersEl.innerHTML = '';
+                    if (hasFolders) {
+                        folders.forEach(folder => driveFoldersEl.appendChild(createDriveFolderCard(folder)));
+                    }
+                }
             }
 
-            if (hasFiles && driveFolderFilesEl) {
-                files.forEach(file => driveFolderFilesEl.appendChild(createDriveFileCard(file)));
+            if (driveFolderFilesEl) {
+                const fp = driveListFingerprint(files);
+                const alreadyRendered = driveListLastRenderHash.files === fp
+                    && (driveFolderFilesEl.children.length > 0 || !hasFiles);
+                if (!alreadyRendered) {
+                    driveListLastRenderHash.files = fp;
+                    driveFolderFilesEl.innerHTML = '';
+                    if (hasFiles) {
+                        files.forEach(file => driveFolderFilesEl.appendChild(createDriveFileCard(file)));
+                    }
+                }
             }
 
             if (driveFolderEmptyEl) {
@@ -13152,6 +13232,14 @@
             if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
             if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
             if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
+            // After replacing real items with skeletons, the next render of
+            // real data must always paint regardless of the previous hash —
+            // otherwise the skeletons would stick.
+            driveListLastRenderHash.recents = '';
+            driveListLastRenderHash.starred = '';
+            driveListLastRenderHash.shared = '';
+            driveListLastRenderHash.folders = '';
+            driveListLastRenderHash.files = '';
         }
 
         async function refreshDriveFiles() {
@@ -19118,10 +19206,56 @@
             const row = canvasContainer.querySelector('.page-row[data-page-row="' + pageIndex + '"]');
             if (!row) return;
             const existing = row.querySelector('.page-side-panel');
+            if (!panelData) {
+                if (existing) existing.remove();
+                return;
+            }
+            // In-place update path: if a panel with the same dateKeys is
+            // already mounted, only swap the body's innerHTML and refresh the
+            // header title. This avoids the flicker / re-animation that would
+            // happen if we tore down and rebuilt the element.
+            if (existing && spPanelStructureMatches(existing, panelData)) {
+                spUpdateSidePanelInPlace(existing, pageIndex, panelData);
+                return;
+            }
             if (existing) existing.remove();
-            if (!panelData) return;
             const panel = buildSidePanelElement(pageIndex, panelData);
             if (panel) row.appendChild(panel);
+        }
+
+        function spPanelStructureMatches(panelEl, panelData) {
+            if (!panelEl || !panelData || !Array.isArray(panelData.dateKeys)) return false;
+            const existingKeys = Array.from(panelEl.querySelectorAll('.sp-day-section'))
+                .map(el => el.getAttribute('data-day-key') || '');
+            if (existingKeys.length !== panelData.dateKeys.length) return false;
+            for (let i = 0; i < existingKeys.length; i++) {
+                if (existingKeys[i] !== panelData.dateKeys[i]) return false;
+            }
+            return true;
+        }
+
+        function spUpdateSidePanelInPlace(panelEl, pageIndex, panelData) {
+            const titleEl = panelEl.querySelector('.page-side-panel-title');
+            if (titleEl && !titleEl.matches(':focus')) {
+                const nextTitle = panelData.title || 'Calendario';
+                if (titleEl.textContent !== nextTitle) titleEl.textContent = nextTitle;
+            }
+            const body = panelEl.querySelector('.page-side-panel-body');
+            if (!body) return;
+            // Preserve current scroll position so the user doesn't get yanked
+            // back to the top on every 5-second sync tick.
+            const prevScroll = body.scrollTop;
+            // Only replace innerHTML if the rendered HTML actually differs.
+            if (body.innerHTML !== (panelData.html || '')) {
+                body.innerHTML = panelData.html || '';
+            }
+            // Re-apply the "today" highlight (date may have rolled over).
+            const todayKey = formatCalendarDateKey(new Date());
+            body.querySelectorAll('.sp-day-section').forEach(sec => {
+                const k = sec.getAttribute('data-day-key') || '';
+                sec.classList.toggle('today', k === todayKey);
+            });
+            body.scrollTop = prevScroll;
         }
 
 
@@ -19422,13 +19556,13 @@
                 const d = dateFromCalendarKey(key);
                 monthKeys.add(getCalendarMonthKey(d));
             }
-            for (const monthKey of monthKeys) {
-                calendarEventsCache.delete(monthKey);
-                calendarEventsInFlight.delete(monthKey);
-            }
+            // Force-refetch the affected months. On failure the cached value
+            // (if any) is preserved by fetchCalendarEventsForMonth itself,
+            // so panels won't blink to empty.
             await Promise.all(Array.from(monthKeys).map(monthKey => {
                 const [y, m] = monthKey.split('-').map(Number);
-                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1)).catch(() => []);
+                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1), { force: true })
+                    .catch(err => { console.warn('Calendar refresh failed:', monthKey, err); });
             }));
             const eventMap = new Map();
             for (const events of calendarEventsCache.values()) {
@@ -19593,22 +19727,48 @@
                 const d = dateFromCalendarKey(k);
                 if (d && !Number.isNaN(d.getTime())) monthKeys.add(getCalendarMonthKey(d));
             }
-            const prevSnapshots = new Map();
-            for (const mk of monthKeys) prevSnapshots.set(mk, JSON.stringify(calendarEventsCache.get(mk) || []));
+            // Snapshot prior state via a stable fingerprint so we can detect
+            // whether anything actually changed and skip re-rendering otherwise.
+            const prevFingerprints = new Map();
             for (const mk of monthKeys) {
-                calendarEventsCache.delete(mk);
-                calendarEventsInFlight.delete(mk);
+                prevFingerprints.set(mk, fingerprintEvents(calendarEventsCache.get(mk)));
             }
+            // Force-refetch; failures keep the previous cache (see
+            // fetchCalendarEventsForMonth) so panels never blink to empty.
             await Promise.all(Array.from(monthKeys).map(mk => {
                 const [y, m] = mk.split('-').map(Number);
-                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1)).catch(() => []);
+                return fetchCalendarEventsForMonth(new Date(y, m - 1, 1), { force: true })
+                    .catch(err => { console.warn('Calendar sync failed:', mk, err); });
             }));
             let changed = false;
             for (const mk of monthKeys) {
-                const after = JSON.stringify(calendarEventsCache.get(mk) || []);
-                if (after !== prevSnapshots.get(mk)) { changed = true; break; }
+                const after = fingerprintEvents(calendarEventsCache.get(mk));
+                if (after !== prevFingerprints.get(mk)) { changed = true; break; }
             }
             if (changed) await spRefreshPanelsForKeys(allDateKeys);
+        }
+
+        // Stable fingerprint of an event list — only the fields that affect
+        // panel rendering, so unrelated metadata changes (etag, updated, etc.)
+        // don't trigger a re-render.
+        function fingerprintEvents(events) {
+            if (!Array.isArray(events) || events.length === 0) return '[]';
+            const compact = events
+                .map(e => {
+                    const start = e?.start?.dateTime || e?.start?.date || '';
+                    const end = e?.end?.dateTime || e?.end?.date || '';
+                    return [
+                        e?.id || '',
+                        start,
+                        end,
+                        e?.summary || '',
+                        e?.colorId || '',
+                        e?.location || '',
+                        e?.status || ''
+                    ].join('|');
+                })
+                .sort();
+            return compact.join('\n');
         }
 
         let spSyncInterval = null;
@@ -19675,26 +19835,39 @@
             if (!options.force && calendarEventsCache.has(monthKey)) {
                 return calendarEventsCache.get(monthKey);
             }
-            if (!options.force && calendarEventsInFlight.has(monthKey)) {
+            // Coalesce concurrent fetches for the same month — even a forced
+            // refresh joins the in-flight request to avoid double load.
+            if (calendarEventsInFlight.has(monthKey)) {
                 return calendarEventsInFlight.get(monthKey);
             }
-            if (options.force) {
-                calendarEventsCache.delete(monthKey);
-                calendarEventsInFlight.delete(monthKey);
-            }
+            // Keep the previous cached value around so a failed fetch can fall
+            // back to it instead of leaving the cache empty (which manifests
+            // as "events disappearing" on the panels).
+            const previous = calendarEventsCache.has(monthKey)
+                ? calendarEventsCache.get(monthKey)
+                : null;
             const request = (async () => {
-                const { start, end } = getCalendarGridRange(monthDate);
-                const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-                url.searchParams.set('timeMin', start.toISOString());
-                url.searchParams.set('timeMax', end.toISOString());
-                url.searchParams.set('singleEvents', 'true');
-                url.searchParams.set('orderBy', 'startTime');
-                url.searchParams.set('maxResults', '2500');
-                const res = await calendarFetch(url.toString());
-                const data = await res.json();
-                const events = Array.isArray(data.items) ? data.items : [];
-                calendarEventsCache.set(monthKey, events);
-                return events;
+                try {
+                    const { start, end } = getCalendarGridRange(monthDate);
+                    const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+                    url.searchParams.set('timeMin', start.toISOString());
+                    url.searchParams.set('timeMax', end.toISOString());
+                    url.searchParams.set('singleEvents', 'true');
+                    url.searchParams.set('orderBy', 'startTime');
+                    url.searchParams.set('maxResults', '2500');
+                    const res = await calendarFetch(url.toString());
+                    const data = await res.json();
+                    const events = Array.isArray(data.items) ? data.items : [];
+                    calendarEventsCache.set(monthKey, events);
+                    return events;
+                } catch (err) {
+                    if (previous !== null) {
+                        // Restore previous cache on failure so panels keep showing
+                        // the last-known events instead of going blank.
+                        calendarEventsCache.set(monthKey, previous);
+                    }
+                    throw err;
+                }
             })().finally(() => {
                 calendarEventsInFlight.delete(monthKey);
             });
@@ -25702,17 +25875,50 @@
                     console.log(`Page ${i} merged: ${localOnlyStrokes.length} local-only, ${localSuppressedRemoteCount} local-deleted-remote, ${localStrokeConflictCount} local-stroke-conflicts, ${localImageConflictCount} local-image-conflicts, ${allDeleted.size} deleted, ${mergedStrokes.length} total strokes`);
                 }
 
-                // Restore side panel from remote data if present
+                // Reconcile side panel from remote data. The HTML field is a
+                // cached rendering of live calendar data — each device fetches
+                // events independently from Google's API, so the HTML can
+                // legitimately diverge between devices without indicating any
+                // real change. We therefore compare on the structural fields
+                // (dateKeys + title) and only accept remote's html when the
+                // panel didn't exist locally. The local auto-sync will keep
+                // the html fresh.
                 if (remotePageData.sidePanel && remotePageData.sidePanel.html) {
                     const prevPanel = currentPage.sidePanel;
-                    if (!prevPanel || prevPanel.html !== remotePageData.sidePanel.html || prevPanel.title !== remotePageData.sidePanel.title) {
+                    const remoteDateKeys = Array.isArray(remotePageData.sidePanel.dateKeys)
+                        ? remotePageData.sidePanel.dateKeys
+                        : null;
+                    const remoteTitle = remotePageData.sidePanel.title || '';
+                    const sameKeys = prevPanel
+                        && Array.isArray(prevPanel.dateKeys)
+                        && remoteDateKeys
+                        && prevPanel.dateKeys.length === remoteDateKeys.length
+                        && prevPanel.dateKeys.every((k, idx) => k === remoteDateKeys[idx]);
+                    if (!prevPanel) {
                         currentPage.sidePanel = {
-                            title: remotePageData.sidePanel.title || '',
+                            title: remoteTitle,
                             html: remotePageData.sidePanel.html,
-                            dateKeys: Array.isArray(remotePageData.sidePanel.dateKeys) ? remotePageData.sidePanel.dateKeys : null
+                            dateKeys: remoteDateKeys
+                        };
+                        renderPageSidePanel(i, currentPage.sidePanel);
+                    } else if (!sameKeys) {
+                        // Different structure — accept remote and let auto-sync
+                        // refresh the events for those new dates.
+                        currentPage.sidePanel = {
+                            title: remoteTitle,
+                            html: remotePageData.sidePanel.html,
+                            dateKeys: remoteDateKeys
+                        };
+                        renderPageSidePanel(i, currentPage.sidePanel);
+                    } else if (prevPanel.title !== remoteTitle) {
+                        // Same dates, only the title changed on the other device
+                        currentPage.sidePanel = {
+                            ...prevPanel,
+                            title: remoteTitle
                         };
                         renderPageSidePanel(i, currentPage.sidePanel);
                     }
+                    // If sameKeys && sameTitle, keep local html untouched.
                 } else if (remotePageData.sidePanel === null && currentPage.sidePanel) {
                     // Remote explicitly removed the panel
                     currentPage.sidePanel = null;
@@ -27073,7 +27279,9 @@
                 }
 
                 hideLoading();
-                if (!scrollToTodayCalendarPage()) centerViewOnTop();
+                whenViewportReady(() => {
+                    if (!scrollToTodayCalendarPage()) centerViewOnTop();
+                });
 
             } catch (err) {
                 if (err?.name === 'AbortError') {
