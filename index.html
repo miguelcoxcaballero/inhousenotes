@@ -8213,6 +8213,8 @@
         let pdfRenderToken = 0;
         let pdfRenderResumeHandle = null;
         let activePdfBackgroundRenderTask = null;
+        let activePdfEmbeddedStrokesCache = undefined;
+        let activePdfEmbeddedKeywords = '';
         let pdfRestoreInProgress = false;
         let pageStructureVersion = 0;
         const pdfBackgroundCache = new Map();
@@ -9191,6 +9193,8 @@
             });
             activePdfDocument = null;
             activePdfPageCount = 0;
+            activePdfEmbeddedStrokesCache = undefined;
+            activePdfEmbeddedKeywords = '';
             pdfBackgroundScale = Math.min(3, CANVAS_SCALE * 1.5);
             pdfRenderQueue = [];
             pdfRenderActive = false;
@@ -11919,9 +11923,9 @@
             }
         }
 
-        async function restorePdfBackgroundsIfNeeded() {
+        async function restorePdfBackgroundsIfNeeded(options = {}) {
             if (!driveAccessToken || activePdfDocument || !state.driveFileId) return;
-            const needsPdf = state.pages.some(page => page?.pdfPageIndex);
+            const needsPdf = !!options.force || state.pages.some(page => page?.pdfPageIndex);
             if (!needsPdf) return;
             if (pdfRestoreInProgress) return;
             pdfRestoreInProgress = true;
@@ -11964,9 +11968,13 @@
                     try {
                         const meta0 = await pdf.getMetadata();
                         const kw0 = meta0?.info?.Keywords || '';
+                        activePdfEmbeddedKeywords = kw0;
+                        activePdfEmbeddedStrokesCache = await decodeEmbeddedStrokesFromPdfKeywords(kw0);
                         const decodedHistory = await decodeVersionHistoryFromKeywords(kw0);
                         state.versionHistory = Array.isArray(decodedHistory) ? decodedHistory : [];
                     } catch (vhErr) {
+                        activePdfEmbeddedKeywords = '';
+                        activePdfEmbeddedStrokesCache = null;
                         state.versionHistory = state.versionHistory || [];
                     }
                     // Recovery order: 1) attached clean original, 2) IH_OVERLAY_REFS
@@ -12055,6 +12063,89 @@
             } finally {
                 pdfRestoreInProgress = false;
             }
+        }
+
+        function stripPdfKeywordExtras(str) {
+            const text = String(str || '');
+            const semi = text.indexOf(';');
+            return semi >= 0 ? text.substring(0, semi) : text;
+        }
+
+        async function decodeEmbeddedStrokesFromPdfKeywords(keywords) {
+            const text = String(keywords || '');
+            if (text.startsWith('STROKES_Z:')) {
+                const encodedData = stripPdfKeywordExtras(text.substring('STROKES_Z:'.length));
+                const decodedString = await decompressFromBase64(encodedData);
+                return JSON.parse(decodedString);
+            }
+            if (text.startsWith('STROKES_DATA:')) {
+                const encodedData = stripPdfKeywordExtras(text.substring('STROKES_DATA:'.length));
+                const decodedString = decodeURIComponent(escape(atob(encodedData)));
+                return JSON.parse(decodedString);
+            }
+            return null;
+        }
+
+        async function getActivePdfEmbeddedStrokes() {
+            if (activePdfEmbeddedStrokesCache !== undefined) return activePdfEmbeddedStrokesCache;
+            if (!activePdfDocument) return null;
+            try {
+                const metadata = await activePdfDocument.getMetadata();
+                activePdfEmbeddedKeywords = metadata?.info?.Keywords || '';
+                activePdfEmbeddedStrokesCache = await decodeEmbeddedStrokesFromPdfKeywords(activePdfEmbeddedKeywords);
+            } catch (err) {
+                activePdfEmbeddedKeywords = '';
+                activePdfEmbeddedStrokesCache = null;
+            }
+            return activePdfEmbeddedStrokesCache;
+        }
+
+        async function recoverMissingPageDataFromActivePdf(pageIndex) {
+            if (!Number.isFinite(pageIndex)) return null;
+            if (!activePdfDocument && state.driveFileId && driveAccessToken) {
+                await restorePdfBackgroundsIfNeeded({ force: true });
+            }
+            const embeddedPages = await getActivePdfEmbeddedStrokes();
+            const pageData = Array.isArray(embeddedPages) ? embeddedPages[pageIndex] : null;
+            if (!pageData) return null;
+            const current = state.pages[pageIndex] || {};
+            const backgroundSource = current.backgroundSource
+                || pageData.backgroundSource
+                || (pageData.hasCustomBackground ? 'pdf' : 'template');
+            const restoredStrokes = Array.isArray(pageData.strokes)
+                ? pageData.strokes
+                    .filter(stroke => stroke && Array.isArray(stroke.points))
+                    .map(stroke => cloneStroke(stroke))
+                    .filter(Boolean)
+                : [];
+            const restoredImages = Array.isArray(pageData.images)
+                ? JSON.parse(JSON.stringify(pageData.images))
+                : [];
+            const restoredPage = {
+                ...current,
+                pageId: pageData.pageId || current.pageId || generatePageId(),
+                strokes: restoredStrokes,
+                images: restoredImages,
+                deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? [...pageData.deletedStrokeIds] : [],
+                backgroundImage: current.backgroundImage || null,
+                backgroundSource,
+                templateKind: normalizeTemplateKind(pageData.templateKind || current.templateKind),
+                pdfPageIndex: Number.isFinite(current.pdfPageIndex)
+                    ? current.pdfPageIndex
+                    : (backgroundSource === 'pdf' ? pageIndex + 1 : null),
+                pageWidth: normalizePageDimension(pageData.pageWidth || current.pageWidth, A4_WIDTH),
+                pageHeight: normalizePageDimension(pageData.pageHeight || current.pageHeight, A4_HEIGHT),
+                sidePanel: current.sidePanel || pageData.sidePanel || null,
+                strokeCount: restoredStrokes.length,
+                unloaded: false,
+                missingData: false,
+                pendingUnload: false,
+                needsRedraw: true
+            };
+            ensureStrokeIds(restoredPage);
+            const saved = await savePageToIndexedDb(pageIndex, restoredPage);
+            if (!saved) return restoredPage;
+            return restoredPage;
         }
 
         async function driveFetch(url, options = {}, _retried = false) {
@@ -22519,8 +22610,10 @@
             };
         }
 
-        async function migrateLegacyPayload(payload) {
+        async function migrateLegacyPayload(payload, options = {}) {
             const pages = Array.isArray(payload?.pages) ? payload.pages : [];
+            const sessionToken = getDocumentSessionToken();
+            const awaitAllPages = !!options.awaitAllPages;
             await clearPageStore();
             pageDirty.clear();
             pageDirtyMode.clear();
@@ -22549,6 +22642,7 @@
 
             const keepCount = Math.min(MAX_ACTIVE_PAGES, pages.length);
             for (let i = 0; i < keepCount; i++) {
+                if (!isDocumentSessionTokenValid(sessionToken)) return;
                 const fullPage = normalizeLegacyPage(pages[i]);
                 state.pages[i] = {
                     ...fullPage,
@@ -22557,6 +22651,7 @@
                     unloaded: false
                 };
                 const saved = await savePageToIndexedDb(i, fullPage);
+                if (!isDocumentSessionTokenValid(sessionToken)) return;
                 if (saved) {
                     legacyPagesCache[i] = null;
                 }
@@ -22566,17 +22661,37 @@
 
             let index = keepCount;
             const batchSize = 10;
-            const migrateBatch = async () => {
+            const migratePageRange = async (limit) => {
                 let count = 0;
-                while (index < pages.length && count < batchSize) {
+                while (index < pages.length && count < limit) {
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     const fullPage = normalizeLegacyPage(pages[index]);
                     const saved = await savePageToIndexedDb(index, fullPage);
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     if (saved) {
                         legacyPagesCache[index] = null;
                     }
                     count += 1;
                     index += 1;
                 }
+                pruneLegacyPagesCache();
+                return true;
+            };
+
+            if (awaitAllPages) {
+                while (index < pages.length) {
+                    const ok = await migratePageRange(batchSize);
+                    if (!ok) return;
+                    if (index < pages.length) {
+                        await yieldToMainThread();
+                    }
+                }
+                return;
+            }
+
+            const migrateBatch = async () => {
+                const ok = await migratePageRange(batchSize);
+                if (!ok) return;
                 if (index < pages.length) {
                     if ('requestIdleCallback' in window) {
                         requestIdleCallback(migrateBatch, { timeout: 500 });
@@ -22584,7 +22699,6 @@
                         setTimeout(migrateBatch, 60);
                     }
                 } else {
-                    pruneLegacyPagesCache();
                     saveToStorage();
                 }
             };
@@ -22641,6 +22755,10 @@
                 }
                 if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 if (!data) {
+                    data = await recoverMissingPageDataFromActivePdf(pageIndex);
+                }
+                if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
+                if (!data) {
                     const expectedStrokes = typeof page.strokeCount === 'number' ? page.strokeCount : 0;
                     if (expectedStrokes > 0) {
                         console.error('Page data missing while page reports strokes', { pageIndex, expectedStrokes });
@@ -22681,7 +22799,7 @@
                     // on-demand and never persisted to IndexedDB)
                     backgroundImage: page.backgroundImage || data.backgroundImage || null,
                     preview: page.preview || data.preview || null,
-                    strokeCount: typeof page.strokeCount === 'number' ? page.strokeCount : getVisibleStrokeCount(data),
+                    strokeCount: getVisibleStrokeCount(data),
                     missingData: false,
                     unloaded: false,
                     pendingUnload
@@ -27297,6 +27415,8 @@
                 } catch (metaErr) {
                     console.log('No embedded stroke data found:', metaErr);
                 }
+                activePdfEmbeddedKeywords = pdfKeywordsString;
+                activePdfEmbeddedStrokesCache = embeddedStrokes;
 
                 // Restore the version timeline embedded in the PDF (if any).
                 try {
@@ -27529,7 +27649,7 @@
                 }
 
                 throwIfSessionInvalid();
-                await migrateLegacyPayload({ pages: importedPages });
+                await migrateLegacyPayload({ pages: importedPages }, { awaitAllPages: !!embeddedStrokes });
                 await yieldToMainThread();
                 throwIfSessionInvalid();
                 renderAllPages();
