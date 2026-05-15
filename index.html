@@ -17896,15 +17896,30 @@
             const targetPage = findTodayCalendarPageIndex();
             if (targetPage < 0) return false;
             const rect = canvasViewport && canvasViewport.getBoundingClientRect();
+            const viewportWidth = (rect && rect.width) || window.innerWidth || 1200;
             const viewportHeight = (rect && rect.height) || window.innerHeight || 800;
             // Guard against zero/uninitialised zoom — fall back to 1.
             if (!Number.isFinite(state.zoom) || state.zoom <= 0) state.zoom = 1;
-            const centerY = getPageCenterOffset(targetPage);
+            const topY = getPageTopOffset(targetPage);
+            const pageHeight = getPageHeight(targetPage);
+            const pageHeightScaled = pageHeight * state.zoom;
+            // Vertical placement: if the page fits within the viewport, centre
+            // it; otherwise align its top to a small margin below the viewport
+            // top (standard page-navigation behaviour: "jump to page N" puts
+            // the page top near the top of the screen, not its midpoint).
+            const TOP_MARGIN = 24;
+            let panY;
+            if (pageHeightScaled <= viewportHeight - TOP_MARGIN * 2) {
+                const centerY = topY + pageHeight / 2;
+                panY = -centerY * state.zoom + viewportHeight / 2;
+            } else {
+                panY = -topY * state.zoom + TOP_MARGIN;
+            }
+            // Horizontal placement: centre the page (or, more accurately,
+            // the row of pages — the doc's logical centre).
             const maxPageWidth = getMaxPageWidth();
-            // Centre horizontally too — otherwise on wide screens the page
-            // can sit off-centre and the doc looks unscrolled.
-            state.panX = (((rect && rect.width) || window.innerWidth) - maxPageWidth * state.zoom) / 2 - PAGE_PADDING * state.zoom;
-            state.panY = -centerY * state.zoom + viewportHeight / 2;
+            state.panX = (viewportWidth - maxPageWidth * state.zoom) / 2 - PAGE_PADDING * state.zoom;
+            state.panY = panY;
             state.activePageIndex = targetPage;
             state.overscrollY = 0;
             updateTransform();
@@ -19641,6 +19656,10 @@
                 return fetchCalendarEventsForMonth(new Date(y, m - 1, 1), { force: true })
                     .catch(err => { console.warn('Calendar refresh failed:', monthKey, err); });
             }));
+            // Build the day → events map from ALL cached months. The same
+            // event id appears in multiple months when its date falls in the
+            // 42-day grid overlap between neighbour months, so dedupe by id
+            // (keeping the freshest version) before sorting.
             const eventMap = new Map();
             for (const events of calendarEventsCache.values()) {
                 if (!Array.isArray(events)) continue;
@@ -19654,13 +19673,16 @@
                     eventMap.get(k).push(ev);
                 }
             }
-            for (const list of eventMap.values()) {
-                list.sort((a, b) => {
-                    const aS = parseGoogleEventDate(a?.start?.dateTime || a?.start?.date);
-                    const bS = parseGoogleEventDate(b?.start?.dateTime || b?.start?.date);
-                    return (aS?.getTime() || 0) - (bS?.getTime() || 0);
-                });
+            for (const [k, list] of eventMap) {
+                eventMap.set(k, sortEventsByStart(dedupeEventsById(list)));
             }
+            // Re-render affected panels. This is a sync (read) from Google
+            // Calendar — the user didn't make a change, so we update the
+            // in-memory html only and do NOT mark the document dirty or
+            // trigger a save. The next time the user actually modifies the
+            // doc, the fresh html will be persisted along with their change.
+            // Until then, on a cold reopen the live API will repopulate the
+            // panel within ~1 sync tick.
             for (let i = 0; i < state.pages.length; i++) {
                 const page = state.pages[i];
                 if (!page || !page.sidePanel || !Array.isArray(page.sidePanel.dateKeys)) continue;
@@ -19677,11 +19699,14 @@
                         events: eventMap.get(k) || []
                     };
                 });
-                page.sidePanel.html = buildSidePanelHtml(sections);
+                const nextHtml = buildSidePanelHtml(sections);
+                if (page.sidePanel.html !== nextHtml) {
+                    page.sidePanel.html = nextHtml;
+                }
+                // Always re-render: cheap (DOM-diffed in renderPageSidePanel)
+                // and ensures the "today" highlight is up to date.
                 renderPageSidePanel(i, page.sidePanel);
-                markPageDirty(i, 'meta');
             }
-            scheduleSave(false);
         }
 
         async function spSaveEvent() {
