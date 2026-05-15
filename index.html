@@ -17659,57 +17659,136 @@
                     }
                     return !(driveSaveInProgress || driveSaveQueued);
                 };
+                // True when the doc is fully persisted to Drive: nothing in
+                // flight, nothing queued, no dirty marker, and the uploaded
+                // content version matches the live content version (i.e. no
+                // edit landed during the save we'd otherwise miss).
+                const isDriveFullySaved = () => {
+                    if (driveSaveInProgress || driveSaveQueued) return false;
+                    if (driveDirty || deferredDriveSave) return false;
+                    if (typeof driveContentVersion === 'number'
+                        && typeof driveUploadedContentVersion === 'number'
+                        && driveContentVersion !== driveUploadedContentVersion) {
+                        return false;
+                    }
+                    return true;
+                };
                 const goHome = async () => {
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
                     try {
                         // Clear presence before leaving document
                         clearPresence();
-                        // Force-end interaction state so paused saves can resume
+                        // Force-end interaction state so paused saves can resume.
                         isPenWriting = false;
                         isGestureInteracting = false;
                         penWritingIdleDeadline = 0;
                         if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
                         if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
 
-                        // Always flush pending saves, even if the user just
-                        // toggled to read mode — the dirty changes happened
-                        // while editing was on and must be persisted before
-                        // leaving the document.
                         const needsSave = hasPendingLocalSave() || hasPendingDriveSave() || driveDirty;
-                        if (needsSave) {
-                            showLoading('Saving to Drive...');
-                            clearTimeout(state.saveTimeout);
-                            state.saveTimeout = null;
+                        if (!needsSave && isDriveFullySaved()) {
+                            // Fast path — nothing to do.
+                            showDriveHome();
+                            refreshDriveFiles();
+                            return;
+                        }
 
-                            // Flush local persistence first.
-                            await queueSave();
-                            await flushDirtyPages({ force: true });
+                        showLoading('Guardando en Drive...');
+                        clearTimeout(state.saveTimeout);
+                        state.saveTimeout = null;
 
-                            if (state.driveAutosave) {
-                                if (!driveAccessToken) {
-                                    showStatus('Drive sign-in required before leaving', { error: true });
-                                    return;
-                                }
-                                clearDriveSyncTimers();
+                        // Local-first: this never fails on us. Persist to
+                        // IndexedDB so the doc is recoverable on the next
+                        // open even if Drive upload later fails.
+                        await queueSave();
+                        await flushDirtyPages({ force: true });
 
-                                // Wait for any previous save cycle before forcing a final one.
-                                const settledBeforeSave = await waitForDriveSaveCompletion(30000);
-                                if (!settledBeforeSave) {
-                                    showStatus('Drive is still saving. Try again in a moment', { error: true });
-                                    return;
-                                }
+                        // If autosave isn't enabled (read-only file or signed
+                        // out), don't try to push to Drive — just go home.
+                        if (!state.driveAutosave) {
+                            showDriveHome();
+                            refreshDriveFiles();
+                            return;
+                        }
 
-                                driveDirty = true;
-                                await queueDriveSave(true, { keepalive: true });
+                        if (!driveAccessToken) {
+                            showStatus('Drive sign-in required before leaving', { error: true });
+                            return;
+                        }
 
-                                const settledAfterSave = await waitForDriveSaveCompletion(30000);
-                                if (!settledAfterSave || driveDirty || driveSaveInProgress || driveSaveQueued) {
-                                    console.warn('goHome blocked: save incomplete - dirty:', driveDirty, 'inProgress:', driveSaveInProgress, 'queued:', driveSaveQueued);
-                                    showStatus('Drive save failed. Still in editor to avoid data loss', { error: true });
-                                    return;
-                                }
+                        // Drive save retry loop. A single save can be marked
+                        // dirty again *during* its own upload (collab pull,
+                        // concurrent stroke ops, ResizeObserver-triggered
+                        // version bumps, etc.). Instead of giving up after
+                        // one attempt and stranding the user in the editor
+                        // with a red dot, retry up to MAX_ATTEMPTS times.
+                        clearDriveSyncTimers();
+                        const MAX_ATTEMPTS = 4;
+                        const PER_ATTEMPT_TIMEOUT_MS = 45000;
+                        let attempt = 0;
+                        let success = false;
+                        let lastErrorReason = '';
+                        while (attempt < MAX_ATTEMPTS) {
+                            attempt += 1;
+                            if (attempt > 1) {
+                                showLoading(`Guardando en Drive (intento ${attempt}/${MAX_ATTEMPTS})...`);
                             }
+
+                            // Drain anything already in flight before starting our forced save.
+                            const settledBeforeSave = await waitForDriveSaveCompletion(PER_ATTEMPT_TIMEOUT_MS);
+                            if (!settledBeforeSave) {
+                                lastErrorReason = 'prior-save-stuck';
+                                continue;
+                            }
+
+                            // If something between attempts already brought
+                            // the doc to a clean state, we're done.
+                            if (isDriveFullySaved()) {
+                                success = true;
+                                break;
+                            }
+
+                            // Mark dirty + queue a forced save. queueDriveSave
+                            // is fire-and-forget internally — it returns after
+                            // starting the save. waitForDriveSaveCompletion
+                            // below blocks until the actual upload finishes.
+                            driveDirty = true;
+                            try {
+                                await queueDriveSave(true, { keepalive: true });
+                            } catch (err) {
+                                console.warn('queueDriveSave threw:', err);
+                                lastErrorReason = (err && err.message) || 'queue-failed';
+                            }
+
+                            const settledAfterSave = await waitForDriveSaveCompletion(PER_ATTEMPT_TIMEOUT_MS);
+                            if (!settledAfterSave) {
+                                lastErrorReason = 'save-timeout';
+                                continue;
+                            }
+
+                            if (isDriveFullySaved()) {
+                                success = true;
+                                break;
+                            }
+
+                            lastErrorReason = driveDirty
+                                ? 'dirty-after-save'
+                                : 'version-mismatch';
+                            // Small backoff before next attempt so we don't
+                            // hammer the API on a transient failure.
+                            await new Promise(r => setTimeout(r, 400));
+                        }
+
+                        if (!success) {
+                            console.warn('goHome: save incomplete after retries -',
+                                { reason: lastErrorReason, dirty: driveDirty,
+                                  inProgress: driveSaveInProgress, queued: driveSaveQueued });
+                            showStatus('No se pudo terminar de guardar en Drive. Los cambios están guardados localmente; se subirán cuando la conexión lo permita.', { error: true });
+                            // Stay in the editor so the user can retry —
+                            // local data is safe, but we don't want to hide
+                            // an unfinished upload behind the home screen.
+                            return;
                         }
 
                         showDriveHome();
