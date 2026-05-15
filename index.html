@@ -8221,6 +8221,7 @@
         const pendingPageActivations = new Map();
         let visiblePageUpdateHandle = null;
         let visiblePageUpdateForce = false;
+        let visiblePageUpdateRetryHandle = null;
         let pageActivationHandle = null;
         let canvasResolutionSyncHandle = null;
         const addPageIndicator = document.createElement('div');
@@ -9258,6 +9259,10 @@
             activePageIndices.clear();
             desiredActivePageIndices.clear();
             pendingPageActivations.clear();
+            if (visiblePageUpdateRetryHandle) {
+                clearTimeout(visiblePageUpdateRetryHandle);
+                visiblePageUpdateRetryHandle = null;
+            }
             cancelPageActivationScheduler();
             pageLoadQueue.clear();
             pdfExportCache.clear();
@@ -9526,14 +9531,33 @@
             const deferHeavy = !force && isViewportInteracting();
 
             // During active interaction (scroll/pinch), skip all DOM work
-            if (deferHeavy) return;
+            if (deferHeavy) {
+                if (!visiblePageUpdateRetryHandle) {
+                    visiblePageUpdateRetryHandle = setTimeout(() => {
+                        visiblePageUpdateRetryHandle = null;
+                        scheduleVisiblePageUpdate(force);
+                    }, 140);
+                }
+                return;
+            }
+            if (visiblePageUpdateRetryHandle) {
+                clearTimeout(visiblePageUpdateRetryHandle);
+                visiblePageUpdateRetryHandle = null;
+            }
 
             const buffer = VISIBLE_PAGE_BUFFER;
             const range = getVisiblePageRange(buffer);
+            const directRange = getVisiblePageRange(0);
             if (range.end < range.start) return;
             const visibleIndices = [];
             for (let i = range.start; i <= range.end; i++) {
                 visibleIndices.push(i);
+            }
+            const directlyVisibleIndices = [];
+            if (directRange.end >= directRange.start) {
+                for (let i = directRange.start; i <= directRange.end; i++) {
+                    directlyVisibleIndices.push(i);
+                }
             }
 
             const rect = canvasViewport.getBoundingClientRect();
@@ -9565,6 +9589,7 @@
                 && state.activePageIndex <= range.end) {
                 addOrderedActive(state.activePageIndex);
             }
+            directlyVisibleIndices.forEach(index => addOrderedActive(index));
             for (const item of candidates) {
                 if (activeSet.size >= MAX_ACTIVE_PAGES) break;
                 addOrderedActive(item.index);
