@@ -4676,7 +4676,12 @@
             opacity: 0.75;
         }
 
-        /* Version timeline side panel */
+        /* Version timeline side panel. Hidden via `display: none` (not just
+           `transform: translateX(100%)`) so it can never accidentally show
+           during boot, CSS reflows, or when the home view is active —
+           previously the panel relied solely on a transform offset, which
+           would leak through if the rule wasn't applied yet on first paint
+           or if the page had unexpected horizontal overflow. */
         #timeline-panel {
             position: fixed;
             top: 0;
@@ -4689,11 +4694,12 @@
             z-index: 1500;
             transform: translateX(100%);
             transition: transform 0.3s ease;
-            display: flex;
+            display: none;
             flex-direction: column;
         }
 
         #timeline-panel.visible {
+            display: flex;
             transform: translateX(0);
         }
 
@@ -5029,8 +5035,11 @@
                 transform: none;
                 transition: bottom 0.3s ease;
                 box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.2);
+                /* display: none is set by the base rule above; only override
+                   it when .visible is present (see next selector). */
             }
             #timeline-panel.visible {
+                display: flex;
                 bottom: 0;
                 transform: none;
             }
@@ -11407,6 +11416,10 @@
             if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.remove('hidden');
             if (editorView) editorView.classList.add('hidden');
+            // Defensive: editor-only overlays must never linger on the home
+            // (in case they were open when the user clicked the logo, or
+            // somehow got a `.visible` class during boot).
+            closeTimelinePanelIfOpen();
             closeSaveDebugPopup();
             closePresencePopup();
             closeDriveProfileMenus();
@@ -11417,11 +11430,19 @@
             updateCalendarFeatureAvailability();
         }
 
+        function closeTimelinePanelIfOpen() {
+            const panel = document.getElementById('timeline-panel');
+            if (!panel) return;
+            panel.classList.remove('visible');
+            panel.setAttribute('aria-hidden', 'true');
+        }
+
         function showWelcomeView() {
             const welcomeView = document.getElementById('welcome-view');
             if (welcomeView) welcomeView.classList.remove('hidden');
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.add('hidden');
+            closeTimelinePanelIfOpen();
             closeSaveDebugPopup();
             closePresencePopup();
             closeDriveProfileMenus();
