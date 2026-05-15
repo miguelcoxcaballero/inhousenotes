@@ -7939,6 +7939,8 @@
             driveFileId: null,
             driveFileName: null,
             driveFolderId: null,
+            driveParentIds: [],
+            driveFolderKind: null,
             driveAutosave: false,
             driveCanEdit: true,
             driveOwnedByMe: true,
@@ -8326,6 +8328,7 @@
                     setTimeout(() => prewarmPdfCache().catch(() => {}).finally(() => { prewarmPdfCache._running = false; }), 200);
                 }
             }
+            updateCalendarFeatureAvailability();
         }
 
         // Initialize
@@ -8484,7 +8487,9 @@
 
         function getPageCalendarPanelSpace(pageIndex) {
             const page = state.pages[pageIndex];
-            return page && page.sidePanel ? PAGE_CALENDAR_PANEL_HEIGHT + PAGE_CALENDAR_PANEL_GAP : 0;
+            return page && page.sidePanel && shouldRenderPageCalendarPanels()
+                ? PAGE_CALENDAR_PANEL_HEIGHT + PAGE_CALENDAR_PANEL_GAP
+                : 0;
         }
 
         function getPageHeight(pageIndex) {
@@ -8852,7 +8857,7 @@
             scheduleVisiblePageUpdate(true);
             scheduleSave(true, pageIndex);
             showStatus('Page added', { preserveState: true });
-            if (state.calendarPageConfig && !state.isReadOnly) {
+            if (state.calendarPageConfig && !state.isReadOnly && canUseAgendaCalendarForCurrentDocument()) {
                 spAutoAttachCalendarPanel(pageIndex).catch(err => console.warn('Auto-attach calendar panel failed:', err));
             }
         }
@@ -8910,7 +8915,7 @@
             });
 
             // Restore side panel if the page data has one
-            if (page && page.sidePanel) {
+            if (page && page.sidePanel && shouldRenderPageCalendarPanels()) {
                 renderPageSidePanel(pageIndex, page.sidePanel);
             }
 
@@ -11041,6 +11046,100 @@
                     shareBtn.classList.add('hidden');
                 }
             }
+            updateCalendarFeatureAvailability();
+        }
+
+        function normalizeDriveQuickAccessKind(kind) {
+            return Object.prototype.hasOwnProperty.call(DRIVE_QUICK_ACCESS_DOCS, kind) ? kind : null;
+        }
+
+        function normalizeDriveCompareValue(value) {
+            return String(value || '').trim().replace(/\.pdf$/i, '').toLowerCase();
+        }
+
+        function getDriveQuickAccessKindFromFolderName(folderName) {
+            const normalized = normalizeDriveCompareValue(folderName);
+            if (!normalized) return null;
+            for (const [kind, config] of Object.entries(DRIVE_QUICK_ACCESS_DOCS)) {
+                if (normalizeDriveCompareValue(config.folderName) === normalized) return kind;
+            }
+            return null;
+        }
+
+        function getDriveQuickAccessKindFromFolderStack(parentIds = []) {
+            const parentSet = new Set((Array.isArray(parentIds) ? parentIds : []).filter(Boolean));
+            if (Array.isArray(driveFolderStack)) {
+                for (let i = driveFolderStack.length - 1; i >= 0; i--) {
+                    const crumb = driveFolderStack[i];
+                    if (!crumb || (parentSet.size > 0 && !parentSet.has(crumb.id))) continue;
+                    const kind = getDriveQuickAccessKindFromFolderName(crumb.name);
+                    if (kind) return kind;
+                }
+            }
+            return null;
+        }
+
+        async function resolveDriveQuickAccessKindForFile(file, parentIds = []) {
+            const explicit = normalizeDriveQuickAccessKind(
+                file?.driveQuickAccessKind || file?.driveFolderKind || file?.quickAccessKind
+            );
+            if (explicit) return explicit;
+
+            const parents = (Array.isArray(parentIds) && parentIds.length)
+                ? parentIds
+                : (Array.isArray(file?.parents) ? file.parents : []);
+            const fromStack = getDriveQuickAccessKindFromFolderStack(parents);
+            if (fromStack) return fromStack;
+
+            for (const parentId of parents) {
+                const meta = await getDriveFolderMeta(parentId);
+                const kind = getDriveQuickAccessKindFromFolderName(meta?.name);
+                if (kind) return kind;
+            }
+            return null;
+        }
+
+        function usesAgendaTemplate() {
+            return Array.isArray(state.pages)
+                && state.pages.some(page => normalizeTemplateKind(page?.templateKind) === TEMPLATE_KINDS.AGENDA);
+        }
+
+        function isAgendaQuickAccessFileName(name) {
+            const base = normalizeDriveCompareValue(name);
+            const prefix = normalizeDriveCompareValue(DRIVE_QUICK_ACCESS_DOCS.agenda.filePrefix);
+            return !!base && !!prefix && base.startsWith(prefix);
+        }
+
+        function canUseAgendaCalendarForCurrentDocument() {
+            if (state.driveFolderKind !== 'agenda') return false;
+            return usesAgendaTemplate() || isAgendaQuickAccessFileName(state.driveFileName || state.exportName);
+        }
+
+        function shouldRenderPageCalendarPanels() {
+            return canUseAgendaCalendarForCurrentDocument();
+        }
+
+        function updateCalendarFeatureAvailability() {
+            const canUseCalendar = canUseAgendaCalendarForCurrentDocument();
+            if (openCalendarBtn) {
+                openCalendarBtn.classList.toggle('hidden', !canUseCalendar);
+                openCalendarBtn.disabled = !canUseCalendar;
+            }
+            if (calendarAddPagesBtn) {
+                calendarAddPagesBtn.classList.toggle('hidden', !canUseCalendar);
+                calendarAddPagesBtn.disabled = !canUseCalendar || !!state.isReadOnly;
+            }
+            if (!canUseCalendar) {
+                closeCalendarModal();
+                closeCalendarPagesModal();
+                if (canvasContainer) {
+                    const panels = canvasContainer.querySelectorAll('.page-side-panel');
+                    if (panels.length) {
+                        panels.forEach(panel => panel.remove());
+                        refreshPageSidePanelLayout();
+                    }
+                }
+            }
         }
 
         function getSystemTheme() {
@@ -11185,6 +11284,7 @@
             clearDriveSyncTimers();
             saveViewMode('drive');
             startDriveHomeAutoRefresh();
+            updateCalendarFeatureAvailability();
         }
 
         function showWelcomeView() {
@@ -11198,6 +11298,7 @@
             stopCollabPolling();
             clearDriveSyncTimers();
             stopDriveHomeAutoRefresh();
+            updateCalendarFeatureAvailability();
         }
 
         function getEditorTopOffset() {
@@ -11252,6 +11353,7 @@
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.remove('hidden');
             stopDriveHomeAutoRefresh();
+            updateCalendarFeatureAvailability();
             requestAnimationFrame(() => {
                 clampToolbarPosition();
                 scheduleVisiblePageUpdate(true);
@@ -11821,6 +11923,8 @@
             state.driveFileId = null;
             state.driveFileName = null;
             state.driveFolderId = null;
+            state.driveParentIds = [];
+            state.driveFolderKind = null;
             state.driveAutosave = false;
             state.driveCanEdit = true;
             state.driveOwnedByMe = true;
@@ -11828,6 +11932,7 @@
             state.driveOwnerEmail = '';
             state.driveOwnerPhoto = '';
             state.driveResourceKey = '';
+            state.calendarPageConfig = null;
             driveRecentsCache = [];
             driveStarredCache = [];
             driveSharedCache = [];
@@ -11858,6 +11963,7 @@
             try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (e) { }
             clearDriveSession();
             updateDriveAuthUI();
+            updateCalendarFeatureAvailability();
             if (typeof showStatus === 'function') showStatus('Signed out');
             showWelcomeView();
         }
@@ -12544,6 +12650,10 @@
             state.panX = 0;
             state.panY = 0;
             state.overscrollY = 0;
+            state.driveFolderId = null;
+            state.driveParentIds = [];
+            state.driveFolderKind = null;
+            state.calendarPageConfig = null;
             setReadOnlyMode(true, { force: true });
             showDriveHome();
             showLoading('Opening shared document...');
@@ -12556,6 +12666,8 @@
                 markDriveHydrated(fileId);
                 state.driveFileName = publicPdf.fileName || 'Shared Document';
                 state.driveFolderId = null;
+                state.driveParentIds = [];
+                state.driveFolderKind = null;
                 state.driveAutosave = false;
                 state.driveCanEdit = false;
                 state.driveOwnedByMe = false;
@@ -12729,11 +12841,14 @@
                 const existingFile = await findDrivePdfInFolder(folderId, fileBaseName);
                 hideLoading();
                 if (existingFile?.id) {
-                    await openDriveFile(existingFile);
+                    await openDriveFile({ ...existingFile, parents: [folderId], driveQuickAccessKind: kind });
                 } else {
                     const quickTemplateKind = kind === 'agenda' ? TEMPLATE_KINDS.AGENDA
                         : (kind === 'diary' ? TEMPLATE_KINDS.DIARY : TEMPLATE_KINDS.DEFAULT);
-                    await createNewDriveDocumentWithFolder(folderId, fileBaseName, { templateKind: quickTemplateKind });
+                    await createNewDriveDocumentWithFolder(folderId, fileBaseName, {
+                        templateKind: quickTemplateKind,
+                        driveQuickAccessKind: kind
+                    });
                     refreshDriveFiles().catch(() => { });
                 }
             } catch (err) {
@@ -13648,6 +13763,10 @@
             resetDriveContentSyncVersion();
             resetDriveHydrationState();
             state.driveFileId = null;
+            state.driveFolderId = null;
+            state.driveParentIds = [];
+            state.driveFolderKind = null;
+            state.calendarPageConfig = null;
             state.driveAutosave = false;
             state.pages = [];
             activePageIndices.clear();
@@ -13689,7 +13808,7 @@
 
                 // Start metadata and file content downloads in parallel
                 const metaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
-                metaUrl.searchParams.set('fields', 'capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),resourceKey,headRevisionId,modifiedTime');
+                metaUrl.searchParams.set('fields', 'capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),resourceKey,headRevisionId,modifiedTime,parents');
                 if (requestedResourceKey) {
                     metaUrl.searchParams.set('resourceKey', requestedResourceKey);
                 }
@@ -13733,6 +13852,7 @@
                 let ownerEmail = '';
                 let ownerPhoto = '';
                 let resolvedResourceKey = requestedResourceKey;
+                let resolvedParentIds = Array.isArray(file.parents) ? file.parents.filter(Boolean) : [];
                 if (metaResult.status === 'fulfilled') {
                     const metaData = metaResult.value;
                     if (metaData.capabilities && metaData.capabilities.canEdit === false) {
@@ -13756,16 +13876,24 @@
                     if (typeof metaData.resourceKey === 'string' && metaData.resourceKey) {
                         resolvedResourceKey = metaData.resourceKey;
                     }
+                    if (Array.isArray(metaData.parents)) {
+                        resolvedParentIds = metaData.parents.filter(Boolean);
+                    }
                 } else {
                     console.warn('Failed to fetch file metadata:', metaResult.reason);
                 }
 
+                const resolvedFolderKind = await resolveDriveQuickAccessKindForFile(file, resolvedParentIds);
+                state.driveParentIds = resolvedParentIds;
+                state.driveFolderId = resolvedParentIds[0] || null;
+                state.driveFolderKind = resolvedFolderKind;
                 state.driveCanEdit = canEdit;
                 state.driveOwnedByMe = ownedByMe;
                 state.driveOwnerName = ownerName;
                 state.driveOwnerEmail = ownerEmail;
                 state.driveOwnerPhoto = ownerPhoto;
                 state.driveResourceKey = resolvedResourceKey || '';
+                updateCalendarFeatureAvailability();
                 if (!isDocumentSessionTokenValid(sessionToken) || driveOpenFileId !== file.id) {
                     throw createAbortError('Drive open superseded');
                 }
@@ -13870,6 +13998,7 @@
                     dt.style.pointerEvents = 'auto';
                 }
             }
+            updateCalendarFeatureAvailability();
         }
 
         async function makeDriveCopy() {
@@ -13895,7 +14024,7 @@
                 hideLoading();
                 if (data.id) {
                     showStatus('Copy created! Opening...');
-                    await openDriveFile({ id: data.id, name: data.name });
+                    await openDriveFile({ id: data.id, name: data.name, parents: folderId ? [folderId] : [] });
                 } else {
                     showStatus('Failed to create copy.', { error: true });
                 }
@@ -13953,6 +14082,12 @@
                 strokeCount: 0,
                 unloaded: false
             }];
+            const driveFolderKind = normalizeDriveQuickAccessKind(options.driveQuickAccessKind)
+                || getDriveQuickAccessKindFromFolderStack(folderId ? [folderId] : []);
+            state.driveFolderId = folderId || null;
+            state.driveParentIds = folderId ? [folderId] : [];
+            state.driveFolderKind = driveFolderKind || null;
+            state.calendarPageConfig = null;
             state.history = [];
             state.historyIndex = -1;
             updateHistoryButtons();
@@ -13962,7 +14097,6 @@
             state.driveFileId = null;
             resetDriveHydrationState();
             state.driveFileName = fileName;
-            state.driveFolderId = folderId || null;
             state.driveAutosave = false;
             state.driveCanEdit = true;
             state.driveOwnedByMe = true;
@@ -15806,7 +15940,7 @@
                 row.appendChild(wrapper);
 
                 // Restore side panel if saved
-                if (page && page.sidePanel) {
+                if (page && page.sidePanel && shouldRenderPageCalendarPanels()) {
                     const panel = buildSidePanelElement(index, page.sidePanel);
                     if (panel) row.appendChild(panel);
                 }
@@ -18176,6 +18310,7 @@
         }
 
         function findTodayCalendarPageIndex() {
+            if (!shouldRenderPageCalendarPanels()) return -1;
             const todayKey = formatCalendarDateKey(new Date());
             if (!Array.isArray(state.pages) || state.pages.length === 0) return -1;
             // Pass 1: exact match — a page that lists today in its dateKeys.
@@ -18347,6 +18482,33 @@
             state.pendingPageCreate = false;
             state.pageCreateLocked = false;
             updateAddPageIndicator();
+        }
+
+        function finalizePendingPageCreation() {
+            if (state.isReadOnly) {
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                state.overscrollY = 0;
+                updateAddPageIndicator();
+                return false;
+            }
+            const viewportHeight = canvasViewport.getBoundingClientRect().height;
+            const bottomInView = state.panY + getContentHeight() * state.zoom;
+            const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
+            if (state.pendingPageCreate && state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate) {
+                const prevLimit = getBottomLimit();
+                addPage(null, true);
+                state.overscrollY = 0;
+                state.pendingPageCreate = false;
+                state.pageCreateLocked = false;
+                updateAddPageIndicator();
+                animatePanTo(prevLimit.minPanY);
+                return true;
+            }
+            state.pendingPageCreate = false;
+            state.pageCreateLocked = false;
+            updateAddPageIndicator();
+            return false;
         }
 
         function stopInertia(triggerUpdate = false) {
@@ -18675,6 +18837,7 @@
                 clearTimeout(wheelReleaseTimeout);
             }
             wheelReleaseTimeout = setTimeout(() => {
+                finalizePendingPageCreation();
                 state.pageCreateLocked = false;
             }, 300);
         }
@@ -18840,31 +19003,11 @@
         function handleViewportPointerUp(e) {
             if (e.pointerType === 'pen') return;
             state.activePointers.delete(e.pointerId);
-            const finalizePageCreation = () => {
-                if (state.isReadOnly) {
-                    state.pendingPageCreate = false;
-                    state.pageCreateLocked = false;
-                    state.overscrollY = 0;
-                    updateAddPageIndicator();
-                    return;
-                }
-                const viewportHeight = canvasViewport.getBoundingClientRect().height;
-                const bottomInView = state.panY + getContentHeight() * state.zoom;
-                const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
-                if (state.pendingPageCreate && state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate) {
-                    const prevLimit = getBottomLimit();
-                    addPage(null, true);
-                    state.overscrollY = 0;
-                    updateAddPageIndicator();
-                    animatePanTo(prevLimit.minPanY);
-                }
-                state.pendingPageCreate = false;
-            };
 
             if (e.pointerType === 'mouse') {
                 state.isPanning = false;
                 canvasViewport.style.cursor = '';
-                finalizePageCreation();
+                finalizePendingPageCreation();
                 state.pageCreateLocked = false;
                 stopInertia();
                 if (state.overscrollY > 0) {
@@ -18895,7 +19038,7 @@
                 state.isPanning = false;
                 const finalLock = state.scrollLocked || 'free';
                 state.scrollLocked = false;
-                finalizePageCreation();
+                finalizePendingPageCreation();
                 state.pageCreateLocked = false;
                 if (state.overscrollY === 0) {
                     const speed = Math.hypot(state.panVelocityX, state.panVelocityY);
@@ -18983,6 +19126,11 @@
 
         function openCalendarModal() {
             if (!calendarModal) return;
+            if (!canUseAgendaCalendarForCurrentDocument()) {
+                updateCalendarFeatureAvailability();
+                showStatus('El calendario solo esta disponible en agendas de Drive.', { preserveState: true });
+                return;
+            }
             const now = new Date();
             calendarVisibleMonth = new Date(now.getFullYear(), now.getMonth(), 1);
             calendarSelectedDateKey = formatCalendarDateKey(now);
@@ -19009,6 +19157,11 @@
 
         function openCalendarPagesModal() {
             if (!calendarPagesModal) return;
+            if (!canUseAgendaCalendarForCurrentDocument()) {
+                updateCalendarFeatureAvailability();
+                showStatus('El calendario solo se puede anadir a agendas de Drive.', { preserveState: true });
+                return;
+            }
             const cfg = state.calendarPageConfig;
             const selected = (cfg && cfg.startDateKey) || calendarSelectedDateKey || formatCalendarDateKey(new Date());
             if (calendarPagesStartDate) calendarPagesStartDate.value = selected;
@@ -19513,6 +19666,12 @@
                 showStatus('Switch to edit mode to add calendar events', { preserveState: true });
                 return;
             }
+            if (!canUseAgendaCalendarForCurrentDocument()) {
+                closeCalendarPagesModal();
+                updateCalendarFeatureAvailability();
+                showStatus('El calendario solo se puede anadir a agendas de Drive.', { preserveState: true });
+                return;
+            }
             const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const startPage = Math.max(1, parseInt(calendarPagesStartPage?.value || '1', 10) || 1) - 1;
@@ -19650,6 +19809,7 @@
 
         function buildSidePanelElement(pageIndex, panelData) {
             if (!panelData) return null;
+            if (!shouldRenderPageCalendarPanels()) return null;
             const panel = document.createElement('div');
             panel.className = 'page-side-panel';
             panel.classList.toggle('is-week', Array.isArray(panelData.dateKeys) && panelData.dateKeys.length > 1);
@@ -19720,6 +19880,11 @@
             const row = canvasContainer.querySelector('.page-row[data-page-row="' + pageIndex + '"]');
             if (!row) return;
             const existing = row.querySelector('.page-side-panel');
+            if (panelData && !shouldRenderPageCalendarPanels()) {
+                if (existing) existing.remove();
+                refreshPageSidePanelLayout();
+                return;
+            }
             if (!panelData) {
                 if (existing) existing.remove();
                 refreshPageSidePanelLayout();
@@ -19934,6 +20099,10 @@
 
         async function spOpenEventModal({ mode, pageIndex, dayKey, eventId }) {
             if (!spEventModal) return;
+            if (!canUseAgendaCalendarForCurrentDocument()) {
+                updateCalendarFeatureAvailability();
+                return;
+            }
             if (state.isReadOnly) {
                 showStatus('Switch to edit mode to modify events', { preserveState: true });
                 return;
@@ -20110,6 +20279,7 @@
         // due to 42-day grid overlap is kept once, freshest version wins).
         // Updates in-place — does not mark the doc dirty.
         function spRebuildAllPanels() {
+            if (!shouldRenderPageCalendarPanels()) return;
             const eventMap = new Map();
             for (const events of calendarEventsCache.values()) {
                 if (!Array.isArray(events)) continue;
@@ -20160,6 +20330,7 @@
         }
 
         async function spRefreshPanelsForKeys(dateKeys) {
+            if (!shouldRenderPageCalendarPanels()) return;
             if (!dateKeys || !dateKeys.size) return;
             const monthKeys = new Set();
             for (const key of dateKeys) {
@@ -20244,6 +20415,7 @@
         }
 
         async function spAutoAttachCalendarPanel(pageIndex) {
+            if (!canUseAgendaCalendarForCurrentDocument()) return;
             if (!state.calendarPageConfig) return;
             const { mode, nextDateKey } = state.calendarPageConfig;
             const page = state.pages[pageIndex];
@@ -20286,6 +20458,7 @@
         }
 
         async function spSyncAllPanels() {
+            if (!shouldRenderPageCalendarPanels()) return;
             const allDateKeys = new Set();
             for (const page of state.pages) {
                 if (!page || !page.sidePanel || !Array.isArray(page.sidePanel.dateKeys)) continue;
@@ -20322,6 +20495,7 @@
                 // Sync runs in both viewer and edit mode (Google Calendar changes
                 // should always be reflected). Only skipped when not signed in.
                 if (driveSignedOut || !driveAccessToken) return;
+                if (!shouldRenderPageCalendarPanels()) return;
                 const hasAnyPanel = state.pages.some(p => p && p.sidePanel && Array.isArray(p.sidePanel.dateKeys) && p.sidePanel.dateKeys.length > 0);
                 if (!hasAnyPanel) return;
                 spSyncAllPanels().catch(() => {});
@@ -20479,6 +20653,7 @@
 
         // Pages Panel
         function openPagesPanel() {
+            updateCalendarFeatureAvailability();
             renderPagesList();
             if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
             document.getElementById('pages-panel').classList.add('visible');
@@ -21826,6 +22001,9 @@
                 const payload = {
                     fileId: state.driveFileId,
                     fileName: state.driveFileName,
+                    folderId: state.driveFolderId || null,
+                    parentIds: Array.isArray(state.driveParentIds) ? state.driveParentIds : [],
+                    folderKind: state.driveFolderKind || null,
                     exportName: state.exportName,
                     autosave: state.driveAutosave,
                     canEdit: state.driveCanEdit,
@@ -21861,6 +22039,9 @@
                 resetDriveHydrationState();
                 state.driveFileId = parsed.fileId || null;
                 state.driveFileName = parsed.fileName || null;
+                state.driveFolderId = parsed.folderId || null;
+                state.driveParentIds = Array.isArray(parsed.parentIds) ? parsed.parentIds : [];
+                state.driveFolderKind = normalizeDriveQuickAccessKind(parsed.folderKind) || null;
                 if (parsed.exportName) {
                     state.exportName = parsed.exportName;
                 }
@@ -21890,6 +22071,10 @@
                 if (typeof parsed.lastKnownModified === 'number') {
                     state.driveLastKnownModified = parsed.lastKnownModified;
                 }
+                if (!canUseAgendaCalendarForCurrentDocument()) {
+                    state.calendarPageConfig = null;
+                }
+                updateCalendarFeatureAvailability();
             } catch (e) {
                 console.error('Failed to load Drive session:', e);
             }
@@ -22044,7 +22229,7 @@
                 legacyCoverStrokes: Array.isArray(page.legacyCoverStrokes) ? page.legacyCoverStrokes : null,
                 pageWidth,
                 pageHeight,
-                sidePanel: page.sidePanel || null
+                sidePanel: shouldRenderPageCalendarPanels() ? (page.sidePanel || null) : null
             };
         }
 
@@ -22069,7 +22254,7 @@
                 pageHeight,
                 strokeCount,
                 preview: page.preview || null,
-                sidePanel: page.sidePanel || null
+                sidePanel: shouldRenderPageCalendarPanels() ? (page.sidePanel || null) : null
             };
         }
 
@@ -22550,7 +22735,7 @@
                 pages: state.pages.map(page => buildPageMeta(page)),
                 version: 3,
                 savedAt,
-                calendarPageConfig: state.calendarPageConfig || null
+                calendarPageConfig: canUseAgendaCalendarForCurrentDocument() ? (state.calendarPageConfig || null) : null
             };
         }
 
@@ -22998,7 +23183,7 @@
                 state.pages[pageIndex] = next;
                 touchPageAccess(pageIndex);
                 // Restore side panel now that full page data is available
-                if (next.sidePanel && !page.sidePanel) {
+                if (next.sidePanel && !page.sidePanel && shouldRenderPageCalendarPanels()) {
                     renderPageSidePanel(pageIndex, next.sidePanel);
                 }
                 if (!options.keepLoaded && (next.pendingUnload || !activePageIndices.has(pageIndex))) {
@@ -27455,6 +27640,7 @@
                 }
             };
             showLoading('Analyzing PDF...');
+            state.calendarPageConfig = null;
 
             try {
                 // Capture a copy of the original bytes for text-preserving export (pdf-lib).
@@ -28844,7 +29030,7 @@
                     pdfPageIndex: (pageData.backgroundSource === 'pdf' || !!pageData.backgroundImage) ? (i + 1) : null,
                     pageWidth: logicalPageWidthPx,
                     pageHeight: logicalPageHeightPx,
-                    sidePanel: pageData.sidePanel || null
+                    sidePanel: shouldRenderPageCalendarPanels() ? (pageData.sidePanel || null) : null
                 };
                 metadataParts.push(JSON.stringify(pageStrokeEntry));
 
@@ -28981,7 +29167,7 @@
                     .join(',');
                 if (refsStr) keywordsPayload += `;IH_OVERLAY_REFS:${refsStr}`;
             }
-            if (state.calendarPageConfig) {
+            if (state.calendarPageConfig && canUseAgendaCalendarForCurrentDocument()) {
                 try {
                     const calStr = JSON.stringify(state.calendarPageConfig);
                     const calB64 = btoa(unescape(encodeURIComponent(calStr)));
@@ -29242,7 +29428,7 @@
                     pdfPageIndex: (backgroundSource === 'pdf' || !!backgroundImage) ? (i + 1) : null,
                     pageWidth: resolvedPageWidth,
                     pageHeight: resolvedPageHeight,
-                    sidePanel: pageData.sidePanel || null
+                    sidePanel: shouldRenderPageCalendarPanels() ? (pageData.sidePanel || null) : null
                 };
                 const metaJson = JSON.stringify(pageStrokeEntry);
                 metadataParts.push(metaJson);
