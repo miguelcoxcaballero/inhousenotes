@@ -9355,6 +9355,17 @@
             processPdfRenderQueue();
         }
 
+        function requeuePdfPageRenderAfterInteraction(pageIndex) {
+            if (!activePdfDocument) return;
+            const page = state.pages[pageIndex];
+            if (!page || !page.pdfPageIndex || page.backgroundImage) return;
+            if (!activePageIndices.has(pageIndex)) return;
+            if (!pdfRenderQueue.includes(pageIndex)) {
+                pdfRenderQueue.unshift(pageIndex);
+            }
+            schedulePdfRenderResume();
+        }
+
         async function processPdfRenderQueue() {
             if (pdfRenderActive) return;
             if (isViewportInteracting()) {
@@ -9399,13 +9410,19 @@
             if (page.backgroundImage) return;
             if (token !== pdfRenderToken) return;
             const ignoreRecentActivity = !!options.ignoreRecentActivity;
-            if (!ignoreRecentActivity && hasRecentUserActivity(240)) return;
+            if (!ignoreRecentActivity && hasRecentUserActivity(240)) {
+                requeuePdfPageRenderAfterInteraction(pageIndex);
+                return;
+            }
 
             try {
                 const pdfPage = await activePdfDocument.getPage(page.pdfPageIndex);
                 if (token !== pdfRenderToken || (!ignoreRecentActivity && hasRecentUserActivity(240))) {
                     if (pdfPage.cleanup) {
                         pdfPage.cleanup();
+                    }
+                    if (token === pdfRenderToken && !ignoreRecentActivity) {
+                        requeuePdfPageRenderAfterInteraction(pageIndex);
                     }
                     return;
                 }
@@ -9439,6 +9456,9 @@
                     }
                     tempCanvas.width = 0;
                     tempCanvas.height = 0;
+                    if (token === pdfRenderToken && !ignoreRecentActivity) {
+                        requeuePdfPageRenderAfterInteraction(pageIndex);
+                    }
                     return;
                 }
 
@@ -12121,6 +12141,12 @@
             const restoredImages = Array.isArray(pageData.images)
                 ? JSON.parse(JSON.stringify(pageData.images))
                 : [];
+            const legacyCoverStrokes = backgroundSource === 'pdf' && !state.cleanOriginalPdfBytes
+                ? restoredStrokes.map(stroke => ({
+                    ...stroke,
+                    points: Array.isArray(stroke.points) ? stroke.points.map(p => ({ ...p })) : []
+                }))
+                : (Array.isArray(current.legacyCoverStrokes) ? current.legacyCoverStrokes : null);
             const restoredPage = {
                 ...current,
                 pageId: pageData.pageId || current.pageId || generatePageId(),
@@ -12133,6 +12159,7 @@
                 pdfPageIndex: Number.isFinite(current.pdfPageIndex)
                     ? current.pdfPageIndex
                     : (backgroundSource === 'pdf' ? pageIndex + 1 : null),
+                legacyCoverStrokes,
                 pageWidth: normalizePageDimension(pageData.pageWidth || current.pageWidth, A4_WIDTH),
                 pageHeight: normalizePageDimension(pageData.pageHeight || current.pageHeight, A4_HEIGHT),
                 sidePanel: current.sidePanel || pageData.sidePanel || null,
@@ -15619,6 +15646,14 @@
                 const { width: pageWidth, height: pageHeight } = getPageDimensions(index);
                 wrapper.style.width = `${pageWidth}px`;
                 wrapper.style.height = `${pageHeight}px`;
+                if (page && !page.preview && !page.unloaded) {
+                    const hasContent = (Array.isArray(page.strokes) && page.strokes.length > 0)
+                        || page.backgroundImage || page.bakedBackground
+                        || (Array.isArray(page.images) && page.images.length > 0);
+                    if (hasContent) {
+                        page.preview = renderPagePreview(index);
+                    }
+                }
                 const pageNumber = document.createElement('div');
                 pageNumber.className = 'page-number';
                 pageNumber.textContent = `${index + 1}`;
@@ -18795,6 +18830,7 @@
                 clampPanToVisible();
                 applyViewportTransformStyle();
                 scheduleCanvasResolutionSync();
+                scheduleVisiblePageUpdate();
             });
         }
 
@@ -22596,12 +22632,15 @@
             const templateKind = normalizeTemplateKind(page?.templateKind);
             const kindDefaults = getTemplateKindDefaults(templateKind);
             return {
+                pageId: page?.pageId || generatePageId(),
                 strokes: Array.isArray(page?.strokes) ? page.strokes : [],
                 images: Array.isArray(page?.images) ? page.images : [],
+                deletedStrokeIds: Array.isArray(page?.deletedStrokeIds) ? page.deletedStrokeIds : [],
                 backgroundImage,
                 backgroundSource,
                 templateKind,
                 pdfPageIndex,
+                legacyCoverStrokes: Array.isArray(page?.legacyCoverStrokes) ? page.legacyCoverStrokes : null,
                 pageWidth: normalizePageDimension(page?.pageWidth, kindDefaults.width),
                 pageHeight: normalizePageDimension(page?.pageHeight, kindDefaults.height),
                 sidePanel: page?.sidePanel || null,
@@ -22666,6 +22705,15 @@
                 while (index < pages.length && count < limit) {
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     const fullPage = normalizeLegacyPage(pages[index]);
+                    if (awaitAllPages) {
+                        state.pages[index] = {
+                            ...fullPage,
+                            preview: state.pages[index]?.preview || fullPage.preview || null,
+                            strokeCount: getVisibleStrokeCount(fullPage),
+                            unloaded: false,
+                            needsRedraw: true
+                        };
+                    }
                     const saved = await savePageToIndexedDb(index, fullPage);
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     if (saved) {
@@ -27561,7 +27609,7 @@
                             ? pageData.images
                             : [];
                         const useLegacyRaster = !hasImagesKey;
-                        const restoredStrokes = useLegacyRaster ? [] : (pageData.strokes || []);
+                        const restoredStrokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
                         const backgroundSource = pageData.backgroundSource
                             || (pageData.hasCustomBackground ? 'pdf' : 'template');
                         const needsPdfBackground = useLegacyRaster || backgroundSource !== 'template';
