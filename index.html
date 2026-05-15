@@ -17898,20 +17898,26 @@
             const rect = canvasViewport && canvasViewport.getBoundingClientRect();
             const viewportWidth = (rect && rect.width) || window.innerWidth || 1200;
             const viewportHeight = (rect && rect.height) || window.innerHeight || 800;
-            // Guard against zero/uninitialised zoom — fall back to 1.
-            if (!Number.isFinite(state.zoom) || state.zoom <= 0) state.zoom = 1;
-            // Centre the target page vertically in the viewport. If the page
-            // is taller than the viewport its top/bottom extend outside, which
-            // is fine — the page's midpoint sits at viewport midpoint and the
-            // user sees the middle of the page. For pages near the start/end
-            // of the doc clampPanToVisible inside updateTransform() handles
-            // the edge cases (no content above page 1, none after the last).
+            const { width: pageWidth, height: pageHeight } = getPageDimensions(targetPage);
+            // Zoom-to-fit: pick the zoom that snaps the target page into the
+            // viewport with the previous/next pages flush against the
+            // viewport edges (so neither is visible). For a vertically-centred
+            // layout the previous page's bottom is at screen-y
+            //   vh/2 - (pageHeight/2 + PAGE_GAP) * zoom
+            // and the next page's top at
+            //   vh/2 + (pageHeight/2 + PAGE_GAP) * zoom
+            // The exact zoom that places both at the viewport edges is:
+            //   zoom = vh / (pageHeight + 2 * PAGE_GAP)
+            // We also check the horizontal axis so the page never overflows
+            // the width, and clamp to the app-wide [0.5, 3] zoom range.
+            const fitZoomY = viewportHeight / (pageHeight + 2 * PAGE_GAP);
+            const fitZoomX = viewportWidth / (pageWidth + 2 * PAGE_PADDING);
+            const zoom = Math.max(0.5, Math.min(3, Math.min(fitZoomY, fitZoomX)));
+            state.zoom = zoom;
+            // Centre the target page vertically and horizontally.
             const centerY = getPageCenterOffset(targetPage);
-            const panY = -centerY * state.zoom + viewportHeight / 2;
-            // Centre horizontally too.
-            const maxPageWidth = getMaxPageWidth();
-            state.panX = (viewportWidth - maxPageWidth * state.zoom) / 2 - PAGE_PADDING * state.zoom;
-            state.panY = panY;
+            state.panY = -centerY * zoom + viewportHeight / 2;
+            state.panX = (viewportWidth - pageWidth * zoom) / 2 - PAGE_PADDING * zoom;
             state.activePageIndex = targetPage;
             state.overscrollY = 0;
             updateTransform();
