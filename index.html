@@ -9405,6 +9405,8 @@
                 pdfRenderResumeHandle = null;
                 if (!isViewportInteracting()) {
                     processPdfRenderQueue();
+                } else if (pdfRenderQueue.length > 0) {
+                    schedulePdfRenderResume();
                 }
             };
             if ('requestIdleCallback' in window) {
@@ -12049,7 +12051,13 @@
                             console.warn('Failed to load cached original PDF bytes:', idbErr);
                         }
                     }
-                    if (state.cleanOriginalPdfBytes) {
+                    const displaySavedPdfWithBakedOverlay = shouldDisplaySavedPdfWithBakedOverlay(activePdfEmbeddedStrokesCache)
+                        || state.pages.some(pg => (
+                            pg && pg.backgroundSource === 'pdf'
+                            && !pageEntryHasDrawableVectors(pg)
+                            && (pg.preview || pg.strokeCount === 0)
+                        ));
+                    if (state.cleanOriginalPdfBytes && !displaySavedPdfWithBakedOverlay) {
                         await swapDisplayDocToCleanOriginal();
                         // Clear any leftover white covers from a prior legacy session —
                         // we now have the real clean original so strokes are pure vector.
@@ -12065,6 +12073,9 @@
                         // build whose output baked strokes into the page raster. Seed
                         // legacy white covers (and re-seed in case strokes changed) so
                         // the eraser can still wipe burnt-in pixels.
+                        if (displaySavedPdfWithBakedOverlay) {
+                            state.hasLegacyBakedOverlay = true;
+                        }
                         const hasBakedStrokes = state.pages.some(p =>
                             p && p.backgroundSource === 'pdf'
                             && Array.isArray(p.strokes) && p.strokes.length > 0
@@ -12118,6 +12129,35 @@
                 return JSON.parse(decodedString);
             }
             return null;
+        }
+
+        function pageEntryHasDrawableVectors(pageData) {
+            const strokes = Array.isArray(pageData?.strokes) ? pageData.strokes : [];
+            if (strokes.some(stroke => {
+                const minPoints = stroke?.tool === 'highlighter' ? 1 : 2;
+                return stroke?.tool !== 'eraser-stroke'
+                    && Array.isArray(stroke?.points)
+                    && stroke.points.length >= minPoints;
+            })) return true;
+            return Array.isArray(pageData?.images) && pageData.images.length > 0;
+        }
+
+        function pageEntryNeedsPdfBackground(pageData) {
+            if (!pageData) return false;
+            const backgroundSource = pageData.backgroundSource
+                || (pageData.hasCustomBackground ? 'pdf' : 'template');
+            return backgroundSource === 'pdf'
+                || backgroundSource === 'custom'
+                || !!pageData.hasCustomBackground
+                || Number.isFinite(pageData.pdfPageIndex);
+        }
+
+        function shouldDisplaySavedPdfWithBakedOverlay(embeddedPages) {
+            if (!Array.isArray(embeddedPages)) return false;
+            return embeddedPages.some(pageData =>
+                pageEntryNeedsPdfBackground(pageData)
+                && !pageEntryHasDrawableVectors(pageData)
+            );
         }
 
         async function getActivePdfEmbeddedStrokes() {
@@ -22876,6 +22916,16 @@
                     pendingUnload
                 };
                 ensureStrokeIds(next);
+                if (state.hasLegacyBakedOverlay
+                    && next.backgroundSource === 'pdf'
+                    && Array.isArray(next.strokes)
+                    && next.strokes.length > 0
+                    && (!Array.isArray(next.legacyCoverStrokes) || next.legacyCoverStrokes.length === 0)) {
+                    next.legacyCoverStrokes = next.strokes.map(stroke => ({
+                        ...stroke,
+                        points: Array.isArray(stroke.points) ? stroke.points.map(p => ({ ...p })) : []
+                    }));
+                }
                 if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 state.pages[pageIndex] = next;
                 touchPageAccess(pageIndex);
@@ -27557,10 +27607,14 @@
                         }
                     }
                 }
-                // If we have the clean original AND the loaded file is an app-saved
-                // version (has STROKES_Z), swap PDF.js display to the clean source so
-                // the burnt-in overlay doesn't double the visible strokes.
-                if (needsCleanOriginalSwap) {
+                const displaySavedPdfWithBakedOverlay = shouldDisplaySavedPdfWithBakedOverlay(embeddedStrokes);
+                // If some PDF-background pages do not have drawable vector
+                // metadata, the saved PDF's overlay is the only faithful source
+                // for their strokes. Keep the saved PDF as display in that case;
+                // pages that do have vectors get white legacy covers below.
+                if (displaySavedPdfWithBakedOverlay) {
+                    state.hasLegacyBakedOverlay = true;
+                } else if (needsCleanOriginalSwap) {
                     await swapDisplayDocToCleanOriginal();
                 } else if (embeddedStrokes && !state.cleanOriginalPdfBytes) {
                     // Legacy doc that was previously saved by this app but we no longer
