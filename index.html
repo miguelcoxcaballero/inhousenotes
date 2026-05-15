@@ -13366,80 +13366,95 @@
             if (driveBackBtn) driveBackBtn.disabled = driveFolderStack.length <= 1;
         }
 
-        // Fingerprint a Drive item list — covers the fields that actually
-        // affect rendering. Used to skip re-renders when an auto-refresh
-        // poll returns identical data (which is the common case), avoiding
-        // visible flicker every few seconds.
-        function driveListFingerprint(items) {
-            if (!Array.isArray(items) || items.length === 0) return '0';
-            return items.map(it => [
-                it?.id || '',
-                it?.modifiedTime || '',
-                it?.name || '',
-                it?.starred ? 1 : 0,
-                it?.thumbnailLink ? 1 : 0,
-                it?.folderColorRgb || '',
-                it?.mimeType || ''
-            ].join('|')).join('\n');
+        // Per-item fingerprint — every field that actually renders in the
+        // card. If this hasn't changed since the last render, the card's
+        // DOM (including the loaded <img>) can stay untouched.
+        function driveItemFingerprint(item) {
+            if (!item) return '';
+            return [
+                item.id || '',
+                item.name || '',
+                item.starred ? 1 : 0,
+                item.modifiedTime || '',
+                item.thumbnailLink ? 'T' : 'N',
+                item.folderColorRgb || '',
+                item.mimeType || ''
+            ].join('|');
         }
 
-        const driveListLastRenderHash = {
-            recents: '',
-            starred: '',
-            shared: '',
-            folders: '',
-            files: ''
-        };
+        // DOM-diff a Drive list: reuse existing card elements when their
+        // fingerprint is unchanged. Cards whose data didn't change keep
+        // their <img> element, so we avoid the image-reload flicker that
+        // happens when `innerHTML = ''` recreates everything from scratch
+        // every 5-second poll.
+        function diffRenderDriveList(container, items, builderForItem) {
+            if (!container) return;
+            const desiredItems = Array.isArray(items) ? items : [];
+            // Index existing cards by their stable file id.
+            const existing = new Map();
+            Array.from(container.children).forEach(child => {
+                const id = child && child.dataset && child.dataset.driveItemId;
+                if (id) existing.set(id, child);
+            });
+            const desiredIds = new Set();
+            let cursor = container.firstElementChild;
+            desiredItems.forEach(item => {
+                const id = item && item.id;
+                if (!id) return;
+                desiredIds.add(id);
+                const fp = driveItemFingerprint(item);
+                let card = existing.get(id);
+                if (card && card.dataset.driveItemFp === fp) {
+                    existing.delete(id);
+                    // Position match: advance cursor; mismatch: move into place.
+                    if (cursor !== card) {
+                        container.insertBefore(card, cursor);
+                    } else {
+                        cursor = card.nextElementSibling;
+                        return;
+                    }
+                    cursor = card.nextElementSibling;
+                    return;
+                }
+                // Need a new card (data changed or didn't exist before).
+                const newCard = builderForItem(item);
+                if (!newCard) return;
+                newCard.dataset.driveItemId = id;
+                newCard.dataset.driveItemFp = fp;
+                if (card) {
+                    container.replaceChild(newCard, card);
+                    existing.delete(id);
+                    cursor = newCard.nextElementSibling;
+                } else {
+                    container.insertBefore(newCard, cursor);
+                }
+            });
+            // Anything left in `existing` is no longer in the list — remove.
+            existing.forEach(el => el.remove());
+        }
 
         function renderDriveRecents(files) {
             if (!driveRecentsEl) return;
-            const fp = driveListFingerprint(files);
-            if (driveListLastRenderHash.recents === fp && driveRecentsEl.children.length > 0) return;
-            driveListLastRenderHash.recents = fp;
-            driveRecentsEl.innerHTML = '';
-            if (!files || files.length === 0) return;
-            files.forEach(file => driveRecentsEl.appendChild(createDriveFileCard(file)));
+            diffRenderDriveList(driveRecentsEl, files || [], createDriveFileCard);
         }
 
         function renderDriveStarred(files) {
             if (!driveStarredEl) return;
-            const fp = driveListFingerprint(files);
-            if (driveListLastRenderHash.starred === fp && (driveStarredEl.children.length > 0 || !files || files.length === 0)) {
-                // Still toggle empty state in case it transitioned
-                if (driveStarredEmptyEl) driveStarredEmptyEl.classList.toggle('hidden', !!files && files.length > 0);
-                return;
-            }
-            driveListLastRenderHash.starred = fp;
-            driveStarredEl.innerHTML = '';
-            if (!files || files.length === 0) {
-                if (driveStarredEmptyEl) driveStarredEmptyEl.classList.remove('hidden');
-                return;
-            }
-            if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
-            files.forEach(item => driveStarredEl.appendChild(createDriveStarredCard(item)));
+            const list = Array.isArray(files) ? files : [];
+            diffRenderDriveList(driveStarredEl, list, createDriveStarredCard);
+            if (driveStarredEmptyEl) driveStarredEmptyEl.classList.toggle('hidden', list.length > 0);
         }
 
         function renderDriveShared(files) {
             if (!driveSharedEl) return;
-            const fp = driveListFingerprint(files);
-            if (driveListLastRenderHash.shared === fp && (driveSharedEl.children.length > 0 || !files || files.length === 0)) {
-                if (driveSharedEmptyEl) driveSharedEmptyEl.classList.toggle('hidden', !!files && files.length > 0);
-                return;
-            }
-            driveListLastRenderHash.shared = fp;
-            driveSharedEl.innerHTML = '';
-            if (!files || files.length === 0) {
-                if (driveSharedEmptyEl) driveSharedEmptyEl.classList.remove('hidden');
-                return;
-            }
-            if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
-            files.forEach(item => {
+            const list = Array.isArray(files) ? files : [];
+            diffRenderDriveList(driveSharedEl, list, (item) => {
                 if (item?.mimeType === 'application/vnd.google-apps.folder') {
-                    driveSharedEl.appendChild(createDriveSharedFolderCard(item));
-                } else {
-                    driveSharedEl.appendChild(createDriveFileCard(item));
+                    return createDriveSharedFolderCard(item);
                 }
+                return createDriveFileCard(item);
             });
+            if (driveSharedEmptyEl) driveSharedEmptyEl.classList.toggle('hidden', list.length > 0);
         }
 
         function createDriveSharedFolderCard(folder) {
@@ -13476,34 +13491,15 @@
         }
 
         function renderDriveFolderContents(folders, files) {
-            const hasFolders = Array.isArray(folders) && folders.length > 0;
-            const hasFiles = Array.isArray(files) && files.length > 0;
-
-            // Skip the folder grid re-render if nothing changed.
+            const folderList = Array.isArray(folders) ? folders : [];
+            const fileList = Array.isArray(files) ? files : [];
+            const hasFolders = folderList.length > 0;
+            const hasFiles = fileList.length > 0;
             if (driveFoldersEl) {
-                const fp = driveListFingerprint(folders);
-                const alreadyRendered = driveListLastRenderHash.folders === fp
-                    && (driveFoldersEl.children.length > 0 || !hasFolders);
-                if (!alreadyRendered) {
-                    driveListLastRenderHash.folders = fp;
-                    driveFoldersEl.innerHTML = '';
-                    if (hasFolders) {
-                        folders.forEach(folder => driveFoldersEl.appendChild(createDriveFolderCard(folder)));
-                    }
-                }
+                diffRenderDriveList(driveFoldersEl, folderList, createDriveFolderCard);
             }
-
             if (driveFolderFilesEl) {
-                const fp = driveListFingerprint(files);
-                const alreadyRendered = driveListLastRenderHash.files === fp
-                    && (driveFolderFilesEl.children.length > 0 || !hasFiles);
-                if (!alreadyRendered) {
-                    driveListLastRenderHash.files = fp;
-                    driveFolderFilesEl.innerHTML = '';
-                    if (hasFiles) {
-                        files.forEach(file => driveFolderFilesEl.appendChild(createDriveFileCard(file)));
-                    }
-                }
+                diffRenderDriveList(driveFolderFilesEl, fileList, createDriveFileCard);
             }
 
             if (driveFolderEmptyEl) {
@@ -13664,14 +13660,11 @@
             if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
             if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
             if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
-            // After replacing real items with skeletons, the next render of
-            // real data must always paint regardless of the previous hash —
-            // otherwise the skeletons would stick.
-            driveListLastRenderHash.recents = '';
-            driveListLastRenderHash.starred = '';
-            driveListLastRenderHash.shared = '';
-            driveListLastRenderHash.folders = '';
-            driveListLastRenderHash.files = '';
+            // Skeletons replace real card DOM, so the diff-render won't find
+            // matching `data-drive-item-id` next time around — it'll rebuild
+            // everything (skeletons → real cards). That's the only render
+            // where flicker is unavoidable, and it only happens after an
+            // explicit skeleton-show (folder navigation, initial load).
         }
 
         async function refreshDriveFiles() {
@@ -18364,11 +18357,6 @@
         function scrollToTodayCalendarPage() {
             const targetPage = findTodayCalendarPageIndex();
             if (targetPage < 0) return false;
-            // Read positions from the actual DOM rather than computing from
-            // state.pages. The DOM is authoritative: side panels can make
-            // rows taller than their pages, layout quirks can shift offsets,
-            // etc. Using offsetTop/offsetHeight eliminates an entire class
-            // of "page positioned slightly off" bugs.
             const row = canvasContainer.querySelector('.page-row[data-page-row="' + targetPage + '"]');
             const wrapper = row && row.querySelector('.page-wrapper');
             if (!row || !wrapper) return false;
@@ -18378,29 +18366,26 @@
             const viewportHeight = rect.height;
             const pageHeight = wrapper.offsetHeight || getPageHeight(targetPage);
             const pageWidth = wrapper.offsetWidth || getPageDimensions(targetPage).width;
-            // Zoom-to-fit derivation: with the page centred vertically, the
-            // previous page's bottom is at screen-y vh/2 − (pageHeight/2 + gap)·zoom
-            // and the next page's top at vh/2 + (pageHeight/2 + gap)·zoom.
-            // Both land exactly on the viewport edges when
+            // Zoom-to-fit so previous/next pages are flush against the
+            // viewport edges (neither visible). Derivation:
             //   zoom = vh / (pageHeight + 2·PAGE_GAP).
-            // Same for horizontal (page + 2·PAGE_PADDING fits in vw).
             const fitZoomY = viewportHeight / (pageHeight + 2 * PAGE_GAP);
             const fitZoomX = viewportWidth / (pageWidth + 2 * PAGE_PADDING);
             const zoom = Math.max(0.5, Math.min(3, Math.min(fitZoomY, fitZoomX)));
             state.zoom = zoom;
-            // Use the row's actual offsetTop (in canvasContainer-local space,
-            // unaffected by transform) as the page's vertical anchor.
             const pageTop = row.offsetTop + wrapper.offsetTop;
             const pageCenter = pageTop + pageHeight / 2;
             state.panY = -pageCenter * zoom + viewportHeight / 2;
             state.panX = (viewportWidth - pageWidth * zoom) / 2 - PAGE_PADDING * zoom;
-            state.activePageIndex = targetPage;
-            state.overscrollY = 0;
+            // NOTE: deliberately NOT setting state.activePageIndex here.
+            // updateVisiblePages decides which pages activate based on what's
+            // in the viewport; touching activePageIndex from a navigation
+            // helper interferes with the page lifecycle (it can prevent
+            // subsequent pages from being loaded when the user scrolls).
             updateTransform();
-            // After the transform has been committed, verify the page is
-            // actually centred (DOM measurements after layout settle are the
-            // ground truth). If anything else shifted the position — clamping,
-            // a parallel layout pass, a CSS quirk — correct the residual.
+            // After the transform commits, verify the page is centred. If
+            // anything else shifted it (clamping, a parallel layout pass,
+            // a CSS quirk), correct the residual.
             requestAnimationFrame(() => {
                 const wRect = wrapper.getBoundingClientRect();
                 const vRect = canvasViewport.getBoundingClientRect();
@@ -18412,8 +18397,11 @@
                     state.panY += delta;
                     updateTransform();
                 }
+                // Re-evaluate which pages are visible AFTER all transforms
+                // are settled, so lazy-loaded pages around the target get
+                // their strokes drawn promptly.
+                scheduleVisiblePageUpdate(true);
             });
-            scheduleVisiblePageUpdate(true);
             return true;
         }
 
