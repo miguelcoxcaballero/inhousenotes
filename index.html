@@ -1290,7 +1290,7 @@
             gap: 30px;
         }
 
-        /* ─── Page row: page + optional side panel sit side by side ─── */
+        /* Page row: page + optional calendar panel stacked vertically */
         .page-row {
             display: flex;
             flex-direction: column;
@@ -2884,13 +2884,13 @@
         /* === Page-row: wraps page + side panel === */
         .page-row {
             display: flex;
-            flex-direction: row;
-            align-items: flex-start;
+            flex-direction: column;
+            align-items: center;
             gap: 14px;
             flex-shrink: 0;
         }
 
-        /* Side panel: calendar panel to the right of a page — see white/orange block above */
+        /* Side panel: calendar panel below a page */
 
 
         .calendar-pages-form {
@@ -8466,6 +8466,11 @@
 
         function getPageTopOffset(pageIndex) {
             const idx = Math.max(0, Math.min(state.pages.length, pageIndex));
+            const row = canvasContainer?.querySelector?.('.page-row[data-page-row="' + idx + '"]');
+            const wrapper = row?.querySelector?.('.page-wrapper');
+            if (row && wrapper) {
+                return row.offsetTop + wrapper.offsetTop;
+            }
             let y = PAGE_PADDING;
             for (let i = 0; i < idx; i++) {
                 const { height } = getPageDimensions(i);
@@ -8851,7 +8856,7 @@
 
         // Create page DOM element shell (canvases are lazy-loaded)
         function createPageElement(pageIndex, animate = false, withCanvas = false) {
-            // Each page lives inside a .page-row so the side panel can sit to the right
+            // Each page lives inside a .page-row so the calendar panel can sit below it.
             const row = document.createElement('div');
             row.className = 'page-row';
             row.dataset.pageRow = pageIndex;
@@ -9487,8 +9492,10 @@
             let y = PAGE_PADDING;
             for (let i = 0; i < state.pages.length; i++) {
                 const pageHeight = getPageHeight(i);
-                const top = y;
-                const bottom = y + pageHeight;
+                const row = canvasContainer?.querySelector?.('.page-row[data-page-row="' + i + '"]');
+                const wrapper = row?.querySelector?.('.page-wrapper');
+                const top = row && wrapper ? row.offsetTop + wrapper.offsetTop : y;
+                const bottom = top + pageHeight;
                 if (bottom >= viewTop && top <= viewBottom) {
                     if (firstVisible === -1) firstVisible = i;
                     lastVisible = i;
@@ -15485,7 +15492,7 @@
             state.pages.forEach((_, index) => {
                 const page = state.pages[index];
 
-                // Wrap each page in a row so the side panel can sit to the right
+                // Wrap each page in a row so the calendar panel can sit below it.
                 const row = document.createElement('div');
                 row.className = 'page-row';
                 row.dataset.pageRow = index;
@@ -17799,7 +17806,9 @@
             for (let i = 0; i < pageCount; i++) {
                 totalPageHeight += getPageHeight(i) + getPageCalendarPanelSpace(i);
             }
-            return padding * 2 + totalPageHeight + Math.max(0, pageCount - 1) * gap;
+            const computedHeight = padding * 2 + totalPageHeight + Math.max(0, pageCount - 1) * gap;
+            const domHeight = canvasContainer?.scrollHeight || 0;
+            return Math.max(computedHeight, domHeight);
         }
 
         function getPageBounds() {
@@ -19425,12 +19434,20 @@
             return panel;
         }
 
+        function refreshPageSidePanelLayout() {
+            requestAnimationFrame(() => {
+                if (typeof updateAddPageIndicator === 'function') updateAddPageIndicator();
+                if (typeof scheduleVisiblePageUpdate === 'function') scheduleVisiblePageUpdate(true);
+            });
+        }
+
         function renderPageSidePanel(pageIndex, panelData) {
             const row = canvasContainer.querySelector('.page-row[data-page-row="' + pageIndex + '"]');
             if (!row) return;
             const existing = row.querySelector('.page-side-panel');
             if (!panelData) {
                 if (existing) existing.remove();
+                refreshPageSidePanelLayout();
                 return;
             }
             // Sanitize the panel data BEFORE rendering. Older docs (and any
@@ -19453,11 +19470,13 @@
             // happen if we tore down and rebuilt the element.
             if (existing && spPanelStructureMatches(existing, panelData)) {
                 spUpdateSidePanelInPlace(existing, pageIndex, panelData);
+                refreshPageSidePanelLayout();
                 return;
             }
             if (existing) existing.remove();
             const panel = buildSidePanelElement(pageIndex, panelData);
             if (panel) row.appendChild(panel);
+            refreshPageSidePanelLayout();
         }
 
         // Strip duplicate <button class="sp-event" data-sp-event="ID"> nodes
