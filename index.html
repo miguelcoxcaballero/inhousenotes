@@ -9036,9 +9036,18 @@
                 const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
                 if (canvas) {
                     applyPageBackground(pageIndex, canvas, { deferPdfRender: !!options.deferPdfRender });
+                    const page = state.pages[pageIndex];
+                    if (page && isPageLoaded(page) && page.needsRedraw) {
+                        redrawPage(pageIndex);
+                    }
+                    touchPageAccess(pageIndex);
+                    return;
                 }
-                touchPageAccess(pageIndex);
-                return;
+                // The index can survive while the DOM canvas was removed by a
+                // structure/render refresh. Treat that as stale state and
+                // rebuild the canvas below; otherwise the page stays stuck on
+                // its preview forever.
+                activePageIndices.delete(pageIndex);
             }
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (!wrapper) return;
@@ -9100,7 +9109,9 @@
             if (!desiredActivePageIndices.has(pageIndex)) return;
             const page = state.pages[pageIndex];
             if (!page) return;
-            if (!activePageIndices.has(pageIndex)) {
+            const existingCanvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+            if (!activePageIndices.has(pageIndex) || !existingCanvas) {
+                if (!existingCanvas) activePageIndices.delete(pageIndex);
                 const shouldDeferCanvas = !isPageLoaded(page);
                 ensurePageCanvas(pageIndex, {
                     defer: shouldDeferCanvas,
@@ -9109,10 +9120,10 @@
             }
             if (!desiredActivePageIndices.has(pageIndex)) return;
             if (isPageLoaded(page)) {
-                if (page.needsRedraw) {
+                const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+                if (page.needsRedraw || (canvas && canvas.dataset.hasPageDraw !== '1')) {
                     redrawPage(pageIndex);
                 } else if (page.backgroundSource === 'pdf' && !page.backgroundImage && activePdfDocument) {
-                    const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
                     if (canvas) {
                         applyPageBackground(pageIndex, canvas);
                     }
@@ -9632,13 +9643,16 @@
                 applyPagePreview(index);
                 const page = state.pages[index];
                 if (activePageIndices.has(index) && page && isPageLoaded(page)) {
-                    if (page.needsRedraw) {
+                    const canvas = document.querySelector(`canvas.page-canvas[data-page="${index}"]`);
+                    if (!canvas) {
+                        activePageIndices.delete(index);
+                        queuePageActivation(index, order);
+                        return;
+                    }
+                    if (page.needsRedraw || canvas.dataset.hasPageDraw !== '1') {
                         redrawPage(index);
                     } else if (page.backgroundSource === 'pdf' && !page.backgroundImage && activePdfDocument) {
-                        const canvas = document.querySelector(`canvas.page-canvas[data-page="${index}"]`);
-                        if (canvas) {
-                            applyPageBackground(index, canvas);
-                        }
+                        applyPageBackground(index, canvas);
                     }
                     return;
                 }
@@ -15622,6 +15636,7 @@
             ctx.restore();
             page.needsRedraw = false;
             // Bug fix: clear preview only after page is fully drawn
+            canvas.dataset.hasPageDraw = '1';
             clearPagePreview(pageIndex);
         }
 
@@ -22784,6 +22799,14 @@
             const page = state.pages[pageIndex];
             if (!page) return null;
             if (isPageLoaded(page)) {
+                const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+                if (canvas) {
+                    applyPageDimensionsToWrapper(pageIndex, { skipRedraw: true });
+                    applyPageBackground(pageIndex, canvas);
+                    if (page.needsRedraw || canvas.dataset.hasPageDraw !== '1') {
+                        redrawPage(pageIndex);
+                    }
+                }
                 touchPageAccess(pageIndex);
                 return page;
             }
