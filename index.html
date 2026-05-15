@@ -17895,32 +17895,55 @@
         function scrollToTodayCalendarPage() {
             const targetPage = findTodayCalendarPageIndex();
             if (targetPage < 0) return false;
+            // Read positions from the actual DOM rather than computing from
+            // state.pages. The DOM is authoritative: side panels can make
+            // rows taller than their pages, layout quirks can shift offsets,
+            // etc. Using offsetTop/offsetHeight eliminates an entire class
+            // of "page positioned slightly off" bugs.
+            const row = canvasContainer.querySelector('.page-row[data-page-row="' + targetPage + '"]');
+            const wrapper = row && row.querySelector('.page-wrapper');
+            if (!row || !wrapper) return false;
             const rect = canvasViewport && canvasViewport.getBoundingClientRect();
-            const viewportWidth = (rect && rect.width) || window.innerWidth || 1200;
-            const viewportHeight = (rect && rect.height) || window.innerHeight || 800;
-            const { width: pageWidth, height: pageHeight } = getPageDimensions(targetPage);
-            // Zoom-to-fit: pick the zoom that snaps the target page into the
-            // viewport with the previous/next pages flush against the
-            // viewport edges (so neither is visible). For a vertically-centred
-            // layout the previous page's bottom is at screen-y
-            //   vh/2 - (pageHeight/2 + PAGE_GAP) * zoom
-            // and the next page's top at
-            //   vh/2 + (pageHeight/2 + PAGE_GAP) * zoom
-            // The exact zoom that places both at the viewport edges is:
-            //   zoom = vh / (pageHeight + 2 * PAGE_GAP)
-            // We also check the horizontal axis so the page never overflows
-            // the width, and clamp to the app-wide [0.5, 3] zoom range.
+            if (!rect || !rect.width || !rect.height) return false;
+            const viewportWidth = rect.width;
+            const viewportHeight = rect.height;
+            const pageHeight = wrapper.offsetHeight || getPageHeight(targetPage);
+            const pageWidth = wrapper.offsetWidth || getPageDimensions(targetPage).width;
+            // Zoom-to-fit derivation: with the page centred vertically, the
+            // previous page's bottom is at screen-y vh/2 − (pageHeight/2 + gap)·zoom
+            // and the next page's top at vh/2 + (pageHeight/2 + gap)·zoom.
+            // Both land exactly on the viewport edges when
+            //   zoom = vh / (pageHeight + 2·PAGE_GAP).
+            // Same for horizontal (page + 2·PAGE_PADDING fits in vw).
             const fitZoomY = viewportHeight / (pageHeight + 2 * PAGE_GAP);
             const fitZoomX = viewportWidth / (pageWidth + 2 * PAGE_PADDING);
             const zoom = Math.max(0.5, Math.min(3, Math.min(fitZoomY, fitZoomX)));
             state.zoom = zoom;
-            // Centre the target page vertically and horizontally.
-            const centerY = getPageCenterOffset(targetPage);
-            state.panY = -centerY * zoom + viewportHeight / 2;
+            // Use the row's actual offsetTop (in canvasContainer-local space,
+            // unaffected by transform) as the page's vertical anchor.
+            const pageTop = row.offsetTop + wrapper.offsetTop;
+            const pageCenter = pageTop + pageHeight / 2;
+            state.panY = -pageCenter * zoom + viewportHeight / 2;
             state.panX = (viewportWidth - pageWidth * zoom) / 2 - PAGE_PADDING * zoom;
             state.activePageIndex = targetPage;
             state.overscrollY = 0;
             updateTransform();
+            // After the transform has been committed, verify the page is
+            // actually centred (DOM measurements after layout settle are the
+            // ground truth). If anything else shifted the position — clamping,
+            // a parallel layout pass, a CSS quirk — correct the residual.
+            requestAnimationFrame(() => {
+                const wRect = wrapper.getBoundingClientRect();
+                const vRect = canvasViewport.getBoundingClientRect();
+                if (!vRect.height) return;
+                const actualCenter = (wRect.top + wRect.bottom) / 2 - vRect.top;
+                const desiredCenter = vRect.height / 2;
+                const delta = desiredCenter - actualCenter;
+                if (Math.abs(delta) > 1) {
+                    state.panY += delta;
+                    updateTransform();
+                }
+            });
             scheduleVisiblePageUpdate(true);
             return true;
         }
@@ -18748,16 +18771,61 @@
             return new Date(value);
         }
 
+        // Compute every local day key an event covers. All-day events use
+        // `start.date` / `end.date` where `end` is exclusive. Timed events
+        // span every day from the start's local day up to (but not including)
+        // the end's local day; an event that ends exactly at midnight does
+        // NOT add the next day. Returns at least one key when the event has
+        // a valid start.
+        function getEventDayKeys(event) {
+            const keys = [];
+            if (event?.start?.date) {
+                // All-day event.
+                const start = parseGoogleEventDate(event.start.date);
+                const endRaw = event?.end?.date ? parseGoogleEventDate(event.end.date) : null;
+                if (!start || Number.isNaN(start.getTime())) return keys;
+                const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+                const endDay = (endRaw && !Number.isNaN(endRaw.getTime()))
+                    ? new Date(endRaw.getFullYear(), endRaw.getMonth(), endRaw.getDate())
+                    : new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
+                if (endDay.getTime() <= cur.getTime()) {
+                    keys.push(formatCalendarDateKey(cur));
+                } else {
+                    while (cur.getTime() < endDay.getTime()) {
+                        keys.push(formatCalendarDateKey(cur));
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                }
+                return keys;
+            }
+            const startTs = event?.start?.dateTime;
+            if (!startTs) return keys;
+            const start = parseGoogleEventDate(startTs);
+            if (!start || Number.isNaN(start.getTime())) return keys;
+            const endRaw = event?.end?.dateTime ? parseGoogleEventDate(event.end.dateTime) : null;
+            // Stop at the end's exact instant — events ending at 00:00 don't
+            // bleed into the next day. If end is missing/invalid, treat as a
+            // single-instant event (still emit the start day).
+            const endLimit = (endRaw && !Number.isNaN(endRaw.getTime()))
+                ? endRaw
+                : new Date(start.getTime() + 1);
+            const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+            while (cur.getTime() < endLimit.getTime()) {
+                keys.push(formatCalendarDateKey(cur));
+                cur.setDate(cur.getDate() + 1);
+            }
+            if (keys.length === 0) keys.push(formatCalendarDateKey(start));
+            return keys;
+        }
+
         function buildCalendarEventMap(events) {
             const byDay = new Map();
             for (const event of events || []) {
-                const startValue = event?.start?.dateTime || event?.start?.date;
-                if (!startValue) continue;
-                const start = parseGoogleEventDate(startValue);
-                if (!start || Number.isNaN(start.getTime())) continue;
-                const key = formatCalendarDateKey(start);
-                if (!byDay.has(key)) byDay.set(key, []);
-                byDay.get(key).push(event);
+                const dayKeys = getEventDayKeys(event);
+                for (const key of dayKeys) {
+                    if (!byDay.has(key)) byDay.set(key, []);
+                    byDay.get(key).push(event);
+                }
             }
             for (const [key, dayEvents] of byDay) {
                 byDay.set(key, sortEventsByStart(dedupeEventsById(dayEvents)));
@@ -18968,13 +19036,14 @@
             const endKey = formatCalendarDateKey(endDate);
             for (const events of monthEventLists) {
                 for (const event of events || []) {
-                    const startValue = event?.start?.dateTime || event?.start?.date;
-                    const eventDate = parseGoogleEventDate(startValue);
-                    if (!eventDate || Number.isNaN(eventDate.getTime())) continue;
-                    const key = formatCalendarDateKey(eventDate);
-                    if (key < startKey || key > endKey) continue;
-                    if (!byDay.has(key)) byDay.set(key, []);
-                    byDay.get(key).push(event);
+                    // Spread the event across every day it covers (multi-day
+                    // all-day events and timed events spanning midnight).
+                    const dayKeys = getEventDayKeys(event);
+                    for (const key of dayKeys) {
+                        if (key < startKey || key > endKey) continue;
+                        if (!byDay.has(key)) byDay.set(key, []);
+                        byDay.get(key).push(event);
+                    }
                 }
             }
             // Neighbour month caches overlap (grid range = 42 days), so the
@@ -19686,13 +19755,14 @@
             for (const events of calendarEventsCache.values()) {
                 if (!Array.isArray(events)) continue;
                 for (const ev of events) {
-                    const startVal = ev && ev.start && (ev.start.dateTime || ev.start.date);
-                    if (!startVal) continue;
-                    const start = parseGoogleEventDate(startVal);
-                    if (!start || Number.isNaN(start.getTime())) continue;
-                    const k = formatCalendarDateKey(start);
-                    if (!eventMap.has(k)) eventMap.set(k, []);
-                    eventMap.get(k).push(ev);
+                    // Spread the event over every day it covers, so multi-day
+                    // events show up on every day of their range, not just on
+                    // their start date.
+                    const dayKeys = getEventDayKeys(ev);
+                    for (const k of dayKeys) {
+                        if (!eventMap.has(k)) eventMap.set(k, []);
+                        eventMap.get(k).push(ev);
+                    }
                 }
             }
             for (const [k, list] of eventMap) {
