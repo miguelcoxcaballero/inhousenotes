@@ -17841,23 +17841,72 @@
             }, 360);
         }
 
-        function scrollToTodayCalendarPage() {
-            const cfg = state.calendarPageConfig;
-            if (!cfg || !cfg.startDateKey || typeof cfg.startPage !== 'number') return false;
+        function findTodayCalendarPageIndex() {
             const todayKey = formatCalendarDateKey(new Date());
-            const [sy, sm, sd] = cfg.startDateKey.split('-').map(Number);
+            if (!Array.isArray(state.pages) || state.pages.length === 0) return -1;
+            // Pass 1: exact match — a page that lists today in its dateKeys.
+            let firstCalPage = -1;
+            let lastCalPage = -1;
+            let firstDateAfterToday = -1;
+            let lastDateBeforeToday = -1;
+            for (let i = 0; i < state.pages.length; i++) {
+                const sp = state.pages[i] && state.pages[i].sidePanel;
+                if (!sp || !Array.isArray(sp.dateKeys) || sp.dateKeys.length === 0) continue;
+                if (firstCalPage < 0) firstCalPage = i;
+                lastCalPage = i;
+                if (sp.dateKeys.includes(todayKey)) return i;
+                // Track nearest neighbours by comparing dateKey strings — they
+                // are ISO YYYY-MM-DD so lexical compare matches chronological.
+                for (const k of sp.dateKeys) {
+                    if (k > todayKey) {
+                        if (firstDateAfterToday < 0) firstDateAfterToday = i;
+                        break;
+                    }
+                    if (k < todayKey) lastDateBeforeToday = i;
+                }
+            }
+            // Pass 2: today is outside the calendar's range — pick the nearest
+            // calendar page so the user lands somewhere useful instead of on
+            // page 1 of an unrelated section.
+            if (firstCalPage >= 0) {
+                if (firstDateAfterToday >= 0 && lastDateBeforeToday < 0) return firstCalPage;
+                if (lastDateBeforeToday >= 0 && firstDateAfterToday < 0) return lastCalPage;
+                if (firstDateAfterToday >= 0 && lastDateBeforeToday >= 0) {
+                    return firstDateAfterToday;
+                }
+            }
+            // Fallback: derive page index from the doc-level config.
+            const cfg = state.calendarPageConfig;
+            if (!cfg || !cfg.startDateKey || typeof cfg.startPage !== 'number') return -1;
+            const [sy, sm, sd] = String(cfg.startDateKey).split('-').map(Number);
             const [ty, tm, td] = todayKey.split('-').map(Number);
+            if (!sy || !sm || !sd || !ty || !tm || !td) return -1;
             const startMs = new Date(sy, sm - 1, sd).getTime();
             const todayMs = new Date(ty, tm - 1, td).getTime();
             const daysDiff = Math.round((todayMs - startMs) / 86400000);
-            if (daysDiff < 0) return false;
             const pageDiff = cfg.mode === 'week' ? Math.floor(daysDiff / 7) : daysDiff;
-            const targetPage = cfg.startPage + pageDiff;
-            if (targetPage < 0 || targetPage >= state.pages.length) return false;
-            const viewportHeight = canvasViewport.getBoundingClientRect().height || window.innerHeight;
+            const targetPage = Math.max(
+                0,
+                Math.min(state.pages.length - 1, cfg.startPage + Math.max(0, pageDiff))
+            );
+            return targetPage;
+        }
+
+        function scrollToTodayCalendarPage() {
+            const targetPage = findTodayCalendarPageIndex();
+            if (targetPage < 0) return false;
+            const rect = canvasViewport && canvasViewport.getBoundingClientRect();
+            const viewportHeight = (rect && rect.height) || window.innerHeight || 800;
+            // Guard against zero/uninitialised zoom — fall back to 1.
+            if (!Number.isFinite(state.zoom) || state.zoom <= 0) state.zoom = 1;
             const centerY = getPageCenterOffset(targetPage);
+            const maxPageWidth = getMaxPageWidth();
+            // Centre horizontally too — otherwise on wide screens the page
+            // can sit off-centre and the doc looks unscrolled.
+            state.panX = (((rect && rect.width) || window.innerWidth) - maxPageWidth * state.zoom) / 2 - PAGE_PADDING * state.zoom;
             state.panY = -centerY * state.zoom + viewportHeight / 2;
             state.activePageIndex = targetPage;
+            state.overscrollY = 0;
             updateTransform();
             scheduleVisiblePageUpdate(true);
             return true;
@@ -18697,14 +18746,43 @@
                 if (!byDay.has(key)) byDay.set(key, []);
                 byDay.get(key).push(event);
             }
-            for (const dayEvents of byDay.values()) {
-                dayEvents.sort((a, b) => {
-                    const aStart = parseGoogleEventDate(a?.start?.dateTime || a?.start?.date);
-                    const bStart = parseGoogleEventDate(b?.start?.dateTime || b?.start?.date);
-                    return (aStart?.getTime() || 0) - (bStart?.getTime() || 0);
-                });
+            for (const [key, dayEvents] of byDay) {
+                byDay.set(key, sortEventsByStart(dedupeEventsById(dayEvents)));
             }
             return byDay;
+        }
+
+        // Dedupe an event list by Google Calendar event id. When duplicates
+        // exist (same event present in two cached months due to grid overlap),
+        // prefer the most recently `updated` version so a stale copy from a
+        // neighbour cache never overrides a freshly-fetched one. Events
+        // without an id are passed through (defensive: they can't be deduped).
+        function dedupeEventsById(events) {
+            if (!Array.isArray(events) || events.length === 0) return events || [];
+            const byId = new Map();
+            const noId = [];
+            for (const ev of events) {
+                if (!ev) continue;
+                const id = ev.id;
+                if (!id) { noId.push(ev); continue; }
+                const existing = byId.get(id);
+                if (!existing) {
+                    byId.set(id, ev);
+                    continue;
+                }
+                const evUpdated = Date.parse(ev.updated || '') || 0;
+                const exUpdated = Date.parse(existing.updated || '') || 0;
+                if (evUpdated > exUpdated) byId.set(id, ev);
+            }
+            return [...byId.values(), ...noId];
+        }
+
+        function sortEventsByStart(events) {
+            return events.sort((a, b) => {
+                const aStart = parseGoogleEventDate(a?.start?.dateTime || a?.start?.date);
+                const bStart = parseGoogleEventDate(b?.start?.dateTime || b?.start?.date);
+                return (aStart?.getTime() || 0) - (bStart?.getTime() || 0);
+            });
         }
 
         function formatCalendarEventTime(event) {
@@ -18886,12 +18964,11 @@
                     byDay.get(key).push(event);
                 }
             }
-            for (const events of byDay.values()) {
-                events.sort((a, b) => {
-                    const aStart = parseGoogleEventDate(a?.start?.dateTime || a?.start?.date);
-                    const bStart = parseGoogleEventDate(b?.start?.dateTime || b?.start?.date);
-                    return (aStart?.getTime() || 0) - (bStart?.getTime() || 0);
-                });
+            // Neighbour month caches overlap (grid range = 42 days), so the
+            // same event id can land in `byDay` more than once. Dedupe before
+            // returning, keeping the freshest version.
+            for (const [key, list] of byDay) {
+                byDay.set(key, sortEventsByStart(dedupeEventsById(list)));
             }
             return byDay;
         }
