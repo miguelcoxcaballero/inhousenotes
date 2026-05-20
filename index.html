@@ -1,3 +1,80 @@
+<!--
+================================================================================
+  INHOUSE NOTES  —  Single-file web application (standalone HTML)
+================================================================================
+
+  MASTER TABLE OF CONTENTS
+  ─────────────────────────────────────────────────────────────────────────────
+  1. HEAD
+     1.1  Meta tags & viewport
+     1.2  External libraries (PDF.js, pdf-lib, jsPDF, Google Identity)
+     1.3  External fonts (Google Fonts)
+
+  2. CSS  <style>  (lines ~15 – 6200)
+     2.1  Global reset & utility classes
+     2.2  App-mode detection rules  (Android WebView / inhouse-app flag)
+     2.3  CSS custom properties  (design tokens: colours, radii, shadows)
+     2.4  Welcome / sign-in screen
+     2.5  Drive home  (file grid, cards, toolbar, breadcrumbs, search)
+     2.6  Drive profile & account menu
+     2.7  Drive modals  (folder picker, trash/bin, confirm dialogs)
+     2.8  Editor chrome  (toolbar, pen tools, eraser, zoom)
+     2.9  Canvas & page layout  (page-row, page-wrapper, previews)
+     2.10 Manage-Pages panel & Timeline panel
+     2.11 Calendar widget  (month grid, events, "Add to pages" modal)
+     2.12 Page side-panel  (daily/weekly calendar cards beside each page)
+     2.13 Event editor modal  (create / edit calendar events)
+     2.14 Shared modals  (overlays used by multiple features)
+     2.15 Share / collaboration modal
+     2.16 App download modal
+     2.17 Miscellaneous & responsive overrides
+
+  3. BODY HTML  <body>  (lines ~6200 – 7225)
+     3.1  Welcome / sign-in view
+     3.2  Drive home view  (header, toolbar, file sections, folder contents)
+     3.3  Editor view  (toolbar, canvas viewport, loading overlay)
+     3.4  Calendar modals  (month view, day-detail, add-to-pages)
+     3.5  Event editor modal
+     3.6  Page side-panel event modal
+     3.7  Utility modals  (delete page, reset doc, export, cover image, …)
+     3.8  Drive modals  (folder picker, confirm, trash, bin browser)
+     3.9  App download modal
+     3.10 Timeline (version history) panel
+     3.11 Manage-Pages panel
+     3.12 Share / collaboration modal
+     3.13 Hidden file inputs & misc DOM elements
+
+  4. JAVASCRIPT  <script>  (lines ~7225 – 29976)
+     4.1  Boot & app-mode detection
+     4.2  Constants  (storage keys, limits, UI sizes, PDF params)
+     4.3  Application state  (single mutable `state` object)
+     4.4  DOM element references
+     4.5  Theme & appearance helpers
+     4.6  Drawing engine  (strokes, highlighter, eraser, lasso)
+     4.7  Canvas & page rendering  (redraw, backgrounds, PDF pages)
+     4.8  Page lifecycle  (add, remove, unload, lazy-load, activation)
+     4.9  Viewport transform  (pan, zoom, inertia, clamp)
+     4.10 Visible-page tracking  (which pages load / unload as you scroll)
+     4.11 Undo / redo history
+     4.12 Selection & lasso tool
+     4.13 Image handling  (paste, resize, cache)
+     4.14 Cover image & page templates
+     4.15 Drive sync  (auth, upload, download, collab polling)
+     4.16 Version timeline  (history snapshots, restore, preview)
+     4.17 Manage-Pages panel  (reorder, delete, add pages)
+     4.18 Share / collaboration  (presence, real-time merge)
+     4.19 Google Calendar integration  (auth, fetch, event CRUD)
+     4.20 Page side-panels  (calendar cards rendered beside pages)
+     4.21 Calendar modal  (month picker, day view)
+     4.22 "Add calendar to pages" flow
+     4.23 Auto-sync  (5-second poll, rebuild panels without flicker)
+     4.24 Save & storage  (IndexedDB, localStorage backup, PDF export)
+     4.25 Drive home  (file listing, cards, navigation, auto-refresh)
+     4.26 Welcome / sign-in flow
+     4.27 Event listeners & UI wiring  (all addEventListener calls)
+     4.28 App initialisation  (init function called at page load)
+  ─────────────────────────────────────────────────────────────────────────────
+-->
 <!DOCTYPE html>
 <html lang="en">
 
@@ -13,7 +90,58 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer data-auto_prompt="false"></script>
     <style>
+        /*
+        ════════════════════════════════════════════════════════════════════════
+          CSS INDEX   (search "§ X.Xa" to jump to any sub-section)
+        ════════════════════════════════════════════════════════════════════════
+          2.1   Global reset & utility classes ................. (§ 2.1)
+          2.2   App-mode detection (Android WebView rules) ..... (§ 2.2)
+          2.3   CSS custom properties (design tokens)
+            2.3a  Presence / collaboration avatars ............. (§ 2.3a)
+            2.3b  Save-debug panel ............................ (§ 2.3b)
+            2.3c  Read/Edit mode toggle & save indicator ....... (§ 2.3c)
+            2.3d  Shared button base + editor read-only states . (§ 2.3d)
+          2.4   Welcome / sign-in screen ...................... (§ 2.4)
+          2.5   Drive home
+            2.5a  Header (logo, action buttons, profile) ....... (§ 2.5a)
+            2.5b  Toolbar, search bar & breadcrumbs ........... (§ 2.5b)
+            2.5c  File sections layout ........................ (§ 2.5c)
+            2.5d  File cards & folder cards ................... (§ 2.5d)
+            2.5e  Card skeletons (loading placeholders) ........ (§ 2.5e)
+            2.5f  Dark mode overrides for drive cards .......... (§ 2.5f)
+          2.6   Drive profile & account menu .................. (§ 2.6)
+          2.7   Drive modals (folder picker, bin, confirm) ..... (§ 2.7)
+          2.8   Editor chrome
+            2.8a  Drawing toolbar (pen, eraser, colours, sizes) . (§ 2.8a)
+            Canvas viewport ................................ (§ 2.8)
+          2.9   Canvas & page layout
+            2.9a  Page rows & wrappers ........................ (§ 2.9a)
+            2.9b  Page wrapper, canvas, overlays & page number . (§ 2.9b)
+            2.9c  Keyframe animations (page, lasso, selection) . (§ 2.9c)
+          2.10  Manage-Pages panel ............................ (§ 2.10)
+          2.10b Timeline (version history) panel .............. (§ 2.10b)
+          2.11  Calendar widget
+            2.11a  Modal shell & toolbar ...................... (§ 2.11a)
+            2.11b  Month grid cells ........................... (§ 2.11b)
+            2.11c  Events inside grid cells ................... (§ 2.11c)
+            2.11d  Day-detail popup ........................... (§ 2.11d)
+            2.11e  "Add calendar to pages" modal .............. (§ 2.11e)
+          2.12  Page side-panels (calendar cards beside pages)
+            2.12a  Day sections inside the panel .............. (§ 2.12a)
+            2.12b  Event list & individual event buttons ....... (§ 2.12b)
+          2.13  Event editor modal
+            2.13a  Form fields (title, date, repeat, etc.) .... (§ 2.13a)
+            2.13b  Colour picker & action buttons ............. (§ 2.13b)
+          2.14  Shared modals (overlays, .modal card base) ..... (§ 2.14)
+          2.15  Share / collaboration modal ................... (§ 2.15)
+          2.16  App download modal ............................ (§ 2.16)
+          2.17  Responsive overrides (≤ 720 px & touch) ........ (§ 2.17)
+        ════════════════════════════════════════════════════════════════════════
+        */
+
         @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
+
+        /* ── § 2.1  Global reset & utility classes ─────────────────────── */
 
         * {
             margin: 0;
@@ -26,6 +154,13 @@
             display: none !important;
         }
 
+        /* ── § 2.2  App-mode detection rules ────────────────────────────────
+           The Android WebView sets  html[data-inhouse-app="true"]  via the
+           detectInhouseApp() function at boot. These rules hide features that
+           only make sense in the browser (download button, fullscreen, etc.)
+           or apply native-app tweaks (safe-area, keyboard avoidance).
+        ── */
+
         html[data-inhouse-app="true"] #btn-drive-fullscreen,
         html[data-inhouse-app="true"] #btn-fullscreen {
             display: none !important;
@@ -36,6 +171,11 @@
             inherits: true;
             initial-value: 0deg;
         }
+
+        /* ── § 2.3  CSS custom properties (design tokens) ───────────────────
+           All colours, border-radii, shadows and spacing values live here so
+           that switching to dark mode only needs a class on <html>.
+        ── */
 
         :root {
             --bg-primary: #f5f5f0;
@@ -298,6 +438,13 @@
             gap: clamp(4px, 1.2vw, 8px);
             align-items: center;
         }
+
+        /* ┄ § 2.3a  Presence / collaboration avatars ────────────────────────
+           The row of small profile pictures shown in the editor header when
+           multiple users have the document open at the same time. Each avatar
+           has a coloured ring that animates to show what the other user is
+           doing (saving, uploading, typing, etc.).
+        ┄ */
 
         .presence-avatars {
             display: flex;
@@ -743,6 +890,12 @@
             background: var(--accent-red);
         }
 
+        /* ┄ § 2.3b  Save-debug panel ────────────────────────────────────────
+           Hidden developer panel that shows a real-time breakdown of the
+           save/sync state machine (dirty flags, versions, upload phases).
+           Only accessible via a secret tap sequence; invisible in production.
+        ┄ */
+
         .save-debug-backdrop {
             position: fixed;
             inset: 0;
@@ -996,6 +1149,12 @@
             opacity: 0.48;
         }
 
+        /* ┄ § 2.3c  Read / Edit mode toggle & save indicator ────────────────
+           The pill-shaped toggle in the editor header that switches between
+           read mode (no drawing, safer scrolling) and edit mode (pen active).
+           The coloured dot beside it is the save indicator.
+        ┄ */
+
         .mode-toggle-btn {
             display: grid;
             grid-template-columns: 15px 36px auto;
@@ -1160,6 +1319,12 @@
             cursor: default;
         }
 
+        /* ┄ § 2.3d  Shared button base styles & editor read-only overrides ──
+           Base .btn rules (used across all views) plus the rules that disable
+           toolbar buttons and hide the add-page indicator when the doc is
+           in read-only mode.
+        ┄ */
+
         #status-bar {
             display: none;
         }
@@ -1265,6 +1430,11 @@
             height: 18px;
         }
 
+        /* ── § 2.8  Editor chrome ────────────────────────────────────────────
+           The main editor area: the scrollable viewport that holds the
+           canvas container (which in turn holds all page wrappers).
+        ── */
+
         #canvas-viewport {
             flex: 1;
             overflow: hidden;
@@ -1290,6 +1460,12 @@
             gap: 30px;
         }
 
+        /* ┄ § 2.9a  Page rows & wrappers ────────────────────────────────────
+           Each notebook page lives inside a .page-row flex container so the
+           optional calendar side-panel can sit beside it. The .page-wrapper
+           is the white rectangle that the user draws on.
+        ┄ */
+
         /* Page row: page + optional calendar panel stacked vertically */
         .page-row {
             display: flex;
@@ -1297,6 +1473,12 @@
             align-items: center;
             gap: 14px;
         }
+
+        /* ── § 2.12  Page side-panels ────────────────────────────────────────
+           Each notebook page can have an optional calendar card panel on its
+           right side. These panels always use the brand white + orange palette
+           regardless of dark mode (they are printed on paper, conceptually).
+        ── */
 
         /* ─── Calendar side panel (white + orange, always — independent of theme) ─── */
         .page-side-panel,
@@ -1361,7 +1543,7 @@
         }
 
         .page-side-panel-title:empty::before {
-            content: 'Calendario';
+            content: 'Calendar';
             color: rgba(224, 122, 60, 0.5);
             font-style: italic;
         }
@@ -1418,6 +1600,12 @@
             gap: 5px;
             overflow-x: hidden;
         }
+
+        /* ┄ § 2.12a  Day sections inside the panel ──────────────────────────
+           Each day of the week has its own card-like section with a header
+           (day label + add-event button) and a list of events below it.
+           The "today" section is highlighted in green.
+        ┄ */
 
         .page-side-panel-body .sp-day-section,
         [data-theme="dark"] .page-side-panel-body .sp-day-section {
@@ -1532,6 +1720,13 @@
             box-shadow: none;
         }
 
+        /* ┄ § 2.12b  Event list & individual event buttons ─────────────────
+           The scrollable list of event pills inside a day section. Each pill
+           shows the event's time (coloured with the Google Calendar event
+           colour) and its title. Read-only mode removes the hover state and
+           hides the add (+) button.
+        ┄ */
+
         .page-side-panel-body .sp-events-list {
             display: flex;
             flex-direction: column;
@@ -1610,6 +1805,12 @@
             padding: 1px 3px;
         }
 
+        /* ── § 2.13  Event editor modal ──────────────────────────────────────
+           The popup that appears when the user taps an event or the + button
+           in a side-panel day section — lets them create, edit, or delete
+           a Google Calendar event without leaving the notebook page.
+        ── */
+
         /* ─── Side-panel event editor modal (white + orange, always) ─── */
         .modal.sp-event-modal,
         [data-theme="dark"] .modal.sp-event-modal {
@@ -1672,6 +1873,11 @@
             width: 16px;
             height: 16px;
         }
+
+        /* ┄ § 2.13a  Event editor form fields ───────────────────────────────
+           Input fields inside the event editor: title, date, start/end time,
+           repeat selector, reminder selector, location, description.
+        ┄ */
 
         .sp-event-form {
             display: flex;
@@ -1755,6 +1961,12 @@
         @media (max-width: 480px) {
             .sp-event-row-double { grid-template-columns: 1fr; }
         }
+
+        /* ┄ § 2.13b  Event colour picker & action buttons ───────────────────
+           The row of colour swatches (matching Google Calendar's 12-colour
+           palette) and the Delete / Cancel / Save button row at the bottom
+           of the event editor modal.
+        ┄ */
 
         .sp-color-picker {
             display: flex;
@@ -1863,6 +2075,12 @@
             background: #fff4ea;
         }
 
+        /* ┄ § 2.9b  Page wrapper, canvas, overlays & page number ────────────
+           The page-wrapper holds the drawing canvas, the lasso overlay, the
+           cursor overlay, and the page-number badge. Background images (PDF
+           or template) are applied as CSS background-image via JS.
+        ┄ */
+
         .page-wrapper {
             position: relative;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
@@ -1875,6 +2093,11 @@
         .page-wrapper.new-page {
             animation: pageFadeIn 0.5s ease;
         }
+
+        /* ┄ § 2.9c  Keyframe animations (page, lasso, selection) ────────────
+           CSS @keyframe declarations referenced by the canvas/page layer:
+           page fade-in on creation, lasso marquee dash animation, etc.
+        ┄ */
 
         @keyframes pageFadeIn {
             from {
@@ -2133,6 +2356,12 @@
             pointer-events: none;
             opacity: 0.6;
         }
+
+        /* ┄ § 2.8a  Drawing toolbar ─────────────────────────────────────────
+           The floating pill toolbar the user drags around the screen. Contains
+           pen / highlighter / eraser / lasso tool buttons, colour swatches,
+           stroke-size selector, and the undo/redo buttons.
+        ┄ */
 
         #toolbar {
             position: fixed;
@@ -2510,6 +2739,13 @@
             background: var(--accent-green);
         }
 
+        /* ── § 2.14  Shared modals ───────────────────────────────────────────
+           The .modal-overlay backdrop + .modal card used by multiple features:
+           delete page, export PDF, reset doc, cover image, folder picker, etc.
+           svh (small viewport height) is used so the overlay never bleeds
+           behind the mobile address bar.
+        ── */
+
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -2657,6 +2893,14 @@
         #cover-image-input {
             display: none;
         }
+
+        /* ── § 2.10  Manage-Pages & Timeline panels ──────────────────────────
+           Two slide-in panels that share the same overlay style:
+           • #pages-panel   — thumbnails + reorder / delete pages
+           • #timeline-panel — version history snapshots (see § 2.10b below)
+           Both panels slide in from the right on desktop and rise from the
+           bottom as a sheet on narrow screens (≤ 720 px).
+        ── */
 
         #pages-panel {
             position: fixed;
@@ -2849,6 +3093,20 @@
             background-size: 220% 100%;
         }
 
+        /* ── § 2.11  Calendar widget ─────────────────────────────────────────
+           Month-grid popup (calendar icon in toolbar), day-detail popup,
+           and "Add calendar to pages" configuration modal.
+
+           Sub-sections:
+             § 2.11a  Modal shell & toolbar (navigation arrows, month label)
+             § 2.11b  Month grid & day cells (7-column grid, today highlight)
+             § 2.11c  Events inside cells
+             § 2.11d  Day-detail popup (list of events for one tapped day)
+             § 2.11e  "Add calendar to pages" configuration modal
+        ── */
+
+        /* ┄ § 2.11a  Calendar modal shell & toolbar ─────────────────────── */
+
         .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -2866,6 +3124,9 @@
             display: block;
         }
 
+        /* ┄ § 2.11b  Month grid & day cells ─────────────────────────────── */
+
+        /* ┄ § 2.11d  Day-detail popup ───────────────────────────────────── */
         .calendar-day-modal {
             width: min(92vw, 520px);
             max-width: 520px;
@@ -2881,6 +3142,7 @@
             min-height: 0;
         }
 
+        /* ┄ § 2.11e  "Add calendar to pages" configuration modal ─────────── */
         .calendar-pages-modal {
             width: min(92vw, 560px);
             max-width: 560px;
@@ -2959,6 +3221,8 @@
             border-color: rgba(255, 255, 255, 0.1);
             background: rgba(255, 255, 255, 0.06);
         }
+
+        /* ┄ § 2.11b  Month grid cells ────────────────────────────────────── */
 
         .calendar-weekday,
         .calendar-day {
@@ -3062,6 +3326,8 @@
             font-weight: 700;
             margin-bottom: 6px;
         }
+
+        /* ┄ § 2.11c  Events shown inside the grid cells ─────────────────── */
 
         .calendar-event {
             display: block;
@@ -3622,6 +3888,11 @@
             font-size: 0.875rem;
         }
 
+        /* ── § 2.4  Welcome / sign-in screen ────────────────────────────────
+           Full-screen landing shown when no Google account is connected.
+           Contains the logo, tagline, and Sign-in button.
+        ── */
+
         /* Welcome view (signed-out home) */
         #welcome-view {
             position: fixed;
@@ -3670,6 +3941,20 @@
             padding: 12px 40px;
             font-size: 1.05rem;
         }
+
+        /* ── § 2.5  Drive home ───────────────────────────────────────────────
+           The file browser shown after sign-in.
+
+           Sub-sections:
+             § 2.5a  Header (logo, action buttons, profile area)
+             § 2.5b  Toolbar, search bar & breadcrumbs
+             § 2.5c  File sections (recents, starred, shared, folder contents)
+             § 2.5d  File cards (.drive-card) and folder cards
+             § 2.5e  Card skeletons (loading placeholders)
+             § 2.5f  Dark mode overrides for drive cards
+        ── */
+
+        /* ┄ § 2.5a  Drive home header ────────────────────────────────────── */
 
         /* Drive home */
         #drive-home {
@@ -3738,6 +4023,11 @@
         html[data-inhouse-app="true"] .btn-download-app {
             display: none !important;
         }
+
+        /* ── § 2.16  App download modal ─────────────────────────────────────
+           "APP" button in the home header (web-only, hidden in Android
+           WebView). Opens a popup with the Android APK download link.
+        ── */
 
         /* Download-APK modal */
         .download-app-modal {
@@ -3820,6 +4110,11 @@
             width: 18px;
             height: 18px;
         }
+
+        /* ── § 2.6  Drive profile & account menu ────────────────────────────
+           Avatar button and dropdown: account info, night-mode toggle,
+           quick-access shortcuts (Diary / Agenda), Sign out.
+        ── */
 
         .drive-profile {
             position: relative;
@@ -3984,6 +4279,8 @@
             box-sizing: border-box;
         }
 
+        /* ┄ § 2.5b  Drive toolbar, search bar & breadcrumbs ───────────────── */
+
         .drive-toolbar {
             display: flex;
             align-items: center;
@@ -4080,6 +4377,8 @@
                 rgba(255, 255, 255, 0.05) 100%);
             background-size: 480px 100%;
         }
+
+        /* ┄ § 2.5c  File sections (recents, starred, shared, folder) ──────── */
 
         .drive-section {
             margin-bottom: 32px;
@@ -4192,6 +4491,8 @@
             margin-bottom: 18px;
         }
 
+        /* ┄ § 2.5d  File cards & folder cards ───────────────────────────── */
+
         .drive-card {
             background: white;
             border-radius: 14px;
@@ -4278,6 +4579,8 @@
             min-width: 168px;
             z-index: 9999;
         }
+
+        /* ┄ § 2.5f  Dark mode overrides for drive cards ─────────────────── */
 
         [data-theme="dark"] .drive-card,
         [data-theme="dark"] .drive-folder-card,
@@ -4696,6 +4999,11 @@
             opacity: 0.75;
         }
 
+        /* ── § 2.10b  Timeline (version history) panel ──────────────────────
+           Slide-in panel that shows automatic snapshots of the document over
+           time. The user can preview and restore any past version.
+        ── */
+
         /* Version timeline side panel. Hidden via `display: none` (not just
            `transform: translateX(100%)`) so it can never accidentally show
            during boot, CSS reflows, or when the home view is active —
@@ -5043,6 +5351,11 @@
             height: 16px;
         }
 
+        /* ── § 2.17  Responsive overrides (≤ 720 px and touch devices) ──────
+           On narrow screens the side panels become bottom sheets, the toolbar
+           adapts, font sizes shrink, and card grids collapse to fewer columns.
+        ── */
+
         @media (max-width: 720px) {
             #timeline-panel {
                 top: auto;
@@ -5258,6 +5571,7 @@
             height: 16px;
         }
 
+        /* ┄ § 2.5e  Card skeletons (shimmer placeholders while loading) ───── */
         /* Skeleton placeholders shown while Drive content is loading */
         @keyframes drive-skeleton-shimmer {
             0% { background-position: -240px 0; }
@@ -5435,6 +5749,11 @@
             opacity: 1;
             pointer-events: auto;
         }
+
+        /* ── § 2.15  Share / collaboration modal ────────────────────────────
+           Modal for sharing a document with other users and managing live
+           collaborative editing permissions (read / edit).
+        ── */
 
         /* Share Modal Styles */
         .modal-container {
@@ -6245,6 +6564,44 @@
             }
         })();
     </script>
+
+    <!--
+    ════════════════════════════════════════════════════════════════════════════
+      SECTION 3 — BODY HTML
+    ════════════════════════════════════════════════════════════════════════════
+      3.1  Welcome / sign-in view ........... #welcome-view
+      3.2  Drive home view .................. #drive-home
+           3.2a  Header (logo, buttons, profile)
+           3.2b  Main area (toolbar, search, file sections)
+      3.3  Editor view ...................... #editor-view
+           3.3a  Editor header (title, mode toggle, presence)
+           3.3b  Toolbar (drawing tools)
+           3.3c  Canvas viewport
+      3.4  Page modals (editor)
+           3.4a  Delete page modal
+           3.4b  Reset document modal
+           3.4c  Export PDF modal
+           3.4d  Cover image modal
+      3.5  Drive modals
+           3.5a  Folder picker modal
+           3.5b  Confirm-action slider modal
+           3.5c  Trash file modal
+           3.5d  Bin browser modal
+      3.6  Manage-Pages panel ............... #pages-panel
+      3.7  Calendar modals
+           3.7a  Month-view calendar modal
+           3.7b  Day-detail calendar modal
+           3.7c  "Add calendar to pages" modal
+      3.8  Event editor modal ............... #sp-event-modal
+      3.9  App download modal ............... #modal-download-app
+      3.10 Loading overlay .................. #loading-overlay
+      3.11 Hidden file inputs
+      3.12 Timeline (version history) panel . #timeline-panel
+      3.13 Share / collaboration modal ...... #share-modal-overlay
+    ════════════════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- ── § 3.1  Welcome / sign-in view ─────────────────────────────────── -->
     <div id="welcome-view">
         <div class="welcome-logo">
             <svg viewBox="0 0 40 24" fill="none" aria-hidden="true">
@@ -6272,6 +6629,7 @@
         })();
     </script>
 
+    <!-- ── § 3.2  Drive home view ──────────────────────────────────────────── -->
     <div id="drive-home" class="hidden">
         <div class="drive-topbar">
             <div class="drive-brand">
@@ -6294,7 +6652,7 @@
                 </button>
                 <button class="btn btn-primary" id="btn-drive-new">New PDF</button>
                 <button class="btn btn-secondary btn-download-app" id="btn-download-app" type="button"
-                    title="Descargar la app de Android" aria-label="Descargar la app de Android">
+                    title="Download the Android app" aria-label="Download the Android app">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -6384,6 +6742,7 @@
         </div>
     </div>
 
+    <!-- ── § 3.3  Editor view ──────────────────────────────────────────────── -->
     <div id="editor-view" class="hidden">
         <div id="readonly-banner" class="hidden"
             style="background:var(--accent-yellow);color:#000;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;font-size:0.95rem;border-bottom:1px solid rgba(0,0,0,0.1);">
@@ -6491,11 +6850,11 @@
                 </div>
             </header>
             <div class="presence-popup hidden" id="presence-popup" role="dialog" aria-modal="false"
-                aria-label="Actividad de usuarios">
+                aria-label="User activity">
                 <div class="presence-popup-header">
                     <span>Actividad del documento</span>
                     <button type="button" class="presence-popup-close" id="btn-close-presence-popup"
-                        aria-label="Cerrar lista de actividad">×</button>
+                        aria-label="Close activity list">×</button>
                 </div>
                 <div class="presence-popup-list" id="presence-popup-list"></div>
             </div>
@@ -6611,6 +6970,11 @@
         </div>
     </div>
 
+    <!-- ── § 3.4  Page modals ────────────────────────────────────────────────
+         Small confirmation dialogs that operate on the current page or doc.
+    ─── -->
+
+    <!-- § 3.4a  Delete page -->
     <div class="modal-overlay" id="modal-delete-page">
         <div class="modal modal-danger">
             <h2>Delete page?</h2>
@@ -6623,6 +6987,7 @@
         </div>
     </div>
 
+    <!-- § 3.4b  Reset document -->
     <div class="modal-overlay" id="modal-reset-document">
         <div class="modal modal-warning">
             <h2>Start new document?</h2>
@@ -6640,6 +7005,7 @@
         </div>
     </div>
 
+    <!-- § 3.4c  Export PDF -->
     <div class="modal-overlay" id="modal-export-pdf">
         <div class="modal">
             <h2>Export PDF</h2>
@@ -6655,6 +7021,7 @@
         </div>
     </div>
 
+    <!-- § 3.4d  Cover image picker -->
     <div class="modal-overlay" id="modal-cover-image">
         <div class="modal modal-cover">
             <h2>Add Photo Page</h2>
@@ -6709,6 +7076,11 @@
         </div>
     </div>
 
+    <!-- ── § 3.5  Drive modals ───────────────────────────────────────────────
+         Dialogs that interact with the user's Google Drive account.
+    ─── -->
+
+    <!-- § 3.5a  Folder picker (choose where to save) -->
     <div class="modal-overlay" id="modal-folder-picker">
         <div class="modal">
             <h2 id="folder-picker-title">New PDF</h2>
@@ -6734,6 +7106,7 @@
         </div>
     </div>
 
+    <!-- § 3.5b  Confirm-action slider (slide to confirm dangerous operations) -->
     <div class="modal-overlay" id="modal-confirm-slider">
         <div class="modal modal-danger">
             <h2 id="confirm-slider-title">Are you sure?</h2>
@@ -6754,6 +7127,7 @@
         </div>
     </div>
 
+    <!-- § 3.5c  Trash / move to bin confirmation -->
     <div class="modal-overlay" id="modal-trash-file">
         <div class="modal modal-danger">
             <h2>Move to bin?</h2>
@@ -6774,6 +7148,7 @@
         </div>
     </div>
 
+    <!-- § 3.5d  Bin browser (browse and restore trashed files) -->
     <div class="modal-overlay" id="modal-drive-bin">
         <div class="modal">
             <h2>Bin</h2>
@@ -6792,6 +7167,10 @@
 
     <div class="panel-overlay" id="panel-overlay"></div>
 
+    <!-- ── § 3.6  Manage-Pages panel ────────────────────────────────────────
+         Slide-in panel showing all page thumbnails. The user can reorder
+         them by drag-and-drop or delete individual pages.
+    ─── -->
     <div id="pages-panel">
         <div class="panel-header">
             <h2>Manage Pages</h2>
@@ -6855,6 +7234,11 @@
         <div class="pages-list" id="pages-list"></div>
     </div>
 
+    <!-- ── § 3.7  Calendar modals ────────────────────────────────────────────
+         Three linked modals for the Google Calendar integration.
+    ─── -->
+
+    <!-- § 3.7a  Month-view calendar picker -->
     <div class="modal-overlay" id="modal-calendar">
         <div class="modal calendar-modal">
             <div class="calendar-modal-head">
@@ -6899,6 +7283,7 @@
         </div>
     </div>
 
+    <!-- § 3.7b  Day-detail popup (events for one specific day) -->
     <div class="modal-overlay" id="modal-calendar-day">
         <div class="modal calendar-day-modal">
             <div class="calendar-modal-head">
@@ -6917,6 +7302,7 @@
         </div>
     </div>
 
+    <!-- ── § 3.9  App download modal (web-only, hidden in Android WebView) ── -->
     <div class="modal-overlay" id="modal-download-app">
         <div class="modal download-app-modal">
             <button class="panel-close download-app-close" id="download-app-close" type="button" aria-label="Cerrar">
@@ -6928,7 +7314,7 @@
             <svg class="download-app-icon" viewBox="0 0 24 24" fill="#3ddc84" aria-hidden="true">
                 <path d="M17.6 9.48l1.84-3.18a.4.4 0 0 0-.69-.4L16.85 9.1A11.05 11.05 0 0 0 12 8a11.05 11.05 0 0 0-4.85 1.1L5.25 5.9a.4.4 0 0 0-.69.4l1.84 3.18A10.61 10.61 0 0 0 1 18h22a10.61 10.61 0 0 0-5.4-8.52ZM7 15.25a1.05 1.05 0 1 1 1.05-1.05A1.05 1.05 0 0 1 7 15.25Zm10 0a1.05 1.05 0 1 1 1.05-1.05A1.05 1.05 0 0 1 17 15.25Z"/>
             </svg>
-            <h2 class="download-app-title">Descarga la app de inhouse notes para Android</h2>
+            <h2 class="download-app-title">Download the inhouse notes Android app</h2>
             <a class="btn btn-primary download-app-btn" id="download-app-link"
                 href="https://github.com/miguelcoxcaballero/inhousenotes/raw/main/inhouse-notes-release-v1.0.0.apk"
                 download="inhouse-notes-release-v1.0.0.apk" rel="noopener">
@@ -6938,11 +7324,12 @@
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
-                <span>Descargar APK</span>
+                <span>Download APK</span>
             </a>
         </div>
     </div>
 
+    <!-- § 3.7c  "Add calendar to pages" configuration modal -->
     <div class="modal-overlay" id="modal-calendar-pages">
         <div class="modal calendar-pages-modal">
             <div class="calendar-modal-head">
@@ -6989,6 +7376,11 @@
         </div>
     </div>
 
+    <!-- ── § 3.8  Event editor modal ─────────────────────────────────────────
+         Create / edit / delete a Google Calendar event without leaving the
+         notebook. Opened by tapping an event pill or the + button in a
+         page side-panel day section.
+    ─── -->
     <div class="modal-overlay" id="sp-event-modal">
         <div class="modal sp-event-modal">
             <div class="sp-event-modal-head">
@@ -7029,28 +7421,28 @@
                 </div>
                 <div class="sp-event-row-double">
                     <div class="sp-field">
-                        <label for="sp-event-recurrence">Repetir</label>
+                        <label for="sp-event-recurrence">Repeat</label>
                         <select id="sp-event-recurrence">
-                            <option value="none">No se repite</option>
-                            <option value="daily">Cada día</option>
-                            <option value="weekly">Cada semana</option>
-                            <option value="monthly">Cada mes</option>
-                            <option value="yearly">Cada año</option>
-                            <option value="weekdays">Días laborables (L–V)</option>
+                            <option value="none">Does not repeat</option>
+                            <option value="daily">Every day</option>
+                            <option value="weekly">Every week</option>
+                            <option value="monthly">Every month</option>
+                            <option value="yearly">Every year</option>
+                            <option value="weekdays">Weekdays (Mon–Fri)</option>
                         </select>
                     </div>
                     <div class="sp-field">
-                        <label for="sp-event-reminder">Notificación</label>
+                        <label for="sp-event-reminder">Reminder</label>
                         <select id="sp-event-reminder">
-                            <option value="none">Sin notificación</option>
-                            <option value="0">A la hora</option>
-                            <option value="5">5 min antes</option>
-                            <option value="10">10 min antes</option>
-                            <option value="15">15 min antes</option>
-                            <option value="30">30 min antes</option>
-                            <option value="60">1 hora antes</option>
-                            <option value="120">2 horas antes</option>
-                            <option value="1440">1 día antes</option>
+                            <option value="none">No reminder</option>
+                            <option value="0">At the time</option>
+                            <option value="5">5 min before</option>
+                            <option value="10">10 min before</option>
+                            <option value="15">15 min before</option>
+                            <option value="30">30 min before</option>
+                            <option value="60">1 hour before</option>
+                            <option value="120">2 hours before</option>
+                            <option value="1440">1 day before</option>
                         </select>
                     </div>
                 </div>
@@ -7074,14 +7466,27 @@
         </div>
     </div>
 
+    <!-- ── § 3.10  Loading overlay ───────────────────────────────────────────
+         Full-screen dimmed overlay with a spinner shown during long operations
+         (opening a PDF, saving to Drive, adding calendar events, etc.).
+    ─── -->
     <div id="loading-overlay">
         <div class="spinner"></div>
         <div id="loading-text">Loading PDF...</div>
     </div>
 
+    <!-- ── § 3.11  Hidden file inputs ────────────────────────────────────────
+         Invisible <input type="file"> elements triggered programmatically
+         when the user chooses to import a PDF or pick a cover photo.
+    ─── -->
     <input type="file" id="pdf-input" accept=".pdf">
     <input type="file" id="cover-image-input" accept="image/*">
 
+    <!-- ── § 3.12  Timeline (version history) panel ──────────────────────────
+         Slide-in panel that shows automatic document snapshots over time.
+         The user can preview any past version and revert to it if needed.
+         Hidden via display:none until opened (never appears on home).
+    ─── -->
     <div id="timeline-panel" aria-hidden="true">
         <div class="panel-header">
             <h2 id="timeline-panel-title">Version timeline</h2>
@@ -7114,6 +7519,10 @@
         </div>
     </div>
 
+    <!-- ── § 3.13  Share / collaboration modal ──────────────────────────────
+         Modal for sharing the document with other Google accounts and
+         managing live collaborative-editing permissions (read / edit).
+    ─── -->
     <div id="share-modal-overlay" class="modal-overlay">
         <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
             <div class="modal-header">
@@ -7223,6 +7632,71 @@
         </div>
     </div>
     <script>
+        /*
+        ════════════════════════════════════════════════════════════════════════
+          SECTION 4 — JAVASCRIPT   (search "§ 4.X" to jump to any sub-section)
+        ════════════════════════════════════════════════════════════════════════
+          4.1   Boot & app-mode detection ............... (§ 4.1)
+                detectInhouseApp, applyInhouseAppMode
+          4.2   Constants & configuration ............... (§ 4.2)
+                Storage keys, PDF.js URLs, rendering limits
+          4.3   Application state object ................ (§ 4.3)
+                The single `state` object — everything mutable lives here
+          4.4   DOM element references .................. (§ 4.4)
+                All getElementById / querySelector calls at startup
+          4.5   Theme, Drive auth & sign-in
+            4.5a  initDriveAuth, PKCE & token refresh .... (§ 4.5)
+            4.5b  Theme helpers ......................... (§ 4.5b)
+            4.5c  Sign-in / sign-out & profile UI ....... (§ 4.5c)
+            4.5d  Status bar, loading overlay & utils ... (§ 4.5d)
+          4.6   Core drawing engine ..................... (§ 4.6)
+                drawSmoothStroke, highlighter, eraser
+          4.7   Canvas & page rendering ................. (§ 4.7)
+                redrawPage, applyPageBackground, PDF rendering
+          4.8   Page lifecycle .......................... (§ 4.8)
+                addPage, ensurePageCanvas, unloadPageData
+          4.9   Viewport transform ...................... (§ 4.9)
+                pan, zoom, inertia, clampPanToVisible, handleWheel
+          4.10  Visible-page tracking ................... (§ 4.10)
+                updateVisiblePages — activates / unloads pages on scroll
+          4.11  Canvas pointer events & live stroke drawing (§ 4.11)
+            4.11b Undo / redo history ................... (§ 4.11b)
+          4.12  Selection & lasso tool .................. (§ 4.12)
+                selectStrokesWithLasso, updateSelectionBox, delete/move
+          4.13  Cover image & page templates ............ (§ 4.13)
+          4.14  Tool switching & document helpers
+            4.14a Tool switching & document title ....... (§ 4.14a)
+            4.14b Agenda / Diary detection .............. (§ 4.14b)
+          4.15  Drive home UI ........................... (§ 4.15)
+            4.15b Folder helpers & quick-access docs .... (§ 4.15b)
+          4.16  Drive file open & PDF import
+            4.16a PDF background management ............. (§ 4.16a)
+            4.16b Shared / public link support .......... (§ 4.16b)
+            4.16c PDF import (from file or URL) ......... (§ 4.16c)
+          4.17  Drive sync & save ....................... (§ 4.17)
+            4.17a Drive HTTP client (driveFetch) ........ (§ 4.17a)
+            4.17b PDF export helpers ..................... (§ 4.17b)
+          4.18  Local storage & IndexedDB ............... (§ 4.18)
+            4.18b View-state & token persistence ........ (§ 4.18b)
+          4.19  Version timeline ....................... (§ 4.19)
+            4.19b Version snapshot capture .............. (§ 4.19b)
+          4.20  Manage-Pages panel ...................... (§ 4.20)
+            4.20b Page delete & reset modals ............ (§ 4.20b)
+          4.21  Share / collaboration
+            4.21a Drive sharing permissions API ......... (§ 4.21a)
+            4.21b Presence write & heartbeat ............ (§ 4.21b)
+            4.21c Remote change detection & merge ....... (§ 4.21c)
+          4.22  Google Calendar integration ............. (§ 4.22)
+          4.23  Page side-panels ........................ (§ 4.23)
+          4.24  Auto-sync (5-second poll) ............... (§ 4.24)
+          4.25  "Add calendar to pages" flow ............ (§ 4.25)
+          4.26  Welcome / sign-in & view switching ...... (§ 4.26)
+          4.27  Event listeners & UI wiring ............. (§ 4.27)
+          4.28  App initialisation — init() ............. (§ 4.28)
+        ════════════════════════════════════════════════════════════════════════
+        */
+
+        // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
         const PDFJS_VERSION = '3.11.174';
         const PDFJS_WORKER_URL = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
@@ -7233,6 +7707,10 @@
 
         const INHOUSE_APP_STORAGE_KEY = 'inhouseNotesAppMode';
 
+        // ── § 4.1  Boot & app-mode detection ─────────────────────────────────
+        // Determines whether we are running inside the Android WebView wrapper
+        // (the inhouse notes Android app) vs a regular browser. If yes, certain
+        // browser-only features are hidden (download button, fullscreen, etc.).
         function detectInhouseApp() {
             const params = new URLSearchParams(window.location.search);
             const explicitAppFlag = params.get('inhouse_app') || params.get('app');
@@ -8061,6 +8539,10 @@
         // ============= END MEMORY OPTIMIZATION UTILITIES =============
 
         // App State
+        // ── § 4.3  Application state object ──────────────────────────────────
+        // The single source of truth for all mutable runtime values:
+        // which pages exist, current tool/colour/zoom, Drive file info, etc.
+        // Everything that needs to survive a re-render lives here.
         const state = {
             pages: [],
             currentTool: 'pen',
@@ -8137,7 +8619,9 @@
             calendarPageConfig: null
         };
 
-        // DOM Elements
+        // ── § 4.4  DOM element references ─────────────────────────────────────
+        // All getElementById / querySelector calls are collected here at the
+        // top so the rest of the code can use short names without re-querying.
         const canvasContainer = document.getElementById('canvas-container');
         const canvasViewport = document.getElementById('canvas-viewport');
         const toolbar = document.getElementById('toolbar');
@@ -8495,6 +8979,10 @@
         }
 
         // Initialize
+        // ── § 4.28  App initialisation ────────────────────────────────────────
+        // init() is the single entry point called at the bottom of the script.
+        // It loads saved data, renders all pages, wires up event listeners,
+        // starts Drive auth, and navigates to today's calendar page.
         async function init() {
             pendingViewState = loadViewState();
             initTheme();
@@ -8994,6 +9482,10 @@
         }
 
         // Add a new blank page
+        // ── § 4.8  Page lifecycle ─────────────────────────────────────────────
+        // Create, activate, deactivate and remove pages. Pages are lazy-loaded:
+        // only the ~3 pages nearest the viewport have their canvas active at
+        // any time; the rest are stored in IndexedDB and shown as previews.
         function addPage(backgroundImage = null, animate = false) {
             const pageIndex = state.pages.length;
             // Inherit template kind and size from the previous page (supports A5 agenda/diary)
@@ -9766,6 +10258,10 @@
             return Array.from(expanded).sort((a, b) => a - b);
         }
 
+        // ── § 4.10  Visible-page tracking ────────────────────────────────────
+        // On every scroll/zoom change, determines which pages intersect the
+        // viewport, activates their canvases, and unloads pages that moved
+        // far enough away (to stay within the MAX_ACTIVE_PAGES memory limit).
         function updateVisiblePages(force = false) {
             const pageCount = state.pages.length;
             if (!pageCount) return;
@@ -9919,6 +10415,10 @@
         }
 
         // Setup canvas pointer events with improved drawing
+        // ── § 4.11  Canvas pointer events & live stroke drawing ──────────────
+        // Wires up pen/touch/mouse events on each page canvas: start stroke,
+        // accumulate points, preview the live tail, and commit to the page.
+        // Also handles eraser preview and gesture-to-eraser switching.
         function setupCanvasEvents(canvas, pageIndex) {
             let isDrawing = false;
             let currentStroke = null;
@@ -10538,6 +11038,10 @@
             ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
         }
 
+        // ── § 4.12  Selection & lasso tool ───────────────────────────────────
+        // Lasso draw → hit-test strokes/images → show handles → move/scale/
+        // delete/duplicate the selected content. Also manages the visual
+        // selection box and its drag handles.
         function clearSelection() {
             if (state.selection.pageIndex !== null) {
                 const box = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
@@ -11121,6 +11625,10 @@
             });
         }
 
+        // ── § 4.14a  Tool switching & document title ─────────────────────────
+        // setActiveTool switches between pen / highlighter / eraser / lasso,
+        // remembers the last non-eraser tool, and updates the toolbar UI.
+        // getBaseDocTitle / updateDocTitle syncs the <title> and header label.
         function setActiveTool(toolName, options = {}) {
             if (!toolName) return;
             if (state.isReadOnly) return;
@@ -11262,6 +11770,10 @@
             return null;
         }
 
+        // ── § 4.14b  Agenda/Diary detection & calendar availability ──────────
+        // Checks whether the currently open document is a quick-access Agenda
+        // or Diary (by folder name / file prefix). This gates the calendar
+        // icon, side-panels, and Add-to-Pages button.
         function usesAgendaTemplate() {
             return Array.isArray(state.pages)
                 && state.pages.some(page => normalizeTemplateKind(page?.templateKind) === TEMPLATE_KINDS.AGENDA);
@@ -11305,6 +11817,7 @@
             }
         }
 
+        // ── § 4.5b  Theme helpers ─────────────────────────────────────────────
         function getSystemTheme() {
             return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
                 ? 'dark'
@@ -11435,6 +11948,9 @@
             updateDocTitle();
         }
 
+        // ── § 4.26  Welcome / sign-in & view switching ───────────────────────
+        // Functions that show/hide the three top-level views: welcome screen,
+        // Drive home, and the editor. Also handles the sign-in / sign-out flow.
         function showDriveHome() {
             const welcomeView = document.getElementById('welcome-view');
             if (welcomeView) welcomeView.classList.add('hidden');
@@ -11536,6 +12052,9 @@
             saveViewMode('editor');
         }
 
+        // ── § 4.5  Theme, appearance & Drive authentication ───────────────────
+        // initTheme sets light/dark mode. initDriveAuth wires Google Identity
+        // Services (GIS) to get OAuth tokens for Drive + Calendar access.
         function initDriveAuth() {
             const hadRedirectToken = processDriveOAuthRedirect();
             const hasStoredToken = loadDriveTokenFromStorage();
@@ -12045,6 +12564,7 @@
             });
         }
 
+        // ── § 4.5c  Sign-in / sign-out & profile UI ─────────────────────────
         function signInDrive() {
             driveSignedOut = false;
             driveAuthNeedsReconnect = false;
@@ -12262,6 +12782,10 @@
         // vector copy. To prevent this we swap the PDF.js document used for
         // background rendering to the *clean original* whenever those bytes are
         // available (cached in IndexedDB or captured this session).
+        // ── § 4.16a  PDF background management ───────────────────────────────
+        // For documents opened from Drive PDFs, the original clean PDF is
+        // cached in memory so per-page backgrounds can be re-rendered on
+        // demand without re-downloading the file.
         async function swapDisplayDocToCleanOriginal() {
             if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) return false;
             try {
@@ -12572,6 +13096,9 @@
             return restoredPage;
         }
 
+        // ── § 4.17a  Drive HTTP client ────────────────────────────────────────
+        // driveFetch wraps fetch() with automatic token injection, 401-retry,
+        // and request timeout. All Drive API calls go through this function.
         async function driveFetch(url, options = {}, _retried = false) {
             const token = await ensureDriveToken(false);
             const headers = new Headers(options.headers || {});
@@ -12678,6 +13205,10 @@
             return false;
         }
 
+        // ── § 4.16b  Shared / public link support ────────────────────────────
+        // Allows opening a Drive file shared via a public link without being
+        // signed in. Downloads the PDF directly from the sharing URL and falls
+        // back to an unauthenticated fetch when the token is absent.
         async function fetchPublicSharedPdf(fileId, resourceKey = '') {
             const safeResourceKey = resourceKey ? String(resourceKey).trim() : '';
             const withResourceKey = (base) => {
@@ -12896,6 +13427,10 @@
             });
         }
 
+        // ── § 4.15b  Drive folder helpers & quick-access documents ───────────
+        // ensureDriveFolder ensures the inhouse-notes folder exists in Drive.
+        // openQuickAccessDriveDocument opens the user's Diary or Agenda PDF
+        // from that folder, creating it automatically if it doesn't exist yet.
         async function ensureDriveFolder(options = {}) {
             if (state.driveFolderId) return state.driveFolderId;
             const query = encodeURIComponent(`name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
@@ -13036,6 +13571,7 @@
             }
         }
 
+        // ── § 4.21a  Drive sharing permissions API ────────────────────────────
         async function fetchDrivePermissions(fileId) {
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role,emailAddress,displayName,photoLink)`, { method: 'GET' });
             return await res.json();
@@ -13608,6 +14144,10 @@
             existing.forEach(el => el.remove());
         }
 
+        // ── § 4.15  Drive home UI ─────────────────────────────────────────────
+        // Renders the file-browser home screen: recents, starred, shared, and
+        // current-folder grids. Uses DOM diffing (diffRenderDriveList) so that
+        // the 5-second auto-refresh never causes a visible flicker.
         function renderDriveRecents(files) {
             if (!driveRecentsEl) return;
             diffRenderDriveList(driveRecentsEl, files || [], createDriveFileCard);
@@ -13911,6 +14451,10 @@
             driveHomeAutoRefreshInProgress = false;
         }
 
+        // ── § 4.16  Drive file open ───────────────────────────────────────────
+        // Downloads the PDF from Drive, extracts embedded strokes from the
+        // PDF metadata (STROKES_Z), reconstructs the page state, and renders
+        // all pages. Also restores the calendar config (IH_CAL keyword).
         async function openDriveFile(file) {
             if (!file || !file.id) return;
             if (driveOpenInProgress) return;
@@ -15816,6 +16360,9 @@
             ctx.restore();
         }
 
+        // ── § 4.6  Core drawing engine ────────────────────────────────────────
+        // Low-level Canvas 2D routines: smooth Bezier stroke rendering,
+        // highlighter blending, eraser paths, and image drawing on the canvas.
         function drawSmoothStroke(ctx, stroke) {
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
             if (stroke.tool === 'highlighter') {
@@ -15990,6 +16537,9 @@
             ctx.restore();
         }
 
+        // ── § 4.7  Canvas & page rendering ───────────────────────────────────
+        // High-level page rendering: clears the canvas and repaints background
+        // (template / PDF page) then all strokes and images in order.
         function redrawPage(pageIndex) {
             const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
             const page = state.pages[pageIndex];
@@ -16923,6 +17473,10 @@
             return months;
         }
 
+        // ── § 4.19  Version timeline ──────────────────────────────────────────
+        // Automatic snapshots of the document state are captured after each
+        // Drive upload. This section renders the list, handles selection, and
+        // provides the "Revert to this version" action.
         function renderTimelineList() {
             const listEl = document.getElementById('timeline-list');
             const emptyEl = document.getElementById('timeline-empty');
@@ -17608,6 +18162,9 @@
         }
 
         // Setup event listeners
+        // ── § 4.27  Event listeners & UI wiring ──────────────────────────────
+        // All addEventListener calls live here, keeping the setup phase
+        // separate from the logic. Called once by init().
         function setupEventListeners() {
             setupShareModalEvents();
             setupTimelineModalEvents();
@@ -17891,7 +18448,7 @@
                             return;
                         }
 
-                        showLoading('Guardando en Drive...');
+                        showLoading('Saving to Drive...');
                         clearTimeout(state.saveTimeout);
                         state.saveTimeout = null;
 
@@ -17929,7 +18486,7 @@
                         while (attempt < MAX_ATTEMPTS) {
                             attempt += 1;
                             if (attempt > 1) {
-                                showLoading(`Guardando en Drive (intento ${attempt}/${MAX_ATTEMPTS})...`);
+                                showLoading(`Saving to Drive (attempt ${attempt}/${MAX_ATTEMPTS})...`);
                             }
 
                             // Drain anything already in flight before starting our forced save.
@@ -17981,7 +18538,7 @@
                             console.warn('goHome: save incomplete after retries -',
                                 { reason: lastErrorReason, dirty: driveDirty,
                                   inProgress: driveSaveInProgress, queued: driveSaveQueued });
-                            showStatus('No se pudo terminar de guardar en Drive. Los cambios están guardados localmente; se subirán cuando la conexión lo permita.', { error: true });
+                            showStatus('Could not finish saving to Drive. Changes are saved locally and will upload when connectivity allows.', { error: true });
                             // Stay in the editor so the user can retry —
                             // local data is safe, but we don't want to hide
                             // an unfinished upload behind the home screen.
@@ -18510,6 +19067,10 @@
             };
         }
 
+        // ── § 4.9  Viewport transform ─────────────────────────────────────────
+        // All pan (scroll) and zoom logic. clampPanToVisible keeps the pages
+        // in bounds; animatePanTo animates smooth jumps; handleWheel and the
+        // pointer handlers drive the interactive gesture recognition.
         function clampPanToVisible() {
             const rect = canvasViewport.getBoundingClientRect();
             if (!rect.width || !rect.height) return;
@@ -19388,11 +19949,15 @@
         const calendarEventsInFlight = new Map();
         let calendarLoadingMonthKey = '';
 
+        // ── § 4.22  Google Calendar integration ──────────────────────────────
+        // Opens the month-grid popup, fetches events from the Google Calendar
+        // API, and populates the grid cells. Authentication reuses the same
+        // Drive token (scoped to calendar.events).
         function openCalendarModal() {
             if (!calendarModal) return;
             if (!canUseAgendaCalendarForCurrentDocument()) {
                 updateCalendarFeatureAvailability();
-                showStatus('El calendario solo esta disponible en agendas de Drive.', { preserveState: true });
+                showStatus('Calendar is only available in Drive agenda documents.', { preserveState: true });
                 return;
             }
             const now = new Date();
@@ -19423,7 +19988,7 @@
             if (!calendarPagesModal) return;
             if (!canUseAgendaCalendarForCurrentDocument()) {
                 updateCalendarFeatureAvailability();
-                showStatus('El calendario solo se puede anadir a agendas de Drive.', { preserveState: true });
+                showStatus('Calendar can only be added to Drive agenda documents.', { preserveState: true });
                 return;
             }
             const cfg = state.calendarPageConfig;
@@ -19462,7 +20027,7 @@
             const count = Math.max(1, state.pages.length - startPage + 1);
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const lastDate = addCalendarDays(startDate, mode === 'week' ? (count * 7 - 1) : (count - 1));
-            calendarPagesSummary.textContent = `${count} página${count === 1 ? '' : 's'} desde pág. ${startPage} hasta el final, cubriendo ${startDate.toLocaleDateString()} – ${lastDate.toLocaleDateString()}.`;
+            calendarPagesSummary.textContent = `${count} page${count === 1 ? '' : 's'} from p. ${startPage} to end, covering ${startDate.toLocaleDateString()} – ${lastDate.toLocaleDateString()}.`;
         }
 
         function shiftCalendarMonth(delta) {
@@ -19925,6 +20490,10 @@
             return before - page.images.length;
         }
 
+        // ── § 4.25  "Add calendar to pages" flow ─────────────────────────────
+        // Fetches events for a date range, assigns one panel per page,
+        // saves calendarPageConfig so the app knows where each date lives,
+        // and navigates to today's page on next open.
         async function applyCalendarEventsToPages() {
             if (state.isReadOnly) {
                 showStatus('Switch to edit mode to add calendar events', { preserveState: true });
@@ -19933,7 +20502,7 @@
             if (!canUseAgendaCalendarForCurrentDocument()) {
                 closeCalendarPagesModal();
                 updateCalendarFeatureAvailability();
-                showStatus('El calendario solo se puede anadir a agendas de Drive.', { preserveState: true });
+                showStatus('Calendar can only be added to Drive agenda documents.', { preserveState: true });
                 return;
             }
             const mode = calendarPagesMode?.value === 'week' ? 'week' : 'day';
@@ -19982,7 +20551,7 @@
                         });
                     }
                     const title = mode === 'week'
-                        ? `Semana del ${addCalendarDays(startDate, i * 7).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                        ? `Week of ${addCalendarDays(startDate, i * 7).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
                         : addCalendarDays(startDate, i).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
                     const dateKeys = sections.map(s => s.dateKey);
@@ -20008,7 +20577,7 @@
                     nextDateKey: formatCalendarDateKey(nextDate)
                 };
                 scheduleSave(true);
-                showStatus(`Calendario añadido a ${added} página${added === 1 ? '' : 's'}`, { preserveState: true });
+                showStatus(`Calendar added to ${added} page${added === 1 ? '' : 's'}`, { preserveState: true });
             } catch (err) {
                 console.error('Add calendar to pages failed:', err);
                 showStatus('Could not add calendar events', { error: true, preserveState: true });
@@ -20032,6 +20601,11 @@
             return '#039be5'; // default calendar color (peacock blue, like Google's default)
         }
 
+        // ── § 4.23  Page side-panels ──────────────────────────────────────────
+        // Builds and updates the calendar card panels that sit beside each
+        // notebook page. Each card shows the day/week's events fetched from
+        // Google Calendar. Panels are updated in-place (DOM diffing) every
+        // 5 seconds by the auto-sync without causing visible flicker.
         function buildSidePanelHtml(sections) {
             let html = '';
             const todayKey = formatCalendarDateKey(new Date());
@@ -20041,15 +20615,15 @@
                 html += '<div class="sp-day-section' + (isToday ? ' today' : '') + '" data-day-key="' + dayKey + '">';
                 html += '<div class="sp-day-header">';
                 html += '<span class="sp-day-label">' + escapeHtmlSafe(section.label) + '</span>';
-                html += '<button type="button" class="sp-add-btn" data-sp-add="' + dayKey + '" title="Añadir evento" aria-label="Añadir evento">+</button>';
+                html += '<button type="button" class="sp-add-btn" data-sp-add="' + dayKey + '" title="Add event" aria-label="Add event">+</button>';
                 html += '</div>';
                 html += '<div class="sp-events-list">';
                 if (!section.events || section.events.length === 0) {
-                    html += '<div class="sp-no-events">Sin eventos</div>';
+                    html += '<div class="sp-no-events">No events</div>';
                 } else {
                     for (const event of section.events) {
                         const time = formatCalendarEventTime(event);
-                        const summary = event.summary || '(Sin título)';
+                        const summary = event.summary || '(No title)';
                         const eventId = escapeHtmlSafe(event.id || '');
                         const color = getEventColor(event);
                         html += '<button type="button" class="sp-event" data-sp-event="' + eventId + '" data-sp-day="' + dayKey + '" style="--sp-event-color:' + color + '">';
@@ -20087,7 +20661,7 @@
             const titleEl = document.createElement('div');
             titleEl.className = 'page-side-panel-title';
             titleEl.contentEditable = 'true';
-            titleEl.textContent = panelData.title || 'Calendario';
+            titleEl.textContent = panelData.title || 'Calendar';
             titleEl.addEventListener('input', function() {
                 const page = state.pages[pageIndex];
                 if (page && page.sidePanel) {
@@ -20221,7 +20795,7 @@
             panelEl.classList.toggle('is-week', Array.isArray(panelData.dateKeys) && panelData.dateKeys.length > 1);
             const titleEl = panelEl.querySelector('.page-side-panel-title');
             if (titleEl && !titleEl.matches(':focus')) {
-                const nextTitle = panelData.title || 'Calendario';
+                const nextTitle = panelData.title || 'Calendar';
                 if (titleEl.textContent !== nextTitle) titleEl.textContent = nextTitle;
             }
             const body = panelEl.querySelector('.page-side-panel-body');
@@ -20383,7 +20957,7 @@
             spEventModalState = { mode, pageIndex, dayKey, eventId, event };
 
             if (mode === 'edit' && event) {
-                spEventModalTitleEl.textContent = 'Editar evento';
+                spEventModalTitleEl.textContent = 'Edit event';
                 spEventSummaryInput.value = event.summary || '';
                 spEventLocationInput.value = event.location || '';
                 spEventDescriptionInput.value = event.description || '';
@@ -20405,7 +20979,7 @@
                 spEventReminderInput.value = spParseEventReminders(event);
                 spEventDeleteBtn.hidden = false;
             } else {
-                spEventModalTitleEl.textContent = 'Nuevo evento';
+                spEventModalTitleEl.textContent = 'New event';
                 spEventSummaryInput.value = '';
                 spEventLocationInput.value = '';
                 spEventDescriptionInput.value = '';
@@ -20542,6 +21116,12 @@
         // Deduplicates events (same id present in two neighbour-month caches
         // due to 42-day grid overlap is kept once, freshest version wins).
         // Updates in-place — does not mark the doc dirty.
+        // ── § 4.24  Auto-sync (5-second poll) ────────────────────────────────
+        // spRebuildAllPanels  — rebuilds every panel's HTML from the current
+        //   event cache, deduplicating events that appear in overlapping month
+        //   caches (the API grid = 42 days, so border events appear twice).
+        // spSyncAllPanels     — force-refetches all months used by panels and
+        //   then calls spRebuildAllPanels; runs every 5 s via spStartAutoSync.
         function spRebuildAllPanels() {
             if (!shouldRenderPageCalendarPanels()) return;
             const eventMap = new Map();
@@ -20632,7 +21212,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                    showStatus('Evento actualizado', { preserveState: true });
+                    showStatus('Event updated', { preserveState: true });
                 } else {
                     const url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
                     await calendarFetch(url, {
@@ -20640,7 +21220,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                    showStatus('Evento creado', { preserveState: true });
+                    showStatus('Event created', { preserveState: true });
                 }
                 spCloseEventModal();
                 await spRefreshPanelsForKeys(affectedKeys);
@@ -20655,7 +21235,7 @@
 
         async function spDeleteEvent() {
             if (!spEventModalState || !spEventModalState.eventId) return;
-            if (!confirm('¿Eliminar este evento?')) return;
+            if (!confirm('Delete this event?')) return;
             spEventSaveBtn.disabled = true;
             spEventDeleteBtn.disabled = true;
             const affectedKeys = new Set();
@@ -20666,7 +21246,7 @@
             try {
                 const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(spEventModalState.eventId)}`;
                 await calendarFetch(url, { method: 'DELETE' });
-                showStatus('Evento eliminado', { preserveState: true });
+                showStatus('Event deleted', { preserveState: true });
                 spCloseEventModal();
                 await spRefreshPanelsForKeys(affectedKeys);
             } catch (err) {
@@ -20705,7 +21285,7 @@
                 });
             }
             const title = mode === 'week'
-                ? `Semana del ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                ? `Week of ${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
                 : date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
             const dateKeys = sections.map(s => s.dateKey);
             const nextAdvance = mode === 'week' ? 7 : 1;
@@ -20916,6 +21496,10 @@
         }
 
         // Pages Panel
+        // ── § 4.20  Manage-Pages panel ────────────────────────────────────────
+        // Opens/closes the panel, builds thumbnail rows, and wires drag-and-
+        // drop reordering. Also handles page insertion and deletion from the
+        // panel UI.
         function openPagesPanel() {
             updateCalendarFeatureAvailability();
             renderPagesList();
@@ -21207,6 +21791,10 @@
             coverImageInput.click();
         }
 
+        // ── § 4.13  Cover image & page templates ─────────────────────────────
+        // The cover photo flow: pick an image, choose fit/fill/original mode,
+        // preview, and confirm. The image is stored as a base-64 background on
+        // page 0 and saved with the document.
         function openCoverModal() {
             if (state.isReadOnly || !coverModal) return;
             coverLayoutModeInputs.forEach(input => {
@@ -21694,6 +22282,7 @@
         // Delete page
         let pageToDelete = null;
 
+        // ── § 4.20b  Page delete & document reset modals ─────────────────────
         async function openDeleteModal(pageIndex) {
             if (state.isReadOnly || state.pages.length <= 1) return;
             pageToDelete = pageIndex;
@@ -22147,6 +22736,10 @@
             }
         }
 
+        // ── § 4.18b  View-state & token persistence ───────────────────────────
+        // Small localStorage helpers that remember zoom/pan between sessions
+        // (saveViewState / loadViewState) and persist the Google OAuth token
+        // (saveDriveTokenToStorage / clearDriveTokenStorage).
         function saveViewState() {
             try {
                 const data = JSON.stringify({
@@ -23074,6 +23667,10 @@
             }
         }
 
+        // ── § 4.18  Local storage & IndexedDB ────────────────────────────────
+        // Two-layer persistence: page strokes go into IndexedDB (one record
+        // per page, lazy-saved), while the lightweight meta (dimensions,
+        // previews, calendarPageConfig) goes into localStorage as a backup.
         async function saveToStorage(controller = null) {
             if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             const opsFlushed = await flushStrokeOpsQueue({ abortSignal: controller });
@@ -24382,6 +24979,10 @@
             }
         }
 
+        // ── § 4.17  Drive sync & save ─────────────────────────────────────────
+        // Builds the PDF (with STROKES_Z metadata), uploads to Drive, handles
+        // token refresh, retry logic, and version-content tracking to avoid
+        // overwriting concurrent edits from another device.
         function clearDriveSyncTimers() {
             clearTimeout(driveSaveTimeout);
             driveSaveTimeout = null;
@@ -25140,6 +25741,11 @@
                 collabPollInProgress = false;
             }
         }
+
+        // ── § 4.21  Share / collaboration ────────────────────────────────────
+        // Real-time multi-user editing: presence avatars, remote-change polling,
+        // three-way merge (local + remote + deleted strokes), and the share
+        // modal for managing per-user permissions via the Drive API.
 
         // ── Presence / Active Users ──────────────────────────────
         let _presencePingInterval = null;
@@ -26025,6 +26631,10 @@
             requestAnimationFrame(positionPresencePopup);
         }
 
+        // ── § 4.21b  Presence write & heartbeat ──────────────────────────────
+        // pingPresence writes the current user's status (save phase, cursor
+        // position, device type) to Drive appProperties. clearPresence removes
+        // it cleanly when the user closes or navigates away.
         async function clearPresence() {
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
             const keyPrefix = getPresenceKey();
@@ -26059,6 +26669,10 @@
             } catch (err) { /* best effort */ }
         }
 
+        // ── § 4.21c  Remote change detection & three-way merge ───────────────
+        // pullRemoteChanges downloads the latest PDF from Drive, extracts its
+        // strokes, and merges them with any local-only changes. applyRemotePages
+        // performs the actual three-way merge (local + remote + deleted list).
         async function pullRemoteChanges(remoteMetaHint = null, options = {}) {
             if (!state.driveFileId || !driveAccessToken) return;
             if (!options.allowWhileLocalPending && hasUnsyncedLocalDriveChanges()) {
@@ -27025,6 +27639,11 @@
         }
 
         // History functions for undo/redo
+        // ── § 4.11b  Undo / redo history ─────────────────────────────────────
+        // Each user action (add stroke, erase, move image, …) is stored as an
+        // action object. Undo walks the history backwards; redo re-applies.
+        // History is capped to MAX_HISTORY entries and is NOT persisted (it
+        // resets on each session).
         function saveToHistory(action) {
             if (state.isReadOnly) return;
             // Remove any future history if we're not at the end
@@ -27662,6 +28281,11 @@
             }, 350);
         }
 
+        // ── § 4.5d  Status bar, loading overlay & utility helpers ────────────
+        // showStatus displays a brief message in the save-indicator area.
+        // showLoading / hideLoading manage the full-screen progress overlay.
+        // Also contains small utilities: filename sanitation, image loading,
+        // interaction-idle detection, and Canvas-to-image helpers.
         function showStatus(text, options = {}) {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
@@ -27893,6 +28517,10 @@
         }
 
         // Import PDF - detect embedded strokes or treat as background
+        // ── § 4.16c  PDF import (from file or URL) ───────────────────────────
+        // Parses an external PDF, renders each page to a background image, and
+        // creates the page structure in state. Also called when the user drags
+        // a PDF onto the editor or picks one via the file picker.
         async function importPDFData(pdfData, isUrl = false, options = {}) {
             if (!pdfData) return;
             const sessionToken = Number.isFinite(options.sessionToken)
@@ -28364,6 +28992,10 @@
             pdfInput.value = '';
         }
 
+        // ── § 4.17b  PDF export helpers ───────────────────────────────────────
+        // Utilities used when building the PDF to upload to Drive: load the
+        // full page data, get the canvas context at export scale, and compress
+        // the STROKES_Z metadata payload for the PDF keywords.
         async function loadPageDataForExport(pageIndex) {
             const page = state.pages[pageIndex];
             if (!page) {
@@ -28796,6 +29428,9 @@
         // Coalesces autosaves by the same author within VERSION_HISTORY_COALESCE_MS
         // into a single entry to prevent spam, BUT never coalesces away a milestone
         // entry (manual restores, reverts, etc.) so reverts don't destroy history.
+        // ── § 4.19b  Version snapshot capture ────────────────────────────────
+        // Snapshot is taken after every successful Drive upload. Stored inside
+        // the PDF keywords alongside the stroke data. Max ~20 snapshots kept.
         function captureVersionSnapshot(pagesJsonArray) {
             const author = getCurrentVersionAuthor();
             const ts = Date.now();
