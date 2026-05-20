@@ -16911,11 +16911,13 @@
                 showStatus('Could not restore: version data unavailable.', { error: true });
                 return false;
             }
+            const hasCleanPdf = !!(state.cleanOriginalPdfBytes && state.cleanOriginalPdfBytes.byteLength);
+            const originalLabel = hasCleanPdf ? 'the unmodified original PDF' : 'the unmodified original document';
             const whenStr = entry.isOriginal
-                ? 'the unmodified original PDF'
+                ? originalLabel
                 : (() => { try { return new Date(entry.ts).toLocaleString(); } catch (e) { return ''; } })();
             const titleText = entry.isOriginal
-                ? 'Revert to the original PDF?'
+                ? (hasCleanPdf ? 'Revert to the original PDF?' : 'Revert to the original document?')
                 : 'Restore this version?';
             const message = entry.isOriginal
                 ? 'All annotations across the document will be removed. A milestone entry will be added so you can roll forward to the current state again later.'
@@ -16931,7 +16933,7 @@
                 milestone: true,
                 kind: entry.isOriginal ? 'revert-original' : 'restore',
                 summary: entry.isOriginal
-                    ? 'Reverted to clean original PDF'
+                    ? (hasCleanPdf ? 'Reverted to clean original PDF' : 'Reverted to clean original document')
                     : `Restored version from ${whenStr}${entry.author?.name ? ` (${entry.author.name})` : ''}`
             };
             const newPages = buildPagesFromSnapshot(entry.pages);
@@ -16940,7 +16942,10 @@
 
             const applied = await applyRestoredPages(newPages);
             if (applied) {
-                showStatus(entry.isOriginal ? 'Reverted to original PDF.' : 'Document restored.', { autoClose: true });
+                showStatus(entry.isOriginal
+                    ? (hasCleanPdf ? 'Reverted to original PDF.' : 'Reverted to original document.')
+                    : 'Document restored.',
+                    { autoClose: true });
             } else {
                 state.pendingVersionHint = null;
             }
@@ -17030,35 +17035,78 @@
             return Math.max(TIMELINE_ZOOM_MIN, Math.min(TIMELINE_ZOOM_MAX, z));
         }
 
-        // Build a synthetic timeline entry representing the clean original PDF (no
-        // edits). It always appears as the oldest entry in the list so the user can
-        // "revert to this version" all the way back to the unmodified document.
+        // Build a synthetic timeline entry representing the document with NO
+        // edits — strokes, images and any other user-added content stripped.
+        // Always shown as the oldest entry in the list so the user can revert
+        // all the way back to the unmodified document.
+        //
+        // Two code paths depending on the document's origin:
+        //   • PDF-imported docs: the clean original PDF bytes are cached
+        //     (state.cleanOriginalPdfBytes); we list pdf-backed pages so the
+        //     revert action can swap back to the cached PDF.
+        //   • Template-based docs (Agenda, Diary, new blank docs): there is
+        //     no clean PDF, so we synthesise the entry from the CURRENT page
+        //     structure with strokes/images removed. Revert keeps the page
+        //     count and templates the user expects.
         function buildOriginalVersionEntry() {
-            if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) return null;
-            const originalSizes = Array.isArray(state.cleanOriginalPageSizes) ? state.cleanOriginalPageSizes : [];
-            const numPages = originalSizes.length || activePdfDocument?.numPages || state.pages.length || 0;
-            if (!numPages) return null;
-            const pages = [];
-            for (let i = 1; i <= numPages; i++) {
-                const originalSize = originalSizes[i - 1] || null;
-                const pageWidth = normalizePageDimension(originalSize?.width, A4_WIDTH);
-                const pageHeight = normalizePageDimension(originalSize?.height, A4_HEIGHT);
-                pages.push({
-                    pageId: `original-page-${i}`,
+            // Path A: doc imported from an external PDF — use the cached
+            // clean PDF bytes as the source of truth.
+            if (state.cleanOriginalPdfBytes && state.cleanOriginalPdfBytes.byteLength) {
+                const originalSizes = Array.isArray(state.cleanOriginalPageSizes) ? state.cleanOriginalPageSizes : [];
+                const numPages = originalSizes.length || activePdfDocument?.numPages || state.pages.length || 0;
+                if (!numPages) return null;
+                const pages = [];
+                for (let i = 1; i <= numPages; i++) {
+                    const originalSize = originalSizes[i - 1] || null;
+                    const pageWidth = normalizePageDimension(originalSize?.width, A4_WIDTH);
+                    const pageHeight = normalizePageDimension(originalSize?.height, A4_HEIGHT);
+                    pages.push({
+                        pageId: `original-page-${i}`,
+                        strokes: [],
+                        images: [],
+                        deletedStrokeIds: [],
+                        backgroundSource: 'pdf',
+                        pdfPageIndex: i,
+                        pageWidth,
+                        pageHeight
+                    });
+                }
+                return {
+                    id: ORIGINAL_VERSION_ID,
+                    ts: 0,
+                    author: { name: 'Original document', email: '', photo: '' },
+                    summary: 'Unmodified PDF without any annotations',
+                    kind: 'original',
+                    isMilestone: true,
+                    isOriginal: true,
+                    pages
+                };
+            }
+            // Path B: template-based doc (no clean PDF). Synthesise the
+            // "original" by stripping strokes / images from the current
+            // pages while preserving each page's template and dimensions.
+            if (!Array.isArray(state.pages) || state.pages.length === 0) return null;
+            const pages = state.pages.map((page, i) => {
+                const { width: pageWidth, height: pageHeight } = getPageDimensions(page);
+                return {
+                    pageId: `original-page-${i + 1}`,
                     strokes: [],
                     images: [],
                     deletedStrokeIds: [],
-                    backgroundSource: 'pdf',
-                    pdfPageIndex: i,
+                    backgroundSource: normalizeTemplateKind(page?.templateKind) && !page?.pdfPageIndex
+                        ? 'template'
+                        : (page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : 'template')),
+                    templateKind: normalizeTemplateKind(page?.templateKind),
+                    pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
                     pageWidth,
                     pageHeight
-                });
-            }
+                };
+            });
             return {
                 id: ORIGINAL_VERSION_ID,
                 ts: 0,
                 author: { name: 'Original document', email: '', photo: '' },
-                summary: 'Unmodified PDF without any annotations',
+                summary: 'Blank document with no annotations',
                 kind: 'original',
                 isMilestone: true,
                 isOriginal: true,
@@ -17326,7 +17374,48 @@
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                // 1. PDF background (only for pdf-backed pages).
+                // 1a. Template background (lined, grid, agenda, diary, …).
+                // The snapshot stores templateKind + backgroundSource, so we
+                // can faithfully reproduce the page background that was in
+                // place at that version, even for brand-new template docs.
+                const snapshotBgSource = snapshotPage?.backgroundSource
+                    || (pdfPageIdx ? 'pdf' : 'template');
+                if (snapshotBgSource === 'template') {
+                    ctx.save();
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    drawTemplateBackground(
+                        ctx,
+                        canvas.width,
+                        canvas.height,
+                        1,
+                        normalizeTemplateKind(snapshotPage?.templateKind)
+                    );
+                    ctx.restore();
+                }
+
+                // 1b. Custom cover-image background. The snapshot doesn't
+                // carry the raw base-64 (too heavy for PDF keywords), so we
+                // fall back to the current page's backgroundImage when its
+                // index lines up. Cover images rarely change between
+                // versions, so this is usually correct.
+                if (snapshotBgSource === 'custom') {
+                    const livePage = state.pages?.[pageIdx];
+                    const bgSrc = livePage && livePage.backgroundImage;
+                    if (bgSrc) {
+                        try {
+                            const bgImg = getCachedImage(bgSrc, () => {
+                                if (token === _timelinePreviewToken) {
+                                    requestAnimationFrame(() => renderTimelinePreview(entry));
+                                }
+                            });
+                            if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
+                                ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+
+                // 1c. PDF background (only for pdf-backed pages).
                 if (activePdfDocument && pdfPageIdx) {
                     try {
                         const pdfPage = await activePdfDocument.getPage(
