@@ -14077,16 +14077,24 @@
             if (driveBackBtn) driveBackBtn.disabled = driveFolderStack.length <= 1;
         }
 
-        // Per-item fingerprint — every field that actually renders in the
-        // card. If this hasn't changed since the last render, the card's
-        // DOM (including the loaded <img>) can stay untouched.
+        // Per-item fingerprint — only the fields that actually render visibly
+        // in the card. If this hasn't changed since the last render, the
+        // card's DOM (including the loaded <img>) can stay untouched.
+        //
+        // Note: `modifiedTime` is deliberately EXCLUDED. Drive bumps it any
+        // time the file is opened or its appProperties change (presence,
+        // headRevision, etc.), but none of those affect what we draw inside
+        // the card. Including it caused the 5-second auto-refresh to recreate
+        // cards whose visible state hadn't changed at all — the new <img>
+        // elements then flashed while their cached image reloaded.
+        // The diff function still handles reordering by id, so the file order
+        // in "recents" updates correctly without a visual flicker.
         function driveItemFingerprint(item) {
             if (!item) return '';
             return [
                 item.id || '',
                 item.name || '',
                 item.starred ? 1 : 0,
-                item.modifiedTime || '',
                 item.thumbnailLink ? 'T' : 'N',
                 item.folderColorRgb || '',
                 item.mimeType || ''
@@ -14142,6 +14150,18 @@
             });
             // Anything left in `existing` is no longer in the list — remove.
             existing.forEach(el => el.remove());
+            // Also sweep any leftover children that aren't tagged as real
+            // cards. These are skeleton placeholders left behind by
+            // showDriveSkeletons() when the actual data has fewer items
+            // than the number of skeletons we drew, plus any stray nodes.
+            // Without this step, an empty or under-filled section keeps
+            // displaying ghost skeleton tiles forever.
+            for (let i = container.children.length - 1; i >= 0; i--) {
+                const child = container.children[i];
+                if (!child || !child.dataset || !child.dataset.driveItemId) {
+                    child.remove();
+                }
+            }
         }
 
         // ── § 4.15  Drive home UI ─────────────────────────────────────────────
@@ -14479,6 +14499,12 @@
             state.driveParentIds = [];
             state.driveFolderKind = null;
             state.calendarPageConfig = null;
+            // Reset the version-history so it doesn't carry over from the
+            // previous document. importPDFData will fill it back in from the
+            // newly-loaded PDF's IH_VERSIONS keyword (or leave it empty when
+            // the doc has no history yet).
+            state.versionHistory = [];
+            state.pendingVersionHint = null;
             state.driveAutosave = false;
             state.pages = [];
             activePageIndices.clear();
@@ -14800,6 +14826,13 @@
             state.driveParentIds = folderId ? [folderId] : [];
             state.driveFolderKind = driveFolderKind || null;
             state.calendarPageConfig = null;
+            // Reset version history & undo stack so the new doc doesn't
+            // inherit stale entries from whichever document was open before.
+            // Without this, captureVersionSnapshot would push entries on top
+            // of the previous doc's history and the IH_VERSIONS payload would
+            // mix unrelated snapshots.
+            state.versionHistory = [];
+            state.pendingVersionHint = null;
             state.history = [];
             state.historyIndex = -1;
             updateHistoryButtons();
@@ -26783,14 +26816,9 @@
                         } catch (vhErr) {
                             console.warn('Failed to extract remote version history:', vhErr);
                         }
-                        if ((!Array.isArray(state.versionHistory) || state.versionHistory.length === 0)
-                            && Array.isArray(remoteStrokeData)) {
-                            ensureTimelineBaselineFromPages(remoteStrokeData, {
-                                id: 'remote-legacy-baseline',
-                                summary: 'Remote legacy version',
-                                kind: 'legacy-baseline'
-                            });
-                        }
+                        // No synthetic "legacy" baseline here — if the remote
+                        // PDF has no IH_VERSIONS, leave the timeline empty.
+                        // Real history will appear after the next save.
                     } catch (metaErr) {
                         console.warn('Failed to extract remote stroke data:', metaErr);
                     }
@@ -28911,13 +28939,11 @@
                     }
                 }
 
-                if (embeddedStrokes) {
-                    ensureTimelineBaselineFromPages(importedPages, {
-                        id: 'legacy-import-baseline',
-                        summary: 'Imported legacy version',
-                        kind: 'legacy-baseline'
-                    });
-                }
+                // No synthetic "legacy" baseline here — if the imported PDF
+                // has no IH_VERSIONS keyword (older saves, third-party PDFs),
+                // we leave state.versionHistory empty and let the timeline
+                // show its empty state. A real entry will appear on the
+                // first save in this app version.
 
                 throwIfSessionInvalid();
                 await migrateLegacyPayload({ pages: importedPages }, { awaitAllPages: !!embeddedStrokes });
@@ -30518,6 +30544,29 @@
                 console.warn('Metadata compression failed, using uncompressed fallback:', compressErr);
                 encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
                 metaPrefix = 'STROKES_DATA:';
+            }
+
+            // Append the same keyword suffixes the pdf-lib path adds — without
+            // these, brand-new docs (which never have a clean original PDF and
+            // thus always use this raster path) would lose their calendar
+            // config and version history on every save, leaving the timeline
+            // permanently stuck on a "legacy" baseline.
+            if (state.calendarPageConfig && canUseAgendaCalendarForCurrentDocument()) {
+                try {
+                    const calStr = JSON.stringify(state.calendarPageConfig);
+                    const calB64 = btoa(unescape(encodeURIComponent(calStr)));
+                    encodedMetadata += `;IH_CAL:${calB64}`;
+                } catch (calErr) { /* ignore */ }
+            }
+            try {
+                const pagesParsed = metadataParts.map(s => JSON.parse(s));
+                const updatedHistory = captureVersionSnapshot(pagesParsed);
+                const encodedHistory = await encodeVersionHistoryForKeywords(updatedHistory);
+                if (encodedHistory) {
+                    encodedMetadata += `;${VERSION_HISTORY_KEYWORD}${encodedHistory}`;
+                }
+            } catch (versionErr) {
+                console.warn('Failed to capture version snapshot (raster path):', versionErr);
             }
 
             throwIfAborted();
