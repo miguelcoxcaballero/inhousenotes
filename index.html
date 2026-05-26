@@ -19847,15 +19847,17 @@
                     return;
                 }
             }
-            // Palm rejection for pan: if the pen is writing right now, OR
-            // we've seen a pen event in the last 2 s, a TOUCH pointer is
-            // almost certainly a palm resting on the screen. Ignore it
-            // entirely so it doesn't register as the start of a pan — that
-            // was the source of the giant canvas jumps the user reported.
-            if (e.pointerType === 'touch') {
-                const penRecentlyActive = isPenWriting || (Date.now() - lastPenEventTime) < 2000;
-                if (penRecentlyActive) return;
-            }
+            // Palm rejection for pan: ignore TOUCH pointers ONLY while the
+            // pen is actively writing (which keeps isPenWriting true for the
+            // duration of the stroke plus its idle timer, ~120–220 ms after
+            // pen-up). As soon as the idle timer expires, touch is accepted
+            // again so the user can pan/zoom immediately after writing — even
+            // while the autosave is still processing the document.
+            // A wider window (e.g. "2 s since the last pen event") wrongly
+            // blocked legitimate finger pans for several seconds after a
+            // stroke ended, which is what was making the canvas feel frozen
+            // when the user finished writing and tried to scroll.
+            if (e.pointerType === 'touch' && isPenWriting) return;
             noteInteractionActivity();
             stopInertia();
             if (state.currentTool === 'lasso' && state.selection.pageIndex !== null) {
