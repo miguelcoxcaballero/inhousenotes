@@ -20024,7 +20024,14 @@
                 // Don't poison it with the discarded "teleport" delta.
                 if (!delta.teleport) {
                     const now = performance.now();
-                    const dt = Math.max(1, now - (state.lastPanTime || now));
+                    // Guard the dt against `lastPanTime === 0` (set by the
+                    // pinch path) and against the same-tick degenerate case.
+                    // Anything below 8 ms or above 64 ms is rounded to a
+                    // sensible default so velocity stays in a realistic
+                    // range — no more 2 800 px/s spikes from a 10 px nudge.
+                    let dt = now - (state.lastPanTime || now);
+                    if (!Number.isFinite(dt) || dt < 8) dt = 16;
+                    else if (dt > 64) dt = 64;
                     const vx = dx / dt;
                     const vy = dy / dt;
                     state.panVelocityX = state.panVelocityX * 0.72 + vx * 0.28;
@@ -20067,6 +20074,18 @@
                     state.lastPanY = remaining.clientY;
                     state.panStartX = remaining.clientX;
                     state.panStartY = remaining.clientY;
+                    // Reset velocity & timing when transitioning out of pinch.
+                    // During pinch state.lastPanTime is held at 0, so the very
+                    // first single-finger pointermove computed dt = 1 ms,
+                    // producing a velocity ~28% of the raw delta (e.g. a
+                    // 10 px finger nudge → 2 800 px/s). Releasing the last
+                    // finger right after that then fired inertia at that
+                    // velocity and the canvas teleported. By stamping the
+                    // current time here, the next pointermove sees a real
+                    // ~16 ms dt and computes a sane velocity.
+                    state.lastPanTime = performance.now();
+                    state.panVelocityX = 0;
+                    state.panVelocityY = 0;
                 }
             }
             if (state.activePointers.size === 0) {
