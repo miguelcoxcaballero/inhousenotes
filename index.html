@@ -18552,6 +18552,12 @@
                 const goHome = async () => {
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
+                    // Tell the rest of the codebase: "user has chosen to leave,
+                    // please don't abort or pause the save for incidental
+                    // input events". interruptProcessingForUserInput,
+                    // pauseSavesDuringInteraction and hasHotUserInteraction
+                    // all honour this flag.
+                    forceFlushingForExit = true;
                     try {
                         // Clear presence before leaving document
                         clearPresence();
@@ -18671,6 +18677,7 @@
                         refreshDriveFiles();
                     } finally {
                         hideLoading();
+                        forceFlushingForExit = false;
                         goHomeInProgress = false;
                     }
                 };
@@ -19824,6 +19831,15 @@
                     return;
                 }
             }
+            // Palm rejection for pan: if the pen is writing right now, OR
+            // we've seen a pen event in the last 2 s, a TOUCH pointer is
+            // almost certainly a palm resting on the screen. Ignore it
+            // entirely so it doesn't register as the start of a pan — that
+            // was the source of the giant canvas jumps the user reported.
+            if (e.pointerType === 'touch') {
+                const penRecentlyActive = isPenWriting || (Date.now() - lastPenEventTime) < 2000;
+                if (penRecentlyActive) return;
+            }
             noteInteractionActivity();
             stopInertia();
             if (state.currentTool === 'lasso' && state.selection.pageIndex !== null) {
@@ -19875,6 +19891,26 @@
             }
         }
 
+        // Maximum per-event movement allowed. Anything bigger than this is
+        // treated as a pointer "teleport" (a palm landing on the screen, a
+        // second finger arriving, or main-thread stalls that batched many
+        // moves into one event) and the delta is dropped instead of applied
+        // to the pan position. A real swipe at 60 fps rarely exceeds ~120 px
+        // per event even on a fast phone, so 200 px is well above legitimate
+        // movement and well below the giant jumps we want to suppress.
+        const MAX_PAN_STEP_PX = 200;
+        function clampPanDelta(currentX, currentY, lastX, lastY) {
+            const dx = currentX - lastX;
+            const dy = currentY - lastY;
+            if (Math.abs(dx) > MAX_PAN_STEP_PX || Math.abs(dy) > MAX_PAN_STEP_PX) {
+                // Treat as teleport — drop the delta entirely. The caller will
+                // still update lastPan to the new position so the next event
+                // computes a small, normal delta.
+                return { dx: 0, dy: 0, teleport: true };
+            }
+            return { dx, dy, teleport: false };
+        }
+
         function handleViewportPointerMove(e) {
             // Pen is handled by canvas
             if (e.pointerType === 'pen') return;
@@ -19885,13 +19921,12 @@
 
             // Mouse drag
             if (e.pointerType === 'mouse' && state.isPanning) {
-                const dx = e.clientX - state.lastPanX;
-                const dy = e.clientY - state.lastPanY;
-                state.panX += dx;
-                applyVerticalPan(dy);
+                const delta = clampPanDelta(e.clientX, e.clientY, state.lastPanX, state.lastPanY);
+                state.panX += delta.dx;
+                applyVerticalPan(delta.dy);
                 state.lastPanX = e.clientX;
                 state.lastPanY = e.clientY;
-                scheduleViewportTransformRender();
+                if (!delta.teleport) scheduleViewportTransformRender();
                 return;
             }
 
@@ -19922,11 +19957,15 @@
                     scheduleViewportTransformRender();
                 }
             } else if (state.activePointers.size === 1 && state.isPanning) {
-                // Single finger pan
-                const dx = e.clientX - state.lastPanX;
-                const dy = e.clientY - state.lastPanY;
+                // Single finger pan — clamp the delta so a stray palm contact
+                // or a delayed batched event can't teleport the canvas.
+                const delta = clampPanDelta(e.clientX, e.clientY, state.lastPanX, state.lastPanY);
+                const dx = delta.dx;
+                const dy = delta.dy;
 
-                // Check if we should lock to vertical scroll
+                // Check if we should lock to vertical scroll — uses cumulative
+                // distance from the starting touch, which is unaffected by
+                // any single big jump that we just dropped.
                 if (!state.scrollLocked) {
                     const totalDx = Math.abs(e.clientX - state.panStartX);
                     const totalDy = Math.abs(e.clientY - state.panStartY);
@@ -19954,14 +19993,18 @@
 
                 state.lastPanX = e.clientX;
                 state.lastPanY = e.clientY;
-                const now = performance.now();
-                const dt = Math.max(1, now - (state.lastPanTime || now));
-                const vx = dx / dt;
-                const vy = dy / dt;
-                state.panVelocityX = state.panVelocityX * 0.72 + vx * 0.28;
-                state.panVelocityY = state.panVelocityY * 0.72 + vy * 0.28;
-                state.lastPanTime = now;
-                scheduleViewportTransformRender();
+                // Velocity is used for fling/inertia after pointer-up.
+                // Don't poison it with the discarded "teleport" delta.
+                if (!delta.teleport) {
+                    const now = performance.now();
+                    const dt = Math.max(1, now - (state.lastPanTime || now));
+                    const vx = dx / dt;
+                    const vy = dy / dt;
+                    state.panVelocityX = state.panVelocityX * 0.72 + vx * 0.28;
+                    state.panVelocityY = state.panVelocityY * 0.72 + vy * 0.28;
+                    state.lastPanTime = now;
+                    scheduleViewportTransformRender();
+                }
             }
         }
 
@@ -24561,7 +24604,16 @@
             );
         }
 
+        // When true (set by goHome while it's force-flushing to Drive before
+        // leaving the editor), any incidental pointermove / hover input must
+        // NOT abort the in-flight save. Otherwise the user's mouse drifting
+        // over the loading overlay can cancel the save mid-upload, the retry
+        // loop sees driveDirty=true, tries again, gets aborted again, and
+        // the red "Drive save failed" dot appears after every attempt.
+        let forceFlushingForExit = false;
+
         function interruptProcessingForUserInput() {
+            if (forceFlushingForExit) return;
             noteRecentUserActivity();
             if (_prewarmRunning) abortPrewarm();
             if (pdfRenderActive || activePdfBackgroundRenderTask || pdfRenderQueue.length > 0 || pdfRenderResumeHandle) {
@@ -24572,6 +24624,10 @@
         }
 
         function pauseSavesDuringInteraction() {
+            // While the user is leaving the editor, the save MUST run to
+            // completion — abort signals would force the retry loop in
+            // goHome to fail and strand unsaved changes. See forceFlushingForExit.
+            if (forceFlushingForExit) return;
             if (!hasInterruptibleProcessingInFlight()) return;
             let pausedProcessing = false;
             if (_prewarmRunning) {
@@ -28596,6 +28652,11 @@
         }
 
         function hasHotUserInteraction(windowMs = DRIVE_BUILD_IDLE_WINDOW_MS) {
+            // While force-flushing on exit, treat the user as idle so the
+            // PDF build doesn't stall waiting for incidental hover events
+            // to settle — there's no point pausing for an interaction
+            // when the user explicitly asked us to save and leave.
+            if (forceFlushingForExit) return false;
             return hasSmoothInteraction() || hasRecentUserActivity(windowMs) || hasPendingUserInput();
         }
 
