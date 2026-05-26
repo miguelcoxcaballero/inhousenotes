@@ -18635,9 +18635,20 @@
                             // is fire-and-forget internally — it returns after
                             // starting the save. waitForDriveSaveCompletion
                             // below blocks until the actual upload finishes.
+                            //
+                            // IMPORTANT: do NOT pass keepalive:true here. The
+                            // fetch keepalive flag caps the request body at
+                            // ~64 KB per the spec, so any real notebook PDF
+                            // (which is several MB) fails immediately with
+                            // `TypeError: Failed to fetch`. This was the
+                            // hidden reason every goHome save was failing
+                            // while autosave (no keepalive) worked perfectly.
+                            // We don't need keepalive here anyway — clicking
+                            // the logo doesn't unload the page, it just
+                            // switches the visible view.
                             driveDirty = true;
                             try {
-                                await queueDriveSave(true, { keepalive: true });
+                                await queueDriveSave(true);
                             } catch (err) {
                                 console.warn('queueDriveSave threw:', err);
                                 lastErrorReason = (err && err.message) || 'queue-failed';
@@ -19513,8 +19524,11 @@
                     return;
                 }
 
-                const dx = state.panVelocityX * dt;
-                const dy = state.panVelocityY * dt;
+                // Cap per-frame inertia movement so a long-stuck frame (e.g.
+                // GC pause, save processing) doesn't multiply dt × velocity
+                // into a giant pan jump on the next animation frame.
+                const dx = capPanStep(state.panVelocityX * dt);
+                const dy = capPanStep(state.panVelocityY * dt);
 
                 if (state.inertiaLock === 'vertical') {
                     applyVerticalPan(dy);
@@ -19800,9 +19814,11 @@
 
                 scheduleViewportTransformRender();
             } else {
-                // Scroll with wheel
-                state.panX -= normDeltaX * 0.92;
-                applyVerticalPan(-normDeltaY * 0.92);
+                // Scroll with wheel — cap per-event delta so a trackpad
+                // momentum burst or a touchpad driver that delivers giant
+                // delta values can't teleport the canvas.
+                state.panX -= capPanStep(normDeltaX * 0.92);
+                applyVerticalPan(-capPanStep(normDeltaY * 0.92));
                 scheduleViewportTransformRender();
             }
             if (wheelReleaseTimeout) {
@@ -19891,14 +19907,15 @@
             }
         }
 
-        // Maximum per-event movement allowed. Anything bigger than this is
-        // treated as a pointer "teleport" (a palm landing on the screen, a
-        // second finger arriving, or main-thread stalls that batched many
-        // moves into one event) and the delta is dropped instead of applied
-        // to the pan position. A real swipe at 60 fps rarely exceeds ~120 px
-        // per event even on a fast phone, so 200 px is well above legitimate
-        // movement and well below the giant jumps we want to suppress.
-        const MAX_PAN_STEP_PX = 200;
+        // Maximum per-event movement allowed for ANY pan source (touch,
+        // mouse drag, wheel, inertia). Bigger than this and we either drop
+        // the delta (pointermove "teleport") or clamp it down (wheel /
+        // inertia). On 60 fps a fast finger flick rarely exceeds ~80 px per
+        // event; 100 px is a safe cap that still allows fast scrolling but
+        // suppresses the giant jumps the user was reporting (palm contacts,
+        // batched events after a main-thread stall, glitched touch
+        // controllers, trackpad bursts).
+        const MAX_PAN_STEP_PX = 100;
         function clampPanDelta(currentX, currentY, lastX, lastY) {
             const dx = currentX - lastX;
             const dy = currentY - lastY;
@@ -19909,6 +19926,16 @@
                 return { dx: 0, dy: 0, teleport: true };
             }
             return { dx, dy, teleport: false };
+        }
+        // Hard-cap any pan delta produced by wheel/trackpad/inertia. These
+        // sources can deliver huge values (e.g. inertia after a long frame
+        // multiplies velocity × dt, trackpad bursts deliver 1000+ px in a
+        // single event). We cap each axis to ±MAX_PAN_STEP_PX so a single
+        // tick never moves the canvas more than one "step" worth.
+        function capPanStep(value) {
+            if (value > MAX_PAN_STEP_PX) return MAX_PAN_STEP_PX;
+            if (value < -MAX_PAN_STEP_PX) return -MAX_PAN_STEP_PX;
+            return value;
         }
 
         function handleViewportPointerMove(e) {
