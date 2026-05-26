@@ -18788,6 +18788,24 @@
                 if (isSaveDebugInteraction(e)) return;
                 interruptProcessingForUserInput();
             }, { capture: true, passive: true });
+            // Continuous gesture tracking — pointermove and touchmove fire
+            // very frequently, so we only refresh the "user is active" timer
+            // (cheap) and re-pause any save that resumed too early. Throttled
+            // to once per ~60 ms so the listener itself never becomes the
+            // bottleneck on busy devices.
+            let _lastMoveInterruptAt = 0;
+            const onMoveInterrupt = (e) => {
+                if (isSaveDebugInteraction(e)) return;
+                const now = performance.now();
+                if (now - _lastMoveInterruptAt < 60) {
+                    noteRecentUserActivity();
+                    return;
+                }
+                _lastMoveInterruptAt = now;
+                interruptProcessingForUserInput();
+            };
+            document.addEventListener('pointermove', onMoveInterrupt, { capture: true, passive: true });
+            document.addEventListener('touchmove', onMoveInterrupt, { capture: true, passive: true });
             document.addEventListener('wheel', (e) => {
                 if (isSaveDebugInteraction(e)) return;
                 interruptProcessingForUserInput();
@@ -24575,7 +24593,11 @@
                 activeDriveSaveController.abort();
                 driveDirty = true;
                 deferredDriveSave = true;
-                scheduleDeferredDriveSaveRetry();
+                // Defer the retry well beyond the gesture's idle window so the
+                // save doesn't restart on the very next finger lift and yank
+                // the main thread away again. The watchdog (armed below) will
+                // pick it up once the user is genuinely idle.
+                scheduleDeferredDriveSaveRetry(900);
                 pausedProcessing = true;
             }
             if (pausedProcessing) {
@@ -30296,15 +30318,22 @@
                     throwIfSessionInvalid();
                 }
             };
-            const maxMainThreadSliceMs = isMobileLike ? 0.8 : 4;
+            // Tighter slice budgets — keeps pen/touch latency low even mid-build.
+            // 4 ms felt fine on a desktop benchmark but on real devices it was
+            // enough to delay the first stroke point by a noticeable gap.
+            const maxMainThreadSliceMs = isMobileLike ? 0.5 : 1.5;
             let lastSliceYieldAt = performance.now();
             const maybeYieldForSlice = async (force = false) => {
                 const elapsed = performance.now() - lastSliceYieldAt;
                 const inputPending = hasPendingUserInput();
-                const userHot = inputPending || hasHotUserInteraction(isMobileLike ? 160 : 180);
+                const userHot = inputPending || hasHotUserInteraction(isMobileLike ? 220 : 280);
                 if (!force && !userHot && !inputPending && elapsed < maxMainThreadSliceMs) return;
-                if (inputPending || (isMobileLike && elapsed > 1.2)) {
-                    // Immediately yield a full frame so pending input gets processed
+                // Whenever input is pending OR we noticed a fresh user gesture,
+                // give the event loop a real frame to flush pointer/touch
+                // events before resuming. setTimeout(0) is too coarse — the
+                // browser may schedule it before the touch handler runs and
+                // we'd be back to processing immediately, dropping events.
+                if (inputPending || userHot || elapsed > (isMobileLike ? 1.0 : 6)) {
                     await yieldToMainThread();
                     throwIfAborted();
                     throwIfSessionInvalid();
