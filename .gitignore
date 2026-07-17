@@ -1,0 +1,16 @@
+node_modules/
+.claude/
+.codex/
+.agents/
+
+*.log
+*.tmp
+*.bak
+*.pyc
+__pycache__/
+*.keystore
+
+android app/apk-output/
+
+.DS_Store
+Thumbs.db
