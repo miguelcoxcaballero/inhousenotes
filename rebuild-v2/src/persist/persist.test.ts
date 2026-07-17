@@ -4,10 +4,11 @@ import { createDoc, createPage, makeStroke, packPoints } from '../core/model';
 import { addStrokeOp, applyOp, removeStrokesOp } from '../core/ops';
 import { serializeStroke } from '../core/serial';
 import { DocStore } from '../core/store';
-import { openDb, resetDbCache } from './idb';
-import { loadDoc, saveDocSnapshot, listDocs } from './docRepo';
+import { openDb, req, resetDbCache, STORE_PAGES } from './idb';
+import { loadDoc, saveDocChanges, saveDocSnapshot, listDocs } from './docRepo';
 import { OplogWriter } from './oplog';
 import { PersistController } from './persistController';
+import { saveAssets } from './assets';
 
 // fake-indexeddb needs its own IDBKeyRange implementation globally.
 (globalThis as Record<string, unknown>).IDBKeyRange = FakeKeyRange;
@@ -73,7 +74,52 @@ describe('doc snapshot round-trip', () => {
     const docs = await listDocs(db);
     expect(docs.map((d) => d.name)).toEqual(['b', 'a']);
   });
+
+  it('rewrites only dirty pages during incremental compaction', async () => {
+    const db = await openDb(factory);
+    const doc = createDoc({ pages: [createPage(), createPage()] });
+    const store = new DocStore(doc);
+    await saveDocSnapshot(db, doc);
+    const untouchedId = doc.pageOrder[1]!;
+    const before = await pageRecord(db, doc.id, untouchedId);
+
+    drawOn(store, 12);
+    await saveDocChanges(db, doc, { dirtyPageIds: [doc.pageOrder[0]!] });
+
+    const after = await pageRecord(db, doc.id, untouchedId);
+    expect(after.snapshotRev).toBe(before.snapshotRev);
+    expect(after).toEqual(before);
+  });
+
+  it('loads an original PDF asset with its page reference intact', async () => {
+    const db = await openDb(factory);
+    const page = createPage();
+    page.background = { kind: 'pdf', sourceId: 'source-pdf', pdfPageIndex: 3 };
+    const doc = createDoc({ pages: [page] });
+    await saveAssets(db, doc.id, [{
+      id: 'source-pdf',
+      name: 'Samsung note.pdf',
+      mimeType: 'application/pdf',
+      bytes: new Uint8Array([37, 80, 68, 70]),
+      createdAt: 123
+    }]);
+    await saveDocSnapshot(db, doc);
+
+    const loaded = await loadDoc(db, doc.id);
+    expect(loaded!.assets).toHaveLength(1);
+    expect([...loaded!.assets[0]!.bytes]).toEqual([37, 80, 68, 70]);
+    expect(loaded!.doc.pages.get(page.id)!.background).toEqual({
+      kind: 'pdf',
+      sourceId: 'source-pdf',
+      pdfPageIndex: 3
+    });
+  });
 });
+
+async function pageRecord(db: IDBDatabase, docId: string, pageId: string): Promise<Record<string, unknown>> {
+  const tx = db.transaction(STORE_PAGES, 'readonly');
+  return await req(tx.objectStore(STORE_PAGES).get([docId, pageId])) as Record<string, unknown>;
+}
 
 describe('oplog crash recovery', () => {
   it('replays ops that were never compacted', async () => {
@@ -130,6 +176,29 @@ describe('oplog crash recovery', () => {
     const recovered = await loadDoc(db, doc.id);
     expect(recovered!.replayed).toBe(0);
     expect(recovered!.doc.pages.get(doc.pageOrder[0]!)!.strokeOrder).toHaveLength(2);
+  });
+
+  it('compacts a crash-recovered journal after the document opens', async () => {
+    const db = await openDb(factory);
+    const doc = createDoc();
+    await saveDocSnapshot(db, doc);
+    const sourceStore = new DocStore(doc);
+    const oplog = new OplogWriter(db, doc.id);
+    await oplog.init();
+    sourceStore.subscribe((applied) => oplog.append(applied.op));
+    drawOn(sourceStore, 22);
+    await oplog.flush();
+
+    const recovered = await loadDoc(db, doc.id);
+    expect(recovered!.replayed).toBe(1);
+    const controller = new PersistController(db, new DocStore(recovered!.doc));
+    await controller.start(recovered!.doc.pageOrder);
+    await controller.compact(false);
+    await controller.dispose();
+
+    const cleanReload = await loadDoc(db, doc.id);
+    expect(cleanReload!.replayed).toBe(0);
+    expect(cleanReload!.doc.pages.get(doc.pageOrder[0]!)!.strokeOrder).toHaveLength(1);
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createDoc, makeStroke, packPoints } from './model';
+import { createDoc, createPage, makeStroke, packPoints } from './model';
 import { addStrokeOp, applyOp } from './ops';
-import { serializeStroke } from './serial';
+import { serializePage, serializeStroke } from './serial';
 import { VersionLog } from './versions';
 import type { VersionAuthor } from './versions';
 
@@ -69,6 +69,22 @@ describe('VersionLog', () => {
     expect(page.strokes.has(discardedId)).toBe(false);
     expect(page.tombstones.has(discardedId)).toBe(true);
     expect(page.tombstones.has(keptId)).toBe(false);
+  });
+
+  it('restoreOp restores metadata and tombstones pages added later', () => {
+    const doc = createDoc({ name: 'Original name' });
+    const log = new VersionLog();
+    log.capture(doc, ALICE);
+    const entry = log.entries[0]!;
+    const added = createPage();
+    applyOp(doc, { type: 'add-page', page: serializePage(added), index: 1 });
+    applyOp(doc, { type: 'set-meta', meta: { name: 'Changed name' } });
+
+    applyOp(doc, log.restoreOp(doc, entry));
+
+    expect(doc.meta.name).toBe('Original name');
+    expect(doc.pages.has(added.id)).toBe(false);
+    expect(doc.pageTombstones.has(added.id)).toBe(true);
   });
 
   it('evicts oldest non-milestones first when over the entry cap', () => {

@@ -24,14 +24,11 @@ export interface MergeResult {
 }
 
 function strokeSig(s: SerialStroke): string {
-  const pts = s.points;
-  const head = pts.length > 0 ? pts[0] : 0;
-  const tail = pts.length > 0 ? pts[pts.length - 1] : 0;
-  return `${s.tool}|${s.color}|${s.width}|${pts.length}|${head}|${tail}`;
+  return `${s.tool}|${s.color}|${s.width}|${Array.from(s.points).join(',')}`;
 }
 
 function imageSig(img: Img): string {
-  return `${img.x}|${img.y}|${img.width}|${img.height}|${img.rotation}|${img.src.length}`;
+  return `${img.x}|${img.y}|${img.width}|${img.height}|${img.rotation}|${img.src}`;
 }
 
 function pageMetaSig(p: SerialPage): string {
@@ -174,7 +171,12 @@ export function mergeDocs(local: SerialDoc, remote: SerialDoc, base: SerialDoc |
     meta: { ...remote.meta, ...((base && JSON.stringify(local.meta) !== JSON.stringify(base.meta)) || !base ? local.meta : {}) }
   };
 
-  const sigOf = (d: SerialDoc) => d.pages.map((p) => `${p.id}:${pageContentSig(p)}`).join(';');
+  const sigOf = (d: SerialDoc) => [
+    d.pages.map((p) => `${p.id}:${pageContentSig(p)}`).join(';'),
+    d.pageOrder.join(','),
+    [...(d.pageTombstones ?? [])].sort().join(','),
+    JSON.stringify(d.meta)
+  ].join('|');
   const mergedSig = sigOf(merged);
   return {
     merged,

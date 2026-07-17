@@ -3,7 +3,7 @@ import type { DocStore } from '../core/store';
 import type { DocRenderer } from '../render/docRenderer';
 import { serializePage } from '../core/serial';
 import type { CalendarClient } from '../sync/calendarClient';
-import { makeOverlay, buttonStyle, smallText } from './modal';
+import { makeOverlay, buttonStyle, showMessage, smallText } from './modal';
 
 interface CalendarEvent {
   id: string;
@@ -215,7 +215,7 @@ export class CalendarPanel {
       ]);
       this.render(body);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      showMessage('Calendar sync failed', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -238,7 +238,7 @@ export class CalendarPanel {
       close();
       this.render(body);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      showMessage('Could not create event', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -251,7 +251,7 @@ export class CalendarPanel {
       close();
       this.render(body);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      showMessage('Could not delete event', err instanceof Error ? err.message : String(err));
     }
   }
 

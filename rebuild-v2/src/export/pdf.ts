@@ -1,5 +1,6 @@
-import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
+import { PDFDocument, PDFString, StandardFonts, degrees, rgb } from 'pdf-lib';
 import type { Doc, Img, Page, Stroke } from '../core/model';
+import { getPdfAssetBytes } from '../pdf/pdfAssets';
 
 export async function exportDocPdf(doc: Doc): Promise<Blob> {
   const pdf = await PDFDocument.create();
@@ -24,7 +25,7 @@ export async function exportDocPdf(doc: Doc): Promise<Blob> {
     }
     for (const id of modelPage.strokeOrder) {
       const stroke = modelPage.strokes.get(id);
-      if (stroke) drawStroke(page, modelPage, stroke);
+      if (stroke) addInkAnnotation(pdf, page, modelPage, stroke);
     }
   }
 
@@ -52,6 +53,19 @@ async function drawBackground(
 ): Promise<void> {
   if (modelPage.background.kind === 'custom') {
     await drawDataImage(pdf, page, modelPage.background.src, 0, 0, modelPage.width, modelPage.height, 0);
+  } else if (modelPage.background.kind === 'pdf' && modelPage.background.sourceId) {
+    const bytes = getPdfAssetBytes(modelPage.background.sourceId);
+    if (bytes) {
+      const [embedded] = await pdf.embedPdf(bytes, [modelPage.background.pdfPageIndex]);
+      if (embedded) {
+        page.drawPage(embedded, {
+          x: 0,
+          y: 0,
+          width: modelPage.width,
+          height: modelPage.height
+        });
+      }
+    }
   } else if (modelPage.background.kind === 'template') {
     const lineColor = rgb(0.88, 0.91, 0.95);
     const step = modelPage.background.template === 'diary' ? 28 : 32;
@@ -139,29 +153,40 @@ async function drawDataImage(
   });
 }
 
-function drawStroke(page: ReturnType<PDFDocument['addPage']>, modelPage: Page, stroke: Stroke): void {
-  const color = hexToRgb(stroke.color);
-  if (stroke.points.length < 6) {
-    if (stroke.points.length >= 2) {
-      page.drawCircle({
-        x: stroke.points[0]!,
-        y: modelPage.height - stroke.points[1]!,
-        size: Math.max(0.7, stroke.width / 2),
-        color,
-        opacity: stroke.tool === 'highlighter' ? 0.35 : 1
-      });
-    }
-    return;
+function addInkAnnotation(
+  pdf: PDFDocument,
+  page: ReturnType<PDFDocument['addPage']>,
+  modelPage: Page,
+  stroke: Stroke
+): void {
+  if (stroke.points.length < 3) return;
+  const points: number[] = [];
+  for (let i = 0; i + 1 < stroke.points.length; i += 3) {
+    points.push(stroke.points[i]!, modelPage.height - stroke.points[i + 1]!);
   }
-  for (let i = 0; i < stroke.points.length - 3; i += 3) {
-    page.drawLine({
-      start: { x: stroke.points[i]!, y: modelPage.height - stroke.points[i + 1]! },
-      end: { x: stroke.points[i + 3]!, y: modelPage.height - stroke.points[i + 4]! },
-      thickness: stroke.width,
-      color,
-      opacity: stroke.tool === 'highlighter' ? 0.35 : 1
-    });
-  }
+  if (points.length === 2) points.push(points[0]!, points[1]!);
+
+  const color = hexComponents(stroke.color);
+  const padding = Math.max(1, stroke.width);
+  const rect = [
+    Math.max(0, stroke.bbox.x0 - padding),
+    Math.max(0, modelPage.height - stroke.bbox.y1 - padding),
+    Math.min(modelPage.width, stroke.bbox.x1 + padding),
+    Math.min(modelPage.height, modelPage.height - stroke.bbox.y0 + padding)
+  ];
+  const annotation = pdf.context.obj({
+    Type: 'Annot',
+    Subtype: 'Ink',
+    Rect: rect,
+    InkList: [points],
+    C: color,
+    CA: stroke.tool === 'highlighter' ? 0.35 : 1,
+    BS: { Type: 'Border', W: stroke.width, S: 'S' },
+    F: 4,
+    NM: PDFString.of(stroke.id),
+    Contents: PDFString.of('Inhouse Notes ink')
+  });
+  page.node.addAnnot(pdf.context.register(annotation));
 }
 
 function dataUrlToBytes(src: string): Uint8Array | null {
@@ -178,10 +203,15 @@ function isJpeg(src: string): boolean {
 }
 
 function hexToRgb(hex: string): ReturnType<typeof rgb> {
+  const [r, g, b] = hexComponents(hex);
+  return rgb(r, g, b);
+}
+
+function hexComponents(hex: string): [number, number, number] {
   const clean = hex.replace('#', '').padEnd(6, '0');
-  return rgb(
+  return [
     parseInt(clean.slice(0, 2), 16) / 255,
     parseInt(clean.slice(2, 4), 16) / 255,
     parseInt(clean.slice(4, 6), 16) / 255
-  );
+  ];
 }

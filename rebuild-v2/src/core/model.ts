@@ -42,7 +42,7 @@ export type TemplateKind = 'default' | 'agenda' | 'diary';
 
 export type Background =
   | { kind: 'template'; template: TemplateKind }
-  | { kind: 'pdf'; pdfPageIndex: number }
+  | { kind: 'pdf'; pdfPageIndex: number; sourceId?: string }
   | { kind: 'custom'; src: string };
 
 export interface SidePanelConfig {

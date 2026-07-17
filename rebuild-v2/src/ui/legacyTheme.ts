@@ -48,7 +48,7 @@ html, body {
 
 /* ── Welcome (legacy §2.4) ─────────────────────────────────────────────── */
 #welcome-view {
-  position: fixed; inset: 0; background: var(--bg-primary);
+  position: fixed; inset: 0; background: #151515;
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 56px; z-index: 1300; padding: 48px 32px;
 }
@@ -57,7 +57,7 @@ html, body {
 #welcome-view .welcome-logo svg { width: 180px; height: 108px; }
 #welcome-view .welcome-logo .brand-name {
   font-family: 'Comfortaa', cursive; font-size: 2.25rem; font-weight: 600;
-  color: var(--text-primary); letter-spacing: 0.5px;
+  color: #f5f5f5; letter-spacing: 0.5px;
 }
 #welcome-view .btn { min-height: 48px; padding: 12px 40px; font-size: 1.05rem; }
 
@@ -133,6 +133,41 @@ html, body {
 }
 .editor-action-bar button:hover { background: var(--bg-primary) !important; }
 .sync-status-bar { font-family: inherit !important; border-radius: var(--radius-md) !important; box-shadow: var(--shadow-soft) !important; }
+
+@media (max-width: 700px) {
+  .drive-topbar {
+    display: grid; grid-template-columns: 1fr; gap: 10px;
+    padding: 10px 14px;
+  }
+  .drive-topbar-actions {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%; min-width: 0; gap: 8px;
+  }
+  .drive-search {
+    grid-column: 1 / -1; box-sizing: border-box;
+    width: 100%; min-width: 0;
+  }
+  .drive-topbar-actions .btn {
+    min-width: 0; padding: 9px 6px; font-size: 0.82rem;
+    white-space: nowrap;
+  }
+  .editor-action-bar {
+    max-width: calc(100vw - 36px) !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .editor-action-bar::-webkit-scrollbar { display: none; }
+  .sync-status-bar { top: 68px !important; }
+  .toolbar {
+    top: calc(50% + 32px) !important;
+    max-height: calc(100vh - 144px) !important;
+    overflow-y: auto !important;
+    scrollbar-width: none;
+  }
+  .toolbar::-webkit-scrollbar { display: none; }
+}
 `;
 
 let injected = false;

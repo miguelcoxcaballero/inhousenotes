@@ -271,6 +271,8 @@ function isValidStoredTokens(tokens: Partial<StoredTokens>): tokens is StoredTok
 
 const BASE_URL = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3';
+const DRIVE_FILE_FIELDS = 'id,name,mimeType,modifiedTime,size,parents,shared,webContentLink,webViewLink,resourceKey';
+const SIMPLE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 
 export interface DriveFile {
   id: string;
@@ -289,6 +291,14 @@ export interface DriveError {
   code: number;
   message: string;
   errors?: { domain: string; reason: string; message: string }[];
+}
+
+async function driveResponseError(response: Response, fallback: string): Promise<Error> {
+  const detail = (await response.json().catch(() => ({}))) as Partial<DriveError>;
+  return Object.assign(new Error(detail.message ?? fallback), {
+    code: response.status,
+    err: detail
+  });
 }
 
 export class DriveClient {
@@ -417,13 +427,16 @@ export class DriveClient {
   }
 
   async createFile(name: string, blob: Blob, mimeType: string, parents: string[] = []): Promise<DriveFile> {
-    const accessToken = await this.auth.getAccessToken();
-    const boundary = `ihn_${newId()}`;
     const metadata = {
       name,
       mimeType,
       ...(parents.length > 0 ? { parents } : {})
     };
+    if (blob.size > SIMPLE_UPLOAD_MAX_BYTES) {
+      return this.resumableUpload('POST', `${UPLOAD_URL}/files`, metadata, blob, mimeType);
+    }
+    const accessToken = await this.auth.getAccessToken();
+    const boundary = `ihn_${newId()}`;
     const body = new Blob([
       `--${boundary}\r\n`,
       'Content-Type: application/json; charset=UTF-8\r\n\r\n',
@@ -448,6 +461,9 @@ export class DriveClient {
   }
 
   async updateFileMedia(fileId: string, blob: Blob, mimeType: string): Promise<DriveFile> {
+    if (blob.size > SIMPLE_UPLOAD_MAX_BYTES) {
+      return this.resumableUpload('PATCH', `${UPLOAD_URL}/files/${fileId}`, {}, blob, mimeType);
+    }
     const accessToken = await this.auth.getAccessToken();
     const resp = await fetch(`${UPLOAD_URL}/files/${fileId}?uploadType=media&fields=id,name,mimeType,modifiedTime,size,parents,shared,webContentLink,webViewLink,resourceKey`, {
       method: 'PATCH',
@@ -463,6 +479,47 @@ export class DriveClient {
       throw Object.assign(new Error(err.message ?? 'Update file failed'), { code: resp.status, err });
     }
     return resp.json() as Promise<DriveFile>;
+  }
+
+  private async resumableUpload(
+    method: 'POST' | 'PATCH',
+    url: string,
+    metadata: Record<string, unknown>,
+    blob: Blob,
+    mimeType: string
+  ): Promise<DriveFile> {
+    const accessToken = await this.auth.getAccessToken();
+    const session = await fetch(`${url}?uploadType=resumable&fields=${DRIVE_FILE_FIELDS}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Type': mimeType,
+        'X-Upload-Content-Length': String(blob.size)
+      },
+      body: JSON.stringify(metadata)
+    });
+    if (!session.ok) throw await driveResponseError(session, 'Could not start resumable upload');
+    const location = session.headers.get('Location');
+    if (!location) throw new Error('Drive did not return a resumable upload URL');
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await fetch(location, {
+          method: 'PUT',
+          headers: { 'Content-Type': mimeType },
+          body: blob
+        });
+        if (response.ok) return response.json() as Promise<DriveFile>;
+        if (response.status < 500 || attempt === 2) {
+          throw await driveResponseError(response, 'Resumable upload failed');
+        }
+      } catch (err) {
+        if (attempt === 2) throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
+    }
+    throw new Error('Resumable upload failed');
   }
 
   /**

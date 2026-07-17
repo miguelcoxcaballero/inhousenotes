@@ -8,12 +8,12 @@ import { serializePage } from './core/serial';
 import { DocStore } from './core/store';
 import { PersistController } from './persist/persistController';
 import { openDb } from './persist/idb';
-import { loadDoc, listDocs, deleteDoc, DocRecord } from './persist/docRepo';
+import { loadDoc, listDocs, deleteDoc, saveDocSnapshot, DocRecord } from './persist/docRepo';
 import { DocRenderer } from './render/docRenderer';
 import { SyncMachine } from './sync/syncMachine';
 import { CollabClient } from './sync/collab';
 import { GoogleAuth, DriveClient, type DriveFile } from './sync/driveClient';
-import { loadDoc as loadDocFromDrive } from './sync/sidecar';
+import { loadBundle as loadBundleFromDrive, type SidecarAssetReference } from './sync/sidecar';
 import { Editor } from './editor';
 import { SyncStatusBar } from './ui/syncStatusBar';
 import { TimelinePanel } from './ui/timelinePanel';
@@ -21,8 +21,12 @@ import { ManagePagesPanel } from './ui/managePagesPanel';
 import { CalendarPanel } from './ui/calendarPanel';
 import { ShareModal } from './ui/shareModal';
 import { downloadBlob, exportDocPdf } from './export/pdf';
-import { importPdfPages, importPdfUrl, type ImportedPdfPage } from './import/pdfImport';
+import { importPdfDocument, importPdfUrl, type ImportedPdfDocument } from './import/pdfImport';
 import { CalendarClient } from './sync/calendarClient';
+import { saveAssets } from './persist/assets';
+import type { BinaryAsset } from './persist/assets';
+import { registerPdfAssets, unregisterPdfAssets } from './pdf/pdfAssets';
+import { promptText, showMessage } from './ui/modal';
 
 export class App {
   // Public subsystems — null until a document is open
@@ -41,6 +45,7 @@ export class App {
   private db: IDBDatabase | null = null;
   private viewport: HTMLElement | null = null;
   private disposed = false;
+  private currentAssetIds = new Set<string>();
 
   /** Current document ID, null when no document is open. */
   get docId(): string | null {
@@ -63,7 +68,14 @@ export class App {
       return;
     }
 
-    await this.initWithDoc(loaded.doc);
+    await this.initWithDoc(
+      loaded.doc,
+      undefined,
+      loaded.assets,
+      undefined,
+      loaded.savedAt,
+      loaded.replayed > 0
+    );
   }
 
   /**
@@ -77,13 +89,16 @@ export class App {
 
     const blob = await this.drive!.downloadMedia(fileId, { resourceKey });
     const text = await blob.text();
-    const doc = loadDocFromDrive(text);
-    if (!doc) {
+    const bundle = loadBundleFromDrive(text);
+    if (!bundle) {
       console.error(`Failed to load document from Drive: ${fileId}`);
       return;
     }
 
-    await this.initWithDoc(doc, fileId);
+    const assets = await this.downloadDriveAssets(bundle.assets, bundle.assetRefs);
+    await saveAssets(this.db!, bundle.doc.id, assets);
+    await saveDocSnapshot(this.db!, bundle.doc);
+    await this.initWithDoc(bundle.doc, fileId, assets, bundle.writeId, bundle.savedAt);
   }
 
   /**
@@ -97,21 +112,20 @@ export class App {
     const doc = createDoc({ name });
 
     // Save the new document to IDB
-    const { saveDocSnapshot } = await import('./persist/docRepo');
     await saveDocSnapshot(this.db!, doc);
 
-    await this.initWithDoc(doc);
+    await this.initWithDoc(doc, undefined, [], undefined, Date.now());
     return doc.id;
   }
 
   async createFromPdf(file: File, name = file.name.replace(/\.pdf$/i, '') || 'PDF'): Promise<string> {
     if (this.disposed) throw new Error('App disposed');
     await this.ensureDb();
-    const pages = await importPdfPages(file);
-    const doc = createDoc({ name, pages });
-    const { saveDocSnapshot } = await import('./persist/docRepo');
+    const imported = await importPdfDocument(file);
+    const doc = createDoc({ name, pages: imported.pages });
+    await saveAssets(this.db!, doc.id, imported.assets);
     await saveDocSnapshot(this.db!, doc);
-    await this.initWithDoc(doc);
+    await this.initWithDoc(doc, undefined, imported.assets, undefined, Date.now());
     return doc.id;
   }
 
@@ -144,6 +158,8 @@ export class App {
 
     this.store = null;
     this.viewport = null;
+    unregisterPdfAssets(this.currentAssetIds);
+    this.currentAssetIds.clear();
   }
 
   // ── Document list (home screen) ───────────────────────────────────────────
@@ -210,11 +226,21 @@ export class App {
     }
   }
 
-  private async initWithDoc(doc: Doc, driveFileId?: string): Promise<void> {
+  private async initWithDoc(
+    doc: Doc,
+    driveFileId?: string,
+    assets: BinaryAsset[] = [],
+    driveWriteId?: string,
+    savedAt?: number,
+    recovered = false
+  ): Promise<void> {
     // Dispose previous document first
     if (this.store) {
       await this.closeDocument();
     }
+
+    registerPdfAssets(assets);
+    this.currentAssetIds = new Set(assets.map((asset) => asset.id));
 
     // Create store and renderer
     this.store = new DocStore(doc);
@@ -228,12 +254,19 @@ export class App {
 
     // Initialize persistence
     this.persist = new PersistController(this.db!, this.store);
-    await this.persist.start();
+    await this.persist.start(recovered ? doc.pageOrder : undefined);
+    this.persist.lastSavedAt = savedAt ?? null;
 
     // Initialize sync and collab (drive integration)
     await this.ensureDrive();
     if (this.drive) {
-      this.sync = new SyncMachine(this.store, this.persist, this.drive, { name: doc.meta.name, fileId: driveFileId });
+      this.sync = new SyncMachine(
+        this.store,
+        this.persist,
+        this.drive,
+        { name: doc.meta.name, fileId: driveFileId, writeId: driveWriteId },
+        (remoteAssets) => this.retainRemoteAssets(remoteAssets)
+      );
       this.statusBar = new SyncStatusBar(this.viewport, {
         onSyncNow: () => void this.sync?.start(),
         onAcceptRemote: () => void this.sync?.acceptRemote(),
@@ -285,21 +318,26 @@ export class App {
       const file = input.files?.[0];
       if (!file || !this.store || !this.renderer) return;
       try {
-        await this.applyImportedPages(await importPdfPages(file));
+        await this.applyImportedDocument(await importPdfDocument(file));
       } catch (err) {
-        window.alert(err instanceof Error ? err.message : String(err));
+        showMessage('PDF import failed', err instanceof Error ? err.message : String(err));
       }
     });
     input.click();
   }
 
   private async importPdfFromUrl(): Promise<void> {
-    const url = window.prompt('PDF URL:');
+    const url = await promptText('Import PDF from URL', {
+      label: 'PDF URL',
+      inputType: 'url',
+      placeholder: 'https://example.com/document.pdf',
+      confirmLabel: 'Import'
+    });
     if (!url?.trim() || !this.store || !this.renderer) return;
     try {
-      await this.applyImportedPages(await importPdfUrl(url.trim()));
+      await this.applyImportedDocument(await importPdfUrl(url.trim()));
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      showMessage('PDF import failed', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -309,9 +347,13 @@ export class App {
     downloadBlob(await exportDocPdf(this.store.doc), name);
   }
 
-  private async applyImportedPages(pages: ImportedPdfPage[]): Promise<void> {
+  private async applyImportedDocument(imported: ImportedPdfDocument): Promise<void> {
     if (!this.store || !this.renderer) return;
-    const serialPages = pages.map(serializePage);
+    await this.ensureDb();
+    await saveAssets(this.db!, this.store.doc.id, imported.assets);
+    registerPdfAssets(imported.assets);
+    for (const asset of imported.assets) this.currentAssetIds.add(asset.id);
+    const serialPages = imported.pages.map(serializePage);
     if (serialPages.length === 0) return;
     if (isEmptyStarterDoc(this.store.doc)) {
       this.store.apply({ type: 'replace-doc', pages: serialPages });
@@ -321,6 +363,36 @@ export class App {
       }
     }
     this.renderer.rebuild();
+  }
+
+  private async retainRemoteAssets(assets: BinaryAsset[]): Promise<void> {
+    if (!this.store || assets.length === 0) return;
+    registerPdfAssets(assets);
+    for (const asset of assets) this.currentAssetIds.add(asset.id);
+    await this.ensureDb();
+    await saveAssets(this.db!, this.store.doc.id, assets);
+  }
+
+  private async downloadDriveAssets(
+    inlineAssets: BinaryAsset[],
+    references: SidecarAssetReference[]
+  ): Promise<BinaryAsset[]> {
+    const byId = new Map(inlineAssets.map((asset) => [asset.id, asset]));
+    const missing = references.filter((reference) => !byId.has(reference.id));
+    const downloaded = await Promise.all(missing.map(async (reference): Promise<BinaryAsset> => {
+      const blob = await this.drive!.downloadMedia(reference.fileId, {
+        resourceKey: reference.resourceKey
+      });
+      return {
+        id: reference.id,
+        name: reference.name,
+        mimeType: reference.mimeType,
+        createdAt: reference.createdAt,
+        bytes: new Uint8Array(await blob.arrayBuffer())
+      };
+    }));
+    for (const asset of downloaded) byId.set(asset.id, asset);
+    return [...byId.values()];
   }
 
   private goHome(): void {

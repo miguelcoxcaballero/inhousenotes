@@ -20,6 +20,7 @@ export class OplogWriter {
   private nextSeq = 1;
   private flushScheduled = false;
   private flushInProgress = false;
+  private flushWaiters: ((ok: boolean) => void)[] = [];
   private lastWrittenSeq = 0;
   /** Surfaced to the UI when local writes fail (e.g. quota). */
   onError: ((err: unknown) => void) | null = null;
@@ -59,28 +60,40 @@ export class OplogWriter {
   }
 
   async flush(): Promise<boolean> {
-    if (this.flushInProgress) return true;
+    if (this.flushInProgress) {
+      return new Promise((resolve) => this.flushWaiters.push(resolve));
+    }
     if (this.queue.length === 0) return true;
     this.flushInProgress = true;
-    const batch = this.queue;
-    this.queue = [];
+    let ok = true;
     try {
-      const tx = this.db.transaction(STORE_OPLOG, 'readwrite');
-      const store = tx.objectStore(STORE_OPLOG);
-      for (const record of batch) store.put(record);
-      await txDone(tx);
-      const last = batch[batch.length - 1];
-      if (last) this.lastWrittenSeq = Math.max(this.lastWrittenSeq, last.seq);
-      return true;
-    } catch (err) {
-      // Requeue in order and retry shortly — never drop user ops.
-      this.queue = [...batch, ...this.queue];
-      this.onError?.(err);
-      setTimeout(() => void this.flush(), FLUSH_RETRY_MS);
-      return false;
+      // Drain until stable. Ops appended while an IDB transaction is in
+      // flight are picked up by the next loop before any waiter resolves.
+      while (this.queue.length > 0) {
+        const batch = this.queue;
+        this.queue = [];
+        try {
+          const tx = this.db.transaction(STORE_OPLOG, 'readwrite');
+          const store = tx.objectStore(STORE_OPLOG);
+          for (const record of batch) store.put(record);
+          await txDone(tx);
+          const last = batch[batch.length - 1];
+          if (last) this.lastWrittenSeq = Math.max(this.lastWrittenSeq, last.seq);
+        } catch (err) {
+          this.queue = [...batch, ...this.queue];
+          this.onError?.(err);
+          ok = false;
+          setTimeout(() => void this.flush(), FLUSH_RETRY_MS);
+          break;
+        }
+      }
+      return ok;
     } finally {
       this.flushInProgress = false;
-      if (this.queue.length > 0 && !this.flushScheduled) {
+      const waiters = this.flushWaiters;
+      this.flushWaiters = [];
+      for (const resolve of waiters) resolve(ok);
+      if (ok && this.queue.length > 0 && !this.flushScheduled) {
         this.flushScheduled = true;
         queueMicrotask(() => {
           this.flushScheduled = false;

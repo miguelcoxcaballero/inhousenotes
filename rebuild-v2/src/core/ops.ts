@@ -35,7 +35,12 @@ export type Op =
   | { type: 'set-page-background'; pageId: PageId; background: Background }
   | { type: 'set-page-side-panel'; pageId: PageId; sidePanel: SidePanelConfig | null }
   | { type: 'set-meta'; meta: Partial<DocMeta> }
-  | { type: 'replace-doc'; pages: SerialPage[] };
+  | {
+      type: 'replace-doc';
+      pages: SerialPage[];
+      meta?: DocMeta;
+      pageTombstones?: string[];
+    };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -149,14 +154,19 @@ export function applyOp(doc: Doc, op: Op): void {
     case 'replace-doc': {
       const pages = op.pages.map(deserializePage);
       const newIds = new Set(pages.map((p) => p.id));
+      const nextPageTombstones = op.pageTombstones
+        ? new Set(op.pageTombstones)
+        : new Set(doc.pageTombstones);
       // Pages dropped by the replace are tombstoned so the collaborative
       // merge deletes them remotely instead of resurrecting them.
       for (const id of doc.pageOrder) {
-        if (!newIds.has(id)) doc.pageTombstones.add(id);
+        if (!newIds.has(id)) nextPageTombstones.add(id);
       }
-      for (const id of newIds) doc.pageTombstones.delete(id);
+      for (const id of newIds) nextPageTombstones.delete(id);
       doc.pages = new Map(pages.map((p) => [p.id, p]));
       doc.pageOrder = pages.map((p) => p.id);
+      doc.pageTombstones = nextPageTombstones;
+      if (op.meta) doc.meta = { ...op.meta };
       break;
     }
   }
@@ -248,7 +258,9 @@ export function invertOp(doc: Doc, op: Op): Op {
         pages: doc.pageOrder
           .map((id) => doc.pages.get(id))
           .filter((p): p is NonNullable<typeof p> => !!p)
-          .map(serializePage)
+          .map(serializePage),
+        meta: { ...doc.meta },
+        pageTombstones: [...doc.pageTombstones]
       };
   }
 }
