@@ -3,7 +3,7 @@ import type { Background } from '../core/model';
 import type { DocStore } from '../core/store';
 import type { DocRenderer } from '../render/docRenderer';
 import { serializePage } from '../core/serial';
-import { makeOverlay, buttonStyle, smallText } from './modal';
+import { makeOverlay, buttonStyle, confirmAction, smallText } from './modal';
 
 export class ManagePagesPanel {
   constructor(
@@ -37,8 +37,12 @@ export class ManagePagesPanel {
     clear.type = 'button';
     clear.textContent = 'Clear Annotations';
     Object.assign(clear.style, buttonStyle('danger'));
-    clear.addEventListener('click', () => {
-      const ok = window.confirm('Clear all strokes and inserted images from this document?');
+    clear.addEventListener('click', async () => {
+      const ok = await confirmAction(
+        'Clear annotations',
+        'Clear all strokes and inserted images from this document?',
+        'Clear'
+      );
       if (!ok) return;
       const pages = this.store.doc.pageOrder
         .map((id) => this.store.doc.pages.get(id))
@@ -127,8 +131,8 @@ export class ManagePagesPanel {
         this.renderer.rebuild();
         this.render(body);
       }));
-      actions.appendChild(this.actionButton('Delete', this.store.doc.pageOrder.length <= 1, () => {
-        const ok = window.confirm(`Delete page ${index + 1}?`);
+      actions.appendChild(this.actionButton('Delete', this.store.doc.pageOrder.length <= 1, async () => {
+        const ok = await confirmAction('Delete page', `Delete page ${index + 1}?`, 'Delete');
         if (!ok) return;
         this.store.apply({ type: 'remove-page', pageId });
         this.renderer.rebuild();

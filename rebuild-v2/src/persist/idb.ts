@@ -4,12 +4,13 @@
 // by array position — reordering pages touches a single doc record.
 
 export const DB_NAME = 'inhouse-notes-v2';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export const STORE_DOCS = 'docs';
 export const STORE_PAGES = 'pages';
 export const STORE_OPLOG = 'oplog';
 export const STORE_VERSIONS = 'versions';
+export const STORE_ASSETS = 'assets';
 
 export function req<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -45,6 +46,9 @@ export function openDb(factory: IDBFactory = indexedDB): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_VERSIONS)) {
         db.createObjectStore(STORE_VERSIONS, { keyPath: ['docId', 'id'] });
+      }
+      if (!db.objectStoreNames.contains(STORE_ASSETS)) {
+        db.createObjectStore(STORE_ASSETS, { keyPath: ['docId', 'id'] });
       }
     };
     request.onsuccess = () => {

@@ -15,6 +15,7 @@ import { drawStroke } from './strokePainter';
 import { getTemplateCanvas } from './templates';
 import { getCachedImage } from './imageCache';
 import type { StrokeId } from '../core/ids';
+import { renderPdfBackground } from '../pdf/pdfAssets';
 
 /** Max backing-store pixels per dimension (memory guard on tablets). */
 const MAX_BACKING_DIM = 4096;
@@ -30,6 +31,7 @@ export class PageView {
   readonly hiddenStrokes = new Set<StrokeId>();
   /** Stroke ids already painted by the live pen path — skip on commit. */
   private skipPaint = new Set<StrokeId>();
+  private backgroundRenderToken = 0;
 
   constructor(
     public readonly pageId: string,
@@ -85,6 +87,7 @@ export class PageView {
 
   /** Drop canvas memory, leaving a thumbnail on the wrapper. */
   release(): void {
+    this.backgroundRenderToken++;
     const page = this.getPage();
     if (this.allocated && page) {
       const preview = this.renderPreview(page);
@@ -213,6 +216,7 @@ export class PageView {
 
   private drawBackground(page: Page): void {
     if (!this.bgCanvas) return;
+    const backgroundToken = ++this.backgroundRenderToken;
     const ctx = this.bgCanvas.getContext('2d')!;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.bgCanvas.width, this.bgCanvas.height);
@@ -227,9 +231,23 @@ export class PageView {
         ctx.drawImage(img, 0, 0, this.bgCanvas.width, this.bgCanvas.height);
       }
     } else {
-      // PDF backgrounds arrive in the sync phase (rendered rasters).
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, this.bgCanvas.width, this.bgCanvas.height);
+      if (page.background.sourceId) {
+        const width = this.bgCanvas.width;
+        const height = this.bgCanvas.height;
+        void renderPdfBackground(page.background.sourceId, page.background.pdfPageIndex, width, height)
+          .then((rendered) => {
+            if (!rendered || backgroundToken !== this.backgroundRenderToken || !this.bgCanvas) return;
+            if (this.bgCanvas.width !== width || this.bgCanvas.height !== height) return;
+            const live = this.bgCanvas.getContext('2d');
+            if (!live) return;
+            live.setTransform(1, 0, 0, 1, 0, 0);
+            live.drawImage(rendered, 0, 0, width, height);
+            this.drawSidePanel(live, page);
+          })
+          .catch((err) => console.warn('PDF background render failed:', err));
+      }
     }
     this.drawSidePanel(ctx, page);
   }

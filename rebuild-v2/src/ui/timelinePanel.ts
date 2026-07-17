@@ -2,7 +2,7 @@ import type { DocStore } from '../core/store';
 import type { PersistController } from '../persist/persistController';
 import type { DocRenderer } from '../render/docRenderer';
 import type { JsonPage } from '../core/serial';
-import { makeOverlay, buttonStyle, smallText } from './modal';
+import { makeOverlay, buttonStyle, confirmAction, smallText } from './modal';
 
 export class TimelinePanel {
   constructor(
@@ -100,7 +100,11 @@ export class TimelinePanel {
       restore.textContent = 'Restore';
       Object.assign(restore.style, buttonStyle('primary'));
       restore.addEventListener('click', async () => {
-        const ok = window.confirm(`Restore "${entry.summary}" from ${formatDateTime(entry.ts)}?`);
+        const ok = await confirmAction(
+          'Restore version',
+          `Restore "${entry.summary}" from ${formatDateTime(entry.ts)}?`,
+          'Restore'
+        );
         if (!ok) return;
         this.persist.pendingVersionHint = { milestone: true, kind: 'restore', summary: `Restored ${formatDateTime(entry.ts)}` };
         this.store.apply(this.persist.versions.restoreOp(this.store.doc, entry), 'restore');

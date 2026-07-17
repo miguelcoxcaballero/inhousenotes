@@ -44,6 +44,9 @@ export class ShareModal {
       try {
         const file = await this.sync!.currentDriveFile();
         if (!file) throw new Error('Drive file was not created');
+        await Promise.all(this.sync!.driveAssetFileIds().map((fileId) =>
+          createPublicLink(this.sync!.drive, fileId)
+        ));
         linkOut.value = await createPublicLink(this.sync!.drive, file.id);
       } catch (err) {
         linkOut.value = err instanceof Error ? err.message : String(err);
@@ -101,6 +104,9 @@ export class ShareModal {
       try {
         const file = await this.sync!.currentDriveFile();
         if (!file) throw new Error('Drive file was not created');
+        await Promise.all(this.sync!.driveAssetFileIds().map((fileId) =>
+          shareDoc(this.sync!.drive, fileId, email.value.trim(), role.value as 'writer' | 'reader' | 'commenter')
+        ));
         await shareDoc(this.sync!.drive, file.id, email.value.trim(), role.value as 'writer' | 'reader' | 'commenter');
         result.textContent = 'Invite sent.';
       } catch (err) {

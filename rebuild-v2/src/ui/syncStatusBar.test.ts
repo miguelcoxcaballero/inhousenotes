@@ -8,6 +8,7 @@ function status(partial: Partial<SyncStatus>): SyncStatus {
   return {
     state: 'idle',
     saving: false,
+    driveEnabled: true,
     lastSaved: null,
     lastDriveSyncAt: null,
     error: null,
@@ -22,6 +23,16 @@ describe('describeSyncStatus', () => {
     expect(display.detail).toBe('Saved locally 1m ago');
     expect(display.tone).toBe('warning');
     expect(display.primaryAction).toBe('sync');
+  });
+
+  it('shows local-only saves without a Drive action while offline', () => {
+    const display = describeSyncStatus(status({
+      state: 'localDirty',
+      driveEnabled: false,
+      lastSaved: NOW - 10_000
+    }), NOW);
+    expect(display.label).toBe('Saved locally');
+    expect(display.primaryAction).toBeNull();
   });
 
   it('shows active Drive sync as busy', () => {

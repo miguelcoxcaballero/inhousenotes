@@ -2,7 +2,9 @@
 // legacy visual shell, Android WebView detection and global error handling.
 
 import { App } from './app';
+import './assets/fonts/fonts.css';
 import { BRAND_SVG, injectLegacyTheme } from './ui/legacyTheme';
+import { buttonStyle, makeOverlay, promptText, showMessage, smallText } from './ui/modal';
 
 const app = new App();
 
@@ -50,7 +52,11 @@ async function showHome(): Promise<void> {
   const appEl = document.getElementById('app');
   if (!appEl) return;
   appEl.innerHTML = '';
-  renderHome(appEl);
+  if (!app.isDriveSignedIn() && sessionStorage.getItem('ihn_offline_session') !== '1') {
+    renderWelcome(appEl);
+  } else {
+    renderHome(appEl);
+  }
 }
 
 function renderWelcome(root: HTMLElement): void {
@@ -62,27 +68,46 @@ function renderWelcome(root: HTMLElement): void {
   signIn.className = 'btn btn-primary';
   signIn.type = 'button';
   signIn.textContent = 'Sign in';
-  signIn.addEventListener('click', async () => {
+  signIn.addEventListener('click', () => openEntryOptions(root, view));
+  view.appendChild(signIn);
+  root.appendChild(view);
+}
+
+function openEntryOptions(root: HTMLElement, welcome: HTMLElement): void {
+  const modal = makeOverlay('Open Inhouse Notes');
+  modal.panel.style.width = 'min(460px, calc(100vw - 32px))';
+  modal.body.appendChild(smallText('Choose where this session stores and syncs your notes.'));
+  const actions = document.createElement('div');
+  Object.assign(actions.style, { display: 'grid', gap: '10px', marginTop: '16px' });
+  const google = document.createElement('button');
+  google.type = 'button';
+  google.textContent = 'Sign in with Google';
+  Object.assign(google.style, buttonStyle('primary'));
+  google.addEventListener('click', async () => {
+    google.disabled = true;
     try {
       await app.signInDrive();
-      view.remove();
+      modal.close();
+      welcome.remove();
       renderHome(root);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      google.disabled = false;
+      showMessage('Sign in failed', err instanceof Error ? err.message : String(err));
     }
   });
-  view.appendChild(signIn);
-
-  const local = document.createElement('button');
-  local.className = 'btn';
-  local.type = 'button';
-  local.textContent = 'Use without account';
-  local.addEventListener('click', async () => {
-    const newId = await app.createNew('cuaderno');
-    openDoc(newId);
+  const offline = document.createElement('button');
+  offline.type = 'button';
+  offline.textContent = 'Continue offline';
+  Object.assign(offline.style, buttonStyle());
+  offline.addEventListener('click', () => {
+    sessionStorage.setItem('ihn_offline_session', '1');
+    modal.close();
+    welcome.remove();
+    renderHome(root);
   });
-  view.appendChild(local);
-  root.appendChild(view);
+  actions.append(google, offline);
+  modal.body.appendChild(actions);
+  document.body.appendChild(modal.overlay);
 }
 
 function renderHome(root: HTMLElement): void {
@@ -108,7 +133,11 @@ function renderHome(root: HTMLElement): void {
   newBtn.className = 'btn btn-primary';
   newBtn.textContent = 'New notebook';
   newBtn.addEventListener('click', async () => {
-    const name = window.prompt('Document name:', 'cuaderno');
+    const name = await promptText('New notebook', {
+      label: 'Document name',
+      initialValue: 'cuaderno',
+      confirmLabel: 'Create'
+    });
     if (name) openDoc(await app.createNew(name));
   });
   actions.appendChild(newBtn);
@@ -128,7 +157,7 @@ function renderHome(root: HTMLElement): void {
       if (app.isDriveSignedIn()) app.signOutDrive();
       else await app.signInDrive();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      showMessage('Drive sign in failed', err instanceof Error ? err.message : String(err));
     }
     renderHome(root);
   });
@@ -215,15 +244,27 @@ async function pickPdf(): Promise<void> {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'application/pdf';
+  input.style.display = 'none';
+  document.body.appendChild(input);
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
-    if (!file) return;
+    if (!file) {
+      input.remove();
+      return;
+    }
     try {
       openDoc(await app.createFromPdf(file));
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      showMessage('PDF import failed', err instanceof Error ? err.message : String(err));
+    } finally {
+      input.remove();
     }
-  });
+  }, { once: true });
+  window.addEventListener('focus', () => {
+    window.setTimeout(() => {
+      if (!input.files?.length) input.remove();
+    }, 500);
+  }, { once: true });
   input.click();
 }
 

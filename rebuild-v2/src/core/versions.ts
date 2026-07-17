@@ -135,6 +135,7 @@ export class VersionLog {
    */
   restoreOp(doc: Doc, entry: VersionEntry): Op {
     const restoredIds = new Set<string>();
+    const restoredPageIds = new Set(entry.snapshot.pages.map((page) => page.id));
     for (const page of entry.snapshot.pages) {
       for (const stroke of page.strokes) restoredIds.add(stroke.id);
       for (const img of page.images) restoredIds.add(img.id);
@@ -146,12 +147,11 @@ export class VersionLog {
       tombstones: [...p.tombstones]
     }));
     const byId = new Map(pages.map((p) => [p.id, p]));
-    const fallback = pages[pages.length - 1];
 
     for (const pageId of doc.pageOrder) {
       const livePage = doc.pages.get(pageId);
       if (!livePage) continue;
-      const target = byId.get(pageId) ?? fallback;
+      const target = byId.get(pageId);
       if (!target) continue;
       const purged: string[] = [];
       for (const id of livePage.strokeOrder) if (!restoredIds.has(id)) purged.push(id);
@@ -161,7 +161,16 @@ export class VersionLog {
       }
     }
 
-    return { type: 'replace-doc', pages };
+    const pageTombstones = new Set(entry.snapshot.pageTombstones ?? []);
+    for (const pageId of doc.pageOrder) {
+      if (!restoredPageIds.has(pageId)) pageTombstones.add(pageId);
+    }
+    return {
+      type: 'replace-doc',
+      pages,
+      meta: { ...entry.snapshot.meta },
+      pageTombstones: [...pageTombstones]
+    };
   }
 
   totalBytes(): number {

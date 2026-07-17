@@ -15,7 +15,7 @@ export interface SerialStroke {
   tool: Stroke['tool'];
   color: string;
   width: number;
-  points: number[];
+  points: number[] | Float32Array;
 }
 
 export interface SerialPage {
@@ -118,7 +118,17 @@ export type JsonPage = SerialPage;
 export type JsonDoc = SerialDoc;
 
 export function toJsonDoc(doc: Doc): JsonDoc {
-  return serializeDoc(doc);
+  const serial = serializeDoc(doc);
+  return {
+    ...serial,
+    pages: serial.pages.map((page) => ({
+      ...page,
+      strokes: page.strokes.map((stroke) => ({
+        ...stroke,
+        points: Array.from(stroke.points)
+      }))
+    }))
+  };
 }
 
 export function fromJsonDoc(j: JsonDoc): Doc {

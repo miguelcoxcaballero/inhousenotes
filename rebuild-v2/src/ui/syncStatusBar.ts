@@ -11,6 +11,23 @@ export interface SyncStatusDisplay {
 }
 
 export function describeSyncStatus(status: SyncStatus, now = Date.now()): SyncStatusDisplay {
+  if (!status.driveEnabled) {
+    return status.lastSaved
+      ? {
+          tone: 'ok',
+          label: 'Saved locally',
+          detail: formatRelativeTime(status.lastSaved, now),
+          primaryAction: null,
+          showConflictActions: false
+        }
+      : {
+          tone: 'neutral',
+          label: 'Offline',
+          detail: 'Changes are saved on this device',
+          primaryAction: null,
+          showConflictActions: false
+        };
+  }
   if (status.error) {
     return {
       tone: 'danger',
