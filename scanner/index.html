@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scanner Pro</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#131314">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0">
+
+  <link rel="stylesheet" href="./styles.css">
+
+  <!-- OpenCV bootstrap (kept compatible with async load + multi-file) -->
+  <script>
+    window.__cvReadyFlag = false;
+    window.__cvReady = function(){ window.__cvReadyFlag = true; };
+    window.Module = {
+      onRuntimeInitialized: function() {
+        try { window.__cvReady && window.__cvReady(); } catch(e) {}
+      }
+    };
+  </script>
+</head>
+
+<body>
+
+<div id="appLoading">
+  <div class="spinner"></div>
+  <span style="font-family:'Google Sans';font-size:18px;color:var(--text-main)">Loading Core...</span>
+</div>
+
+<div id="landingPage">
+  <div class="hero-content">
+    <span class="material-symbols-rounded hero-icon">document_scanner</span>
+    <h1 class="hero-title">Scanner</h1>
+    <p class="hero-sub">Digitize, Crop & Export</p>
+    <div class="hero-actions">
+      <button class="btn-hero" id="btnLandingStart">
+        <span class="material-symbols-rounded">add</span>New Scan
+      </button>
+
+      <div class="dropdown" id="stencilDropdown">
+        <button class="btn-hero secondary" id="btnStencilToggle">
+          <span class="material-symbols-rounded">download</span>Download Stencil
+        </button>
+        <div class="dropdown-content">
+          <button class="dropdown-item" onclick="downloadStencil('pdf')">
+            <span class="material-symbols-rounded">picture_as_pdf</span>PDF Document
+          </button>
+          <button class="dropdown-item" onclick="downloadStencil('svg')">
+            <span class="material-symbols-rounded">gesture</span>SVG Vector
+          </button>
+          <button class="dropdown-item" onclick="downloadStencil('png')">
+            <span class="material-symbols-rounded">image</span>PNG Image
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="inhouse-badge">
+    <svg viewBox="0 0 100 60"><path d="M5 55 L50 10 L95 55"/></svg>
+    <span>inhouse software</span>
+  </div>
+</div>
+
+<div id="modalOverlay">
+  <div class="modal-card">
+    <h2 class="modal-title">New Scan</h2>
+    <div class="input-group">
+      <input type="text" id="scanNameInput" class="mat-input" placeholder="Untitled Scan" autofocus>
+      <span class="input-label">Document Name</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-text" id="btnModalCancel">Cancel</button>
+      <button class="btn-fill" id="btnModalCreate">Create</button>
+    </div>
+  </div>
+</div>
+
+<div id="sourceModal">
+  <div class="source-sheet">
+    <h3 class="source-title">Add Pages</h3>
+    <div class="source-options">
+      <button class="source-btn" id="btnSourceCamera">
+        <span class="material-symbols-rounded">photo_camera</span>Take Photo
+      </button>
+      <button class="source-btn" id="btnSourceGallery">
+        <span class="material-symbols-rounded">photo_library</span>Choose from Gallery
+      </button>
+    </div>
+    <button class="source-cancel" id="btnSourceCancel">Cancel</button>
+  </div>
+</div>
+
+<div id="appContainer" class="hidden">
+  <div id="magnifier"><canvas id="magCanvas"></canvas></div>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden disabled>
+  <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+
+  <div id="mainPanel">
+    <div id="toolbar">
+      <input type="text" class="doc-title" id="docTitle" value="Untitled Document">
+      <div class="actions">
+        <button class="btn-icon" id="themeBtn" title="Theme">
+          <span class="material-symbols-rounded">dark_mode</span>
+        </button>
+        <div style="width:1px;height:20px;background:var(--outline);opacity:.3"></div>
+        <button class="btn-chip" id="autoCropBtn" style="display:none">
+          <span class="material-symbols-rounded">auto_fix</span>
+          <span class="label-text">Auto</span>
+        </button>
+        <button class="btn-chip" id="cropBtn" disabled>
+          <span class="material-symbols-rounded">crop</span>
+          <span class="label-text">Crop</span>
+        </button>
+        <button class="btn-chip" id="stencilBtn" disabled>
+          <span class="material-symbols-rounded">grid_4x4</span>
+          <span class="label-text">Ref</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="viewport">
+      <div id="stageBadge">
+        <span class="dot"></span>
+        <span id="stageText">Processing…</span>
+      </div>
+
+      <div id="emptyState">
+        <span class="material-symbols-rounded">add_photo_alternate</span>
+        <p>Add photos to start</p>
+      </div>
+
+      <div id="paper">
+        <img id="previewImg" alt="" style="display:none">
+        <canvas id="stencilLayer" class="layer-canvas"></canvas>
+        <canvas id="cropLayer" class="layer-canvas"></canvas>
+      </div>
+    </div>
+
+    <div id="toast">Notification</div>
+  </div>
+
+  <button id="btnAddMobile" aria-label="Add pages">
+    <span class="material-symbols-rounded">add</span>
+  </button>
+
+  <div id="sidebar">
+    <div class="brand" id="mobileSidebarHeader">
+      <div class="brand-main">
+        <span class="material-symbols-rounded brand-icon">document_scanner</span>
+        <div class="brand-text">
+          <span class="brand-name">Scanner</span>
+          <span class="brand-pages" id="pageSummary">No pages</span>
+        </div>
+      </div>
+      <button id="sidebarToggle" class="sidebar-toggle" aria-expanded="false">
+        <span id="sidebarToggleIcon" class="material-symbols-rounded">expand_less</span>
+      </button>
+    </div>
+
+    <div class="fab-add" id="btnDesktopAdd">
+      <span class="material-symbols-rounded">add</span> Add Pages
+    </div>
+
+    <div id="sidebarBody">
+      <div id="pageList"></div>
+    </div>
+
+    <div class="bottom-controls">
+      <button id="exportBtn" class="btn-main" disabled>
+        <span class="material-symbols-rounded">picture_as_pdf</span> Export PDF
+      </button>
+      <div class="sidebar-footer-brand">
+        <div class="inhouse-badge">
+          <svg viewBox="0 0 100 60"><path d="M5 55 L50 10 L95 55"/></svg>
+          <span>inhouse software</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- libs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<!-- config loader (must load first) -->
+<script src="./configLoader.js"></script>
+
+<!-- processing modules (no bundler needed; plain scripts attach to window.ScannerPro) -->
+<script src="./processing/preMesh.js"></script>
+<script src="./processing/yellowMask.js"></script>
+<script src="./processing/yellowRectangle.js"></script>
+<script src="./processing/edgeDetectionFallback.js"></script>
+<script src="./processing/mesh.js"></script>
+<script src="./processing/colourValues.js"></script>
+<script src="./processing/colorTransform.js"></script>
+
+<!-- main app script -->
+<script src="./script.js"></script>
+
+<!-- OpenCV (async is fine because we gate with __cvReadyFlag) -->
+<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+
+</body>
+</html>
