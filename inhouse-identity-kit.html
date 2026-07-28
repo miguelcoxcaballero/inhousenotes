@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inhouse · Visual Identity Kit</title>
+<!--
+  INHOUSE · VISUAL IDENTITY KIT (standalone, un solo archivo)
+
+  Documento de traspaso visual. Otra IA o dev puede leer este archivo y generar
+  nueva UI de la familia "inhouse" sin volver a escanear los repos. Todos los
+  valores salen del código real de los repositorios, no están inventados.
+
+  Repos (github.com/miguelcoxcaballero):
+    inhouse-software         marca raíz, landing y catálogo
+    inhousenotes             app de notas (canvas + S-Pen)
+    inhouselearn             app de aprendizaje con asistente IA
+    inhouse-math-playground  playground matemático (azul)
+    inhouse-apkbuilder       herramienta Python, sin UI
+    inhousemusic             solo README
+
+  Reglas rápidas:
+    1. Nombres en minúscula: "inhouse notes", nunca "Inhouse Notes".
+    2. Marca raíz: negro, cobre (#d97736), crema. Logo tejado en cobre.
+    3. Apps: crema y blanco, logo tejado en naranja (#E07A3C).
+    4. Logo en Comfortaa. Cuerpo en DM Sans.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Lato:wght@300;400;700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* TOKENS · copiados de los :root de cada repo */
+:root{
+  /* Marca raíz · inhouse-software */
+  --black:#000000;
+  --copper:#d97736;
+  --cream:#f5f5f0;
+  --white:#ffffff;
+  --ink:#1a1a1a;
+  --ink-soft:#444746;
+  --muted:#999999;
+  --text-secondary:#555555;
+
+  /* Acento de producto (notes / learn) */
+  --orange:#E07A3C;
+  --orange-soft:rgba(224,122,60,0.07);
+  --orange-border:rgba(224,122,60,0.13);
+
+  /* Tinta funcional · inhouse notes */
+  --n-yellow:#ffde00;
+  --n-blue:#002FD9;
+  --n-red:#E81010;
+  --n-black:#4D4D4D;
+  --n-green:#34c759;
+
+  /* Estado · inhouse learn */
+  --green:#22c55e;
+
+  /* Proveedores IA · inhouse learn */
+  --ai-codex:#10a37f;
+  --ai-gemini:#4285f4;
+  --ai-claude:#c96442;
+  --ai-gemma:#7c3aed;
+
+  /* Sub-marca · inhouse math playground */
+  --math-blue:#2563eb;
+  --math-blue-soft:rgba(37,99,235,0.1);
+
+  /* Superficies y bordes */
+  --surface:#ffffff;
+  --surface-hover:#fafaf8;
+  --border:rgba(0,0,0,0.06);
+  --border-strong:rgba(0,0,0,0.10);
+
+  /* Radios */
+  --r-xs:6px; --r-sm:10px; --r-md:14px; --r-lg:20px; --r-xl:28px; --r-card:2.5rem; --r-full:999px;
+
+  /* Sombras */
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.04);
+  --shadow:0 2px 12px rgba(0,0,0,0.06);
+  --shadow-lg:0 8px 30px rgba(0,0,0,0.10);
+  --shadow-product:0 1px 3px rgba(0,0,0,0.30), 0 4px 8px 3px rgba(0,0,0,0.15);
+  --ease:cubic-bezier(0.4,0,0.2,1);
+
+  /* Tipografía */
+  --f-logo:'Comfortaa',cursive;
+  --f-body:'DM Sans','Lato',-apple-system,BlinkMacSystemFont,sans-serif;
+  --f-roboto:'Roboto',Arial,sans-serif;
+  --f-mono:'Roboto Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;background:var(--black);}
+body{
+  margin:0;color:var(--cream);font-family:var(--f-body);line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(900px 520px at 15% -5%, rgba(217,119,54,0.12), transparent 70%),
+    linear-gradient(180deg,#000 0%,#050505 100%);
+}
+
+/* layout base */
+.wrap{max-width:1080px;margin:0 auto;padding:0 32px;}
+section{padding:96px 0;border-top:1px solid rgba(255,255,255,0.06);}
+section:first-of-type{border-top:0;}
+
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--copper);margin:0 0 16px;}
+h1{font-family:var(--f-logo);font-weight:700;font-size:clamp(40px,7vw,76px);
+  line-height:.95;letter-spacing:-.02em;margin:0;color:var(--white);text-transform:lowercase;}
+h2{font-family:var(--f-logo);font-weight:600;font-size:clamp(26px,4vw,38px);
+  margin:0 0 14px;color:var(--white);text-transform:lowercase;letter-spacing:-.01em;}
+h3{font-family:var(--f-logo);font-weight:600;font-size:18px;margin:0 0 4px;color:var(--white);}
+p.lead{font-size:17px;color:rgba(245,245,240,0.62);max-width:60ch;margin:0;}
+.note{font-size:14px;color:var(--muted);}
+
+/* HERO */
+.hero{min-height:80vh;display:flex;flex-direction:column;justify-content:center;
+  border-top:0;}
+.hero .roof{width:96px;height:auto;margin-bottom:28px;}
+.hero .roof path{stroke:var(--copper);}
+.hero .sub{margin-top:24px;color:rgba(245,245,240,0.5);font-size:16px;max-width:52ch;}
+.hero .repos{margin-top:40px;display:flex;flex-wrap:wrap;gap:10px;}
+.tag{font-family:var(--f-mono);font-size:12px;letter-spacing:.04em;
+  padding:7px 14px;border:1px solid rgba(255,255,255,0.14);border-radius:var(--r-full);
+  color:rgba(245,245,240,0.7);}
+.tag.muted{opacity:.45;}
+
+/* PALETA */
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+  gap:16px;margin-top:32px;}
+.sw{border-radius:var(--r-md);overflow:hidden;border:1px solid rgba(255,255,255,0.08);}
+.sw .chip{height:78px;}
+.sw .meta{padding:12px 14px;background:rgba(255,255,255,0.03);}
+.sw .meta b{display:block;font-size:13px;color:var(--white);font-weight:600;}
+.sw .meta code{font-family:var(--f-mono);font-size:11px;color:var(--muted);}
+.group-label{font-family:var(--f-mono);font-size:12px;letter-spacing:.16em;
+  text-transform:uppercase;color:rgba(245,245,240,0.4);margin:32px 0 8px;}
+
+/* TIPOGRAFÍA */
+.type-rows{margin-top:32px;display:grid;gap:28px;}
+.type-row{display:grid;grid-template-columns:140px 1fr;gap:24px;align-items:baseline;}
+.type-row .k{font-family:var(--f-mono);font-size:12px;color:var(--copper);
+  letter-spacing:.06em;padding-top:6px;}
+.type-row .v .big{color:var(--white);line-height:1.15;}
+.type-row .v small{display:block;color:var(--muted);font-family:var(--f-mono);
+  font-size:11px;margin-top:8px;}
+@media(max-width:620px){.type-row{grid-template-columns:1fr;gap:8px;}}
+
+/* ESPECÍMENES */
+.specimen{margin-top:36px;border-radius:var(--r-lg);overflow:hidden;
+  box-shadow:var(--shadow-lg);}
+
+/* logo tejado reutilizable */
+.roof{display:block;}
+.roof path{fill:none;stroke-width:4;stroke-linecap:round;stroke-linejoin:round;}
+
+/* Catálogo de marca raíz */
+.catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:24px;margin-top:36px;}
+.product-card{background:var(--white);border-radius:var(--r-card);
+  aspect-ratio:1/1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:16px;box-shadow:var(--shadow-product);
+  transition:transform .3s var(--ease);text-decoration:none;}
+.product-card:hover{transform:translateY(-6px);}
+.product-card .ico{width:64px;height:64px;display:grid;place-items:center;}
+.product-card .name{font-family:var(--f-roboto);font-size:22px;color:var(--ink);font-weight:400;}
+.product-card .name.lower{font-family:var(--f-logo);font-weight:700;
+  text-transform:lowercase;letter-spacing:-.01em;}
+
+/* Specimen NOTES · header blanco + canvas oscuro #2c2c2c + toolbar flotante */
+.notes{font-family:var(--f-body);color:var(--ink);}
+.notes .bar{display:flex;align-items:center;gap:14px;
+  padding:12px 20px;min-height:64px;background:var(--white);border-bottom:1px solid var(--border);}
+.notes .logo{display:flex;align-items:center;gap:10px;font-family:var(--f-logo);
+  font-weight:600;font-size:1.25rem;color:var(--ink);}
+.notes .logo .doc-title{font-family:var(--f-body);font-size:.95rem;font-weight:400;
+  color:var(--muted);margin-left:4px;}
+.notes .actions{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.notes .ibtn{width:44px;height:44px;border-radius:var(--r-md);border:none;
+  background:rgba(0,0,0,0.05);color:var(--ink);display:grid;place-items:center;cursor:default;}
+.notes .ibtn svg{width:18px;height:18px;}
+.notes .mode{display:grid;grid-template-columns:auto auto auto;align-items:center;gap:8px;
+  height:44px;padding:0 12px;border-radius:var(--r-md);background:rgba(0,0,0,0.05);}
+.notes .mode .sv{width:10px;height:10px;border-radius:50%;background:var(--n-green);
+  box-shadow:0 0 0 2px rgba(0,0,0,0.08);}
+.notes .mode .lab{font-size:.875rem;font-weight:600;color:var(--ink);}
+.notes .mode .pill{width:38px;height:20px;border-radius:var(--r-full);
+  background:rgba(0,0,0,0.15);position:relative;}
+.notes .mode .pill::after{content:"";position:absolute;width:14px;height:14px;border-radius:50%;
+  background:#fff;top:3px;left:3px;box-shadow:0 2px 4px rgba(0,0,0,0.2);}
+.notes .canvas{position:relative;background:#2c2c2c;min-height:300px;padding:30px;
+  display:flex;justify-content:center;}
+.notes .paper{width:100%;max-width:520px;aspect-ratio:1.5/1;background:#fff;
+  border-radius:2px;box-shadow:0 4px 20px rgba(0,0,0,0.4);overflow:hidden;}
+.notes .toolbar{position:absolute;left:20px;top:50%;transform:translateY(-50%);
+  background:rgba(255,255,255,0.92);border:1px solid rgba(0,0,0,0.06);
+  border-radius:var(--r-lg);box-shadow:var(--shadow);backdrop-filter:blur(8px);
+  padding:10px;display:flex;flex-direction:column;gap:6px;}
+.notes .toolbar .handle{display:flex;justify-content:center;color:#bbb;padding-bottom:2px;}
+.notes .toolbar .sep{height:1px;background:rgba(0,0,0,0.08);margin:2px 4px;}
+.notes .tool{width:40px;height:40px;border-radius:var(--r-md);background:transparent;
+  border:none;display:grid;place-items:center;cursor:default;}
+.notes .tool svg{width:20px;height:20px;}
+.notes .tool.active{background:var(--n-yellow);}
+
+/* Specimen LEARN · chat con topbar glass + sidebar + composer */
+.learn{font-family:var(--f-body);color:var(--ink);background:var(--cream);}
+.learn .top{display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;
+  background:rgba(245,245,240,0.65);backdrop-filter:blur(24px) saturate(180%);
+  border-bottom:1px solid rgba(0,0,0,0.03);}
+.learn .ham{color:var(--muted);display:grid;place-items:center;}
+.learn .brand{display:flex;align-items:center;gap:7px;font-family:var(--f-logo);
+  font-weight:700;font-size:1rem;color:var(--ink);}
+.learn .model{margin:0 auto;display:flex;align-items:center;gap:10px;
+  height:40px;padding:0 12px 0 10px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:rgba(255,255,255,0.82);min-width:200px;}
+.learn .model .pdot{width:24px;height:24px;border-radius:50%;flex-shrink:0;}
+.learn .model .mc{display:flex;flex-direction:column;line-height:1.15;}
+.learn .model .mc small{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
+.learn .model .mc b{font-size:.85rem;color:var(--ink);}
+.learn .model .caret{margin-left:auto;color:var(--muted);}
+.learn .gbtn{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(0,0,0,0.04);color:var(--text-secondary);}
+.learn .gbtn svg{width:18px;height:18px;}
+.learn .body{display:grid;grid-template-columns:200px 1fr;min-height:360px;}
+.learn .side{background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;padding:14px 10px;}
+.learn .side .lbl{font-size:.64rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.1em;color:var(--muted);padding:2px 6px;margin-bottom:8px;}
+.learn .row{padding:9px 10px;border-radius:var(--r-sm);margin-bottom:1px;}
+.learn .row.on{background:var(--orange-soft);}
+.learn .row b{display:block;font-size:.81rem;font-weight:600;color:var(--ink);}
+.learn .row small{font-size:.67rem;color:var(--muted);}
+.learn .new{margin-top:auto;display:flex;align-items:center;gap:8px;height:38px;
+  padding:0 12px;border-radius:var(--r-md);background:var(--orange);color:#fff;
+  font-size:.85rem;font-weight:500;}
+.learn .new svg{width:14px;height:14px;}
+.learn .chatcol{display:flex;flex-direction:column;background:var(--cream);}
+.learn .thread{flex:1;padding:24px 20px;display:flex;flex-direction:column;gap:14px;}
+.learn .msg{display:flex;gap:10px;max-width:78%;}
+.learn .msg.user{align-self:flex-end;flex-direction:row-reverse;}
+.learn .badge{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;}
+.learn .badge.ai{background:rgba(0,0,0,0.04);}
+.learn .badge.u{background:var(--orange-soft);}
+.learn .badge svg{width:15px;height:auto;}
+.learn .bubble{background:var(--surface);border:1px solid var(--border);
+  border-radius:4px var(--r-lg) var(--r-lg) var(--r-lg);padding:12px 16px;
+  font-size:.9rem;line-height:1.6;box-shadow:var(--shadow-sm);color:var(--ink);}
+.learn .msg.user .bubble{background:var(--orange-soft);border-color:var(--orange-border);
+  border-radius:var(--r-lg) 4px var(--r-lg) var(--r-lg);}
+.learn .composer{padding:0 20px 20px;}
+.learn .cshell{max-width:560px;margin:0 auto;display:flex;align-items:flex-end;gap:6px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);
+  padding:6px 7px 6px 8px;box-shadow:var(--shadow);}
+.learn .cbtn{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:grid;
+  place-items:center;color:var(--muted);}
+.learn .cbtn svg{width:16px;height:16px;}
+.learn .ctext{flex:1;padding:8px 6px;font-size:.9rem;color:var(--muted);}
+.learn .csend{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:grid;
+  place-items:center;background:var(--orange);color:#fff;}
+.learn .csend svg{width:15px;height:15px;}
+
+/* Specimen MATH · home estilo Drive con cards de preview */
+.math{font-family:var(--f-body);background:var(--cream);}
+.math .top{display:flex;align-items:center;padding:12px 20px;min-height:64px;
+  background:var(--white);border-bottom:1px solid var(--border);}
+.math .brand{display:flex;align-items:center;gap:10px;font-family:var(--f-logo);
+  font-weight:600;font-size:1.25rem;color:var(--ink);}
+.math .main{padding:28px 32px;}
+.math .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;}
+.math .card{display:flex;flex-direction:column;gap:10px;padding:12px;
+  border-radius:var(--r-md);background:var(--white);border:1px solid var(--border);
+  box-shadow:var(--shadow-sm);text-align:left;}
+.math .card .pv{width:100%;aspect-ratio:4/3;border-radius:var(--r-sm);
+  background:rgba(0,0,0,0.035);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.math .card .pv svg{width:78%;height:78%;}
+.math .card b{font-size:.9rem;color:var(--ink);font-weight:600;}
+.math .card small{display:block;font-size:.72rem;color:var(--muted);margin-top:2px;}
+
+/* CONTRATO */
+.contract{margin-top:32px;border-radius:var(--r-lg);overflow:hidden;
+  border:1px solid rgba(255,255,255,0.1);background:#0c0c0c;}
+.contract .head{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);}
+.contract .head span{font-family:var(--f-mono);font-size:12px;color:var(--muted);}
+.copy{font-family:var(--f-body);font-size:13px;padding:7px 14px;border-radius:var(--r-sm);
+  border:1px solid var(--copper);background:transparent;color:var(--copper);cursor:pointer;}
+.copy:hover{background:var(--copper);color:#000;}
+pre{margin:0;padding:18px 20px;overflow-x:auto;font-family:var(--f-mono);
+  font-size:12.5px;line-height:1.7;color:#cfcfcc;}
+pre .c{color:#6f6f6a;}
+pre .o{color:#E07A3C;}
+pre .g{color:#7fcf9a;}
+pre .b{color:#7aa2ff;}
+
+footer{padding:40px 0 60px;border-top:1px solid rgba(255,255,255,0.06);}
+footer .row{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+footer .lock{display:flex;align-items:center;gap:10px;font-family:var(--f-logo);
+  font-size:13px;color:rgba(245,245,240,0.4);}
+footer .lock .roof{width:30px;}
+footer .lock .roof path{stroke:var(--copper);}
+footer small{color:var(--muted);font-family:var(--f-mono);font-size:11px;}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ HERO ═══════════ -->
+<header class="wrap hero">
+  <svg class="roof" viewBox="0 0 100 60" aria-hidden="true"><path d="M5 55 L50 10 L95 55"/></svg>
+  <h1>inhouse</h1>
+  <p class="sub">El sistema visual de la familia de productos en un solo archivo. Colores,
+  logo, tipografía y componentes listos para que otra IA genere UI nueva.</p>
+  <div class="repos">
+    <span class="tag">inhouse-software</span>
+    <span class="tag">inhouse notes</span>
+    <span class="tag">inhouse learn</span>
+    <span class="tag">inhouse math playground</span>
+    <span class="tag muted">inhouse-apkbuilder · sin UI</span>
+    <span class="tag muted">inhousemusic · pendiente</span>
+  </div>
+</header>
+
+<!-- ═══════════ MARCA & LOGO ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">01 · marca</p>
+  <h2>el tejado</h2>
+  <p class="lead">Una línea de tejado de un solo trazo: <code>M5 55 L50 10 L95 55</code>
+  (apps: <code>M4 24 L20 8 L36 24</code>). Mismo path, dos tintas.</p>
+
+  <div class="catalog" style="grid-template-columns:repeat(2,1fr);max-width:520px;">
+    <div class="product-card" style="background:#000;box-shadow:0 0 0 1px rgba(255,255,255,.08);">
+      <svg class="roof" style="width:72px" viewBox="0 0 100 60"><path d="M5 55 L50 10 L95 55" style="stroke:var(--copper)"/></svg>
+      <span class="name lower" style="color:#fff">inhouse software</span>
+    </div>
+    <div class="product-card">
+      <svg class="roof" style="width:72px" viewBox="0 0 100 60"><path d="M5 55 L50 10 L95 55" style="stroke:var(--orange)"/></svg>
+      <span class="name lower">inhouse notes</span>
+    </div>
+  </div>
+  <p class="note" style="margin-top:20px;">Marca raíz: tejado <b style="color:var(--copper)">cobre</b> sobre negro.
+  Apps: tejado <b style="color:var(--orange)">naranja</b> sobre crema. Siempre en minúscula, en Comfortaa.</p>
+</section>
+
+<!-- ═══════════ PALETA ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">02 · color</p>
+  <h2>paleta</h2>
+  <p class="lead">Todos los valores salen del código real de los repos.</p>
+
+  <div class="swatches" style="margin-top:32px;">
+    <div class="sw"><div class="chip" style="background:#000"></div><div class="meta"><b>black</b><code>#000000</code></div></div>
+    <div class="sw"><div class="chip" style="background:#d97736"></div><div class="meta"><b>copper</b><code>#d97736</code></div></div>
+    <div class="sw"><div class="chip" style="background:#f5f5f0"></div><div class="meta"><b>cream</b><code>#f5f5f0</code></div></div>
+    <div class="sw"><div class="chip" style="background:#1a1a1a"></div><div class="meta"><b>ink</b><code>#1a1a1a</code></div></div>
+  </div>
+</section>
+
+<!-- ═══════════ TIPOGRAFÍA ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">03 · tipografía</p>
+  <h2>fuentes</h2>
+  <div class="type-rows">
+    <div class="type-row">
+      <div class="k">logo / títulos</div>
+      <div class="v"><div class="big" style="font-family:var(--f-logo);font-weight:700;font-size:34px;text-transform:lowercase">inhouse</div>
+        <small>Comfortaa · 400/500/600/700 · minúsculas · letter-spacing -.5px</small></div>
+    </div>
+    <div class="type-row">
+      <div class="k">cuerpo / UI</div>
+      <div class="v"><div class="big" style="font-family:var(--f-body);font-size:22px">The quick brown fox · 0123456789</div>
+        <small>DM Sans · 400/500/600 + itálica · alterna Lato en la landing</small></div>
+    </div>
+    <div class="type-row">
+      <div class="k">producto (landing)</div>
+      <div class="v"><div class="big" style="font-family:var(--f-roboto);font-size:22px;font-weight:400">Maps · Metro Studio · TypeTest</div>
+        <small>Roboto 400 · nombres de productos externos en el catálogo</small></div>
+    </div>
+    <div class="type-row">
+      <div class="k">mono / código</div>
+      <div class="v"><div class="big" style="font-family:var(--f-mono);font-size:18px">--orange: #E07A3C;</div>
+        <small>Roboto Mono · tokens, specs, etiquetas</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ CATÁLOGO REAL ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">04 · landing · inhouse software</p>
+  <h2>cards de catálogo</h2>
+  <p class="lead">Cards blancas cuadradas, <code>border-radius:2.5rem</code>, sombra suave,
+  suben al pasar el cursor. Cada producto mantiene su color dentro del marco común.</p>
+  <div class="catalog">
+    <a class="product-card">
+      <span class="ico"><svg class="roof" style="width:60px" viewBox="0 0 40 28"><path d="M4 24 L20 8 L36 24" style="stroke:var(--orange);stroke-width:3.5"/></svg></span>
+      <span class="name lower">inhouse notes</span>
+    </a>
+    <a class="product-card">
+      <span class="ico">
+        <svg width="60" height="60" viewBox="0 0 24 24" fill="#7c3aed" aria-hidden="true">
+          <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82z"/>
+        </svg>
+      </span>
+      <span class="name">Wonderxam</span>
+    </a>
+    <a class="product-card">
+      <span class="ico"><svg width="60" height="60" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <path d="M8.6 11.8H16.6M12.6 7.8V15.8" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round"/>
+        <path d="M24.1 8.2L31.1 15.2M31.1 8.2L24.1 15.2" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round"/>
+        <path d="M8.8 29.2L12 32.4L17.2 22.2" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M23.9 27.4H32.1" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round"/>
+        <circle cx="28" cy="22.7" r="1.8" fill="#2563eb"/><circle cx="28" cy="32.1" r="1.8" fill="#2563eb"/>
+      </svg></span>
+      <span class="name lower">inhouse math</span>
+    </a>
+  </div>
+</section>
+
+<!-- ═══════════ SPECIMEN NOTES ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">05 · app</p>
+  <h2>inhouse notes</h2>
+  <p class="lead">Header blanco, canvas oscuro con papel encima y toolbar flotante.
+  La herramienta activa va en amarillo; las tintas son funcionales.</p>
+  <div class="specimen notes">
+    <div class="bar">
+      <div class="logo">
+        <svg viewBox="0 0 40 24" width="34" height="20" fill="none"><path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        inhouse notes
+        <span class="doc-title">Untitled</span>
+      </div>
+      <div class="actions">
+        <button class="ibtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+        <button class="ibtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg></button>
+        <div class="mode"><span class="sv"></span><span class="lab">Read</span><span class="pill"></span></div>
+      </div>
+    </div>
+    <div class="canvas">
+      <div class="toolbar">
+        <div class="handle"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>
+        <div class="sep"></div>
+        <button class="tool"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#4D4D4D" stroke="#4D4D4D" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+        <button class="tool active"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#002FD9" stroke="#002FD9" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+        <button class="tool"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4l11-11a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4z" fill="#E81010" stroke="#E81010" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+        <div class="sep"></div>
+        <button class="tool"><svg viewBox="0 0 24 24" fill="none"><rect x="6" y="3" width="6" height="14" rx="1" fill="#ffde00" stroke="#1a1a1a" stroke-width="1.2"/><path d="M6 17l3 4 3-4" fill="#ffde00" stroke="#1a1a1a" stroke-width="1.2" stroke-linejoin="round"/></svg></button>
+        <button class="tool"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="10" width="18" height="8" rx="2" fill="#f5f5f5" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="10" width="7" height="8" rx="2" fill="#ffb6c1" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <div class="sep"></div>
+        <button class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h10a5 5 0 0 1 5 5v2"/><path d="M7 6l-4 4 4 4"/></svg></button>
+      </div>
+      <div class="paper">
+        <svg viewBox="0 0 360 200" width="100%" height="100%" aria-hidden="true">
+          <path d="M30 70 C80 24,128 52,160 110 S250 180,300 96" fill="none" stroke="#002FD9" stroke-width="5" stroke-linecap="round"/>
+          <path d="M44 150 C90 116,140 132,188 96" fill="none" stroke="#E81010" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="78" cy="92" r="14" fill="none" stroke="#ffde00" stroke-width="7"/>
+          <path d="M210 150 h110" stroke="#4D4D4D" stroke-width="6" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ SPECIMEN LEARN ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">06 · app</p>
+  <h2>inhouse learn</h2>
+  <p class="lead">Chat con asistente: topbar translúcida, sidebar de chats recientes,
+  selector de modelo con color por proveedor y composer abajo.</p>
+  <div class="specimen learn">
+    <div class="top">
+      <span class="ham"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></span>
+      <div class="brand"><svg viewBox="0 0 40 24" width="28" height="17" fill="none"><path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg> inhouse learn</div>
+      <div class="model">
+        <span class="pdot" style="background:var(--ai-gemini)"></span>
+        <span class="mc"><small>Modelo</small><b>Gemini 2.5 Pro</b></span>
+        <span class="caret"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+      </div>
+      <span class="gbtn"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg></span>
+    </div>
+    <div class="body">
+      <aside class="side">
+        <div class="lbl">Recientes</div>
+        <div class="row on"><b>Campo eléctrico</b><small>Física</small></div>
+        <div class="row"><b>Series de Fourier</b><small>Mathematica</small></div>
+        <div class="row"><b>Materiales</b><small>microestructuras</small></div>
+        <div class="new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Nuevo chat</div>
+      </aside>
+      <div class="chatcol">
+        <div class="thread">
+          <div class="msg user">
+            <span class="badge u"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#E07A3C" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1" transform="translate(2 0)"/></svg></span>
+            <div class="bubble">¿Por qué la energía total es negativa en una órbita ligada?</div>
+          </div>
+          <div class="msg">
+            <span class="badge ai"><svg viewBox="0 0 40 24" width="15" fill="none"><path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <div class="bubble">Porque la energía cinética no llega a compensar la potencial gravitatoria, que es negativa. El cuerpo queda atrapado en el pozo de potencial.</div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="cshell">
+            <span class="cbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-8.49 8.49a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66L9.4 17.43a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg></span>
+            <span class="cbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/></svg></span>
+            <span class="ctext">Escribe aquí...</span>
+            <span class="csend"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12.5L20 4L14 20L11.4 13.1L4 12.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ SPECIMEN MATH ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">07 · sub-marca</p>
+  <h2>inhouse math playground</h2>
+  <p class="lead">La sub-marca azul. Home estilo Drive con cards de preview, glifo
+  matemático propio en vez del tejado, y azul <code>#2563eb</code> en lugar del naranja.</p>
+  <div class="specimen math">
+    <div class="top">
+      <div class="brand">
+        <svg viewBox="0 0 40 40" width="28" height="28" fill="none" aria-hidden="true">
+          <path d="M8.6 11.8H16.6M12.6 7.8V15.8" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round"/>
+          <path d="M24.1 8.2L31.1 15.2M31.1 8.2L24.1 15.2" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round"/>
+          <path d="M8.8 29.2L12 32.4L17.2 22.2" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M23.9 27.4H32.1" stroke="#2563eb" stroke-width="2.7" stroke-linecap="round"/>
+          <circle cx="28" cy="22.7" r="1.8" fill="#2563eb"/><circle cx="28" cy="32.1" r="1.8" fill="#2563eb"/>
+        </svg>
+        inhouse math playground
+      </div>
+    </div>
+    <div class="main">
+      <div class="grid">
+        <button class="card">
+          <div class="pv"><svg viewBox="0 0 120 90" fill="none" aria-hidden="true">
+            <rect x="19" y="17" width="32" height="26" rx="4" fill="rgba(37,99,235,0.1)" stroke="#2563eb" stroke-width="3"/>
+            <path d="M24 38L31 31L36 35L43 25L48 38" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="30" cy="26" r="3" fill="#2563eb"/>
+            <path d="M20 70H103M30 72V22" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"/>
+            <path d="M34 66C45 58 54 48 62 39C74 26 86 21 99 19" stroke="#2563eb" stroke-width="4" stroke-linecap="round"/>
+          </svg></div>
+          <div><b>image logarithm</b><small>Playground</small></div>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ CONTRATO ═══════════ -->
+<section class="wrap">
+  <p class="eyebrow">08 · traspaso</p>
+  <h2>contrato visual</h2>
+  <p class="lead">Copia esto antes de generar cualquier UI inhouse. Es el mínimo que define la marca.</p>
+  <div class="contract">
+    <div class="head"><span>inhouse-tokens.css</span><button class="copy" id="copyBtn">Copiar</button></div>
+<pre id="block"><span class="c">/* === INHOUSE · tokens canónicos (extraídos de los repos) === */</span>
+<span class="b">:root</span>{
+  <span class="c">/* marca raíz */</span>
+  --black:<span class="o">#000000</span>; --copper:<span class="o">#d97736</span>; --cream:<span class="o">#f5f5f0</span>; --ink:<span class="o">#1a1a1a</span>;
+  <span class="c">/* producto (notes/learn) */</span>
+  --orange:<span class="o">#E07A3C</span>;
+  --n-yellow:<span class="o">#ffde00</span>; --n-blue:<span class="o">#002FD9</span>; --n-red:<span class="o">#E81010</span>;
+  --n-black:<span class="o">#4D4D4D</span>; --n-green:<span class="o">#34c759</span>; --green:<span class="o">#22c55e</span>;
+  <span class="c">/* proveedores IA */</span>
+  --ai-codex:<span class="o">#10a37f</span>; --ai-gemini:<span class="o">#4285f4</span>; --ai-claude:<span class="o">#c96442</span>; --ai-gemma:<span class="o">#7c3aed</span>;
+  <span class="c">/* sub-marca math */</span>
+  --math-blue:<span class="o">#2563eb</span>;
+  <span class="c">/* superficie · radios · sombra */</span>
+  --surface:<span class="o">#ffffff</span>; --border:<span class="g">rgba(0,0,0,.06)</span>;
+  --r-md:<span class="g">14px</span>; --r-card:<span class="g">2.5rem</span>; --r-full:<span class="g">999px</span>;
+  --shadow-product:<span class="g">0 1px 3px rgba(0,0,0,.3), 0 4px 8px 3px rgba(0,0,0,.15)</span>;
+  <span class="c">/* tipografía */</span>
+  --f-logo:<span class="g">'Comfortaa',cursive</span>; --f-body:<span class="g">'DM Sans','Lato',sans-serif</span>;
+  --f-roboto:<span class="g">'Roboto',sans-serif</span>; --f-mono:<span class="g">'Roboto Mono',monospace</span>;
+}
+
+<span class="c">/* === LOGO · un solo trazo de tejado === */</span>
+<span class="c">/* marca raíz, sobre negro: */</span>
+&lt;svg viewBox=<span class="g">"0 0 100 60"</span> fill=<span class="g">"none"</span>&gt;
+  &lt;path d=<span class="g">"M5 55 L50 10 L95 55"</span> stroke=<span class="o">"#d97736"</span> stroke-width=<span class="g">"4"</span>
+        stroke-linecap=<span class="g">"round"</span> stroke-linejoin=<span class="g">"round"</span>/&gt;
+&lt;/svg&gt;
+<span class="c">/* apps, sobre crema: mismo path "M4 24 L20 8 L36 24", stroke #E07A3C */</span>
+
+<span class="c">/* === REGLAS === */</span>
+<span class="c">// 1. Nombres SIEMPRE en minúscula: inhouse software · inhouse notes · inhouse learn</span>
+<span class="c">// 2. Marca raíz = negro+cobre. Apps = crema/blanco + tejado naranja.</span>
+<span class="c">// 3. math playground es la excepción azul (#2563eb), con su propio glifo.</span>
+<span class="c">// 4. Acentos de notes (azul/rojo/amarillo/negro) = tinta funcional, no decoración.</span>
+<span class="c">// 5. Sombras suaves, mockups reales, sin degradados "de IA".</span></pre>
+  </div>
+</section>
+
+<footer class="wrap">
+  <div class="row">
+    <div class="lock"><svg class="roof" viewBox="0 0 100 60"><path d="M5 55 L50 10 L95 55"/></svg> inhouse</div>
+    <small>visual identity kit · standalone · 2026</small>
+  </div>
+</footer>
+
+<script>
+document.getElementById('copyBtn').addEventListener('click', async (e)=>{
+  const txt = document.getElementById('block').innerText;
+  try{ await navigator.clipboard.writeText(txt);
+    e.target.textContent='Copiado ✓'; setTimeout(()=>e.target.textContent='Copiar',1400);
+  }catch{ e.target.textContent='Selecciona manualmente'; }
+});
+</script>
+</body>
+</html>
