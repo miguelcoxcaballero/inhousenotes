@@ -7,7 +7,7 @@
 // to viewport-relative client space — pageAt() expects them that way.
 
 import type { PageId } from '../core/ids';
-import { InputRouter } from './router';
+import { InputRouter, isUiEventTarget } from './router';
 
 export interface PointerPoint {
   x: number;
@@ -63,6 +63,7 @@ export class PointerPipeline {
   }
 
   private onPointerDown = (e: PointerEvent): void => {
+    if (isUiEventTarget(e.target)) return;
     if (e.pointerType === 'touch') {
       this.activeTouchIds.add(e.pointerId);
       // A second finger while touch-drawing → discard the stroke and let

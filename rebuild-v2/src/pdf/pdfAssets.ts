@@ -1,5 +1,6 @@
 import type { BinaryAsset } from '../persist/assets';
 import type { Doc } from '../core/model';
+import { loadPdfJsRuntime } from './pdfJs';
 
 interface PdfViewport {
   width: number;
@@ -21,7 +22,7 @@ interface PdfDocument {
 }
 
 interface PdfJsRuntime {
-  getDocument(opts: { data: Uint8Array; disableWorker: boolean }): { promise: Promise<PdfDocument> };
+  getDocument(opts: { data: Uint8Array }): { promise: Promise<PdfDocument> };
 }
 
 const assets = new Map<string, BinaryAsset>();
@@ -97,9 +98,8 @@ async function loadDocument(sourceId: string): Promise<PdfDocument | null> {
   if (!asset) return null;
   let pending = documents.get(sourceId);
   if (!pending) {
-    pending = import('pdfjs-dist/legacy/build/pdf.mjs').then((module) => {
-      const pdfjs = module as unknown as PdfJsRuntime;
-      return pdfjs.getDocument({ data: asset.bytes.slice(), disableWorker: true }).promise;
+    pending = loadPdfJsRuntime<PdfJsRuntime>().then((pdfjs) => {
+      return pdfjs.getDocument({ data: asset.bytes.slice() }).promise;
     });
     documents.set(sourceId, pending);
   }
