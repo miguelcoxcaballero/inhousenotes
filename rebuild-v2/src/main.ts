@@ -238,6 +238,103 @@ function renderHome(root: HTMLElement): void {
   void loadDrive();
 
   root.appendChild(home);
+  mountPullToRefresh(home, topbar, body);
+}
+
+function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HTMLElement): void {
+  if (!window.matchMedia('(max-width: 700px)').matches) return;
+  if (navigator.maxTouchPoints <= 0 && !('ontouchstart' in window)) return;
+
+  const indicator = document.createElement('div');
+  indicator.className = 'pull-refresh-indicator';
+  indicator.setAttribute('role', 'status');
+  indicator.setAttribute('aria-label', 'Pull to refresh');
+  indicator.innerHTML = '<span class="pull-refresh-icon" aria-hidden="true"></span>';
+  home.appendChild(indicator);
+
+  const threshold = 92;
+  const maxOffset = 76;
+  let startY: number | null = null;
+  let pullDistance = 0;
+  let refreshing = false;
+  let resetTimer: number | null = null;
+
+  const updateTop = () => {
+    home.style.setProperty('--pull-refresh-top', `${topbar.offsetHeight}px`);
+  };
+  updateTop();
+  window.requestAnimationFrame(updateTop);
+
+  const setPull = (distance: number) => {
+    pullDistance = Math.max(0, distance);
+    const progress = Math.min(1, pullDistance / threshold);
+    const offset = Math.min(maxOffset, pullDistance * 0.58);
+    home.style.setProperty('--pull-distance', `${offset}px`);
+    home.style.setProperty('--pull-progress', String(progress));
+    home.style.setProperty('--pull-rotation', `${progress * 300}deg`);
+    home.classList.toggle('is-pulling', pullDistance > 0);
+    home.classList.toggle('is-refresh-ready', progress >= 1);
+    indicator.setAttribute('aria-label', progress >= 1 ? 'Release to refresh' : 'Pull to refresh');
+  };
+
+  const reset = () => {
+    startY = null;
+    pullDistance = 0;
+    home.classList.add('is-pull-resetting');
+    home.classList.remove('is-pulling', 'is-refresh-ready');
+    home.style.setProperty('--pull-distance', '0px');
+    home.style.setProperty('--pull-progress', '0');
+    home.style.setProperty('--pull-rotation', '0deg');
+    if (resetTimer !== null) window.clearTimeout(resetTimer);
+    resetTimer = window.setTimeout(() => {
+      home.classList.remove('is-pull-resetting');
+      resetTimer = null;
+    }, 220);
+  };
+
+  const refresh = () => {
+    refreshing = true;
+    startY = null;
+    home.classList.remove('is-refresh-ready');
+    home.classList.add('is-pulling', 'is-refreshing');
+    home.style.setProperty('--pull-distance', '54px');
+    indicator.setAttribute('aria-label', 'Refreshing');
+    window.setTimeout(() => window.location.reload(), 420);
+  };
+
+  scroller.addEventListener('touchstart', (event) => {
+    if (refreshing || event.touches.length !== 1 || scroller.scrollTop > 0) return;
+    startY = event.touches[0]!.clientY;
+    pullDistance = 0;
+    if (resetTimer !== null) window.clearTimeout(resetTimer);
+    resetTimer = null;
+    home.classList.remove('is-pull-resetting');
+  }, { passive: true });
+
+  scroller.addEventListener('touchmove', (event) => {
+    if (refreshing || startY === null || event.touches.length !== 1) return;
+    if (scroller.scrollTop > 0) {
+      reset();
+      return;
+    }
+    const distance = event.touches[0]!.clientY - startY;
+    if (distance <= 0) {
+      setPull(0);
+      return;
+    }
+    event.preventDefault();
+    setPull(distance);
+  }, { passive: false });
+
+  scroller.addEventListener('touchend', () => {
+    if (refreshing || startY === null) return;
+    if (pullDistance >= threshold) refresh();
+    else reset();
+  }, { passive: true });
+
+  scroller.addEventListener('touchcancel', () => {
+    if (!refreshing) reset();
+  }, { passive: true });
 }
 
 async function pickPdf(): Promise<void> {

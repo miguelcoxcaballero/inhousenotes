@@ -62,7 +62,13 @@ html, body {
 #welcome-view .btn { min-height: 48px; padding: 12px 40px; font-size: 1.05rem; }
 
 /* ── Home (legacy drive-home look, §2.5) ───────────────────────────────── */
-#drive-home { position: fixed; inset: 0; background: var(--bg-primary); display: flex; flex-direction: column; overflow: hidden; }
+#drive-home {
+  position: fixed; inset: 0; background: var(--bg-primary);
+  display: flex; flex-direction: column; overflow: hidden;
+  overscroll-behavior-y: none;
+  --pull-distance: 0px; --pull-progress: 0;
+  --pull-rotation: 0deg; --pull-refresh-top: 64px;
+}
 .drive-topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 20px; min-height: 64px; background: var(--bg-secondary);
@@ -75,7 +81,50 @@ html, body {
 .drive-brand svg { width: 32px; height: 24px; }
 .drive-brand span { letter-spacing: -0.5px; }
 .drive-topbar-actions { display: flex; gap: 10px; align-items: center; }
-.drive-body { flex: 1; overflow-y: auto; padding: 22px clamp(16px, 4vw, 42px); }
+.drive-body {
+  flex: 1; overflow-y: auto; padding: 22px clamp(16px, 4vw, 42px);
+  overscroll-behavior-y: contain;
+  transform: translateY(var(--pull-distance));
+  will-change: transform;
+}
+.pull-refresh-indicator {
+  position: absolute; z-index: 5; pointer-events: none;
+  left: 50%; top: var(--pull-refresh-top);
+  opacity: 0;
+  transform: translate(-50%, calc(var(--pull-distance) - 100%));
+  transition: opacity 0.14s ease;
+}
+.pull-refresh-icon {
+  width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--bg-secondary); box-shadow: var(--shadow-medium);
+  transition: background 0.16s ease, transform 0.16s ease;
+}
+.pull-refresh-icon::before {
+  content: ''; width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(102,102,102,0.25);
+  border-top-color: var(--accent-orange);
+  transform: rotate(var(--pull-rotation));
+}
+#drive-home.is-pulling .pull-refresh-indicator { opacity: 1; }
+#drive-home.is-refresh-ready .pull-refresh-icon {
+  background: var(--accent-orange);
+  transform: scale(1.08);
+}
+#drive-home.is-refresh-ready .pull-refresh-icon::before {
+  border-color: rgba(255,255,255,0.42);
+  border-top-color: #fff;
+}
+#drive-home.is-pull-resetting .drive-body,
+#drive-home.is-pull-resetting .pull-refresh-indicator,
+#drive-home.is-refreshing .drive-body,
+#drive-home.is-refreshing .pull-refresh-indicator {
+  transition: transform 0.2s ease-out, opacity 0.14s ease;
+}
+#drive-home.is-refreshing .pull-refresh-icon::before {
+  animation: pull-refresh-spin 0.65s linear infinite;
+}
+@keyframes pull-refresh-spin { to { transform: rotate(360deg); } }
 .drive-section-title {
   font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);
   text-transform: uppercase; letter-spacing: 0.8px; margin: 18px 0 12px;
@@ -167,6 +216,12 @@ html, body {
     scrollbar-width: none;
   }
   .toolbar::-webkit-scrollbar { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pull-refresh-icon,
+  .pull-refresh-indicator,
+  #drive-home .drive-body { transition-duration: 0.01ms !important; }
+  #drive-home.is-refreshing .pull-refresh-icon::before { animation-duration: 1.2s; }
 }
 `;
 
