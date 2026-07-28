@@ -9,7 +9,7 @@
 
 import type { CameraState } from '../viewport/camera';
 import { clampZoom } from '../viewport/camera';
-import { InputRouter } from './router';
+import { InputRouter, isUiEventTarget } from './router';
 
 export interface GestureCallbacks {
   onCameraChange(camera: CameraState): void;
@@ -93,6 +93,7 @@ export class GestureHandler {
 
   private onPointerDown = (e: PointerEvent): void => {
     if (e.pointerType !== 'touch') return;
+    if (isUiEventTarget(e.target)) return;
     if (this.router.penDrawing) return; // palm rejection
     this.touches.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
 
@@ -207,6 +208,7 @@ export class GestureHandler {
   // ── Wheel: scroll pans, Ctrl+wheel zooms (legacy behaviour) ────────────────
 
   private onWheel = (e: WheelEvent): void => {
+    if (isUiEventTarget(e.target)) return;
     e.preventDefault();
     const cam = this.getCamera();
 

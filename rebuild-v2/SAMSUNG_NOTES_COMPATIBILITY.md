@@ -34,14 +34,24 @@ trazos por encima como objetos independientes. Al importar un PDF:
 4. Al exportar, los trazos se escriben como anotaciones `/Ink` estandar en vez
    de aplanarlos sobre la pagina.
 
+Si el PDF no contiene `/Ink` y presenta tinta de color fina sobre un fondo
+claro, Inhouse Notes intenta recuperar esa tinta aplanada. Renderiza la pagina,
+separa los pixeles de tinta, reconstruye trayectorias editables y crea una copia
+limpia del fondo. El borrador, deshacer, rehacer y la exportacion funcionan sobre
+los trazos recuperados igual que sobre los creados dentro de la app.
+
 El test `src/pdf/pdfRoundtrip.test.ts` comprueba el ciclo completo: exportar,
 detectar `/Ink` con un lector independiente, reimportar y borrar el trazo.
 
 ## Limites del formato
 
 - Si Samsung Notes exporta la escritura aplanada dentro del contenido grafico
-  de la pagina, el PDF ya no contiene objetos de trazo. Se puede escribir y
-  borrar lo nuevo, pero no separar con precision la tinta ya aplanada del fondo.
+  de la pagina, el PDF ya no contiene objetos de trazo originales. La
+  recuperacion automatica puede reconstruir tinta cromatica claramente separada
+  del fondo, pero no puede conocer las trayectorias originales con precision.
+- La tinta negra aplanada sobre texto negro no se separa automaticamente porque
+  hacerlo tambien eliminaria contenido del documento. Es preferible importar el
+  `.sdocx` original o un PDF que conserve anotaciones `/Ink`.
 - `.sdocx` es un formato diferente de PDF. Esta version no intenta analizarlo
   directamente. Se puede exportar la nota desde Samsung Notes como PDF e
   importarla; la editabilidad de tinta previa dependera de que Samsung la haya

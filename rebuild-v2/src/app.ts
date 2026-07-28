@@ -314,15 +314,27 @@ export class App {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/pdf';
+    input.style.display = 'none';
+    document.body.appendChild(input);
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
-      if (!file || !this.store || !this.renderer) return;
+      if (!file || !this.store || !this.renderer) {
+        input.remove();
+        return;
+      }
       try {
         await this.applyImportedDocument(await importPdfDocument(file));
       } catch (err) {
         showMessage('PDF import failed', err instanceof Error ? err.message : String(err));
+      } finally {
+        input.remove();
       }
-    });
+    }, { once: true });
+    window.addEventListener('focus', () => {
+      window.setTimeout(() => {
+        if (!input.files?.length) input.remove();
+      }, 500);
+    }, { once: true });
     input.click();
   }
 

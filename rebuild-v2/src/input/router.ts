@@ -14,6 +14,22 @@
 // which point the claim is already visible.
 
 const PEN_SEEN_KEY = 'ihn_pen_seen';
+const UI_CONTROL_SELECTOR = [
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'a',
+  '[role="dialog"]',
+  '[contenteditable="true"]',
+  '[data-no-canvas-input]',
+  '.toolbar',
+  '.editor-action-bar'
+].join(',');
+
+export function isUiEventTarget(target: EventTarget | null): boolean {
+  return typeof Element !== 'undefined' && target instanceof Element && !!target.closest(UI_CONTROL_SELECTOR);
+}
 
 export class InputRouter {
   penEverSeen: boolean;

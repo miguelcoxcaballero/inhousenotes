@@ -27,6 +27,8 @@
   binarios separados y el sidecar solo conserva referencias.
 - Upload reanudable para archivos grandes y reintentos de red.
 - Importacion de anotaciones PDF estandar `/Ink` como trazos editables.
+- Recuperacion conservadora de tinta cromatica aplanada en PDFs rasterizados,
+  validada con un PDF real: el fondo se limpia y la tinta se vuelve editable.
 - Exportacion de los trazos de la app como `/Ink`, de modo que siguen siendo
   anotaciones editables al reimportarlos en Inhouse Notes y en lectores PDF que
   soporten ese estandar.
@@ -38,7 +40,7 @@
 
 ## Verificado
 
-- 62 tests automatizados: core, merge, historial, versiones, migracion,
+- 65 tests automatizados: core, merge, historial, versiones, migracion,
   persistencia incremental, recuperacion del op-log, sidecar, concurrencia Drive,
   assets PDF y roundtrip de `/Ink`.
 - TypeScript sin errores y build single-file correcto.
