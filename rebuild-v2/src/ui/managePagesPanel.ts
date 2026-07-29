@@ -1,5 +1,6 @@
-import { createPage } from '../core/model';
+import { A4_HEIGHT, A4_WIDTH, createPage } from '../core/model';
 import type { Background } from '../core/model';
+import { pageSizeLabel } from '../core/pageSize';
 import type { DocStore } from '../core/store';
 import type { DocRenderer } from '../render/docRenderer';
 import { serializePage } from '../core/serial';
@@ -68,6 +69,17 @@ export class ManagePagesPanel {
     top.appendChild(smallText(`${this.store.doc.pageOrder.length} page${this.store.doc.pageOrder.length === 1 ? '' : 's'}`));
     body.appendChild(top);
 
+    const defaultSize = smallText(`Default page · ${pageSizeLabel(A4_WIDTH, A4_HEIGHT)}`);
+    Object.assign(defaultSize.style, {
+      display: 'block',
+      marginBottom: '12px',
+      padding: '9px 0',
+      borderTop: '1px solid rgba(0,0,0,0.07)',
+      borderBottom: '1px solid rgba(0,0,0,0.07)',
+      fontVariantNumeric: 'tabular-nums'
+    });
+    body.appendChild(defaultSize);
+
     const list = document.createElement('div');
     Object.assign(list.style, { display: 'grid', gap: '8px' });
     body.appendChild(list);
@@ -78,7 +90,7 @@ export class ManagePagesPanel {
       const row = document.createElement('div');
       Object.assign(row.style, {
         display: 'grid',
-        gridTemplateColumns: '54px 1fr auto',
+        gridTemplateColumns: 'minmax(34px, 44px) minmax(0, 1fr)',
         gap: '10px',
         alignItems: 'center',
         padding: '10px',
@@ -94,7 +106,8 @@ export class ManagePagesPanel {
 
       const settings = document.createElement('div');
       const name = document.createElement('div');
-      name.textContent = `${Math.round(page.width)} x ${Math.round(page.height)}`;
+      name.textContent = pageSizeLabel(page.width, page.height);
+      name.title = `${Math.round(page.width)} × ${Math.round(page.height)} px`;
       Object.assign(name.style, { fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '6px' });
       settings.appendChild(name);
       const select = document.createElement('select');
@@ -114,7 +127,13 @@ export class ManagePagesPanel {
       row.appendChild(settings);
 
       const actions = document.createElement('div');
-      Object.assign(actions.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' });
+      Object.assign(actions.style, {
+        gridColumn: '1 / -1',
+        display: 'flex',
+        gap: '6px',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-end'
+      });
       actions.appendChild(this.actionButton('Up', index === 0, () => {
         this.store.apply({ type: 'move-page', pageId, toIndex: index - 1 });
         this.renderer.rebuild();
