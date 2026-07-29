@@ -1820,7 +1820,8 @@ public class MainActivity extends BridgeActivity {{
                     resolver.delete(uri, null, null);
                     throw error;
                 }}
-                notifyPdfExportResult(true, safeName, "PDF saved to Downloads");
+                openPdfChooser(uri, safeName);
+                notifyPdfExportResult(true, safeName, "PDF saved; choose an app to open or share it");
                 return;
             }}
 
@@ -1835,13 +1836,24 @@ public class MainActivity extends BridgeActivity {{
                 getPackageName() + ".fileprovider",
                 file
             );
-            Intent shareIntent = new Intent(Intent.ACTION_SEND);
-            shareIntent.setType("application/pdf");
-            shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
-            shareIntent.putExtra(Intent.EXTRA_TITLE, safeName);
-            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            runOnUiThread(() -> startActivity(Intent.createChooser(shareIntent, "Export PDF")));
-            notifyPdfExportResult(true, safeName, "Choose where to save the PDF");
+            openPdfChooser(uri, safeName);
+            notifyPdfExportResult(true, safeName, "PDF saved; choose an app to open or share it");
+        }}
+
+        private void openPdfChooser(Uri uri, String safeName) {{
+            Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+            viewIntent.setDataAndType(uri, "application/pdf");
+            viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            Intent sendIntent = new Intent(Intent.ACTION_SEND);
+            sendIntent.setType("application/pdf");
+            sendIntent.putExtra(Intent.EXTRA_STREAM, uri);
+            sendIntent.putExtra(Intent.EXTRA_TITLE, safeName);
+            sendIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            Intent chooser = Intent.createChooser(viewIntent, "Abrir o compartir PDF");
+            chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[] {{ sendIntent }});
+            runOnUiThread(() -> startActivity(chooser));
         }}
 
         private void notifyPdfExportResult(boolean ok, String fileName, String message) {{
@@ -2039,7 +2051,8 @@ class MainActivity : BridgeActivity() {{
                     contentResolver.delete(uri, null, null)
                     throw error
                 }}
-                notifyPdfExportResult(true, safeName, "PDF saved to Downloads")
+                openPdfChooser(uri, safeName)
+                notifyPdfExportResult(true, safeName, "PDF saved; choose an app to open or share it")
                 return
             }}
 
@@ -2051,14 +2064,25 @@ class MainActivity : BridgeActivity() {{
                 "$packageName.fileprovider",
                 file
             )
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {{
+            openPdfChooser(uri, safeName)
+            notifyPdfExportResult(true, safeName, "PDF saved; choose an app to open or share it")
+        }}
+
+        private fun openPdfChooser(uri: Uri, safeName: String) {{
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {{
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }}
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {{
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_TITLE, safeName)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }}
-            runOnUiThread {{ startActivity(Intent.createChooser(shareIntent, "Export PDF")) }}
-            notifyPdfExportResult(true, safeName, "Choose where to save the PDF")
+            val chooser = Intent.createChooser(viewIntent, "Abrir o compartir PDF").apply {{
+                putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf<android.os.Parcelable>(sendIntent))
+            }}
+            runOnUiThread {{ startActivity(chooser) }}
         }}
 
         private fun notifyPdfExportResult(ok: Boolean, fileName: String?, message: String?) {{
