@@ -1,7 +1,7 @@
 {
-  "version": "1.0.6",
-  "versionCode": 7,
+  "version": "1.0.7",
+  "versionCode": 8,
   "required": true,
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.6/inhouse-notes-release-v1.0.6.apk",
-  "publishedAppVersion": "4.4.22"
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
+  "publishedAppVersion": "4.4.24"
 }
