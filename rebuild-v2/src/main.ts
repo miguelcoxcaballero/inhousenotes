@@ -249,15 +249,20 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
   indicator.className = 'pull-refresh-indicator';
   indicator.setAttribute('role', 'status');
   indicator.setAttribute('aria-label', 'Pull to refresh');
-  indicator.innerHTML = '<span class="pull-refresh-icon" aria-hidden="true"></span>';
+  indicator.innerHTML = `
+    <span class="pull-refresh-surface" aria-hidden="true">
+      <span class="pull-refresh-arrow"></span>
+      <span class="pull-refresh-spinner"></span>
+    </span>`;
   home.appendChild(indicator);
 
-  const threshold = 92;
-  const maxOffset = 76;
+  const threshold = 96;
+  const maxOffset = 82;
   let startY: number | null = null;
   let pullDistance = 0;
   let refreshing = false;
   let resetTimer: number | null = null;
+  let ready = false;
 
   const updateTop = () => {
     home.style.setProperty('--pull-refresh-top', `${topbar.offsetHeight}px`);
@@ -268,23 +273,35 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
   const setPull = (distance: number) => {
     pullDistance = Math.max(0, distance);
     const progress = Math.min(1, pullDistance / threshold);
-    const offset = Math.min(maxOffset, pullDistance * 0.58);
+    const easedProgress = 1 - Math.pow(1 - progress, 3);
+    const offset = maxOffset * (1 - Math.exp(-pullDistance / 78));
+    const isReady = progress >= 1;
     home.style.setProperty('--pull-distance', `${offset}px`);
-    home.style.setProperty('--pull-progress', String(progress));
-    home.style.setProperty('--pull-rotation', `${progress * 300}deg`);
+    home.style.setProperty('--pull-progress', `${progress * 360}deg`);
+    home.style.setProperty('--pull-scale', String(0.78 + easedProgress * 0.22));
+    home.style.setProperty('--pull-opacity', String(Math.min(1, progress * 1.8)));
+    home.style.setProperty('--pull-arrow-rotation', `${isReady ? 180 : progress * 20}deg`);
     home.classList.toggle('is-pulling', pullDistance > 0);
-    home.classList.toggle('is-refresh-ready', progress >= 1);
-    indicator.setAttribute('aria-label', progress >= 1 ? 'Release to refresh' : 'Pull to refresh');
+    home.classList.toggle('is-refresh-ready', isReady);
+    if (isReady !== ready) {
+      ready = isReady;
+      indicator.setAttribute('aria-label', ready ? 'Release to refresh' : 'Pull to refresh');
+      if (ready && typeof navigator.vibrate === 'function') navigator.vibrate(8);
+    }
   };
 
   const reset = () => {
     startY = null;
     pullDistance = 0;
+    ready = false;
     home.classList.add('is-pull-resetting');
     home.classList.remove('is-pulling', 'is-refresh-ready');
     home.style.setProperty('--pull-distance', '0px');
-    home.style.setProperty('--pull-progress', '0');
-    home.style.setProperty('--pull-rotation', '0deg');
+    home.style.setProperty('--pull-progress', '0deg');
+    home.style.setProperty('--pull-scale', '0.78');
+    home.style.setProperty('--pull-opacity', '0');
+    home.style.setProperty('--pull-arrow-rotation', '0deg');
+    indicator.setAttribute('aria-label', 'Pull to refresh');
     if (resetTimer !== null) window.clearTimeout(resetTimer);
     resetTimer = window.setTimeout(() => {
       home.classList.remove('is-pull-resetting');
@@ -295,11 +312,18 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
   const refresh = () => {
     refreshing = true;
     startY = null;
+    ready = false;
+    if (resetTimer !== null) window.clearTimeout(resetTimer);
+    resetTimer = null;
     home.classList.remove('is-refresh-ready');
     home.classList.add('is-pulling', 'is-refreshing');
-    home.style.setProperty('--pull-distance', '54px');
+    home.style.setProperty('--pull-distance', '58px');
+    home.style.setProperty('--pull-progress', '360deg');
+    home.style.setProperty('--pull-scale', '1');
+    home.style.setProperty('--pull-opacity', '1');
+    home.style.setProperty('--pull-arrow-rotation', '180deg');
     indicator.setAttribute('aria-label', 'Refreshing');
-    window.setTimeout(() => window.location.reload(), 420);
+    window.setTimeout(() => window.location.reload(), 620);
   };
 
   scroller.addEventListener('touchstart', (event) => {
