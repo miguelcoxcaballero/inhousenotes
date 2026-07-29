@@ -62,27 +62,27 @@ jobs:
 
       - name: Verify APK exists
         run: |
-          test -s inhouse-notes-release-v1.0.1.apk
-          ls -lh inhouse-notes-release-v1.0.1.apk
+          test -s inhouse-notes-release-v1.0.2.apk
+          ls -lh inhouse-notes-release-v1.0.2.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: inhouse-notes-android-v1.0.1
-          path: inhouse-notes-release-v1.0.1.apk
+          name: inhouse-notes-android-v1.0.2
+          path: inhouse-notes-release-v1.0.2.apk
           if-no-files-found: error
 
-      - name: Publish APK as app v4.4.12
+      - name: Publish APK as app v4.4.14
         run: |
           python - <<'PY'
           from pathlib import Path
 
           path = Path('index.html')
           text = path.read_text(encoding='utf-8')
-          old_version = "const APP_VERSION = '4.4.11';"
-          new_version = "const APP_VERSION = '4.4.12';"
-          old_apk = 'inhouse-notes-release-v1.0.0.apk'
-          new_apk = 'inhouse-notes-release-v1.0.1.apk'
+          old_version = "const APP_VERSION = '4.4.13';"
+          new_version = "const APP_VERSION = '4.4.14';"
+          old_apk = 'inhouse-notes-release-v1.0.1.apk'
+          new_apk = 'inhouse-notes-release-v1.0.2.apk'
           if text.count(old_version) != 1:
               raise SystemExit('Expected exactly one v4.4.10 APP_VERSION declaration')
           if old_apk not in text:
@@ -92,7 +92,7 @@ jobs:
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- index.html inhouse-notes-release-v1.0.1.apk
+          git add -- index.html inhouse-notes-release-v1.0.2.apk
           git diff --cached --check
-          git commit -m 'Publish signed Android APK in v4.4.12'
+          git commit -m 'Publish signed Android APK in v4.4.14'
           git push origin HEAD:main
