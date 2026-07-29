@@ -7951,7 +7951,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.20';
+        const APP_VERSION = '4.4.21';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -31497,23 +31497,116 @@
             return pdfResult;
         }
 
-        // Export PDF with embedded stroke data
+        // Export the exact PDF stored on Drive. Pending local changes are first
+        // persisted and uploaded; the confirmed Drive revision is then fetched
+        // instead of building a second high-quality PDF just for downloading.
+        async function waitForLocalExportSaveIdle(timeoutMs = 60000) {
+            const deadline = Date.now() + timeoutMs;
+            while (hasPendingLocalSave()) {
+                if (Date.now() >= deadline) throw new Error('Timed out saving the latest edits');
+                if (!saveInProgress && saveQueued && !hasSmoothInteraction()) {
+                    saveQueued = false;
+                    await queueSave();
+                    continue;
+                }
+                await new Promise(resolve => setTimeout(resolve, 80));
+            }
+        }
+
+        async function waitForDriveExportUpload(fileId, targetVersion, timeoutMs = 300000) {
+            const deadline = Date.now() + timeoutMs;
+            let lastSaveKick = 0;
+            while (true) {
+                if (!state.driveFileId || state.driveFileId !== fileId) {
+                    throw new Error('The Drive document changed during export');
+                }
+                if (driveSaveBlockedReason) throw new Error(driveSaveBlockedReason);
+                const uploaded = driveUploadedContentVersion >= targetVersion;
+                if (uploaded && !driveSaveInProgress) return;
+                if (!driveSaveInProgress && Date.now() - lastSaveKick >= 800) {
+                    lastSaveKick = Date.now();
+                    driveDirty = true;
+                    await queueDriveSave(true);
+                    continue;
+                }
+                if (Date.now() >= deadline) throw new Error('Timed out uploading the latest PDF to Drive');
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        async function fetchLatestDrivePdfForExport(fileId) {
+            const expectedRevision = state.driveHeadRevisionId || '';
+            if (expectedRevision) {
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const metaResponse = await driveFetch(
+                        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime`,
+                        { timeout: DRIVE_META_TIMEOUT, headers: { 'Cache-Control': 'no-cache' } }
+                    );
+                    const meta = await metaResponse.json();
+                    applyDriveRemoteMeta(meta || {});
+                    if (!meta.headRevisionId || meta.headRevisionId === expectedRevision) break;
+                    await new Promise(resolve => setTimeout(resolve, 180));
+                }
+            }
+            const response = await driveFetch(
+                `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+                { timeout: 300000, headers: { 'Cache-Control': 'no-cache' } }
+            );
+            const blob = await response.blob();
+            if (!blob || blob.size === 0) throw new Error('Drive returned an empty PDF');
+            return blob.type === 'application/pdf'
+                ? blob
+                : new Blob([blob], { type: 'application/pdf' });
+        }
+
+        async function exportDrivePdf(fileName) {
+            const fileId = state.driveFileId;
+            if (!fileId) throw new Error('No Drive PDF is connected');
+            await ensureDriveToken(false);
+            if (!driveAccessToken) throw new Error('Sign in to Google Drive before exporting');
+
+            if (state.driveCanEdit !== false) {
+                if (!state.driveAutosave) throw new Error('Drive autosave is not available');
+                showLoading('Guardando últimos cambios en Drive...');
+                await flushStrokeOpsQueue({ force: true });
+                await flushDirtyPages({ force: true });
+                if (!state.isReadOnly) await queueSave();
+                await waitForLocalExportSaveIdle();
+                const targetVersion = driveContentVersion;
+                const needsUpload = driveUploadedContentVersion < targetVersion
+                    || driveSaveInProgress
+                    || driveSaveQueued;
+                if (needsUpload) {
+                    await waitForDriveExportUpload(fileId, targetVersion);
+                }
+                if (driveUploadedContentVersion < targetVersion) {
+                    throw new Error('Drive did not confirm the latest document version');
+                }
+            }
+
+            showLoading('Descargando PDF de Drive...');
+            const drivePdf = await fetchLatestDrivePdfForExport(fileId);
+            await deliverExportedPdf(drivePdf, fileName);
+        }
+
         async function exportPDF(fileName) {
             const safeName = fileName || 'cuaderno.pdf';
-            showLoading('Generando PDF...');
-
             try {
-                const pdfBlob = await buildPdfBlob({ highQuality: true, status: false });
-                await deliverExportedPdf(pdfBlob, safeName);
+                if (state.driveFileId) {
+                    await exportDrivePdf(safeName);
+                } else {
+                    showLoading('Generando PDF...');
+                    const pdfBlob = await buildPdfBlob({ highQuality: true, status: false });
+                    await deliverExportedPdf(pdfBlob, safeName);
+                }
                 showStatus('PDF exported', { preserveState: true });
             } catch (err) {
                 console.error('PDF export failed:', err);
-                showStatus('PDF export failed', { preserveState: true });
+                showStatus(err?.message || 'PDF export failed', { error: true, preserveState: true });
+            } finally {
+                hideLoading();
             }
-
-            hideLoading();
         }
-
         function blobToBase64(blob) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();

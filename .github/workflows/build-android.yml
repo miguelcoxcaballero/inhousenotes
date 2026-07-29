@@ -62,14 +62,14 @@ jobs:
 
       - name: Verify APK exists
         run: |
-          test -s inhouse-notes-release-v1.0.5.apk
-          ls -lh inhouse-notes-release-v1.0.5.apk
+          test -s inhouse-notes-release-v1.0.6.apk
+          ls -lh inhouse-notes-release-v1.0.6.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: inhouse-notes-android-v1.0.5
-          path: inhouse-notes-release-v1.0.5.apk
+          name: inhouse-notes-android-v1.0.6
+          path: inhouse-notes-release-v1.0.6.apk
           if-no-files-found: error
 
 
@@ -77,16 +77,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.5 >/dev/null 2>&1; then
-            gh release upload android-v1.0.5 inhouse-notes-release-v1.0.5.apk --clobber
+          if gh release view android-v1.0.6 >/dev/null 2>&1; then
+            gh release upload android-v1.0.6 inhouse-notes-release-v1.0.6.apk --clobber
           else
-            gh release create android-v1.0.5 inhouse-notes-release-v1.0.5.apk \
-              --title "Inhouse Notes Android 1.0.5" \
-              --notes "Signed Android update with native download and installer support." \
+            gh release create android-v1.0.6 inhouse-notes-release-v1.0.6.apk \
+              --title "Inhouse Notes Android 1.0.6" \
+              --notes "Drive-backed PDF export with confirmed latest-save download." \
               --latest=false
           fi
 
-      - name: Publish APK as app v4.4.20
+      - name: Publish APK as app v4.4.22
         run: |
           python - <<'PY'
           import json
@@ -94,28 +94,28 @@ jobs:
 
           path = Path('index.html')
           text = path.read_text(encoding='utf-8')
-          old_version = "const APP_VERSION = '4.4.19';"
-          new_version = "const APP_VERSION = '4.4.20';"
-          old_apk = 'inhouse-notes-release-v1.0.4.apk'
-          new_apk = 'inhouse-notes-release-v1.0.5.apk'
+          old_version = "const APP_VERSION = '4.4.21';"
+          new_version = "const APP_VERSION = '4.4.22';"
+          old_apk = 'inhouse-notes-release-v1.0.5.apk'
+          new_apk = 'inhouse-notes-release-v1.0.6.apk'
           if text.count(old_version) != 1:
-              raise SystemExit('Expected exactly one v4.4.19 APP_VERSION declaration')
+              raise SystemExit('Expected exactly one v4.4.21 APP_VERSION declaration')
           if old_apk not in text:
               raise SystemExit('Existing APK link was not found')
           text = text.replace(old_version, new_version, 1).replace(old_apk, new_apk)
           path.write_text(text, encoding='utf-8')
           manifest_path = Path('android-update.json')
           manifest_path.write_text(json.dumps({
-              'version': '1.0.5',
-              'versionCode': 6,
+              'version': '1.0.6',
+              'versionCode': 7,
               'required': True,
-              'apkUrl': 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.5/inhouse-notes-release-v1.0.5.apk',
-              'publishedAppVersion': '4.4.20'
+              'apkUrl': 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.6/inhouse-notes-release-v1.0.6.apk',
+              'publishedAppVersion': '4.4.22'
           }, indent=2) + '\n', encoding='utf-8')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- index.html android-update.json inhouse-notes-release-v1.0.5.apk
+          git add -- index.html android-update.json inhouse-notes-release-v1.0.6.apk
           git diff --cached --check
-          git commit -m 'Publish signed Android APK in v4.4.20'
+          git commit -m 'Publish signed Android APK in v4.4.22'
           git push origin HEAD:main
