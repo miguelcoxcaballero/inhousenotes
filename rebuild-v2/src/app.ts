@@ -356,7 +356,11 @@ export class App {
   private async exportPdf(): Promise<void> {
     if (!this.store) return;
     const name = `${this.store.doc.meta.name || 'inhouse-notes'}.pdf`;
-    downloadBlob(await exportDocPdf(this.store.doc), name);
+    try {
+      await downloadBlob(await exportDocPdf(this.store.doc), name);
+    } catch (err) {
+      showMessage('PDF export failed', err instanceof Error ? err.message : String(err));
+    }
   }
 
   private async applyImportedDocument(imported: ImportedPdfDocument): Promise<void> {

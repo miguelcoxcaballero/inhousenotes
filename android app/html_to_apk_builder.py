@@ -1546,14 +1546,19 @@ class ApkBuilderApp(tk.Tk):
             java_file.write_text(
                 f"""package {package_id};
 
-import android.os.Bundle;
 import android.content.Intent;
+import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Environment;
 import android.net.Uri;
 import android.util.Base64;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.provider.MediaStore;
 
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.FileProvider;
@@ -1561,6 +1566,8 @@ import androidx.core.content.FileProvider;
 import com.getcapacitor.BridgeActivity;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.OutputStream;
+import android.widget.Toast;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
@@ -1636,6 +1643,11 @@ public class MainActivity extends BridgeActivity {{
         private StringBuilder pendingPdfBase64 = new StringBuilder();
 
         @JavascriptInterface
+        public int getPdfExportApiVersion() {{
+            return 2;
+        }}
+
+        @JavascriptInterface
         public void openAuthUrl(String url) {{
             Uri uri = Uri.parse(url);
             CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder()
@@ -1651,6 +1663,7 @@ public class MainActivity extends BridgeActivity {{
                 savePdfBytes(fileName, Base64.decode(base64Pdf, Base64.DEFAULT));
             }} catch (Exception e) {{
                 e.printStackTrace();
+                notifyPdfExportResult(false, fileName, e.getMessage());
             }}
         }}
 
@@ -1672,6 +1685,7 @@ public class MainActivity extends BridgeActivity {{
                 savePdfBytes(pendingPdfName, bytes);
             }} catch (Exception e) {{
                 e.printStackTrace();
+                notifyPdfExportResult(false, pendingPdfName, e.getMessage());
             }} finally {{
                 pendingPdfBase64 = new StringBuilder();
             }}
@@ -1682,6 +1696,32 @@ public class MainActivity extends BridgeActivity {{
                 ? "cuaderno.pdf"
                 : fileName.replaceAll("[\\\\/:*?\\\"<>|]+", "_");
             if (!safeName.toLowerCase().endsWith(".pdf")) safeName += ".pdf";
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {{
+                ContentResolver resolver = getContentResolver();
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, safeName);
+                values.put(MediaStore.Downloads.MIME_TYPE, "application/pdf");
+                values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                values.put(MediaStore.Downloads.IS_PENDING, 1);
+                Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new Exception("Android could not create the download");
+                try {{
+                    try (OutputStream out = resolver.openOutputStream(uri)) {{
+                        if (out == null) throw new Exception("Android could not open the download");
+                        out.write(bytes);
+                    }}
+                    values.clear();
+                    values.put(MediaStore.Downloads.IS_PENDING, 0);
+                    resolver.update(uri, values, null, null);
+                }} catch (Exception error) {{
+                    resolver.delete(uri, null, null);
+                    throw error;
+                }}
+                notifyPdfExportResult(true, safeName, "PDF saved to Downloads");
+                return;
+            }}
+
             File dir = new File(getCacheDir(), "exports");
             if (!dir.exists()) dir.mkdirs();
             File file = new File(dir, safeName);
@@ -1698,7 +1738,24 @@ public class MainActivity extends BridgeActivity {{
             shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
             shareIntent.putExtra(Intent.EXTRA_TITLE, safeName);
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(shareIntent, "Export PDF"));
+            runOnUiThread(() -> startActivity(Intent.createChooser(shareIntent, "Export PDF")));
+            notifyPdfExportResult(true, safeName, "Choose where to save the PDF");
+        }}
+
+        private void notifyPdfExportResult(boolean ok, String fileName, String message) {{
+            JSONObject payload = new JSONObject();
+            try {{
+                payload.put("ok", ok);
+                payload.put("name", fileName == null ? "cuaderno.pdf" : fileName);
+                payload.put("message", message == null ? (ok ? "PDF saved" : "PDF export failed") : message);
+            }} catch (Exception ignored) {{}}
+            WebView webView = getBridge().getWebView();
+            webView.post(() -> webView.evaluateJavascript(
+                "window.handleInhousePdfExportResult && window.handleInhousePdfExportResult(" + payload.toString() + ");",
+                null
+            ));
+            final String toastMessage = ok ? "PDF guardado en Descargas" : "No se pudo guardar el PDF";
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, toastMessage, Toast.LENGTH_LONG).show());
         }}
     }}
 
@@ -1724,10 +1781,15 @@ public class MainActivity extends BridgeActivity {{
             kotlin_file.write_text(
                 f"""package {package_id}
 
-import android.os.Bundle
 import android.content.Intent
+import android.content.ContentValues
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
 import android.net.Uri
 import android.util.Base64
+import android.provider.MediaStore
+import android.widget.Toast
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
@@ -1803,6 +1865,11 @@ class MainActivity : BridgeActivity() {{
         private var pendingPdfBase64 = StringBuilder()
 
         @JavascriptInterface
+        fun getPdfExportApiVersion(): Int {{
+            return 2
+        }}
+
+        @JavascriptInterface
         fun openAuthUrl(url: String) {{
             val customTabsIntent = CustomTabsIntent.Builder()
                 .setShowTitle(true)
@@ -1817,6 +1884,7 @@ class MainActivity : BridgeActivity() {{
                 savePdfBytes(fileName, Base64.decode(base64Pdf ?: "", Base64.DEFAULT))
             }} catch (e: Exception) {{
                 e.printStackTrace()
+                notifyPdfExportResult(false, fileName, e.message)
             }}
         }}
 
@@ -1838,6 +1906,7 @@ class MainActivity : BridgeActivity() {{
                 savePdfBytes(pendingPdfName, bytes)
             }} catch (e: Exception) {{
                 e.printStackTrace()
+                notifyPdfExportResult(false, pendingPdfName, e.message)
             }} finally {{
                 pendingPdfBase64 = StringBuilder()
             }}
@@ -1848,6 +1917,30 @@ class MainActivity : BridgeActivity() {{
                 .ifBlank {{ "cuaderno.pdf" }}
                 .replace(Regex("[\\\\/:*?\\\"<>|]+"), "_")
             if (!safeName.lowercase().endsWith(".pdf")) safeName += ".pdf"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {{
+                val values = ContentValues().apply {{
+                    put(MediaStore.Downloads.DISPLAY_NAME, safeName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }}
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("Android could not create the download")
+                try {{
+                    contentResolver.openOutputStream(uri)?.use {{ it.write(bytes) }}
+                        ?: error("Android could not open the download")
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    contentResolver.update(uri, values, null, null)
+                }} catch (error: Exception) {{
+                    contentResolver.delete(uri, null, null)
+                    throw error
+                }}
+                notifyPdfExportResult(true, safeName, "PDF saved to Downloads")
+                return
+            }}
+
             val dir = File(cacheDir, "exports").apply {{ mkdirs() }}
             val file = File(dir, safeName)
             file.writeBytes(bytes)
@@ -1862,7 +1955,24 @@ class MainActivity : BridgeActivity() {{
                 putExtra(Intent.EXTRA_TITLE, safeName)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }}
-            startActivity(Intent.createChooser(shareIntent, "Export PDF"))
+            runOnUiThread {{ startActivity(Intent.createChooser(shareIntent, "Export PDF")) }}
+            notifyPdfExportResult(true, safeName, "Choose where to save the PDF")
+        }}
+
+        private fun notifyPdfExportResult(ok: Boolean, fileName: String?, message: String?) {{
+            val payload = org.json.JSONObject().apply {{
+                put("ok", ok)
+                put("name", fileName ?: "cuaderno.pdf")
+                put("message", message ?: if (ok) "PDF saved" else "PDF export failed")
+            }}
+            bridge.webView.post {{
+                bridge.webView.evaluateJavascript(
+                    "window.handleInhousePdfExportResult && window.handleInhousePdfExportResult($payload);",
+                    null
+                )
+            }}
+            val toastMessage = if (ok) "PDF guardado en Descargas" else "No se pudo guardar el PDF"
+            runOnUiThread {{ Toast.makeText(this@MainActivity, toastMessage, Toast.LENGTH_LONG).show() }}
         }}
     }}
 

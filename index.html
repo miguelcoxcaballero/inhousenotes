@@ -7951,7 +7951,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.9';
+        const APP_VERSION = '4.4.10';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -31379,11 +31379,48 @@
             });
         }
 
+        let nativePdfExportWaiter = null;
+
+        window.handleInhousePdfExportResult = payload => {
+            const waiter = nativePdfExportWaiter;
+            if (!waiter) return;
+            nativePdfExportWaiter = null;
+            waiter(payload);
+        };
+
+        function waitForNativePdfExportResult() {
+            return new Promise((resolve, reject) => {
+                const complete = payload => {
+                    clearTimeout(timer);
+                    let result = payload;
+                    if (typeof result === 'string') {
+                        try { result = JSON.parse(result); } catch (err) { result = null; }
+                    }
+                    if (result && result.ok) {
+                        resolve(result);
+                    } else {
+                        reject(new Error(result?.message || 'Android could not save the PDF'));
+                    }
+                };
+                const timer = setTimeout(() => {
+                    if (nativePdfExportWaiter === complete) nativePdfExportWaiter = null;
+                    reject(new Error('Android did not confirm the PDF download'));
+                }, 30000);
+                nativePdfExportWaiter = complete;
+            });
+        }
+
         async function deliverExportedPdf(pdfBlob, safeName) {
             if (isInhouseApp && window.InhouseNative
                 && typeof window.InhouseNative.beginPdfExport === 'function'
                 && typeof window.InhouseNative.appendPdfExportChunk === 'function'
                 && typeof window.InhouseNative.finishPdfExport === 'function') {
+                let nativeApiVersion = 1;
+                if (typeof window.InhouseNative.getPdfExportApiVersion === 'function') {
+                    try {
+                        nativeApiVersion = Number(window.InhouseNative.getPdfExportApiVersion()) || 1;
+                    } catch (err) {}
+                }
                 const base64 = await blobToBase64(pdfBlob);
                 window.InhouseNative.beginPdfExport(safeName);
                 const chunkSize = 240000;
@@ -31391,7 +31428,11 @@
                     window.InhouseNative.appendPdfExportChunk(base64.slice(i, i + chunkSize));
                     await yieldToMainThread();
                 }
+                const nativeResult = nativeApiVersion >= 2
+                    ? waitForNativePdfExportResult()
+                    : null;
                 window.InhouseNative.finishPdfExport();
+                if (nativeResult) await nativeResult;
                 return;
             }
             if (isInhouseApp && window.InhouseNative && typeof window.InhouseNative.savePdf === 'function') {

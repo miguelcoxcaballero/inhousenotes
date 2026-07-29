@@ -34,7 +34,26 @@ export async function exportDocPdf(doc: Doc): Promise<Blob> {
   return new Blob([buffer], { type: 'application/pdf' });
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
+type InhousePdfBridge = {
+  beginPdfExport?: (filename: string) => void;
+  appendPdfExportChunk?: (chunk: string) => void;
+  finishPdfExport?: () => void;
+};
+
+export async function downloadBlob(blob: Blob, filename: string): Promise<void> {
+  const native = (window as Window & { InhouseNative?: InhousePdfBridge }).InhouseNative;
+  if (native?.beginPdfExport && native.appendPdfExportChunk && native.finishPdfExport) {
+    const base64 = await blobToBase64(blob);
+    native.beginPdfExport(filename);
+    const chunkSize = 240_000;
+    for (let offset = 0; offset < base64.length; offset += chunkSize) {
+      native.appendPdfExportChunk(base64.slice(offset, offset + chunkSize));
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    native.finishPdfExport();
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -43,6 +62,16 @@ export function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunkSize = 32_768;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 async function drawBackground(
