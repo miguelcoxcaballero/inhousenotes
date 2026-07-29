@@ -1,0 +1,99 @@
+name: Build and publish signed Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-android-apk
+  cancel-in-progress: false
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: rebuild-v2/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install builder dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.INHOUSE_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/inhousenotes-release.jks"
+
+      - name: Build signed APK
+        env:
+          INHOUSE_KEYSTORE_PATH: ${{ runner.temp }}/inhousenotes-release.jks
+          INHOUSE_KEYSTORE_PASSWORD: ${{ secrets.INHOUSE_ANDROID_KEYSTORE_PASSWORD }}
+          INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_ANDROID_KEY_ALIAS }}
+        run: python .github/scripts/build_android_apk.py
+
+      - name: Verify APK exists
+        run: |
+          test -s inhouse-notes-release-v1.0.1.apk
+          ls -lh inhouse-notes-release-v1.0.1.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: inhouse-notes-android-v1.0.1
+          path: inhouse-notes-release-v1.0.1.apk
+          if-no-files-found: error
+
+      - name: Publish APK as app v4.4.11
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          old_version = "const APP_VERSION = '4.4.10';"
+          new_version = "const APP_VERSION = '4.4.11';"
+          old_apk = 'inhouse-notes-release-v1.0.0.apk'
+          new_apk = 'inhouse-notes-release-v1.0.1.apk'
+          if text.count(old_version) != 1:
+              raise SystemExit('Expected exactly one v4.4.10 APP_VERSION declaration')
+          if old_apk not in text:
+              raise SystemExit('Existing APK link was not found')
+          text = text.replace(old_version, new_version, 1).replace(old_apk, new_apk)
+          path.write_text(text, encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- index.html inhouse-notes-release-v1.0.1.apk
+          git diff --cached --check
+          git commit -m 'Publish signed Android APK in v4.4.11'
+          git push origin HEAD:main
