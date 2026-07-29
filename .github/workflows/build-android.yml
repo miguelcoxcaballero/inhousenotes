@@ -34,7 +34,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -73,15 +72,15 @@ jobs:
           path: inhouse-notes-release-v1.0.1.apk
           if-no-files-found: error
 
-      - name: Publish APK as app v4.4.11
+      - name: Publish APK as app v4.4.12
         run: |
           python - <<'PY'
           from pathlib import Path
 
           path = Path('index.html')
           text = path.read_text(encoding='utf-8')
-          old_version = "const APP_VERSION = '4.4.10';"
-          new_version = "const APP_VERSION = '4.4.11';"
+          old_version = "const APP_VERSION = '4.4.11';"
+          new_version = "const APP_VERSION = '4.4.12';"
           old_apk = 'inhouse-notes-release-v1.0.0.apk'
           new_apk = 'inhouse-notes-release-v1.0.1.apk'
           if text.count(old_version) != 1:
@@ -95,5 +94,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- index.html inhouse-notes-release-v1.0.1.apk
           git diff --cached --check
-          git commit -m 'Publish signed Android APK in v4.4.11'
+          git commit -m 'Publish signed Android APK in v4.4.12'
           git push origin HEAD:main
