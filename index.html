@@ -7951,7 +7951,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.16';
+        const APP_VERSION = '4.4.17';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -8053,9 +8053,9 @@
             gate.innerHTML = `
                 <div style="width:min(420px,100%);padding:28px;border-radius:24px;background:#1c1c1f;border:1px solid #3a3a40;box-shadow:0 24px 80px rgba(0,0,0,.45);text-align:center">
                     <div style="font-size:40px;line-height:1;margin-bottom:16px">↻</div>
-                    <h2 data-update-title style="margin:0 0 10px;font:700 24px/1.2 Comfortaa,sans-serif">Comprobando actualización…</h2>
-                    <p data-update-message style="margin:0;color:#c8c8cd;line-height:1.5">Espera un momento.</p>
-                    <button data-update-install type="button" style="display:none;width:100%;margin-top:22px;padding:14px 18px;border:0;border-radius:14px;background:#f2f2f4;color:#151517;font:700 16px DM Sans,sans-serif;cursor:pointer">Instalar actualización</button>
+                    <h2 data-update-title style="margin:0 0 10px;font:700 24px/1.2 Comfortaa,sans-serif">Actualización obligatoria</h2>
+                    <p data-update-message style="margin:0;color:#c8c8cd;line-height:1.5"></p>
+                    <button data-update-install type="button" style="display:block;width:100%;margin-top:22px;padding:14px 18px;border:0;border-radius:14px;background:#f2f2f4;color:#151517;font:700 16px DM Sans,sans-serif;cursor:pointer">Instalar actualización</button>
                     <p data-update-status style="min-height:20px;margin:14px 0 0;color:#aaaab2;font-size:13px;line-height:1.4"></p>
                 </div>`;
             document.body.appendChild(gate);
@@ -8068,25 +8068,54 @@
             setAndroidUpdateGateOverflow(false);
         }
 
+        window.handleInhouseUpdateResult = payload => {
+            let result = payload;
+            if (typeof result === 'string') {
+                try { result = JSON.parse(result); } catch (err) { result = null; }
+            }
+            const gate = document.getElementById('android-update-gate');
+            if (!gate || !result) return;
+            const install = gate.querySelector('[data-update-install]');
+            const status = gate.querySelector('[data-update-status]');
+            if (result.status === 'permission_required') {
+                status.textContent = 'Activa “Permitir desde esta fuente”, vuelve a Inhouse Notes y pulsa Continuar.';
+                install.textContent = 'Continuar instalación';
+                install.disabled = false;
+            } else if (result.status === 'downloading') {
+                status.textContent = 'Descargando la actualización dentro de Inhouse Notes…';
+                install.disabled = true;
+            } else if (result.status === 'ready') {
+                status.textContent = 'Descarga terminada. Confirma la instalación en Android.';
+                install.disabled = true;
+            } else if (result.status === 'error') {
+                status.textContent = result.message || 'No se pudo descargar la actualización. Inténtalo de nuevo.';
+                install.textContent = 'Reintentar';
+                install.disabled = false;
+            }
+        };
+
         function showRequiredAndroidUpdate(manifest, installedVersion) {
             const gate = ensureAndroidUpdateGate();
-            const title = gate.querySelector('[data-update-title]');
             const message = gate.querySelector('[data-update-message]');
             const install = gate.querySelector('[data-update-install]');
             const status = gate.querySelector('[data-update-status]');
-            title.textContent = 'Actualización obligatoria';
             message.textContent = `Tienes Inhouse Notes ${installedVersion}. Instala la versión ${manifest.version} para continuar.`;
-            install.style.display = 'block';
             install.onclick = () => {
-                status.textContent = 'Descargando la actualización. Cuando termine, abre el APK y confirma la instalación.';
+                status.textContent = 'Preparando la actualización…';
+                install.disabled = true;
                 try {
-                    if (window.InhouseNative && typeof window.InhouseNative.openAuthUrl === 'function') {
+                    if (window.InhouseNative && typeof window.InhouseNative.installAppUpdate === 'function') {
+                        window.InhouseNative.installAppUpdate(manifest.apkUrl);
+                    } else if (window.InhouseNative && typeof window.InhouseNative.openAuthUrl === 'function') {
                         window.InhouseNative.openAuthUrl(manifest.apkUrl);
+                        status.textContent = 'Cuando finalice la descarga, abre el APK y confirma la instalación.';
+                        setTimeout(() => { install.disabled = false; }, 1500);
                     } else {
                         window.location.assign(manifest.apkUrl);
                     }
                 } catch (err) {
-                    status.textContent = 'No se pudo abrir la descarga. Inténtalo de nuevo.';
+                    status.textContent = 'No se pudo iniciar la descarga. Inténtalo de nuevo.';
+                    install.disabled = false;
                 }
             };
             install.focus();
@@ -8096,7 +8125,6 @@
             if (!isInhouseApp || !window.InhouseNative) return;
             if (androidUpdateCheckPromise) return androidUpdateCheckPromise;
             androidUpdateCheckPromise = (async () => {
-                const gate = ensureAndroidUpdateGate();
                 try {
                     const response = await fetch(`${ANDROID_UPDATE_MANIFEST_URL}?check=${Date.now()}`, {
                         cache: 'no-store', headers: { 'Cache-Control': 'no-cache' }
@@ -8105,29 +8133,25 @@
                     const manifest = await response.json();
                     if (!/^\d+\.\d+\.\d+$/.test(String(manifest.version || ''))) throw new Error('Invalid update version');
                     const apkUrl = new URL(String(manifest.apkUrl || ''), window.location.origin);
-                    if (apkUrl.protocol !== 'https:' || !['raw.githubusercontent.com', 'github.com'].includes(apkUrl.hostname)) throw new Error('Invalid update download URL');
+                    const allowedHosts = ['inhousenotes.com', 'github.com', 'raw.githubusercontent.com'];
+                    if (apkUrl.protocol !== 'https:' || !allowedHosts.includes(apkUrl.hostname)) throw new Error('Invalid update download URL');
                     manifest.apkUrl = apkUrl.toString();
                     const installedVersion = getInstalledAndroidAppVersion();
                     if (manifest.required !== false && compareSemanticVersions(manifest.version, installedVersion) > 0) {
                         showRequiredAndroidUpdate(manifest, installedVersion);
-                        return;
+                    } else {
+                        closeAndroidUpdateGate();
                     }
-                    closeAndroidUpdateGate();
                 } catch (err) {
                     console.warn('Android update check failed:', err);
-                    gate.querySelector('[data-update-status]').textContent = 'No se pudo comprobar la actualización. Se volverá a intentar.';
-                    setTimeout(closeAndroidUpdateGate, 1200);
                 }
             })().finally(() => { androidUpdateCheckPromise = null; });
             return androidUpdateCheckPromise;
         }
 
         checkForRequiredAndroidUpdate();
-        window.addEventListener('focus', () => {
-            if (document.getElementById('android-update-gate')) checkForRequiredAndroidUpdate();
-        });
+        window.addEventListener('focus', checkForRequiredAndroidUpdate);
         setInterval(checkForRequiredAndroidUpdate, 15 * 60 * 1000);
-
         // Native Canvas Template Render (replaces previous heavy SVG_BACKGROUND)
         // Template background cache: render once, reuse as single drawImage
         const _tplCache = new Map(); // key "kind|WxH" -> canvas
