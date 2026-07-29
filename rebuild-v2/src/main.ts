@@ -257,7 +257,10 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
 
   const threshold = 96;
   const maxOffset = 82;
+  const axisLockThreshold = 8;
+  let startX: number | null = null;
   let startY: number | null = null;
+  let gestureAxis: 'pending' | 'horizontal' | 'vertical' | null = null;
   let pullDistance = 0;
   let refreshing = false;
   let resetTimer: number | null = null;
@@ -281,7 +284,9 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
   };
 
   const reset = () => {
+    startX = null;
     startY = null;
+    gestureAxis = null;
     pullDistance = 0;
     home.classList.add('is-pull-resetting');
     home.classList.remove('is-pulling');
@@ -298,7 +303,9 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
 
   const refresh = () => {
     refreshing = true;
+    startX = null;
     startY = null;
+    gestureAxis = null;
     if (resetTimer !== null) window.clearTimeout(resetTimer);
     resetTimer = null;
     home.classList.add('is-pulling', 'is-refreshing');
@@ -317,7 +324,12 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
 
   scroller.addEventListener('touchstart', (event) => {
     if (refreshing || event.touches.length !== 1 || scroller.scrollTop > 0) return;
-    startY = event.touches[0]!.clientY;
+    const touch = event.touches[0]!;
+    startX = touch.clientX;
+    startY = touch.clientY;
+    gestureAxis = event.target instanceof Element && event.target.closest('.drive-recents')
+      ? 'horizontal'
+      : 'pending';
     pullDistance = 0;
     if (resetTimer !== null) window.clearTimeout(resetTimer);
     resetTimer = null;
@@ -325,12 +337,23 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
   }, { passive: true });
 
   scroller.addEventListener('touchmove', (event) => {
-    if (refreshing || startY === null || event.touches.length !== 1) return;
+    if (refreshing || startX === null || startY === null || event.touches.length !== 1) return;
     if (scroller.scrollTop > 0) {
       reset();
       return;
     }
-    const distance = event.touches[0]!.clientY - startY;
+    const touch = event.touches[0]!;
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
+    if (gestureAxis === 'pending') {
+      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < axisLockThreshold) return;
+      gestureAxis = Math.abs(deltaX) > Math.abs(deltaY) ? 'horizontal' : 'vertical';
+    }
+    if (gestureAxis === 'horizontal') {
+      if (pullDistance > 0) setPull(0);
+      return;
+    }
+    const distance = deltaY;
     if (distance <= 0) {
       setPull(0);
       return;
@@ -341,6 +364,10 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
 
   scroller.addEventListener('touchend', () => {
     if (refreshing || startY === null) return;
+    if (gestureAxis !== 'vertical') {
+      reset();
+      return;
+    }
     if (pullDistance >= threshold) refresh();
     else reset();
   }, { passive: true });
