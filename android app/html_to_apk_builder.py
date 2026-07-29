@@ -1582,7 +1582,7 @@ public class MainActivity extends BridgeActivity {{
         String appUserAgent = settings.getUserAgentString()
             .replace("; wv", "")
             .replace("Version/4.0 ", "");
-        settings.setUserAgentString(appUserAgent + " InhouseNotesApp/1.0");
+        settings.setUserAgentString(appUserAgent + " InhouseNotesApp/{self.version_name.get().strip()}");
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         settings.setJavaScriptEnabled(true);
 
@@ -1808,7 +1808,7 @@ class MainActivity : BridgeActivity() {{
         val appUserAgent = webView.settings.userAgentString
             .replace("; wv", "")
             .replace("Version/4.0 ", "")
-        webView.settings.userAgentString = "$appUserAgent InhouseNotesApp/1.0"
+        webView.settings.userAgentString = "$appUserAgent InhouseNotesApp/{self.version_name.get().strip()}"
         webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         webView.settings.javaScriptEnabled = true
 

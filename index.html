@@ -1,16 +1,16 @@
 <!--
 ================================================================================
-  INHOUSE NOTES  â€”  Single-file web application (standalone HTML)
+  INHOUSE NOTES  —  Single-file web application (standalone HTML)
 ================================================================================
 
   MASTER TABLE OF CONTENTS
-  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  ─────────────────────────────────────────────────────────────────────────────
   1. HEAD
      1.1  Meta tags & viewport
      1.2  External libraries (PDF.js, pdf-lib, jsPDF, Google Identity)
      1.3  External fonts (Google Fonts)
 
-  2. CSS  <style>  (lines ~15 â€“ 6200)
+  2. CSS  <style>  (lines ~15 – 6200)
      2.1  Global reset & utility classes
      2.2  App-mode detection rules  (Android WebView / inhouse-app flag)
      2.3  CSS custom properties  (design tokens: colours, radii, shadows)
@@ -29,14 +29,14 @@
      2.16 App download modal
      2.17 Miscellaneous & responsive overrides
 
-  3. BODY HTML  <body>  (lines ~6200 â€“ 7225)
+  3. BODY HTML  <body>  (lines ~6200 – 7225)
      3.1  Welcome / sign-in view
      3.2  Drive home view  (header, toolbar, file sections, folder contents)
      3.3  Editor view  (toolbar, canvas viewport, loading overlay)
      3.4  Calendar modals  (month view, day-detail, add-to-pages)
      3.5  Event editor modal
      3.6  Page side-panel event modal
-     3.7  Utility modals  (delete page, reset doc, export, cover image, â€¦)
+     3.7  Utility modals  (delete page, reset doc, export, cover image, …)
      3.8  Drive modals  (folder picker, confirm, trash, bin browser)
      3.9  App download modal
      3.10 Timeline (version history) panel
@@ -44,7 +44,7 @@
      3.12 Share / collaboration modal
      3.13 Hidden file inputs & misc DOM elements
 
-  4. JAVASCRIPT  <script>  (lines ~7225 â€“ 29976)
+  4. JAVASCRIPT  <script>  (lines ~7225 – 29976)
      4.1  Boot & app-mode detection
      4.2  Constants  (storage keys, limits, UI sizes, PDF params)
      4.3  Application state  (single mutable `state` object)
@@ -73,7 +73,7 @@
      4.26 Welcome / sign-in flow
      4.27 Event listeners & UI wiring  (all addEventListener calls)
      4.28 App initialisation  (init function called at page load)
-  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  ─────────────────────────────────────────────────────────────────────────────
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -91,57 +91,57 @@
     <script src="https://accounts.google.com/gsi/client" async defer data-auto_prompt="false"></script>
     <style>
         /*
-        â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
-          CSS INDEX   (search "Â§ X.Xa" to jump to any sub-section)
-        â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
-          2.1   Global reset & utility classes ................. (Â§ 2.1)
-          2.2   App-mode detection (Android WebView rules) ..... (Â§ 2.2)
+        ════════════════════════════════════════════════════════════════════════
+          CSS INDEX   (search "§ X.Xa" to jump to any sub-section)
+        ════════════════════════════════════════════════════════════════════════
+          2.1   Global reset & utility classes ................. (§ 2.1)
+          2.2   App-mode detection (Android WebView rules) ..... (§ 2.2)
           2.3   CSS custom properties (design tokens)
-            2.3a  Presence / collaboration avatars ............. (Â§ 2.3a)
-            2.3b  Save-debug panel ............................ (Â§ 2.3b)
-            2.3c  Read/Edit mode toggle & save indicator ....... (Â§ 2.3c)
-            2.3d  Shared button base + editor read-only states . (Â§ 2.3d)
-          2.4   Welcome / sign-in screen ...................... (Â§ 2.4)
+            2.3a  Presence / collaboration avatars ............. (§ 2.3a)
+            2.3b  Save-debug panel ............................ (§ 2.3b)
+            2.3c  Read/Edit mode toggle & save indicator ....... (§ 2.3c)
+            2.3d  Shared button base + editor read-only states . (§ 2.3d)
+          2.4   Welcome / sign-in screen ...................... (§ 2.4)
           2.5   Drive home
-            2.5a  Header (logo, action buttons, profile) ....... (Â§ 2.5a)
-            2.5b  Toolbar, search bar & breadcrumbs ........... (Â§ 2.5b)
-            2.5c  File sections layout ........................ (Â§ 2.5c)
-            2.5d  File cards & folder cards ................... (Â§ 2.5d)
-            2.5e  Card skeletons (loading placeholders) ........ (Â§ 2.5e)
-            2.5f  Dark mode overrides for drive cards .......... (Â§ 2.5f)
-          2.6   Drive profile & account menu .................. (Â§ 2.6)
-          2.7   Drive modals (folder picker, bin, confirm) ..... (Â§ 2.7)
+            2.5a  Header (logo, action buttons, profile) ....... (§ 2.5a)
+            2.5b  Toolbar, search bar & breadcrumbs ........... (§ 2.5b)
+            2.5c  File sections layout ........................ (§ 2.5c)
+            2.5d  File cards & folder cards ................... (§ 2.5d)
+            2.5e  Card skeletons (loading placeholders) ........ (§ 2.5e)
+            2.5f  Dark mode overrides for drive cards .......... (§ 2.5f)
+          2.6   Drive profile & account menu .................. (§ 2.6)
+          2.7   Drive modals (folder picker, bin, confirm) ..... (§ 2.7)
           2.8   Editor chrome
-            2.8a  Drawing toolbar (pen, eraser, colours, sizes) . (Â§ 2.8a)
-            Canvas viewport ................................ (Â§ 2.8)
+            2.8a  Drawing toolbar (pen, eraser, colours, sizes) . (§ 2.8a)
+            Canvas viewport ................................ (§ 2.8)
           2.9   Canvas & page layout
-            2.9a  Page rows & wrappers ........................ (Â§ 2.9a)
-            2.9b  Page wrapper, canvas, overlays & page number . (Â§ 2.9b)
-            2.9c  Keyframe animations (page, lasso, selection) . (Â§ 2.9c)
-          2.10  Manage-Pages panel ............................ (Â§ 2.10)
-          2.10b Timeline (version history) panel .............. (Â§ 2.10b)
+            2.9a  Page rows & wrappers ........................ (§ 2.9a)
+            2.9b  Page wrapper, canvas, overlays & page number . (§ 2.9b)
+            2.9c  Keyframe animations (page, lasso, selection) . (§ 2.9c)
+          2.10  Manage-Pages panel ............................ (§ 2.10)
+          2.10b Timeline (version history) panel .............. (§ 2.10b)
           2.11  Calendar widget
-            2.11a  Modal shell & toolbar ...................... (Â§ 2.11a)
-            2.11b  Month grid cells ........................... (Â§ 2.11b)
-            2.11c  Events inside grid cells ................... (Â§ 2.11c)
-            2.11d  Day-detail popup ........................... (Â§ 2.11d)
-            2.11e  "Add calendar to pages" modal .............. (Â§ 2.11e)
+            2.11a  Modal shell & toolbar ...................... (§ 2.11a)
+            2.11b  Month grid cells ........................... (§ 2.11b)
+            2.11c  Events inside grid cells ................... (§ 2.11c)
+            2.11d  Day-detail popup ........................... (§ 2.11d)
+            2.11e  "Add calendar to pages" modal .............. (§ 2.11e)
           2.12  Page side-panels (calendar cards beside pages)
-            2.12a  Day sections inside the panel .............. (Â§ 2.12a)
-            2.12b  Event list & individual event buttons ....... (Â§ 2.12b)
+            2.12a  Day sections inside the panel .............. (§ 2.12a)
+            2.12b  Event list & individual event buttons ....... (§ 2.12b)
           2.13  Event editor modal
-            2.13a  Form fields (title, date, repeat, etc.) .... (Â§ 2.13a)
-            2.13b  Colour picker & action buttons ............. (Â§ 2.13b)
-          2.14  Shared modals (overlays, .modal card base) ..... (Â§ 2.14)
-          2.15  Share / collaboration modal ................... (Â§ 2.15)
-          2.16  App download modal ............................ (Â§ 2.16)
-          2.17  Responsive overrides (â‰¤ 720 px & touch) ........ (Â§ 2.17)
-        â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
+            2.13a  Form fields (title, date, repeat, etc.) .... (§ 2.13a)
+            2.13b  Colour picker & action buttons ............. (§ 2.13b)
+          2.14  Shared modals (overlays, .modal card base) ..... (§ 2.14)
+          2.15  Share / collaboration modal ................... (§ 2.15)
+          2.16  App download modal ............................ (§ 2.16)
+          2.17  Responsive overrides (≤ 720 px & touch) ........ (§ 2.17)
+        ════════════════════════════════════════════════════════════════════════
         */
 
         @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
 
-        /* â”€â”€ Â§ 2.1  Global reset & utility classes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ── § 2.1  Global reset & utility classes ─────────────────────── */
 
         * {
             margin: 0;
@@ -154,12 +154,12 @@
             display: none !important;
         }
 
-        /* â”€â”€ Â§ 2.2  App-mode detection rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.2  App-mode detection rules ────────────────────────────────
            The Android WebView sets  html[data-inhouse-app="true"]  via the
            detectInhouseApp() function at boot. These rules hide features that
            only make sense in the browser (download button, fullscreen, etc.)
            or apply native-app tweaks (safe-area, keyboard avoidance).
-        â”€â”€ */
+        ── */
 
         html[data-inhouse-app="true"] #btn-drive-fullscreen,
         html[data-inhouse-app="true"] #btn-fullscreen {
@@ -172,10 +172,10 @@
             initial-value: 0deg;
         }
 
-        /* â”€â”€ Â§ 2.3  CSS custom properties (design tokens) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.3  CSS custom properties (design tokens) ───────────────────
            All colours, border-radii, shadows and spacing values live here so
            that switching to dark mode only needs a class on <html>.
-        â”€â”€ */
+        ── */
 
         :root {
             --bg-primary: #f5f5f0;
@@ -403,7 +403,7 @@
                 transform: none;
             }
 
-            /* Don't shrink/shift toggle on mobile â€” it's already floating */
+            /* Don't shrink/shift toggle on mobile — it's already floating */
             .mode-toggle-btn.is-editing {
                 transform: none;
                 min-height: var(--header-btn-size);
@@ -439,12 +439,12 @@
             align-items: center;
         }
 
-        /* â”„ Â§ 2.3a  Presence / collaboration avatars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.3a  Presence / collaboration avatars ────────────────────────
            The row of small profile pictures shown in the editor header when
            multiple users have the document open at the same time. Each avatar
            has a coloured ring that animates to show what the other user is
            doing (saving, uploading, typing, etc.).
-        â”„ */
+        ┄ */
 
         .presence-avatars {
             display: flex;
@@ -890,11 +890,11 @@
             background: var(--accent-red);
         }
 
-        /* â”„ Â§ 2.3b  Save-debug panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.3b  Save-debug panel ────────────────────────────────────────
            Hidden developer panel that shows a real-time breakdown of the
            save/sync state machine (dirty flags, versions, upload phases).
            Only accessible via a secret tap sequence; invisible in production.
-        â”„ */
+        ┄ */
 
         .save-debug-backdrop {
             position: fixed;
@@ -1149,11 +1149,11 @@
             opacity: 0.48;
         }
 
-        /* â”„ Â§ 2.3c  Read / Edit mode toggle & save indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.3c  Read / Edit mode toggle & save indicator ────────────────
            The pill-shaped toggle in the editor header that switches between
            read mode (no drawing, safer scrolling) and edit mode (pen active).
            The coloured dot beside it is the save indicator.
-        â”„ */
+        ┄ */
 
         .mode-toggle-btn {
             display: grid;
@@ -1319,11 +1319,11 @@
             cursor: default;
         }
 
-        /* â”„ Â§ 2.3d  Shared button base styles & editor read-only overrides â”€â”€
+        /* ┄ § 2.3d  Shared button base styles & editor read-only overrides ──
            Base .btn rules (used across all views) plus the rules that disable
            toolbar buttons and hide the add-page indicator when the doc is
            in read-only mode.
-        â”„ */
+        ┄ */
 
         #status-bar {
             display: none;
@@ -1430,10 +1430,10 @@
             height: 18px;
         }
 
-        /* â”€â”€ Â§ 2.8  Editor chrome â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.8  Editor chrome ────────────────────────────────────────────
            The main editor area: the scrollable viewport that holds the
            canvas container (which in turn holds all page wrappers).
-        â”€â”€ */
+        ── */
 
         #canvas-viewport {
             flex: 1;
@@ -1460,11 +1460,11 @@
             gap: 30px;
         }
 
-        /* â”„ Â§ 2.9a  Page rows & wrappers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.9a  Page rows & wrappers ────────────────────────────────────
            Each notebook page lives inside a .page-row flex container so the
            optional calendar side-panel can sit beside it. The .page-wrapper
            is the white rectangle that the user draws on.
-        â”„ */
+        ┄ */
 
         /* Page row: page + optional calendar panel stacked vertically */
         .page-row {
@@ -1474,13 +1474,13 @@
             gap: 14px;
         }
 
-        /* â”€â”€ Â§ 2.12  Page side-panels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.12  Page side-panels ────────────────────────────────────────
            Each notebook page can have an optional calendar card panel on its
            right side. These panels always use the brand white + orange palette
            regardless of dark mode (they are printed on paper, conceptually).
-        â”€â”€ */
+        ── */
 
-        /* â”€â”€â”€ Calendar side panel (white + orange, always â€” independent of theme) â”€â”€â”€ */
+        /* ─── Calendar side panel (white + orange, always — independent of theme) ─── */
         .page-side-panel,
         [data-theme="dark"] .page-side-panel {
             width: 100%;
@@ -1601,11 +1601,11 @@
             overflow-x: hidden;
         }
 
-        /* â”„ Â§ 2.12a  Day sections inside the panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.12a  Day sections inside the panel ──────────────────────────
            Each day of the week has its own card-like section with a header
            (day label + add-event button) and a list of events below it.
            The "today" section is highlighted in green.
-        â”„ */
+        ┄ */
 
         .page-side-panel-body .sp-day-section,
         [data-theme="dark"] .page-side-panel-body .sp-day-section {
@@ -1625,7 +1625,7 @@
             padding: 4px 4px 5px;
         }
 
-        /* Today's day section â€” green accent */
+        /* Today's day section — green accent */
         .page-side-panel-body .sp-day-section.today,
         [data-theme="dark"] .page-side-panel-body .sp-day-section.today {
             background: rgba(34, 197, 94, 0.08);
@@ -1720,12 +1720,12 @@
             box-shadow: none;
         }
 
-        /* â”„ Â§ 2.12b  Event list & individual event buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.12b  Event list & individual event buttons ─────────────────
            The scrollable list of event pills inside a day section. Each pill
            shows the event's time (coloured with the Google Calendar event
            colour) and its title. Read-only mode removes the hover state and
            hides the add (+) button.
-        â”„ */
+        ┄ */
 
         .page-side-panel-body .sp-events-list {
             display: flex;
@@ -1805,13 +1805,13 @@
             padding: 1px 3px;
         }
 
-        /* â”€â”€ Â§ 2.13  Event editor modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.13  Event editor modal ──────────────────────────────────────
            The popup that appears when the user taps an event or the + button
-           in a side-panel day section â€” lets them create, edit, or delete
+           in a side-panel day section — lets them create, edit, or delete
            a Google Calendar event without leaving the notebook page.
-        â”€â”€ */
+        ── */
 
-        /* â”€â”€â”€ Side-panel event editor modal (white + orange, always) â”€â”€â”€ */
+        /* ─── Side-panel event editor modal (white + orange, always) ─── */
         .modal.sp-event-modal,
         [data-theme="dark"] .modal.sp-event-modal {
             background: #ffffff;
@@ -1874,10 +1874,10 @@
             height: 16px;
         }
 
-        /* â”„ Â§ 2.13a  Event editor form fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.13a  Event editor form fields ───────────────────────────────
            Input fields inside the event editor: title, date, start/end time,
            repeat selector, reminder selector, location, description.
-        â”„ */
+        ┄ */
 
         .sp-event-form {
             display: flex;
@@ -1962,11 +1962,11 @@
             .sp-event-row-double { grid-template-columns: 1fr; }
         }
 
-        /* â”„ Â§ 2.13b  Event colour picker & action buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.13b  Event colour picker & action buttons ───────────────────
            The row of colour swatches (matching Google Calendar's 12-colour
            palette) and the Delete / Cancel / Save button row at the bottom
            of the event editor modal.
-        â”„ */
+        ┄ */
 
         .sp-color-picker {
             display: flex;
@@ -2075,11 +2075,11 @@
             background: #fff4ea;
         }
 
-        /* â”„ Â§ 2.9b  Page wrapper, canvas, overlays & page number â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.9b  Page wrapper, canvas, overlays & page number ────────────
            The page-wrapper holds the drawing canvas, the lasso overlay, the
            cursor overlay, and the page-number badge. Background images (PDF
            or template) are applied as CSS background-image via JS.
-        â”„ */
+        ┄ */
 
         .page-wrapper {
             position: relative;
@@ -2094,10 +2094,10 @@
             animation: pageFadeIn 0.5s ease;
         }
 
-        /* â”„ Â§ 2.9c  Keyframe animations (page, lasso, selection) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.9c  Keyframe animations (page, lasso, selection) ────────────
            CSS @keyframe declarations referenced by the canvas/page layer:
            page fade-in on creation, lasso marquee dash animation, etc.
-        â”„ */
+        ┄ */
 
         @keyframes pageFadeIn {
             from {
@@ -2357,11 +2357,11 @@
             opacity: 0.6;
         }
 
-        /* â”„ Â§ 2.8a  Drawing toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ┄ § 2.8a  Drawing toolbar ─────────────────────────────────────────
            The floating pill toolbar the user drags around the screen. Contains
            pen / highlighter / eraser / lasso tool buttons, colour swatches,
            stroke-size selector, and the undo/redo buttons.
-        â”„ */
+        ┄ */
 
         #toolbar {
             position: fixed;
@@ -2739,12 +2739,12 @@
             background: var(--accent-green);
         }
 
-        /* â”€â”€ Â§ 2.14  Shared modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.14  Shared modals ───────────────────────────────────────────
            The .modal-overlay backdrop + .modal card used by multiple features:
            delete page, export PDF, reset doc, cover image, folder picker, etc.
            svh (small viewport height) is used so the overlay never bleeds
            behind the mobile address bar.
-        â”€â”€ */
+        ── */
 
         .modal-overlay {
             position: fixed;
@@ -2894,13 +2894,13 @@
             display: none;
         }
 
-        /* â”€â”€ Â§ 2.10  Manage-Pages & Timeline panels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.10  Manage-Pages & Timeline panels ──────────────────────────
            Two slide-in panels that share the same overlay style:
-           â€¢ #pages-panel   â€” thumbnails + reorder / delete pages
-           â€¢ #timeline-panel â€” version history snapshots (see Â§ 2.10b below)
+           • #pages-panel   — thumbnails + reorder / delete pages
+           • #timeline-panel — version history snapshots (see § 2.10b below)
            Both panels slide in from the right on desktop and rise from the
-           bottom as a sheet on narrow screens (â‰¤ 720 px).
-        â”€â”€ */
+           bottom as a sheet on narrow screens (≤ 720 px).
+        ── */
 
         #pages-panel {
             position: fixed;
@@ -3119,19 +3119,19 @@
             background-size: 220% 100%;
         }
 
-        /* â”€â”€ Â§ 2.11  Calendar widget â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.11  Calendar widget ─────────────────────────────────────────
            Month-grid popup (calendar icon in toolbar), day-detail popup,
            and "Add calendar to pages" configuration modal.
 
            Sub-sections:
-             Â§ 2.11a  Modal shell & toolbar (navigation arrows, month label)
-             Â§ 2.11b  Month grid & day cells (7-column grid, today highlight)
-             Â§ 2.11c  Events inside cells
-             Â§ 2.11d  Day-detail popup (list of events for one tapped day)
-             Â§ 2.11e  "Add calendar to pages" configuration modal
-        â”€â”€ */
+             § 2.11a  Modal shell & toolbar (navigation arrows, month label)
+             § 2.11b  Month grid & day cells (7-column grid, today highlight)
+             § 2.11c  Events inside cells
+             § 2.11d  Day-detail popup (list of events for one tapped day)
+             § 2.11e  "Add calendar to pages" configuration modal
+        ── */
 
-        /* â”„ Â§ 2.11a  Calendar modal shell & toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.11a  Calendar modal shell & toolbar ─────────────────────── */
 
         .calendar-grid {
             display: grid;
@@ -3150,9 +3150,9 @@
             display: block;
         }
 
-        /* â”„ Â§ 2.11b  Month grid & day cells â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.11b  Month grid & day cells ─────────────────────────────── */
 
-        /* â”„ Â§ 2.11d  Day-detail popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.11d  Day-detail popup ───────────────────────────────────── */
         .calendar-day-modal {
             width: min(92vw, 520px);
             max-width: 520px;
@@ -3168,7 +3168,7 @@
             min-height: 0;
         }
 
-        /* â”„ Â§ 2.11e  "Add calendar to pages" configuration modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.11e  "Add calendar to pages" configuration modal ─────────── */
         .calendar-pages-modal {
             width: min(92vw, 560px);
             max-width: 560px;
@@ -3248,7 +3248,7 @@
             background: rgba(255, 255, 255, 0.06);
         }
 
-        /* â”„ Â§ 2.11b  Month grid cells â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.11b  Month grid cells ────────────────────────────────────── */
 
         .calendar-weekday,
         .calendar-day {
@@ -3353,7 +3353,7 @@
             margin-bottom: 6px;
         }
 
-        /* â”„ Â§ 2.11c  Events shown inside the grid cells â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.11c  Events shown inside the grid cells ─────────────────── */
 
         .calendar-event {
             display: block;
@@ -4009,10 +4009,10 @@
             font-size: 0.875rem;
         }
 
-        /* â”€â”€ Â§ 2.4  Welcome / sign-in screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.4  Welcome / sign-in screen ────────────────────────────────
            Full-screen landing shown when no Google account is connected.
            Contains the logo, tagline, and Sign-in button.
-        â”€â”€ */
+        ── */
 
         /* Welcome view (signed-out home) */
         #welcome-view {
@@ -4063,19 +4063,19 @@
             font-size: 1.05rem;
         }
 
-        /* â”€â”€ Â§ 2.5  Drive home â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.5  Drive home ───────────────────────────────────────────────
            The file browser shown after sign-in.
 
            Sub-sections:
-             Â§ 2.5a  Header (logo, action buttons, profile area)
-             Â§ 2.5b  Toolbar, search bar & breadcrumbs
-             Â§ 2.5c  File sections (recents, starred, shared, folder contents)
-             Â§ 2.5d  File cards (.drive-card) and folder cards
-             Â§ 2.5e  Card skeletons (loading placeholders)
-             Â§ 2.5f  Dark mode overrides for drive cards
-        â”€â”€ */
+             § 2.5a  Header (logo, action buttons, profile area)
+             § 2.5b  Toolbar, search bar & breadcrumbs
+             § 2.5c  File sections (recents, starred, shared, folder contents)
+             § 2.5d  File cards (.drive-card) and folder cards
+             § 2.5e  Card skeletons (loading placeholders)
+             § 2.5f  Dark mode overrides for drive cards
+        ── */
 
-        /* â”„ Â§ 2.5a  Drive home header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.5a  Drive home header ────────────────────────────────────── */
 
         /* Drive home */
         #drive-home {
@@ -4129,7 +4129,7 @@
             padding-bottom: 10px;
         }
 
-        /* "APP" download button â€” web-only. The Android in-app WebView sets
+        /* "APP" download button — web-only. The Android in-app WebView sets
            html[data-inhouse-app="true"] (see detectInhouseApp), so this rule
            keeps the button hidden there. */
         .btn-download-app {
@@ -4151,10 +4151,10 @@
             display: none !important;
         }
 
-        /* â”€â”€ Â§ 2.16  App download modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.16  App download modal ─────────────────────────────────────
            "APP" button in the home header (web-only, hidden in Android
            WebView). Opens a popup with the Android APK download link.
-        â”€â”€ */
+        ── */
 
         /* Download-APK modal */
         .download-app-modal {
@@ -4238,10 +4238,10 @@
             height: 18px;
         }
 
-        /* â”€â”€ Â§ 2.6  Drive profile & account menu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.6  Drive profile & account menu ────────────────────────────
            Avatar button and dropdown: account info, night-mode toggle,
            quick-access shortcuts (Diary / Agenda), Sign out.
-        â”€â”€ */
+        ── */
 
         .drive-profile {
             position: relative;
@@ -4480,7 +4480,7 @@
             }
         }
 
-        /* â”„ Â§ 2.5b  Drive toolbar, search bar & breadcrumbs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.5b  Drive toolbar, search bar & breadcrumbs ───────────────── */
 
         .drive-toolbar {
             display: flex;
@@ -4579,7 +4579,7 @@
             background-size: 480px 100%;
         }
 
-        /* â”„ Â§ 2.5c  File sections (recents, starred, shared, folder) â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.5c  File sections (recents, starred, shared, folder) ──────── */
 
         .drive-section {
             margin-bottom: 32px;
@@ -4693,7 +4693,7 @@
             margin-bottom: 18px;
         }
 
-        /* â”„ Â§ 2.5d  File cards & folder cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.5d  File cards & folder cards ───────────────────────────── */
 
         .drive-card {
             background: white;
@@ -4813,7 +4813,7 @@
             z-index: 9999;
         }
 
-        /* â”„ Â§ 2.5f  Dark mode overrides for drive cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.5f  Dark mode overrides for drive cards ─────────────────── */
 
         [data-theme="dark"] .drive-card,
         [data-theme="dark"] .drive-folder-card,
@@ -5232,14 +5232,14 @@
             opacity: 0.75;
         }
 
-        /* â”€â”€ Â§ 2.10b  Timeline (version history) panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.10b  Timeline (version history) panel ──────────────────────
            Slide-in panel that shows automatic snapshots of the document over
            time. The user can preview and restore any past version.
-        â”€â”€ */
+        ── */
 
         /* Version timeline side panel. Hidden via `display: none` (not just
            `transform: translateX(100%)`) so it can never accidentally show
-           during boot, CSS reflows, or when the home view is active â€”
+           during boot, CSS reflows, or when the home view is active —
            previously the panel relied solely on a transform offset, which
            would leak through if the rule wasn't applied yet on first paint
            or if the page had unexpected horizontal overflow. */
@@ -5325,7 +5325,7 @@
             color: var(--text-secondary);
         }
 
-        /* Empty/single-canvas legacy styling â€” kept harmless for backward compat. */
+        /* Empty/single-canvas legacy styling — kept harmless for backward compat. */
         .timeline-preview-canvas-wrap > canvas {
             display: block;
             max-width: 100%;
@@ -5584,10 +5584,10 @@
             height: 16px;
         }
 
-        /* â”€â”€ Â§ 2.17  Responsive overrides (â‰¤ 720 px and touch devices) â”€â”€â”€â”€â”€â”€
+        /* ── § 2.17  Responsive overrides (≤ 720 px and touch devices) ──────
            On narrow screens the side panels become bottom sheets, the toolbar
            adapts, font sizes shrink, and card grids collapse to fewer columns.
-        â”€â”€ */
+        ── */
 
         @media (max-width: 720px) {
             #timeline-panel {
@@ -5804,7 +5804,7 @@
             height: 16px;
         }
 
-        /* â”„ Â§ 2.5e  Card skeletons (shimmer placeholders while loading) â”€â”€â”€â”€â”€ */
+        /* ┄ § 2.5e  Card skeletons (shimmer placeholders while loading) ───── */
         /* Skeleton placeholders shown while Drive content is loading */
         @keyframes drive-skeleton-shimmer {
             0% { background-position: -240px 0; }
@@ -5983,10 +5983,10 @@
             pointer-events: auto;
         }
 
-        /* â”€â”€ Â§ 2.15  Share / collaboration modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        /* ── § 2.15  Share / collaboration modal ────────────────────────────
            Modal for sharing a document with other users and managing live
            collaborative editing permissions (read / edit).
-        â”€â”€ */
+        ── */
 
         /* Share Modal Styles */
         .modal-container {
@@ -6030,7 +6030,7 @@
             flex-direction: column;
         }
 
-        /* Block 1 â€” mirrors #share-owner-info exact paddings + bottom border */
+        /* Block 1 — mirrors #share-owner-info exact paddings + bottom border */
         .share-modal-loading .skel-owner-info {
             padding: 16px 20px 16px 20px;
             border-bottom: 1px solid rgba(0, 0, 0, 0.1);
@@ -6073,7 +6073,7 @@
             border-radius: 6px;
         }
 
-        /* Block 2 â€” mirrors .modal-content padding 20px, gap 20px */
+        /* Block 2 — mirrors .modal-content padding 20px, gap 20px */
         .share-modal-loading .skel-content {
             padding: 20px;
             display: flex;
@@ -6816,9 +6816,9 @@
     </script>
 
     <!--
-    â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
-      SECTION 3 â€” BODY HTML
-    â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
+    ════════════════════════════════════════════════════════════════════════════
+      SECTION 3 — BODY HTML
+    ════════════════════════════════════════════════════════════════════════════
       3.1  Welcome / sign-in view ........... #welcome-view
       3.2  Drive home view .................. #drive-home
            3.2a  Header (logo, buttons, profile)
@@ -6848,10 +6848,10 @@
       3.11 Hidden file inputs
       3.12 Timeline (version history) panel . #timeline-panel
       3.13 Share / collaboration modal ...... #share-modal-overlay
-    â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
+    ════════════════════════════════════════════════════════════════════════════
     -->
 
-    <!-- â”€â”€ Â§ 3.1  Welcome / sign-in view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── § 3.1  Welcome / sign-in view ─────────────────────────────────── -->
     <div id="welcome-view">
         <div class="welcome-logo">
             <svg viewBox="0 0 40 24" fill="none" aria-hidden="true">
@@ -6879,7 +6879,7 @@
         })();
     </script>
 
-    <!-- â”€â”€ Â§ 3.2  Drive home view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── § 3.2  Drive home view ──────────────────────────────────────────── -->
     <div id="drive-home" class="hidden">
         <div class="drive-topbar">
             <div class="drive-brand">
@@ -6997,7 +6997,7 @@
         </div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.3  Editor view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── § 3.3  Editor view ──────────────────────────────────────────────── -->
     <div id="editor-view" class="hidden">
         <div id="readonly-banner" class="hidden"
             style="background:var(--accent-yellow);color:#000;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;font-size:0.95rem;border-bottom:1px solid rgba(0,0,0,0.1);">
@@ -7109,7 +7109,7 @@
                 <div class="presence-popup-header">
                     <span>Actividad del documento</span>
                     <button type="button" class="presence-popup-close" id="btn-close-presence-popup"
-                        aria-label="Close activity list">Ã—</button>
+                        aria-label="Close activity list">×</button>
                 </div>
                 <div class="presence-popup-list" id="presence-popup-list"></div>
             </div>
@@ -7225,11 +7225,11 @@
         </div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.4  Page modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.4  Page modals ────────────────────────────────────────────────
          Small confirmation dialogs that operate on the current page or doc.
-    â”€â”€â”€ -->
+    ─── -->
 
-    <!-- Â§ 3.4a  Delete page -->
+    <!-- § 3.4a  Delete page -->
     <div class="modal-overlay" id="modal-delete-page">
         <div class="modal modal-danger">
             <h2>Delete page?</h2>
@@ -7242,7 +7242,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.4b  Reset document -->
+    <!-- § 3.4b  Reset document -->
     <div class="modal-overlay" id="modal-reset-document">
         <div class="modal modal-warning">
             <h2>Start new document?</h2>
@@ -7260,7 +7260,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.4c  Export PDF -->
+    <!-- § 3.4c  Export PDF -->
     <div class="modal-overlay" id="modal-export-pdf">
         <div class="modal">
             <h2>Export PDF</h2>
@@ -7276,7 +7276,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.4d  Cover image picker -->
+    <!-- § 3.4d  Cover image picker -->
     <div class="modal-overlay" id="modal-cover-image">
         <div class="modal modal-cover" role="dialog" aria-modal="true" aria-labelledby="cover-modal-title">
             <h2 id="cover-modal-title">Add photo page</h2>
@@ -7328,11 +7328,11 @@
         </div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.5  Drive modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.5  Drive modals ───────────────────────────────────────────────
          Dialogs that interact with the user's Google Drive account.
-    â”€â”€â”€ -->
+    ─── -->
 
-    <!-- Â§ 3.5a  Folder picker (choose where to save) -->
+    <!-- § 3.5a  Folder picker (choose where to save) -->
     <div class="modal-overlay" id="modal-folder-picker">
         <div class="modal">
             <h2 id="folder-picker-title">New PDF</h2>
@@ -7358,7 +7358,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.5b  Confirm-action slider (slide to confirm dangerous operations) -->
+    <!-- § 3.5b  Confirm-action slider (slide to confirm dangerous operations) -->
     <div class="modal-overlay" id="modal-confirm-slider">
         <div class="modal modal-danger">
             <h2 id="confirm-slider-title">Are you sure?</h2>
@@ -7379,7 +7379,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.5c  Trash / move to bin confirmation -->
+    <!-- § 3.5c  Trash / move to bin confirmation -->
     <div class="modal-overlay" id="modal-trash-file">
         <div class="modal modal-danger">
             <h2>Move to bin?</h2>
@@ -7400,7 +7400,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.5d  Bin browser (browse and restore trashed files) -->
+    <!-- § 3.5d  Bin browser (browse and restore trashed files) -->
     <div class="modal-overlay" id="modal-drive-bin">
         <div class="modal">
             <h2>Bin</h2>
@@ -7419,10 +7419,10 @@
 
     <div class="panel-overlay" id="panel-overlay"></div>
 
-    <!-- â”€â”€ Â§ 3.6  Manage-Pages panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.6  Manage-Pages panel ────────────────────────────────────────
          Slide-in panel showing all page thumbnails. The user can reorder
          them by drag-and-drop or delete individual pages.
-    â”€â”€â”€ -->
+    ─── -->
     <div id="pages-panel">
         <div class="panel-header">
             <h2>Manage Pages</h2>
@@ -7487,11 +7487,11 @@
         <div class="pages-list" id="pages-list"></div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.7  Calendar modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.7  Calendar modals ────────────────────────────────────────────
          Three linked modals for the Google Calendar integration.
-    â”€â”€â”€ -->
+    ─── -->
 
-    <!-- Â§ 3.7a  Month-view calendar picker -->
+    <!-- § 3.7a  Month-view calendar picker -->
     <div class="modal-overlay" id="modal-calendar">
         <div class="modal calendar-modal">
             <div class="calendar-modal-head">
@@ -7536,7 +7536,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.7b  Day-detail popup (events for one specific day) -->
+    <!-- § 3.7b  Day-detail popup (events for one specific day) -->
     <div class="modal-overlay" id="modal-calendar-day">
         <div class="modal calendar-day-modal">
             <div class="calendar-modal-head">
@@ -7555,7 +7555,7 @@
         </div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.9  App download modal (web-only, hidden in Android WebView) â”€â”€ -->
+    <!-- ── § 3.9  App download modal (web-only, hidden in Android WebView) ── -->
     <div class="modal-overlay" id="modal-download-app">
         <div class="modal download-app-modal">
             <button class="panel-close download-app-close" id="download-app-close" type="button" aria-label="Cerrar">
@@ -7582,7 +7582,7 @@
         </div>
     </div>
 
-    <!-- Â§ 3.7c  "Add calendar to pages" configuration modal -->
+    <!-- § 3.7c  "Add calendar to pages" configuration modal -->
     <div class="modal-overlay" id="modal-calendar-pages">
         <div class="modal calendar-pages-modal">
             <div class="calendar-modal-head">
@@ -7629,11 +7629,11 @@
         </div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.8  Event editor modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.8  Event editor modal ─────────────────────────────────────────
          Create / edit / delete a Google Calendar event without leaving the
          notebook. Opened by tapping an event pill or the + button in a
          page side-panel day section.
-    â”€â”€â”€ -->
+    ─── -->
     <div class="modal-overlay" id="sp-event-modal">
         <div class="modal sp-event-modal">
             <div class="sp-event-modal-head">
@@ -7681,7 +7681,7 @@
                             <option value="weekly">Every week</option>
                             <option value="monthly">Every month</option>
                             <option value="yearly">Every year</option>
-                            <option value="weekdays">Weekdays (Monâ€“Fri)</option>
+                            <option value="weekdays">Weekdays (Mon–Fri)</option>
                         </select>
                     </div>
                     <div class="sp-field">
@@ -7719,27 +7719,27 @@
         </div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.10  Loading overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.10  Loading overlay ───────────────────────────────────────────
          Full-screen dimmed overlay with a spinner shown during long operations
          (opening a PDF, saving to Drive, adding calendar events, etc.).
-    â”€â”€â”€ -->
+    ─── -->
     <div id="loading-overlay">
         <div class="spinner"></div>
         <div id="loading-text">Loading PDF...</div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.11  Hidden file inputs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.11  Hidden file inputs ────────────────────────────────────────
          Invisible <input type="file"> elements triggered programmatically
          when the user chooses to import a PDF or pick a cover photo.
-    â”€â”€â”€ -->
+    ─── -->
     <input type="file" id="pdf-input" accept=".pdf">
     <input type="file" id="cover-image-input" accept="image/*">
 
-    <!-- â”€â”€ Â§ 3.12  Timeline (version history) panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.12  Timeline (version history) panel ──────────────────────────
          Slide-in panel that shows automatic document snapshots over time.
          The user can preview any past version and revert to it if needed.
          Hidden via display:none until opened (never appears on home).
-    â”€â”€â”€ -->
+    ─── -->
     <div id="timeline-panel" aria-hidden="true">
         <div class="panel-header">
             <h2 id="timeline-panel-title">Version timeline</h2>
@@ -7772,10 +7772,10 @@
         </div>
     </div>
 
-    <!-- â”€â”€ Â§ 3.13  Share / collaboration modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    <!-- ── § 3.13  Share / collaboration modal ──────────────────────────────
          Modal for sharing the document with other Google accounts and
          managing live collaborative-editing permissions (read / edit).
-    â”€â”€â”€ -->
+    ─── -->
     <div id="share-modal-overlay" class="modal-overlay">
         <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
             <div class="modal-header">
@@ -7886,72 +7886,72 @@
     </div>
     <script>
         /*
-        â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
-          SECTION 4 â€” JAVASCRIPT   (search "Â§ 4.X" to jump to any sub-section)
-        â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
-          4.1   Boot & app-mode detection ............... (Â§ 4.1)
+        ════════════════════════════════════════════════════════════════════════
+          SECTION 4 — JAVASCRIPT   (search "§ 4.X" to jump to any sub-section)
+        ════════════════════════════════════════════════════════════════════════
+          4.1   Boot & app-mode detection ............... (§ 4.1)
                 detectInhouseApp, applyInhouseAppMode
-          4.2   Constants & configuration ............... (Â§ 4.2)
+          4.2   Constants & configuration ............... (§ 4.2)
                 Storage keys, PDF.js URLs, rendering limits
-          4.3   Application state object ................ (Â§ 4.3)
-                The single `state` object â€” everything mutable lives here
-          4.4   DOM element references .................. (Â§ 4.4)
+          4.3   Application state object ................ (§ 4.3)
+                The single `state` object — everything mutable lives here
+          4.4   DOM element references .................. (§ 4.4)
                 All getElementById / querySelector calls at startup
           4.5   Theme, Drive auth & sign-in
-            4.5a  initDriveAuth, PKCE & token refresh .... (Â§ 4.5)
-            4.5b  Theme helpers ......................... (Â§ 4.5b)
-            4.5c  Sign-in / sign-out & profile UI ....... (Â§ 4.5c)
-            4.5d  Status bar, loading overlay & utils ... (Â§ 4.5d)
-          4.6   Core drawing engine ..................... (Â§ 4.6)
+            4.5a  initDriveAuth, PKCE & token refresh .... (§ 4.5)
+            4.5b  Theme helpers ......................... (§ 4.5b)
+            4.5c  Sign-in / sign-out & profile UI ....... (§ 4.5c)
+            4.5d  Status bar, loading overlay & utils ... (§ 4.5d)
+          4.6   Core drawing engine ..................... (§ 4.6)
                 drawSmoothStroke, highlighter, eraser
-          4.7   Canvas & page rendering ................. (Â§ 4.7)
+          4.7   Canvas & page rendering ................. (§ 4.7)
                 redrawPage, applyPageBackground, PDF rendering
-          4.8   Page lifecycle .......................... (Â§ 4.8)
+          4.8   Page lifecycle .......................... (§ 4.8)
                 addPage, ensurePageCanvas, unloadPageData
-          4.9   Viewport transform ...................... (Â§ 4.9)
+          4.9   Viewport transform ...................... (§ 4.9)
                 pan, zoom, inertia, clampPanToVisible, handleWheel
-          4.10  Visible-page tracking ................... (Â§ 4.10)
-                updateVisiblePages â€” activates / unloads pages on scroll
-          4.11  Canvas pointer events & live stroke drawing (Â§ 4.11)
-            4.11b Undo / redo history ................... (Â§ 4.11b)
-          4.12  Selection & lasso tool .................. (Â§ 4.12)
+          4.10  Visible-page tracking ................... (§ 4.10)
+                updateVisiblePages — activates / unloads pages on scroll
+          4.11  Canvas pointer events & live stroke drawing (§ 4.11)
+            4.11b Undo / redo history ................... (§ 4.11b)
+          4.12  Selection & lasso tool .................. (§ 4.12)
                 selectStrokesWithLasso, updateSelectionBox, delete/move
-          4.13  Cover image & page templates ............ (Â§ 4.13)
+          4.13  Cover image & page templates ............ (§ 4.13)
           4.14  Tool switching & document helpers
-            4.14a Tool switching & document title ....... (Â§ 4.14a)
-            4.14b Agenda / Diary detection .............. (Â§ 4.14b)
-          4.15  Drive home UI ........................... (Â§ 4.15)
-            4.15b Folder helpers & quick-access docs .... (Â§ 4.15b)
+            4.14a Tool switching & document title ....... (§ 4.14a)
+            4.14b Agenda / Diary detection .............. (§ 4.14b)
+          4.15  Drive home UI ........................... (§ 4.15)
+            4.15b Folder helpers & quick-access docs .... (§ 4.15b)
           4.16  Drive file open & PDF import
-            4.16a PDF background management ............. (Â§ 4.16a)
-            4.16b Shared / public link support .......... (Â§ 4.16b)
-            4.16c PDF import (from file or URL) ......... (Â§ 4.16c)
-          4.17  Drive sync & save ....................... (Â§ 4.17)
-            4.17a Drive HTTP client (driveFetch) ........ (Â§ 4.17a)
-            4.17b PDF export helpers ..................... (Â§ 4.17b)
-          4.18  Local storage & IndexedDB ............... (Â§ 4.18)
-            4.18b View-state & token persistence ........ (Â§ 4.18b)
-          4.19  Version timeline ....................... (Â§ 4.19)
-            4.19b Version snapshot capture .............. (Â§ 4.19b)
-          4.20  Manage-Pages panel ...................... (Â§ 4.20)
-            4.20b Page delete & reset modals ............ (Â§ 4.20b)
+            4.16a PDF background management ............. (§ 4.16a)
+            4.16b Shared / public link support .......... (§ 4.16b)
+            4.16c PDF import (from file or URL) ......... (§ 4.16c)
+          4.17  Drive sync & save ....................... (§ 4.17)
+            4.17a Drive HTTP client (driveFetch) ........ (§ 4.17a)
+            4.17b PDF export helpers ..................... (§ 4.17b)
+          4.18  Local storage & IndexedDB ............... (§ 4.18)
+            4.18b View-state & token persistence ........ (§ 4.18b)
+          4.19  Version timeline ....................... (§ 4.19)
+            4.19b Version snapshot capture .............. (§ 4.19b)
+          4.20  Manage-Pages panel ...................... (§ 4.20)
+            4.20b Page delete & reset modals ............ (§ 4.20b)
           4.21  Share / collaboration
-            4.21a Drive sharing permissions API ......... (Â§ 4.21a)
-            4.21b Presence write & heartbeat ............ (Â§ 4.21b)
-            4.21c Remote change detection & merge ....... (Â§ 4.21c)
-          4.22  Google Calendar integration ............. (Â§ 4.22)
-          4.23  Page side-panels ........................ (Â§ 4.23)
-          4.24  Auto-sync (5-second poll) ............... (Â§ 4.24)
-          4.25  "Add calendar to pages" flow ............ (Â§ 4.25)
-          4.26  Welcome / sign-in & view switching ...... (Â§ 4.26)
-          4.27  Event listeners & UI wiring ............. (Â§ 4.27)
-          4.28  App initialisation â€” init() ............. (Â§ 4.28)
-        â•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^Pâ•^P
+            4.21a Drive sharing permissions API ......... (§ 4.21a)
+            4.21b Presence write & heartbeat ............ (§ 4.21b)
+            4.21c Remote change detection & merge ....... (§ 4.21c)
+          4.22  Google Calendar integration ............. (§ 4.22)
+          4.23  Page side-panels ........................ (§ 4.23)
+          4.24  Auto-sync (5-second poll) ............... (§ 4.24)
+          4.25  "Add calendar to pages" flow ............ (§ 4.25)
+          4.26  Welcome / sign-in & view switching ...... (§ 4.26)
+          4.27  Event listeners & UI wiring ............. (§ 4.27)
+          4.28  App initialisation — init() ............. (§ 4.28)
+        ════════════════════════════════════════════════════════════════════════
         */
 
-        // â”€â”€ Â§ 4.2  Constants & configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.14';
+        const APP_VERSION = '4.4.15';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -7964,7 +7964,7 @@
 
         const INHOUSE_APP_STORAGE_KEY = 'inhouseNotesAppMode';
 
-        // â”€â”€ Â§ 4.1  Boot & app-mode detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.1  Boot & app-mode detection ─────────────────────────────────
         // Determines whether we are running inside the Android WebView wrapper
         // (the inhouse notes Android app) vs a regular browser. If yes, certain
         // browser-only features are hidden (download button, fullscreen, etc.).
@@ -8004,6 +8004,129 @@
         }
 
         applyInhouseAppMode();
+        const ANDROID_UPDATE_MANIFEST_URL = '/android-update.json';
+        const LEGACY_ANDROID_APP_VERSION = '1.0.2';
+        let androidUpdateCheckPromise = null;
+
+        function compareSemanticVersions(left, right) {
+            const parse = value => String(value || '').split('.').map(part => Number.parseInt(part, 10) || 0);
+            const a = parse(left);
+            const b = parse(right);
+            const length = Math.max(a.length, b.length);
+            for (let i = 0; i < length; i++) {
+                const difference = (a[i] || 0) - (b[i] || 0);
+                if (difference !== 0) return difference;
+            }
+            return 0;
+        }
+
+        function getInstalledAndroidAppVersion() {
+            if (window.InhouseNative && typeof window.InhouseNative.getAppVersion === 'function') {
+                try {
+                    const nativeVersion = String(window.InhouseNative.getAppVersion() || '').trim();
+                    if (/^\d+\.\d+\.\d+$/.test(nativeVersion)) return nativeVersion;
+                } catch (err) {}
+            }
+            const match = String(navigator.userAgent || '').match(/\bInhouseNotesApp\/(\d+(?:\.\d+){1,2})\b/i);
+            if (match && match[1] !== '1.0') return match[1];
+            return LEGACY_ANDROID_APP_VERSION;
+        }
+
+        function setAndroidUpdateGateOverflow(blocked) {
+            document.documentElement.style.overflow = blocked ? 'hidden' : '';
+            document.body.style.overflow = blocked ? 'hidden' : '';
+        }
+
+        function ensureAndroidUpdateGate() {
+            let gate = document.getElementById('android-update-gate');
+            if (gate) return gate;
+            gate = document.createElement('div');
+            gate.id = 'android-update-gate';
+            gate.setAttribute('role', 'dialog');
+            gate.setAttribute('aria-modal', 'true');
+            gate.setAttribute('aria-label', 'Required application update');
+            Object.assign(gate.style, {
+                position: 'fixed', inset: '0', zIndex: '2147483647', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', padding: '24px',
+                background: 'rgba(10, 10, 12, 0.94)', color: '#f7f7f8', fontFamily: 'DM Sans, sans-serif'
+            });
+            gate.innerHTML = `
+                <div style="width:min(420px,100%);padding:28px;border-radius:24px;background:#1c1c1f;border:1px solid #3a3a40;box-shadow:0 24px 80px rgba(0,0,0,.45);text-align:center">
+                    <div style="font-size:40px;line-height:1;margin-bottom:16px">↻</div>
+                    <h2 data-update-title style="margin:0 0 10px;font:700 24px/1.2 Comfortaa,sans-serif">Comprobando actualización…</h2>
+                    <p data-update-message style="margin:0;color:#c8c8cd;line-height:1.5">Espera un momento.</p>
+                    <button data-update-install type="button" style="display:none;width:100%;margin-top:22px;padding:14px 18px;border:0;border-radius:14px;background:#f2f2f4;color:#151517;font:700 16px DM Sans,sans-serif;cursor:pointer">Instalar actualización</button>
+                    <p data-update-status style="min-height:20px;margin:14px 0 0;color:#aaaab2;font-size:13px;line-height:1.4"></p>
+                </div>`;
+            document.body.appendChild(gate);
+            setAndroidUpdateGateOverflow(true);
+            return gate;
+        }
+
+        function closeAndroidUpdateGate() {
+            document.getElementById('android-update-gate')?.remove();
+            setAndroidUpdateGateOverflow(false);
+        }
+
+        function showRequiredAndroidUpdate(manifest, installedVersion) {
+            const gate = ensureAndroidUpdateGate();
+            const title = gate.querySelector('[data-update-title]');
+            const message = gate.querySelector('[data-update-message]');
+            const install = gate.querySelector('[data-update-install]');
+            const status = gate.querySelector('[data-update-status]');
+            title.textContent = 'Actualización obligatoria';
+            message.textContent = `Tienes Inhouse Notes ${installedVersion}. Instala la versión ${manifest.version} para continuar.`;
+            install.style.display = 'block';
+            install.onclick = () => {
+                status.textContent = 'Descargando la actualización. Cuando termine, abre el APK y confirma la instalación.';
+                try {
+                    if (window.InhouseNative && typeof window.InhouseNative.openAuthUrl === 'function') {
+                        window.InhouseNative.openAuthUrl(manifest.apkUrl);
+                    } else {
+                        window.location.assign(manifest.apkUrl);
+                    }
+                } catch (err) {
+                    status.textContent = 'No se pudo abrir la descarga. Inténtalo de nuevo.';
+                }
+            };
+            install.focus();
+        }
+
+        async function checkForRequiredAndroidUpdate() {
+            if (!isInhouseApp || !window.InhouseNative) return;
+            if (androidUpdateCheckPromise) return androidUpdateCheckPromise;
+            androidUpdateCheckPromise = (async () => {
+                const gate = ensureAndroidUpdateGate();
+                try {
+                    const response = await fetch(`${ANDROID_UPDATE_MANIFEST_URL}?check=${Date.now()}`, {
+                        cache: 'no-store', headers: { 'Cache-Control': 'no-cache' }
+                    });
+                    if (!response.ok) throw new Error(`Update check failed (${response.status})`);
+                    const manifest = await response.json();
+                    if (!/^\d+\.\d+\.\d+$/.test(String(manifest.version || ''))) throw new Error('Invalid update version');
+                    const apkUrl = new URL(String(manifest.apkUrl || ''), window.location.origin);
+                    if (apkUrl.protocol !== 'https:' || !['raw.githubusercontent.com', 'github.com'].includes(apkUrl.hostname)) throw new Error('Invalid update download URL');
+                    manifest.apkUrl = apkUrl.toString();
+                    const installedVersion = getInstalledAndroidAppVersion();
+                    if (manifest.required !== false && compareSemanticVersions(manifest.version, installedVersion) > 0) {
+                        showRequiredAndroidUpdate(manifest, installedVersion);
+                        return;
+                    }
+                    closeAndroidUpdateGate();
+                } catch (err) {
+                    console.warn('Android update check failed:', err);
+                    gate.querySelector('[data-update-status]').textContent = 'No se pudo comprobar la actualización. Se volverá a intentar.';
+                    setTimeout(closeAndroidUpdateGate, 1200);
+                }
+            })().finally(() => { androidUpdateCheckPromise = null; });
+            return androidUpdateCheckPromise;
+        }
+
+        checkForRequiredAndroidUpdate();
+        window.addEventListener('focus', () => {
+            if (document.getElementById('android-update-gate')) checkForRequiredAndroidUpdate();
+        });
+        setInterval(checkForRequiredAndroidUpdate, 15 * 60 * 1000);
 
         // Native Canvas Template Render (replaces previous heavy SVG_BACKGROUND)
         // Template background cache: render once, reuse as single drawImage
@@ -8755,7 +8878,7 @@
                 if (!mem) return;
                 const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
                 if (usedRatio > 0.5) {
-                    console.warn(`Memory pressure: ${(usedRatio * 100).toFixed(0)}% heap used â€” running cleanup`);
+                    console.warn(`Memory pressure: ${(usedRatio * 100).toFixed(0)}% heap used — running cleanup`);
                     // Aggressive image cache prune
                     const aggressiveTarget = Math.floor(MAX_IMAGE_CACHE * 0.4);
                     const cands = Array.from(imageCacheUsage.entries())
@@ -8786,7 +8909,7 @@
                     });
                 }
             } catch (err) {
-                // performance.memory not available â€” ignore silently
+                // performance.memory not available — ignore silently
             }
         }
 
@@ -8796,7 +8919,7 @@
         // ============= END MEMORY OPTIMIZATION UTILITIES =============
 
         // App State
-        // â”€â”€ Â§ 4.3  Application state object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.3  Application state object ──────────────────────────────────
         // The single source of truth for all mutable runtime values:
         // which pages exist, current tool/colour/zoom, Drive file info, etc.
         // Everything that needs to survive a re-render lives here.
@@ -8876,7 +8999,7 @@
             calendarPageConfig: null
         };
 
-        // â”€â”€ Â§ 4.4  DOM element references â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.4  DOM element references ─────────────────────────────────────
         // All getElementById / querySelector calls are collected here at the
         // top so the rest of the code can use short names without re-querying.
         const canvasContainer = document.getElementById('canvas-container');
@@ -9238,7 +9361,7 @@
         }
 
         // Initialize
-        // â”€â”€ Â§ 4.28  App initialisation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.28  App initialisation ────────────────────────────────────────
         // init() is the single entry point called at the bottom of the script.
         // It loads saved data, renders all pages, wires up event listeners,
         // starts Drive auth, and navigates to today's calendar page.
@@ -9292,7 +9415,7 @@
             const isSignedInAtBoot = !!driveAccessToken || hasStoredDriveToken || hasStoredRefreshToken;
             if (window.pendingSharedDriveId) {
                 // Honour the deep-link share regardless of where the user was
-                // last time â€” they explicitly opened a shared link.
+                // last time — they explicitly opened a shared link.
                 if (driveAccessToken) {
                     showEditorView();
                 } else {
@@ -9742,7 +9865,7 @@
         }
 
         // Add a new blank page
-        // â”€â”€ Â§ 4.8  Page lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.8  Page lifecycle ─────────────────────────────────────────────
         // Create, activate, deactivate and remove pages. Pages are lazy-loaded:
         // only the ~3 pages nearest the viewport have their canvas active at
         // any time; the rest are stored in IndexedDB and shown as previews.
@@ -9976,7 +10099,7 @@
                 page.pendingUnload = false;
             }
             // Add to activePageIndices BEFORE attachPageCanvases so that
-            // queuePdfPageRender â†’ processPdfRenderQueue doesn't skip this page
+            // queuePdfPageRender → processPdfRenderQueue doesn't skip this page
             activePageIndices.add(pageIndex);
             attachPageCanvases(wrapper, pageIndex, options);
             touchPageAccess(pageIndex);
@@ -10518,7 +10641,7 @@
             return Array.from(expanded).sort((a, b) => a - b);
         }
 
-        // â”€â”€ Â§ 4.10  Visible-page tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.10  Visible-page tracking ────────────────────────────────────
         // On every scroll/zoom change, determines which pages intersect the
         // viewport, activates their canvases, and unloads pages that moved
         // far enough away (to stay within the MAX_ACTIVE_PAGES memory limit).
@@ -10675,7 +10798,7 @@
         }
 
         // Setup canvas pointer events with improved drawing
-        // â”€â”€ Â§ 4.11  Canvas pointer events & live stroke drawing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.11  Canvas pointer events & live stroke drawing ──────────────
         // Wires up pen/touch/mouse events on each page canvas: start stroke,
         // accumulate points, preview the live tail, and commit to the page.
         // Also handles eraser preview and gesture-to-eraser switching.
@@ -10991,7 +11114,7 @@
                         }
                     }
                     // Resolve the target page by pageId captured when the stroke
-                    // started â€” if a remote sync reordered the document while the
+                    // started — if a remote sync reordered the document while the
                     // user was drawing, the closure's pageIndex is stale and
                     // pushing the stroke to state.pages[pageIndex] would land it
                     // on the wrong page (whichever happens to occupy that index
@@ -11006,7 +11129,7 @@
                     }
                     const targetPage = state.pages[targetPageIndex];
                     if (!targetPage) {
-                        // Page was deleted while we were drawing â€” drop the stroke.
+                        // Page was deleted while we were drawing — drop the stroke.
                         currentStroke = null;
                         currentStrokePageId = null;
                         drawGeometry = null;
@@ -11298,8 +11421,8 @@
             ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
         }
 
-        // â”€â”€ Â§ 4.12  Selection & lasso tool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // Lasso draw â†’ hit-test strokes/images â†’ show handles â†’ move/scale/
+        // ── § 4.12  Selection & lasso tool ───────────────────────────────────
+        // Lasso draw → hit-test strokes/images → show handles → move/scale/
         // delete/duplicate the selected content. Also manages the visual
         // selection box and its drag handles.
         function clearSelection() {
@@ -11885,7 +12008,7 @@
             });
         }
 
-        // â”€â”€ Â§ 4.14a  Tool switching & document title â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.14a  Tool switching & document title ─────────────────────────
         // setActiveTool switches between pen / highlighter / eraser / lasso,
         // remembers the last non-eraser tool, and updates the toolbar UI.
         // getBaseDocTitle / updateDocTitle syncs the <title> and header label.
@@ -12030,7 +12153,7 @@
             return null;
         }
 
-        // â”€â”€ Â§ 4.14b  Agenda/Diary detection & calendar availability â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.14b  Agenda/Diary detection & calendar availability ──────────
         // Checks whether the currently open document is a quick-access Agenda
         // or Diary (by folder name / file prefix). This gates the calendar
         // icon, side-panels, and Add-to-Pages button.
@@ -12077,7 +12200,7 @@
             }
         }
 
-        // â”€â”€ Â§ 4.5b  Theme helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.5b  Theme helpers ─────────────────────────────────────────────
         function getSystemTheme() {
             return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
                 ? 'dark'
@@ -12208,7 +12331,7 @@
             updateDocTitle();
         }
 
-        // â”€â”€ Â§ 4.26  Welcome / sign-in & view switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.26  Welcome / sign-in & view switching ───────────────────────
         // Functions that show/hide the three top-level views: welcome screen,
         // Drive home, and the editor. Also handles the sign-in / sign-out flow.
         function showDriveHome() {
@@ -12312,7 +12435,7 @@
             saveViewMode('editor');
         }
 
-        // â”€â”€ Â§ 4.5  Theme, appearance & Drive authentication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.5  Theme, appearance & Drive authentication ───────────────────
         // initTheme sets light/dark mode. initDriveAuth wires Google Identity
         // Services (GIS) to get OAuth tokens for Drive + Calendar access.
         function initDriveAuth() {
@@ -12477,7 +12600,7 @@
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
                 if (res.status === 400 || res.status === 401) {
-                    // Refresh token revoked or invalid â€” drop it so user re-auths.
+                    // Refresh token revoked or invalid — drop it so user re-auths.
                     try { localStorage.removeItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
                 }
                 throw new Error(`Refresh failed: ${res.status} ${text}`);
@@ -12824,7 +12947,7 @@
             });
         }
 
-        // â”€â”€ Â§ 4.5c  Sign-in / sign-out & profile UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.5c  Sign-in / sign-out & profile UI ─────────────────────────
         function signInDrive() {
             driveSignedOut = false;
             driveAuthNeedsReconnect = false;
@@ -13013,7 +13136,7 @@
             if (state.lastExportSize) {
                 parts.push(formatFileSize(state.lastExportSize));
             }
-            el.textContent = parts.join(' Â· ');
+            el.textContent = parts.join(' · ');
         }
 
         function formatFileSize(bytes) {
@@ -13042,7 +13165,7 @@
         // vector copy. To prevent this we swap the PDF.js document used for
         // background rendering to the *clean original* whenever those bytes are
         // available (cached in IndexedDB or captured this session).
-        // â”€â”€ Â§ 4.16a  PDF background management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.16a  PDF background management ───────────────────────────────
         // For documents opened from Drive PDFs, the original clean PDF is
         // cached in memory so per-page backgrounds can be re-rendered on
         // demand without re-downloading the file.
@@ -13064,7 +13187,7 @@
                 activePdfPageCount = cleanPdfDoc.numPages;
                 state.cleanOriginalPageSizes = await readPdfPageSizes(cleanPdfDoc);
                 // Existing rendered backgrounds (if any) came from the saved file
-                // and have the overlay burnt in â€” drop them so they re-render from
+                // and have the overlay burnt in — drop them so they re-render from
                 // the clean source.
                 pdfBackgroundCache.clear();
                 for (const page of state.pages) {
@@ -13186,7 +13309,7 @@
                         ));
                     if (state.cleanOriginalPdfBytes && !displaySavedPdfWithBakedOverlay) {
                         await swapDisplayDocToCleanOriginal();
-                        // Clear any leftover white covers from a prior legacy session â€”
+                        // Clear any leftover white covers from a prior legacy session —
                         // we now have the real clean original so strokes are pure vector.
                         for (const pg of state.pages) {
                             if (pg && pg.legacyCoverStrokes) {
@@ -13196,7 +13319,7 @@
                         }
                         state.hasLegacyBakedOverlay = false;
                     } else {
-                        // No clean original recoverable â€” this doc was saved by an older
+                        // No clean original recoverable — this doc was saved by an older
                         // build whose output baked strokes into the page raster. Seed
                         // legacy white covers (and re-seed in case strokes changed) so
                         // the eraser can still wipe burnt-in pixels.
@@ -13356,7 +13479,7 @@
             return restoredPage;
         }
 
-        // â”€â”€ Â§ 4.17a  Drive HTTP client â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.17a  Drive HTTP client ────────────────────────────────────────
         // driveFetch wraps fetch() with automatic token injection, 401-retry,
         // and request timeout. All Drive API calls go through this function.
         async function driveFetch(url, options = {}, _retried = false) {
@@ -13396,7 +13519,7 @@
                     if (driveSignedOut) {
                         throw new Error('Drive API error 401: signed out');
                     }
-                    // Token expired server-side â€” force refresh and retry once
+                    // Token expired server-side — force refresh and retry once
                     driveAccessToken = null;
                     driveTokenExpiry = 0;
                     try {
@@ -13465,7 +13588,7 @@
             return false;
         }
 
-        // â”€â”€ Â§ 4.16b  Shared / public link support â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.16b  Shared / public link support ────────────────────────────
         // Allows opening a Drive file shared via a public link without being
         // signed in. Downloads the PDF directly from the sharing URL and falls
         // back to an unauthenticated fetch when the token is absent.
@@ -13687,7 +13810,7 @@
             });
         }
 
-        // â”€â”€ Â§ 4.15b  Drive folder helpers & quick-access documents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.15b  Drive folder helpers & quick-access documents ───────────
         // ensureDriveFolder ensures the inhouse-notes folder exists in Drive.
         // openQuickAccessDriveDocument opens the user's Diary or Agenda PDF
         // from that folder, creating it automatically if it doesn't exist yet.
@@ -13831,7 +13954,7 @@
             }
         }
 
-        // â”€â”€ Â§ 4.21a  Drive sharing permissions API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.21a  Drive sharing permissions API ────────────────────────────
         async function fetchDrivePermissions(fileId) {
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,type,role,emailAddress,displayName,photoLink)`, { method: 'GET' });
             return await res.json();
@@ -14368,7 +14491,7 @@
             if (driveBackBtn) driveBackBtn.disabled = driveFolderStack.length <= 1;
         }
 
-        // Per-item fingerprint â€” only the fields that actually render visibly
+        // Per-item fingerprint — only the fields that actually render visibly
         // in the card. If this hasn't changed since the last render, the
         // card's DOM (including the loaded <img>) can stay untouched.
         //
@@ -14376,7 +14499,7 @@
         // time the file is opened or its appProperties change (presence,
         // headRevision, etc.), but none of those affect what we draw inside
         // the card. Including it caused the 5-second auto-refresh to recreate
-        // cards whose visible state hadn't changed at all â€” the new <img>
+        // cards whose visible state hadn't changed at all — the new <img>
         // elements then flashed while their cached image reloaded.
         // The diff function still handles reordering by id, so the file order
         // in "recents" updates correctly without a visual flicker.
@@ -14439,7 +14562,7 @@
                     container.insertBefore(newCard, cursor);
                 }
             });
-            // Anything left in `existing` is no longer in the list â€” remove.
+            // Anything left in `existing` is no longer in the list — remove.
             existing.forEach(el => el.remove());
             // Also sweep any leftover children that aren't tagged as real
             // cards. These are skeleton placeholders left behind by
@@ -14455,7 +14578,7 @@
             }
         }
 
-        // â”€â”€ Â§ 4.15  Drive home UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.15  Drive home UI ─────────────────────────────────────────────
         // Renders the file-browser home screen: recents, starred, shared, and
         // current-folder grids. Uses DOM diffing (diffRenderDriveList) so that
         // the 5-second auto-refresh never causes a visible flicker.
@@ -14687,8 +14810,8 @@
             if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
             if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
             // Skeletons replace real card DOM, so the diff-render won't find
-            // matching `data-drive-item-id` next time around â€” it'll rebuild
-            // everything (skeletons â†’ real cards). That's the only render
+            // matching `data-drive-item-id` next time around — it'll rebuild
+            // everything (skeletons → real cards). That's the only render
             // where flicker is unavoidable, and it only happens after an
             // explicit skeleton-show (folder navigation, initial load).
         }
@@ -14914,7 +15037,7 @@
             driveHomeAutoRefreshInProgress = false;
         }
 
-        // â”€â”€ Â§ 4.16  Drive file open â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.16  Drive file open ───────────────────────────────────────────
         // Downloads the PDF from Drive, extracts embedded strokes from the
         // PDF metadata (STROKES_Z), reconstructs the page state, and renders
         // all pages. Also restores the calendar config (IH_CAL keyword).
@@ -15098,7 +15221,7 @@
                 // Migration: if PDF used old uncompressed format, re-save with compression
                 if (state.needsMigrationResave && canEdit) {
                     state.needsMigrationResave = false;
-                    showStatus('Optimizando tamaÃ±o del PDF...', { preserveState: true });
+                    showStatus('Optimizando tamaño del PDF...', { preserveState: true });
                     setTimeout(() => queueDriveSave(true, { forceUpload: true }), 4000);
                 }
                 state.driveFileId = file.id;
@@ -16686,7 +16809,7 @@
         function touchImageCache(src) {
             if (!src) return;
             imageCacheUsage.set(src, Date.now());
-            // Debounce pruning â€” avoid expensive sort on every image access
+            // Debounce pruning — avoid expensive sort on every image access
             const now = Date.now();
             if (imageCache.size > MAX_IMAGE_CACHE && now - lastPruneTime > 2000) {
                 lastPruneTime = now;
@@ -16836,7 +16959,7 @@
             ctx.restore();
         }
 
-        // â”€â”€ Â§ 4.6  Core drawing engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.6  Core drawing engine ────────────────────────────────────────
         // Low-level Canvas 2D routines: smooth Bezier stroke rendering,
         // highlighter blending, eraser paths, and image drawing on the canvas.
         function drawSmoothStroke(ctx, stroke) {
@@ -16990,7 +17113,7 @@
         // each known stroke (slightly thicker to cover anti-aliasing) hides the
         // baked pixels so the renderer can re-draw editable vectors on top.
         // The covers persist independently of the editable strokes array, so
-        // erasing a stroke leaves the white cover behind â€” making the baked
+        // erasing a stroke leaves the white cover behind — making the baked
         // pixels effectively erased.
         function drawLegacyCoverStrokes(ctx, page) {
             if (!Array.isArray(page?.legacyCoverStrokes) || page.legacyCoverStrokes.length === 0) return;
@@ -17013,7 +17136,7 @@
             ctx.restore();
         }
 
-        // â”€â”€ Â§ 4.7  Canvas & page rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.7  Canvas & page rendering ───────────────────────────────────
         // High-level page rendering: clears the canvas and repaints background
         // (template / PDF page) then all strokes and images in order.
         function redrawPage(pageIndex) {
@@ -17423,7 +17546,7 @@
                         const vp = pdfPage.getViewport({ scale: 1 });
                         pageSize = { width: Math.round(vp.width), height: Math.round(vp.height) };
                         if (pdfPage.cleanup) pdfPage.cleanup();
-                    } catch (e) { /* ignore â€” fallback to A4 */ }
+                    } catch (e) { /* ignore — fallback to A4 */ }
                 }
                 newPages.push({
                     pageId: `original-page-${i}`,
@@ -17438,7 +17561,7 @@
                     needsRedraw: true
                 });
             }
-            // Mark the upcoming save as a milestone â€” preserves the version we're
+            // Mark the upcoming save as a milestone — preserves the version we're
             // reverting AWAY from so the user can roll forward to it later.
             state.pendingVersionHint = {
                 milestone: true,
@@ -17479,20 +17602,20 @@
         }
 
         // Build a synthetic timeline entry representing the document with NO
-        // edits â€” strokes, images and any other user-added content stripped.
+        // edits — strokes, images and any other user-added content stripped.
         // Always shown as the oldest entry in the list so the user can revert
         // all the way back to the unmodified document.
         //
         // Two code paths depending on the document's origin:
-        //   â€¢ PDF-imported docs: the clean original PDF bytes are cached
+        //   • PDF-imported docs: the clean original PDF bytes are cached
         //     (state.cleanOriginalPdfBytes); we list pdf-backed pages so the
         //     revert action can swap back to the cached PDF.
-        //   â€¢ Template-based docs (Agenda, Diary, new blank docs): there is
+        //   • Template-based docs (Agenda, Diary, new blank docs): there is
         //     no clean PDF, so we synthesise the entry from the CURRENT page
         //     structure with strokes/images removed. Revert keeps the page
         //     count and templates the user expects.
         function buildOriginalVersionEntry() {
-            // Path A: doc imported from an external PDF â€” use the cached
+            // Path A: doc imported from an external PDF — use the cached
             // clean PDF bytes as the source of truth.
             if (state.cleanOriginalPdfBytes && state.cleanOriginalPdfBytes.byteLength) {
                 const originalSizes = Array.isArray(state.cleanOriginalPageSizes) ? state.cleanOriginalPageSizes : [];
@@ -17763,7 +17886,7 @@
                 const author = entry.author?.name || entry.author?.email || 'Unknown';
                 const pageCount = entry.pages.length;
                 metaEl.hidden = false;
-                metaEl.textContent = `${author} Â· ${whenStr} Â· ${pageCount} page${pageCount !== 1 ? 's' : ''}`;
+                metaEl.textContent = `${author} · ${whenStr} · ${pageCount} page${pageCount !== 1 ? 's' : ''}`;
             }
 
             // Compute a base scale that makes ONE full page fit inside the preview
@@ -17817,7 +17940,7 @@
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                // 1a. Template background (lined, grid, agenda, diary, â€¦).
+                // 1a. Template background (lined, grid, agenda, diary, …).
                 // The snapshot stores templateKind + backgroundSource, so we
                 // can faithfully reproduce the page background that was in
                 // place at that version, even for brand-new template docs.
@@ -17879,7 +18002,7 @@
                         ctx.restore();
                         if (pdfPage.cleanup) pdfPage.cleanup();
                     } catch (err) {
-                        // Fall through â€” leave white background.
+                        // Fall through — leave white background.
                     }
                     if (token !== _timelinePreviewToken) return;
                 }
@@ -17995,7 +18118,7 @@
         }
 
         // Group sequential entries by calendar month, then within each month by
-        // 1-hour proximity. Iteration order is newestâ†’oldest (matches the visual
+        // 1-hour proximity. Iteration order is newest→oldest (matches the visual
         // order). Returns: [{ key, label, count, clusters: [{ key, headTs, tailTs, entries }] }]
         function groupTimelineEntriesForDisplay(reversedEntries) {
             const months = [];
@@ -18038,7 +18161,7 @@
             return months;
         }
 
-        // â”€â”€ Â§ 4.19  Version timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.19  Version timeline ──────────────────────────────────────────
         // Automatic snapshots of the document state are captured after each
         // Drive upload. This section renders the list, handles selection, and
         // provides the "Revert to this version" action.
@@ -18169,7 +18292,7 @@
                     const isClusterCollapsed = (explicit === null) ? defaultCollapsed : explicit;
 
                     if (isOriginalCluster) {
-                        // Show the Original entry as a single bare item â€” no cluster header.
+                        // Show the Original entry as a single bare item — no cluster header.
                         const directLi = buildEntryLi(cluster.entries[0]);
                         monthBody.appendChild(directLi);
                         return;
@@ -18192,8 +18315,8 @@
                     const titleEl = document.createElement('div');
                     titleEl.className = 'timeline-cluster-title';
                     titleEl.textContent = dayLabel
-                        ? (fromHm === toHm ? `${dayLabel}, ${toHm}` : `${dayLabel}, ${fromHm}â€“${toHm}`)
-                        : (fromHm === toHm ? toHm : `${fromHm}â€“${toHm}`);
+                        ? (fromHm === toHm ? `${dayLabel}, ${toHm}` : `${dayLabel}, ${fromHm}–${toHm}`)
+                        : (fromHm === toHm ? toHm : `${fromHm}–${toHm}`);
                     clusterInfo.appendChild(titleEl);
                     const metaEl = document.createElement('div');
                     metaEl.className = 'timeline-cluster-meta';
@@ -18204,7 +18327,7 @@
                     });
                     const authorList = Array.from(uniqueAuthors);
                     const authorPart = authorList.length === 0 ? '' : (authorList.length === 1 ? authorList[0] : `${authorList[0]} +${authorList.length - 1}`);
-                    metaEl.textContent = `${cluster.entries.length} edit${cluster.entries.length !== 1 ? 's' : ''}${authorPart ? ` Â· ${authorPart}` : ''}`;
+                    metaEl.textContent = `${cluster.entries.length} edit${cluster.entries.length !== 1 ? 's' : ''}${authorPart ? ` · ${authorPart}` : ''}`;
                     clusterInfo.appendChild(metaEl);
                     clusterHeader.appendChild(clusterInfo);
 
@@ -18727,7 +18850,7 @@
         }
 
         // Setup event listeners
-        // â”€â”€ Â§ 4.27  Event listeners & UI wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.27  Event listeners & UI wiring ──────────────────────────────
         // All addEventListener calls live here, keeping the setup phase
         // separate from the logic. Called once by init().
         function setupEventListeners() {
@@ -18818,7 +18941,7 @@
             if (driveNewBtn) {
                 driveNewBtn.addEventListener('click', createNewDriveDocument);
             }
-            // "APP" download â€” only meaningful on the web; the Android in-app
+            // "APP" download — only meaningful on the web; the Android in-app
             // WebView hides the trigger button via CSS (data-inhouse-app).
             if (downloadAppBtn && downloadAppModal) {
                 const openDownloadAppModal = () => {
@@ -18834,7 +18957,7 @@
                 downloadAppModal.addEventListener('click', (e) => {
                     if (e.target === downloadAppModal) closeDownloadAppModal();
                 });
-                // Close the modal after the download click â€” feels cleaner.
+                // Close the modal after the download click — feels cleaner.
                 const link = document.getElementById('download-app-link');
                 if (link) link.addEventListener('click', () => {
                     setTimeout(closeDownloadAppModal, 100);
@@ -19013,7 +19136,7 @@
 
                         const needsSave = hasPendingLocalSave() || hasPendingDriveSave() || driveDirty;
                         if (!needsSave && isDriveFullySaved()) {
-                            // Fast path â€” nothing to do.
+                            // Fast path — nothing to do.
                             showDriveHome();
                             refreshDriveFiles();
                             return;
@@ -19030,7 +19153,7 @@
                         await flushDirtyPages({ force: true });
 
                         // If autosave isn't enabled (read-only file or signed
-                        // out), don't try to push to Drive â€” just go home.
+                        // out), don't try to push to Drive — just go home.
                         if (!state.driveAutosave) {
                             showDriveHome();
                             refreshDriveFiles();
@@ -19075,7 +19198,7 @@
                             }
 
                             // Mark dirty + queue a forced save. queueDriveSave
-                            // is fire-and-forget internally â€” it returns after
+                            // is fire-and-forget internally — it returns after
                             // starting the save. waitForDriveSaveCompletion
                             // below blocks until the actual upload finishes.
                             //
@@ -19086,7 +19209,7 @@
                             // `TypeError: Failed to fetch`. This was the
                             // hidden reason every goHome save was failing
                             // while autosave (no keepalive) worked perfectly.
-                            // We don't need keepalive here anyway â€” clicking
+                            // We don't need keepalive here anyway — clicking
                             // the logo doesn't unload the page, it just
                             // switches the visible view.
                             driveDirty = true;
@@ -19121,7 +19244,7 @@
                                 { reason: lastErrorReason, dirty: driveDirty,
                                   inProgress: driveSaveInProgress, queued: driveSaveQueued });
                             showStatus('Could not finish saving to Drive. Changes are saved locally and will upload when connectivity allows.', { error: true });
-                            // Stay in the editor so the user can retry â€”
+                            // Stay in the editor so the user can retry —
                             // local data is safe, but we don't want to hide
                             // an unfinished upload behind the home screen.
                             return;
@@ -19249,7 +19372,7 @@
                 if (isSaveDebugInteraction(e)) return;
                 interruptProcessingForUserInput();
             }, { capture: true, passive: true });
-            // Continuous gesture tracking â€” pointermove and touchmove fire
+            // Continuous gesture tracking — pointermove and touchmove fire
             // very frequently, so we only refresh the "user is active" timer
             // (cheap) and re-pause any save that resumed too early. Throttled
             // to once per ~60 ms so the listener itself never becomes the
@@ -19673,7 +19796,7 @@
             };
         }
 
-        // â”€â”€ Â§ 4.9  Viewport transform â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.9  Viewport transform ─────────────────────────────────────────
         // All pan (scroll) and zoom logic. clampPanToVisible keeps the pages
         // in bounds; animatePanTo animates smooth jumps; handleWheel and the
         // pointer handlers drive the interactive gesture recognition.
@@ -19749,7 +19872,7 @@
             if (!shouldRenderPageCalendarPanels()) return -1;
             const todayKey = formatCalendarDateKey(new Date());
             if (!Array.isArray(state.pages) || state.pages.length === 0) return -1;
-            // Pass 1: exact match â€” a page that lists today in its dateKeys.
+            // Pass 1: exact match — a page that lists today in its dateKeys.
             let firstCalPage = -1;
             let lastCalPage = -1;
             let firstDateAfterToday = -1;
@@ -19760,7 +19883,7 @@
                 if (firstCalPage < 0) firstCalPage = i;
                 lastCalPage = i;
                 if (sp.dateKeys.includes(todayKey)) return i;
-                // Track nearest neighbours by comparing dateKey strings â€” they
+                // Track nearest neighbours by comparing dateKey strings — they
                 // are ISO YYYY-MM-DD so lexical compare matches chronological.
                 for (const k of sp.dateKeys) {
                     if (k > todayKey) {
@@ -19770,7 +19893,7 @@
                     if (k < todayKey) lastDateBeforeToday = i;
                 }
             }
-            // Pass 2: today is outside the calendar's range â€” pick the nearest
+            // Pass 2: today is outside the calendar's range — pick the nearest
             // calendar page so the user lands somewhere useful instead of on
             // page 1 of an unrelated section.
             if (firstCalPage >= 0) {
@@ -19811,7 +19934,7 @@
             const pageWidth = wrapper.offsetWidth || getPageDimensions(targetPage).width;
             // Zoom-to-fit so previous/next pages are flush against the
             // viewport edges (neither visible). Derivation:
-            //   zoom = vh / (pageHeight + 2Â·PAGE_GAP).
+            //   zoom = vh / (pageHeight + 2·PAGE_GAP).
             const fitZoomY = viewportHeight / (pageHeight + 2 * PAGE_GAP);
             const fitZoomX = viewportWidth / (pageWidth + 2 * PAGE_PADDING);
             const zoom = Math.max(0.5, Math.min(3, Math.min(fitZoomY, fitZoomX)));
@@ -19973,7 +20096,7 @@
                 }
 
                 // Cap per-frame inertia movement so a long-stuck frame (e.g.
-                // GC pause, save processing) doesn't multiply dt Ã— velocity
+                // GC pause, save processing) doesn't multiply dt × velocity
                 // into a giant pan jump on the next animation frame.
                 const dx = capPanStep(state.panVelocityX * dt);
                 const dy = capPanStep(state.panVelocityY * dt);
@@ -20262,7 +20385,7 @@
 
                 scheduleViewportTransformRender();
             } else {
-                // Scroll with wheel â€” cap per-event delta so a trackpad
+                // Scroll with wheel — cap per-event delta so a trackpad
                 // momentum burst or a touchpad driver that delivers giant
                 // delta values can't teleport the canvas.
                 state.panX -= capPanStep(normDeltaX * 0.92);
@@ -20288,7 +20411,7 @@
                 }
                 return;
             }
-            // Mouse/touch on canvas with drawing tool â†’ let canvas handle it
+            // Mouse/touch on canvas with drawing tool → let canvas handle it
             if (e.target && e.target.closest && e.target.closest('canvas.page-canvas')) {
                 const drawingTools = ['pen', 'highlighter', 'eraser-stroke', 'eraser-area', 'lasso'];
                 if (drawingTools.includes(state.currentTool) && shouldAcceptDrawInput(e)) {
@@ -20297,9 +20420,9 @@
             }
             // Palm rejection for pan: ignore TOUCH pointers ONLY while the
             // pen is actively writing (which keeps isPenWriting true for the
-            // duration of the stroke plus its idle timer, ~120â€“220 ms after
+            // duration of the stroke plus its idle timer, ~120–220 ms after
             // pen-up). As soon as the idle timer expires, touch is accepted
-            // again so the user can pan/zoom immediately after writing â€” even
+            // again so the user can pan/zoom immediately after writing — even
             // while the autosave is still processing the document.
             // A wider window (e.g. "2 s since the last pen event") wrongly
             // blocked legitimate finger pans for several seconds after a
@@ -20370,7 +20493,7 @@
             const dx = currentX - lastX;
             const dy = currentY - lastY;
             if (Math.abs(dx) > MAX_PAN_STEP_PX || Math.abs(dy) > MAX_PAN_STEP_PX) {
-                // Treat as teleport â€” drop the delta entirely. The caller will
+                // Treat as teleport — drop the delta entirely. The caller will
                 // still update lastPan to the new position so the next event
                 // computes a small, normal delta.
                 return { dx: 0, dy: 0, teleport: true };
@@ -20379,8 +20502,8 @@
         }
         // Hard-cap any pan delta produced by wheel/trackpad/inertia. These
         // sources can deliver huge values (e.g. inertia after a long frame
-        // multiplies velocity Ã— dt, trackpad bursts deliver 1000+ px in a
-        // single event). We cap each axis to Â±MAX_PAN_STEP_PX so a single
+        // multiplies velocity × dt, trackpad bursts deliver 1000+ px in a
+        // single event). We cap each axis to ±MAX_PAN_STEP_PX so a single
         // tick never moves the canvas more than one "step" worth.
         function capPanStep(value) {
             if (value > MAX_PAN_STEP_PX) return MAX_PAN_STEP_PX;
@@ -20434,13 +20557,13 @@
                     scheduleViewportTransformRender();
                 }
             } else if (state.activePointers.size === 1 && state.isPanning) {
-                // Single finger pan â€” clamp the delta so a stray palm contact
+                // Single finger pan — clamp the delta so a stray palm contact
                 // or a delayed batched event can't teleport the canvas.
                 const delta = clampPanDelta(e.clientX, e.clientY, state.lastPanX, state.lastPanY);
                 const dx = delta.dx;
                 const dy = delta.dy;
 
-                // Check if we should lock to vertical scroll â€” uses cumulative
+                // Check if we should lock to vertical scroll — uses cumulative
                 // distance from the starting touch, which is unaffected by
                 // any single big jump that we just dropped.
                 if (!state.scrollLocked) {
@@ -20478,7 +20601,7 @@
                     // pinch path) and against the same-tick degenerate case.
                     // Anything below 8 ms or above 64 ms is rounded to a
                     // sensible default so velocity stays in a realistic
-                    // range â€” no more 2 800 px/s spikes from a 10 px nudge.
+                    // range — no more 2 800 px/s spikes from a 10 px nudge.
                     let dt = now - (state.lastPanTime || now);
                     if (!Number.isFinite(dt) || dt < 8) dt = 16;
                     else if (dt > 64) dt = 64;
@@ -20528,7 +20651,7 @@
                     // During pinch state.lastPanTime is held at 0, so the very
                     // first single-finger pointermove computed dt = 1 ms,
                     // producing a velocity ~28% of the raw delta (e.g. a
-                    // 10 px finger nudge â†’ 2 800 px/s). Releasing the last
+                    // 10 px finger nudge → 2 800 px/s). Releasing the last
                     // finger right after that then fired inertia at that
                     // velocity and the canvas teleported. By stamping the
                     // current time here, the next pointermove sees a real
@@ -20628,7 +20751,7 @@
         const calendarEventsInFlight = new Map();
         let calendarLoadingMonthKey = '';
 
-        // â”€â”€ Â§ 4.22  Google Calendar integration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.22  Google Calendar integration ──────────────────────────────
         // Opens the month-grid popup, fetches events from the Google Calendar
         // API, and populates the grid cells. Authentication reuses the same
         // Drive token (scoped to calendar.events).
@@ -20706,7 +20829,7 @@
             const count = Math.max(1, state.pages.length - startPage + 1);
             const startDate = parseCalendarInputDate(calendarPagesStartDate?.value);
             const lastDate = addCalendarDays(startDate, mode === 'week' ? (count * 7 - 1) : (count - 1));
-            calendarPagesSummary.textContent = `${count} page${count === 1 ? '' : 's'} from p. ${startPage} to end, covering ${startDate.toLocaleDateString()} â€“ ${lastDate.toLocaleDateString()}.`;
+            calendarPagesSummary.textContent = `${count} page${count === 1 ? '' : 's'} from p. ${startPage} to end, covering ${startDate.toLocaleDateString()} – ${lastDate.toLocaleDateString()}.`;
         }
 
         function shiftCalendarMonth(delta) {
@@ -20799,7 +20922,7 @@
             const start = parseGoogleEventDate(startTs);
             if (!start || Number.isNaN(start.getTime())) return keys;
             const endRaw = event?.end?.dateTime ? parseGoogleEventDate(event.end.dateTime) : null;
-            // Stop at the end's exact instant â€” events ending at 00:00 don't
+            // Stop at the end's exact instant — events ending at 00:00 don't
             // bleed into the next day. If end is missing/invalid, treat as a
             // single-instant event (still emit the start day).
             const endLimit = (endRaw && !Number.isNaN(endRaw.getTime()))
@@ -20921,7 +21044,7 @@
                 if (metaParts.length) {
                     const meta = document.createElement('div');
                     meta.className = 'calendar-day-event-meta';
-                    meta.textContent = metaParts.join(' Â· ');
+                    meta.textContent = metaParts.join(' · ');
                     item.appendChild(meta);
                 }
                 calendarDayEventsEl.appendChild(item);
@@ -21169,7 +21292,7 @@
             return before - page.images.length;
         }
 
-        // â”€â”€ Â§ 4.25  "Add calendar to pages" flow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.25  "Add calendar to pages" flow ─────────────────────────────
         // Fetches events for a date range, assigns one panel per page,
         // saves calendarPageConfig so the app knows where each date lives,
         // and navigates to today's page on next open.
@@ -21265,7 +21388,7 @@
             }
         }
 
-        // Google Calendar event color palette (colorId â†’ hex). Mirrors the
+        // Google Calendar event color palette (colorId → hex). Mirrors the
         // official palette so events match what the user sees in Google Calendar.
         const GOOGLE_EVENT_COLORS = {
             '1': '#7986cb', '2': '#33b679', '3': '#8e24aa', '4': '#e67c73',
@@ -21280,7 +21403,7 @@
             return '#039be5'; // default calendar color (peacock blue, like Google's default)
         }
 
-        // â”€â”€ Â§ 4.23  Page side-panels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.23  Page side-panels ──────────────────────────────────────────
         // Builds and updates the calendar card panels that sit beside each
         // notebook page. Each card shows the day/week's events fetched from
         // Google Calendar. Panels are updated in-place (DOM diffing) every
@@ -21355,7 +21478,7 @@
             body.className = 'page-side-panel-body';
             body.innerHTML = panelData.html || '';
             // Refresh the "today" class so it stays correct across date changes
-            // (the html was baked when the panel was created â€” re-evaluate now).
+            // (the html was baked when the panel was created — re-evaluate now).
             (function applyTodayClass() {
                 const todayKey = formatCalendarDateKey(new Date());
                 body.querySelectorAll('.sp-day-section').forEach(sec => {
@@ -21410,7 +21533,7 @@
             // Sanitize the panel data BEFORE rendering. Older docs (and any
             // code path that bypassed the dedupe step) can have duplicate
             // event entries baked into `panelData.html`. We can't trust the
-            // cached html â€” strip duplicates and persist the cleaned version
+            // cached html — strip duplicates and persist the cleaned version
             // back to state so it never re-appears, even on subsequent
             // renders or saves.
             const cleaned = sanitizeSidePanelHtmlForDuplicates(panelData.html || '');
@@ -21516,7 +21639,7 @@
             showStatus('Calendario eliminado', { preserveState: true });
         }
 
-        // â”€â”€â”€ Side-panel event editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ─── Side-panel event editor ───────────────────────────────────────────
         const spEventModal = document.getElementById('sp-event-modal');
         const spEventModalTitleEl = document.getElementById('sp-event-modal-title');
         const spEventSummaryInput = document.getElementById('sp-event-summary');
@@ -21541,7 +21664,7 @@
         function spBuildColorPicker() {
             if (!spEventColorPickerEl) return;
             spEventColorPickerEl.innerHTML = '';
-            // Default swatch (no colorId â€” uses calendar's default color)
+            // Default swatch (no colorId — uses calendar's default color)
             const defSwatch = document.createElement('button');
             defSwatch.type = 'button';
             defSwatch.className = 'sp-color-swatch default-swatch has-color';
@@ -21791,15 +21914,15 @@
         }
 
         // Rebuild ALL panels' html from the current calendar events cache.
-        // Does no network I/O â€” assumes the cache is already fresh enough.
+        // Does no network I/O — assumes the cache is already fresh enough.
         // Deduplicates events (same id present in two neighbour-month caches
         // due to 42-day grid overlap is kept once, freshest version wins).
-        // Updates in-place â€” does not mark the doc dirty.
-        // â”€â”€ Â§ 4.24  Auto-sync (5-second poll) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // spRebuildAllPanels  â€” rebuilds every panel's HTML from the current
+        // Updates in-place — does not mark the doc dirty.
+        // ── § 4.24  Auto-sync (5-second poll) ────────────────────────────────
+        // spRebuildAllPanels  — rebuilds every panel's HTML from the current
         //   event cache, deduplicating events that appear in overlapping month
         //   caches (the API grid = 42 days, so border events appear twice).
-        // spSyncAllPanels     â€” force-refetches all months used by panels and
+        // spSyncAllPanels     — force-refetches all months used by panels and
         //   then calls spRebuildAllPanels; runs every 5 s via spStartAutoSync.
         function spRebuildAllPanels() {
             if (!shouldRenderPageCalendarPanels()) return;
@@ -21824,7 +21947,7 @@
                 const page = state.pages[i];
                 if (!page || !page.sidePanel || !Array.isArray(page.sidePanel.dateKeys)) continue;
                 // Only rebuild a panel when every one of its dates is covered
-                // by at least one cached month â€” otherwise we'd be wiping a
+                // by at least one cached month — otherwise we'd be wiping a
                 // panel's events just because its month isn't loaded yet
                 // (e.g. on cold open before first sync completes).
                 const allCovered = page.sidePanel.dateKeys.every(k => {
@@ -22000,7 +22123,7 @@
                 return fetchCalendarEventsForMonth(new Date(y, m - 1, 1), { force: true })
                     .catch(err => { console.warn('Calendar sync failed:', mk, err); });
             }));
-            // Always rebuild after a sync â€” even when Google returned identical
+            // Always rebuild after a sync — even when Google returned identical
             // events. The stored html in `page.sidePanel.html` (restored from
             // IDB / the PDF metadata) can be stale from before a bugfix or
             // from a moment when the cache was incomplete; the only way to
@@ -22076,7 +22199,7 @@
             if (!options.force && calendarEventsCache.has(monthKey)) {
                 return calendarEventsCache.get(monthKey);
             }
-            // Coalesce concurrent fetches for the same month â€” even a forced
+            // Coalesce concurrent fetches for the same month — even a forced
             // refresh joins the in-flight request to avoid double load.
             if (calendarEventsInFlight.has(monthKey)) {
                 return calendarEventsInFlight.get(monthKey);
@@ -22175,7 +22298,7 @@
         }
 
         // Pages Panel
-        // â”€â”€ Â§ 4.20  Manage-Pages panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.20  Manage-Pages panel ────────────────────────────────────────
         // Opens/closes the panel, builds thumbnail rows, and wires drag-and-
         // drop reordering. Also handles page insertion and deletion from the
         // panel UI.
@@ -22341,7 +22464,7 @@
             const heightMm = safeHeight * 25.4 / 96;
             return {
                 standardName: getStandardPageName(widthMm, heightMm),
-                dimensionsLabel: `${formatPageMillimetres(safeWidth)} Ã— ${formatPageMillimetres(safeHeight)} mm`,
+                dimensionsLabel: `${formatPageMillimetres(safeWidth)} × ${formatPageMillimetres(safeHeight)} mm`,
                 ratioLabel: formatPageAspectRatio(safeWidth, safeHeight)
             };
         }
@@ -22427,7 +22550,7 @@
                         sizeInfo.standardName,
                         sizeInfo.dimensionsLabel,
                         sizeInfo.ratioLabel
-                    ].filter(Boolean).join(' Â· ');
+                    ].filter(Boolean).join(' · ');
                 }
                 if (coverBrowseLabel) coverBrowseLabel.textContent = 'Choose photo';
                 if (coverUploadDropzone) coverUploadDropzone.setAttribute('aria-label', 'Choose photo');
@@ -22460,7 +22583,7 @@
                     sizeInfo.standardName,
                     sizeInfo.dimensionsLabel,
                     sizeInfo.ratioLabel
-                ].filter(Boolean).join(' Â· ');
+                ].filter(Boolean).join(' · ');
             }
             if (coverBrowseLabel) coverBrowseLabel.textContent = 'Replace photo';
             if (coverUploadDropzone) {
@@ -22491,7 +22614,7 @@
                 return;
             }
             const token = ++coverModalSelectionToken;
-            if (coverBrowseLabel) coverBrowseLabel.textContent = 'Loadingâ€¦';
+            if (coverBrowseLabel) coverBrowseLabel.textContent = 'Loading…';
             updateCoverModalConfirmState();
             let decoded = null;
             try {
@@ -22527,7 +22650,7 @@
             coverImageInput.click();
         }
 
-        // â”€â”€ Â§ 4.13  Cover image & page templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.13  Cover image & page templates ─────────────────────────────
         // The photo-page flow keeps the source aspect ratio and stores a
         // bounded JPEG background with the page's logical dimensions.
         function openCoverModal() {
@@ -22730,7 +22853,7 @@
                     defaultSizeInfo.standardName,
                     defaultSizeInfo.dimensionsLabel,
                     defaultSizeInfo.ratioLabel
-                ].filter(Boolean).join(' Â· ');
+                ].filter(Boolean).join(' · ');
                 pagesDefaultSize.replaceChildren(label, value);
             }
 
@@ -22772,8 +22895,8 @@
                                 pageSizeInfo.standardName,
                                 pageSizeInfo.dimensionsLabel,
                                 pageSizeInfo.ratioLabel
-                            ].filter(Boolean).join(' Â· ')}</p>
-                            <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${pageType ? ` Â· ${pageType}` : ''}</p>
+                            ].filter(Boolean).join(' · ')}</p>
+                            <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${pageType ? ` · ${pageType}` : ''}</p>
                         </div>
                     </div>
                     <div class="page-actions">
@@ -23055,7 +23178,7 @@
         // Delete page
         let pageToDelete = null;
 
-        // â”€â”€ Â§ 4.20b  Page delete & document reset modals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.20b  Page delete & document reset modals ─────────────────────
         async function openDeleteModal(pageIndex) {
             if (state.isReadOnly || state.pages.length <= 1) return;
             pageToDelete = pageIndex;
@@ -23509,7 +23632,7 @@
             }
         }
 
-        // â”€â”€ Â§ 4.18b  View-state & token persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.18b  View-state & token persistence ───────────────────────────
         // Small localStorage helpers that remember zoom/pan between sessions
         // (saveViewState / loadViewState) and persist the Google OAuth token
         // (saveDriveTokenToStorage / clearDriveTokenStorage).
@@ -24440,7 +24563,7 @@
             }
         }
 
-        // â”€â”€ Â§ 4.18  Local storage & IndexedDB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.18  Local storage & IndexedDB ────────────────────────────────
         // Two-layer persistence: page strokes go into IndexedDB (one record
         // per page, lazy-saved), while the lightweight meta (dimensions,
         // previews, calendarPageConfig) goes into localStorage as a backup.
@@ -25057,7 +25180,7 @@
             pageDirty.add(pageIndex);
             pdfExportCache.delete(pageIndex);
             pdfLibOverlayCache.delete(pageIndex);
-            // During interaction, just mark dirty â€” flushDeferredSavesAfterInteraction
+            // During interaction, just mark dirty — flushDeferredSavesAfterInteraction
             // will trigger scheduleDriveSync once the user lifts their finger/pen.
             if (!hasSmoothInteraction()) {
                 scheduleDriveSync();
@@ -25215,7 +25338,7 @@
 
         function pauseSavesDuringInteraction() {
             // While the user is leaving the editor, the save MUST run to
-            // completion â€” abort signals would force the retry loop in
+            // completion — abort signals would force the retry loop in
             // goHome to fail and strand unsaved changes. See forceFlushingForExit.
             if (forceFlushingForExit) return;
             if (!hasInterruptibleProcessingInFlight()) return;
@@ -25381,7 +25504,7 @@
             noteRecentUserActivity();
             isPenWriting = true;
             // Only update status indicator on the first pen event of a stroke,
-            // not on every pointermove â€” avoids DOM thrashing during drawing.
+            // not on every pointermove — avoids DOM thrashing during drawing.
             if (!wasWriting) showPendingSaveStatus();
             const now = Date.now();
             if (!wasWriting || (hasInterruptibleProcessingInFlight() && now - lastPenProcessingPauseAt > 140)) {
@@ -25732,7 +25855,7 @@
             } else if (result.ok) {
                 recordSaveDebug('Local save finished');
                 if (isDriveSyncPending()) {
-                    // Local save done, Drive sync still pending â€” keep saving indicator
+                    // Local save done, Drive sync still pending — keep saving indicator
                     showStatus('Saved locally, preparing Drive save...', { phase: 'building', savedAt: result.savedAt });
                 } else {
                     showStatus('Saved', { savedAt: result.savedAt });
@@ -25769,7 +25892,7 @@
             }
         }
 
-        // â”€â”€ Â§ 4.17  Drive sync & save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.17  Drive sync & save ─────────────────────────────────────────
         // Builds the PDF (with STROKES_Z metadata), uploads to Drive, handles
         // token refresh, retry logic, and version-content tracking to avoid
         // overwriting concurrent edits from another device.
@@ -26023,7 +26146,7 @@
             if (!state.driveAutosave) return;
             // The local "read-only" toggle is a UI mode (the user disabled the
             // pen to scroll comfortably). It must not block an explicit force
-            // save (e.g. before leaving the document) â€” pending dirty changes
+            // save (e.g. before leaving the document) — pending dirty changes
             // happened while editing was on and need to be flushed.
             if (state.isReadOnly && !force) return;
             if (driveSaveBlockedReason && !force) {
@@ -26089,7 +26212,7 @@
                             throw new Error('Pending remote merge failed');
                         }
                         if (flushed?.hasLocalMerges) {
-                            // Merge produced a new state â€” keep it dirty so we still
+                            // Merge produced a new state — keep it dirty so we still
                             // upload the merged result.
                             driveDirty = true;
                         }
@@ -26532,12 +26655,12 @@
             }
         }
 
-        // â”€â”€ Â§ 4.21  Share / collaboration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.21  Share / collaboration ────────────────────────────────────
         // Real-time multi-user editing: presence avatars, remote-change polling,
         // three-way merge (local + remote + deleted strokes), and the share
         // modal for managing per-user permissions via the Drive API.
 
-        // â”€â”€ Presence / Active Users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Presence / Active Users ──────────────────────────────
         let _presencePingInterval = null;
         let _presenceHeartbeatInterval = null;
         let _presenceHeartbeatInFlight = false;
@@ -26579,7 +26702,7 @@
                 const locale = new Intl.Locale(navigator.language || '');
                 region = locale.region || '';
             } catch (e) { }
-            if (region && tz) return `${region} Â· ${tz}`;
+            if (region && tz) return `${region} · ${tz}`;
             if (tz) return tz;
             if (region) return region;
             return 'Unknown';
@@ -27365,11 +27488,11 @@
 
                     const metaEl = document.createElement('div');
                     metaEl.className = 'presence-device-meta';
-                    const location = device.location || 'UbicaciÃ³n desconocida';
+                    const location = device.location || 'Ubicación desconocida';
                     const absolute = device.lastActivity
                         ? new Date(device.lastActivity).toLocaleString()
                         : 'desconocida';
-                    metaEl.textContent = `${location} Â· Ãšltima actividad ${formatPresenceLastActivity(device.lastActivity)} (${absolute})`;
+                    metaEl.textContent = `${location} · Última actividad ${formatPresenceLastActivity(device.lastActivity)} (${absolute})`;
                     contentEl.appendChild(metaEl);
 
                     rowEl.appendChild(contentEl);
@@ -27421,7 +27544,7 @@
             requestAnimationFrame(positionPresencePopup);
         }
 
-        // â”€â”€ Â§ 4.21b  Presence write & heartbeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.21b  Presence write & heartbeat ──────────────────────────────
         // pingPresence writes the current user's status (save phase, cursor
         // position, device type) to Drive appProperties. clearPresence removes
         // it cleanly when the user closes or navigates away.
@@ -27459,7 +27582,7 @@
             } catch (err) { /* best effort */ }
         }
 
-        // â”€â”€ Â§ 4.21c  Remote change detection & three-way merge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.21c  Remote change detection & three-way merge ───────────────
         // pullRemoteChanges downloads the latest PDF from Drive, extracts its
         // strokes, and merges them with any local-only changes. applyRemotePages
         // performs the actual three-way merge (local + remote + deleted list).
@@ -27573,7 +27696,7 @@
                         } catch (vhErr) {
                             console.warn('Failed to extract remote version history:', vhErr);
                         }
-                        // No synthetic "legacy" baseline here â€” if the remote
+                        // No synthetic "legacy" baseline here — if the remote
                         // PDF has no IH_VERSIONS, leave the timeline empty.
                         // Real history will appear after the next save.
                     } catch (metaErr) {
@@ -27620,7 +27743,7 @@
                 // Render backgrounds for pages that got a PDF/custom backgroundSource but have no image.
                 // Important: when the document has a cached clean-original (no overlay XObjects),
                 // keep activePdfDocument pointed at it. Swapping in the freshly-pulled remote PDF
-                // would render the page WITH the overlay PNG baked in â€” strokes would then appear
+                // would render the page WITH the overlay PNG baked in — strokes would then appear
                 // as part of the rasterized background instead of being drawn as vectors on top.
                 if (mergeResult?.pagesNeedingPdfBackground?.length > 0) {
                     const prevActivePdf = activePdfDocument;
@@ -27677,7 +27800,7 @@
 
                 // If we merged local-only content, save back to Drive so others get it
                 if (mergeResult && mergeResult.hasLocalMerges && !state.isReadOnly) {
-                    console.log('Local strokes merged into pull â€” saving back to Drive');
+                    console.log('Local strokes merged into pull — saving back to Drive');
                     showStatus('Syncing merged changes...', { phase: 'syncing' });
                     requestImmediateDriveSave();
                 } else {
@@ -27846,7 +27969,7 @@
                 // position instead of generating a random local one. Without
                 // this the localById map wouldn't match anything in remote and
                 // every remote page would be added as a "new" shell, leaving
-                // the un-IDed local pages dangling at the end â†’ the document
+                // the un-IDed local pages dangling at the end → the document
                 // would appear duplicated (original pages, then "fresh" ones).
                 for (let i = 0; i < state.pages.length && i < remoteStrokeData.length; i++) {
                     const localPage = state.pages[i];
@@ -27856,7 +27979,7 @@
                     }
                 }
                 // Any local pages beyond remote count that still lack a pageId
-                // get a fresh ID â€” they're brand-new local additions.
+                // get a fresh ID — they're brand-new local additions.
                 ensurePageIds(state.pages);
                 const localById = new Map();
                 state.pages.forEach((page, oldIdx) => {
@@ -27907,7 +28030,7 @@
                 }
 
                 // Local-only pages: keep them if they're brand-new locally (not yet
-                // synced â€” pageId not in lastSyncedPageIds). Drop them if they were
+                // synced — pageId not in lastSyncedPageIds). Drop them if they were
                 // previously synced and are now absent on remote (= deleted there).
                 let droppedLocalCount = 0;
                 for (const page of state.pages) {
@@ -27918,7 +28041,7 @@
                     }
                     if (placedIds.has(page.pageId)) continue;
                     if (lastSyncedPageIds.has(page.pageId)) {
-                        // Was synced, now gone remotely â†’ deleted on remote.
+                        // Was synced, now gone remotely → deleted on remote.
                         droppedLocalCount += 1;
                         continue;
                     }
@@ -27957,7 +28080,7 @@
                     structureChanged = true;
                     changed = true;
 
-                    // Index-based caches are now stale â€” rebuild what we can,
+                    // Index-based caches are now stale — rebuild what we can,
                     // clear what we can't.
                     lastSyncedStrokeIds.clear();
                     state.pages.forEach((page, newIdx) => {
@@ -28156,7 +28279,7 @@
 
                 // Detect structural identity change at this position: if the remote page's
                 // background source or template kind differs, this is a different page (likely
-                // reordered). Additive merge is invalid here â€” it would combine strokes from
+                // reordered). Additive merge is invalid here — it would combine strokes from
                 // two different pages. Use remote content directly instead.
                 const remoteBgSrcEarly = remotePageData.backgroundSource || 'template';
                 const localBgSrcEarly = currentPage.backgroundSource || 'template';
@@ -28222,7 +28345,7 @@
                 mergedImages.push(...localOnlyImages);
 
                 // Merge deletion lists (union) and dedupe. If identity changed at this
-                // position, tombstones from the old page don't apply â€” use remote only.
+                // position, tombstones from the old page don't apply — use remote only.
                 const previousDeletedIds = new Set(localDeletedRaw.filter(id => !!id));
                 const mergedDeletedIds = structuralIdentityChanged ? new Set(remoteDeleted) : new Set(allDeleted);
                 currentPage.deletedStrokeIds = [...mergedDeletedIds];
@@ -28291,7 +28414,7 @@
                     if (remotePageData.pdfPageIndex !== undefined) {
                         currentPage.pdfPageIndex = Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null;
                     }
-                    // If identity changed, drop the stale local background â€” it belonged to
+                    // If identity changed, drop the stale local background — it belonged to
                     // the previous page at this position. The PDF render pass below refills it.
                     if (structuralIdentityChanged) {
                         currentPage.backgroundImage = null;
@@ -28325,7 +28448,7 @@
                 }
 
                 // Reconcile side panel from remote data. The HTML field is a
-                // cached rendering of live calendar data â€” each device fetches
+                // cached rendering of live calendar data — each device fetches
                 // events independently from Google's API, so the HTML can
                 // legitimately diverge between devices without indicating any
                 // real change. We therefore compare on the structural fields
@@ -28351,7 +28474,7 @@
                         };
                         renderPageSidePanel(i, currentPage.sidePanel);
                     } else if (!sameKeys) {
-                        // Different structure â€” accept remote and let auto-sync
+                        // Different structure — accept remote and let auto-sync
                         // refresh the events for those new dates.
                         currentPage.sidePanel = {
                             title: remoteTitle,
@@ -28424,8 +28547,8 @@
         }
 
         // History functions for undo/redo
-        // â”€â”€ Â§ 4.11b  Undo / redo history â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // Each user action (add stroke, erase, move image, â€¦) is stored as an
+        // ── § 4.11b  Undo / redo history ─────────────────────────────────────
+        // Each user action (add stroke, erase, move image, …) is stored as an
         // action object. Undo walks the history backwards; redo re-applies.
         // History is capped to MAX_HISTORY entries and is NOT persisted (it
         // resets on each session).
@@ -29066,7 +29189,7 @@
             }, 350);
         }
 
-        // â”€â”€ Â§ 4.5d  Status bar, loading overlay & utility helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.5d  Status bar, loading overlay & utility helpers ────────────
         // showStatus displays a brief message in the save-indicator area.
         // showLoading / hideLoading manage the full-screen progress overlay.
         // Also contains small utilities: filename sanitation, image loading,
@@ -29244,7 +29367,7 @@
         function hasHotUserInteraction(windowMs = DRIVE_BUILD_IDLE_WINDOW_MS) {
             // While force-flushing on exit, treat the user as idle so the
             // PDF build doesn't stall waiting for incidental hover events
-            // to settle â€” there's no point pausing for an interaction
+            // to settle — there's no point pausing for an interaction
             // when the user explicitly asked us to save and leave.
             if (forceFlushingForExit) return false;
             return hasSmoothInteraction() || hasRecentUserActivity(windowMs) || hasPendingUserInput();
@@ -29307,7 +29430,7 @@
         }
 
         // Import PDF - detect embedded strokes or treat as background
-        // â”€â”€ Â§ 4.16c  PDF import (from file or URL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.16c  PDF import (from file or URL) ───────────────────────────
         // Parses an external PDF, renders each page to a background image, and
         // creates the page structure in state. Also called when the user drags
         // a PDF onto the editor or picks one via the file picker.
@@ -29504,7 +29627,7 @@
                     }
                 } else if (embeddedStrokes) {
                     // Saved-by-this-app document. Recover clean original via, in order:
-                    //   1. IH_CLEAN_ORIGINAL.pdf embedded attachment (most reliable â€”
+                    //   1. IH_CLEAN_ORIGINAL.pdf embedded attachment (most reliable —
                     //      first-class PDF object that survives any toolchain).
                     //   2. IH_OVERLAY_REFS in keywords (surgical strip via XObject ref).
                     //   3. IndexedDB cache (older saves that didn't tag refs/attach).
@@ -29556,7 +29679,7 @@
                     // Legacy doc that was previously saved by this app but we no longer
                     // have the clean original. The strokes are baked into the saved
                     // PDF as an overlay PNG AND restored as vectors here. Mark legacy
-                    // so the renderer paints white covers over the baked image â€” that
+                    // so the renderer paints white covers over the baked image — that
                     // way erasing a stroke visually wipes the baked pixels too.
                     state.hasLegacyBakedOverlay = true;
                 }
@@ -29587,7 +29710,7 @@
                                 }
                             }
                             if (unique.length < pageData.strokes.length) {
-                                console.log(`Deduplicated: ${pageData.strokes.length} â†’ ${unique.length} strokes`);
+                                console.log(`Deduplicated: ${pageData.strokes.length} → ${unique.length} strokes`);
                                 pageData.strokes = unique;
                                 state.needsMigrationResave = true;
                             }
@@ -29642,7 +29765,7 @@
                         // In legacy-baked mode (file has STROKES_Z but no clean
                         // original cached), seed legacyCoverStrokes with a clone of
                         // the restored strokes so the renderer paints white covers
-                        // over the burnt-in image â€” that lets the eraser work.
+                        // over the burnt-in image — that lets the eraser work.
                         const legacyCovers = (state.hasLegacyBakedOverlay && needsPdfBackground)
                             ? restoredStrokes.map(s => ({
                                 ...s,
@@ -29701,7 +29824,7 @@
                     }
                 }
 
-                // No synthetic "legacy" baseline here â€” if the imported PDF
+                // No synthetic "legacy" baseline here — if the imported PDF
                 // has no IH_VERSIONS keyword (older saves, third-party PDFs),
                 // we leave state.versionHistory empty and let the timeline
                 // show its empty state. A real entry will appear on the
@@ -29780,7 +29903,7 @@
             pdfInput.value = '';
         }
 
-        // â”€â”€ Â§ 4.17b  PDF export helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.17b  PDF export helpers ───────────────────────────────────────
         // Utilities used when building the PDF to upload to Drive: load the
         // full page data, get the canvas context at export scale, and compress
         // the STROKES_Z metadata payload for the PDF keywords.
@@ -30216,7 +30339,7 @@
         // Coalesces autosaves by the same author within VERSION_HISTORY_COALESCE_MS
         // into a single entry to prevent spam, BUT never coalesces away a milestone
         // entry (manual restores, reverts, etc.) so reverts don't destroy history.
-        // â”€â”€ Â§ 4.19b  Version snapshot capture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── § 4.19b  Version snapshot capture ────────────────────────────────
         // Snapshot is taken after every successful Drive upload. Stored inside
         // the PDF keywords alongside the stroke data. Max ~20 snapshots kept.
         function captureVersionSnapshot(pagesJsonArray) {
@@ -30233,8 +30356,8 @@
                 && last.author?.name === author.name;
             const recentEnough = last && (ts - last.ts) < VERSION_HISTORY_COALESCE_MS;
             // Never coalesce when:
-            //   - this snapshot is a milestone (restore/revert) â€” must be its own entry
-            //   - the previous entry is a milestone â€” must not be replaced
+            //   - this snapshot is a milestone (restore/revert) — must be its own entry
+            //   - the previous entry is a milestone — must not be replaced
             const canCoalesce = !isMilestone
                 && sameAuthor
                 && recentEnough
@@ -30257,7 +30380,7 @@
             } else {
                 state.versionHistory.push(entry);
             }
-            // Cap entries â€” but try hard to keep milestones. Drop the oldest non-milestone
+            // Cap entries — but try hard to keep milestones. Drop the oldest non-milestone
             // first, only fall back to dropping the oldest entry overall when nothing else
             // can be evicted.
             while (state.versionHistory.length > VERSION_HISTORY_MAX) {
@@ -30442,7 +30565,7 @@
         // unchanged pages. Cleared on document switch / state reset.
         const pdfLibOverlayCache = new Map(); // pageIndex -> { hash, pngBytes }
 
-        // Cache of the parsed pdf-lib document for the clean original bytes â€”
+        // Cache of the parsed pdf-lib document for the clean original bytes —
         // avoids re-parsing the source PDF on every autosave (saves hundreds of
         // ms per save for typical documents).
         const _pdfLibOriginalCache = { bytesRef: null, doc: null };
@@ -30534,7 +30657,7 @@
             const PX_TO_PT = 0.75;
 
             // Load source + target. Cache the parsed original document across
-            // consecutive saves of the same buffer â€” parsing a 5MB PDF takes
+            // consecutive saves of the same buffer — parsing a 5MB PDF takes
             // 200-500ms and would otherwise be re-done on every autosave.
             // copyPages() doesn't mutate the source doc's page tree, so reusing
             // the same instance is safe.
@@ -30950,7 +31073,7 @@
                 throwIfAborted();
                 throwIfSessionInvalid();
                 if (hasHotUserInteraction()) {
-                    // User is writing or scrolling â€” pause PDF build entirely
+                    // User is writing or scrolling — pause PDF build entirely
                     // and show grey (paused) indicator. Resume when interaction ends.
                     if (updateSaveStatus) showStatus('Save paused...', { phase: 'paused' });
                     await waitForHotInteractionToSettle({
@@ -30969,7 +31092,7 @@
                     throwIfSessionInvalid();
                 }
             };
-            // Tighter slice budgets â€” keeps pen/touch latency low even mid-build.
+            // Tighter slice budgets — keeps pen/touch latency low even mid-build.
             // 4 ms felt fine on a desktop benchmark but on real devices it was
             // enough to delay the first stroke point by a noticeable gap.
             const maxMainThreadSliceMs = isMobileLike ? 0.5 : 1.5;
@@ -30981,7 +31104,7 @@
                 if (!force && !userHot && !inputPending && elapsed < maxMainThreadSliceMs) return;
                 // Whenever input is pending OR we noticed a fresh user gesture,
                 // give the event loop a real frame to flush pointer/touch
-                // events before resuming. setTimeout(0) is too coarse â€” the
+                // events before resuming. setTimeout(0) is too coarse — the
                 // browser may schedule it before the touch handler runs and
                 // we'd be back to processing immediately, dropping events.
                 if (inputPending || userHot || elapsed > (isMobileLike ? 1.0 : 6)) {
@@ -31302,7 +31425,7 @@
             pdfCanvas.width = 0;
             pdfCanvas.height = 0;
 
-            // Compress metadata on main thread (uses streaming CompressionStream â€” non-blocking)
+            // Compress metadata on main thread (uses streaming CompressionStream — non-blocking)
             const metadataString = `[${metadataParts.join(',')}]`;
             await maybeYieldForSlice(true);
             let encodedMetadata, metaPrefix;
@@ -31315,7 +31438,7 @@
                 metaPrefix = 'STROKES_DATA:';
             }
 
-            // Append the same keyword suffixes the pdf-lib path adds â€” without
+            // Append the same keyword suffixes the pdf-lib path adds — without
             // these, brand-new docs (which never have a clean original PDF and
             // thus always use this raster path) would lose their calendar
             // config and version history on every save, leaving the timeline

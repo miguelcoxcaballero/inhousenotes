@@ -1,0 +1,7 @@
+{
+  "version": "1.0.2",
+  "versionCode": 3,
+  "required": true,
+  "apkUrl": "https://raw.githubusercontent.com/miguelcoxcaballero/inhousenotes/main/inhouse-notes-release-v1.0.2.apk",
+  "publishedAppVersion": "4.4.14"
+}
