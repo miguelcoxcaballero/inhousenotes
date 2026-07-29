@@ -7951,7 +7951,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.8';
+        const APP_VERSION = '4.4.9';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -14724,9 +14724,11 @@
             const threshold = 96;
             const maxOffset = 82;
             const axisLockThreshold = 8;
+            const carouselVerticalIntentRatio = 1.25;
             let startX = null;
             let startY = null;
             let gestureAxis = null;
+            let startedInCarousel = false;
             let pullDistance = 0;
             let refreshing = false;
             let resetTimer = null;
@@ -14757,6 +14759,7 @@
                 startX = null;
                 startY = null;
                 gestureAxis = null;
+                startedInCarousel = false;
                 pullDistance = 0;
                 driveHome.classList.add('home-pull-resetting');
                 driveHome.classList.remove('home-is-pulling');
@@ -14776,6 +14779,7 @@
                 startX = null;
                 startY = null;
                 gestureAxis = null;
+                startedInCarousel = false;
                 if (resetTimer !== null) clearTimeout(resetTimer);
                 resetTimer = null;
                 driveHome.classList.add('home-is-pulling', 'home-is-refreshing');
@@ -14805,11 +14809,14 @@
                 const touch = event.touches[0];
                 startX = touch.clientX;
                 startY = touch.clientY;
-                // Pull-to-refresh must never compete with the horizontal file carousel.
-                // The rest of the home waits for enough movement to lock onto one axis.
-                gestureAxis = event.target instanceof Element && event.target.closest('.drive-recents')
-                    ? 'horizontal'
-                    : 'pending';
+                startedInCarousel = !!(
+                    event.target instanceof Element
+                    && event.target.closest('.drive-recents')
+                );
+                // Wait for the user's direction before assigning the gesture. Inside
+                // a carousel, favour horizontal scrolling unless the pull is clearly
+                // vertical, so vertical refresh remains available over the cards.
+                gestureAxis = 'pending';
                 pullDistance = 0;
                 if (resetTimer !== null) clearTimeout(resetTimer);
                 resetTimer = null;
@@ -14826,8 +14833,12 @@
                 const deltaX = touch.clientX - startX;
                 const deltaY = touch.clientY - startY;
                 if (gestureAxis === 'pending') {
-                    if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < axisLockThreshold) return;
-                    gestureAxis = Math.abs(deltaX) > Math.abs(deltaY) ? 'horizontal' : 'vertical';
+                    const absoluteX = Math.abs(deltaX);
+                    const absoluteY = Math.abs(deltaY);
+                    if (Math.max(absoluteX, absoluteY) < axisLockThreshold) return;
+                    gestureAxis = startedInCarousel
+                        ? (absoluteY > absoluteX * carouselVerticalIntentRatio ? 'vertical' : 'horizontal')
+                        : (absoluteX > absoluteY ? 'horizontal' : 'vertical');
                 }
                 if (gestureAxis === 'horizontal') {
                     if (pullDistance > 0) setPull(0);
