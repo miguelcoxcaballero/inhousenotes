@@ -12,13 +12,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android app" / "html_to_apk_builder.py"
-SOURCE_HTML = REPO_ROOT / "rebuild-v2" / "dist" / "index.html"
+SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android app" / "Inhouse Notes Logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.1.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.2.apk"
 APP_NAME = "Inhouse Notes"
 PACKAGE_ID = "com.local.inhousenotes"
-ANDROID_VERSION_NAME = "1.0.1"
-ANDROID_VERSION_CODE = 2
+ANDROID_VERSION_NAME = "1.0.2"
+ANDROID_VERSION_CODE = 3
 
 
 class Value:
