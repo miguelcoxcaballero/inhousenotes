@@ -1450,6 +1450,8 @@ class ApkBuilderApp(tk.Tk):
         ns = "{http://schemas.android.com/apk/res/android}"
 
         wanted = []
+        if package_id == "com.local.inhousenotes":
+            wanted.append("android.permission.REQUEST_INSTALL_PACKAGES")
         if self.permission_internet.get():
             wanted.append("android.permission.INTERNET")
         if self.permission_location.get():
@@ -1532,6 +1534,7 @@ class ApkBuilderApp(tk.Tk):
             """<?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="exports" path="exports/" />
+    <cache-path name="updates" path="updates/" />
 </paths>
 """,
             encoding="utf-8"
@@ -1559,6 +1562,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.provider.MediaStore;
+import android.provider.Settings;
 
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.FileProvider;
@@ -1567,6 +1571,10 @@ import com.getcapacitor.BridgeActivity;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.io.BufferedInputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import android.widget.Toast;
 import org.json.JSONObject;
 
@@ -1641,10 +1649,104 @@ public class MainActivity extends BridgeActivity {{
     public class InhouseNativeBridge {{
         private String pendingPdfName = "cuaderno.pdf";
         private StringBuilder pendingPdfBase64 = new StringBuilder();
+        private volatile boolean updateDownloadRunning = false;
 
         @JavascriptInterface
         public int getPdfExportApiVersion() {{
             return 2;
+        }}
+
+        @JavascriptInterface
+        public String getAppVersion() {{
+            return "{self.version_name.get().strip()}";
+        }}
+
+        @JavascriptInterface
+        public void installAppUpdate(String url) {{
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    && !getPackageManager().canRequestPackageInstalls()) {{
+                notifyAppUpdateResult("permission_required", "Allow Inhouse Notes to install updates");
+                runOnUiThread(() -> startActivity(new Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getPackageName())
+                )));
+                return;
+            }}
+            if (updateDownloadRunning) {{
+                notifyAppUpdateResult("downloading", "The update is already downloading");
+                return;
+            }}
+            updateDownloadRunning = true;
+            notifyAppUpdateResult("downloading", "Downloading update");
+            new Thread(() -> {{
+                HttpURLConnection connection = null;
+                try {{
+                    Uri parsed = Uri.parse(url);
+                    String host = parsed.getHost();
+                    boolean allowedHost = "inhousenotes.com".equalsIgnoreCase(host)
+                        || "github.com".equalsIgnoreCase(host)
+                        || "raw.githubusercontent.com".equalsIgnoreCase(host);
+                    if (!"https".equalsIgnoreCase(parsed.getScheme()) || !allowedHost) {{
+                        throw new Exception("Update URL is not allowed");
+                    }}
+                    connection = (HttpURLConnection) new URL(url).openConnection();
+                    connection.setInstanceFollowRedirects(true);
+                    connection.setConnectTimeout(15000);
+                    connection.setReadTimeout(45000);
+                    connection.setRequestProperty("Accept", "application/vnd.android.package-archive");
+                    int responseCode = connection.getResponseCode();
+                    if (responseCode < 200 || responseCode >= 300) {{
+                        throw new Exception("Update download failed (" + responseCode + ")");
+                    }}
+                    File updateDir = new File(getCacheDir(), "updates");
+                    if (!updateDir.exists() && !updateDir.mkdirs()) {{
+                        throw new Exception("Could not prepare update storage");
+                    }}
+                    File apkFile = new File(updateDir, "inhouse-notes-update.apk");
+                    long totalBytes = 0;
+                    try (InputStream input = new BufferedInputStream(connection.getInputStream());
+                         FileOutputStream output = new FileOutputStream(apkFile)) {{
+                        byte[] buffer = new byte[32768];
+                        int read;
+                        while ((read = input.read(buffer)) != -1) {{
+                            output.write(buffer, 0, read);
+                            totalBytes += read;
+                        }}
+                    }}
+                    if (totalBytes < 100000) throw new Exception("Downloaded update is incomplete");
+                    Uri apkUri = FileProvider.getUriForFile(
+                        MainActivity.this,
+                        getPackageName() + ".fileprovider",
+                        apkFile
+                    );
+                    notifyAppUpdateResult("ready", "Update downloaded");
+                    runOnUiThread(() -> {{
+                        Intent installIntent = new Intent(Intent.ACTION_VIEW);
+                        installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                        installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(installIntent);
+                    }});
+                }} catch (Exception error) {{
+                    error.printStackTrace();
+                    notifyAppUpdateResult("error", error.getMessage());
+                }} finally {{
+                    updateDownloadRunning = false;
+                    if (connection != null) connection.disconnect();
+                }}
+            }}, "InhouseNotesUpdate").start();
+        }}
+
+        private void notifyAppUpdateResult(String status, String message) {{
+            JSONObject payload = new JSONObject();
+            try {{
+                payload.put("status", status);
+                payload.put("message", message == null ? "" : message);
+            }} catch (Exception ignored) {{}}
+            WebView webView = getBridge().getWebView();
+            webView.post(() -> webView.evaluateJavascript(
+                "window.handleInhouseUpdateResult && window.handleInhouseUpdateResult(" + payload.toString() + ");",
+                null
+            ));
         }}
 
         @JavascriptInterface
