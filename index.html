@@ -2905,8 +2905,8 @@
         #pages-panel {
             position: fixed;
             top: 0;
-            right: -350px;
-            width: 350px;
+            right: -390px;
+            width: min(380px, 100vw);
             height: 100%;
             background: var(--bg-secondary);
             box-shadow: -4px 0 30px rgba(0, 0, 0, 0.15);
@@ -2999,6 +2999,32 @@
         .panel-cover-row .btn svg {
             width: 18px;
             height: 18px;
+        }
+
+        .pages-default-size {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            margin: 14px 20px 2px;
+            padding: 10px 0;
+            border-top: 1px solid rgba(0, 0, 0, 0.07);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+            color: var(--text-secondary);
+            font-size: 0.74rem;
+            line-height: 1.3;
+        }
+
+        .pages-default-size strong {
+            color: var(--text-primary);
+            font-size: 0.78rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        [data-theme="dark"] .pages-default-size {
+            border-color: rgba(255, 255, 255, 0.08);
         }
 
         .pages-panel-actions {
@@ -3429,123 +3455,51 @@
         }
 
         .modal-cover {
-            width: min(92vw, 720px);
-            max-width: 720px;
-            max-height: min(92svh, 820px);
-            overflow: auto;
+            width: min(540px, calc(100vw - 24px));
+            max-width: 540px;
+            max-height: min(92svh, 720px);
+            padding: 20px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        .modal-cover h2 {
+            margin-bottom: 14px;
         }
 
         .cover-modal-layout {
-            display: grid;
-            grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-            gap: 18px;
-            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
         .cover-upload-dropzone {
+            position: relative;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 12px;
-            min-height: 260px;
-            padding: 22px;
-            border-radius: 18px;
-            border: 2px dashed rgba(0, 0, 0, 0.14);
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(245, 245, 240, 0.94)),
-                radial-gradient(circle at top, rgba(224, 122, 60, 0.1), transparent 55%);
-            text-align: center;
+            width: 100%;
+            height: clamp(220px, 44svh, 360px);
+            min-height: 180px;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            background: var(--bg-primary);
             cursor: pointer;
-            transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            overflow: hidden;
+            transition: border-color 0.18s ease, background 0.18s ease;
             outline: none;
         }
 
         .cover-upload-dropzone:hover,
         .cover-upload-dropzone.dragover,
         .cover-upload-dropzone:focus-visible {
-            border-color: rgba(224, 122, 60, 0.55);
-            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
-            transform: translateY(-1px);
+            border-color: rgba(224, 122, 60, 0.72);
+            background: rgba(224, 122, 60, 0.045);
         }
 
-        .cover-upload-dropzone svg {
-            width: 42px;
-            height: 42px;
-            color: var(--accent-orange);
-        }
-
-        .cover-upload-title {
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            max-width: 100%;
-            overflow-wrap: anywhere;
-        }
-
-        .cover-upload-subtitle {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            line-height: 1.45;
-        }
-
-        .cover-modal-side {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
-
-        .cover-layout-options {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .cover-layout-option {
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
-            padding: 12px 14px;
-            border-radius: 14px;
-            background: rgba(0, 0, 0, 0.04);
-            border: 1px solid rgba(0, 0, 0, 0.06);
-            cursor: pointer;
-        }
-
-        .cover-layout-option input {
-            margin-top: 3px;
-            accent-color: var(--accent-orange);
-        }
-
-        .cover-layout-option strong {
-            display: block;
-            font-size: 0.95rem;
-            margin-bottom: 3px;
-        }
-
-        .cover-layout-option span {
-            display: block;
-            font-size: 0.82rem;
-            line-height: 1.45;
-            color: var(--text-secondary);
-        }
-
-        .cover-modal-meta {
-            min-height: 42px;
-            font-size: 0.84rem;
-            line-height: 1.5;
-            color: var(--text-secondary);
-        }
-
-        .cover-preview-shell {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 320px;
-            padding: 14px;
-            border-radius: 18px;
-            background: linear-gradient(160deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.02));
-            border: 1px solid rgba(0, 0, 0, 0.06);
+        .cover-upload-dropzone:focus-visible {
+            box-shadow: 0 0 0 3px rgba(224, 122, 60, 0.16);
         }
 
         .cover-preview-stage {
@@ -3553,21 +3507,31 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            max-width: 100%;
-            max-height: 100%;
+            width: 100%;
+            height: 100%;
+            min-width: 0;
+            min-height: 0;
         }
 
         .cover-preview-empty {
             position: absolute;
             inset: 0;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: 10px;
             text-align: center;
             padding: 20px;
             color: var(--text-secondary);
             font-size: 0.88rem;
-            line-height: 1.45;
+            font-weight: 500;
+        }
+
+        .cover-preview-empty svg {
+            width: 34px;
+            height: 34px;
+            color: var(--accent-orange);
         }
 
         .cover-preview-page {
@@ -3575,10 +3539,13 @@
             align-items: center;
             justify-content: center;
             background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.14);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 4px;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.13);
             overflow: hidden;
-            transition: width 0.2s ease, height 0.2s ease;
+            transition:
+                width 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+                height 0.2s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         .cover-preview-image {
@@ -3586,35 +3553,121 @@
             max-width: none;
             max-height: none;
             object-fit: contain;
-            border-radius: 8px;
         }
 
         .cover-preview-stage.is-empty .cover-preview-page {
-            opacity: 0.25;
+            opacity: 0.16;
         }
 
         .cover-preview-stage.is-empty .cover-preview-image {
             display: none;
         }
 
+        .cover-modal-controls {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #btn-cover-browse {
+            min-width: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        #btn-cover-browse svg {
+            width: 17px;
+            height: 17px;
+            flex-shrink: 0;
+        }
+
+        .cover-browse-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cover-layout-options {
+            position: relative;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            align-items: center;
+            padding: 3px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 8px;
+            background: var(--bg-primary);
+        }
+
+        .cover-layout-option {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .cover-layout-label {
+            min-height: 34px;
+            padding: 8px 11px;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            font-weight: 600;
+            line-height: 1;
+            text-align: center;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .cover-layout-option:checked + .cover-layout-label {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .cover-layout-option:focus-visible + .cover-layout-label {
+            outline: 2px solid rgba(224, 122, 60, 0.5);
+            outline-offset: 1px;
+        }
+
+        .cover-layout-option:disabled + .cover-layout-label {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .cover-modal-meta {
+            min-height: 18px;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.35;
+            text-align: center;
+        }
+
         [data-theme="dark"] .cover-upload-dropzone {
             border-color: rgba(255, 255, 255, 0.1);
-            background:
-                linear-gradient(180deg, rgba(31, 31, 31, 0.96), rgba(22, 22, 22, 0.96)),
-                radial-gradient(circle at top, rgba(224, 122, 60, 0.14), transparent 55%);
+            background: rgba(255, 255, 255, 0.035);
         }
 
         [data-theme="dark"] .cover-upload-dropzone:hover,
         [data-theme="dark"] .cover-upload-dropzone.dragover,
         [data-theme="dark"] .cover-upload-dropzone:focus-visible {
             border-color: rgba(224, 122, 60, 0.62);
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+            background: rgba(224, 122, 60, 0.08);
         }
 
-        [data-theme="dark"] .cover-layout-option,
-        [data-theme="dark"] .cover-preview-shell {
-            background: rgba(255, 255, 255, 0.05);
+        [data-theme="dark"] .cover-layout-options {
+            background: rgba(255, 255, 255, 0.04);
             border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        [data-theme="dark"] .cover-layout-option:checked + .cover-layout-label {
+            background: rgba(255, 255, 255, 0.11);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.24);
         }
 
         [data-theme="dark"] .cover-preview-page {
@@ -3622,16 +3675,45 @@
         }
 
         @media (max-width: 720px) {
-            .cover-modal-layout {
-                grid-template-columns: 1fr;
+            #modal-cover-image {
+                align-items: flex-end;
+            }
+
+            .modal-cover {
+                width: 100%;
+                max-width: none;
+                max-height: calc(100svh - 8px);
+                padding:
+                    18px
+                    max(16px, env(safe-area-inset-right, 0px))
+                    max(16px, env(safe-area-inset-bottom, 0px))
+                    max(16px, env(safe-area-inset-left, 0px));
+                border-radius: 16px 16px 0 0;
             }
 
             .cover-upload-dropzone {
-                min-height: 200px;
+                height: clamp(210px, 46svh, 360px);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .cover-modal-controls {
+                grid-template-columns: 1fr;
             }
 
-            .cover-preview-shell {
-                min-height: 240px;
+            .cover-layout-options {
+                width: 100%;
+            }
+        }
+
+        @media (max-height: 560px) {
+            .modal-cover {
+                max-height: calc(100svh - 8px);
+            }
+
+            .cover-upload-dropzone {
+                height: clamp(150px, 36svh, 210px);
+                min-height: 150px;
             }
         }
 
@@ -3665,20 +3747,27 @@
             background: rgba(0, 0, 0, 0.06);
         }
 
+        .page-thumbnail-slot {
+            width: 52px;
+            height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
         .page-thumbnail {
-            width: 50px;
-            height: 70px;
             background: white;
             border: 1px solid rgba(0, 0, 0, 0.1);
             border-radius: 4px;
             overflow: hidden;
-            flex-shrink: 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         }
 
         .page-thumbnail canvas {
+            display: block;
             width: 100%;
             height: 100%;
-            object-fit: cover;
         }
 
         .page-info {
@@ -3695,6 +3784,38 @@
         .page-info p {
             font-size: 0.75rem;
             color: var(--text-secondary);
+            line-height: 1.35;
+        }
+
+        .page-info .page-size {
+            margin-bottom: 2px;
+            color: var(--text-primary);
+            font-size: 0.72rem;
+            font-variant-numeric: tabular-nums;
+            overflow-wrap: anywhere;
+        }
+
+        @media (max-width: 480px) {
+            .pages-default-size {
+                margin-inline: 16px;
+            }
+
+            .pages-list {
+                padding: 10px;
+            }
+
+            .page-item {
+                gap: 8px;
+                padding: 10px 8px;
+            }
+
+            .page-item-main {
+                gap: 8px;
+            }
+
+            .page-item .page-drag-handle {
+                width: 22px;
+            }
         }
 
         .page-actions {
@@ -7156,51 +7277,48 @@
 
     <!-- § 3.4d  Cover image picker -->
     <div class="modal-overlay" id="modal-cover-image">
-        <div class="modal modal-cover">
-            <h2>Add Photo Page</h2>
-            <p>Choose a photo. You can keep the regular document page size with the photo centered, or let the page adopt the photo ratio while staying within the document bounds.</p>
+        <div class="modal modal-cover" role="dialog" aria-modal="true" aria-labelledby="cover-modal-title">
+            <h2 id="cover-modal-title">Add photo page</h2>
             <div class="cover-modal-layout">
                 <div class="cover-upload-dropzone" id="cover-upload-dropzone" tabindex="0" role="button"
-                    aria-label="Choose cover photo">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14 2 14 8 20 8" />
-                        <path d="M8 15l2.5-2.5a1.5 1.5 0 0 1 2.1 0L16 16" />
-                        <path d="M14.5 14.5L16 13a1.5 1.5 0 0 1 2.1 0L20 15" />
-                        <circle cx="9" cy="9" r="1.2" />
-                    </svg>
-                    <div class="cover-upload-title" id="cover-upload-title">Drop a photo here</div>
-                    <div class="cover-upload-subtitle" id="cover-upload-subtitle">or click to browse from your device
-                    </div>
-                    <button class="btn btn-secondary" id="btn-cover-browse" type="button">Choose Photo</button>
-                </div>
-                <div class="cover-modal-side">
-                    <div class="cover-layout-options">
-                        <label class="cover-layout-option" for="cover-layout-fit">
-                            <input type="radio" id="cover-layout-fit" name="cover-layout-mode" value="fit" checked>
-                            <div>
-                                <strong>Document page</strong>
-                                <span>Keeps the normal page size and centers the photo with white margins if needed.</span>
-                            </div>
-                        </label>
-                        <label class="cover-layout-option" for="cover-layout-photo">
-                            <input type="radio" id="cover-layout-photo" name="cover-layout-mode" value="photo">
-                            <div>
-                                <strong>Photo ratio page</strong>
-                                <span>The page adopts the photo ratio, capped by the document width and height.</span>
-                            </div>
-                        </label>
-                    </div>
-                    <div class="cover-modal-meta" id="cover-modal-meta">Select a photo to preview the cover result.</div>
-                    <div class="cover-preview-shell">
-                        <div class="cover-preview-stage is-empty" id="cover-preview-stage">
-                            <div class="cover-preview-empty" id="cover-preview-empty">No photo selected yet.</div>
-                            <div class="cover-preview-page" id="cover-preview-page">
-                                <img class="cover-preview-image" id="cover-preview-image" alt="Cover preview">
-                            </div>
+                    aria-label="Choose photo">
+                    <div class="cover-preview-stage is-empty" id="cover-preview-stage">
+                        <div class="cover-preview-empty" id="cover-preview-empty">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                                <circle cx="9" cy="10" r="1.5"></circle>
+                                <path d="M4 17l4.5-4.5a1.5 1.5 0 0 1 2.1 0L13 15l1.6-1.6a1.5 1.5 0 0 1 2.1 0L20 16.7"></path>
+                            </svg>
+                            <span>Choose a photo</span>
+                        </div>
+                        <div class="cover-preview-page" id="cover-preview-page">
+                            <img class="cover-preview-image" id="cover-preview-image" alt="Photo page preview">
                         </div>
                     </div>
                 </div>
+                <div class="cover-modal-controls">
+                    <button class="btn btn-secondary" id="btn-cover-browse" type="button">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 5v14M5 12h14"></path>
+                        </svg>
+                        <span class="cover-browse-label" id="cover-browse-label">Choose photo</span>
+                    </button>
+                    <div class="cover-layout-options" role="radiogroup" aria-label="Page size">
+                        <label for="cover-layout-fit">
+                            <input class="cover-layout-option" type="radio" id="cover-layout-fit"
+                                name="cover-layout-mode" value="fit" checked>
+                            <span class="cover-layout-label">Document</span>
+                        </label>
+                        <label for="cover-layout-photo">
+                            <input class="cover-layout-option" type="radio" id="cover-layout-photo"
+                                name="cover-layout-mode" value="photo">
+                            <span class="cover-layout-label">Photo ratio</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="cover-modal-meta" id="cover-modal-meta" aria-live="polite"></div>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="cover-modal-cancel">Cancel</button>
@@ -7364,6 +7482,7 @@
                 Export
             </button>
         </div>
+        <div class="pages-default-size" id="pages-default-size" aria-live="polite"></div>
         <div class="pages-list" id="pages-list"></div>
     </div>
 
@@ -7831,7 +7950,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.6';
+        const APP_VERSION = '4.4.7';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -8848,9 +8967,8 @@
         const setCoverBtn = document.getElementById('btn-set-cover');
         const coverModal = document.getElementById('modal-cover-image');
         const coverUploadDropzone = document.getElementById('cover-upload-dropzone');
-        const coverUploadTitle = document.getElementById('cover-upload-title');
-        const coverUploadSubtitle = document.getElementById('cover-upload-subtitle');
         const coverBrowseBtn = document.getElementById('btn-cover-browse');
+        const coverBrowseLabel = document.getElementById('cover-browse-label');
         const coverModalMeta = document.getElementById('cover-modal-meta');
         const coverModalCancel = document.getElementById('cover-modal-cancel');
         const coverModalConfirm = document.getElementById('cover-modal-confirm');
@@ -8859,6 +8977,7 @@
         const coverPreviewImage = document.getElementById('cover-preview-image');
         const coverPreviewEmpty = document.getElementById('cover-preview-empty');
         const coverLayoutModeInputs = Array.from(document.querySelectorAll('input[name="cover-layout-mode"]'));
+        const pagesDefaultSize = document.getElementById('pages-default-size');
         const openCalendarBtn = document.getElementById('btn-open-calendar');
         const calendarModal = document.getElementById('modal-calendar');
         const calendarModalClose = document.getElementById('calendar-modal-close');
@@ -19315,6 +19434,11 @@
             coverLayoutModeInputs.forEach(input => {
                 input.addEventListener('change', updateCoverModalPreview);
             });
+            window.addEventListener('resize', () => {
+                if (coverModal?.classList.contains('visible')) {
+                    updateCoverModalPreview();
+                }
+            }, { passive: true });
             if (coverModalCancel) {
                 coverModalCancel.addEventListener('click', closeCoverModal);
             }
@@ -22142,6 +22266,45 @@
             };
         }
 
+        function formatPageMillimetres(px) {
+            const millimetres = Math.max(1, Number(px) || 1) * 25.4 / 96;
+            const rounded = Math.round(millimetres);
+            return Math.abs(millimetres - rounded) < 0.25
+                ? String(rounded)
+                : millimetres.toFixed(1).replace(/\.0$/, '');
+        }
+
+        function formatPageAspectRatio(width, height) {
+            const safeWidth = Math.max(1, Number(width) || 1);
+            const safeHeight = Math.max(1, Number(height) || 1);
+            const landscape = safeWidth >= safeHeight;
+            const longSideRatio = (landscape ? safeWidth / safeHeight : safeHeight / safeWidth)
+                .toFixed(3)
+                .replace(/\.?0+$/, '');
+            return landscape ? `${longSideRatio} : 1` : `1 : ${longSideRatio}`;
+        }
+
+        function getStandardPageName(widthMm, heightMm) {
+            const matches = (first, second) =>
+                Math.abs(widthMm - first) <= 1.5 && Math.abs(heightMm - second) <= 1.5;
+            if (matches(210, 297) || matches(297, 210)) return 'A4';
+            if (matches(148, 210) || matches(210, 148)) return 'A5';
+            if (matches(215.9, 279.4) || matches(279.4, 215.9)) return 'US Letter';
+            return '';
+        }
+
+        function getPageSizeInfo(width, height) {
+            const safeWidth = Math.max(1, Number(width) || A4_WIDTH);
+            const safeHeight = Math.max(1, Number(height) || A4_HEIGHT);
+            const widthMm = safeWidth * 25.4 / 96;
+            const heightMm = safeHeight * 25.4 / 96;
+            return {
+                standardName: getStandardPageName(widthMm, heightMm),
+                dimensionsLabel: `${formatPageMillimetres(safeWidth)} × ${formatPageMillimetres(safeHeight)} mm`,
+                ratioLabel: formatPageAspectRatio(safeWidth, safeHeight)
+            };
+        }
+
         function getCoverLayoutMode() {
             const selected = coverLayoutModeInputs.find(input => input.checked);
             return selected?.value === 'photo' ? 'photo' : 'fit';
@@ -22153,13 +22316,14 @@
             if (mode === 'photo') {
                 const pageWidth = normalizePageDimension(fittedImage.width, documentSize.width);
                 const pageHeight = normalizePageDimension(fittedImage.height, documentSize.height);
+                const containedImage = getContainedRect(imageWidth, imageHeight, pageWidth, pageHeight);
                 return {
                     documentWidth: documentSize.width,
                     documentHeight: documentSize.height,
                     pageWidth,
                     pageHeight,
-                    imageWidth: pageWidth,
-                    imageHeight: pageHeight
+                    imageWidth: containedImage.width,
+                    imageHeight: containedImage.height
                 };
             }
             return {
@@ -22167,15 +22331,9 @@
                 documentHeight: documentSize.height,
                 pageWidth: documentSize.width,
                 pageHeight: documentSize.height,
-                imageWidth: normalizePageDimension(fittedImage.width, documentSize.width),
-                imageHeight: normalizePageDimension(fittedImage.height, documentSize.height)
+                imageWidth: fittedImage.width,
+                imageHeight: fittedImage.height
             };
-        }
-
-        function formatCoverLengthCm(px) {
-            const safePx = Math.max(1, Number(px) || 1);
-            const cm = safePx * 2.54 / 96;
-            return (Math.round(cm * 10) / 10).toFixed(1);
         }
 
         function updateCoverModalConfirmState() {
@@ -22201,48 +22359,72 @@
         function updateCoverModalPreview() {
             if (!coverPreviewStage || !coverPreviewPage || !coverPreviewImage || !coverPreviewEmpty) return;
             const documentSize = getDocumentBasePageDimensions();
-            const stageRect = getContainedRect(documentSize.width, documentSize.height, 230, 320);
-            coverPreviewStage.style.width = `${stageRect.width}px`;
-            coverPreviewStage.style.height = `${stageRect.height}px`;
+            const availableWidth = coverPreviewStage.clientWidth > 0
+                ? coverPreviewStage.clientWidth
+                : 460;
+            const availableHeight = coverPreviewStage.clientHeight > 0
+                ? coverPreviewStage.clientHeight
+                : 320;
 
             if (!coverModalSelection) {
+                const pageRect = getContainedRect(
+                    documentSize.width,
+                    documentSize.height,
+                    availableWidth,
+                    availableHeight
+                );
+                const sizeInfo = getPageSizeInfo(documentSize.width, documentSize.height);
                 coverPreviewStage.classList.add('is-empty');
                 coverPreviewEmpty.classList.remove('hidden');
-                coverPreviewPage.style.width = `${stageRect.width}px`;
-                coverPreviewPage.style.height = `${stageRect.height}px`;
+                coverPreviewPage.style.width = `${pageRect.width}px`;
+                coverPreviewPage.style.height = `${pageRect.height}px`;
                 coverPreviewImage.removeAttribute('src');
+                coverPreviewImage.style.width = '0';
+                coverPreviewImage.style.height = '0';
                 if (coverModalMeta) {
-                    coverModalMeta.textContent = 'Select a photo to preview the cover result.';
+                    coverModalMeta.textContent = [
+                        sizeInfo.standardName,
+                        sizeInfo.dimensionsLabel,
+                        sizeInfo.ratioLabel
+                    ].filter(Boolean).join(' · ');
                 }
-                if (coverUploadTitle) coverUploadTitle.textContent = 'Drop a photo here';
-                if (coverUploadSubtitle) coverUploadSubtitle.textContent = 'or click to browse from your device';
+                if (coverBrowseLabel) coverBrowseLabel.textContent = 'Choose photo';
+                if (coverUploadDropzone) coverUploadDropzone.setAttribute('aria-label', 'Choose photo');
                 updateCoverModalConfirmState();
                 return;
             }
 
             const layout = getCoverResultLayout(coverModalSelection.width, coverModalSelection.height, getCoverLayoutMode());
-            const previewScale = Math.min(stageRect.width / layout.documentWidth, stageRect.height / layout.documentHeight);
-            const previewPageWidth = Math.max(1, Math.round(layout.pageWidth * previewScale));
-            const previewPageHeight = Math.max(1, Math.round(layout.pageHeight * previewScale));
+            const previewPage = getContainedRect(
+                layout.pageWidth,
+                layout.pageHeight,
+                availableWidth,
+                availableHeight
+            );
+            const previewScale = previewPage.width / layout.pageWidth;
             const previewImageWidth = Math.max(1, Math.round(layout.imageWidth * previewScale));
             const previewImageHeight = Math.max(1, Math.round(layout.imageHeight * previewScale));
-            const modeLabel = getCoverLayoutMode() === 'photo'
-                ? 'Photo ratio page'
-                : 'Document page with white margins';
+            const sizeInfo = getPageSizeInfo(layout.pageWidth, layout.pageHeight);
 
             coverPreviewStage.classList.remove('is-empty');
             coverPreviewEmpty.classList.add('hidden');
-            coverPreviewPage.style.width = `${previewPageWidth}px`;
-            coverPreviewPage.style.height = `${previewPageHeight}px`;
+            coverPreviewPage.style.width = `${previewPage.width}px`;
+            coverPreviewPage.style.height = `${previewPage.height}px`;
             coverPreviewImage.src = coverModalSelection.previewUrl;
             coverPreviewImage.style.width = `${previewImageWidth}px`;
             coverPreviewImage.style.height = `${previewImageHeight}px`;
 
             if (coverModalMeta) {
-                coverModalMeta.textContent = `${coverModalSelection.file.name} · ${coverModalSelection.width}×${coverModalSelection.height}px · Result: ${formatCoverLengthCm(layout.pageWidth)} × ${formatCoverLengthCm(layout.pageHeight)} cm · ${modeLabel}.`;
+                coverModalMeta.textContent = [
+                    sizeInfo.standardName,
+                    sizeInfo.dimensionsLabel,
+                    sizeInfo.ratioLabel
+                ].filter(Boolean).join(' · ');
             }
-            if (coverUploadTitle) coverUploadTitle.textContent = coverModalSelection.file.name;
-            if (coverUploadSubtitle) coverUploadSubtitle.textContent = 'Drop another photo or click to replace it.';
+            if (coverBrowseLabel) coverBrowseLabel.textContent = 'Replace photo';
+            if (coverUploadDropzone) {
+                coverUploadDropzone.setAttribute('aria-label', `Replace ${coverModalSelection.file.name}`);
+            }
             updateCoverModalConfirmState();
         }
 
@@ -22268,8 +22450,7 @@
                 return;
             }
             const token = ++coverModalSelectionToken;
-            if (coverUploadTitle) coverUploadTitle.textContent = 'Loading photo...';
-            if (coverUploadSubtitle) coverUploadSubtitle.textContent = 'Checking image size and preparing preview.';
+            if (coverBrowseLabel) coverBrowseLabel.textContent = 'Loading…';
             updateCoverModalConfirmState();
             let decoded = null;
             try {
@@ -22306,9 +22487,8 @@
         }
 
         // ── § 4.13  Cover image & page templates ─────────────────────────────
-        // The cover photo flow: pick an image, choose fit/fill/original mode,
-        // preview, and confirm. The image is stored as a base-64 background on
-        // page 0 and saved with the document.
+        // The photo-page flow keeps the source aspect ratio and stores a
+        // bounded JPEG background with the page's logical dimensions.
         function openCoverModal() {
             if (state.isReadOnly || !coverModal) return;
             coverLayoutModeInputs.forEach(input => {
@@ -22318,6 +22498,7 @@
             clearCoverModalSelection();
             coverModal.classList.add('visible');
             requestAnimationFrame(() => {
+                updateCoverModalPreview();
                 coverUploadDropzone?.focus?.();
             });
         }
@@ -22337,7 +22518,7 @@
             const layout = getCoverResultLayout(decoded.width, decoded.height, mode);
             let renderScale = Math.min(COVER_RENDER_SCALE, COVER_RENDER_MAX_SIDE / Math.max(layout.pageWidth, layout.pageHeight));
             if (!Number.isFinite(renderScale) || renderScale <= 0) renderScale = 1;
-            renderScale = Math.max(1, renderScale);
+            renderScale = Math.max(0.05, renderScale);
 
             const targetPageWidth = Math.max(1, Math.round(layout.pageWidth * renderScale));
             const targetPageHeight = Math.max(1, Math.round(layout.pageHeight * renderScale));
@@ -22498,6 +22679,19 @@
             pagesList.innerHTML = '';
             const canDeletePages = !state.isReadOnly && state.pages.length > 1;
             const canReorder = !state.isReadOnly && state.pages.length > 1;
+            const defaultDimensions = getDocumentBasePageDimensions();
+            const defaultSizeInfo = getPageSizeInfo(defaultDimensions.width, defaultDimensions.height);
+            if (pagesDefaultSize) {
+                const label = document.createElement('span');
+                label.textContent = 'Default page';
+                const value = document.createElement('strong');
+                value.textContent = [
+                    defaultSizeInfo.standardName,
+                    defaultSizeInfo.dimensionsLabel,
+                    defaultSizeInfo.ratioLabel
+                ].filter(Boolean).join(' · ');
+                pagesDefaultSize.replaceChildren(label, value);
+            }
 
             state.pages.forEach((page, index) => {
                 const item = document.createElement('div');
@@ -22505,6 +22699,19 @@
                 item.dataset.pageIndex = index;
                 const strokeCount = getVisibleStrokeCount(page);
                 const isPdfBackground = page.backgroundSource === 'pdf' || Number.isFinite(page.pdfPageIndex);
+                const isPhotoBackground = page.backgroundSource === 'custom' && !!page.backgroundImage;
+                const pageDimensions = getPageDimensions(page);
+                const pageSizeInfo = getPageSizeInfo(pageDimensions.width, pageDimensions.height);
+                const thumbnailRect = getContainedRect(
+                    pageDimensions.width,
+                    pageDimensions.height,
+                    50,
+                    70
+                );
+                const thumbnailWidth = Math.max(1, thumbnailRect.width);
+                const thumbnailHeight = Math.max(1, thumbnailRect.height);
+                const thumbnailScale = 2;
+                const pageType = isPdfBackground ? 'PDF' : (isPhotoBackground ? 'Photo' : '');
                 item.innerHTML = `
                     ${canReorder ? `<div class="page-drag-handle" title="Drag to reorder">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -22513,12 +22720,19 @@
                         </svg>
                     </div>` : ''}
                     <div class="page-item-main" data-action="open">
-                        <div class="page-thumbnail">
-                            <canvas id="thumb-${index}" width="50" height="70"></canvas>
+                        <div class="page-thumbnail-slot">
+                            <div class="page-thumbnail" style="width:${thumbnailWidth}px;height:${thumbnailHeight}px">
+                                <canvas id="thumb-${index}" width="${thumbnailWidth * thumbnailScale}" height="${thumbnailHeight * thumbnailScale}"></canvas>
+                            </div>
                         </div>
                         <div class="page-info">
                             <h3>Page ${index + 1}</h3>
-                            <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${isPdfBackground ? ' · PDF' : ''}</p>
+                            <p class="page-size">${[
+                                pageSizeInfo.standardName,
+                                pageSizeInfo.dimensionsLabel,
+                                pageSizeInfo.ratioLabel
+                            ].filter(Boolean).join(' · ')}</p>
+                            <p>${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}${pageType ? ` · ${pageType}` : ''}</p>
                         </div>
                     </div>
                     <div class="page-actions">
@@ -22704,14 +22918,16 @@
             const ctx = thumbCanvas.getContext('2d');
             const page = state.pages[pageIndex];
             if (!page) return;
+            const thumbWidth = thumbCanvas.width;
+            const thumbHeight = thumbCanvas.height;
 
             ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, 50, 70);
+            ctx.fillRect(0, 0, thumbWidth, thumbHeight);
 
             if (page.unloaded && page.preview) {
                 const img = new Image();
                 img.onload = () => {
-                    ctx.drawImage(img, 0, 0, 50, 70);
+                    ctx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
                 };
                 img.src = page.preview;
                 return;
@@ -22721,31 +22937,33 @@
             if (page.backgroundImage) {
                 const img = new Image();
                 img.onload = () => {
-                    ctx.drawImage(img, 0, 0, 50, 70);
-                    drawThumbnailStrokes(ctx, page, pageIndex);
+                    ctx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+                    drawThumbnailStrokes(ctx, page, pageIndex, thumbWidth, thumbHeight);
                 };
                 img.src = page.backgroundImage;
-            } else if (page.pdfPageIndex) {
+            } else if (Number.isFinite(page.pdfPageIndex)) {
+                const inset = Math.max(2, Math.round(Math.min(thumbWidth, thumbHeight) * 0.04));
                 ctx.fillStyle = '#f2f2f2';
-                ctx.fillRect(2, 2, 46, 66);
+                ctx.fillRect(inset, inset, thumbWidth - inset * 2, thumbHeight - inset * 2);
                 ctx.strokeStyle = '#d0d0d0';
-                ctx.strokeRect(2, 2, 46, 66);
+                ctx.strokeRect(inset, inset, thumbWidth - inset * 2, thumbHeight - inset * 2);
                 ctx.fillStyle = '#9a9a9a';
-                ctx.font = 'bold 10px sans-serif';
+                ctx.font = `bold ${Math.max(9, Math.round(Math.min(thumbWidth, thumbHeight) * 0.18))}px sans-serif`;
                 ctx.textAlign = 'center';
-                ctx.fillText('PDF', 25, 38);
-                drawThumbnailStrokes(ctx, page, pageIndex);
+                ctx.textBaseline = 'middle';
+                ctx.fillText('PDF', thumbWidth / 2, thumbHeight / 2);
+                drawThumbnailStrokes(ctx, page, pageIndex, thumbWidth, thumbHeight);
             } else {
                 const kind = normalizeTemplateKind(page.templateKind);
-                drawTemplateBackground(ctx, 50, 70, 1, kind);
-                drawThumbnailStrokes(ctx, page, pageIndex);
+                drawTemplateBackground(ctx, thumbWidth, thumbHeight, 1, kind);
+                drawThumbnailStrokes(ctx, page, pageIndex, thumbWidth, thumbHeight);
             }
         }
 
-        function drawThumbnailStrokes(ctx, page, pageIndex) {
+        function drawThumbnailStrokes(ctx, page, pageIndex, thumbWidth, thumbHeight) {
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
-            const scaleX = 50 / pageWidth;
-            const scaleY = 70 / pageHeight;
+            const scaleX = thumbWidth / pageWidth;
+            const scaleY = thumbHeight / pageHeight;
 
             ctx.save();
             ctx.scale(scaleX, scaleY);
