@@ -258,9 +258,11 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
   const threshold = 96;
   const maxOffset = 82;
   const axisLockThreshold = 8;
+  const carouselVerticalIntentRatio = 1.25;
   let startX: number | null = null;
   let startY: number | null = null;
   let gestureAxis: 'pending' | 'horizontal' | 'vertical' | null = null;
+  let startedInCarousel = false;
   let pullDistance = 0;
   let refreshing = false;
   let resetTimer: number | null = null;
@@ -287,6 +289,7 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
     startX = null;
     startY = null;
     gestureAxis = null;
+    startedInCarousel = false;
     pullDistance = 0;
     home.classList.add('is-pull-resetting');
     home.classList.remove('is-pulling');
@@ -306,6 +309,7 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
     startX = null;
     startY = null;
     gestureAxis = null;
+    startedInCarousel = false;
     if (resetTimer !== null) window.clearTimeout(resetTimer);
     resetTimer = null;
     home.classList.add('is-pulling', 'is-refreshing');
@@ -327,9 +331,13 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
     const touch = event.touches[0]!;
     startX = touch.clientX;
     startY = touch.clientY;
-    gestureAxis = event.target instanceof Element && event.target.closest('.drive-recents')
-      ? 'horizontal'
-      : 'pending';
+    startedInCarousel = !!(
+      event.target instanceof Element
+      && event.target.closest('.drive-recents')
+    );
+    // Wait for the user's direction before assigning the gesture. Inside a
+    // carousel, favour horizontal scrolling unless the pull is clearly vertical.
+    gestureAxis = 'pending';
     pullDistance = 0;
     if (resetTimer !== null) window.clearTimeout(resetTimer);
     resetTimer = null;
@@ -346,8 +354,12 @@ function mountPullToRefresh(home: HTMLElement, topbar: HTMLElement, scroller: HT
     const deltaX = touch.clientX - startX;
     const deltaY = touch.clientY - startY;
     if (gestureAxis === 'pending') {
-      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < axisLockThreshold) return;
-      gestureAxis = Math.abs(deltaX) > Math.abs(deltaY) ? 'horizontal' : 'vertical';
+      const absoluteX = Math.abs(deltaX);
+      const absoluteY = Math.abs(deltaY);
+      if (Math.max(absoluteX, absoluteY) < axisLockThreshold) return;
+      gestureAxis = startedInCarousel
+        ? (absoluteY > absoluteX * carouselVerticalIntentRatio ? 'vertical' : 'horizontal')
+        : (absoluteX > absoluteY ? 'horizontal' : 'vertical');
     }
     if (gestureAxis === 'horizontal') {
       if (pullDistance > 0) setPull(0);
