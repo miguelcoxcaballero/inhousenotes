@@ -66,9 +66,8 @@ html, body {
   position: fixed; inset: 0; background: var(--bg-primary);
   display: flex; flex-direction: column; overflow: hidden;
   overscroll-behavior-y: none;
-  --pull-distance: 0px; --pull-progress: 0deg;
-  --pull-scale: 0.78; --pull-opacity: 0;
-  --pull-arrow-rotation: 0deg; --pull-refresh-top: 64px;
+  --pull-distance: 0px; --pull-scale: 0.84; --pull-opacity: 0;
+  --pull-refresh-top: 64px;
 }
 .drive-topbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -91,83 +90,36 @@ html, body {
 .pull-refresh-indicator {
   position: absolute; z-index: 5; pointer-events: none;
   left: 50%; top: var(--pull-refresh-top);
-  width: 48px; height: 48px; display: grid; place-items: center;
+  width: 44px; height: 44px; display: grid; place-items: center;
   opacity: var(--pull-opacity);
-  transform: translate3d(-50%, calc(var(--pull-distance) - 108%), 0) scale(var(--pull-scale));
+  transform: translate3d(-50%, calc(var(--pull-distance) - 104%), 0) scale(var(--pull-scale));
   transform-origin: center; will-change: transform, opacity;
 }
 .pull-refresh-surface {
-  position: relative; width: 44px; height: 44px; border-radius: 50%;
-  display: grid; place-items: center; color: var(--accent-orange);
-  background: rgba(102,102,102,0.16);
-  background: conic-gradient(
-    from -90deg,
-    var(--accent-orange) 0deg var(--pull-progress),
-    rgba(102,102,102,0.16) var(--pull-progress) 360deg
-  );
-  box-shadow: 0 8px 24px rgba(20,20,20,0.16), 0 2px 6px rgba(20,20,20,0.08);
-  transition: box-shadow 0.24s ease, color 0.24s ease;
-}
-.pull-refresh-surface::before {
-  content: ''; position: absolute; inset: 2px; border-radius: 50%;
-  background: var(--bg-secondary); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.035);
-}
-.pull-refresh-arrow, .pull-refresh-spinner {
-  position: absolute; z-index: 1; left: 50%; top: 50%;
-}
-.pull-refresh-arrow {
-  width: 16px; height: 16px; margin: -8px 0 0 -8px;
-  transform: rotate(var(--pull-arrow-rotation));
-  transition: transform 0.28s cubic-bezier(0.22,1,0.36,1), opacity 0.16s ease;
-}
-.pull-refresh-arrow::before {
-  content: ''; position: absolute; left: 7px; top: 1px;
-  width: 2px; height: 12px; border-radius: 2px; background: currentColor;
-}
-.pull-refresh-arrow::after {
-  content: ''; position: absolute; left: 4px; bottom: 1px;
-  width: 7px; height: 7px; border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor; border-radius: 1px; transform: rotate(45deg);
+  position: relative; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--bg-secondary);
+  box-shadow: 0 7px 20px rgba(20,20,20,0.14), 0 1px 4px rgba(20,20,20,0.08);
+  transition: box-shadow 0.2s ease;
 }
 .pull-refresh-spinner {
+  position: absolute; left: 50%; top: 50%;
   width: 18px; height: 18px; margin: -9px 0 0 -9px;
-  border-radius: 50%; opacity: 0; transform: scale(0.64);
-  transition: opacity 0.16s ease, transform 0.24s cubic-bezier(0.22,1,0.36,1);
-}
-.pull-refresh-spinner::before {
-  content: ''; position: absolute; inset: 0; border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.42); border-top-color: #fff;
-}
-#drive-home.is-refresh-ready .pull-refresh-surface {
-  box-shadow: 0 10px 28px rgba(224,122,60,0.28), 0 0 0 5px rgba(224,122,60,0.1);
+  border-radius: 50%; border: 2px solid rgba(224,122,60,0.2);
+  border-top-color: var(--accent-orange);
+  animation: pull-refresh-spin 0.72s linear infinite;
 }
 #drive-home.is-pull-resetting .drive-body,
 #drive-home.is-pull-resetting .pull-refresh-indicator {
-  transition: transform 0.44s cubic-bezier(0.22,1,0.36,1), opacity 0.24s ease;
+  transition: transform 0.3s cubic-bezier(0.22,1,0.36,1), opacity 0.2s ease;
 }
 #drive-home.is-refreshing .drive-body,
 #drive-home.is-refreshing .pull-refresh-indicator {
-  transition: transform 0.34s cubic-bezier(0.22,1,0.36,1), opacity 0.18s ease;
+  transition: transform 0.24s cubic-bezier(0.22,1,0.36,1), opacity 0.16s ease;
 }
 #drive-home.is-refreshing .pull-refresh-surface {
-  color: #fff; background: var(--accent-orange);
-  box-shadow: 0 10px 30px rgba(224,122,60,0.32), 0 0 0 5px rgba(224,122,60,0.1);
-  animation: pull-refresh-breathe 1.1s ease-in-out infinite;
-}
-#drive-home.is-refreshing .pull-refresh-surface::before {
-  background: var(--accent-orange); box-shadow: none;
-}
-#drive-home.is-refreshing .pull-refresh-arrow {
-  opacity: 0; transform: rotate(var(--pull-arrow-rotation)) scale(0.58);
-}
-#drive-home.is-refreshing .pull-refresh-spinner {
-  opacity: 1; transform: scale(1);
-}
-#drive-home.is-refreshing .pull-refresh-spinner::before {
-  animation: pull-refresh-spin 0.68s linear infinite;
+  box-shadow: 0 8px 22px rgba(20,20,20,0.16), 0 1px 5px rgba(20,20,20,0.1);
 }
 @keyframes pull-refresh-spin { to { transform: rotate(360deg); } }
-@keyframes pull-refresh-breathe { 50% { transform: scale(1.035); } }
 .drive-section-title {
   font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);
   text-transform: uppercase; letter-spacing: 0.8px; margin: 18px 0 12px;
@@ -262,12 +214,10 @@ html, body {
 }
 @media (prefers-reduced-motion: reduce) {
   .pull-refresh-surface,
-  .pull-refresh-arrow,
   .pull-refresh-spinner,
   .pull-refresh-indicator,
   #drive-home .drive-body { transition-duration: 0.01ms !important; }
-  #drive-home.is-refreshing .pull-refresh-surface { animation: none; }
-  #drive-home.is-refreshing .pull-refresh-spinner::before { animation-duration: 1.2s; }
+  .pull-refresh-spinner { animation-duration: 1.2s; }
 }
 `;
 

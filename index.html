@@ -3967,10 +3967,8 @@
             overflow: hidden;
             overscroll-behavior-y: none;
             --home-pull-distance: 0px;
-            --home-pull-progress: 0deg;
-            --home-pull-scale: 0.78;
+            --home-pull-scale: 0.84;
             --home-pull-opacity: 0;
-            --home-pull-arrow-rotation: 0deg;
             --home-pull-top: var(--banner-height);
         }
 
@@ -4296,13 +4294,13 @@
             pointer-events: none;
             left: 50%;
             top: var(--home-pull-top);
-            width: 48px;
-            height: 48px;
+            width: 44px;
+            height: 44px;
             display: grid;
             place-items: center;
             opacity: var(--home-pull-opacity);
             transform:
-                translate3d(-50%, calc(var(--home-pull-distance) - 108%), 0)
+                translate3d(-50%, calc(var(--home-pull-distance) - 104%), 0)
                 scale(var(--home-pull-scale));
             transform-origin: center;
             will-change: transform, opacity;
@@ -4310,155 +4308,54 @@
 
         .home-pull-refresh-surface {
             position: relative;
-            width: 44px;
-            height: 44px;
+            width: 38px;
+            height: 38px;
             border-radius: 50%;
             display: grid;
             place-items: center;
-            color: var(--accent-orange);
-            background: rgba(102, 102, 102, 0.16);
-            background: conic-gradient(
-                from -90deg,
-                var(--accent-orange) 0deg var(--home-pull-progress),
-                rgba(102, 102, 102, 0.16) var(--home-pull-progress) 360deg
-            );
-            box-shadow:
-                0 8px 24px rgba(20, 20, 20, 0.16),
-                0 2px 6px rgba(20, 20, 20, 0.08);
-            transition:
-                box-shadow 0.24s ease,
-                color 0.24s ease;
-        }
-
-        .home-pull-refresh-surface::before {
-            content: '';
-            position: absolute;
-            inset: 2px;
-            border-radius: 50%;
             background: var(--bg-secondary);
-            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.035);
+            box-shadow:
+                0 7px 20px rgba(20, 20, 20, 0.14),
+                0 1px 4px rgba(20, 20, 20, 0.08);
+            transition: box-shadow 0.2s ease;
         }
 
-        .home-pull-refresh-arrow,
         .home-pull-refresh-spinner {
             position: absolute;
-            z-index: 1;
             left: 50%;
             top: 50%;
-        }
-
-        .home-pull-refresh-arrow {
-            width: 16px;
-            height: 16px;
-            margin: -8px 0 0 -8px;
-            transform: rotate(var(--home-pull-arrow-rotation));
-            transition:
-                transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                opacity 0.16s ease;
-        }
-
-        .home-pull-refresh-arrow::before {
-            content: '';
-            position: absolute;
-            left: 7px;
-            top: 1px;
-            width: 2px;
-            height: 12px;
-            border-radius: 2px;
-            background: currentColor;
-        }
-
-        .home-pull-refresh-arrow::after {
-            content: '';
-            position: absolute;
-            left: 4px;
-            bottom: 1px;
-            width: 7px;
-            height: 7px;
-            border-right: 2px solid currentColor;
-            border-bottom: 2px solid currentColor;
-            border-radius: 1px;
-            transform: rotate(45deg);
-        }
-
-        .home-pull-refresh-spinner {
             width: 18px;
             height: 18px;
             margin: -9px 0 0 -9px;
             border-radius: 50%;
-            opacity: 0;
-            transform: scale(0.64);
-            transition:
-                opacity 0.16s ease,
-                transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-
-        .home-pull-refresh-spinner::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 50%;
-            border: 2px solid rgba(255, 255, 255, 0.42);
-            border-top-color: #fff;
-        }
-
-        #drive-home.home-refresh-ready .home-pull-refresh-surface {
-            box-shadow:
-                0 10px 28px rgba(224, 122, 60, 0.28),
-                0 0 0 5px rgba(224, 122, 60, 0.1);
+            border: 2px solid rgba(224, 122, 60, 0.2);
+            border-top-color: var(--accent-orange);
+            animation: home-pull-refresh-spin 0.72s linear infinite;
         }
 
         #drive-home.home-pull-resetting .drive-main,
         #drive-home.home-pull-resetting .home-pull-refresh {
             transition:
-                transform 0.44s cubic-bezier(0.22, 1, 0.36, 1),
-                opacity 0.24s ease;
+                transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.2s ease;
         }
 
         #drive-home.home-is-refreshing .drive-main,
         #drive-home.home-is-refreshing .home-pull-refresh {
             transition:
-                transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-                opacity 0.18s ease;
+                transform 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.16s ease;
         }
 
         #drive-home.home-is-refreshing .home-pull-refresh-surface {
-            color: #fff;
-            background: var(--accent-orange);
             box-shadow:
-                0 10px 30px rgba(224, 122, 60, 0.32),
-                0 0 0 5px rgba(224, 122, 60, 0.1);
-            animation: home-pull-refresh-breathe 1.1s ease-in-out infinite;
-        }
-
-        #drive-home.home-is-refreshing .home-pull-refresh-surface::before {
-            background: var(--accent-orange);
-            box-shadow: none;
-        }
-
-        #drive-home.home-is-refreshing .home-pull-refresh-arrow {
-            opacity: 0;
-            transform: rotate(var(--home-pull-arrow-rotation)) scale(0.58);
-        }
-
-        #drive-home.home-is-refreshing .home-pull-refresh-spinner {
-            opacity: 1;
-            transform: scale(1);
-        }
-
-        #drive-home.home-is-refreshing .home-pull-refresh-spinner::before {
-            animation: home-pull-refresh-spin 0.68s linear infinite;
+                0 8px 22px rgba(20, 20, 20, 0.16),
+                0 1px 5px rgba(20, 20, 20, 0.1);
         }
 
         @keyframes home-pull-refresh-spin {
             to {
                 transform: rotate(360deg);
-            }
-        }
-
-        @keyframes home-pull-refresh-breathe {
-            50% {
-                transform: scale(1.035);
             }
         }
 
@@ -4704,13 +4601,44 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
+            isolation: isolate;
+        }
+
+        .drive-card-preview.is-loading::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background: linear-gradient(90deg,
+                rgba(0, 0, 0, 0.05) 0%,
+                rgba(0, 0, 0, 0.1) 50%,
+                rgba(0, 0, 0, 0.05) 100%);
+            background-size: 480px 100%;
+            animation: drive-skeleton-shimmer 1.2s infinite linear;
         }
 
         .drive-card-preview img {
+            position: relative;
+            z-index: 1;
             width: 100%;
             height: 100%;
             object-fit: cover;
             object-position: top center;
+            opacity: 0;
+            transition: opacity 0.16s ease;
+        }
+
+        .drive-card-preview.is-loaded img {
+            opacity: 1;
+        }
+
+        [data-theme="dark"] .drive-card-preview.is-loading::after {
+            background: linear-gradient(90deg,
+                rgba(255, 255, 255, 0.05) 0%,
+                rgba(255, 255, 255, 0.1) 50%,
+                rgba(255, 255, 255, 0.05) 100%);
+            background-size: 480px 100%;
         }
 
         .drive-card-icon {
@@ -6700,19 +6628,18 @@
 
         @media (prefers-reduced-motion: reduce) {
             .home-pull-refresh-surface,
-            .home-pull-refresh-arrow,
             .home-pull-refresh-spinner,
             .home-pull-refresh,
             #drive-home .drive-main {
                 transition-duration: 0.01ms !important;
             }
 
-            #drive-home.home-is-refreshing .home-pull-refresh-surface {
-                animation: none;
+            .home-pull-refresh-spinner {
+                animation-duration: 1.2s;
             }
 
-            #drive-home.home-is-refreshing .home-pull-refresh-spinner::before {
-                animation-duration: 1.2s;
+            .drive-card-preview img {
+                transition-duration: 0.01ms;
             }
         }
     </style>
@@ -6895,7 +6822,6 @@
         </div>
         <div class="home-pull-refresh" id="home-pull-refresh" role="status" aria-label="Pull to refresh">
             <span class="home-pull-refresh-surface" aria-hidden="true">
-                <span class="home-pull-refresh-arrow"></span>
                 <span class="home-pull-refresh-spinner"></span>
             </span>
         </div>
@@ -7905,7 +7831,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.5';
+        const APP_VERSION = '4.4.6';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -13886,14 +13812,45 @@
             const thumb = normalizeDriveThumbnail(file.thumbnailLink || '');
             if (thumb) {
                 const img = new Image();
-                img.src = thumb;
                 img.alt = `${file.name} preview`;
                 img.loading = 'lazy';
-                img.onerror = () => {
-                    preview.innerHTML = '';
-                    preview.appendChild(icon);
+                img.decoding = 'async';
+                preview.classList.add('is-loading');
+                let settled = false;
+
+                const showFallback = () => {
+                    if (settled) return;
+                    settled = true;
+                    preview.classList.remove('is-loading', 'is-loaded');
+                    preview.replaceChildren(icon);
                 };
+
+                const revealImage = async () => {
+                    if (settled) return;
+                    if (typeof img.decode === 'function') {
+                        try {
+                            await img.decode();
+                        } catch (_) {
+                            // Some browsers reject decode() for an otherwise usable image.
+                        }
+                    }
+                    if (settled) return;
+                    if (!img.naturalWidth || !img.naturalHeight) {
+                        showFallback();
+                        return;
+                    }
+                    settled = true;
+                    requestAnimationFrame(() => {
+                        preview.classList.remove('is-loading');
+                        preview.classList.add('is-loaded');
+                    });
+                };
+
+                img.addEventListener('load', () => { void revealImage(); }, { once: true });
+                img.addEventListener('error', showFallback, { once: true });
                 preview.appendChild(img);
+                img.src = thumb;
+                if (img.complete) void revealImage();
                 return preview;
             }
             preview.appendChild(icon);
@@ -14650,7 +14607,6 @@
             let pullDistance = 0;
             let refreshing = false;
             let resetTimer = null;
-            let ready = false;
 
             const updateTop = () => {
                 const topbar = driveHome.querySelector('.drive-topbar');
@@ -14664,40 +14620,24 @@
                 const progress = Math.min(1, pullDistance / threshold);
                 const easedProgress = 1 - Math.pow(1 - progress, 3);
                 const offset = maxOffset * (1 - Math.exp(-pullDistance / 78));
-                const isReady = progress >= 1;
                 driveHome.style.setProperty('--home-pull-distance', `${offset}px`);
-                driveHome.style.setProperty('--home-pull-progress', `${progress * 360}deg`);
-                driveHome.style.setProperty('--home-pull-scale', String(0.78 + easedProgress * 0.22));
-                driveHome.style.setProperty('--home-pull-opacity', String(Math.min(1, progress * 1.8)));
-                driveHome.style.setProperty(
-                    '--home-pull-arrow-rotation',
-                    `${isReady ? 180 : progress * 20}deg`
-                );
+                driveHome.style.setProperty('--home-pull-scale', String(0.84 + easedProgress * 0.16));
+                driveHome.style.setProperty('--home-pull-opacity', String(Math.min(1, progress * 2)));
                 driveHome.classList.toggle('home-is-pulling', pullDistance > 0);
-                driveHome.classList.toggle('home-refresh-ready', isReady);
-                if (isReady !== ready) {
-                    ready = isReady;
-                    homePullRefresh.setAttribute(
-                        'aria-label',
-                        ready ? 'Release to refresh' : 'Pull to refresh'
-                    );
-                    if (ready && typeof navigator.vibrate === 'function') {
-                        navigator.vibrate(8);
-                    }
-                }
+                homePullRefresh.setAttribute(
+                    'aria-label',
+                    progress >= 1 ? 'Release to refresh' : 'Pull to refresh'
+                );
             };
 
             const reset = () => {
                 startY = null;
                 pullDistance = 0;
-                ready = false;
                 driveHome.classList.add('home-pull-resetting');
-                driveHome.classList.remove('home-is-pulling', 'home-refresh-ready');
+                driveHome.classList.remove('home-is-pulling');
                 driveHome.style.setProperty('--home-pull-distance', '0px');
-                driveHome.style.setProperty('--home-pull-progress', '0deg');
-                driveHome.style.setProperty('--home-pull-scale', '0.78');
+                driveHome.style.setProperty('--home-pull-scale', '0.84');
                 driveHome.style.setProperty('--home-pull-opacity', '0');
-                driveHome.style.setProperty('--home-pull-arrow-rotation', '0deg');
                 homePullRefresh.setAttribute('aria-label', 'Pull to refresh');
                 if (resetTimer !== null) clearTimeout(resetTimer);
                 resetTimer = setTimeout(() => {
@@ -14706,21 +14646,28 @@
                 }, 220);
             };
 
-            const refresh = () => {
+            const refresh = async () => {
                 refreshing = true;
                 startY = null;
-                ready = false;
                 if (resetTimer !== null) clearTimeout(resetTimer);
                 resetTimer = null;
-                driveHome.classList.remove('home-refresh-ready');
                 driveHome.classList.add('home-is-pulling', 'home-is-refreshing');
-                driveHome.style.setProperty('--home-pull-distance', '58px');
-                driveHome.style.setProperty('--home-pull-progress', '360deg');
+                driveHome.style.setProperty('--home-pull-distance', '52px');
                 driveHome.style.setProperty('--home-pull-scale', '1');
                 driveHome.style.setProperty('--home-pull-opacity', '1');
-                driveHome.style.setProperty('--home-pull-arrow-rotation', '180deg');
                 homePullRefresh.setAttribute('aria-label', 'Refreshing');
-                setTimeout(() => window.location.reload(), 620);
+                const startedAt = performance.now();
+                try {
+                    await refreshDriveFiles();
+                } finally {
+                    const remaining = Math.max(0, 420 - (performance.now() - startedAt));
+                    if (remaining > 0) {
+                        await new Promise(resolve => setTimeout(resolve, remaining));
+                    }
+                    driveHome.classList.remove('home-is-refreshing');
+                    refreshing = false;
+                    reset();
+                }
             };
 
             updateTop();
@@ -14752,7 +14699,7 @@
 
             driveMain.addEventListener('touchend', () => {
                 if (refreshing || startY === null) return;
-                if (pullDistance >= threshold) refresh();
+                if (pullDistance >= threshold) void refresh();
                 else reset();
             }, { passive: true });
 
