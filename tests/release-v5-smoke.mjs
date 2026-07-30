@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.0.0.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.0.1.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.0\.0';/);
+assert.match(html, /const APP_VERSION = '5\.0\.1';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -18,6 +18,20 @@ assert.match(html, /Before restoring \$\{whenStr\}/);
 assert.match(html, /backgroundImage: page\.backgroundImage/);
 assert.match(html, /calendarPageConfig:/);
 assert.match(html, /legacyCoverStrokes:/);
+
+assert.match(html, /const DRIVE_BUILD_IDLE_WINDOW_MS = 180;/);
+assert.match(html, /optimizeForUpload: true/);
+assert.match(html, /function schedulePreparedDrivePdf\(/);
+assert.match(html, /async function prepareDrivePdfBlob\(/);
+assert.match(html, /sourceBlob: blob/);
+assert.match(html, /function getEmbeddedMetadataWorker\(/);
+assert.match(html, /parseEmbeddedMetadataPayload\(encodedData, true\)/);
+assert.match(html, /awaitAllPages: false/);
+assert.doesNotMatch(
+  html.slice(html.indexOf('async function importPDFData'), html.indexOf('async function importPDF(e)')),
+  /const fetchRes = await fetch\(pdfData\);\s*const buf = await fetchRes\.arrayBuffer\(\);[\s\S]{0,500}pdfjsLib\.getDocument/,
+  'opening must not copy a URL PDF before handing it to PDF.js'
+);
 
 assert.match(html, /allowFileDiscovery: false/);
 assert.match(html, /Public link copied/);
@@ -83,11 +97,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.0.0');
+assert.equal(update.publishedAppVersion, '5.0.1');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.0\.0/);
-assert.match(notes, /Live collaboration/i);
-assert.match(notes, /Timeline/i);
-assert.match(notes, /without (?:a )?Google sign-in/i);
+assert.match(update.releaseNotes, /v5\.0\.1/);
+assert.match(notes, /PDF opening/i);
+assert.match(notes, /stroke analysis/i);
+assert.match(notes, /Drive/i);
 
-console.log('v5.0.0 smoke checks passed.');
+console.log('v5.0.1 smoke checks passed.');
