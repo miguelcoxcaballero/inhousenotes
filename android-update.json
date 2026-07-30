@@ -3,5 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "4.4.24"
+  "publishedAppVersion": "5.0.0",
+  "releaseNotes": "Inhouse Notes v5.0.0: live cross-device collaboration, anonymous public links, and a resilient merged timeline with recovery points."
 }

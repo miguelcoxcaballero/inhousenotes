@@ -7884,6 +7884,7 @@
             </div>
         </div>
     </div>
+    <script src="live-collaboration-v5.js?v=5.0.0"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -7951,7 +7952,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '4.4.24';
+        const APP_VERSION = '5.0.0';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -8422,6 +8423,14 @@
             highQuality: true
         });
         const GOOGLE_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
+        // Optional browser key for importing public Drive PDFs without OAuth.
+        // The key is intentionally public and must be restricted in Google Cloud
+        // to the Drive API plus the production/GitHub Pages HTTP referrers.
+        const PUBLIC_DRIVE_API_KEY = String(
+            window.INHOUSE_PUBLIC_DRIVE_API_KEY
+            || document.querySelector('meta[name="inhouse-public-drive-api-key"]')?.content
+            || ''
+        ).trim();
         const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
         const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
         const GOOGLE_API_SCOPE = `${DRIVE_SCOPE} ${CALENDAR_SCOPE}`;
@@ -8461,11 +8470,12 @@
         const DATA_STORAGE_KEY = 'notebook-data-v3';
         const LEGACY_DATA_KEYS = ['notebook-data-v2'];
         const DB_NAME = 'notebook-data-db-v1';
-        const DB_VERSION = 3;
+        const DB_VERSION = 4;
         const DB_STORE = 'snapshots';
         const DB_KEY = 'latest';
         const PAGE_STORE = 'pages';
         const OPS_STORE = 'stroke-ops';
+        const TIMELINE_STORE = 'timeline-history';
 
         // Separate IndexedDB for caching clean original PDF bytes used by the
         // text-preserving export pipeline (pdf-lib). Kept in its own database so
@@ -9420,7 +9430,8 @@
                 sharedLinkSignInPrompted = false;
                 lastPendingSharedPublicAttemptId = null;
                 pendingSharedDriveResourceKey = sharedDriveResourceKey || null;
-                window.history.replaceState({}, document.title, window.location.pathname);
+                // Keep the share parameters in the address bar so reloads and
+                // copied links retain the file/resource key until opening succeeds.
             }
 
             const lastView = loadViewMode();
@@ -12782,7 +12793,7 @@
                     : signedIn
                     ? 'Loading your PDFs...'
                     : (hasPendingShared
-                        ? (pendingSharedOpenFailed ? 'Sign in to open shared document.' : 'Opening shared document...')
+                        ? (pendingSharedOpenFailed ? 'Opening public preview...' : 'Opening shared document...')
                         : 'Sign in to browse your Drive.');
             }
             if (!connectedOrRecoverable) {
@@ -13281,7 +13292,7 @@
                         activePdfEmbeddedKeywords = kw0;
                         activePdfEmbeddedStrokesCache = await decodeEmbeddedStrokesFromPdfKeywords(kw0);
                         const decodedHistory = await decodeVersionHistoryFromKeywords(kw0);
-                        state.versionHistory = Array.isArray(decodedHistory) ? decodedHistory : [];
+                        await adoptVersionHistory(Array.isArray(decodedHistory) ? decodedHistory : []);
                     } catch (vhErr) {
                         activePdfEmbeddedKeywords = '';
                         activePdfEmbeddedStrokesCache = null;
@@ -13616,143 +13627,225 @@
         // Allows opening a Drive file shared via a public link without being
         // signed in. Downloads the PDF directly from the sharing URL and falls
         // back to an unauthenticated fetch when the token is absent.
+        function getPublicDriveResourceHeaders(fileId, resourceKey = '') {
+            const headers = { 'Cache-Control': 'no-cache' };
+            if (resourceKey) headers['X-Goog-Drive-Resource-Keys'] = `${fileId}/${resourceKey}`;
+            return headers;
+        }
+
+        function buildPublicDrivePreviewUrl(fileId, resourceKey = '') {
+            const params = new URLSearchParams({ embedded: 'true' });
+            if (resourceKey) params.set('resourcekey', resourceKey);
+            return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview?${params.toString()}`;
+        }
+
+        function buildPublicDriveOpenUrl(fileId, resourceKey = '') {
+            const params = new URLSearchParams();
+            if (resourceKey) params.set('resourcekey', resourceKey);
+            const suffix = params.toString();
+            return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view${suffix ? `?${suffix}` : ''}`;
+        }
+
+        async function fetchPublicSharedMetadata(fileId, resourceKey = '') {
+            if (!PUBLIC_DRIVE_API_KEY) return null;
+            const url = new URL(`https://www.googleapis.com/drive/v3/files/${fileId}`);
+            url.searchParams.set('key', PUBLIC_DRIVE_API_KEY);
+            url.searchParams.set('supportsAllDrives', 'true');
+            url.searchParams.set('fields', 'id,name,mimeType,size,md5Checksum,modifiedTime,headRevisionId,resourceKey,capabilities(canDownload)');
+            const res = await fetch(url.toString(), {
+                method: 'GET',
+                headers: getPublicDriveResourceHeaders(fileId, resourceKey),
+                credentials: 'omit',
+                cache: 'no-store'
+            });
+            if (!res.ok) {
+                const error = new Error(res.status === 403 || res.status === 404
+                    ? 'This document is not public or its owner disabled downloads.'
+                    : `Public Drive metadata failed (${res.status}).`);
+                error.status = res.status;
+                throw error;
+            }
+            return res.json();
+        }
+
         async function fetchPublicSharedPdf(fileId, resourceKey = '') {
-            const safeResourceKey = resourceKey ? String(resourceKey).trim() : '';
-            const withResourceKey = (base) => {
-                if (!safeResourceKey) return base;
-                const sep = base.includes('?') ? '&' : '?';
-                const keyParam = base.includes('googleapis.com/drive/') ? 'resourceKey' : 'resourcekey';
-                return `${base}${sep}${keyParam}=${encodeURIComponent(safeResourceKey)}`;
-            };
-            const decodeHtmlEntities = (value) => value
-                .replace(/&amp;/g, '&')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'")
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>');
-            const queueParsedDownloadUrls = (sourceText, currentEndpoint, queue, visited) => {
-                if (!sourceText) return;
-                const candidates = [];
-
-                const directUrlMatches = sourceText.match(/https?:\/\/drive(?:\.usercontent)?\.google\.com\/[^\s"'<>\\]+/g) || [];
-                directUrlMatches.forEach(url => candidates.push(url));
-
-                const relativeUcMatches = sourceText.match(/\/uc\?[^\s"'<>\\]+/g) || [];
-                relativeUcMatches.forEach(path => {
-                    candidates.push(`https://drive.google.com${path}`);
+            const safeResourceKey = String(resourceKey || '').trim();
+            const endpoints = [];
+            if (PUBLIC_DRIVE_API_KEY) {
+                const apiUrl = new URL(`https://www.googleapis.com/drive/v3/files/${fileId}`);
+                apiUrl.searchParams.set('alt', 'media');
+                apiUrl.searchParams.set('supportsAllDrives', 'true');
+                apiUrl.searchParams.set('key', PUBLIC_DRIVE_API_KEY);
+                endpoints.push({
+                    url: apiUrl.toString(),
+                    headers: getPublicDriveResourceHeaders(fileId, safeResourceKey)
                 });
-
-                const jsonDownloadUrlMatches = sourceText.match(/"downloadUrl"\s*:\s*"([^"]+)"/g) || [];
-                jsonDownloadUrlMatches.forEach(chunk => {
-                    const m = chunk.match(/"downloadUrl"\s*:\s*"([^"]+)"/);
-                    if (!m || !m[1]) return;
-                    let url = m[1].replace(/\\u003d/g, '=').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
-                    url = decodeHtmlEntities(url);
-                    candidates.push(url);
-                });
-
-                const formMatch = sourceText.match(/<form[^>]+action="([^"]+)"[^>]*>([\s\S]*?)<\/form>/i);
-                if (formMatch && formMatch[1]) {
-                    try {
-                        const actionUrl = new URL(decodeHtmlEntities(formMatch[1]), currentEndpoint);
-                        const formBody = formMatch[2] || '';
-                        const inputRegex = /<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi;
-                        let inputMatch;
-                        while ((inputMatch = inputRegex.exec(formBody)) !== null) {
-                            actionUrl.searchParams.set(
-                                decodeHtmlEntities(inputMatch[1]),
-                                decodeHtmlEntities(inputMatch[2])
-                            );
-                        }
-                        candidates.push(actionUrl.toString());
-                    } catch (e) {
-                        // ignore invalid form action URLs
-                    }
-                }
-
-                candidates.forEach(candidateRaw => {
-                    try {
-                        const candidateUrl = new URL(decodeHtmlEntities(candidateRaw), currentEndpoint);
-                        if (safeResourceKey && !candidateUrl.searchParams.get('resourcekey') && !candidateUrl.searchParams.get('resourceKey')) {
-                            const keyParam = candidateUrl.hostname.includes('googleapis.com') ? 'resourceKey' : 'resourcekey';
-                            candidateUrl.searchParams.set(keyParam, safeResourceKey);
-                        }
-                        const candidate = candidateUrl.toString();
-                        if (!visited.has(candidate)) {
-                            visited.add(candidate);
-                            queue.push(candidate);
-                        }
-                    } catch (e) {
-                        // ignore invalid candidate URL strings
-                    }
-                });
-            };
-            const endpoints = [
-                withResourceKey(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`),
-                withResourceKey(`https://drive.usercontent.google.com/download?id=${fileId}&export=download`),
-                withResourceKey(`https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`),
-                withResourceKey(`https://drive.google.com/uc?export=download&id=${fileId}`),
-                withResourceKey(`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`)
-            ];
-            const queue = [...endpoints];
-            const visited = new Set(queue);
+            }
+            const resourceSuffix = safeResourceKey ? `&resourcekey=${encodeURIComponent(safeResourceKey)}` : '';
+            endpoints.push(
+                { url: `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download${resourceSuffix}`, headers: {} },
+                { url: `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}${resourceSuffix}`, headers: {} }
+            );
             let lastError = null;
-
-            while (queue.length > 0) {
-                const endpoint = queue.shift();
+            for (const endpoint of endpoints) {
                 try {
-                    const res = await fetch(endpoint, {
+                    const res = await fetch(endpoint.url, {
                         method: 'GET',
                         redirect: 'follow',
                         cache: 'no-store',
-                        credentials: 'omit'
+                        credentials: 'omit',
+                        headers: endpoint.headers
                     });
                     if (!res.ok) {
-                        lastError = new Error(`Shared fetch failed (${res.status})`);
+                        lastError = Object.assign(new Error(`Public PDF request failed (${res.status}).`), { status: res.status });
                         continue;
                     }
-                    const contentDisposition = res.headers.get('content-disposition') || '';
-                    const contentType = (res.headers.get('content-type') || '').toLowerCase();
                     const blob = await res.blob();
-                    // Check PDF header using only the first 1024 bytes (avoids full ArrayBuffer in heap)
                     const headerSlice = await blob.slice(0, 1024).arrayBuffer();
                     if (!isPdfArrayBuffer(headerSlice)) {
-                        if (contentType.includes('text/html') || contentType.includes('text/plain') || !contentDisposition) {
-                            try {
-                                const maxDecode = Math.min(blob.size, 220000);
-                                const textSlice = await blob.slice(0, maxDecode).text();
-                                queueParsedDownloadUrls(textSlice, endpoint, queue, visited);
-                                const tokenMatch = textSlice.match(/[?&]confirm=([0-9A-Za-z_-]+)/i) || textSlice.match(/name=\"confirm\"[^>]*value=\"([^\"]+)\"/i);
-                                if (tokenMatch && tokenMatch[1]) {
-                                    const url = new URL(endpoint);
-                                    url.searchParams.set('confirm', tokenMatch[1]);
-                                    if (safeResourceKey && !url.searchParams.get('resourcekey') && !url.searchParams.get('resourceKey')) {
-                                        const keyParam = endpoint.includes('googleapis.com/drive/') ? 'resourceKey' : 'resourcekey';
-                                        url.searchParams.set(keyParam, safeResourceKey);
-                                    }
-                                    const nextEndpoint = url.toString();
-                                    if (!visited.has(nextEndpoint)) {
-                                        visited.add(nextEndpoint);
-                                        queue.push(nextEndpoint);
-                                    }
-                                }
-                            } catch (parseErr) {
-                                // ignore html parse errors and continue trying next endpoints
-                            }
-                        }
-                        lastError = new Error('Shared response is not a PDF');
+                        lastError = new Error('The public response was not a PDF.');
                         continue;
                     }
-                    const fileName = parseFilenameFromContentDisposition(contentDisposition) || '';
-                    return { blob, fileName };
+                    const disposition = res.headers.get('content-disposition') || '';
+                    return {
+                        blob,
+                        fileName: parseFilenameFromContentDisposition(disposition) || '',
+                        metadata: await fetchPublicSharedMetadata(fileId, safeResourceKey).catch(() => null)
+                    };
                 } catch (err) {
                     lastError = err;
                 }
             }
-
-            throw lastError || new Error('Unable to fetch shared PDF without sign-in');
+            throw lastError || new Error('The public PDF could not be imported in this browser.');
         }
 
+        let publicSharedPollTimer = null;
+        let publicSharedPollInFlight = false;
+        let publicSharedPreviewFileId = '';
+        let publicSharedPreviewResourceKey = '';
+        let publicSharedPreviewModifiedTime = 0;
+
+        function stopPublicSharedPolling() {
+            if (publicSharedPollTimer) clearInterval(publicSharedPollTimer);
+            publicSharedPollTimer = null;
+            publicSharedPollInFlight = false;
+            publicSharedPreviewFileId = '';
+            publicSharedPreviewResourceKey = '';
+            publicSharedPreviewModifiedTime = 0;
+        }
+
+        function getPublicPreviewOverlay() {
+            let overlay = document.getElementById('public-drive-preview-overlay');
+            if (overlay) return overlay;
+            const style = document.createElement('style');
+            style.textContent = `
+                #public-drive-preview-overlay{position:fixed;inset:0;z-index:10050;background:#111;display:flex;flex-direction:column;color:#fff}
+                #public-drive-preview-overlay[hidden]{display:none}
+                .public-preview-bar{min-height:58px;display:flex;align-items:center;gap:12px;padding:8px 14px;background:#1b1b1b;border-bottom:1px solid #333}
+                .public-preview-title{min-width:0;flex:1;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                .public-preview-badge{font-size:12px;color:#9fe3b0;background:#153e23;border:1px solid #28643b;border-radius:999px;padding:5px 9px}
+                .public-preview-action{border:1px solid #555;background:#292929;color:#fff;border-radius:10px;padding:8px 11px;text-decoration:none;font:inherit;cursor:pointer}
+                #public-drive-preview-frame{width:100%;height:100%;border:0;background:#202124;flex:1}
+                @media(max-width:620px){.public-preview-badge{display:none}.public-preview-bar{gap:7px;padding:7px}.public-preview-action{padding:8px;font-size:13px}}
+            `;
+            document.head.appendChild(style);
+            overlay = document.createElement('section');
+            overlay.id = 'public-drive-preview-overlay';
+            overlay.hidden = true;
+            overlay.innerHTML = `
+                <div class="public-preview-bar">
+                    <button type="button" class="public-preview-action" id="public-preview-back">Back</button>
+                    <div class="public-preview-title" id="public-preview-title">Shared document</div>
+                    <span class="public-preview-badge">Public view · no sign-in required</span>
+                    <button type="button" class="public-preview-action" id="public-preview-refresh">Refresh</button>
+                    <a class="public-preview-action" id="public-preview-open" target="_blank" rel="noopener">Open in Drive</a>
+                </div>
+                <iframe id="public-drive-preview-frame" title="Public shared PDF preview" allow="clipboard-read; clipboard-write" referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+            document.body.appendChild(overlay);
+            overlay.querySelector('#public-preview-back').addEventListener('click', () => {
+                overlay.hidden = true;
+                const frame = overlay.querySelector('#public-drive-preview-frame');
+                if (frame) frame.src = 'about:blank';
+                stopPublicSharedPolling();
+                showDriveHome();
+            });
+            overlay.querySelector('#public-preview-refresh').addEventListener('click', () => {
+                const frame = overlay.querySelector('#public-drive-preview-frame');
+                if (frame && publicSharedPreviewFileId) {
+                    frame.src = buildPublicDrivePreviewUrl(publicSharedPreviewFileId, publicSharedPreviewResourceKey);
+                }
+            });
+            return overlay;
+        }
+
+        function openPublicDrivePreview(fileId, resourceKey = '', options = {}) {
+            const overlay = getPublicPreviewOverlay();
+            publicSharedPreviewFileId = fileId;
+            publicSharedPreviewResourceKey = resourceKey || '';
+            const title = overlay.querySelector('#public-preview-title');
+            if (title) title.textContent = options.fileName || 'Shared document';
+            const open = overlay.querySelector('#public-preview-open');
+            if (open) open.href = buildPublicDriveOpenUrl(fileId, resourceKey);
+            const frame = overlay.querySelector('#public-drive-preview-frame');
+            frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey);
+            overlay.hidden = false;
+            state.driveFileId = fileId;
+            state.driveResourceKey = resourceKey || '';
+            state.driveCanEdit = false;
+            state.driveAutosave = false;
+            setReadOnlyMode(true, { force: true });
+            window.pendingSharedDriveId = null;
+            pendingSharedDriveResourceKey = null;
+            sharedLinkSignInPrompted = false;
+            lastPendingSharedPublicAttemptId = null;
+            startPublicSharedPolling(fileId, resourceKey, { previewOnly: true });
+            showStatus('Public document opened — no sign-in required.', { preserveState: true });
+            return true;
+        }
+
+        function startPublicSharedPolling(fileId, resourceKey = '', options = {}) {
+            stopPublicSharedPolling();
+            publicSharedPreviewFileId = fileId;
+            publicSharedPreviewResourceKey = resourceKey || '';
+            const previewOnly = !!options.previewOnly;
+            const poll = async () => {
+                if (publicSharedPollInFlight || document.visibilityState === 'hidden') return;
+                publicSharedPollInFlight = true;
+                try {
+                    if (PUBLIC_DRIVE_API_KEY) {
+                        const metadata = await fetchPublicSharedMetadata(fileId, resourceKey);
+                        const modified = metadata?.modifiedTime ? new Date(metadata.modifiedTime).getTime() : 0;
+                        if (modified && publicSharedPreviewModifiedTime && modified > publicSharedPreviewModifiedTime) {
+                            if (previewOnly) {
+                                const overlay = document.getElementById('public-drive-preview-overlay');
+                                const frame = overlay?.querySelector('#public-drive-preview-frame');
+                                if (frame) frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey);
+                            } else {
+                                const refreshed = await fetchPublicSharedPdf(fileId, resourceKey);
+                                const objectUrl = URL.createObjectURL(refreshed.blob);
+                                try {
+                                    await importPDFData(objectUrl, true, { fileSize: refreshed.blob.size, driveFileId: fileId });
+                                } finally {
+                                    URL.revokeObjectURL(objectUrl);
+                                }
+                                showStatus('Public document updated.', { preserveState: true });
+                            }
+                        }
+                        if (modified) publicSharedPreviewModifiedTime = modified;
+                    } else if (previewOnly) {
+                        const overlay = document.getElementById('public-drive-preview-overlay');
+                        const frame = overlay?.querySelector('#public-drive-preview-frame');
+                        if (frame) frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey);
+                    }
+                } catch (err) {
+                    console.warn('Public document refresh failed:', err);
+                } finally {
+                    publicSharedPollInFlight = false;
+                }
+            };
+            poll();
+            publicSharedPollTimer = setInterval(poll, PUBLIC_DRIVE_API_KEY ? 5000 : 60000);
+        }
         async function openSharedFileWithoutSignIn(fileId, resourceKey = '') {
             if (!fileId) return false;
             if (driveOpenInProgress) return false;
@@ -13773,7 +13866,11 @@
             try {
                 const publicPdf = await fetchPublicSharedPdf(fileId, resourceKey);
                 const objectUrl = URL.createObjectURL(publicPdf.blob);
-                await importPDFData(objectUrl, true, { fileSize: publicPdf.blob.size, driveFileId: fileId });
+                try {
+                    await importPDFData(objectUrl, true, { fileSize: publicPdf.blob.size, driveFileId: fileId });
+                } finally {
+                    URL.revokeObjectURL(objectUrl);
+                }
 
                 state.driveFileId = fileId;
                 markDriveHydrated(fileId);
@@ -13788,11 +13885,11 @@
                 state.driveOwnerEmail = '';
                 state.driveOwnerPhoto = '';
                 state.driveResourceKey = resourceKey || '';
-                state.driveHeadRevisionId = null;
-                state.driveLastKnownModified = null;
-                // Start polling for updates even in view-only mode.
-                // pollDriveRevision will no-op if driveAccessToken is null.
-                startCollabPolling();
+                state.driveHeadRevisionId = publicPdf.metadata?.headRevisionId || null;
+                state.driveLastKnownModified = publicPdf.metadata?.modifiedTime
+                    ? new Date(publicPdf.metadata.modifiedTime).getTime()
+                    : null;
+                startPublicSharedPolling(fileId, resourceKey, { previewOnly: false });
 
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
@@ -13807,14 +13904,12 @@
                 showStatus('Shared PDF loaded (View Only)', { preserveState: true });
                 return true;
             } catch (err) {
-                console.error('Could not open shared file without sign-in:', err);
-                showDriveHome();
-                sharedLinkSignInPrompted = true;
+                console.warn('Public PDF import unavailable; opening the anonymous Drive preview:', err);
+                sharedLinkSignInPrompted = false;
                 if (driveStatusEl) {
-                    driveStatusEl.textContent = 'Sign in to open shared document.';
+                    driveStatusEl.textContent = 'Opening public view — no sign-in required.';
                 }
-                showStatus('Could not open shared document without sign-in. If restricted, sign in first.', { error: true });
-                return false;
+                return openPublicDrivePreview(fileId, resourceKey, { fileName: 'Shared document' });
             } finally {
                 hideLoading();
                 driveOpenInProgress = false;
@@ -13994,23 +14089,28 @@
         }
 
         async function setDriveLinkPermission(fileId, role) {
+            const data = await fetchDrivePermissions(fileId);
+            const anyonePerm = data.permissions?.find(permission => permission.type === 'anyone') || null;
             if (role === 'restricted') {
-                const data = await fetchDrivePermissions(fileId);
-                const anyonePerm = data.permissions?.find(p => p.type === 'anyone');
                 if (anyonePerm) {
                     await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${anyonePerm.id}`, { method: 'DELETE' });
                 }
-                return { success: true };
-            } else {
-                const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'anyone', role: role })
-                });
-                return await res.json();
+                return { success: true, role: 'restricted' };
             }
+            if (anyonePerm) {
+                if (anyonePerm.role !== role) {
+                    const updated = await updateDrivePermissionRole(fileId, anyonePerm.id, role);
+                    return { ...updated, id: anyonePerm.id, type: 'anyone', role };
+                }
+                return anyonePerm;
+            }
+            const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=id,type,role`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'anyone', role, allowFileDiscovery: false })
+            });
+            return await res.json();
         }
-
         async function updateDrivePermissionRole(fileId, permissionId, role) {
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${permissionId}`, {
                 method: 'PATCH',
@@ -17400,12 +17500,14 @@
                 strokes: Array.isArray(p?.strokes) ? JSON.parse(JSON.stringify(p.strokes)) : [],
                 images: Array.isArray(p?.images) ? JSON.parse(JSON.stringify(p.images)) : [],
                 deletedStrokeIds: Array.isArray(p?.deletedStrokeIds) ? p.deletedStrokeIds.slice() : [],
-                backgroundImage: null,
+                backgroundImage: p?.backgroundSource === 'custom' ? (p?.backgroundImage || null) : null,
                 backgroundSource: p?.backgroundSource || (p?.pdfPageIndex ? 'pdf' : 'template'),
                 templateKind: normalizeTemplateKind(p?.templateKind),
                 pdfPageIndex: Number.isFinite(p?.pdfPageIndex) ? p.pdfPageIndex : null,
                 pageWidth: normalizePageDimension(p?.pageWidth, A4_WIDTH),
                 pageHeight: normalizePageDimension(p?.pageHeight, A4_HEIGHT),
+                sidePanel: cloneTimelineValue(p?.sidePanel || null, null),
+                legacyCoverStrokes: cloneTimelineValue(p?.legacyCoverStrokes || null, null),
                 needsRedraw: true
             }));
         }
@@ -17515,6 +17617,11 @@
             const sliderText = entry.isOriginal ? 'Slide to revert' : 'Slide to restore';
             const ok = await showConfirmSlider({ title: titleText, message, sliderText });
             if (!ok) return false;
+            const recoveryCreated = await captureTimelineRecoveryPoint(`Before restoring ${whenStr}`);
+            if (!recoveryCreated) {
+                showStatus('Restore cancelled: a safe recovery point could not be created.', { error: true });
+                return false;
+            }
             if (entry.isOriginal) {
                 await swapDisplayDocToCleanOriginal();
             }
@@ -17526,6 +17633,13 @@
                     ? (hasCleanPdf ? 'Reverted to clean original PDF' : 'Reverted to clean original document')
                     : `Restored version from ${whenStr}${entry.author?.name ? ` (${entry.author.name})` : ''}`
             };
+            if (entry.calendarPageConfig !== undefined) {
+                state.calendarPageConfig = cloneTimelineValue(entry.calendarPageConfig || null, null);
+            }
+            if (entry.exportName) {
+                state.exportName = entry.exportName;
+                updateDocTitle();
+            }
             const newPages = buildPagesFromSnapshot(entry.pages);
 
             addRestoreTombstones(newPages, state.pages);
@@ -18855,21 +18969,49 @@
                 }
             });
 
-            copyBtn.addEventListener('click', () => {
-                if (state.driveOwnedByMe === false) return;
-                if (!state.driveFileId) return;
-                const params = new URLSearchParams();
-                params.set('drive', state.driveFileId);
-                if (state.driveResourceKey) {
-                    params.set('resourcekey', state.driveResourceKey);
+            copyBtn.addEventListener('click', async () => {
+                if (state.driveOwnedByMe === false || !state.driveFileId) return;
+                const originalText = copyBtn.textContent;
+                copyBtn.disabled = true;
+                copyBtn.textContent = 'Preparing public link...';
+                try {
+                    // A public-view link is only copied after Drive confirms the
+                    // anyone/reader ACL. This prevents links that immediately ask
+                    // the recipient to sign in.
+                    await setDriveLinkPermission(state.driveFileId, 'reader');
+                    const permissions = await fetchDrivePermissions(state.driveFileId);
+                    const publicPermission = permissions.permissions?.find(permission => (
+                        permission.type === 'anyone'
+                        && ['reader', 'commenter', 'writer'].includes(permission.role)
+                    ));
+                    if (!publicPermission) {
+                        throw new Error('Google Drive did not confirm public access. Your organisation may block public sharing.');
+                    }
+                    const metadataUrl = new URL(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}`);
+                    metadataUrl.searchParams.set('fields', 'id,name,resourceKey');
+                    const metadataRes = await driveFetch(metadataUrl.toString(), { method: 'GET' });
+                    const metadata = await metadataRes.json();
+                    if (metadata.resourceKey) state.driveResourceKey = metadata.resourceKey;
+                    const params = new URLSearchParams();
+                    params.set('drive', state.driveFileId);
+                    params.set('public', '1');
+                    if (state.driveResourceKey) params.set('resourcekey', state.driveResourceKey);
+                    const link = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+                    await navigator.clipboard.writeText(link);
+                    if (accessSelect) accessSelect.value = 'anyone';
+                    if (roleSelect) {
+                        roleSelect.value = 'reader';
+                        roleSelect.classList.remove('hidden');
+                    }
+                    saveDriveSession();
+                    showStatus('Public link copied — no sign-in required.', { icon: 'check' });
+                } catch (err) {
+                    console.error('Public link error:', err);
+                    showStatus(err?.message || 'Could not create a public link.', { error: true });
+                } finally {
+                    copyBtn.disabled = false;
+                    copyBtn.textContent = originalText;
                 }
-                const link = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
-                navigator.clipboard.writeText(link).then(() => {
-                    showStatus('Link copied', { icon: 'check' });
-                }).catch(err => {
-                    console.error('Copy error:', err);
-                    showStatus('Failed to copy', { error: true });
-                });
             });
         }
 
@@ -23927,6 +24069,9 @@
                             }
                         }
                     }
+                    if (!db.objectStoreNames.contains(TIMELINE_STORE)) {
+                        db.createObjectStore(TIMELINE_STORE, { keyPath: 'key' });
+                    }
                 };
                 request.onsuccess = () => {
                     const db = request.result;
@@ -23989,6 +24134,71 @@
                 request.onsuccess = () => resolve(request.result || null);
                 request.onerror = () => resolve(null);
             });
+        }
+
+        function getTimelineDocumentKey() {
+            const driveId = state?.driveFileId || driveOpenFileId || window.pendingSharedDriveId || '';
+            if (driveId) return `drive:${driveId}`;
+            const firstPageId = Array.isArray(state?.pages) && state.pages[0]?.pageId
+                ? state.pages[0].pageId
+                : 'untitled';
+            const name = String(state?.exportName || 'untitled').trim().toLowerCase();
+            return `local:${simpleHash(`${name}:${firstPageId}`)}`;
+        }
+
+        async function saveTimelineToIndexedDb(history, key = getTimelineDocumentKey()) {
+            if (!key || !Array.isArray(history)) return false;
+            const db = await openNotebookDb();
+            if (!db || !db.objectStoreNames.contains(TIMELINE_STORE)) return false;
+            return new Promise((resolve) => {
+                try {
+                    const tx = db.transaction(TIMELINE_STORE, 'readwrite');
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                    tx.onabort = () => resolve(false);
+                    tx.objectStore(TIMELINE_STORE).put({
+                        key,
+                        history,
+                        savedAt: Date.now(),
+                        schemaVersion: 2
+                    });
+                } catch (err) {
+                    resolve(false);
+                }
+            });
+        }
+
+        async function loadTimelineFromIndexedDb(key = getTimelineDocumentKey()) {
+            if (!key) return null;
+            const db = await openNotebookDb();
+            if (!db || !db.objectStoreNames.contains(TIMELINE_STORE)) return null;
+            return new Promise((resolve) => {
+                try {
+                    const tx = db.transaction(TIMELINE_STORE, 'readonly');
+                    const req = tx.objectStore(TIMELINE_STORE).get(key);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => resolve(null);
+                } catch (err) {
+                    resolve(null);
+                }
+            });
+        }
+
+        async function persistTimelineHistory() {
+            const normalized = normalizeTimelineHistory(state.versionHistory || []);
+            state.versionHistory = normalized;
+            return saveTimelineToIndexedDb(normalized);
+        }
+
+        async function adoptVersionHistory(incomingHistory, options = {}) {
+            const localRecord = await loadTimelineFromIndexedDb(options.documentKey || getTimelineDocumentKey());
+            const localHistory = Array.isArray(localRecord?.history) ? localRecord.history : [];
+            state.versionHistory = mergeVersionHistories(
+                mergeVersionHistories(state.versionHistory || [], localHistory),
+                Array.isArray(incomingHistory) ? incomingHistory : []
+            );
+            await saveTimelineToIndexedDb(state.versionHistory, options.documentKey || getTimelineDocumentKey());
+            return state.versionHistory;
         }
 
         function sanitizePageForStorage(page) {
@@ -24598,6 +24808,7 @@
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             const dbOk = await saveToIndexedDb(payload, savedAt);
+            persistTimelineHistory().catch(err => console.warn('Timeline recovery save failed:', err));
             if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
             scheduleLocalStorageBackup(payload);
             let localOk = false;
@@ -24680,6 +24891,7 @@
                         const kind = normalizeTemplateKind(page?.templateKind);
                         const kindDefaults = getTemplateKindDefaults(kind);
                         return {
+                            pageId: page?.pageId || generatePageId(),
                             strokes: null,
                             images: null,
                             backgroundImage: page?.backgroundImage || null,
@@ -24709,6 +24921,7 @@
                 state.pages = [];
                 state.lastSavedAt = null;
             }
+            await adoptVersionHistory(Array.isArray(best?.versionHistory) ? best.versionHistory : []);
             await restorePendingStrokeOps();
             updateSaveTimestamp();
         }
@@ -25600,6 +25813,7 @@
         function bumpDriveContentVersion() {
             clearDriveSaveBlocked();
             driveContentVersion += 1;
+            scheduleLiveDocumentBroadcast();
         }
 
         function markDriveContentUploaded(version = driveContentVersion) {
@@ -25908,6 +26122,7 @@
             const payload = buildMetaPayload(savedAt);
             scheduleLocalStorageBackup(payload, { immediate: true });
             saveToIndexedDb(payload, savedAt);
+            persistTimelineHistory().catch(() => {});
             state.lastSavedAt = savedAt;
             updateSaveTimestamp();
             flushDirtyPages({ force: true });
@@ -26548,7 +26763,7 @@
             const sessionToken = getDocumentSessionToken();
             try {
                 const res = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${fileIdAtStart}?fields=headRevisionId,modifiedTime,appProperties`,
+                    `https://www.googleapis.com/drive/v3/files/${fileIdAtStart}?fields=headRevisionId,modifiedTime,appProperties,properties`,
                     {
                         method: 'GET',
                         timeout: DRIVE_POST_SAVE_CHECK_TIMEOUT,
@@ -26557,7 +26772,7 @@
                 );
                 const data = await res.json();
                 if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileIdAtStart) return false;
-                updatePresenceFromProps(data.appProperties || {});
+                updatePresenceFromProps({ ...(data.appProperties || {}), ...(data.properties || {}) });
 
                 const hasChanged = isRemoteMetaNewerThanTracked(data);
 
@@ -26588,11 +26803,14 @@
             clearCollabFastCatchup();
             state.collabPollInterval = setInterval(pollDriveRevision, COLLAB_POLL_INTERVAL);
             startPresencePing();
+            startLiveCollaboration();
             pollDriveRevision();
             console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
         }
 
         function stopCollabPolling() {
+            stopPublicSharedPolling();
+            stopLiveCollaboration();
             if (state.collabPollInterval) {
                 clearInterval(state.collabPollInterval);
                 state.collabPollInterval = null;
@@ -26624,7 +26842,7 @@
             const sessionToken = getDocumentSessionToken();
             try {
                 const res = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${fileIdAtStart}?fields=headRevisionId,modifiedTime,appProperties`,
+                    `https://www.googleapis.com/drive/v3/files/${fileIdAtStart}?fields=headRevisionId,modifiedTime,appProperties,properties`,
                     {
                         method: 'GET',
                         timeout: DRIVE_POLL_TIMEOUT,
@@ -26638,7 +26856,7 @@
                 state.driveLastPolledAt = Date.now();
 
                 // Update presence avatars from appProperties (zero extra API calls)
-                updatePresenceFromProps(data.appProperties || {});
+                updatePresenceFromProps({ ...(data.appProperties || {}), ...(data.properties || {}) });
 
                 // Detect changes BEFORE updating local state
                 const hasChanged = isRemoteMetaNewerThanTracked(data);
@@ -26746,7 +26964,9 @@
             return Math.abs(h).toString(36).slice(0, 8);
         }
 
-        const PRESENCE_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h', 's', 'm'];
+        const PRESENCE_FIELD_SUFFIXES = ['q', 'r'];
+        const PRESENCE_LEGACY_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h', 's', 'm'];
+        const PRESENCE_ALL_FIELD_SUFFIXES = [...PRESENCE_FIELD_SUFFIXES, ...PRESENCE_LEGACY_FIELD_SUFFIXES];
         const PRESENCE_SAVE_ACTIVE_MS = 6500;
         const PRESENCE_SAVE_DONE_MS = 2200;
         const PRESENCE_PROCESSING_MIN_VISIBLE_MS = 900;
@@ -26793,6 +27013,52 @@
             return str.length > maxLen ? str.slice(0, maxLen) : str;
         }
 
+        function packPresenceIdentity() {
+            const accountHash = simpleHash(String(driveUserProfile?.email || '').trim().toLowerCase());
+            return [
+                accountHash,
+                clampPresenceValue(getPresenceClientId(), 16),
+                clampPresenceValue(driveUserProfile?.email || '', 38).replace(/\|/g, ''),
+                clampPresenceValue(driveUserProfile?.name || '', 22).replace(/\|/g, ''),
+                detectDeviceType().charAt(0),
+                clampPresenceValue(detectDeviceLabel(), 16).replace(/\|/g, '')
+            ].join('|');
+        }
+
+        function packPresenceRuntime(now = Date.now()) {
+            const phaseCode = presenceSavePhase === 'processing' ? 'p'
+                : (presenceSavePhase === 'uploading' ? 'u' : (presenceSavePhase === 'saved' ? 's' : ''));
+            return [
+                Math.max(0, Math.floor(now)).toString(36),
+                phaseCode,
+                presenceSavePhaseAt ? Math.floor(presenceSavePhaseAt).toString(36) : ''
+            ].join('|');
+        }
+
+        function parsePackedPresence(chunk) {
+            if (!chunk?.q) return null;
+            const identity = String(chunk.q).split('|');
+            const runtime = String(chunk.r || '').split('|');
+            const heartbeat = parseInt(runtime[0] || '', 36);
+            const phase = runtime[1] === 'p' ? 'processing'
+                : (runtime[1] === 'u' ? 'uploading' : (runtime[1] === 's' ? 'saved' : ''));
+            const phaseAt = runtime[2] ? parseInt(runtime[2], 36) : 0;
+            const deviceType = identity[4] === 'm' ? 'mobile' : (identity[4] === 't' ? 'tablet' : 'pc');
+            return {
+                a: identity[0] || '',
+                c: identity[1] || '',
+                e: identity[2] || '',
+                n: identity[3] || identity[2] || 'Collaborator',
+                d: deviceType,
+                v: identity[5] || '',
+                p: '', l: '',
+                t: heartbeat,
+                h: heartbeat,
+                s: phase,
+                m: Number.isFinite(phaseAt) ? phaseAt : 0
+            };
+        }
+
         function getPresenceKey() {
             const email = (driveUserProfile?.email || 'anon').toLowerCase().trim();
             const clientId = getPresenceClientId();
@@ -26810,12 +27076,14 @@
         }
 
         function parsePresenceChunkKey(key) {
-            const match = /^((?:p_[a-z0-9]+))_([nedtpvlchsm])$/i.exec(key || '');
+            const match = /^((?:p_[a-z0-9]+))_([qrnedtpvlchsm])$/i.exec(key || '');
             if (!match) return null;
             return { prefix: match[1], field: match[2].toLowerCase() };
         }
 
         function getPresenceFreshnessTs(chunk) {
+            const packed = parsePackedPresence(chunk);
+            if (packed) return Math.max(Number(packed.t) || 0, Number(packed.h) || 0);
             const ts = Number(chunk?.t);
             const hb = Number(chunk?.h);
             if (Number.isFinite(ts) && Number.isFinite(hb)) return Math.max(ts, hb);
@@ -26825,6 +27093,11 @@
         }
 
         function buildPresenceRecordFromChunk(chunk, now) {
+            const packed = parsePackedPresence(chunk);
+            if (packed) {
+                const freshness = getPresenceFreshnessTs(chunk);
+                return Number.isFinite(freshness) && now - freshness <= PRESENCE_STALE_MS ? packed : null;
+            }
             const freshnessTs = getPresenceFreshnessTs(chunk);
             if (!Number.isFinite(freshnessTs) || now - freshnessTs > PRESENCE_STALE_MS) return null;
             const ts = Number(chunk.t);
@@ -27017,27 +27290,25 @@
             const legacyKey = getLegacyPresenceKey();
             const now = Date.now();
             const patch = {
-                [getPresenceFieldKey(keyPrefix, 'n')]: clampPresenceValue(driveUserProfile.name || '', 80),
-                [getPresenceFieldKey(keyPrefix, 'e')]: clampPresenceValue(driveUserProfile.email || '', 120),
-                [getPresenceFieldKey(keyPrefix, 'p')]: clampPresenceValue(driveUserProfile.photo || '', 120),
-                [getPresenceFieldKey(keyPrefix, 't')]: String(now),
-                [getPresenceFieldKey(keyPrefix, 'd')]: clampPresenceValue(detectDeviceType(), 12),
-                [getPresenceFieldKey(keyPrefix, 'v')]: clampPresenceValue(detectDeviceLabel(), 64),
-                [getPresenceFieldKey(keyPrefix, 'l')]: clampPresenceValue(detectPresenceLocationLabel(), 64),
-                [getPresenceFieldKey(keyPrefix, 'c')]: clampPresenceValue(getPresenceClientId(), 24),
-                [getPresenceFieldKey(keyPrefix, 'h')]: String(now),
-                [getPresenceFieldKey(keyPrefix, 's')]: presenceSavePhase,
-                [getPresenceFieldKey(keyPrefix, 'm')]: presenceSavePhaseAt ? String(presenceSavePhaseAt) : '',
-                [legacyKey]: null // cleanup old single-key format for this client
+                [getPresenceFieldKey(keyPrefix, 'q')]: packPresenceIdentity(),
+                [getPresenceFieldKey(keyPrefix, 'r')]: packPresenceRuntime(now),
+                [legacyKey]: null
             };
+            const privateCleanup = {};
+            PRESENCE_LEGACY_FIELD_SUFFIXES.forEach(suffix => {
+                patch[getPresenceFieldKey(keyPrefix, suffix)] = null;
+            });
             try {
                 // Read current appProperties to clean stale entries
                 const metaRes = await driveFetch(
-                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=appProperties`,
+                    `https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=appProperties,properties`,
                     { method: 'GET' }
                 );
                 const metaData = await metaRes.json();
-                const props = metaData.appProperties || {};
+                Object.keys(metaData.appProperties || {}).forEach(key => {
+                    if (key === legacyKey || key.startsWith(`${keyPrefix}_`)) privateCleanup[key] = null;
+                });
+                const props = { ...(metaData.appProperties || {}), ...(metaData.properties || {}) };
                 updatePresenceFromProps(props);
                 const grouped = new Map();
 
@@ -27065,23 +27336,9 @@
                 // Remove stale/corrupt chunked records from other clients.
                 grouped.forEach((chunk, prefix) => {
                     if (prefix === keyPrefix) return;
-                    if (String(chunk?.c || '').trim() === getPresenceClientId()) {
-                        PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
-                            patch[getPresenceFieldKey(prefix, suffix)] = null;
-                        });
-                        return;
-                    }
-                    const ts = Number(chunk?.t);
-                    const hasIdentity = Boolean(String(chunk?.n || '').trim() || String(chunk?.e || '').trim());
-                    if (!Number.isFinite(ts) || !hasIdentity) {
-                        PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
-                            patch[getPresenceFieldKey(prefix, suffix)] = null;
-                        });
-                        return;
-                    }
-                    const freshnessTs = getPresenceFreshnessTs(chunk);
-                    if (Number.isFinite(freshnessTs) && now - freshnessTs <= PRESENCE_STALE_MS) return;
-                    PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
+                    const record = buildPresenceRecordFromChunk(chunk, now);
+                    if (record && String(record.c || '').trim() !== getPresenceClientId()) return;
+                    PRESENCE_ALL_FIELD_SUFFIXES.forEach(suffix => {
                         patch[getPresenceFieldKey(prefix, suffix)] = null;
                     });
                 });
@@ -27091,7 +27348,10 @@
                     {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ appProperties: patch })
+                        body: JSON.stringify({
+                            properties: patch,
+                            ...(Object.keys(privateCleanup).length > 0 ? { appProperties: privateCleanup } : {})
+                        })
                     }
                 );
                 _presenceCanHeartbeat = true;
@@ -27116,16 +27376,14 @@
                     presenceSavePhaseAt = 0;
                 }
                 const patch = {
-                    [getPresenceFieldKey(keyPrefix, 'h')]: String(now),
-                    [getPresenceFieldKey(keyPrefix, 's')]: presenceSavePhase,
-                    [getPresenceFieldKey(keyPrefix, 'm')]: presenceSavePhaseAt ? String(presenceSavePhaseAt) : ''
+                    [getPresenceFieldKey(keyPrefix, 'r')]: packPresenceRuntime(now)
                 };
                 await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
                     {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ appProperties: patch })
+                        body: JSON.stringify({ properties: patch })
                     }
                 );
             } catch (err) {
@@ -27202,9 +27460,8 @@
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            appProperties: {
-                                [getPresenceFieldKey(keyPrefix, 's')]: presenceSavePhase,
-                                [getPresenceFieldKey(keyPrefix, 'm')]: presenceSavePhaseAt ? String(presenceSavePhaseAt) : ''
+                            properties: {
+                                [getPresenceFieldKey(keyPrefix, 'r')]: packPresenceRuntime(now)
                             }
                         })
                     }
@@ -27311,6 +27568,7 @@
                 return (Number(b.t) || 0) - (Number(a.t) || 0);
             });
             latestPresenceUsers = deduped;
+            liveCollabUpdatePeers(deduped);
             renderPresenceAvatars(deduped);
             if (presencePopupEl && !presencePopupEl.classList.contains('hidden')) {
                 renderPresencePopup(deduped);
@@ -27576,12 +27834,12 @@
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
             const keyPrefix = getPresenceKey();
             const legacyKey = getLegacyPresenceKey();
-            const appProperties = { [legacyKey]: null };
-            PRESENCE_FIELD_SUFFIXES.forEach(suffix => {
-                appProperties[getPresenceFieldKey(keyPrefix, suffix)] = null;
+            const properties = { [legacyKey]: null };
+            PRESENCE_ALL_FIELD_SUFFIXES.forEach(suffix => {
+                properties[getPresenceFieldKey(keyPrefix, suffix)] = null;
             });
             try {
-                const body = JSON.stringify({ appProperties });
+                const body = JSON.stringify({ properties });
                 if (navigator.sendBeacon) {
                     // sendBeacon can't set auth headers, use fetch with keepalive
                     fetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}`, {
@@ -27715,7 +27973,7 @@
                         try {
                             const decodedHistory = await decodeVersionHistoryFromKeywords(keywords);
                             if (Array.isArray(decodedHistory)) {
-                                state.versionHistory = decodedHistory;
+                                await adoptVersionHistory(decodedHistory);
                             }
                         } catch (vhErr) {
                             console.warn('Failed to extract remote version history:', vhErr);
@@ -27902,27 +28160,16 @@
         function strokeSyncFingerprint(stroke) {
             if (!stroke) return '';
             const points = Array.isArray(stroke.points) ? stroke.points : [];
-            const len = points.length;
-            if (len === 0) {
-                return `${stroke.id || ''}|${stroke.tool || ''}|${stroke.color || ''}|${stroke.width || 0}|0`;
-            }
-            const idxA = 0;
-            const idxB = Math.max(0, Math.floor(len / 3));
-            const idxC = Math.max(0, Math.floor((len * 2) / 3));
-            const idxD = len - 1;
+            const pointHash = simpleHash(points.map(pointFingerprint).join(';'));
             return [
                 stroke.id || '',
                 stroke.tool || '',
                 stroke.color || '',
                 Number.isFinite(stroke.width) ? Math.round(stroke.width * 100) / 100 : 0,
-                len,
-                pointFingerprint(points[idxA]),
-                pointFingerprint(points[idxB]),
-                pointFingerprint(points[idxC]),
-                pointFingerprint(points[idxD])
+                points.length,
+                pointHash
             ].join('|');
         }
-
         function imageSyncFingerprint(image) {
             if (!image) return '';
             const x = Number.isFinite(image.x) ? Math.round(image.x * 100) / 100 : 0;
@@ -27930,7 +28177,7 @@
             const width = Number.isFinite(image.width) ? Math.round(image.width * 100) / 100 : 0;
             const height = Number.isFinite(image.height) ? Math.round(image.height * 100) / 100 : 0;
             const rotation = Number.isFinite(image.rotation) ? Math.round(image.rotation * 10000) / 10000 : 0;
-            return `${image.id || ''}|${image.src || ''}|${x}|${y}|${width}|${height}|${rotation}`;
+            return `${image.id || ''}|${simpleHash(image.src || '')}|${x}|${y}|${width}|${height}|${rotation}`;
         }
 
         function remoteStrokeDataLooksDifferent(remoteStrokeData) {
@@ -28418,7 +28665,7 @@
                 const localPageHasContent = getVisibleStrokeCount(currentPage) > 0
                     || (Array.isArray(currentPage.images) && currentPage.images.length > 0)
                     || (Array.isArray(currentPage.legacyCoverStrokes) && currentPage.legacyCoverStrokes.length > 0);
-                const adoptRemoteDimensions = rawDimensionChanged && (structuralIdentityChanged || !localPageHasContent);
+                const adoptRemoteDimensions = rawDimensionChanged && (!preserveLocalUnsynced || structuralIdentityChanged || !localPageHasContent);
                 const dimensionChanged = adoptRemoteDimensions;
                 const nextPageWidth = adoptRemoteDimensions ? remoteWidth : currentWidth;
                 const nextPageHeight = adoptRemoteDimensions ? remoteHeight : currentHeight;
@@ -28429,12 +28676,22 @@
                 const remoteBackgroundSource = remotePageData.backgroundSource || 'template';
                 const localBackgroundSource = currentPage.backgroundSource || 'template';
                 const backgroundSourceChanged = remoteBackgroundSource !== localBackgroundSource;
+                const remoteBackgroundImage = remoteBackgroundSource === 'custom' ? (remotePageData.backgroundImage || null) : null;
+                const canAdoptRemoteBackground = !preserveLocalUnsynced || structuralIdentityChanged || localBackgroundSource !== 'custom';
+                const backgroundImageChanged = canAdoptRemoteBackground && remoteBackgroundImage !== (currentPage.backgroundImage || null);
+                const remoteLegacyCoverStrokes = Array.isArray(remotePageData.legacyCoverStrokes)
+                    ? remotePageData.legacyCoverStrokes
+                    : null;
+                const legacyCoverChanged = !preserveLocalUnsynced
+                    && JSON.stringify(remoteLegacyCoverStrokes) !== JSON.stringify(currentPage.legacyCoverStrokes || null);
 
-                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || dimensionChanged || sharedContentChanged || templateKindChanged || backgroundSourceChanged) {
+                if (strokeCountChanged || imageCountChanged || strokeIdsChanged || imageIdsChanged || deletedIdsChanged || dimensionChanged || sharedContentChanged || templateKindChanged || backgroundSourceChanged || backgroundImageChanged || legacyCoverChanged) {
                     currentPage.strokes = mergedStrokes;
                     currentPage.images = mergedImages;
                     currentPage.backgroundSource = remoteBackgroundSource;
                     currentPage.templateKind = remoteTemplateKind;
+                    if (backgroundImageChanged) currentPage.backgroundImage = remoteBackgroundImage;
+                    if (legacyCoverChanged) currentPage.legacyCoverStrokes = remoteLegacyCoverStrokes;
                     if (remotePageData.pdfPageIndex !== undefined) {
                         currentPage.pdfPageIndex = Number.isFinite(remotePageData.pdfPageIndex) ? remotePageData.pdfPageIndex : null;
                     }
@@ -28497,6 +28754,7 @@
                             dateKeys: remoteDateKeys
                         };
                         renderPageSidePanel(i, currentPage.sidePanel);
+                        changed = true;
                     } else if (!sameKeys) {
                         // Different structure — accept remote and let auto-sync
                         // refresh the events for those new dates.
@@ -28506,6 +28764,7 @@
                             dateKeys: remoteDateKeys
                         };
                         renderPageSidePanel(i, currentPage.sidePanel);
+                        changed = true;
                     } else if (prevPanel.title !== remoteTitle) {
                         // Same dates, only the title changed on the other device
                         currentPage.sidePanel = {
@@ -28513,12 +28772,14 @@
                             title: remoteTitle
                         };
                         renderPageSidePanel(i, currentPage.sidePanel);
+                        changed = true;
                     }
                     // If sameKeys && sameTitle, keep local html untouched.
                 } else if (remotePageData.sidePanel === null && currentPage.sidePanel) {
                     // Remote explicitly removed the panel
                     currentPage.sidePanel = null;
                     renderPageSidePanel(i, null);
+                    changed = true;
                 }
 
                 // Keep the baseline as "confirmed on remote". Local-only merge
@@ -29625,9 +29886,9 @@
                 // Restore the version timeline embedded in the PDF (if any).
                 try {
                     const decodedHistory = await decodeVersionHistoryFromKeywords(pdfKeywordsString);
-                    state.versionHistory = Array.isArray(decodedHistory) ? decodedHistory : [];
+                    await adoptVersionHistory(Array.isArray(decodedHistory) ? decodedHistory : []);
                 } catch (vhErr) {
-                    state.versionHistory = [];
+                    await adoptVersionHistory([]);
                 }
 
                 // Clean-original tracking for text-preserving export (pdf-lib path).
@@ -30280,12 +30541,15 @@
         }
 
         // ----- Version history (timeline) -----
-        const VERSION_HISTORY_MAX = 50;
-        const VERSION_HISTORY_COALESCE_MS = 5 * 60 * 1000; // 5 min same-user collapse
+        const TIMELINE_SCHEMA_VERSION = 2;
+        const VERSION_HISTORY_MAX = 80;
+        const VERSION_HISTORY_MILESTONE_MAX = 30;
+        const VERSION_HISTORY_COALESCE_MS = 5 * 60 * 1000;
+        const VERSION_HISTORY_EMBED_BUDGET = 3_500_000;
         const VERSION_HISTORY_KEYWORD = 'IH_VERSIONS:';
 
         function generateVersionId() {
-            return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+            return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
         }
 
         function getCurrentVersionAuthor() {
@@ -30297,133 +30561,279 @@
             };
         }
 
+        function cloneTimelineValue(value, fallback = null) {
+            try {
+                return value === undefined ? fallback : JSON.parse(JSON.stringify(value));
+            } catch (err) {
+                return fallback;
+            }
+        }
+
+        function timelineSnapshotHash(pages, calendarPageConfig = null, exportName = '') {
+            try {
+                const serialized = JSON.stringify({
+                    pages,
+                    calendarPageConfig: calendarPageConfig || null,
+                    exportName: String(exportName || '')
+                });
+                return `${simpleHash(serialized)}:${serialized.length.toString(36)}`;
+            } catch (err) {
+                return simpleHash(`${Date.now()}:${Array.isArray(pages) ? pages.length : 0}`);
+            }
+        }
+
         function summarizeVersionDelta(prevPagesJson, newPagesJson) {
             try {
                 const prev = Array.isArray(prevPagesJson) ? prevPagesJson : [];
                 const next = Array.isArray(newPagesJson) ? newPagesJson : [];
-                const pageDiff = next.length - prev.length;
-                let strokeAdded = 0, strokeRemoved = 0;
-                const minLen = Math.min(prev.length, next.length);
-                for (let i = 0; i < minLen; i++) {
-                    const ps = (prev[i]?.strokes || []).length;
-                    const ns = (next[i]?.strokes || []).length;
+                const prevById = new Map(prev.map((page, index) => [page?.pageId || `index:${index}`, page]));
+                const nextById = new Map(next.map((page, index) => [page?.pageId || `index:${index}`, page]));
+                const addedPages = [...nextById.keys()].filter(key => !prevById.has(key)).length;
+                const removedPages = [...prevById.keys()].filter(key => !nextById.has(key)).length;
+                let strokeAdded = 0;
+                let strokeRemoved = 0;
+                let imageChanges = 0;
+                let pageChanges = 0;
+                nextById.forEach((page, key) => {
+                    const before = prevById.get(key);
+                    if (!before) {
+                        strokeAdded += (page?.strokes || []).length;
+                        imageChanges += (page?.images || []).length;
+                        return;
+                    }
+                    const ps = (before?.strokes || []).length;
+                    const ns = (page?.strokes || []).length;
                     if (ns > ps) strokeAdded += ns - ps;
-                    else if (ps > ns) strokeRemoved += ps - ns;
-                }
-                for (let i = prev.length; i < next.length; i++) {
-                    strokeAdded += (next[i]?.strokes || []).length;
-                }
-                for (let i = next.length; i < prev.length; i++) {
-                    strokeRemoved += (prev[i]?.strokes || []).length;
-                }
+                    if (ps > ns) strokeRemoved += ps - ns;
+                    if (JSON.stringify(before?.images || []) !== JSON.stringify(page?.images || [])) imageChanges += 1;
+                    const beforeLayout = `${before?.pageWidth}|${before?.pageHeight}|${before?.backgroundSource}|${before?.templateKind}|${JSON.stringify(before?.sidePanel || null)}`;
+                    const afterLayout = `${page?.pageWidth}|${page?.pageHeight}|${page?.backgroundSource}|${page?.templateKind}|${JSON.stringify(page?.sidePanel || null)}`;
+                    if (beforeLayout !== afterLayout) pageChanges += 1;
+                });
+                prevById.forEach((page, key) => {
+                    if (!nextById.has(key)) strokeRemoved += (page?.strokes || []).length;
+                });
+                const prevOrder = prev.map((page, index) => page?.pageId || `index:${index}`).join('|');
+                const nextOrder = next.map((page, index) => page?.pageId || `index:${index}`).join('|');
                 const parts = [];
-                if (pageDiff > 0) parts.push(`+${pageDiff} page${pageDiff !== 1 ? 's' : ''}`);
-                if (pageDiff < 0) parts.push(`${pageDiff} page${pageDiff !== -1 ? 's' : ''}`);
-                if (strokeAdded > 0) parts.push(`+${strokeAdded} stroke${strokeAdded !== 1 ? 's' : ''}`);
-                if (strokeRemoved > 0) parts.push(`-${strokeRemoved} stroke${strokeRemoved !== 1 ? 's' : ''}`);
-                if (parts.length === 0) return 'Saved';
-                return parts.join(', ');
-            } catch (e) {
+                if (addedPages) parts.push(`+${addedPages} page${addedPages === 1 ? '' : 's'}`);
+                if (removedPages) parts.push(`-${removedPages} page${removedPages === 1 ? '' : 's'}`);
+                if (!addedPages && !removedPages && prevOrder !== nextOrder) parts.push('Pages reordered');
+                if (strokeAdded) parts.push(`+${strokeAdded} stroke${strokeAdded === 1 ? '' : 's'}`);
+                if (strokeRemoved) parts.push(`-${strokeRemoved} stroke${strokeRemoved === 1 ? '' : 's'}`);
+                if (imageChanges) parts.push(`${imageChanges} image change${imageChanges === 1 ? '' : 's'}`);
+                if (pageChanges) parts.push(`${pageChanges} page setting${pageChanges === 1 ? '' : 's'} changed`);
+                return parts.length > 0 ? parts.join(', ') : 'Saved';
+            } catch (err) {
                 return 'Saved';
             }
         }
 
         function buildTimelineSnapshotFromPages(pages) {
             if (!Array.isArray(pages)) return [];
-            return pages.map((page, index) => ({
-                pageId: page?.pageId || `legacy-page-${index + 1}`,
-                strokes: Array.isArray(page?.strokes) ? JSON.parse(JSON.stringify(page.strokes)) : [],
-                images: Array.isArray(page?.images) ? JSON.parse(JSON.stringify(page.images)) : [],
-                deletedStrokeIds: Array.isArray(page?.deletedStrokeIds) ? page.deletedStrokeIds.slice() : [],
-                backgroundSource: page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : 'template'),
-                templateKind: normalizeTemplateKind(page?.templateKind),
-                pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
-                pageWidth: normalizePageDimension(page?.pageWidth, A4_WIDTH),
-                pageHeight: normalizePageDimension(page?.pageHeight, A4_HEIGHT)
-            }));
+            return pages.map((page, index) => {
+                const backgroundSource = page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : 'template');
+                return {
+                    pageId: page?.pageId || `legacy-page-${index + 1}`,
+                    strokes: cloneTimelineValue(Array.isArray(page?.strokes) ? page.strokes : [], []),
+                    images: cloneTimelineValue(Array.isArray(page?.images) ? page.images : [], []),
+                    deletedStrokeIds: Array.isArray(page?.deletedStrokeIds) ? page.deletedStrokeIds.slice() : [],
+                    backgroundImage: backgroundSource === 'custom' ? (page?.backgroundImage || null) : null,
+                    backgroundSource,
+                    templateKind: normalizeTemplateKind(page?.templateKind),
+                    pdfPageIndex: Number.isFinite(page?.pdfPageIndex) ? page.pdfPageIndex : null,
+                    pageWidth: normalizePageDimension(page?.pageWidth, A4_WIDTH),
+                    pageHeight: normalizePageDimension(page?.pageHeight, A4_HEIGHT),
+                    sidePanel: cloneTimelineValue(page?.sidePanel || null, null),
+                    legacyCoverStrokes: cloneTimelineValue(page?.legacyCoverStrokes || null, null)
+                };
+            });
+        }
+
+        function normalizeTimelineEntry(rawEntry, index = 0) {
+            if (!rawEntry || typeof rawEntry !== 'object') return null;
+            const pages = buildTimelineSnapshotFromPages(rawEntry.pages);
+            if (pages.length === 0) return null;
+            const ts = Number.isFinite(Number(rawEntry.ts)) ? Math.max(0, Number(rawEntry.ts)) : Date.now();
+            const calendarPageConfig = cloneTimelineValue(rawEntry.calendarPageConfig || null, null);
+            const exportName = rawEntry.exportName ? String(rawEntry.exportName).slice(0, 220) : '';
+            const contentHash = String(rawEntry.contentHash || timelineSnapshotHash(pages, calendarPageConfig, exportName));
+            const kind = String(rawEntry.kind || 'autosave').slice(0, 48);
+            const milestoneKinds = new Set(['baseline', 'restore', 'revert-original', 'pre-restore', 'manual']);
+            const isMilestone = !!rawEntry.isMilestone || milestoneKinds.has(kind);
+            const author = rawEntry.author && typeof rawEntry.author === 'object' ? rawEntry.author : {};
+            return {
+                id: String(rawEntry.id || `recovered_${ts.toString(36)}_${contentHash}_${index}`).slice(0, 160),
+                ts,
+                author: {
+                    email: String(author.email || '').slice(0, 256),
+                    name: String(author.name || author.email || 'Unknown editor').slice(0, 160),
+                    photo: String(author.photo || '').slice(0, 1024)
+                },
+                summary: String(rawEntry.summary || 'Saved').slice(0, 320),
+                kind,
+                isMilestone,
+                schemaVersion: TIMELINE_SCHEMA_VERSION,
+                parentId: rawEntry.parentId ? String(rawEntry.parentId).slice(0, 160) : null,
+                contentHash,
+                deviceId: rawEntry.deviceId ? String(rawEntry.deviceId).slice(0, 96) : '',
+                calendarPageConfig,
+                exportName,
+                pages
+            };
+        }
+
+        function pruneTimelineHistory(history) {
+            const byId = new Map();
+            normalizeTimelineHistoryUnpruned(history).forEach(entry => {
+                const previous = byId.get(entry.id);
+                if (!previous || entry.ts > previous.ts || (entry.isMilestone && !previous.isMilestone)) {
+                    byId.set(entry.id, entry);
+                }
+            });
+            let entries = [...byId.values()].sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
+            const seenContent = new Set();
+            entries = entries.slice().reverse().filter(entry => {
+                if (entry.isMilestone) return true;
+                const key = `${entry.author.email || entry.author.name}:${entry.contentHash}`;
+                if (seenContent.has(key)) return false;
+                seenContent.add(key);
+                return true;
+            }).reverse();
+            const milestones = entries.filter(entry => entry.isMilestone);
+            if (milestones.length > VERSION_HISTORY_MILESTONE_MAX) {
+                const protectedIds = new Set(milestones.slice(-VERSION_HISTORY_MILESTONE_MAX).map(entry => entry.id));
+                const baseline = milestones.find(entry => entry.kind === 'baseline');
+                if (baseline) protectedIds.add(baseline.id);
+                entries = entries.filter(entry => !entry.isMilestone || protectedIds.has(entry.id));
+            }
+            while (entries.length > VERSION_HISTORY_MAX) {
+                const dropIndex = entries.findIndex(entry => !entry.isMilestone);
+                entries.splice(dropIndex >= 0 ? dropIndex : 0, 1);
+            }
+            let estimate = JSON.stringify(entries).length;
+            while (estimate > VERSION_HISTORY_EMBED_BUDGET && entries.length > 1) {
+                const dropIndex = entries.findIndex((entry, index) => index < entries.length - 1 && !entry.isMilestone);
+                if (dropIndex < 0) break;
+                entries.splice(dropIndex, 1);
+                estimate = JSON.stringify(entries).length;
+            }
+            return entries;
+        }
+
+        function normalizeTimelineHistoryUnpruned(history) {
+            if (!Array.isArray(history)) return [];
+            return history.map((entry, index) => normalizeTimelineEntry(entry, index)).filter(Boolean);
+        }
+
+        function normalizeTimelineHistory(history) {
+            return pruneTimelineHistory(history);
+        }
+
+        function mergeVersionHistories(leftHistory, rightHistory) {
+            return pruneTimelineHistory([
+                ...normalizeTimelineHistoryUnpruned(leftHistory),
+                ...normalizeTimelineHistoryUnpruned(rightHistory)
+            ]);
         }
 
         function ensureTimelineBaselineFromPages(pages, options = {}) {
             if (Array.isArray(state.versionHistory) && state.versionHistory.length > 0) return false;
             const snapshot = buildTimelineSnapshotFromPages(pages);
             if (snapshot.length === 0) return false;
-            state.versionHistory = [{
-                id: options.id || `baseline_${Date.now().toString(36)}`,
-                ts: Number.isFinite(options.ts) ? options.ts : Math.max(1, Date.now() - 1),
+            const ts = Number.isFinite(options.ts) ? options.ts : Math.max(1, Date.now() - 1);
+            state.versionHistory = normalizeTimelineHistory([{
+                id: options.id || `baseline_${ts.toString(36)}_${timelineSnapshotHash(snapshot, state.calendarPageConfig, state.exportName)}`,
+                ts,
                 author: options.author || { name: 'Imported document', email: '', photo: '' },
                 summary: options.summary || 'Starting version',
                 kind: options.kind || 'baseline',
                 isMilestone: true,
+                calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
+                exportName: state.exportName || '',
                 pages: snapshot
-            }];
+            }]);
+            persistTimelineHistory().catch(() => {});
             return true;
         }
 
-        // Update the in-memory version history with the current snapshot.
-        // Coalesces autosaves by the same author within VERSION_HISTORY_COALESCE_MS
-        // into a single entry to prevent spam, BUT never coalesces away a milestone
-        // entry (manual restores, reverts, etc.) so reverts don't destroy history.
-        // ── § 4.19b  Version snapshot capture ────────────────────────────────
-        // Snapshot is taken after every successful Drive upload. Stored inside
-        // the PDF keywords alongside the stroke data. Max ~20 snapshots kept.
-        function captureVersionSnapshot(pagesJsonArray) {
+        function captureVersionSnapshot(pagesJsonArray, options = {}) {
             const author = getCurrentVersionAuthor();
-            const ts = Date.now();
-            if (!Array.isArray(state.versionHistory)) state.versionHistory = [];
-            // Read & clear the one-shot hint left by restoreVersion / revertToOriginal.
-            const hint = state.pendingVersionHint || null;
-            state.pendingVersionHint = null;
+            const ts = Number.isFinite(options.ts) ? options.ts : Date.now();
+            state.versionHistory = normalizeTimelineHistory(state.versionHistory || []);
+            const hint = options.hint || state.pendingVersionHint || null;
+            if (!options.preservePendingHint) state.pendingVersionHint = null;
             const isMilestone = !!(hint && hint.milestone);
+            const pages = buildTimelineSnapshotFromPages(pagesJsonArray);
+            if (pages.length === 0) return state.versionHistory;
+            const calendarPageConfig = cloneTimelineValue(state.calendarPageConfig || null, null);
+            const contentHash = timelineSnapshotHash(pages, calendarPageConfig, state.exportName);
             const last = state.versionHistory[state.versionHistory.length - 1];
+            if (!isMilestone && last?.contentHash === contentHash) {
+                return state.versionHistory;
+            }
             const sameAuthor = last
                 && last.author?.email === author.email
                 && last.author?.name === author.name;
             const recentEnough = last && (ts - last.ts) < VERSION_HISTORY_COALESCE_MS;
-            // Never coalesce when:
-            //   - this snapshot is a milestone (restore/revert) — must be its own entry
-            //   - the previous entry is a milestone — must not be replaced
-            const canCoalesce = !isMilestone
-                && sameAuthor
-                && recentEnough
-                && last
-                && !last.isMilestone;
-
-            const summary = (hint && hint.summary)
-                || summarizeVersionDelta(last?.pages, pagesJsonArray);
-            const entry = {
+            const canCoalesce = !isMilestone && sameAuthor && recentEnough && last && !last.isMilestone;
+            const entry = normalizeTimelineEntry({
                 id: canCoalesce ? last.id : generateVersionId(),
                 ts,
                 author,
-                summary,
+                summary: (hint && hint.summary) || summarizeVersionDelta(last?.pages, pages),
                 kind: hint?.kind || 'autosave',
                 isMilestone,
-                pages: pagesJsonArray
-            };
-            if (canCoalesce) {
-                state.versionHistory[state.versionHistory.length - 1] = entry;
-            } else {
-                state.versionHistory.push(entry);
-            }
-            // Cap entries — but try hard to keep milestones. Drop the oldest non-milestone
-            // first, only fall back to dropping the oldest entry overall when nothing else
-            // can be evicted.
-            while (state.versionHistory.length > VERSION_HISTORY_MAX) {
-                const dropIdx = state.versionHistory.findIndex(e => !e?.isMilestone);
-                if (dropIdx >= 0) {
-                    state.versionHistory.splice(dropIdx, 1);
-                } else {
-                    state.versionHistory.shift();
-                }
-            }
+                parentId: last?.id || null,
+                contentHash,
+                deviceId: getPresenceClientId(),
+                calendarPageConfig,
+                exportName: state.exportName || '',
+                pages
+            });
+            if (!entry) return state.versionHistory;
+            if (canCoalesce) state.versionHistory[state.versionHistory.length - 1] = entry;
+            else state.versionHistory.push(entry);
+            state.versionHistory = pruneTimelineHistory(state.versionHistory);
+            persistTimelineHistory().catch(err => console.warn('Timeline recovery save failed:', err));
             return state.versionHistory;
         }
 
+        async function captureTimelineRecoveryPoint(summary = 'Recovery point before restore') {
+            try {
+                await ensureAllPagesLoadedForStructureChange();
+                const existingHint = state.pendingVersionHint || null;
+                captureVersionSnapshot(state.pages, {
+                    hint: { milestone: true, kind: 'pre-restore', summary },
+                    preservePendingHint: true
+                });
+                state.pendingVersionHint = existingHint;
+                await persistTimelineHistory();
+                return true;
+            } catch (err) {
+                console.warn('Could not create timeline recovery point:', err);
+                return false;
+            }
+        }
         // Encode the version history for embedding in the PDF Keywords field.
         async function encodeVersionHistoryForKeywords(history) {
             if (!Array.isArray(history) || history.length === 0) return '';
             try {
-                const json = JSON.stringify(history);
-                const compressed = await compressToBase64(json);
+                let safeHistory = normalizeTimelineHistory(history);
+                let compressed = await compressToBase64(JSON.stringify(safeHistory));
+                while (compressed.length > VERSION_HISTORY_EMBED_BUDGET && safeHistory.length > 1) {
+                    let dropIndex = safeHistory.findIndex((entry, index) => index < safeHistory.length - 1 && !entry.isMilestone);
+                    if (dropIndex < 0) {
+                        dropIndex = safeHistory.findIndex((entry, index) => index < safeHistory.length - 1 && entry.kind !== 'baseline');
+                    }
+                    if (dropIndex < 0) dropIndex = 0;
+                    safeHistory.splice(dropIndex, 1);
+                    compressed = await compressToBase64(JSON.stringify(safeHistory));
+                }
+                if (compressed.length > VERSION_HISTORY_EMBED_BUDGET) {
+                    console.warn('Timeline snapshot is too large to embed safely; local recovery history is retained.');
+                    return '';
+                }
                 return compressed;
             } catch (err) {
                 console.warn('Could not encode version history:', err);
@@ -30441,7 +30851,7 @@
             try {
                 const json = await decompressFromBase64(payload);
                 const parsed = JSON.parse(json);
-                return Array.isArray(parsed) ? parsed : null;
+                return Array.isArray(parsed) ? normalizeTimelineHistory(parsed) : null;
             } catch (err) {
                 console.warn('Could not decode version history:', err);
                 return null;
