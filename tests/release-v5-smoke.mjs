@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.4.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.5.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.2\.4';/);
+assert.match(html, /const APP_VERSION = '5\.2\.5';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -113,6 +113,16 @@ assert.match(html, /params\.set\('name', metadata\.name/);
 assert.match(html, /const sharedDriveName = \(urlParams\.get\('name'\)/);
 assert.match(html, /openSharedFileWithoutSignIn\(fileId, resourceKey, \{ requestedRole, fileName \}\)/);
 assert.match(html, /if \(!state\.isReadOnly && drawingTools\.includes\(state\.currentTool\) && shouldAcceptDrawInput\(e\)\)/);
+assert.match(html, /function installPublicPreviewGestures\(/);
+assert.match(html, /function setPublicPreviewZoom\(/);
+assert.match(html, /publicPreviewPointers\.size >= 2/);
+assert.match(html, /className = 'public-preview-stage'/);
+assert.match(html, /className = 'public-preview-controls'/);
+assert.match(html, /data-public-preview-action="fit"/);
+assert.match(html, /event\.ctrlKey \|\| event\.metaKey/);
+assert.match(html, /message\.append\(strong, document\.createTextNode\(' Sign in to edit and save\.'\)\)/);
+assert.match(html, /editButton\.textContent = 'Sign in';/);
+assert.match(html, /background: color-mix\(in srgb, var\(--accent-yellow\) 18%, var\(--bg-primary\)\)/);
 assert.match(html, /public-read-only-mode/);
 assert.match(html, /modeToggleLabel\.textContent = 'Read only';/);
 assert.match(html, /isViewer && !isAnonymousPublicViewer/);
@@ -175,11 +185,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.2.4');
+assert.equal(update.publishedAppVersion, '5.2.5');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.2\.4/);
-assert.match(notes, /PDF name/i);
-assert.match(notes, /touch panning/i);
-assert.match(notes, /compact centred card/i);
+assert.match(update.releaseNotes, /v5\.2\.5/);
+assert.match(notes, /two-finger pinch/i);
+assert.match(notes, /compact zoom controls/i);
+assert.match(notes, /responsive sign-in notice/i);
 
-console.log('v5.2.4 smoke checks passed.');
+console.log('v5.2.5 smoke checks passed.');
