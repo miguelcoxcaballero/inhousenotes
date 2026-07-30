@@ -1493,6 +1493,17 @@
             z-index: 8;
             overflow: hidden;
             background: var(--bg-primary);
+            touch-action: pan-x pan-y pinch-zoom;
+            overscroll-behavior: contain;
+        }
+
+        #canvas-viewport.public-preview-active {
+            touch-action: auto !important;
+            overscroll-behavior: contain;
+        }
+
+        body.public-preview-mode {
+            touch-action: auto;
         }
 
         .public-inline-preview iframe {
@@ -1505,6 +1516,8 @@
             background: #202124;
             opacity: 0;
             transition: opacity 120ms ease;
+            pointer-events: auto;
+            touch-action: auto;
         }
 
         .public-inline-preview iframe.ready {
@@ -6458,20 +6471,19 @@
             height: 18px;
         }
 
-        /* Share sheet refresh — Google-inspired clarity with Inhouse Notes
-           typography, colour and softer geometric shapes. */
+        /* Compact sharing card with Inhouse Notes typography and colour. */
         #share-modal-overlay {
-            padding: 24px;
+            padding: 20px;
             background: rgba(10, 10, 10, 0.56);
             backdrop-filter: blur(5px);
             -webkit-backdrop-filter: blur(5px);
         }
 
         #share-modal-overlay .modal-container {
-            width: min(92vw, 560px);
-            max-width: 560px;
-            max-height: min(88svh, 760px);
-            border-radius: 24px;
+            width: min(92vw, 520px);
+            max-width: 520px;
+            max-height: min(88svh, 720px);
+            border-radius: 20px;
             border: 1px solid rgba(0, 0, 0, 0.08);
             box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
             transform: translateY(14px) scale(0.98);
@@ -6488,14 +6500,13 @@
         }
 
         #share-modal-overlay .modal-header {
-            align-items: flex-start;
-            padding: 22px 24px 14px;
+            align-items: center;
+            padding: 18px 22px 10px;
             border-bottom: 0;
         }
 
         .share-title-block {
             min-width: 0;
-            padding-top: 2px;
         }
 
         #share-modal-overlay .modal-header h2 {
@@ -6503,13 +6514,6 @@
             font-size: 1.2rem;
             font-weight: 700;
             letter-spacing: -0.02em;
-        }
-
-        .share-modal-subtitle {
-            margin-top: 5px;
-            color: var(--text-secondary);
-            font-size: 0.84rem;
-            line-height: 1.35;
         }
 
         #btn-close-share-modal {
@@ -6527,7 +6531,7 @@
         }
 
         #share-modal-overlay .share-owner-info {
-            padding: 10px 24px 18px !important;
+            padding: 8px 22px 12px !important;
             border-bottom: 0 !important;
             max-height: 224px;
             overflow-y: auto;
@@ -6617,8 +6621,8 @@
         #share-modal-overlay .modal-content {
             min-height: 0;
             overflow-y: auto;
-            padding: 16px 24px 24px;
-            gap: 22px;
+            padding: 12px 22px 20px;
+            gap: 16px;
         }
 
         #share-modal-overlay .share-section {
@@ -6630,13 +6634,6 @@
             font-family: 'Comfortaa', sans-serif;
             font-size: 0.82rem;
             font-weight: 700;
-        }
-
-        .share-section-description {
-            margin-top: -5px;
-            color: var(--text-secondary);
-            font-size: 0.78rem;
-            line-height: 1.35;
         }
 
         .share-invite-controls {
@@ -6690,8 +6687,8 @@
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 10px;
-            min-height: 68px;
-            padding: 10px 12px;
+            min-height: 60px;
+            padding: 8px 10px;
             border: 1px solid rgba(0, 0, 0, 0.07);
             border-radius: 16px;
             background: var(--bg-primary);
@@ -6723,28 +6720,12 @@
             color: currentColor;
         }
 
-        .share-link-access-copy {
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
         #share-modal-overlay .link-access-info select {
             width: 100%;
             min-height: 30px;
             padding-top: 2px;
             padding-bottom: 2px;
             overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .share-link-access-hint {
-            overflow: hidden;
-            color: var(--text-secondary);
-            font-size: 0.72rem;
-            line-height: 1.3;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
@@ -6761,27 +6742,8 @@
             display: flex;
             flex-direction: row;
             align-items: center;
-            justify-content: space-between;
-            gap: 18px;
-            padding-top: 18px;
-        }
-
-        .share-copy-copy {
-            min-width: 0;
-        }
-
-        .share-copy-title {
-            color: var(--text-primary);
-            font-family: 'Comfortaa', sans-serif;
-            font-size: 0.8rem;
-            font-weight: 700;
-        }
-
-        .share-copy-hint {
-            margin-top: 3px;
-            color: var(--text-secondary);
-            font-size: 0.72rem;
-            line-height: 1.35;
+            justify-content: flex-end;
+            padding-top: 12px;
         }
 
         #btn-copy-share-link {
@@ -6821,21 +6783,21 @@
 
         @media (max-width: 600px) {
             #share-modal-overlay {
-                align-items: flex-end;
-                padding: 0;
+                align-items: center;
+                padding: 14px;
             }
 
             #share-modal-overlay .modal-container {
                 width: 100%;
-                max-width: none;
-                max-height: calc(100svh - 12px);
-                border-width: 1px 0 0;
-                border-radius: 26px 26px 0 0;
-                transform: translateY(24px);
+                max-width: 440px;
+                max-height: calc(100svh - 28px);
+                border-width: 1px;
+                border-radius: 20px;
+                transform: translateY(10px) scale(0.98);
             }
 
             #share-modal-overlay.visible .modal-container {
-                transform: translateY(0);
+                transform: translateY(0) scale(1);
             }
 
             #share-modal-overlay .modal-header {
@@ -6929,13 +6891,12 @@
             }
 
             #share-modal-overlay .copy-link-section {
-                align-items: stretch;
-                flex-direction: column;
-                gap: 12px;
+                align-items: center;
+                flex-direction: row;
             }
 
             #btn-copy-share-link {
-                width: 100%;
+                width: auto;
                 justify-content: center;
             }
         }
@@ -8377,7 +8338,6 @@
             <div class="modal-header">
                 <div class="share-title-block">
                     <h2 id="share-modal-title">Share document</h2>
-                    <p class="share-modal-subtitle">Invite people or create a link for this note.</p>
                 </div>
                 <button type="button" class="btn btn-secondary btn-icon-square" id="btn-close-share-modal"
                     aria-label="Close" style="border:none;background:transparent;box-shadow:none;">
@@ -8436,7 +8396,6 @@
             <div class="modal-content">
                 <form id="share-invite-form" class="share-section">
                     <label for="share-email-input" class="share-label">Add people</label>
-                    <p class="share-section-description">Invite someone directly and choose what they can do.</p>
                     <div class="share-input-group share-invite-controls">
                         <input type="email" id="share-email-input" placeholder="Email address" required
                             autocomplete="email">
@@ -8450,7 +8409,6 @@
 
                 <div class="share-section">
                     <label class="share-label">General access</label>
-                    <p class="share-section-description">Control who can open this document from its link.</p>
                     <div class="share-input-group link-access-group">
                         <div class="link-access-info">
                             <span class="share-link-icon" aria-hidden="true">
@@ -8462,13 +8420,10 @@
                                     </path>
                                 </svg>
                             </span>
-                            <span class="share-link-access-copy">
-                                <select id="share-link-access-select" aria-label="Link access">
-                                    <option value="restricted">Restricted</option>
-                                    <option value="anyone">Anyone with the link</option>
-                                </select>
-                                <span class="share-link-access-hint">Choose who can use this link</span>
-                            </span>
+                            <select id="share-link-access-select" aria-label="Link access">
+                                <option value="restricted">Restricted</option>
+                                <option value="anyone">Anyone with the link</option>
+                            </select>
                         </div>
                         <select id="share-link-role-select" class="hidden" aria-label="Link role">
                             <option value="reader">Viewer</option>
@@ -8478,10 +8433,6 @@
                 </div>
 
                 <div class="share-section copy-link-section">
-                    <div class="share-copy-copy">
-                        <div class="share-copy-title">Share this note</div>
-                        <div class="share-copy-hint">The link uses the access level selected above.</div>
-                    </div>
                     <button type="button" class="btn btn-secondary" id="btn-copy-share-link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
@@ -8493,7 +8444,7 @@
             </div>
         </div>
     </div>
-    <script src="live-collaboration-v5.js?v=5.2.3"></script>
+    <script src="live-collaboration-v5.js?v=5.2.4"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8561,7 +8512,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.2.3';
+        const APP_VERSION = '5.2.4';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -9879,6 +9830,7 @@
         let sharedLinkSignInPrompted = false;
         let lastPendingSharedPublicAttemptId = null;
         let pendingSharedDriveResourceKey = null;
+        let pendingSharedDriveName = '';
         let pendingSharedDriveRole = 'reader';
         let sharedEditorSignInGateActive = false;
         let coverModalSelection = null;
@@ -10048,6 +10000,7 @@
             const urlParams = new URLSearchParams(window.location.search);
             const sharedDriveId = urlParams.get('drive');
             const sharedDriveResourceKey = urlParams.get('resourcekey') || urlParams.get('rk');
+            const sharedDriveName = (urlParams.get('name') || '').trim().slice(0, 240);
             const sharedDriveRole = (
                 urlParams.get('role') === 'writer'
                 || urlParams.get('mode') === 'edit'
@@ -10057,6 +10010,7 @@
                 sharedLinkSignInPrompted = false;
                 lastPendingSharedPublicAttemptId = null;
                 pendingSharedDriveResourceKey = sharedDriveResourceKey || null;
+                pendingSharedDriveName = sharedDriveName;
                 pendingSharedDriveRole = sharedDriveRole;
                 // Keep the share parameters in the address bar so reloads and
                 // copied links retain the file/resource key until opening succeeds.
@@ -13483,6 +13437,7 @@
                                 .then(() => {
                                     window.pendingSharedDriveId = null;
                                     pendingSharedDriveResourceKey = null;
+                                    pendingSharedDriveName = '';
                                     pendingSharedDriveRole = 'reader';
                                     clearSharedEditorSignInGate();
                                 })
@@ -13493,10 +13448,15 @@
                         })
                         .catch(err => {
                             console.error('Failed to load file info', err);
-                            openDriveFile({ id: fileIdToOpen, name: 'Shared Document', resourceKey: resourceKey || '' })
+                            openDriveFile({
+                                id: fileIdToOpen,
+                                name: pendingSharedDriveName || 'Shared Document',
+                                resourceKey: resourceKey || ''
+                            })
                                 .then(() => {
                                     window.pendingSharedDriveId = null;
                                     pendingSharedDriveResourceKey = null;
+                                    pendingSharedDriveName = '';
                                     pendingSharedDriveRole = 'reader';
                                     clearSharedEditorSignInGate();
                                 })
@@ -13706,6 +13666,7 @@
             sharedLinkSignInPrompted = false;
             lastPendingSharedPublicAttemptId = null;
             pendingSharedDriveResourceKey = null;
+            pendingSharedDriveName = '';
             pendingSharedDriveRole = 'reader';
             clearSharedEditorSignInGate();
             updateDriveProfileUI(null);
@@ -14542,6 +14503,8 @@
 
         function clearPublicInlinePreview() {
             document.getElementById('public-inline-preview')?.remove();
+            canvasViewport?.classList.remove('public-preview-active');
+            document.body.classList.remove('public-preview-mode');
             if (canvasContainer) canvasContainer.style.visibility = '';
             const managePages = document.getElementById('btn-edit-pages');
             if (managePages) managePages.disabled = false;
@@ -14558,6 +14521,8 @@
                 host.className = 'public-inline-preview';
                 canvasViewport.appendChild(host);
             }
+            canvasViewport?.classList.add('public-preview-active');
+            document.body.classList.add('public-preview-mode');
             if (canvasContainer) canvasContainer.style.visibility = 'hidden';
             const managePages = document.getElementById('btn-edit-pages');
             if (managePages) managePages.disabled = true;
@@ -14565,6 +14530,8 @@
             const frame = document.createElement('iframe');
             frame.title = 'Public shared PDF';
             frame.referrerPolicy = 'strict-origin-when-cross-origin';
+            frame.setAttribute('scrolling', 'yes');
+            frame.tabIndex = 0;
             frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey, Date.now());
             frame.addEventListener('load', () => {
                 frame.classList.add('ready');
@@ -14652,6 +14619,7 @@
             } else {
                 window.pendingSharedDriveId = null;
                 pendingSharedDriveResourceKey = null;
+                pendingSharedDriveName = '';
                 pendingSharedDriveRole = 'reader';
             }
             sharedLinkSignInPrompted = false;
@@ -14781,7 +14749,7 @@
 
                 state.driveFileId = fileId;
                 markDriveHydrated(fileId);
-                state.driveFileName = publicPdf.fileName || 'Shared Document';
+                state.driveFileName = publicPdf.fileName || publicPdf.metadata?.name || options.fileName || 'Shared Document';
                 state.driveFolderId = null;
                 state.driveParentIds = [];
                 state.driveFolderKind = null;
@@ -14815,6 +14783,7 @@
                 } else {
                     window.pendingSharedDriveId = null;
                     pendingSharedDriveResourceKey = null;
+                    pendingSharedDriveName = '';
                     pendingSharedDriveRole = 'reader';
                 }
                 sharedLinkSignInPrompted = false;
@@ -14833,7 +14802,7 @@
                     driveStatusEl.textContent = 'Opening public view — no sign-in required.';
                 }
                 return openPublicDrivePreview(fileId, resourceKey, {
-                    fileName: 'Shared document',
+                    fileName: options.fileName || 'Shared document',
                     requestedRole
                 });
             } finally {
@@ -14847,11 +14816,12 @@
             const force = !!options.force;
             const fileId = window.pendingSharedDriveId;
             const resourceKey = pendingSharedDriveResourceKey || '';
+            const fileName = pendingSharedDriveName;
             const requestedRole = pendingSharedDriveRole === 'writer' ? 'writer' : 'reader';
             if (!fileId || driveAccessToken || driveOpenInProgress) return;
             if (!force && lastPendingSharedPublicAttemptId === fileId) return;
             lastPendingSharedPublicAttemptId = fileId;
-            openSharedFileWithoutSignIn(fileId, resourceKey, { requestedRole }).catch(err => {
+            openSharedFileWithoutSignIn(fileId, resourceKey, { requestedRole, fileName }).catch(err => {
                 console.error('Public shared open attempt failed:', err);
             });
         }
@@ -19650,7 +19620,6 @@
             const accessSelect = document.getElementById('share-link-access-select');
             const roleSelect = document.getElementById('share-link-role-select');
             const loadingEl = document.getElementById('share-modal-loading');
-            const accessHint = document.querySelector('.share-link-access-hint');
 
             if (!shareBtn || !shareModal) return;
 
@@ -19673,18 +19642,6 @@
                 applyShareSectionsVisibility(inviteForm, generalAccess, copySection, false);
                 if (accessSelect) accessSelect.value = 'restricted';
                 if (roleSelect) roleSelect.classList.add('hidden');
-                updateLinkAccessHint();
-            }
-
-            function updateLinkAccessHint() {
-                if (!accessHint || !accessSelect) return;
-                if (accessSelect.value !== 'anyone') {
-                    accessHint.textContent = 'Only people added above can open it';
-                    return;
-                }
-                accessHint.textContent = roleSelect?.value === 'writer'
-                    ? 'Anyone with the link can edit after sign-in'
-                    : 'Anyone with the link can view without sign-in';
             }
 
             function normalizeShareRole(role) {
@@ -19923,7 +19880,6 @@
                         accessSelect.value = 'restricted';
                         roleSelect.classList.add('hidden');
                     }
-                    updateLinkAccessHint();
                 } catch (err) {
                     console.error('Failed to load permissions', err);
                     const isOwnerFallback = state.driveOwnedByMe !== false;
@@ -19992,7 +19948,6 @@
                 } else {
                     roleSelect.classList.add('hidden');
                 }
-                updateLinkAccessHint();
                 const role = access === 'anyone' ? roleSelect.value : 'restricted';
                 try {
                     await setDriveLinkPermission(state.driveFileId, role);
@@ -20007,7 +19962,6 @@
             roleSelect.addEventListener('change', async () => {
                 if (state.driveOwnedByMe === false) return;
                 if (!state.driveFileId || accessSelect.value !== 'anyone') return;
-                updateLinkAccessHint();
                 try {
                     await setDriveLinkPermission(state.driveFileId, roleSelect.value);
                     showStatus('Link role updated', { icon: 'check' });
@@ -20048,6 +20002,7 @@
                     params.set('drive', state.driveFileId);
                     params.set('public', '1');
                     params.set('role', requestedRole);
+                    params.set('name', metadata.name || state.driveFileName || `${state.exportName || 'Shared document'}.pdf`);
                     if (requestedRole === 'writer') params.set('mode', 'edit');
                     if (state.driveResourceKey) params.set('resourcekey', state.driveResourceKey);
                     const link = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
@@ -20057,7 +20012,6 @@
                         roleSelect.value = requestedRole;
                         roleSelect.classList.remove('hidden');
                     }
-                    updateLinkAccessHint();
                     saveDriveSession();
                     showStatus(
                         requestedRole === 'writer'
@@ -21756,7 +21710,9 @@
             // Mouse/touch on canvas with drawing tool → let canvas handle it
             if (e.target && e.target.closest && e.target.closest('canvas.page-canvas')) {
                 const drawingTools = ['pen', 'highlighter', 'eraser-stroke', 'eraser-area', 'lasso'];
-                if (drawingTools.includes(state.currentTool) && shouldAcceptDrawInput(e)) {
+                // In read-only documents the canvas cannot consume this touch,
+                // so it must fall through to viewport pan/zoom instead.
+                if (!state.isReadOnly && drawingTools.includes(state.currentTool) && shouldAcceptDrawInput(e)) {
                     return;
                 }
             }

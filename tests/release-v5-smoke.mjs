@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.3.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.4.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.2\.3';/);
+assert.match(html, /const APP_VERSION = '5\.2\.4';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -44,8 +44,11 @@ assert.match(html, /class="share-input-group share-invite-controls"/);
 assert.match(html, /grid-template-columns: minmax\(0, 1fr\) 112px;/);
 assert.match(html, /#btn-send-share \{\s*grid-column: 1 \/ -1;/);
 assert.match(html, /class="share-link-icon"/);
-assert.match(html, /class="share-copy-copy"/);
-assert.match(html, /function updateLinkAccessHint\(/);
+assert.doesNotMatch(html, /share-modal-subtitle/);
+assert.doesNotMatch(html, /share-section-description/);
+assert.doesNotMatch(html, /share-link-access-hint/);
+assert.doesNotMatch(html, /share-copy-copy/);
+assert.doesNotMatch(html, /function updateLinkAccessHint\(/);
 assert.match(html, /const originalContent = copyBtn\.innerHTML;/);
 assert.match(html, /copyBtn\.innerHTML = originalContent;/);
 assert.doesNotMatch(
@@ -103,6 +106,13 @@ assert.doesNotMatch(html, /public-inline-status/);
 assert.doesNotMatch(html, /Open in Drive/);
 assert.doesNotMatch(html, /public-preview-open/);
 assert.match(html, /\.public-inline-preview iframe \{\s*position: absolute;\s*top: -52px;/);
+assert.match(html, /#canvas-viewport\.public-preview-active \{\s*touch-action: auto !important;/);
+assert.match(html, /body\.public-preview-mode \{\s*touch-action: auto;/);
+assert.match(html, /frame\.setAttribute\('scrolling', 'yes'\)/);
+assert.match(html, /params\.set\('name', metadata\.name/);
+assert.match(html, /const sharedDriveName = \(urlParams\.get\('name'\)/);
+assert.match(html, /openSharedFileWithoutSignIn\(fileId, resourceKey, \{ requestedRole, fileName \}\)/);
+assert.match(html, /if \(!state\.isReadOnly && drawingTools\.includes\(state\.currentTool\) && shouldAcceptDrawInput\(e\)\)/);
 assert.match(html, /public-read-only-mode/);
 assert.match(html, /modeToggleLabel\.textContent = 'Read only';/);
 assert.match(html, /isViewer && !isAnonymousPublicViewer/);
@@ -165,11 +175,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.2.3');
+assert.equal(update.publishedAppVersion, '5.2.4');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.2\.3/);
-assert.match(notes, /pill labelled.*Read only/i);
-assert.match(notes, /external-open/i);
-assert.match(notes, /status banner/i);
+assert.match(update.releaseNotes, /v5\.2\.4/);
+assert.match(notes, /PDF name/i);
+assert.match(notes, /touch panning/i);
+assert.match(notes, /compact centred card/i);
 
-console.log('v5.2.3 smoke checks passed.');
+console.log('v5.2.4 smoke checks passed.');
