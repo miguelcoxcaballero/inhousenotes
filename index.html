@@ -807,6 +807,24 @@
             line-height: 1.35;
         }
 
+        .presence-device-connection {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 3px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--accent) 12%, transparent);
+            color: var(--accent);
+            font-size: 0.68rem;
+            font-weight: 700;
+        }
+
+        .presence-device-connection.main {
+            background: color-mix(in srgb, #22a447 14%, transparent);
+            color: #168438;
+        }
+
         .mode-toggle-group {
             position: relative;
             display: flex;
@@ -927,8 +945,7 @@
             pointer-events: auto;
         }
 
-        .save-debug-header,
-        .save-debug-admin-row {
+        .save-debug-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -952,9 +969,54 @@
         }
 
         .save-debug-summary {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            display: flex;
+            flex-direction: column;
             gap: 6px;
+            overflow: auto;
+            max-height: 300px;
+        }
+
+        .save-device-status {
+            display: grid;
+            grid-template-columns: 10px minmax(0, 1fr);
+            gap: 8px;
+            align-items: start;
+            padding: 9px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+        }
+
+        .save-device-status-dot {
+            width: 8px;
+            height: 8px;
+            margin-top: 4px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .save-device-status-dot.active {
+            background: var(--accent-orange);
+        }
+
+        .save-device-status-dot.syncing {
+            background: #4a90d9;
+        }
+
+        .save-device-status-dot.error {
+            background: var(--accent-red);
+        }
+
+        .save-device-status-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .save-device-status-detail {
+            margin-top: 2px;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            line-height: 1.35;
         }
 
         .save-debug-hero {
@@ -1086,39 +1148,6 @@
             font-variant-numeric: tabular-nums;
         }
 
-        .save-debug-switch {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.8rem;
-            color: var(--text-secondary);
-        }
-
-        .save-debug-switch input {
-            width: 34px;
-            height: 20px;
-            accent-color: var(--accent-orange);
-        }
-
-        .save-debug-terminal {
-            display: none;
-            min-height: 150px;
-            max-height: 230px;
-            overflow: auto;
-            padding: 10px;
-            border-radius: 8px;
-            background: #101114;
-            color: #d9f2d0;
-            font-family: Consolas, "SFMono-Regular", monospace;
-            font-size: 0.72rem;
-            line-height: 1.45;
-            white-space: pre-wrap;
-        }
-
-        .save-debug-panel.admin .save-debug-terminal {
-            display: block;
-        }
-
         @media (max-width: 720px) {
             .save-debug-backdrop {
                 padding: 0 10px calc(env(safe-area-inset-bottom, 0px) + 74px) 10px;
@@ -1130,9 +1159,7 @@
                 max-height: min(360px, calc(100svh - 130px));
             }
 
-            .save-debug-summary {
-                grid-template-columns: 1fr 1fr;
-            }
+            .save-debug-summary { max-height: 250px; }
         }
 
         .mode-toggle-status .save-timestamp {
@@ -7884,7 +7911,7 @@
             </div>
         </div>
     </div>
-    <script src="live-collaboration-v5.js?v=5.0.1"></script>
+    <script src="live-collaboration-v5.js?v=5.1.0"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -7952,7 +7979,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.0.1';
+        const APP_VERSION = '5.1.0';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -9195,6 +9222,10 @@
         let driveHydrationRetryAfter = 0;
         let driveContentVersion = 0;
         let driveUploadedContentVersion = 0;
+        let driveConfirmedContentHash = '';
+        let backgroundExitSavePromise = null;
+        let backgroundExitSaveFailed = false;
+        let backgroundExitSaveFileId = null;
         let preparedDrivePdf = null;
         let preparedDrivePdfBuild = null;
         let preparedDrivePdfTimer = null;
@@ -9206,8 +9237,7 @@
             runId: 0,
             runStartedAt: Date.now(),
             lastUpdatedAt: Date.now(),
-            events: [],
-            admin: false
+            events: []
         };
         let saveDebugElements = null;
         let saveDebugRenderInterval = null;
@@ -13425,6 +13455,51 @@
             return semi >= 0 ? text.substring(0, semi) : text;
         }
 
+        const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';
+
+        function createDriveSyncEnvelope(pages) {
+            const safePages = Array.isArray(pages) ? pages : [];
+            return {
+                v: 1,
+                writer: getPresenceClientId(),
+                contentHash: timelineSnapshotHash(
+                    safePages,
+                    state.calendarPageConfig || null,
+                    state.exportName || ''
+                ),
+                contentVersion: driveContentVersion
+            };
+        }
+
+        function encodeDriveSyncEnvelope(pages) {
+            try {
+                return btoa(unescape(encodeURIComponent(JSON.stringify(createDriveSyncEnvelope(pages)))));
+            } catch (error) {
+                return '';
+            }
+        }
+
+        function decodeDriveSyncEnvelope(keywords) {
+            const text = String(keywords || '');
+            const index = text.indexOf(`;${DRIVE_SYNC_KEYWORD}`);
+            if (index < 0) return null;
+            const start = index + DRIVE_SYNC_KEYWORD.length + 1;
+            const end = text.indexOf(';', start);
+            try {
+                const raw = text.substring(start, end >= 0 ? end : undefined);
+                const parsed = JSON.parse(decodeURIComponent(escape(atob(raw))));
+                if (parsed?.v !== 1 || !parsed.contentHash) return null;
+                return {
+                    v: 1,
+                    writer: String(parsed.writer || ''),
+                    contentHash: String(parsed.contentHash || ''),
+                    contentVersion: Number(parsed.contentVersion) || 0
+                };
+            } catch (error) {
+                return null;
+            }
+        }
+
         let embeddedMetadataWorker = null;
         let embeddedMetadataWorkerId = 0;
         const embeddedMetadataWorkerRequests = new Map();
@@ -15271,6 +15346,47 @@
             if (driveOpenInProgress) return;
             closeDriveCardMenu();
             driveOpenInProgress = true;
+            if (!backgroundExitSavePromise && backgroundExitSaveFailed && backgroundExitSaveFileId) {
+                forceFlushingForExit = true;
+                backgroundExitSavePromise = (async () => {
+                    await ensureDriveToken(false);
+                    driveDirty = true;
+                    await queueDriveSave(true);
+                    return !driveSaveInProgress
+                        && !driveSaveQueued
+                        && !driveDirty
+                        && !deferredDriveSave
+                        && driveContentVersion === driveUploadedContentVersion;
+                })()
+                    .then(success => {
+                        backgroundExitSaveFailed = !success;
+                        return success;
+                    })
+                    .catch(() => {
+                        backgroundExitSaveFailed = true;
+                        return false;
+                    })
+                    .finally(() => {
+                        forceFlushingForExit = false;
+                        backgroundExitSavePromise = null;
+                        if (!backgroundExitSaveFailed) backgroundExitSaveFileId = null;
+                    });
+            }
+            if (backgroundExitSavePromise) {
+                if (driveStatusEl) {
+                    driveStatusEl.textContent = 'Finishing the previous Drive save...';
+                }
+                showLoading('Finishing previous save...');
+                const previousSaveCompleted = await backgroundExitSavePromise;
+                hideLoading();
+                if (!previousSaveCompleted || backgroundExitSaveFailed) {
+                    driveOpenInProgress = false;
+                    if (driveStatusEl) {
+                        driveStatusEl.textContent = 'The previous document is safe locally, but Drive has not finished saving it yet. Tap it again to retry.';
+                    }
+                    return;
+                }
+            }
             driveOpenFileId = file.id;
             const sessionToken = beginDocumentSession();
             const requestedResourceKey = file.resourceKey || '';
@@ -19401,6 +19517,14 @@
                     }
                     return true;
                 };
+                const waitForLocalSaveCompletion = async (timeoutMs = 12000) => {
+                    const start = Date.now();
+                    while ((saveInProgress || saveQueued || strokeOpsFlushInProgress)
+                        && (Date.now() - start < timeoutMs)) {
+                        await new Promise(r => setTimeout(r, 40));
+                    }
+                    return !(saveInProgress || saveQueued || strokeOpsFlushInProgress);
+                };
                 const goHome = async () => {
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
@@ -19411,6 +19535,90 @@
                     // all honour this flag.
                     forceFlushingForExit = true;
                     try {
+                        {
+                        void clearPresence();
+                        isPenWriting = false;
+                        isGestureInteracting = false;
+                        penWritingIdleDeadline = 0;
+                        if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
+                        if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
+
+                        const needsSave = hasPendingLocalSave() || hasPendingDriveSave() || driveDirty;
+                        if (!needsSave && isDriveFullySaved()) {
+                            showDriveHome();
+                            void refreshDriveFiles();
+                            forceFlushingForExit = false;
+                            return;
+                        }
+
+                        clearTimeout(state.saveTimeout);
+                        state.saveTimeout = null;
+                        const exitingFileId = state.driveFileId || null;
+                        const localCheckpoint = (async () => {
+                            await queueSave();
+                            await waitForLocalSaveCompletion();
+                            await flushDirtyPages({ force: true });
+                        })();
+
+                        backgroundExitSaveFileId = exitingFileId;
+                        backgroundExitSaveFailed = false;
+                        const exitSaveTask = (async () => {
+                            await localCheckpoint;
+                            if (!state.driveAutosave || !driveAccessToken) {
+                                return !state.driveAutosave;
+                            }
+                            clearDriveSyncTimers();
+                            const MAX_BACKGROUND_ATTEMPTS = 2;
+                            for (let attempt = 0; attempt < MAX_BACKGROUND_ATTEMPTS; attempt += 1) {
+                                if (!(await waitForDriveSaveCompletion(30000))) continue;
+                                if (isDriveFullySaved()) return true;
+                                driveDirty = true;
+                                await queueDriveSave(true);
+                                if ((await waitForDriveSaveCompletion(30000)) && isDriveFullySaved()) {
+                                    return true;
+                                }
+                            }
+                            return isDriveFullySaved();
+                        })();
+                        backgroundExitSavePromise = exitSaveTask
+                            .then(success => {
+                                backgroundExitSaveFailed = !success;
+                                return success;
+                            })
+                            .catch(err => {
+                                console.warn('Background Drive save failed:', err);
+                                backgroundExitSaveFailed = true;
+                                return false;
+                            })
+                            .finally(() => {
+                                forceFlushingForExit = false;
+                                backgroundExitSavePromise = null;
+                                if (!backgroundExitSaveFailed) {
+                                    backgroundExitSaveFileId = null;
+                                }
+                                if (!isDriveHomeVisible()) return;
+                                if (backgroundExitSaveFailed) {
+                                    if (driveStatusEl) {
+                                        driveStatusEl.textContent = 'Saved locally. Drive will retry when the connection is available.';
+                                    }
+                                } else {
+                                    void refreshDriveFiles();
+                                }
+                            });
+
+                        await Promise.race([
+                            localCheckpoint.catch(() => {}),
+                            new Promise(resolve => setTimeout(resolve, 450))
+                        ]);
+                        showDriveHome();
+                        if (driveStatusEl) {
+                            driveStatusEl.textContent = state.driveAutosave
+                                ? 'Saving the last document to Drive in the background...'
+                                : 'Changes saved locally.';
+                        }
+                        return;
+                        }
+
                         // Clear presence before leaving document
                         clearPresence();
                         // Force-end interaction state so paused saves can resume.
@@ -19540,7 +19748,9 @@
                         refreshDriveFiles();
                     } finally {
                         hideLoading();
-                        forceFlushingForExit = false;
+                        if (!backgroundExitSavePromise) {
+                            forceFlushingForExit = false;
+                        }
                         goHomeInProgress = false;
                     }
                 };
@@ -25601,6 +25811,7 @@
 
         function beginDocumentSession() {
             documentSessionId += 1;
+            driveConfirmedContentHash = '';
             noteRecentUserActivity();
             stopCollabPolling();
             clearDriveSyncTimers();
@@ -26005,7 +26216,12 @@
                     status: options.status === true,
                     ...DRIVE_UPLOAD_PDF_OPTIONS
                 });
-                const result = { blob, version: versionAtBuildStart, sessionToken };
+                const result = {
+                    blob,
+                    version: versionAtBuildStart,
+                    sessionToken,
+                    contentHash: String(blob?.inhouseContentHash || '')
+                };
                 if (isDocumentSessionTokenValid(sessionToken)
                     && driveContentVersion === versionAtBuildStart) {
                     preparedDrivePdf = result;
@@ -26718,6 +26934,7 @@
                 };
                 let pdfBlob = null;
                 let uploadedContentVersion = driveContentVersion;
+                let uploadedContentHash = '';
                 if (!state.driveFileId) {
                     showStatus('Building PDF...', { phase: 'building' });
                     setPresenceSavePhase('processing');
@@ -26729,6 +26946,7 @@
                     });
                     pdfBlob = prepared.blob;
                     uploadedContentVersion = prepared.version;
+                    uploadedContentHash = prepared.contentHash;
                 }
                 recordSaveDebug('Ensuring Drive file');
                 if (pdfBlob) setPresenceSavePhase('uploading');
@@ -26765,6 +26983,7 @@
                             });
                             pdfBlob = prepared.blob;
                             uploadedContentVersion = prepared.version;
+                            uploadedContentHash = prepared.contentHash;
                         }
                         if (controller.signal.aborted) {
                             throw new Error('Drive save aborted');
@@ -26786,6 +27005,7 @@
                             throw createAbortError('Remote changes still arriving');
                         }
                         pdfBlob = null;
+                        uploadedContentHash = '';
                     }
                     if (controller.signal.aborted) {
                         throw new Error('Drive save aborted');
@@ -26805,6 +27025,9 @@
                     saveDriveSession();
                 }
                 markDriveContentUploaded(uploadedContentVersion);
+                if (uploadedContentHash) {
+                    driveConfirmedContentHash = uploadedContentHash;
+                }
                 // Use Drive's modifiedTime as the universal timestamp
                 const savedAt = state.driveLastKnownModified || Date.now();
                 updateSaveTimestamp();
@@ -27887,6 +28110,41 @@
             return `hace ${diffDay} d`;
         }
 
+        function getPresenceConnectionInfo(record) {
+            try {
+                if (typeof getLiveCollaborationConnectionInfo === 'function') {
+                    return getLiveCollaborationConnectionInfo(record);
+                }
+            } catch (error) { }
+            return {
+                transport: record?.isOwn ? 'This device' : 'Drive fallback',
+                transportCode: record?.isOwn ? 'device' : 'drive',
+                isMain: !!record?.isOwn,
+                connected: !!record?.isOnline
+            };
+        }
+
+        function getPresencePopupUsers(users) {
+            const remoteUsers = Array.isArray(users) ? users.slice() : [];
+            if (!driveUserProfile) return remoteUsers;
+            remoteUsers.unshift({
+                n: driveUserProfile.name || driveUserProfile.email || 'You',
+                e: driveUserProfile.email || '',
+                p: driveUserProfile.photo || '',
+                d: detectDeviceType(),
+                v: detectDeviceLabel(),
+                l: detectPresenceLocationLabel(),
+                c: getPresenceClientId(),
+                s: presenceSavePhase,
+                m: presenceSavePhaseAt,
+                t: Date.now(),
+                h: Date.now(),
+                isOnline: true,
+                isOwn: true
+            });
+            return remoteUsers;
+        }
+
         function groupPresenceByAccount(users) {
             const grouped = new Map();
             (users || []).forEach((user, idx) => {
@@ -27915,7 +28173,11 @@
                     deviceName: user.v || '',
                     location: user.l || '',
                     lastActivity: Number(user.t) || 0,
-                    isOnline: Boolean(user.isOnline)
+                    isOnline: Boolean(user.isOnline),
+                    isOwn: Boolean(user.isOwn),
+                    clientId: user.c || '',
+                    savePhase: getPresenceVisibleSavePhase(user),
+                    connection: getPresenceConnectionInfo(user)
                 });
             });
 
@@ -27939,7 +28201,7 @@
             if (!presencePopupListEl) return;
             const avatarFallback = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
             presencePopupListEl.innerHTML = '';
-            const grouped = groupPresenceByAccount(users);
+            const grouped = groupPresenceByAccount(getPresencePopupUsers(users));
             if (grouped.length === 0) {
                 const emptyEl = document.createElement('div');
                 emptyEl.className = 'presence-popup-empty';
@@ -27990,7 +28252,7 @@
                     mainEl.className = 'presence-device-main';
                     const deviceName = device.deviceName
                         || (device.type === 'mobile' ? 'Mobile' : (device.type === 'tablet' ? 'Tablet' : 'PC'));
-                    mainEl.textContent = deviceName;
+                    mainEl.textContent = `${deviceName}${device.isOwn ? ' · This device' : ''}`;
                     contentEl.appendChild(mainEl);
 
                     const metaEl = document.createElement('div');
@@ -28001,6 +28263,15 @@
                         : 'desconocida';
                     metaEl.textContent = `${location} · Última actividad ${formatPresenceLastActivity(device.lastActivity)} (${absolute})`;
                     contentEl.appendChild(metaEl);
+
+                    const connectionEl = document.createElement('div');
+                    connectionEl.className = `presence-device-connection${device.connection?.isMain ? ' main' : ''}`;
+                    const phaseLabel = device.savePhase === 'processing' ? 'preparing changes'
+                        : (device.savePhase === 'uploading' ? 'uploading to Drive'
+                            : (device.savePhase === 'syncing' ? 'receiving changes'
+                                : (device.savePhase === 'saved' ? 'saved' : 'idle')));
+                    connectionEl.textContent = `${device.connection?.transport || 'Drive fallback'} · ${phaseLabel}${device.connection?.isMain ? ' · Main device' : ''}`;
+                    contentEl.appendChild(connectionEl);
 
                     rowEl.appendChild(contentEl);
                     devicesEl.appendChild(rowEl);
@@ -28140,6 +28411,7 @@
 
                 // Extract stroke data from PDF metadata; keep PDF alive for background rendering
                 let remoteStrokeData = null;
+                let remoteSyncEnvelope = null;
                 let remotePdfDoc = null;
                 try {
                     const pdf = await pdfjsLib.getDocument({
@@ -28155,6 +28427,7 @@
                     try {
                         const metadata = await pdf.getMetadata();
                         const keywords = metadata?.info?.Keywords || '';
+                        remoteSyncEnvelope = decodeDriveSyncEnvelope(keywords);
                         if (keywords.startsWith('STROKES_Z:')
                             || keywords.startsWith('STROKES_DATA:')) {
                             remoteStrokeData = await decodeEmbeddedStrokesFromPdfKeywords(keywords);
@@ -28214,6 +28487,20 @@
                     return;
                 }
                 markDriveHydrated(fileIdAtStart);
+
+                // A different PDF revision can still represent the exact same
+                // logical document (for example an echo save that only changed
+                // Timeline/PDF internals). Do not merge or upload it again.
+                if (!preserveLocalUnsynced
+                    && remoteSyncEnvelope?.contentHash
+                    && remoteSyncEnvelope.contentHash === driveConfirmedContentHash) {
+                    if (remotePdfDoc?.cleanup) { try { remotePdfDoc.cleanup(); } catch (e) {} }
+                    applyDriveRemoteMeta(metaData);
+                    markDriveContentUploaded();
+                    updateSyncBaseline();
+                    showStatus('Already up to date', { savedAt: state.driveLastKnownModified || Date.now() });
+                    return { changed: false, hasLocalMerges: false, duplicateRevision: true };
+                }
 
                 const likelyRemoteContentChange = remoteStrokeDataLooksDifferent(remoteStrokeData);
                 if (likelyRemoteContentChange) {
@@ -28302,11 +28589,14 @@
                     if (!preserveLocalUnsynced) {
                         markDriveContentUploaded();
                     }
+                    if (remoteSyncEnvelope?.contentHash) {
+                        driveConfirmedContentHash = remoteSyncEnvelope.contentHash;
+                    }
                     showStatus('Changes from collaborator', { savedAt: state.driveLastKnownModified || Date.now() });
                 }
                 console.log('Remote changes applied successfully');
                 return {
-                    changed: true,
+                    changed: !!mergeResult?.changed,
                     hasLocalMerges: !!(mergeResult && mergeResult.hasLocalMerges)
                 };
             } catch (err) {
@@ -28780,7 +29070,7 @@
                 // explicitly merging pending local work.
                 const mergedStrokes = [];
                 let localStrokeConflictCount = 0;
-                const localOnlyStrokes = structuralIdentityChanged
+                const localOnlyStrokes = structuralIdentityChanged || !preserveLocalUnsynced
                     ? []
                     : currentPage.strokes.filter(s => (
                         s?.id
@@ -28805,7 +29095,7 @@
 
                 const mergedImages = [];
                 let localImageConflictCount = 0;
-                const localOnlyImages = structuralIdentityChanged
+                const localOnlyImages = structuralIdentityChanged || !preserveLocalUnsynced
                     ? []
                     : (currentPage.images || []).filter(img => (
                         img?.id
@@ -28842,13 +29132,15 @@
                         localSuppressedRemoteCount += 1;
                     }
                 }
-                const pageHasLocalMerges = localOnlyStrokes.length > 0
+                const pageHasLocalMerges = preserveLocalUnsynced && (
+                    localOnlyStrokes.length > 0
                     || localOnlyImages.length > 0
-                    || (preserveLocalUnsynced && (
+                    || (
                         localSuppressedRemoteCount > 0
                         || localStrokeConflictCount > 0
                         || localImageConflictCount > 0
-                    ));
+                    )
+                );
                 if (pageHasLocalMerges) {
                     hasLocalMerges = true;
                 }
@@ -29536,36 +29828,18 @@
                         <div class="save-debug-hero"></div>
                         <button type="button" class="save-debug-close" aria-label="Close save details">&times;</button>
                     </div>
-                    <div class="save-debug-admin-row">
-                        <span class="save-debug-label">Diagnostics</span>
-                        <label class="save-debug-switch">
-                            <input type="checkbox" id="save-debug-admin-toggle">
-                            Admin mode
-                        </label>
-                    </div>
-                    <pre class="save-debug-terminal" aria-label="Save debug terminal"></pre>
+                    <div class="save-debug-summary" aria-label="Save status by device"></div>
                 </div>`;
             document.body.appendChild(backdrop);
             const panel = backdrop.querySelector('.save-debug-panel');
             const closeBtn = backdrop.querySelector('.save-debug-close');
             const hero = backdrop.querySelector('.save-debug-hero');
-            const terminal = backdrop.querySelector('.save-debug-terminal');
-            const adminToggle = backdrop.querySelector('#save-debug-admin-toggle');
+            const summary = backdrop.querySelector('.save-debug-summary');
             closeBtn.addEventListener('click', closeSaveDebugPopup);
             backdrop.addEventListener('click', (event) => {
                 if (event.target === backdrop) closeSaveDebugPopup();
             });
-            adminToggle.addEventListener('change', () => {
-                saveDebugState.admin = adminToggle.checked;
-                panel.classList.toggle('admin', saveDebugState.admin);
-                renderSaveDebugPopup();
-            });
-            terminal.addEventListener('scroll', () => {
-                const atBottom = terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight < 24;
-                if (atBottom) delete terminal.dataset.userScrolled;
-                else terminal.dataset.userScrolled = 'true';
-            });
-            saveDebugElements = { backdrop, panel, hero, terminal, adminToggle };
+            saveDebugElements = { backdrop, panel, hero, summary };
             return saveDebugElements;
         }
 
@@ -29583,7 +29857,6 @@
             if (!saveDebugElements) return;
             const els = saveDebugElements;
             const flags = getSaveDebugFlags();
-            const elapsed = Date.now() - saveDebugState.runStartedAt;
             const phase = saveDebugState.phase || 'saved';
             const phaseLabel = phase === 'saved' ? 'All saved'
                 : (phase === 'paused' ? 'Waiting for idle'
@@ -29596,30 +29869,83 @@
                 <div id="save-debug-title">
                     <div class="save-debug-hero-title">${escapeSaveDebugText(phaseLabel)}</div>
                 </div>`;
-            const currentRunEvents = saveDebugState.events.filter(event => event.runId === saveDebugState.runId);
-            const shouldStickToBottom = els.terminal.scrollHeight - els.terminal.scrollTop - els.terminal.clientHeight < 24;
-            els.terminal.textContent = [
-                `run=${saveDebugState.runId} phase=${saveDebugState.phase} elapsed=${formatSaveDebugMs(elapsed)}`,
-                `drive: dirty=${flags.driveDirty} deferred=${flags.deferredDriveSave} inProgress=${flags.driveSaveInProgress} queued=${flags.driveSaveQueued}`,
-                flags.blocked ? `blocked: ${flags.blocked}` : '',
-                `local: inProgress=${flags.localSaveInProgress} queued=${flags.localSaveQueued} pageDirty=${flags.pageDirtyCount} strokeOps=${flags.strokeOpsQueued}`,
-                `versions: content=${flags.contentVersion} uploaded=${flags.uploadedVersion}`,
-                `mode: autosave=${flags.autosave} readOnly=${flags.readOnly}`,
-                '',
-                ...currentRunEvents.slice(0, 18).reverse().map(event => {
-                    const f = event.flags || {};
-                    return `[${new Date(event.at).toLocaleTimeString(undefined, { hour12: false })}] ${event.phase} ${event.message} dirty=${f.driveDirty} queued=${f.driveSaveQueued} v=${f.contentVersion}/${f.uploadedVersion}`;
-                })
-            ].join('\n');
-            if (shouldStickToBottom || !els.terminal.dataset.userScrolled) {
-                els.terminal.scrollTop = els.terminal.scrollHeight;
-            }
+            const phaseDetails = {
+                processing: 'Preparing its latest changes',
+                uploading: 'Uploading its latest PDF revision',
+                syncing: 'Applying changes from another device',
+                saved: 'Its latest changes are saved',
+                paused: 'Waiting briefly before saving'
+            };
+            const rows = [];
+            const overview = typeof getLiveCollaborationOverview === 'function'
+                ? getLiveCollaborationOverview()
+                : { isMain: true };
+            const localClass = flags.blocked ? 'error'
+                : (flags.driveSaveInProgress || flags.localSaveInProgress || flags.pageDirtyCount || flags.strokeOpsQueued
+                    ? 'syncing'
+                    : ((flags.driveDirty || flags.deferredDriveSave || flags.driveSaveQueued
+                        || flags.contentVersion !== flags.uploadedVersion) ? 'active' : ''));
+            const localDetail = flags.blocked
+                ? flags.blocked
+                : (flags.driveSaveInProgress
+                    ? 'Uploading the latest PDF to Drive'
+                    : (flags.localSaveInProgress || flags.pageDirtyCount || flags.strokeOpsQueued
+                        ? 'Saving the latest edits on this device'
+                        : (localClass ? 'Waiting to upload the latest edits' : 'Latest edits saved locally')));
+            rows.push(`
+                <div class="save-device-status">
+                    <span class="save-device-status-dot ${localClass}"></span>
+                    <div>
+                        <div class="save-device-status-title">This device${overview.isMain ? ' · Main device' : ''}</div>
+                        <div class="save-device-status-detail">${escapeSaveDebugText(localDetail)}</div>
+                    </div>
+                </div>`);
+            getPresencePopupUsers(latestPresenceUsers)
+                .filter(record => !record.isOwn)
+                .forEach(record => {
+                    const remotePhase = getPresenceVisibleSavePhase(record) || '';
+                    const connection = getPresenceConnectionInfo(record);
+                    const remoteClass = ['processing', 'uploading', 'syncing'].includes(remotePhase)
+                        ? 'syncing'
+                        : (record.isOnline ? 'active' : '');
+                    const deviceName = record.v
+                        || (record.d === 'mobile' ? 'Phone' : (record.d === 'tablet' ? 'Tablet' : 'Computer'));
+                    const detail = `${connection.transport}${remotePhase
+                        ? ` · ${phaseDetails[remotePhase] || remotePhase}`
+                        : ' · No unsaved activity reported'}`;
+                    rows.push(`
+                        <div class="save-device-status">
+                            <span class="save-device-status-dot ${remoteClass}"></span>
+                            <div>
+                                <div class="save-device-status-title">${escapeSaveDebugText(deviceName)}${connection.isMain ? ' · Main device' : ''}</div>
+                                <div class="save-device-status-detail">${escapeSaveDebugText(detail)}</div>
+                            </div>
+                        </div>`);
+                });
+            const driveClass = flags.blocked ? 'error'
+                : (flags.driveSaveInProgress ? 'syncing'
+                    : ((flags.driveDirty || flags.deferredDriveSave || flags.driveSaveQueued
+                        || flags.contentVersion !== flags.uploadedVersion) ? 'active' : ''));
+            const driveDetail = flags.blocked
+                ? flags.blocked
+                : (flags.driveSaveInProgress
+                    ? 'Receiving the newest PDF revision'
+                    : (driveClass
+                        ? 'Waiting for the newest device changes'
+                        : `PDF revision ${state.driveHeadRevisionId || 'current'} is saved`));
+            rows.push(`
+                <div class="save-device-status">
+                    <span class="save-device-status-dot ${driveClass}"></span>
+                    <div>
+                        <div class="save-device-status-title">Google Drive</div>
+                        <div class="save-device-status-detail">${escapeSaveDebugText(driveDetail)}</div>
+                    </div>
+                </div>`);
+            els.summary.innerHTML = rows.join('');
         }
 
         function openSaveDebugPopup() {
             const els = ensureSaveDebugPopup();
-            els.adminToggle.checked = !!saveDebugState.admin;
-            els.panel.classList.toggle('admin', !!saveDebugState.admin);
             renderSaveDebugPopup();
             els.backdrop.classList.add('visible');
             if (!saveDebugRenderInterval) {
@@ -30100,6 +30426,8 @@
                 }
                 activePdfEmbeddedKeywords = pdfKeywordsString;
                 activePdfEmbeddedStrokesCache = embeddedStrokes;
+                const embeddedSyncEnvelope = decodeDriveSyncEnvelope(pdfKeywordsString);
+                driveConfirmedContentHash = embeddedSyncEnvelope?.contentHash || '';
 
                 // Timeline history is not needed to draw or edit page 1. Restore
                 // it after the usable document has been painted instead of
@@ -31712,11 +32040,21 @@
                     keywordsPayload += `;IH_CAL:${calB64}`;
                 } catch (e) { /* ignore */ }
             }
+            let pagesParsedForSync = [];
+            try {
+                pagesParsedForSync = metadataParts.map(s => JSON.parse(s));
+                const encodedSync = encodeDriveSyncEnvelope(pagesParsedForSync);
+                if (encodedSync) keywordsPayload += `;${DRIVE_SYNC_KEYWORD}${encodedSync}`;
+            } catch (syncErr) {
+                console.warn('Failed to add Drive sync identity:', syncErr);
+            }
             // Capture this save as a version-history snapshot. The pages JSON we just
             // serialized into STROKES_Z is what gets embedded in the snapshot too, so
             // restoring is a matter of replacing state.pages with that snapshot's data.
             try {
-                const pagesParsed = metadataParts.map(s => JSON.parse(s));
+                const pagesParsed = pagesParsedForSync.length
+                    ? pagesParsedForSync
+                    : metadataParts.map(s => JSON.parse(s));
                 const updatedHistory = captureVersionSnapshot(pagesParsed);
                 const encodedHistory = await encodeVersionHistoryForKeywords(updatedHistory);
                 if (encodedHistory) {
@@ -31761,6 +32099,9 @@
             throwIfSessionInvalid();
 
             const blob = new Blob([finalBytes], { type: 'application/pdf' });
+            blob.inhouseContentHash = pagesParsedForSync.length
+                ? createDriveSyncEnvelope(pagesParsedForSync).contentHash
+                : '';
             state.lastExportSize = blob.size;
             return blob;
         }
@@ -32178,8 +32519,18 @@
                     encodedMetadata += `;IH_CAL:${calB64}`;
                 } catch (calErr) { /* ignore */ }
             }
+            let rasterPagesParsedForSync = [];
             try {
-                const pagesParsed = metadataParts.map(s => JSON.parse(s));
+                rasterPagesParsedForSync = metadataParts.map(s => JSON.parse(s));
+                const encodedSync = encodeDriveSyncEnvelope(rasterPagesParsedForSync);
+                if (encodedSync) encodedMetadata += `;${DRIVE_SYNC_KEYWORD}${encodedSync}`;
+            } catch (syncErr) {
+                console.warn('Failed to add Drive sync identity (raster path):', syncErr);
+            }
+            try {
+                const pagesParsed = rasterPagesParsedForSync.length
+                    ? rasterPagesParsedForSync
+                    : metadataParts.map(s => JSON.parse(s));
                 const updatedHistory = captureVersionSnapshot(pagesParsed);
                 const encodedHistory = await encodeVersionHistoryForKeywords(updatedHistory);
                 if (encodedHistory) {
@@ -32197,6 +32548,9 @@
             const pdfResult = await assemblePdfInWorker(workerPages, encodedMetadata, metaPrefix);
             throwIfAborted();
             throwIfSessionInvalid();
+            pdfResult.inhouseContentHash = rasterPagesParsedForSync.length
+                ? createDriveSyncEnvelope(rasterPagesParsedForSync).contentHash
+                : '';
             state.lastExportSize = pdfResult.size;
             return pdfResult;
         }

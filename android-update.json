@@ -3,6 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.0.1",
-  "releaseNotes": "Inhouse Notes v5.0.1: substantially faster PDF opening and stroke analysis, progressive background loading, and prebuilt incremental Drive saves for near-instant exit."
+  "publishedAppVersion": "5.1.0",
+  "releaseNotes": "Inhouse Notes v5.1.0: immediate multi-device edits, loop-free Drive synchronization, connection and per-device save status, and near-instant return to Home with safe background saving."
 }
