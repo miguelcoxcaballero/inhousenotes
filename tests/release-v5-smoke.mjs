@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.2.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.3.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.2\.2';/);
+assert.match(html, /const APP_VERSION = '5\.2\.3';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -99,6 +99,13 @@ assert.doesNotMatch(
 assert.match(html, /event\.returnValue = '';/);
 assert.match(html, /clearPendingExitUpload\(state\.driveFileId/);
 assert.match(html, /className = 'public-inline-preview'/);
+assert.doesNotMatch(html, /public-inline-status/);
+assert.doesNotMatch(html, /Open in Drive/);
+assert.doesNotMatch(html, /public-preview-open/);
+assert.match(html, /\.public-inline-preview iframe \{\s*position: absolute;\s*top: -52px;/);
+assert.match(html, /public-read-only-mode/);
+assert.match(html, /modeToggleLabel\.textContent = 'Read only';/);
+assert.match(html, /isViewer && !isAnonymousPublicViewer/);
 assert.match(html, /fingerprintPublicPdfBlob/);
 assert.match(html, /setInterval\(poll, PUBLIC_DRIVE_API_KEY \? 1800 : 2500\)/);
 assert.match(html, /startLiveCollaboration\(\);\s*showStatus\(/);
@@ -158,11 +165,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.2.2');
+assert.equal(update.publishedAppVersion, '5.2.3');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.2\.2/);
-assert.match(notes, /responsive sharing sheet/i);
-assert.match(notes, /mobile/i);
-assert.match(notes, /Copy link/i);
+assert.match(update.releaseNotes, /v5\.2\.3/);
+assert.match(notes, /pill labelled.*Read only/i);
+assert.match(notes, /external-open/i);
+assert.match(notes, /status banner/i);
 
-console.log('v5.2.2 smoke checks passed.');
+console.log('v5.2.3 smoke checks passed.');

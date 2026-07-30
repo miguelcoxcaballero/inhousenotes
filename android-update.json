@@ -3,6 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.2.2",
-  "releaseNotes": "Inhouse Notes v5.2.2: a redesigned responsive sharing sheet with clearer permissions, improved mobile controls, and reliable link-button feedback."
+  "publishedAppVersion": "5.2.3",
+  "releaseNotes": "Inhouse Notes v5.2.3: a cleaner anonymous public viewer without the floating status banner or external-open controls, plus a passive Read only pill."
 }
