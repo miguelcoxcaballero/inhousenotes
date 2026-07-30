@@ -27,6 +27,7 @@ let ihnLiveBroadcastQueued = false;
 let ihnLiveApplying = false;
 let ihnLiveSequence = Date.now();
 let ihnLiveLastHash = '';
+let ihnLiveMainPeerId = '';
 const ihnLivePeers = new Map();
 const ihnLiveSeen = new Map();
 const ihnLiveChunks = new Map();
@@ -181,6 +182,7 @@ function ihnClosePeer(peerId, reason = '') {
 function ihnConfigurePeer(peerId, pc, peer) {
     pc.onconnectionstatechange = () => {
         peer.status = pc.connectionState;
+        if (pc.connectionState === 'connected') ihnRefreshPeerPath(peer).catch(() => {});
         if (pc.connectionState === 'failed' || pc.connectionState === 'closed') ihnClosePeer(peerId, pc.connectionState);
     };
     pc.ondatachannel = event => ihnConfigureChannel(peerId, event.channel, peer);
@@ -191,6 +193,7 @@ function ihnConfigureChannel(peerId, channel, peer) {
     channel.bufferedAmountLowThreshold = 512_000;
     channel.onopen = () => {
         peer.status = 'open'; peer.openedAt = Date.now();
+        ihnRefreshPeerPath(peer).catch(() => {});
         if (peer.commentId && peer.initiator && state.driveFileId && driveAccessToken) {
             driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}/comments/${peer.commentId}`, { method: 'DELETE' }).catch(() => {});
             peer.commentId = '';
@@ -301,7 +304,6 @@ async function ihnPollSignals() {
 function liveCollabUpdatePeers(users) {
     if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit) return;
     startLiveCollaboration();
-    if (!ihnIsLiveLeader()) return;
     const ownId = ihnGetLivePeerId();
     const active = new Set();
     for (const user of users || []) {
@@ -309,12 +311,81 @@ function liveCollabUpdatePeers(users) {
         const peerId = ihnGetPresencePeerId(user);
         if (!peerId || peerId === ownId) continue;
         active.add(peerId);
-        if (ownId < peerId) ihnCreateOffer(peerId);
     }
+    ihnLiveMainPeerId = [...active, ownId].sort()[0] || ownId;
+    if (!ihnIsLiveLeader()) return;
+    active.forEach(peerId => {
+        if (ownId < peerId) ihnCreateOffer(peerId);
+    });
     ihnLivePeers.forEach((peer, peerId) => {
         if (!active.has(peerId) && Date.now() - Number(peer.openedAt || peer.createdAt || 0) > 30_000) ihnClosePeer(peerId, 'presence expired');
     });
     ihnPollSignals();
+}
+
+async function ihnRefreshPeerPath(peer) {
+    if (!peer?.pc || typeof peer.pc.getStats !== 'function') return;
+    try {
+        const stats = await peer.pc.getStats();
+        let selectedPair = null;
+        stats.forEach(report => {
+            if (report.type === 'transport' && report.selectedCandidatePairId) {
+                selectedPair = stats.get(report.selectedCandidatePairId) || selectedPair;
+            } else if (report.type === 'candidate-pair'
+                && report.state === 'succeeded'
+                && (report.nominated || report.selected)) {
+                selectedPair = report;
+            }
+        });
+        if (!selectedPair) return;
+        const local = stats.get(selectedPair.localCandidateId);
+        const remote = stats.get(selectedPair.remoteCandidateId);
+        peer.networkPath = local?.candidateType === 'host' && remote?.candidateType === 'host'
+            ? 'local-network'
+            : 'peer';
+        if (typeof refreshPresenceViews === 'function') refreshPresenceViews();
+    } catch (error) {
+        peer.networkPath = peer.networkPath || 'peer';
+    }
+}
+
+function getLiveCollaborationConnectionInfo(record = null) {
+    const ownId = ihnGetLivePeerId();
+    const own = !record || String(record?.c || '') === String(getPresenceClientId());
+    const peerId = own ? ownId : ihnGetPresencePeerId(record);
+    const peer = peerId ? ihnLivePeers.get(peerId) : null;
+    const sameDevice = !own
+        && String(record?.c || '')
+        && String(record.c) === String(getPresenceClientId());
+    let transport = 'Drive fallback';
+    let transportCode = 'drive';
+    if (own) {
+        transport = ihnIsLiveLeader() ? 'This device · coordination leader' : 'This device · local tab';
+        transportCode = 'device';
+    } else if (sameDevice) {
+        transport = 'Same device';
+        transportCode = 'local-tab';
+    } else if (peer?.channel?.readyState === 'open') {
+        transportCode = peer.networkPath === 'local-network' ? 'local-network' : 'peer';
+        transport = transportCode === 'local-network' ? 'Local network · peer-to-peer' : 'Peer-to-peer';
+    }
+    const mainPeerId = ihnLiveMainPeerId || ownId;
+    return {
+        peerId,
+        transport,
+        transportCode,
+        isMain: peerId === mainPeerId,
+        connected: own || sameDevice || peer?.channel?.readyState === 'open'
+    };
+}
+
+function getLiveCollaborationOverview() {
+    return {
+        ownPeerId: ihnGetLivePeerId(),
+        mainPeerId: ihnLiveMainPeerId || ihnGetLivePeerId(),
+        isMain: (ihnLiveMainPeerId || ihnGetLivePeerId()) === ihnGetLivePeerId(),
+        openPeerCount: [...ihnLivePeers.values()].filter(peer => peer.channel?.readyState === 'open').length
+    };
 }
 
 async function ihnVerifyLiveCapability() {
@@ -357,35 +428,40 @@ function stopLiveCollaboration() {
     ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveProcessedOffers.clear();
     try { ihnLiveBroadcastChannel?.close(); } catch (error) {}
     ihnLiveBroadcastChannel = null; ihnLiveBroadcastFileId = '';
-    ihnLiveCryptoKey = null; ihnLiveCryptoFileId = ''; ihnLiveLastHash = '';
+    ihnLiveCryptoKey = null; ihnLiveCryptoFileId = ''; ihnLiveLastHash = ''; ihnLiveMainPeerId = '';
 }
 
 async function ihnBuildLiveSnapshot() {
     await flushStrokeOpsQueue();
     await ensureAllPagesLoadedForStructureChange();
-    return { v: 1, type: 'document-snapshot', fileId: state.driveFileId,
+    const snapshot = { v: 1, type: 'document-snapshot', fileId: state.driveFileId,
         actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`, deviceId: getPresenceClientId(), sequence: ++ihnLiveSequence,
         sentAt: Date.now(), baseRevision: state.driveHeadRevisionId || null,
         exportName: state.exportName || '', calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
         pages: state.pages.map(page => sanitizePageForStorage(page)) };
+    snapshot.contentHash = timelineSnapshotHash(snapshot.pages, snapshot.calendarPageConfig, snapshot.exportName);
+    return snapshot;
 }
 
 function scheduleLiveDocumentBroadcast(options = {}) {
-    if (ihnLiveApplying || !state?.driveFileId || state.isReadOnly) return;
+    if (!state?.driveFileId || state.isReadOnly) return;
     startLiveCollaboration(); ihnLiveBroadcastQueued = true; clearTimeout(ihnLiveBroadcastTimer);
     ihnLiveBroadcastTimer = setTimeout(() => {
         ihnLiveBroadcastTimer = null;
         ihnBroadcastDocument().catch(error => console.warn('Live broadcast failed:', error));
-    }, options.immediate ? 0 : 180);
+    }, options.immediate ? 0 : (ihnLiveApplying || hasSmoothInteraction() ? 60 : 40));
 }
 
 async function ihnBroadcastDocument() {
-    if (ihnLiveBroadcastBusy || ihnLiveApplying || !ihnLiveBroadcastQueued || state.isReadOnly) return;
-    if (hasSmoothInteraction()) { scheduleLiveDocumentBroadcast(); return; }
+    if (!ihnLiveBroadcastQueued || state.isReadOnly) return;
+    if (ihnLiveBroadcastBusy || ihnLiveApplying || hasSmoothInteraction()) {
+        scheduleLiveDocumentBroadcast();
+        return;
+    }
     ihnLiveBroadcastBusy = true; ihnLiveBroadcastQueued = false;
     try {
         const snapshot = await ihnBuildLiveSnapshot();
-        const hash = timelineSnapshotHash(snapshot.pages, snapshot.calendarPageConfig, snapshot.exportName);
+        const hash = snapshot.contentHash;
         if (hash === ihnLiveLastHash) return;
         ihnLiveLastHash = hash; ihnEnsureTabChannel();
         try { ihnLiveBroadcastChannel?.postMessage(snapshot); } catch (error) {}
@@ -445,10 +521,13 @@ async function ihnHandleWireMessage(raw, peerId) {
 
 async function ihnHandleLiveEnvelope(envelope, transport = '') {
     if (!envelope || envelope.v !== 1 || envelope.type !== 'document-snapshot' || envelope.fileId !== state?.driveFileId) return;
-    if (!Array.isArray(envelope.pages) || !envelope.pages.length || envelope.actorId === ihnGetLivePeerId()) return;
+    const ownActorId = `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`;
+    if (!Array.isArray(envelope.pages) || !envelope.pages.length || envelope.actorId === ownActorId) return;
     const sequence = Number(envelope.sequence) || 0, previous = ihnLiveSeen.get(envelope.actorId) || 0;
     if (sequence <= previous) return;
-    ihnLiveSeen.set(envelope.actorId, sequence); ihnLiveApplying = true;
+    ihnLiveSeen.set(envelope.actorId, sequence);
+    if (envelope.contentHash && envelope.contentHash === ihnLiveLastHash) return;
+    ihnLiveApplying = true;
     try {
         const preserveLocal = !state.isReadOnly && hasUnsyncedLocalDriveChanges();
         const previousCalendar = JSON.stringify(state.calendarPageConfig || null);
@@ -465,8 +544,19 @@ async function ihnHandleLiveEnvelope(envelope, transport = '') {
             scheduleLocalStorageBackup(payload);
         }
         if (result?.changed || calendarChanged) showStatus(transport === 'tab' ? 'Live changes from another tab' : 'Live changes from collaborator', { savedAt: Number(envelope.sentAt) || Date.now() });
-        if (result?.hasLocalMerges && !state.isReadOnly) { driveDirty = true; requestImmediateDriveSave(); }
+        const mergedHash = timelineSnapshotHash(
+            state.pages.map(page => sanitizePageForStorage(page)),
+            state.calendarPageConfig,
+            state.exportName
+        );
+        ihnLiveLastHash = mergedHash;
+        if (result?.hasLocalMerges && !state.isReadOnly) {
+            driveDirty = true;
+            requestImmediateDriveSave();
+            ihnLiveBroadcastQueued = true;
+        }
     } finally {
         ihnLiveApplying = false;
+        if (ihnLiveBroadcastQueued) scheduleLiveDocumentBroadcast({ immediate: true });
     }
 }

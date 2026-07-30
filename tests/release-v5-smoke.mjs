@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.0.1.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.1.0.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.0\.1';/);
+assert.match(html, /const APP_VERSION = '5\.1\.0';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -50,6 +50,25 @@ assert.match(live, /ihn_live_key_v1/);
 assert.match(live, /comments/);
 assert.match(live, /bufferedAmountLowThreshold/);
 assert.match(live, /applyRemotePages/);
+assert.match(live, /snapshot\.contentHash = timelineSnapshotHash/);
+assert.match(live, /ihnLiveBroadcastQueued = true/);
+assert.match(live, /if \(ihnLiveBroadcastQueued\) scheduleLiveDocumentBroadcast\(\{ immediate: true \}\)/);
+assert.match(live, /envelope\.contentHash === ihnLiveLastHash/);
+assert.match(live, /function getLiveCollaborationConnectionInfo\(/);
+assert.match(live, /local-network/);
+assert.match(live, /isMain:/);
+
+assert.match(html, /const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';/);
+assert.match(html, /remoteSyncEnvelope\.contentHash === driveConfirmedContentHash/);
+assert.match(html, /const localOnlyStrokes = structuralIdentityChanged \|\| !preserveLocalUnsynced/);
+assert.match(html, /const pageHasLocalMerges = preserveLocalUnsynced &&/);
+assert.match(html, /Saving the last document to Drive in the background/);
+assert.match(html, /await backgroundExitSavePromise/);
+assert.match(html, /Finishing the previous Drive save/);
+assert.match(html, /This device\$\{overview\.isMain \? ' · Main device'/);
+assert.match(html, /Google Drive<\/div>/);
+assert.match(html, /connection\?\.transport/);
+assert.doesNotMatch(html, />Admin mode</);
 
 const inlineScripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
   .filter(match => match.index > 6500 && match[1].trim())
@@ -97,11 +116,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.0.1');
+assert.equal(update.publishedAppVersion, '5.1.0');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.0\.1/);
-assert.match(notes, /PDF opening/i);
-assert.match(notes, /stroke analysis/i);
-assert.match(notes, /Drive/i);
+assert.match(update.releaseNotes, /v5\.1\.0/);
+assert.match(notes, /multi-device/i);
+assert.match(notes, /update loops/i);
+assert.match(notes, /background/i);
 
-console.log('v5.0.1 smoke checks passed.');
+console.log('v5.1.0 smoke checks passed.');
