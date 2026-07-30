@@ -1497,9 +1497,10 @@
 
         .public-inline-preview iframe {
             position: absolute;
-            inset: 0;
+            top: -52px;
+            left: 0;
             width: 100%;
-            height: 100%;
+            height: calc(100% + 52px);
             border: 0;
             background: #202124;
             opacity: 0;
@@ -1510,19 +1511,67 @@
             opacity: 1;
         }
 
-        .public-inline-status {
-            position: absolute;
-            z-index: 1;
+        #editor-view .mode-toggle-group.public-read-only-mode {
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
             left: 50%;
-            top: 16px;
-            transform: translateX(-50%);
-            padding: 7px 11px;
+            z-index: 1001;
+            width: max-content;
+            height: auto;
+            max-width: calc(100vw - 24px);
+            padding: 5px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 999px;
-            background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
-            color: var(--text-secondary);
-            box-shadow: var(--shadow-light);
-            font-size: 0.75rem;
+            background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
+            box-shadow: var(--shadow-medium);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transform: translateX(-50%);
+        }
+
+        [data-theme="dark"] #editor-view .mode-toggle-group.public-read-only-mode {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        #editor-view .mode-toggle-group.public-read-only-mode .mode-toggle-btn {
+            display: flex !important;
+            width: auto;
+            min-width: 0 !important;
+            height: 38px;
+            min-height: 38px;
+            padding: 0 16px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent !important;
+            box-shadow: none !important;
+            color: var(--text-primary);
             pointer-events: none;
+        }
+
+        #editor-view .mode-toggle-group.public-read-only-mode .mode-toggle-status,
+        #editor-view .mode-toggle-group.public-read-only-mode .mode-toggle-pill {
+            display: none;
+        }
+
+        #editor-view .mode-toggle-group.public-read-only-mode .mode-toggle-text {
+            width: auto;
+            min-width: 0;
+            font-family: 'Comfortaa', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        #editor-view .mode-toggle-group.public-read-only-mode .mode-toggle-text::before {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            margin-right: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.12);
+            content: "";
+            vertical-align: 1px;
         }
 
         /* ┄ § 2.9a  Page rows & wrappers ────────────────────────────────────
@@ -8444,7 +8493,7 @@
             </div>
         </div>
     </div>
-    <script src="live-collaboration-v5.js?v=5.2.2"></script>
+    <script src="live-collaboration-v5.js?v=5.2.3"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8512,7 +8561,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.2.2';
+        const APP_VERSION = '5.2.3';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -14507,7 +14556,6 @@
                 host = document.createElement('div');
                 host.id = 'public-inline-preview';
                 host.className = 'public-inline-preview';
-                host.innerHTML = '<div class="public-inline-status">Public view · updates automatically</div>';
                 canvasViewport.appendChild(host);
             }
             if (canvasContainer) canvasContainer.style.visibility = 'hidden';
@@ -14592,50 +14640,6 @@
             updateViewerModeUI();
             updateSharedEditorSignInGateUI();
             showEditorView();
-        }
-
-        function getPublicPreviewOverlay() {
-            let overlay = document.getElementById('public-drive-preview-overlay');
-            if (overlay) return overlay;
-            const style = document.createElement('style');
-            style.textContent = `
-                #public-drive-preview-overlay{position:fixed;inset:0;z-index:10050;background:#111;display:flex;flex-direction:column;color:#fff}
-                #public-drive-preview-overlay[hidden]{display:none}
-                .public-preview-bar{min-height:58px;display:flex;align-items:center;gap:12px;padding:8px 14px;background:#1b1b1b;border-bottom:1px solid #333}
-                .public-preview-title{min-width:0;flex:1;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-                .public-preview-badge{font-size:12px;color:#9fe3b0;background:#153e23;border:1px solid #28643b;border-radius:999px;padding:5px 9px}
-                .public-preview-action{border:1px solid #555;background:#292929;color:#fff;border-radius:10px;padding:8px 11px;text-decoration:none;font:inherit;cursor:pointer}
-                #public-drive-preview-frame{width:100%;height:100%;border:0;background:#202124;flex:1}
-                @media(max-width:620px){.public-preview-badge{display:none}.public-preview-bar{gap:7px;padding:7px}.public-preview-action{padding:8px;font-size:13px}}
-            `;
-            document.head.appendChild(style);
-            overlay = document.createElement('section');
-            overlay.id = 'public-drive-preview-overlay';
-            overlay.hidden = true;
-            overlay.innerHTML = `
-                <div class="public-preview-bar">
-                    <button type="button" class="public-preview-action" id="public-preview-back">Back</button>
-                    <div class="public-preview-title" id="public-preview-title">Shared document</div>
-                    <span class="public-preview-badge">Public view · no sign-in required</span>
-                    <button type="button" class="public-preview-action" id="public-preview-refresh">Refresh</button>
-                    <a class="public-preview-action" id="public-preview-open" target="_blank" rel="noopener">Open in Drive</a>
-                </div>
-                <iframe id="public-drive-preview-frame" title="Public shared PDF preview" allow="clipboard-read; clipboard-write" referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
-            document.body.appendChild(overlay);
-            overlay.querySelector('#public-preview-back').addEventListener('click', () => {
-                overlay.hidden = true;
-                const frame = overlay.querySelector('#public-drive-preview-frame');
-                if (frame) frame.src = 'about:blank';
-                stopPublicSharedPolling();
-                showDriveHome();
-            });
-            overlay.querySelector('#public-preview-refresh').addEventListener('click', () => {
-                const frame = overlay.querySelector('#public-drive-preview-frame');
-                if (frame && publicSharedPreviewFileId) {
-                    frame.src = buildPublicDrivePreviewUrl(publicSharedPreviewFileId, publicSharedPreviewResourceKey);
-                }
-            });
-            return overlay;
         }
 
         function openPublicDrivePreview(fileId, resourceKey = '', options = {}) {
@@ -16365,8 +16369,16 @@
         function updateViewerModeUI() {
             const banner = document.getElementById('readonly-banner');
             const isViewer = state.driveFileId && state.driveCanEdit === false;
+            const isAnonymousPublicViewer = !!(
+                isViewer
+                && publicSharedPreviewFileId
+                && !driveAccessToken
+                && !sharedEditorSignInGateActive
+            );
+            const modeGroup = document.querySelector('#editor-view .mode-toggle-group');
+            const mtb = document.getElementById('mode-toggle-btn');
             if (banner) {
-                if (isViewer) {
+                if (isViewer && !isAnonymousPublicViewer) {
                     banner.classList.remove('hidden');
                 } else {
                     banner.classList.add('hidden');
@@ -16385,8 +16397,7 @@
                 const tb = document.getElementById('toolbar');
                 if (tb) tb.style.display = 'none';
 
-                const mtb = document.getElementById('mode-toggle-btn');
-                if (mtb) mtb.style.display = 'none';
+                if (mtb) mtb.style.display = isAnonymousPublicViewer ? '' : 'none';
 
                 const dt = document.getElementById('doc-title');
                 if (dt) {
@@ -16403,13 +16414,31 @@
                 const tb = document.getElementById('toolbar');
                 if (tb) tb.style.display = '';
 
-                const mtb = document.getElementById('mode-toggle-btn');
                 if (mtb) mtb.style.display = '';
 
                 const dt = document.getElementById('doc-title');
                 if (dt) {
                     dt.contentEditable = 'true';
                     dt.style.pointerEvents = 'auto';
+                }
+            }
+            if (modeGroup) {
+                modeGroup.classList.toggle('public-read-only-mode', isAnonymousPublicViewer);
+            }
+            if (mtb && modeToggleLabel) {
+                if (isAnonymousPublicViewer) {
+                    mtb.classList.remove('is-editing');
+                    mtb.setAttribute('aria-pressed', 'false');
+                    mtb.setAttribute('aria-disabled', 'true');
+                    mtb.setAttribute('aria-label', 'Read only');
+                    mtb.title = 'Read only';
+                    modeToggleLabel.textContent = 'Read only';
+                } else {
+                    mtb.removeAttribute('aria-disabled');
+                    mtb.setAttribute('aria-pressed', state.isReadOnly ? 'false' : 'true');
+                    mtb.setAttribute('aria-label', state.isReadOnly ? 'Read mode' : 'Edit mode');
+                    mtb.title = 'Toggle read/edit mode';
+                    modeToggleLabel.textContent = state.isReadOnly ? 'Read' : 'Edit';
                 }
             }
             if (sharedEditorSignInGateActive) {
