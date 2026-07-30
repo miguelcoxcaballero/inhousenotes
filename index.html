@@ -6409,6 +6409,488 @@
             height: 18px;
         }
 
+        /* Share sheet refresh — Google-inspired clarity with Inhouse Notes
+           typography, colour and softer geometric shapes. */
+        #share-modal-overlay {
+            padding: 24px;
+            background: rgba(10, 10, 10, 0.56);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+        }
+
+        #share-modal-overlay .modal-container {
+            width: min(92vw, 560px);
+            max-width: 560px;
+            max-height: min(88svh, 760px);
+            border-radius: 24px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+            transform: translateY(14px) scale(0.98);
+            transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s ease;
+        }
+
+        [data-theme="dark"] #share-modal-overlay .modal-container {
+            border-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 28px 90px rgba(0, 0, 0, 0.58);
+        }
+
+        #share-modal-overlay.visible .modal-container {
+            transform: translateY(0) scale(1);
+        }
+
+        #share-modal-overlay .modal-header {
+            align-items: flex-start;
+            padding: 22px 24px 14px;
+            border-bottom: 0;
+        }
+
+        .share-title-block {
+            min-width: 0;
+            padding-top: 2px;
+        }
+
+        #share-modal-overlay .modal-header h2 {
+            font-family: 'Comfortaa', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .share-modal-subtitle {
+            margin-top: 5px;
+            color: var(--text-secondary);
+            font-size: 0.84rem;
+            line-height: 1.35;
+        }
+
+        #btn-close-share-modal {
+            width: 38px;
+            height: 38px;
+            min-width: 38px;
+            border-radius: 50% !important;
+            color: var(--text-secondary);
+            transition: background 0.16s ease, color 0.16s ease;
+        }
+
+        #btn-close-share-modal:hover {
+            background: rgba(224, 122, 60, 0.12) !important;
+            color: var(--accent-orange);
+        }
+
+        #share-modal-overlay .share-owner-info {
+            padding: 10px 24px 18px !important;
+            border-bottom: 0 !important;
+            max-height: 224px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        .share-access-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px !important;
+            color: var(--text-primary) !important;
+            font-family: 'Comfortaa', sans-serif;
+            font-size: 0.82rem !important;
+            font-weight: 700 !important;
+        }
+
+        #share-access-list {
+            gap: 4px !important;
+        }
+
+        .share-person-row {
+            min-width: 0;
+            min-height: 52px;
+            padding: 7px 8px;
+            border-radius: 14px;
+            transition: background 0.16s ease;
+        }
+
+        .share-person-row:hover {
+            background: rgba(0, 0, 0, 0.035);
+        }
+
+        [data-theme="dark"] .share-person-row:hover {
+            background: rgba(255, 255, 255, 0.055);
+        }
+
+        .share-person-avatar {
+            width: 40px !important;
+            height: 40px !important;
+            flex: 0 0 40px;
+            box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px rgba(224, 122, 60, 0.18);
+        }
+
+        .share-person-details {
+            min-width: 0;
+        }
+
+        .share-person-primary,
+        .share-person-secondary {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .share-person-primary {
+            font-weight: 600 !important;
+        }
+
+        .share-person-role {
+            flex: 0 0 auto;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.055);
+            color: var(--text-secondary) !important;
+            font-size: 0.78rem !important;
+        }
+
+        [data-theme="dark"] .share-person-role {
+            background: rgba(255, 255, 255, 0.075);
+        }
+
+        .share-person-role-select {
+            min-height: 38px;
+            border-radius: 999px !important;
+        }
+
+        .share-person-actions {
+            flex: 0 0 auto;
+        }
+
+        .share-person-remove {
+            min-height: 38px;
+            border-radius: 999px;
+        }
+
+        #share-modal-overlay .modal-content {
+            min-height: 0;
+            overflow-y: auto;
+            padding: 16px 24px 24px;
+            gap: 22px;
+        }
+
+        #share-modal-overlay .share-section {
+            gap: 10px;
+        }
+
+        #share-modal-overlay .share-label {
+            color: var(--text-primary);
+            font-family: 'Comfortaa', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .share-section-description {
+            margin-top: -5px;
+            color: var(--text-secondary);
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
+
+        .share-invite-controls {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(104px, 116px) auto;
+            gap: 8px;
+            align-items: stretch;
+            width: 100%;
+        }
+
+        #share-modal-overlay .share-input-group input[type="email"],
+        #share-modal-overlay .share-input-group select {
+            min-width: 0;
+            min-height: 48px;
+            border-color: rgba(0, 0, 0, 0.12);
+            border-radius: 14px;
+            background-color: var(--bg-primary);
+            outline: none;
+            transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+        }
+
+        [data-theme="dark"] #share-modal-overlay .share-input-group input[type="email"],
+        [data-theme="dark"] #share-modal-overlay .share-input-group select {
+            border-color: rgba(255, 255, 255, 0.13);
+        }
+
+        #share-modal-overlay .share-input-group input[type="email"]:focus,
+        #share-modal-overlay .share-input-group select:focus {
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 0 3px rgba(224, 122, 60, 0.14);
+            background-color: var(--bg-secondary);
+        }
+
+        #btn-send-share {
+            min-width: 84px;
+            min-height: 48px;
+            padding: 0 18px;
+            border: 0;
+            border-radius: 14px;
+            background: var(--accent-orange);
+            color: white;
+            box-shadow: 0 6px 16px rgba(224, 122, 60, 0.22);
+            font-weight: 700;
+        }
+
+        #btn-send-share:hover {
+            background: #ca6931;
+        }
+
+        #share-modal-overlay .link-access-group {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            min-height: 68px;
+            padding: 10px 12px;
+            border: 1px solid rgba(0, 0, 0, 0.07);
+            border-radius: 16px;
+            background: var(--bg-primary);
+        }
+
+        [data-theme="dark"] #share-modal-overlay .link-access-group {
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        #share-modal-overlay .link-access-info {
+            min-width: 0;
+            gap: 11px;
+        }
+
+        .share-link-icon {
+            display: grid;
+            width: 40px;
+            height: 40px;
+            flex: 0 0 40px;
+            place-items: center;
+            border-radius: 50%;
+            background: rgba(224, 122, 60, 0.14);
+            color: var(--accent-orange);
+        }
+
+        #share-modal-overlay .share-link-icon svg {
+            width: 21px;
+            height: 21px;
+            color: currentColor;
+        }
+
+        .share-link-access-copy {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        #share-modal-overlay .link-access-info select {
+            width: 100%;
+            min-height: 30px;
+            padding-top: 2px;
+            padding-bottom: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .share-link-access-hint {
+            overflow: hidden;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            line-height: 1.3;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        #share-link-role-select {
+            align-self: center;
+            min-width: 108px !important;
+            min-height: 42px !important;
+            border-radius: 999px !important;
+            background-color: var(--bg-secondary) !important;
+        }
+
+        #share-modal-overlay .copy-link-section {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding-top: 18px;
+        }
+
+        .share-copy-copy {
+            min-width: 0;
+        }
+
+        .share-copy-title {
+            color: var(--text-primary);
+            font-family: 'Comfortaa', sans-serif;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .share-copy-hint {
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            line-height: 1.35;
+        }
+
+        #btn-copy-share-link {
+            flex: 0 0 auto;
+            min-height: 46px;
+            padding: 0 16px;
+            border: 1px solid rgba(224, 122, 60, 0.25);
+            border-radius: 14px;
+            background: rgba(224, 122, 60, 0.1);
+            color: var(--accent-orange);
+            font-weight: 700;
+        }
+
+        #btn-copy-share-link:hover {
+            background: rgba(224, 122, 60, 0.17);
+        }
+
+        #share-modal-overlay .share-modal-loading .skel-owner-info {
+            padding: 18px 24px;
+            border-bottom: 0;
+        }
+
+        #share-modal-overlay .share-modal-loading .skel-content {
+            padding: 16px 24px 24px;
+            gap: 22px;
+        }
+
+        #share-modal-overlay.loading #share-owner-info,
+        #share-modal-overlay.loading .modal-content {
+            display: none;
+        }
+
+        #share-modal-overlay.loading .share-modal-loading {
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        @media (max-width: 600px) {
+            #share-modal-overlay {
+                align-items: flex-end;
+                padding: 0;
+            }
+
+            #share-modal-overlay .modal-container {
+                width: 100%;
+                max-width: none;
+                max-height: calc(100svh - 12px);
+                border-width: 1px 0 0;
+                border-radius: 26px 26px 0 0;
+                transform: translateY(24px);
+            }
+
+            #share-modal-overlay.visible .modal-container {
+                transform: translateY(0);
+            }
+
+            #share-modal-overlay .modal-header {
+                padding: 20px 20px 12px;
+            }
+
+            #share-modal-overlay .share-owner-info {
+                padding: 8px 20px 14px !important;
+                max-height: 180px;
+            }
+
+            #share-modal-overlay .modal-content {
+                padding: 14px 20px max(20px, env(safe-area-inset-bottom));
+                gap: 20px;
+            }
+
+            #share-modal-overlay .share-modal-loading .skel-owner-info {
+                padding: 16px 20px;
+            }
+
+            #share-modal-overlay .share-modal-loading .skel-content {
+                padding: 14px 20px max(20px, env(safe-area-inset-bottom));
+            }
+
+            #share-modal-overlay .share-modal-loading .skel-input-group {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 112px;
+            }
+
+            #share-modal-overlay .share-modal-loading .skel-select {
+                width: 100%;
+            }
+
+            #share-modal-overlay .share-modal-loading .skel-button {
+                grid-column: 1 / -1;
+                width: 100%;
+            }
+
+            .share-invite-controls {
+                grid-template-columns: minmax(0, 1fr) 112px;
+            }
+
+            #btn-send-share {
+                grid-column: 1 / -1;
+                width: 100%;
+            }
+
+            #share-modal-overlay .link-access-group {
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 8px;
+            }
+
+            #share-link-role-select {
+                min-width: 96px !important;
+            }
+
+            #share-modal-overlay .link-access-info {
+                gap: 8px;
+            }
+
+            #share-modal-overlay .share-link-icon {
+                width: 36px;
+                height: 36px;
+                flex-basis: 36px;
+            }
+
+            #share-modal-overlay .link-access-info select {
+                padding-right: 22px;
+                font-size: 0.84rem;
+            }
+
+            .share-person-row {
+                gap: 9px !important;
+                padding-right: 2px;
+                padding-left: 2px;
+            }
+
+            .share-person-actions {
+                gap: 4px !important;
+            }
+
+            .share-person-role-select {
+                max-width: 96px;
+                padding-right: 24px !important;
+                padding-left: 9px !important;
+            }
+
+            .share-person-remove {
+                padding-right: 8px !important;
+                padding-left: 8px !important;
+            }
+
+            #share-modal-overlay .copy-link-section {
+                align-items: stretch;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            #btn-copy-share-link {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
         /* Final mobile layout overrides (placed at end to win cascade) */
         @media (max-width: 720px) {
             :root {
@@ -7844,7 +8326,10 @@
     <div id="share-modal-overlay" class="modal-overlay">
         <div class="modal-container" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
             <div class="modal-header">
-                <h2 id="share-modal-title">Share document</h2>
+                <div class="share-title-block">
+                    <h2 id="share-modal-title">Share document</h2>
+                    <p class="share-modal-subtitle">Invite people or create a link for this note.</p>
+                </div>
                 <button type="button" class="btn btn-secondary btn-icon-square" id="btn-close-share-modal"
                     aria-label="Close" style="border:none;background:transparent;box-shadow:none;">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -7895,15 +8380,15 @@
 
             <div class="share-owner-info hidden" id="share-owner-info"
                 style="border-bottom:1px solid rgba(0,0,0,0.1);padding-bottom:16px;flex-direction:column;align-items:stretch;">
-                <div style="font-size:0.85rem;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">People
-                    with access</div>
+                <div class="share-access-heading">People with access</div>
                 <div id="share-access-list" style="display:flex;flex-direction:column;gap:12px;"></div>
             </div>
 
             <div class="modal-content">
                 <form id="share-invite-form" class="share-section">
                     <label for="share-email-input" class="share-label">Add people</label>
-                    <div class="share-input-group">
+                    <p class="share-section-description">Invite someone directly and choose what they can do.</p>
+                    <div class="share-input-group share-invite-controls">
                         <input type="email" id="share-email-input" placeholder="Email address" required
                             autocomplete="email">
                         <select id="share-role-select" aria-label="Select role">
@@ -7916,19 +8401,25 @@
 
                 <div class="share-section">
                     <label class="share-label">General access</label>
+                    <p class="share-section-description">Control who can open this document from its link.</p>
                     <div class="share-input-group link-access-group">
                         <div class="link-access-info">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="2" y1="12" x2="22" y2="12"></line>
-                                <path
-                                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
-                                </path>
-                            </svg>
-                            <select id="share-link-access-select" aria-label="Link access">
-                                <option value="restricted">Restricted</option>
-                                <option value="anyone">Anyone with the link</option>
-                            </select>
+                            <span class="share-link-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <path
+                                        d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z">
+                                    </path>
+                                </svg>
+                            </span>
+                            <span class="share-link-access-copy">
+                                <select id="share-link-access-select" aria-label="Link access">
+                                    <option value="restricted">Restricted</option>
+                                    <option value="anyone">Anyone with the link</option>
+                                </select>
+                                <span class="share-link-access-hint">Choose who can use this link</span>
+                            </span>
                         </div>
                         <select id="share-link-role-select" class="hidden" aria-label="Link role">
                             <option value="reader">Viewer</option>
@@ -7938,6 +8429,10 @@
                 </div>
 
                 <div class="share-section copy-link-section">
+                    <div class="share-copy-copy">
+                        <div class="share-copy-title">Share this note</div>
+                        <div class="share-copy-hint">The link uses the access level selected above.</div>
+                    </div>
                     <button type="button" class="btn btn-secondary" id="btn-copy-share-link">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
@@ -7949,7 +8444,7 @@
             </div>
         </div>
     </div>
-    <script src="live-collaboration-v5.js?v=5.2.1"></script>
+    <script src="live-collaboration-v5.js?v=5.2.2"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8017,7 +8512,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.2.1';
+        const APP_VERSION = '5.2.2';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -19126,6 +19621,7 @@
             const accessSelect = document.getElementById('share-link-access-select');
             const roleSelect = document.getElementById('share-link-role-select');
             const loadingEl = document.getElementById('share-modal-loading');
+            const accessHint = document.querySelector('.share-link-access-hint');
 
             if (!shareBtn || !shareModal) return;
 
@@ -19148,6 +19644,18 @@
                 applyShareSectionsVisibility(inviteForm, generalAccess, copySection, false);
                 if (accessSelect) accessSelect.value = 'restricted';
                 if (roleSelect) roleSelect.classList.add('hidden');
+                updateLinkAccessHint();
+            }
+
+            function updateLinkAccessHint() {
+                if (!accessHint || !accessSelect) return;
+                if (accessSelect.value !== 'anyone') {
+                    accessHint.textContent = 'Only people added above can open it';
+                    return;
+                }
+                accessHint.textContent = roleSelect?.value === 'writer'
+                    ? 'Anyone with the link can edit after sign-in'
+                    : 'Anyone with the link can view without sign-in';
             }
 
             function normalizeShareRole(role) {
@@ -19163,14 +19671,16 @@
             function renderOwnerOnlyRow(accessList, ownerInfo, ownerLabel, ownerPerm) {
                 if (!accessList || !ownerInfo) return;
                 accessList.innerHTML = '';
-                if (ownerLabel) ownerLabel.textContent = 'Owner';
+                if (ownerLabel) ownerLabel.textContent = 'People with access';
 
                 const row = document.createElement('div');
+                row.className = 'share-person-row';
                 row.style.display = 'flex';
                 row.style.alignItems = 'center';
                 row.style.gap = '12px';
 
                 const avatar = document.createElement('img');
+                avatar.className = 'share-person-avatar';
                 avatar.src = (ownerPerm && ownerPerm.photoLink) || state.driveOwnerPhoto || avatarFallback;
                 avatar.style.width = '36px';
                 avatar.style.height = '36px';
@@ -19178,6 +19688,7 @@
                 avatar.style.objectFit = 'cover';
 
                 const name = document.createElement('div');
+                name.className = 'share-person-primary';
                 name.textContent = (ownerPerm && ownerPerm.displayName) || state.driveOwnerName || state.driveOwnerEmail || 'Owner';
                 name.style.fontWeight = '500';
                 name.style.fontSize = '0.95rem';
@@ -19253,11 +19764,13 @@
                         visiblePermissions.forEach(perm => {
 
                             const row = document.createElement('div');
+                            row.className = 'share-person-row';
                             row.style.display = 'flex';
                             row.style.alignItems = 'center';
                             row.style.gap = '12px';
 
                             const avatar = document.createElement('img');
+                            avatar.className = 'share-person-avatar';
                             const isOwnerPermission = perm.role === 'owner';
                             avatar.src = perm.photoLink || (isOwnerPermission ? state.driveOwnerPhoto : '') || avatarFallback;
                             avatar.style.width = '36px';
@@ -19266,12 +19779,14 @@
                             avatar.style.objectFit = 'cover';
 
                             const details = document.createElement('div');
+                            details.className = 'share-person-details';
                             details.style.flex = '1';
                             details.style.display = 'flex';
                             details.style.flexDirection = 'column';
                             details.style.lineHeight = '1.3';
 
                             const name = document.createElement('div');
+                            name.className = 'share-person-primary';
                             name.textContent = perm.displayName
                                 || (isOwnerPermission ? state.driveOwnerName : '')
                                 || perm.emailAddress
@@ -19281,6 +19796,7 @@
                             name.style.color = 'var(--text-primary)';
 
                             const email = document.createElement('div');
+                            email.className = 'share-person-secondary';
                             email.textContent = perm.emailAddress || (isOwnerPermission ? state.driveOwnerEmail : '');
                             email.style.fontSize = '0.8rem';
                             email.style.color = 'var(--text-secondary)';
@@ -19292,18 +19808,21 @@
                             row.appendChild(details);
                             if (isOwnerPermission || !perm.id) {
                                 const roleLabel = document.createElement('div');
+                                roleLabel.className = 'share-person-role';
                                 roleLabel.textContent = roleLabelFromPermission(perm.role);
                                 roleLabel.style.fontSize = '0.85rem';
                                 roleLabel.style.color = 'var(--text-secondary)';
                                 row.appendChild(roleLabel);
                             } else {
                                 const actions = document.createElement('div');
+                                actions.className = 'share-person-actions';
                                 actions.style.display = 'flex';
                                 actions.style.alignItems = 'center';
                                 actions.style.gap = '8px';
 
                                 let currentRole = normalizeShareRole(perm.role);
                                 const permRoleSelect = document.createElement('select');
+                                permRoleSelect.className = 'share-person-role-select';
                                 permRoleSelect.setAttribute('aria-label', `Role for ${name.textContent}`);
                                 permRoleSelect.innerHTML = '<option value="reader">Viewer</option><option value="writer">Editor</option>';
                                 permRoleSelect.value = currentRole;
@@ -19316,7 +19835,7 @@
 
                                 const revokeBtn = document.createElement('button');
                                 revokeBtn.type = 'button';
-                                revokeBtn.className = 'btn btn-secondary';
+                                revokeBtn.className = 'btn btn-secondary share-person-remove';
                                 revokeBtn.textContent = 'Remove';
                                 revokeBtn.style.padding = '6px 10px';
                                 revokeBtn.style.fontSize = '0.8rem';
@@ -19375,6 +19894,7 @@
                         accessSelect.value = 'restricted';
                         roleSelect.classList.add('hidden');
                     }
+                    updateLinkAccessHint();
                 } catch (err) {
                     console.error('Failed to load permissions', err);
                     const isOwnerFallback = state.driveOwnedByMe !== false;
@@ -19443,6 +19963,7 @@
                 } else {
                     roleSelect.classList.add('hidden');
                 }
+                updateLinkAccessHint();
                 const role = access === 'anyone' ? roleSelect.value : 'restricted';
                 try {
                     await setDriveLinkPermission(state.driveFileId, role);
@@ -19457,6 +19978,7 @@
             roleSelect.addEventListener('change', async () => {
                 if (state.driveOwnedByMe === false) return;
                 if (!state.driveFileId || accessSelect.value !== 'anyone') return;
+                updateLinkAccessHint();
                 try {
                     await setDriveLinkPermission(state.driveFileId, roleSelect.value);
                     showStatus('Link role updated', { icon: 'check' });
@@ -19469,7 +19991,7 @@
 
             copyBtn.addEventListener('click', async () => {
                 if (state.driveOwnedByMe === false || !state.driveFileId) return;
-                const originalText = copyBtn.textContent;
+                const originalContent = copyBtn.innerHTML;
                 copyBtn.disabled = true;
                 copyBtn.textContent = 'Preparing public link...';
                 try {
@@ -19506,6 +20028,7 @@
                         roleSelect.value = requestedRole;
                         roleSelect.classList.remove('hidden');
                     }
+                    updateLinkAccessHint();
                     saveDriveSession();
                     showStatus(
                         requestedRole === 'writer'
@@ -19518,7 +20041,7 @@
                     showStatus(err?.message || 'Could not create a public link.', { error: true });
                 } finally {
                     copyBtn.disabled = false;
-                    copyBtn.textContent = originalText;
+                    copyBtn.innerHTML = originalContent;
                 }
             });
         }

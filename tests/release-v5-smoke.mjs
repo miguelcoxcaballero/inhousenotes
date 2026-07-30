@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.1.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.2.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.2\.1';/);
+assert.match(html, /const APP_VERSION = '5\.2\.2';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -40,6 +40,14 @@ assert.match(html, /params\.set\('mode', 'edit'\)/);
 assert.match(html, /Editor link copied/);
 assert.match(html, /function showSharedEditorSignInGate\(/);
 assert.match(html, /Sign in to edit/);
+assert.match(html, /class="share-input-group share-invite-controls"/);
+assert.match(html, /grid-template-columns: minmax\(0, 1fr\) 112px;/);
+assert.match(html, /#btn-send-share \{\s*grid-column: 1 \/ -1;/);
+assert.match(html, /class="share-link-icon"/);
+assert.match(html, /class="share-copy-copy"/);
+assert.match(html, /function updateLinkAccessHint\(/);
+assert.match(html, /const originalContent = copyBtn\.innerHTML;/);
+assert.match(html, /copyBtn\.innerHTML = originalContent;/);
 assert.doesNotMatch(
   html.slice(html.indexOf("copyBtn.addEventListener('click'"), html.indexOf('// Setup event listeners')),
   /setDriveLinkPermission\(state\.driveFileId, 'reader'\)/,
@@ -150,11 +158,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.2.1');
+assert.equal(update.publishedAppVersion, '5.2.2');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.2\.1/);
-assert.match(notes, /preserves the selected role/i);
-assert.match(notes, /real Inhouse Notes editor/i);
-assert.match(notes, /OAuth/i);
+assert.match(update.releaseNotes, /v5\.2\.2/);
+assert.match(notes, /responsive sharing sheet/i);
+assert.match(notes, /mobile/i);
+assert.match(notes, /Copy link/i);
 
-console.log('v5.2.1 smoke checks passed.');
+console.log('v5.2.2 smoke checks passed.');
