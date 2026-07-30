@@ -3,6 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.2.5",
-  "releaseNotes": "Inhouse Notes v5.2.5: reliable drag, pinch and zoom controls for every anonymous public preview, plus a smaller responsive sign-in notice."
+  "publishedAppVersion": "5.3.0",
+  "releaseNotes": "Inhouse Notes v5.3.0: self-healing peer-to-peer connections, reliable first-edit delivery, deferred Drive merge protection, causal undo/deletion metadata, and deterministic multi-device page, agenda, reorder and cross-page conflict handling."
 }

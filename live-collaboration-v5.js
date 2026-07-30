@@ -8,6 +8,20 @@ const IHN_LIVE_CHUNK = 16_000;
 const IHN_LIVE_MAX_CHUNKS = 5000;
 const IHN_LIVE_MAX_CHARS = 50_000_000;
 const IHN_LIVE_LEADER_TTL = 7000;
+const IHN_LIVE_SUPERVISOR_MS = 2000;
+const IHN_LIVE_CONNECT_TIMEOUT = 12_000;
+const IHN_LIVE_DISCONNECTED_GRACE = 5000;
+const IHN_LIVE_PING_INTERVAL = 4000;
+const IHN_LIVE_HEALTH_TIMEOUT = 20_000;
+const IHN_LIVE_ACK_TIMEOUT = 20_000;
+const IHN_LIVE_APPLY_ACK_TIMEOUT = 120_000;
+const IHN_LIVE_LEGACY_PROBE_TIMEOUT = 90_000;
+const IHN_LIVE_PEER_EXPIRY = 30_000;
+const IHN_LIVE_HEALTHY_RESET_MS = 15_000;
+const IHN_LIVE_FAILED_SIGNAL_RETRY_MS = 5000;
+const IHN_LIVE_FAILED_SIGNAL_MAX = 256;
+const IHN_LIVE_BROADCAST_RETRY_LIMIT = 4;
+const IHN_LIVE_APPLY_COALESCE_MS = 36;
 const IHN_LIVE_STUN = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' }
@@ -18,28 +32,56 @@ let ihnLiveBroadcastFileId = '';
 let ihnLiveLeaderTimer = null;
 let ihnLiveSignalTimer = null;
 let ihnLiveCapabilityTimer = null;
+let ihnLiveSupervisorTimer = null;
 let ihnLiveSignalBusy = false;
+let ihnLiveSignalRunId = 0;
 let ihnLiveCryptoKey = null;
 let ihnLiveCryptoFileId = '';
+let ihnLiveCryptoKeyLoad = null;
+let ihnLiveCryptoKeyLoadFileId = '';
+let ihnLiveCryptoKeyRefresh = null;
+let ihnLiveCryptoKeyRefreshFileId = '';
+let ihnLiveCryptoKeyGeneration = 0;
+let ihnLiveCryptoKeyFingerprint = '';
+let ihnLiveFailedSignalRefreshAt = 0;
+let ihnLiveFailedSignalRefreshKey = '';
 let ihnLiveBroadcastTimer = null;
 let ihnLiveBroadcastBusy = false;
+let ihnLiveBroadcastRunId = 0;
 let ihnLiveBroadcastQueued = false;
+let ihnLiveBroadcastForce = false;
+let ihnLiveBroadcastRetryAttempt = 0;
+const ihnLiveBroadcastTargets = new Set();
 let ihnLiveApplying = false;
+let ihnLiveApplyQueue = Promise.resolve();
+let ihnLiveApplyDrainPromise = null;
+let ihnLiveActiveApply = null;
 let ihnLiveSequence = Date.now();
-let ihnLiveLastHash = '';
+let ihnLiveLastAppliedHash = '';
+let ihnLiveLastTabSentHash = '';
+let ihnLiveMergeUploadGuard = null;
 let ihnLiveMainPeerId = '';
+let ihnLiveGeneration = 0;
 const ihnLivePeers = new Map();
+const ihnLiveKnownPeers = new Map();
+const ihnLiveRetryState = new Map();
 const ihnLiveSeen = new Map();
+const ihnLiveAppliedHashes = new Map();
 const ihnLiveChunks = new Map();
-const ihnLiveProcessedOffers = new Set();
+const ihnLiveProcessedOffers = new Map();
+const ihnLiveFailedSignals = new Map();
+const ihnLivePendingApplies = new Map();
+const ihnLiveFanOutTasks = new Set();
 
 function ihnGetLiveTabId() {
     if (ihnLiveTabId) return ihnLiveTabId;
-    try { ihnLiveTabId = sessionStorage.getItem('ihn-live-tab-v1') || ''; } catch (error) {}
-    if (!ihnLiveTabId) {
-        ihnLiveTabId = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
-        try { sessionStorage.setItem('ihn-live-tab-v1', ihnLiveTabId); } catch (error) {}
-    }
+    // sessionStorage can be cloned when a tab is duplicated. A per-JS-realm
+    // identity prevents two tabs from sharing one actor/sequence stream and
+    // accidentally suppressing each other's simultaneous edits.
+    const randomPart = typeof crypto?.randomUUID === 'function'
+        ? crypto.randomUUID().replace(/-/g, '')
+        : Math.random().toString(36).slice(2);
+    ihnLiveTabId = `t${Date.now().toString(36)}${randomPart.slice(0, 14)}`;
     return ihnLiveTabId;
 }
 
@@ -105,50 +147,344 @@ function ihnBase64UrlToBytes(value) {
     return Uint8Array.from(binary, char => char.charCodeAt(0));
 }
 
+function ihnInvalidateSignalKey(fileId = '') {
+    if (fileId && ihnLiveCryptoFileId && ihnLiveCryptoFileId !== fileId) return false;
+    ihnLiveCryptoKey = null;
+    ihnLiveCryptoFileId = '';
+    ihnLiveCryptoKeyFingerprint = '';
+    ihnLiveCryptoKeyGeneration += 1;
+    return true;
+}
+
+async function ihnReadSignalKeyProperty(fileId) {
+    const propertyName = 'ihn_live_key_v1';
+    const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=properties`, {
+        method: 'GET', timeout: DRIVE_META_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
+    });
+    return String((await response.json())?.properties?.[propertyName] || '');
+}
+
+async function ihnImportSignalKey(encoded) {
+    if (!encoded) throw new Error('Live signalling key unavailable');
+    return crypto.subtle.importKey(
+        'raw',
+        ihnBase64UrlToBytes(encoded),
+        'AES-GCM',
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+function ihnAssertSignalKeyContext(fileId, generation) {
+    if (!fileId
+        || state?.driveFileId !== fileId
+        || generation !== ihnLiveCryptoKeyGeneration) {
+        throw new Error('Live signalling document changed');
+    }
+}
+
+function ihnAssertLiveSessionContext(fileId, generation) {
+    if (!fileId
+        || state?.driveFileId !== fileId
+        || generation !== ihnLiveGeneration) {
+        throw new Error('Live collaboration document changed');
+    }
+}
+
+function ihnCaptureLiveOperationContext(fileId = state?.driveFileId || '') {
+    let sessionToken = null;
+    try {
+        if (typeof getDocumentSessionToken === 'function') {
+            sessionToken = getDocumentSessionToken();
+        }
+    } catch (error) {
+        sessionToken = null;
+    }
+    return {
+        fileId: String(fileId || ''),
+        generation: ihnLiveGeneration,
+        sessionToken
+    };
+}
+
+function ihnLiveOperationContextIsCurrent(operation) {
+    if (!operation
+        || !operation.fileId
+        || state?.driveFileId !== operation.fileId
+        || operation.generation !== ihnLiveGeneration) {
+        return false;
+    }
+    if (operation.sessionToken === null
+        || operation.sessionToken === undefined
+        || typeof isDocumentSessionTokenValid !== 'function') {
+        return true;
+    }
+    try {
+        return !!isDocumentSessionTokenValid(operation.sessionToken);
+    } catch (error) {
+        return false;
+    }
+}
+
+function ihnAssertLiveOperationContext(operation) {
+    if (ihnLiveOperationContextIsCurrent(operation)) return;
+    const error = new Error('Live collaboration document changed');
+    error.code = 'IHN_LIVE_STALE_CONTEXT';
+    throw error;
+}
+
+function ihnCanEditLiveDocument() {
+    return !!state && state.driveCanEdit !== false;
+}
+
+function ihnCacheSignalKey(fileId, key, generation, encoded = '') {
+    if (!key) return key;
+    ihnAssertSignalKeyContext(fileId, generation);
+    ihnLiveCryptoKey = key;
+    ihnLiveCryptoFileId = fileId;
+    ihnLiveCryptoKeyFingerprint = encoded ? simpleHash(encoded) : '';
+    return key;
+}
+
+async function ihnCreateAndVerifySignalKey(fileId, generation) {
+    ihnAssertSignalKeyContext(fileId, generation);
+    const propertyName = 'ihn_live_key_v1';
+    const random = new Uint8Array(32);
+    crypto.getRandomValues(random);
+    const candidate = ihnBytesToBase64Url(random);
+    ihnAssertSignalKeyContext(fileId, generation);
+    await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,properties`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ properties: { [propertyName]: candidate } })
+    });
+    ihnAssertSignalKeyContext(fileId, generation);
+
+    // Another editor may have observed the empty property and written its own
+    // candidate at the same time. Never assume our PATCH won: read Drive again
+    // and import the value that is authoritative after the write.
+    const authoritative = await ihnReadSignalKeyProperty(fileId);
+    ihnAssertSignalKeyContext(fileId, generation);
+    if (!authoritative) throw new Error('Live signalling key was not confirmed by Drive');
+    return ihnCacheSignalKey(fileId, await ihnImportSignalKey(authoritative), generation, authoritative);
+}
+
+async function ihnGetAuthoritativeSignalKeyForWrite() {
+    if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit) return null;
+    const fileId = state.driveFileId;
+    if (ihnLiveCryptoKeyRefresh && ihnLiveCryptoKeyRefreshFileId === fileId) {
+        return ihnLiveCryptoKeyRefresh;
+    }
+    const refresh = (async () => {
+        // If this tab is still performing the first read/create, wait for that
+        // write to settle and then compare against Drive once more. Joining the
+        // creation alone is insufficient: another device may win immediately
+        // after our compare-after-write read.
+        if (ihnLiveCryptoKeyLoad && ihnLiveCryptoKeyLoadFileId === fileId) {
+            try { await ihnLiveCryptoKeyLoad; } catch (error) { /* authoritative read below decides */ }
+        }
+        if (state?.driveFileId !== fileId) {
+            throw new Error('Live signalling document changed');
+        }
+        const generation = ihnLiveCryptoKeyGeneration;
+        const encoded = await ihnReadSignalKeyProperty(fileId);
+        ihnAssertSignalKeyContext(fileId, generation);
+        if (encoded) {
+            return ihnCacheSignalKey(fileId, await ihnImportSignalKey(encoded), generation, encoded);
+        }
+        return ihnCreateAndVerifySignalKey(fileId, generation);
+    })();
+    ihnLiveCryptoKeyRefresh = refresh;
+    ihnLiveCryptoKeyRefreshFileId = fileId;
+    try {
+        return await refresh;
+    } finally {
+        if (ihnLiveCryptoKeyRefresh === refresh) {
+            ihnLiveCryptoKeyRefresh = null;
+            ihnLiveCryptoKeyRefreshFileId = '';
+        }
+    }
+}
+
 async function ihnEnsureSignalKey() {
     if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit) return null;
+    if (ihnLiveCryptoKeyRefresh && ihnLiveCryptoKeyRefreshFileId === state.driveFileId) {
+        return ihnLiveCryptoKeyRefresh;
+    }
     if (ihnLiveCryptoKey && ihnLiveCryptoFileId === state.driveFileId) return ihnLiveCryptoKey;
     const fileId = state.driveFileId;
-    const propertyName = 'ihn_live_key_v1';
-    const read = async () => {
-        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=properties`, {
-            method: 'GET', timeout: DRIVE_META_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
-        });
-        return String((await response.json())?.properties?.[propertyName] || '');
-    };
-    let encoded = await read().catch(() => '');
-    if (!encoded) {
-        const random = new Uint8Array(32);
-        crypto.getRandomValues(random);
-        const candidate = ihnBytesToBase64Url(random);
-        await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,properties`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ properties: { [propertyName]: candidate } })
-        });
-        encoded = await read().catch(() => candidate);
+    if (ihnLiveCryptoKeyLoad && ihnLiveCryptoKeyLoadFileId === fileId) {
+        return ihnLiveCryptoKeyLoad;
     }
-    ihnLiveCryptoKey = await crypto.subtle.importKey('raw', ihnBase64UrlToBytes(encoded), 'AES-GCM', false, ['encrypt', 'decrypt']);
-    ihnLiveCryptoFileId = fileId;
-    return ihnLiveCryptoKey;
+    const generation = ihnLiveCryptoKeyGeneration;
+    const load = (async () => {
+        // A failed GET is not evidence that the property is absent. Propagating
+        // that error prevents a transient Drive failure from replacing a valid
+        // shared key with a new candidate.
+        const encoded = await ihnReadSignalKeyProperty(fileId);
+        ihnAssertSignalKeyContext(fileId, generation);
+        if (encoded) {
+            return ihnCacheSignalKey(fileId, await ihnImportSignalKey(encoded), generation, encoded);
+        }
+        return ihnCreateAndVerifySignalKey(fileId, generation);
+    })();
+    ihnLiveCryptoKeyLoad = load;
+    ihnLiveCryptoKeyLoadFileId = fileId;
+    try {
+        return await load;
+    } finally {
+        if (ihnLiveCryptoKeyLoad === load) {
+            ihnLiveCryptoKeyLoad = null;
+            ihnLiveCryptoKeyLoadFileId = '';
+        }
+    }
+}
+
+async function ihnReloadSignalKeyFromDrive(fileId) {
+    if (!fileId || state?.driveFileId !== fileId) {
+        throw new Error('Live signalling document changed');
+    }
+    ihnInvalidateSignalKey(fileId);
+    const generation = ihnLiveCryptoKeyGeneration;
+    const encoded = await ihnReadSignalKeyProperty(fileId);
+    ihnAssertSignalKeyContext(fileId, generation);
+    if (!encoded) throw new Error('Live signalling key unavailable');
+    return ihnCacheSignalKey(fileId, await ihnImportSignalKey(encoded), generation, encoded);
 }
 
 async function ihnEncodeSignal(payload) {
-    const key = await ihnEnsureSignalKey();
+    // Offers and answers are retry boundaries. Always re-read the property so
+    // an initiator that lost a concurrent first-write race adopts the final key
+    // on its next offer even when it never received a decryptable answer.
+    const fileId = state?.driveFileId || '';
+    if (payload?.fileId && payload.fileId !== fileId) {
+        throw new Error('Live signalling document changed');
+    }
+    const key = await ihnGetAuthoritativeSignalKeyForWrite();
     if (!key) throw new Error('Live signalling key unavailable');
+    const generation = ihnLiveCryptoKeyGeneration;
+    ihnAssertSignalKeyContext(fileId, generation);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const plain = new TextEncoder().encode(JSON.stringify(payload));
     const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain));
+    ihnAssertSignalKeyContext(fileId, generation);
     const packed = new Uint8Array(iv.length + cipher.length);
     packed.set(iv); packed.set(cipher, iv.length);
     return IHN_LIVE_SIGNAL_PREFIX + ihnBytesToBase64Url(packed);
 }
 
+function ihnFailedSignalId(content) {
+    const value = String(content || '');
+    return `${simpleHash(value)}:${value.length}`;
+}
+
+function ihnPruneFailedSignals(now = Date.now()) {
+    ihnLiveFailedSignals.forEach((record, signalId) => {
+        if (!record || Number(record.retryAfter || 0) <= now) {
+            ihnLiveFailedSignals.delete(signalId);
+        }
+    });
+    while (ihnLiveFailedSignals.size > IHN_LIVE_FAILED_SIGNAL_MAX) {
+        const oldest = ihnLiveFailedSignals.keys().next().value;
+        if (oldest === undefined) break;
+        ihnLiveFailedSignals.delete(oldest);
+    }
+}
+
+function ihnRememberFailedSignal(content, keyFingerprint, retryAfter) {
+    if (!keyFingerprint) return;
+    const ciphertext = String(content || '');
+    const signalId = ihnFailedSignalId(content);
+    ihnLiveFailedSignals.delete(signalId);
+    ihnLiveFailedSignals.set(signalId, {
+        ciphertext,
+        keyFingerprint,
+        retryAfter: Number(retryAfter) || (Date.now() + IHN_LIVE_FAILED_SIGNAL_RETRY_MS)
+    });
+    ihnPruneFailedSignals();
+}
+
+function ihnShouldSkipFailedSignal(content, keyFingerprint, now = Date.now()) {
+    if (!keyFingerprint) return false;
+    ihnPruneFailedSignals(now);
+    const ciphertext = String(content || '');
+    const record = ihnLiveFailedSignals.get(ihnFailedSignalId(ciphertext));
+    return !!record
+        && record.ciphertext === ciphertext
+        && record.keyFingerprint === keyFingerprint
+        && Number(record.retryAfter || 0) > now;
+}
+
 async function ihnDecodeSignal(content) {
     if (!String(content || '').startsWith(IHN_LIVE_SIGNAL_PREFIX)) return null;
+    let packed;
     try {
-        const key = await ihnEnsureSignalKey();
-        const packed = ihnBase64UrlToBytes(String(content).slice(IHN_LIVE_SIGNAL_PREFIX.length));
-        const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: packed.slice(0, 12) }, key, packed.slice(12));
+        packed = ihnBase64UrlToBytes(String(content).slice(IHN_LIVE_SIGNAL_PREFIX.length));
+        if (packed.length <= 12) return null;
+    } catch (error) {
+        return null;
+    }
+    const fileId = state?.driveFileId || '';
+    let key;
+    try {
+        key = await ihnEnsureSignalKey();
+        if (!key) return null;
+    } catch (error) {
+        return null;
+    }
+    const keyFingerprint = ihnLiveCryptoKeyFingerprint;
+    if (ihnShouldSkipFailedSignal(content, keyFingerprint)) return null;
+    let plain;
+    try {
+        plain = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: packed.slice(0, 12) },
+            key,
+            packed.slice(12)
+        );
+    } catch (firstDecryptError) {
+        // A concurrent first-write can leave this client with the losing key.
+        // Refresh directly from Drive and retry the decrypt once. This is
+        // deliberately non-recursive so corrupt/stale signals cannot cause a
+        // refresh loop.
+        const failedAt = Date.now();
+        if (keyFingerprint
+            && ihnLiveFailedSignalRefreshKey === keyFingerprint
+            && failedAt - ihnLiveFailedSignalRefreshAt < IHN_LIVE_FAILED_SIGNAL_RETRY_MS) {
+            ihnRememberFailedSignal(
+                content,
+                keyFingerprint,
+                ihnLiveFailedSignalRefreshAt + IHN_LIVE_FAILED_SIGNAL_RETRY_MS
+            );
+            return null;
+        }
+        let refreshedKey;
+        try {
+            refreshedKey = await ihnReloadSignalKeyFromDrive(fileId);
+        } catch (refreshError) {
+            ihnLiveFailedSignalRefreshAt = failedAt;
+            ihnLiveFailedSignalRefreshKey = keyFingerprint;
+            ihnRememberFailedSignal(content, keyFingerprint, failedAt + IHN_LIVE_FAILED_SIGNAL_RETRY_MS);
+            return null;
+        }
+        const refreshedAt = Date.now();
+        const refreshedFingerprint = ihnLiveCryptoKeyFingerprint || keyFingerprint;
+        ihnLiveFailedSignalRefreshAt = refreshedAt;
+        ihnLiveFailedSignalRefreshKey = refreshedFingerprint;
+        try {
+            plain = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: packed.slice(0, 12) },
+                refreshedKey,
+                packed.slice(12)
+            );
+        } catch (secondDecryptError) {
+            ihnRememberFailedSignal(
+                content,
+                refreshedFingerprint,
+                refreshedAt + IHN_LIVE_FAILED_SIGNAL_RETRY_MS
+            );
+            return null;
+        }
+    }
+    try {
         return JSON.parse(new TextDecoder().decode(plain));
     } catch (error) {
         return null;
@@ -170,21 +506,168 @@ function ihnWaitForIce(pc, timeout = 3800) {
     });
 }
 
-function ihnClosePeer(peerId, reason = '') {
+function ihnGetRetryState(peerId) {
+    if (!ihnLiveRetryState.has(peerId)) {
+        ihnLiveRetryState.set(peerId, {
+            failures: 0,
+            nextAttemptAt: 0,
+            lastReason: ''
+        });
+    }
+    return ihnLiveRetryState.get(peerId);
+}
+
+function ihnKnownPeerLastSeenAt(known) {
+    return Math.max(
+        Number(known?.lastSeenAt || 0),
+        Number(known?.lastPeerSeenAt || 0)
+    );
+}
+
+function ihnTouchKnownPeerFromChannel(peerId, at = Date.now()) {
+    if (!peerId) return;
+    const known = ihnLiveKnownPeers.get(peerId);
+    if (known) {
+        known.lastPeerSeenAt = Math.max(Number(known.lastPeerSeenAt || 0), Number(at) || 0);
+        return;
+    }
+    // A decrypted signalling exchange and an open data channel are direct
+    // evidence of the peer even if Drive presence is temporarily delayed.
+    ihnLiveKnownPeers.set(peerId, {
+        lastSeenAt: 0,
+        lastPeerSeenAt: Number(at) || Date.now(),
+        record: null
+    });
+}
+
+function ihnPeerIsExpected(peerId) {
+    const known = ihnLiveKnownPeers.get(peerId);
+    return !!known && Date.now() - ihnKnownPeerLastSeenAt(known) <= IHN_LIVE_PEER_EXPIRY;
+}
+
+function ihnCanInitiatePeer(peerId) {
+    return !!(
+        peerId
+        && ihnPeerIsExpected(peerId)
+        && ihnIsLiveLeader()
+        && state?.driveFileId
+        && state.driveCanEdit
+        && driveAccessToken
+        && ihnGetLivePeerId() < peerId
+    );
+}
+
+function ihnSchedulePeerRetry(peerId, reason = '', options = {}) {
+    if (!ihnCanInitiatePeer(peerId)) return;
+    const retry = ihnGetRetryState(peerId);
+    if (options.reset) retry.failures = 0;
+    else if (!options.preserveFailures) retry.failures = Math.min(7, retry.failures + 1);
+    retry.lastReason = reason;
+    retry.nextAttemptAt = options.immediate
+        ? Date.now()
+        : Date.now() + ihnComputeReconnectDelay(Math.max(0, retry.failures - 1), peerId);
+}
+
+function ihnResetPeerRetry(peerId) {
+    const retry = ihnGetRetryState(peerId);
+    retry.failures = 0;
+    retry.nextAttemptAt = 0;
+    retry.lastReason = '';
+}
+
+function ihnPeerChannelIsHealthy(peer, now = Date.now()) {
+    if (peer?.channel?.readyState !== 'open') return false;
+    const lastReceivedAt = Number(peer.lastReceivedAt || peer.openedAt || 0);
+    const timeout = peer.protocolV2 ? IHN_LIVE_HEALTH_TIMEOUT : IHN_LIVE_LEGACY_PROBE_TIMEOUT;
+    return lastReceivedAt > 0 && now - lastReceivedAt <= timeout;
+}
+
+function ihnMarkPeerHealthy(peerId, peer, reason = '') {
+    if (!peer || ihnLivePeers.get(peerId) !== peer || peer.channel?.readyState !== 'open') return false;
+    if (reason !== 'ack'
+        && Date.now() - Number(peer.openedAt || 0) < IHN_LIVE_HEALTHY_RESET_MS) {
+        return false;
+    }
+    ihnResetPeerRetry(peerId);
+    peer.healthyAt = Date.now();
+    return true;
+}
+
+function ihnDeleteSignalComment(peer) {
+    const commentId = String(peer?.commentId || '');
+    const fileId = String(peer?.fileId || state?.driveFileId || '');
+    if (!commentId || !fileId || !driveAccessToken) return;
+    peer.commentId = '';
+    driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${commentId}`, {
+        method: 'DELETE',
+        timeout: DRIVE_META_TIMEOUT
+    }).catch(() => {});
+}
+
+function ihnClosePeer(peerId, reason = '', options = {}) {
     const peer = ihnLivePeers.get(peerId);
-    if (!peer) return;
+    if (!peer) {
+        if (options.retry) ihnSchedulePeerRetry(peerId, reason, options);
+        return;
+    }
+    if (peer.closing) return;
+    peer.closing = true;
+    ihnLivePeers.delete(peerId);
+    ihnDeleteSignalComment(peer);
     try { peer.channel?.close(); } catch (error) {}
     try { peer.pc?.close(); } catch (error) {}
-    ihnLivePeers.delete(peerId);
+    if (options.retry !== false) ihnSchedulePeerRetry(peerId, reason, options);
     if (reason) console.info(`Live peer ${peerId} closed: ${reason}`);
+    if (typeof refreshPresenceViews === 'function') refreshPresenceViews();
+}
+
+function ihnSendControl(peer, payload) {
+    if (peer?.channel?.readyState !== 'open') return false;
+    try {
+        peer.channel.send(JSON.stringify(payload));
+        peer.lastSentAt = Date.now();
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+function ihnObservePeerDocumentHash(peerId, contentHash) {
+    const peer = ihnLivePeers.get(peerId);
+    const observedHash = String(contentHash || '');
+    if (!peer || !observedHash) return false;
+    peer.remoteCurrentHash = observedHash;
+    // An ACK is evidence of a past delivery, not a permanent assertion of the
+    // peer's current state. Once that peer advertises another document hash,
+    // a later local return to the old hash must be delivered again.
+    if (peer.lastAckedHash && peer.lastAckedHash !== observedHash) {
+        peer.lastAckedHash = '';
+    }
+    if (peer.pendingAckHash && peer.pendingAckHash !== observedHash) {
+        peer.pendingAckHash = '';
+        peer.pendingAckAt = 0;
+        peer.pendingAckReceivedHash = '';
+        peer.pendingAckReceivedAt = 0;
+    }
+    return true;
 }
 
 function ihnConfigurePeer(peerId, pc, peer) {
-    pc.onconnectionstatechange = () => {
-        peer.status = pc.connectionState;
-        if (pc.connectionState === 'connected') ihnRefreshPeerPath(peer).catch(() => {});
-        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') ihnClosePeer(peerId, pc.connectionState);
+    const updateConnectionState = () => {
+        if (ihnLivePeers.get(peerId) !== peer || peer.closing) return;
+        const connectionState = pc.connectionState || pc.iceConnectionState || 'connecting';
+        peer.status = connectionState;
+        if (connectionState === 'connected' || connectionState === 'completed') {
+            peer.disconnectedAt = 0;
+            ihnRefreshPeerPath(peer).catch(() => {});
+        } else if (connectionState === 'disconnected') {
+            if (!peer.disconnectedAt) peer.disconnectedAt = Date.now();
+        } else if (connectionState === 'failed' || connectionState === 'closed') {
+            ihnClosePeer(peerId, connectionState, { retry: true });
+        }
     };
+    pc.onconnectionstatechange = updateConnectionState;
+    pc.oniceconnectionstatechange = updateConnectionState;
     pc.ondatachannel = event => ihnConfigureChannel(peerId, event.channel, peer);
 }
 
@@ -192,17 +675,58 @@ function ihnConfigureChannel(peerId, channel, peer) {
     peer.channel = channel;
     channel.bufferedAmountLowThreshold = 512_000;
     channel.onopen = () => {
-        peer.status = 'open'; peer.openedAt = Date.now();
-        ihnRefreshPeerPath(peer).catch(() => {});
-        if (peer.commentId && peer.initiator && state.driveFileId && driveAccessToken) {
-            driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}/comments/${peer.commentId}`, { method: 'DELETE' }).catch(() => {});
-            peer.commentId = '';
+        if (ihnLivePeers.get(peerId) !== peer || peer.closing) {
+            try { channel.close(); } catch (error) {}
+            return;
         }
-        scheduleLiveDocumentBroadcast({ immediate: true });
+        const now = Date.now();
+        peer.status = 'open';
+        peer.openedAt = now;
+        peer.lastReceivedAt = now;
+        peer.lastPongAt = now;
+        peer.lastPingAt = 0;
+        peer.disconnectedAt = 0;
+        peer.lastSentHash = '';
+        peer.pendingAckHash = '';
+        peer.pendingAckAt = 0;
+        peer.pendingAckReceivedHash = '';
+        peer.pendingAckReceivedAt = 0;
+        peer.sendQueue = Promise.resolve();
+        ihnTouchKnownPeerFromChannel(peerId, now);
+        ihnRefreshPeerPath(peer).catch(() => {});
+        ihnDeleteSignalComment(peer);
+        ihnSendControl(peer, { t: 'hello', at: now });
+        ihnSendControl(peer, { t: 'state-request', at: now });
+        // Delivery state is per peer. A newly recovered route always receives
+        // the current document even when no user edit occurred during fallback.
+        scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
+        if (typeof refreshPresenceViews === 'function') refreshPresenceViews();
     };
-    channel.onclose = () => { peer.status = 'closed'; };
-    channel.onerror = error => console.warn('Live data channel error:', error);
-    channel.onmessage = event => ihnHandleWireMessage(event.data, peerId).catch(error => console.warn('Live message rejected:', error));
+    channel.onclose = () => {
+        if (!peer.closing && ihnLivePeers.get(peerId) === peer) {
+            ihnClosePeer(peerId, 'data channel closed', { retry: true });
+        }
+    };
+    channel.onerror = error => {
+        console.warn('Live data channel error:', error);
+        if (!peer.channelErrorAt) peer.channelErrorAt = Date.now();
+    };
+    channel.onmessage = event => {
+        if (ihnLivePeers.get(peerId) !== peer
+            || peer.channel !== channel
+            || peer.closing
+            || peer.fileId !== state?.driveFileId
+            || peer.generation !== ihnLiveGeneration) {
+            return;
+        }
+        ihnHandleWireMessage(
+            event.data,
+            peerId,
+            peer,
+            channel,
+            ihnCaptureLiveOperationContext(peer.fileId)
+        ).catch(error => console.warn('Live message rejected:', error));
+    };
 }
 
 async function ihnCreateOffer(targetPeerId) {
@@ -211,27 +735,54 @@ async function ihnCreateOffer(targetPeerId) {
     if (!targetPeerId || ownId >= targetPeerId) return;
     const current = ihnLivePeers.get(targetPeerId);
     if (current && ['new', 'connecting', 'open'].includes(current.status)) return;
-    if (current) ihnClosePeer(targetPeerId, 'reconnect');
+    if (current) ihnClosePeer(targetPeerId, 'reconnect', { retry: false });
+    const fileId = state.driveFileId;
+    const generation = ihnLiveGeneration;
     const pc = new RTCPeerConnection({ iceServers: IHN_LIVE_STUN });
     const peer = { pc, channel: null, status: 'connecting', initiator: true,
         sessionId: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
-        commentId: '', createdAt: Date.now() };
+        commentId: '', createdAt: Date.now(), fileId, generation, closing: false,
+        lastReceivedAt: 0, lastPongAt: 0, lastSentHash: '', lastAckedHash: '',
+        remoteCurrentHash: '', pendingAckHash: '', pendingAckAt: 0,
+        pendingAckReceivedHash: '', pendingAckReceivedAt: 0, disconnectedAt: 0 };
     ihnLivePeers.set(targetPeerId, peer);
     ihnConfigurePeer(targetPeerId, pc, peer);
     ihnConfigureChannel(targetPeerId, pc.createDataChannel('inhousenotes-live-v5', { ordered: true }), peer);
     try {
         await pc.setLocalDescription(await pc.createOffer());
         await ihnWaitForIce(pc);
-        const content = await ihnEncodeSignal({ v: 1, type: 'offer', fileId: state.driveFileId,
+        ihnAssertLiveSessionContext(fileId, generation);
+        if (ihnLivePeers.get(targetPeerId) !== peer) {
+            throw new Error('Live peer connection was replaced');
+        }
+        const content = await ihnEncodeSignal({ v: 1, type: 'offer', fileId,
             from: ownId, to: targetPeerId, sessionId: peer.sessionId,
             expiresAt: Date.now() + IHN_LIVE_SIGNAL_TTL, description: pc.localDescription });
-        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}/comments?fields=id,createdTime`, {
+        ihnAssertLiveSessionContext(fileId, generation);
+        if (ihnLivePeers.get(targetPeerId) !== peer) {
+            throw new Error('Live peer connection was replaced');
+        }
+        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments?fields=id,createdTime`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
         });
-        peer.commentId = (await response.json()).id || '';
+        const responseData = await response.json();
+        if (ihnLivePeers.get(targetPeerId) !== peer
+            || generation !== ihnLiveGeneration
+            || state.driveFileId !== fileId) {
+            const staleCommentId = responseData.id || '';
+            if (staleCommentId && driveAccessToken) {
+                driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${staleCommentId}`, {
+                    method: 'DELETE'
+                }).catch(() => {});
+            }
+            return;
+        }
+        peer.commentId = responseData.id || '';
     } catch (error) {
         console.warn('Direct connection unavailable; Drive fallback remains active:', error);
-        ihnClosePeer(targetPeerId, 'offer failed');
+        if (ihnLivePeers.get(targetPeerId) === peer) {
+            ihnClosePeer(targetPeerId, 'offer failed', { retry: true });
+        }
     }
 }
 
@@ -240,27 +791,46 @@ async function ihnAcceptOffer(comment, offer) {
     if (!offer || offer.to !== ownId || offer.from === ownId || offer.fileId !== state.driveFileId || Number(offer.expiresAt) < Date.now()) return;
     const offerKey = `${comment.id}:${offer.sessionId}`;
     if (ihnLiveProcessedOffers.has(offerKey)) return;
-    ihnLiveProcessedOffers.add(offerKey);
-    if (ihnLivePeers.get(offer.from)?.status === 'open') return;
-    ihnClosePeer(offer.from, 'new offer');
+    ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
+    const existingPeer = ihnLivePeers.get(offer.from);
+    if (existingPeer?.status === 'open') return;
+    if (existingPeer
+        && Date.now() - Number(existingPeer.createdAt || 0) < IHN_LIVE_CONNECT_TIMEOUT) return;
+    ihnClosePeer(offer.from, 'new offer', { retry: false });
+    const fileId = state.driveFileId;
+    const generation = ihnLiveGeneration;
     const pc = new RTCPeerConnection({ iceServers: IHN_LIVE_STUN });
     const peer = { pc, channel: null, status: 'connecting', initiator: false,
-        sessionId: offer.sessionId, commentId: comment.id, createdAt: Date.now() };
+        sessionId: offer.sessionId, commentId: comment.id, createdAt: Date.now(),
+        fileId, generation, closing: false,
+        lastReceivedAt: 0, lastPongAt: 0, lastSentHash: '', lastAckedHash: '',
+        remoteCurrentHash: '', pendingAckHash: '', pendingAckAt: 0,
+        pendingAckReceivedHash: '', pendingAckReceivedAt: 0, disconnectedAt: 0 };
     ihnLivePeers.set(offer.from, peer);
     ihnConfigurePeer(offer.from, pc, peer);
     try {
         await pc.setRemoteDescription(offer.description);
         await pc.setLocalDescription(await pc.createAnswer());
         await ihnWaitForIce(pc);
-        const content = await ihnEncodeSignal({ v: 1, type: 'answer', fileId: state.driveFileId,
+        ihnAssertLiveSessionContext(fileId, generation);
+        if (ihnLivePeers.get(offer.from) !== peer) {
+            throw new Error('Live peer connection was replaced');
+        }
+        const content = await ihnEncodeSignal({ v: 1, type: 'answer', fileId,
             from: ownId, to: offer.from, sessionId: offer.sessionId,
             expiresAt: Date.now() + IHN_LIVE_SIGNAL_TTL, description: pc.localDescription });
-        await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}/comments/${comment.id}/replies?fields=id,createdTime`, {
+        ihnAssertLiveSessionContext(fileId, generation);
+        if (ihnLivePeers.get(offer.from) !== peer) {
+            throw new Error('Live peer connection was replaced');
+        }
+        await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${comment.id}/replies?fields=id,createdTime`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
         });
     } catch (error) {
         console.warn('Direct offer could not be accepted:', error);
-        ihnClosePeer(offer.from, 'answer failed');
+        if (ihnLivePeers.get(offer.from) === peer) {
+            ihnClosePeer(offer.from, 'answer failed', { retry: false });
+        }
     }
 }
 
@@ -269,35 +839,86 @@ async function ihnApplyAnswer(answer) {
     if (!answer || answer.type !== 'answer' || answer.to !== ownId || answer.fileId !== state.driveFileId || Number(answer.expiresAt) < Date.now()) return;
     const peer = ihnLivePeers.get(answer.from);
     if (!peer?.initiator || peer.sessionId !== answer.sessionId || peer.pc.remoteDescription) return;
-    try { await peer.pc.setRemoteDescription(answer.description); }
-    catch (error) { ihnClosePeer(answer.from, 'invalid answer'); }
+    const operation = ihnCaptureLiveOperationContext(peer.fileId);
+    try {
+        await peer.pc.setRemoteDescription(answer.description);
+        ihnAssertLiveOperationContext(operation);
+        if (ihnLivePeers.get(answer.from) !== peer) return;
+    } catch (error) {
+        if (ihnLiveOperationContextIsCurrent(operation)
+            && ihnLivePeers.get(answer.from) === peer) {
+            ihnClosePeer(answer.from, 'invalid answer', { retry: true });
+        }
+    }
 }
 
 async function ihnPollSignals() {
     if (ihnLiveSignalBusy || !ihnIsLiveLeader() || !state.driveCanEdit || !driveAccessToken || !state.driveFileId || document.visibilityState === 'hidden') return;
+    const runId = ++ihnLiveSignalRunId;
     ihnLiveSignalBusy = true;
+    const fileId = state.driveFileId;
+    const generation = ihnLiveGeneration;
+    const operation = ihnCaptureLiveOperationContext(fileId);
     try {
         await ihnEnsureSignalKey();
-        const fields = encodeURIComponent('comments(id,content,createdTime,resolved,replies(id,content,createdTime))');
-        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}/comments?pageSize=100&includeDeleted=false&fields=${fields}`, {
-            method: 'GET', timeout: DRIVE_POLL_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
+        ihnAssertLiveSessionContext(fileId, generation);
+        ihnAssertLiveOperationContext(operation);
+        const now = Date.now();
+        ihnLiveProcessedOffers.forEach((expiresAt, key) => {
+            if (Number(expiresAt) < now) ihnLiveProcessedOffers.delete(key);
         });
         const ownId = ihnGetLivePeerId();
-        for (const comment of (await response.json()).comments || []) {
-            if (!String(comment?.content || '').startsWith(IHN_LIVE_SIGNAL_PREFIX)) continue;
-            const offer = await ihnDecodeSignal(comment.content);
-            if (!offer || offer.v !== 1 || offer.type !== 'offer') continue;
-            if (offer.to === ownId) await ihnAcceptOffer(comment, offer);
-            if (offer.from !== ownId) continue;
-            for (const reply of comment.replies || []) {
-                const answer = await ihnDecodeSignal(reply.content);
-                if (answer) await ihnApplyAnswer(answer);
+        const fields = encodeURIComponent('nextPageToken,comments(id,content,createdTime,resolved,replies(id,content,createdTime))');
+        // Drive can contain years of ordinary comments. Ask only for the
+        // recent signalling window, then follow every returned page so fresh
+        // offers cannot be hidden by unrelated or stale discussion threads.
+        const startModifiedTime = encodeURIComponent(
+            new Date(now - (IHN_LIVE_SIGNAL_TTL * 4)).toISOString()
+        );
+        let pageToken = '';
+        const requestedPageTokens = new Set();
+        while (true) {
+            if (requestedPageTokens.has(pageToken)) {
+                throw new Error('Drive comments returned a repeated page token');
             }
+            requestedPageTokens.add(pageToken);
+            const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+            const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments?pageSize=100&includeDeleted=false&startModifiedTime=${startModifiedTime}&fields=${fields}${tokenParam}`, {
+                method: 'GET', timeout: DRIVE_POLL_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
+            });
+            const data = await response.json();
+            ihnAssertLiveSessionContext(fileId, generation);
+            ihnAssertLiveOperationContext(operation);
+            for (const comment of data.comments || []) {
+                if (!String(comment?.content || '').startsWith(IHN_LIVE_SIGNAL_PREFIX)) continue;
+                const offer = await ihnDecodeSignal(comment.content);
+                ihnAssertLiveSessionContext(fileId, generation);
+                ihnAssertLiveOperationContext(operation);
+                if (!offer || offer.v !== 1 || offer.type !== 'offer') continue;
+                if (Number(offer.expiresAt) < now) {
+                    if (offer.from === ownId || offer.to === ownId) {
+                        driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${comment.id}`, {
+                            method: 'DELETE'
+                        }).catch(() => {});
+                    }
+                    continue;
+                }
+                if (offer.to === ownId) await ihnAcceptOffer(comment, offer);
+                if (offer.from !== ownId) continue;
+                for (const reply of comment.replies || []) {
+                    const answer = await ihnDecodeSignal(reply.content);
+                    if (answer) await ihnApplyAnswer(answer);
+                }
+            }
+            pageToken = String(data.nextPageToken || '');
+            if (!pageToken) break;
         }
     } catch (error) {
         console.warn('Live signalling unavailable; continuing with Drive sync:', error);
     } finally {
-        ihnLiveSignalBusy = false;
+        if (runId === ihnLiveSignalRunId) {
+            ihnLiveSignalBusy = false;
+        }
     }
 }
 
@@ -306,21 +927,166 @@ function liveCollabUpdatePeers(users) {
     startLiveCollaboration();
     const ownId = ihnGetLivePeerId();
     const active = new Set();
+    const now = Date.now();
     for (const user of users || []) {
         if (!user?.isOnline) continue;
         const peerId = ihnGetPresencePeerId(user);
         if (!peerId || peerId === ownId) continue;
         active.add(peerId);
+        const wasExpected = ihnPeerIsExpected(peerId);
+        ihnLiveKnownPeers.set(peerId, {
+            lastSeenAt: now,
+            record: user
+        });
+        if (!wasExpected) {
+            ihnSchedulePeerRetry(peerId, 'peer online', {
+                immediate: true,
+                preserveFailures: true
+            });
+        }
     }
     ihnLiveMainPeerId = [...active, ownId].sort()[0] || ownId;
-    if (!ihnIsLiveLeader()) return;
-    active.forEach(peerId => {
-        if (ownId < peerId) ihnCreateOffer(peerId);
+    ihnSuperviseConnections({ immediate: true });
+}
+
+function ihnSuperviseConnections(options = {}) {
+    if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit || typeof RTCPeerConnection === 'undefined') return;
+    const now = Date.now();
+    if (!ihnClaimLiveLeader()) {
+        // Only the elected tab owns network peers. Other tabs remain fully
+        // current through BroadcastChannel and can take over after the lease.
+        [...ihnLivePeers.keys()].forEach(peerId => {
+            ihnClosePeer(peerId, 'coordination moved to another tab', { retry: false });
+        });
+        return;
+    }
+
+    ihnLiveKnownPeers.forEach((known, peerId) => {
+        if (now - ihnKnownPeerLastSeenAt(known) <= IHN_LIVE_PEER_EXPIRY) return;
+        const peer = ihnLivePeers.get(peerId);
+        if (ihnPeerChannelIsHealthy(peer, now)) {
+            if (!known.presenceExpiredAt) known.presenceExpiredAt = now;
+            return;
+        }
+        ihnLiveKnownPeers.delete(peerId);
+        ihnLiveRetryState.delete(peerId);
+        ihnClosePeer(peerId, 'presence expired', { retry: false });
     });
+
     ihnLivePeers.forEach((peer, peerId) => {
-        if (!active.has(peerId) && Date.now() - Number(peer.openedAt || peer.createdAt || 0) > 30_000) ihnClosePeer(peerId, 'presence expired');
+        if (!ihnPeerIsExpected(peerId) && !ihnPeerChannelIsHealthy(peer, now)) {
+            ihnClosePeer(peerId, 'presence expired', { retry: false });
+            return;
+        }
+        if (peer.generation !== ihnLiveGeneration || peer.fileId !== state.driveFileId) {
+            ihnClosePeer(peerId, 'stale document connection', { retry: false });
+            return;
+        }
+        const channelOpen = peer.channel?.readyState === 'open';
+        if (!channelOpen && now - Number(peer.createdAt || 0) > IHN_LIVE_CONNECT_TIMEOUT) {
+            ihnClosePeer(peerId, 'connection timeout', { retry: true });
+            return;
+        }
+        if (peer.disconnectedAt && now - peer.disconnectedAt > IHN_LIVE_DISCONNECTED_GRACE) {
+            ihnClosePeer(peerId, 'connection interrupted', { retry: true });
+            return;
+        }
+        if (!channelOpen) return;
+        const pendingAckAge = peer.pendingAckHash
+            ? now - Number(peer.pendingAckAt || 0)
+            : 0;
+        const applyReceiptMatches = !!(
+            peer.pendingAckHash
+            && peer.pendingAckReceivedHash === peer.pendingAckHash
+            && Number(peer.pendingAckReceivedAt || 0) >= Number(peer.pendingAckAt || 0)
+        );
+        const hasRecentVerifiedPong = Number(peer.lastPongAt || 0) > Number(peer.openedAt || 0)
+            && now - Number(peer.lastPongAt || 0) <= IHN_LIVE_HEALTH_TIMEOUT;
+        const remoteApplyInProgress = pendingAckAge > IHN_LIVE_ACK_TIMEOUT
+            && pendingAckAge <= IHN_LIVE_APPLY_ACK_TIMEOUT
+            && applyReceiptMatches;
+        if (peer.protocolV2
+            && now - Number(peer.lastReceivedAt || peer.openedAt || 0) > IHN_LIVE_HEALTH_TIMEOUT
+            && !remoteApplyInProgress) {
+            ihnClosePeer(peerId, 'health check timeout', { retry: true });
+            return;
+        }
+        if (peer.protocolV2
+            && peer.pendingAckHash
+            && pendingAckAge > IHN_LIVE_ACK_TIMEOUT) {
+            if (pendingAckAge > IHN_LIVE_APPLY_ACK_TIMEOUT && hasRecentVerifiedPong) {
+                // The path itself is healthy, so replacing it would create a
+                // reconnect loop. Drop only the stale delivery attempt and
+                // resend the newest full state through the same channel.
+                peer.pendingAckHash = '';
+                peer.pendingAckAt = 0;
+                peer.pendingAckReceivedHash = '';
+                peer.pendingAckReceivedAt = 0;
+                scheduleLiveDocumentBroadcast({
+                    immediate: true,
+                    targetPeerId: peerId,
+                    force: true
+                });
+                return;
+            }
+            if (pendingAckAge > IHN_LIVE_APPLY_ACK_TIMEOUT
+                || (!applyReceiptMatches && !hasRecentVerifiedPong)) {
+                ihnClosePeer(peerId, 'snapshot acknowledgement timeout', { retry: true });
+                return;
+            }
+        }
+        if (!peer.protocolV2
+            && now - Number(peer.lastReceivedAt || peer.openedAt || 0) > IHN_LIVE_LEGACY_PROBE_TIMEOUT) {
+            ihnClosePeer(peerId, 'legacy peer health probe', { retry: true });
+            return;
+        }
+        if (now - Number(peer.lastPingAt || 0) >= IHN_LIVE_PING_INTERVAL) {
+            peer.lastPingAt = now;
+            ihnSendControl(peer, { t: 'ping', at: now });
+        }
+        if (now - Number(peer.lastPathRefreshAt || 0) > 15_000) {
+            peer.lastPathRefreshAt = now;
+            ihnRefreshPeerPath(peer).catch(() => {});
+        }
     });
-    ihnPollSignals();
+
+    ihnLiveKnownPeers.forEach((known, peerId) => {
+        if (!ihnCanInitiatePeer(peerId) || ihnLivePeers.has(peerId)) return;
+        const retry = ihnGetRetryState(peerId);
+        if (Number(retry.nextAttemptAt || 0) > now) return;
+        // Reserve a future slot immediately; the peer map itself prevents a
+        // second in-flight offer once ihnCreateOffer starts.
+        retry.nextAttemptAt = now + IHN_LIVE_CONNECT_TIMEOUT;
+        ihnCreateOffer(peerId).catch(error => {
+            console.warn('Live reconnect attempt failed:', error);
+            ihnSchedulePeerRetry(peerId, 'reconnect failed');
+        });
+    });
+    if (options.immediate) ihnPollSignals();
+}
+
+function ihnWakeLiveCollaboration(reason = 'network available') {
+    if (!state?.driveFileId) return;
+    ihnLiveRetryState.forEach((retry, peerId) => {
+        if (!ihnCanInitiatePeer(peerId)) return;
+        retry.nextAttemptAt = Date.now();
+        retry.lastReason = reason;
+    });
+    ihnSuperviseConnections({ immediate: true });
+}
+
+let ihnLiveLifecycleListenersInstalled = false;
+function ihnInstallLiveLifecycleListeners() {
+    if (ihnLiveLifecycleListenersInstalled || typeof window === 'undefined') return;
+    ihnLiveLifecycleListenersInstalled = true;
+    window.addEventListener('online', () => ihnWakeLiveCollaboration('browser online'));
+    window.addEventListener('pageshow', () => ihnWakeLiveCollaboration('page resumed'));
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') ihnWakeLiveCollaboration('app visible');
+    });
+    try {
+        navigator.connection?.addEventListener?.('change', () => ihnWakeLiveCollaboration('network changed'));
+    } catch (error) { /* optional Network Information API */ }
 }
 
 async function ihnRefreshPeerPath(peer) {
@@ -368,6 +1134,8 @@ function getLiveCollaborationConnectionInfo(record = null) {
     } else if (peer?.channel?.readyState === 'open') {
         transportCode = peer.networkPath === 'local-network' ? 'local-network' : 'peer';
         transport = transportCode === 'local-network' ? 'Local network · peer-to-peer' : 'Peer-to-peer';
+    } else if (!own && ihnPeerIsExpected(peerId)) {
+        transport = 'Reconnecting peer-to-peer · Drive active';
     }
     const mainPeerId = ihnLiveMainPeerId || ownId;
     return {
@@ -375,7 +1143,9 @@ function getLiveCollaborationConnectionInfo(record = null) {
         transport,
         transportCode,
         isMain: peerId === mainPeerId,
-        connected: own || sameDevice || peer?.channel?.readyState === 'open'
+        connected: own || sameDevice || peer?.channel?.readyState === 'open',
+        recovering: !own && !sameDevice && ihnPeerIsExpected(peerId) && peer?.channel?.readyState !== 'open',
+        rttMs: Number.isFinite(peer?.rttMs) ? peer.rttMs : null
     };
 }
 
@@ -390,17 +1160,25 @@ function getLiveCollaborationOverview() {
 
 async function ihnVerifyLiveCapability() {
     if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit) return;
+    const operation = ihnCaptureLiveOperationContext();
     try {
-        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}?fields=capabilities(canEdit,canModifyContent),trashed`, {
+        const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${operation.fileId}?fields=capabilities(canEdit,canModifyContent),trashed`, {
             method: 'GET', timeout: DRIVE_META_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
         });
+        ihnAssertLiveOperationContext(operation);
         const data = await response.json();
+        ihnAssertLiveOperationContext(operation);
         if (data.trashed || data.capabilities?.canEdit === false || data.capabilities?.canModifyContent === false) {
             state.driveCanEdit = false; stopLiveCollaboration(); setReadOnlyMode(true, { force: true });
             showStatus('Editing access was removed. Switched to view only.', { error: true });
         }
     } catch (error) {
-        if (error?.status === 403 || error?.status === 404) stopLiveCollaboration();
+        if (error?.code === 'IHN_LIVE_STALE_CONTEXT') return;
+        // A failed capability probe is not proof that access was revoked:
+        // transient Drive/rate-limit responses can also be 403/404. Keep the
+        // supervisor alive and retry; only an explicit successful capabilities
+        // response above may downgrade the document.
+        console.warn('Live capability check deferred; keeping P2P recovery active:', error);
     }
 }
 
@@ -408,67 +1186,179 @@ function startLiveCollaboration() {
     if (!state?.driveFileId) return;
     ihnEnsureTabChannel();
     if (!driveAccessToken || !state.driveCanEdit || typeof RTCPeerConnection === 'undefined') return;
+    ihnInstallLiveLifecycleListeners();
     if (!ihnLiveLeaderTimer) {
         ihnClaimLiveLeader();
         ihnLiveLeaderTimer = setInterval(() => { if (ihnClaimLiveLeader()) ihnPollSignals(); }, 2000);
     }
     if (!ihnLiveSignalTimer) ihnLiveSignalTimer = setInterval(ihnPollSignals, 2000);
     if (!ihnLiveCapabilityTimer) ihnLiveCapabilityTimer = setInterval(ihnVerifyLiveCapability, 30_000);
+    if (!ihnLiveSupervisorTimer) {
+        ihnLiveSupervisorTimer = setInterval(ihnSuperviseConnections, IHN_LIVE_SUPERVISOR_MS);
+    }
+    ihnSuperviseConnections({ immediate: true });
     ihnPollSignals();
 }
 
 function stopLiveCollaboration() {
+    ihnLiveGeneration += 1;
+    ihnLiveSignalRunId += 1;
+    ihnLiveBroadcastRunId += 1;
     clearTimeout(ihnLiveBroadcastTimer); ihnLiveBroadcastTimer = null;
     if (ihnLiveLeaderTimer) clearInterval(ihnLiveLeaderTimer);
     if (ihnLiveSignalTimer) clearInterval(ihnLiveSignalTimer);
     if (ihnLiveCapabilityTimer) clearInterval(ihnLiveCapabilityTimer);
-    ihnLiveLeaderTimer = ihnLiveSignalTimer = ihnLiveCapabilityTimer = null;
-    ihnLiveSignalBusy = ihnLiveBroadcastBusy = ihnLiveBroadcastQueued = ihnLiveApplying = false;
-    [...ihnLivePeers.keys()].forEach(peerId => ihnClosePeer(peerId, 'document closed'));
-    ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveProcessedOffers.clear();
+    if (ihnLiveSupervisorTimer) clearInterval(ihnLiveSupervisorTimer);
+    ihnLiveLeaderTimer = ihnLiveSignalTimer = ihnLiveCapabilityTimer = ihnLiveSupervisorTimer = null;
+    ihnLiveSignalBusy = false;
+    ihnLiveBroadcastBusy = false;
+    ihnLiveBroadcastQueued = false;
+    if (!ihnLiveActiveApply) ihnLiveApplying = false;
+    ihnCancelPendingLiveApplies();
+    ihnLiveBroadcastForce = false; ihnLiveBroadcastTargets.clear();
+    ihnLiveBroadcastRetryAttempt = 0;
+    [...ihnLivePeers.keys()].forEach(peerId => ihnClosePeer(peerId, 'document closed', { retry: false }));
+    ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveAppliedHashes.clear(); ihnLiveProcessedOffers.clear();
+    ihnLiveFailedSignals.clear();
+    ihnLiveFailedSignalRefreshAt = 0; ihnLiveFailedSignalRefreshKey = '';
+    ihnLiveKnownPeers.clear(); ihnLiveRetryState.clear();
     try { ihnLiveBroadcastChannel?.close(); } catch (error) {}
     ihnLiveBroadcastChannel = null; ihnLiveBroadcastFileId = '';
-    ihnLiveCryptoKey = null; ihnLiveCryptoFileId = ''; ihnLiveLastHash = ''; ihnLiveMainPeerId = '';
+    ihnInvalidateSignalKey();
+    ihnLiveCryptoKeyLoad = null; ihnLiveCryptoKeyLoadFileId = '';
+    ihnLiveCryptoKeyRefresh = null; ihnLiveCryptoKeyRefreshFileId = '';
+    ihnLiveLastAppliedHash = ''; ihnLiveLastTabSentHash = '';
+    ihnLiveMergeUploadGuard = null; ihnLiveMainPeerId = '';
 }
 
-async function ihnBuildLiveSnapshot() {
-    await flushStrokeOpsQueue();
-    await ensureAllPagesLoadedForStructureChange();
-    const snapshot = { v: 1, type: 'document-snapshot', fileId: state.driveFileId,
-        actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`, deviceId: getPresenceClientId(), sequence: ++ihnLiveSequence,
-        sentAt: Date.now(), baseRevision: state.driveHeadRevisionId || null,
-        exportName: state.exportName || '', calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
-        pages: state.pages.map(page => sanitizePageForStorage(page)) };
-    snapshot.contentHash = timelineSnapshotHash(snapshot.pages, snapshot.calendarPageConfig, snapshot.exportName);
-    return snapshot;
+async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()) {
+    let structureToken = null;
+    try {
+        ihnAssertLiveOperationContext(operation);
+        structureToken = typeof acquireRemotePageMerge === 'function'
+            ? await acquireRemotePageMerge()
+            : {};
+        ihnAssertLiveOperationContext(operation);
+        if (!structureToken) {
+            throw new Error('Page structure remained busy while building a live snapshot');
+        }
+        await flushStrokeOpsQueue();
+        ihnAssertLiveOperationContext(operation);
+        await ensureAllPagesLoadedForStructureChange();
+        ihnAssertLiveOperationContext(operation);
+        const snapshot = { v: 1, type: 'document-snapshot', fileId: operation.fileId,
+            actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`, deviceId: getPresenceClientId(), sequence: ++ihnLiveSequence,
+            sentAt: Date.now(), baseRevision: state.driveHeadRevisionId || null,
+            exportName: state.exportName || '', calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
+            structure: getCollabStructureSnapshot(),
+            fields: getCollabFieldSnapshot(),
+            pages: state.pages.map(page => sanitizePageForStorage(page)) };
+        snapshot.snapshotId = `${snapshot.actorId}:${snapshot.sequence}`;
+        snapshot.contentHash = ihnCanonicalDocumentHash(
+            snapshot.pages,
+            snapshot.structure,
+            snapshot.calendarPageConfig,
+            snapshot.exportName,
+            snapshot.fields
+        );
+        ihnAssertLiveOperationContext(operation);
+        return snapshot;
+    } finally {
+        if (structureToken && typeof releaseRemotePageMerge === 'function') {
+            releaseRemotePageMerge(structureToken);
+        }
+    }
 }
 
 function scheduleLiveDocumentBroadcast(options = {}) {
-    if (!state?.driveFileId || state.isReadOnly) return;
-    startLiveCollaboration(); ihnLiveBroadcastQueued = true; clearTimeout(ihnLiveBroadcastTimer);
+    if (!state?.driveFileId || !ihnCanEditLiveDocument()) return;
+    startLiveCollaboration();
+    if (!options.retry && !options.internal) {
+        ihnLiveBroadcastRetryAttempt = 0;
+    }
+    ihnLiveBroadcastQueued = true;
+    if (options.force) ihnLiveBroadcastForce = true;
+    if (options.targetPeerId) ihnLiveBroadcastTargets.add(options.targetPeerId);
+    clearTimeout(ihnLiveBroadcastTimer);
     ihnLiveBroadcastTimer = setTimeout(() => {
         ihnLiveBroadcastTimer = null;
         ihnBroadcastDocument().catch(error => console.warn('Live broadcast failed:', error));
-    }, options.immediate ? 0 : (ihnLiveApplying || hasSmoothInteraction() ? 60 : 40));
+    }, Number.isFinite(options.delay)
+        ? Math.max(0, Number(options.delay))
+        : (options.immediate ? 0 : (ihnLiveApplying || hasSmoothInteraction() ? 60 : 40)));
+}
+
+function ihnLiveBroadcastRetryDelay(attempt) {
+    return Math.min(2000, 120 * (2 ** Math.max(0, Number(attempt || 1) - 1)));
 }
 
 async function ihnBroadcastDocument() {
-    if (!ihnLiveBroadcastQueued || state.isReadOnly) return;
+    if (!ihnLiveBroadcastQueued || !ihnCanEditLiveDocument()) return;
     if (ihnLiveBroadcastBusy || ihnLiveApplying || hasSmoothInteraction()) {
-        scheduleLiveDocumentBroadcast();
+        scheduleLiveDocumentBroadcast({ internal: true });
         return;
     }
+    clearTimeout(ihnLiveBroadcastTimer);
+    ihnLiveBroadcastTimer = null;
+    const runId = ++ihnLiveBroadcastRunId;
+    const operation = ihnCaptureLiveOperationContext();
     ihnLiveBroadcastBusy = true; ihnLiveBroadcastQueued = false;
+    const force = ihnLiveBroadcastForce;
+    const targetPeerIds = new Set(ihnLiveBroadcastTargets);
+    ihnLiveBroadcastForce = false;
+    ihnLiveBroadcastTargets.clear();
+    let retryScheduled = false;
+    let suppressAutomaticSchedule = false;
     try {
-        const snapshot = await ihnBuildLiveSnapshot();
+        const snapshot = await ihnBuildLiveSnapshot(operation);
+        ihnAssertLiveOperationContext(operation);
         const hash = snapshot.contentHash;
-        if (hash === ihnLiveLastHash) return;
-        ihnLiveLastHash = hash; ihnEnsureTabChannel();
-        try { ihnLiveBroadcastChannel?.postMessage(snapshot); } catch (error) {}
-        await Promise.all([...ihnLivePeers.values()].filter(peer => peer.channel?.readyState === 'open').map(peer => ihnSendPayload(peer.channel, snapshot)));
+        ihnEnsureTabChannel();
+        if (targetPeerIds.size === 0 && (force || hash !== ihnLiveLastTabSentHash)) {
+            ihnAssertLiveOperationContext(operation);
+            try {
+                ihnLiveBroadcastChannel?.postMessage(snapshot);
+                ihnLiveLastTabSentHash = hash;
+            } catch (error) {}
+        }
+        const deliveries = [];
+        ihnLivePeers.forEach((peer, peerId) => {
+            if (peer.channel?.readyState !== 'open') return;
+            if (targetPeerIds.size > 0 && !targetPeerIds.has(peerId)) return;
+            if (!force && peer.lastAckedHash === hash) return;
+            if (!force && peer.pendingAckHash === hash) return;
+            deliveries.push(ihnQueuePeerPayload(peerId, peer, snapshot, operation, {
+                trackAcknowledgement: true
+            }));
+        });
+        await Promise.all(deliveries);
+        ihnAssertLiveOperationContext(operation);
+        ihnLiveBroadcastRetryAttempt = 0;
+    } catch (error) {
+        if (ihnLiveOperationContextIsCurrent(operation) && ihnCanEditLiveDocument()) {
+            ihnLiveBroadcastQueued = true;
+            if (force) ihnLiveBroadcastForce = true;
+            targetPeerIds.forEach(peerId => ihnLiveBroadcastTargets.add(peerId));
+            if (ihnLiveBroadcastRetryAttempt < IHN_LIVE_BROADCAST_RETRY_LIMIT) {
+                ihnLiveBroadcastRetryAttempt += 1;
+                retryScheduled = true;
+                scheduleLiveDocumentBroadcast({
+                    retry: true,
+                    delay: ihnLiveBroadcastRetryDelay(ihnLiveBroadcastRetryAttempt)
+                });
+            } else {
+                suppressAutomaticSchedule = true;
+                console.warn('Live broadcast paused after repeated transient failures; the next edit will retry.', error);
+            }
+        }
+        throw error;
     } finally {
-        ihnLiveBroadcastBusy = false;
-        if (ihnLiveBroadcastQueued) scheduleLiveDocumentBroadcast();
+        if (runId === ihnLiveBroadcastRunId) {
+            ihnLiveBroadcastBusy = false;
+            if (ihnLiveBroadcastQueued && !retryScheduled && !suppressAutomaticSchedule) {
+                scheduleLiveDocumentBroadcast({ immediate: true, internal: true });
+            }
+        }
     }
 }
 
@@ -481,29 +1371,127 @@ function ihnWaitForBackpressure(channel) {
     });
 }
 
-async function ihnSendPayload(channel, payload) {
-    if (channel?.readyState !== 'open') return;
+async function ihnSendPayload(channel, payload, operation = null) {
+    if (operation) ihnAssertLiveOperationContext(operation);
+    if (channel?.readyState !== 'open') return false;
     const raw = JSON.stringify(payload);
-    if (raw.length > IHN_LIVE_MAX_CHARS) return;
+    if (raw.length > IHN_LIVE_MAX_CHARS) return false;
     const id = `x${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const total = Math.ceil(raw.length / IHN_LIVE_CHUNK);
-    if (!total || total > IHN_LIVE_MAX_CHUNKS) return;
+    if (!total || total > IHN_LIVE_MAX_CHUNKS) return false;
+    if (operation) ihnAssertLiveOperationContext(operation);
     channel.send(JSON.stringify({ t: 'start', id, total, chars: raw.length }));
     for (let index = 0; index < total; index += 1) {
         await ihnWaitForBackpressure(channel);
-        if (channel.readyState !== 'open') return;
+        if (operation) ihnAssertLiveOperationContext(operation);
+        if (channel.readyState !== 'open') return false;
         channel.send(JSON.stringify({ t: 'chunk', id, index, data: raw.slice(index * IHN_LIVE_CHUNK, (index + 1) * IHN_LIVE_CHUNK) }));
     }
+    if (operation) ihnAssertLiveOperationContext(operation);
+    return true;
 }
 
-async function ihnHandleWireMessage(raw, peerId) {
+function ihnQueuePeerPayload(peerId, peer, payload, operation, options = {}) {
+    const previous = peer?.sendQueue || Promise.resolve();
+    const delivery = previous.catch(() => false).then(async () => {
+        ihnAssertLiveOperationContext(operation);
+        if (ihnLivePeers.get(peerId) !== peer || peer.channel?.readyState !== 'open') return false;
+        const sent = await ihnSendPayload(peer.channel, payload, operation);
+        ihnAssertLiveOperationContext(operation);
+        if (!sent || ihnLivePeers.get(peerId) !== peer) return false;
+        if (options.trackAcknowledgement && payload?.contentHash) {
+            peer.lastSentHash = payload.contentHash;
+            peer.pendingAckHash = payload.contentHash;
+            peer.pendingAckAt = Date.now();
+            peer.pendingAckReceivedHash = '';
+            peer.pendingAckReceivedAt = 0;
+        }
+        return true;
+    });
+    peer.sendQueue = delivery.catch(() => false);
+    return delivery;
+}
+
+async function ihnHandleWireMessage(
+    raw,
+    peerId,
+    expectedPeer = null,
+    expectedChannel = null,
+    operation = null
+) {
     if (typeof raw !== 'string') return;
+    const peer = expectedPeer || ihnLivePeers.get(peerId);
+    const messageOperation = operation || ihnCaptureLiveOperationContext(peer?.fileId);
+    const peerContextIsCurrent = () => !!peer
+        && ihnLivePeers.get(peerId) === peer
+        && (!expectedChannel || peer.channel === expectedChannel)
+        && !peer.closing
+        && ihnLiveOperationContextIsCurrent(messageOperation);
+    if (!peerContextIsCurrent()) return;
+    peer.lastReceivedAt = Date.now();
     const staleBefore = Date.now() - 60_000;
     ihnLiveChunks.forEach((assembly, chunkKey) => {
         if (Number(assembly.createdAt || 0) < staleBefore) ihnLiveChunks.delete(chunkKey);
     });
     let message; try { message = JSON.parse(raw); } catch (error) { return; }
-    const key = `${peerId}:${message?.id || ''}`;
+    if (!peerContextIsCurrent()) return;
+    ihnTouchKnownPeerFromChannel(peerId);
+    if (message?.t === 'ping') {
+        if (peer) peer.protocolV2 = true;
+        ihnSendControl(peer, { t: 'pong', at: Number(message.at) || Date.now(), receivedAt: Date.now() });
+        return;
+    }
+    if (message?.t === 'pong') {
+        if (peer) {
+            peer.protocolV2 = true;
+            const receivedAt = Date.now();
+            const sentAt = Number(message.at) || 0;
+            const expectedAt = Number(peer.lastPingAt) || 0;
+            const validPong = sentAt > 0
+                && sentAt === expectedAt
+                && sentAt >= Number(peer.openedAt || 0)
+                && sentAt <= receivedAt;
+            if (validPong) {
+                peer.lastPongAt = receivedAt;
+                const rtt = Math.max(0, receivedAt - sentAt);
+                peer.rttMs = Number.isFinite(peer.rttMs)
+                    ? Math.round(peer.rttMs * 0.7 + rtt * 0.3)
+                    : rtt;
+                ihnMarkPeerHealthy(peerId, peer, 'pong');
+            }
+        }
+        return;
+    }
+    if (message?.t === 'hello' || message?.t === 'state-request') {
+        if (peer) peer.protocolV2 = true;
+        scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
+        return;
+    }
+    if (message?.t === 'snapshot-received') {
+        if (!peer) return;
+        peer.protocolV2 = true;
+        const receivedHash = String(message.hash || '');
+        if (!receivedHash || !peer.pendingAckHash || peer.pendingAckHash !== receivedHash) return;
+        peer.pendingAckReceivedHash = receivedHash;
+        peer.pendingAckReceivedAt = Date.now();
+        return;
+    }
+    if (message?.t === 'snapshot-ack') {
+        if (!peer) return;
+        peer.protocolV2 = true;
+        const acknowledgedHash = String(message.hash || '');
+        if (!acknowledgedHash || !peer.pendingAckHash || peer.pendingAckHash !== acknowledgedHash) return;
+        peer.lastAckedHash = acknowledgedHash;
+        peer.remoteCurrentHash = acknowledgedHash;
+        peer.pendingAckHash = '';
+        peer.pendingAckAt = 0;
+        peer.pendingAckReceivedHash = '';
+        peer.pendingAckReceivedAt = 0;
+        peer.healthyAckCount = Number(peer.healthyAckCount || 0) + 1;
+        ihnMarkPeerHealthy(peerId, peer, 'ack');
+        return;
+    }
+    const key = `${peerId}:${peer.sessionId || ''}:${message?.id || ''}`;
     if (message?.t === 'start') {
         const total = Number(message.total), chars = Number(message.chars);
         if (!message.id || total <= 0 || total > IHN_LIVE_MAX_CHUNKS || chars <= 0 || chars > IHN_LIVE_MAX_CHARS) return;
@@ -516,22 +1504,295 @@ async function ihnHandleWireMessage(raw, peerId) {
     if (assembly.received !== assembly.total) return;
     ihnLiveChunks.delete(key);
     const combined = assembly.chunks.join('');
-    if (combined.length === assembly.chars) await ihnHandleLiveEnvelope(JSON.parse(combined), 'webrtc');
+    if (combined.length === assembly.chars) {
+        let envelope;
+        try { envelope = JSON.parse(combined); } catch (error) { return; }
+        if (!peerContextIsCurrent()) return;
+        if (envelope?.v === 1
+            && envelope?.type === 'document-snapshot'
+            && envelope?.fileId === state?.driveFileId
+            && envelope?.contentHash) {
+            ihnSendControl(peer, {
+                t: 'snapshot-received',
+                hash: envelope.contentHash,
+                snapshotId: envelope.snapshotId || '',
+                at: Date.now()
+            });
+        }
+        const handled = await ihnHandleLiveEnvelope(envelope, 'webrtc', peerId);
+        if (!peerContextIsCurrent()) return;
+        if (handled !== false && envelope?.contentHash) {
+            ihnObservePeerDocumentHash(peerId, envelope.contentHash);
+            ihnSendControl(peer, {
+                t: 'snapshot-ack',
+                hash: envelope.contentHash,
+                snapshotId: envelope.snapshotId || '',
+                at: Date.now()
+            });
+        }
+    }
 }
 
-async function ihnHandleLiveEnvelope(envelope, transport = '') {
-    if (!envelope || envelope.v !== 1 || envelope.type !== 'document-snapshot' || envelope.fileId !== state?.driveFileId) return;
+function ihnLiveApplyKey(envelope, operation) {
+    return `${operation.generation}\u0000${operation.fileId}\u0000${String(envelope?.actorId || '')}`;
+}
+
+function ihnCancelPendingLiveApplies() {
+    ihnLivePendingApplies.forEach(record => record.resolve(false));
+    ihnLivePendingApplies.clear();
+}
+
+function ihnStartLiveApplyDrain() {
+    if (ihnLiveApplyDrainPromise) return ihnLiveApplyDrainPromise;
+    const drain = (async () => {
+        while (ihnLivePendingApplies.size) {
+            const first = ihnLivePendingApplies.entries().next().value;
+            if (!first) break;
+            const [key, record] = first;
+            ihnLivePendingApplies.delete(key);
+            if (!ihnLiveOperationContextIsCurrent(record.operation)) {
+                record.resolve(false);
+                continue;
+            }
+            ihnLiveActiveApply = record;
+            try {
+                record.resolve(await ihnApplyLiveEnvelope(
+                    record.envelope,
+                    record.transport,
+                    record.peerId,
+                    record.operation,
+                    record
+                ));
+            } catch (error) {
+                if (error?.code === 'IHN_LIVE_STALE_CONTEXT') record.resolve(false);
+                else record.reject(error);
+            } finally {
+                if (ihnLiveActiveApply === record) ihnLiveActiveApply = null;
+            }
+            if (ihnLivePendingApplies.size) {
+                // Give local page operations a lock-acquisition turn and allow
+                // newer anti-entropy snapshots to replace obsolete pending ones.
+                await new Promise(resolve => setTimeout(resolve, IHN_LIVE_APPLY_COALESCE_MS));
+            }
+        }
+    })();
+    ihnLiveApplyDrainPromise = drain;
+    ihnLiveApplyQueue = drain;
+    drain.then(() => {
+        if (ihnLiveApplyDrainPromise !== drain) return;
+        ihnLiveApplyDrainPromise = null;
+        ihnLiveApplyQueue = Promise.resolve();
+        if (ihnLivePendingApplies.size) ihnStartLiveApplyDrain();
+    });
+    return drain;
+}
+
+function ihnHandleLiveEnvelope(envelope, transport = '', peerId = '') {
+    if (!envelope
+        || envelope.v !== 1
+        || envelope.type !== 'document-snapshot'
+        || envelope.fileId !== state?.driveFileId
+        || !envelope.actorId
+        || !Array.isArray(envelope.pages)
+        || !envelope.pages.length) {
+        return Promise.resolve(false);
+    }
+    const operation = ihnCaptureLiveOperationContext(envelope.fileId);
+    if (!ihnLiveOperationContextIsCurrent(operation)) return Promise.resolve(false);
+    const key = ihnLiveApplyKey(envelope, operation);
+    const sequence = Number(envelope.sequence) || 0;
+    const hash = String(envelope.contentHash || '');
+    if (ihnLiveActiveApply?.key === key) {
+        const activeSequence = Number(ihnLiveActiveApply.sequence) || 0;
+        if (sequence === activeSequence && hash === ihnLiveActiveApply.hash) {
+            return ihnLiveActiveApply.promise;
+        }
+        if (sequence <= activeSequence) return Promise.resolve(false);
+    }
+    const pending = ihnLivePendingApplies.get(key);
+    if (pending) {
+        if (sequence === pending.sequence && hash === pending.hash) {
+            return pending.promise;
+        }
+        if (sequence <= pending.sequence) return Promise.resolve(false);
+        pending.resolve(false);
+    }
+    let resolveRecord;
+    let rejectRecord;
+    const promise = new Promise((resolve, reject) => {
+        resolveRecord = resolve;
+        rejectRecord = reject;
+    });
+    const record = {
+        key,
+        envelope,
+        transport,
+        peerId,
+        operation,
+        sequence,
+        hash,
+        promise,
+        resolve: resolveRecord,
+        reject: rejectRecord
+    };
+    ihnLivePendingApplies.set(key, record);
+    ihnStartLiveApplyDrain();
+    return promise;
+}
+
+function ihnTrackMergeCurrentState(currentHash) {
+    const hash = String(currentHash || '');
+    if (!hash) return null;
+    const confirmedHash = typeof driveConfirmedContentHash === 'string'
+        ? driveConfirmedContentHash
+        : '';
+    const contentVersion = typeof driveContentVersion === 'number'
+        ? driveContentVersion
+        : 0;
+    if (!ihnLiveMergeUploadGuard
+        || ihnLiveMergeUploadGuard.currentHash !== hash
+        || ihnLiveMergeUploadGuard.confirmedHash !== confirmedHash
+        || ihnLiveMergeUploadGuard.contentVersion !== contentVersion) {
+        ihnLiveMergeUploadGuard = {
+            currentHash: hash,
+            requestedHash: '',
+            confirmedHash,
+            contentVersion
+        };
+    }
+    return ihnLiveMergeUploadGuard;
+}
+
+function ihnShouldQueueMergeUpload(mergedHash) {
+    const guard = ihnTrackMergeCurrentState(mergedHash);
+    if (!guard) return false;
+    if (guard.confirmedHash && guard.confirmedHash === guard.currentHash) {
+        guard.requestedHash = '';
+        return false;
+    }
+    if (guard.requestedHash === guard.currentHash) return false;
+    // Suppress only a repeated request for the current state. Tracking every
+    // successfully applied state below means an intermediate D clears a
+    // request for C even when D itself already matches the incoming peer and
+    // therefore does not need a convergence upload.
+    guard.requestedHash = guard.currentHash;
+    return true;
+}
+
+function ihnPeerAlreadyHasLiveHash(peer, hash) {
+    if (!peer || !hash) return false;
+    return peer.remoteCurrentHash === hash
+        || peer.lastAckedHash === hash
+        || peer.pendingAckHash === hash;
+}
+
+async function ihnFanOutAppliedEnvelope(envelope, transport, sourcePeerId, operation) {
+    ihnAssertLiveOperationContext(operation);
+    if (transport === 'webrtc') {
+        ihnEnsureTabChannel();
+        ihnAssertLiveOperationContext(operation);
+        try {
+            ihnLiveBroadcastChannel?.postMessage(envelope);
+            if (envelope.contentHash) ihnLiveLastTabSentHash = envelope.contentHash;
+        } catch (error) {
+            console.warn('Same-device live relay failed:', error);
+        }
+    }
+    if (transport !== 'webrtc' && transport !== 'tab') return;
+    const actorId = String(envelope?.actorId || '');
+    const originPeerId = actorId.includes(':') ? actorId.slice(0, actorId.indexOf(':')) : '';
+    const deliveries = [];
+    ihnLivePeers.forEach((peer, relayPeerId) => {
+        if (transport === 'webrtc' && relayPeerId === sourcePeerId) return;
+        if (originPeerId && relayPeerId === originPeerId) return;
+        if (peer.channel?.readyState !== 'open') return;
+        if (ihnPeerAlreadyHasLiveHash(peer, envelope.contentHash)) return;
+        deliveries.push(ihnQueuePeerPayload(
+            relayPeerId,
+            peer,
+            envelope,
+            operation,
+            { trackAcknowledgement: true }
+        ));
+    });
+    await Promise.all(deliveries);
+}
+
+function ihnScheduleLiveFanOut(envelope, transport, sourcePeerId, operation) {
+    const task = ihnFanOutAppliedEnvelope(envelope, transport, sourcePeerId, operation)
+        .catch(error => {
+            if (ihnLiveOperationContextIsCurrent(operation)) {
+                console.warn('Live snapshot relay failed:', error);
+            }
+            return false;
+        });
+    ihnLiveFanOutTasks.add(task);
+    task.finally(() => ihnLiveFanOutTasks.delete(task));
+}
+
+function ihnFlushLiveFanOutTasks() {
+    return Promise.all([...ihnLiveFanOutTasks]);
+}
+
+async function ihnApplyLiveEnvelope(
+    envelope,
+    transport = '',
+    peerId = '',
+    operation = ihnCaptureLiveOperationContext(envelope?.fileId || ''),
+    applyRecord = null
+) {
+    if (!envelope || envelope.v !== 1 || envelope.type !== 'document-snapshot') return false;
+    ihnAssertLiveOperationContext(operation);
+    if (envelope.fileId !== operation.fileId) return false;
     const ownActorId = `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`;
-    if (!Array.isArray(envelope.pages) || !envelope.pages.length || envelope.actorId === ownActorId) return;
+    if (!Array.isArray(envelope.pages) || !envelope.pages.length || envelope.actorId === ownActorId) return false;
     const sequence = Number(envelope.sequence) || 0, previous = ihnLiveSeen.get(envelope.actorId) || 0;
-    if (sequence <= previous) return;
-    ihnLiveSeen.set(envelope.actorId, sequence);
-    if (envelope.contentHash && envelope.contentHash === ihnLiveLastHash) return;
+    if (sequence <= previous) return true;
+    const now = Date.now();
+    ihnLiveAppliedHashes.forEach((appliedAt, hash) => {
+        if (now - Number(appliedAt || 0) > 120_000) ihnLiveAppliedHashes.delete(hash);
+    });
+    if (envelope.contentHash && ihnLiveAppliedHashes.has(envelope.contentHash)) {
+        const currentHash = ihnCanonicalDocumentHash(
+            state.pages.map(page => sanitizePageForStorage(page)),
+            getCollabStructureSnapshot(),
+            state.calendarPageConfig,
+            state.exportName,
+            getCollabFieldSnapshot()
+        );
+        if (currentHash === envelope.contentHash) {
+            ihnLiveSeen.set(envelope.actorId, sequence);
+            ihnScheduleLiveFanOut(envelope, transport, peerId, operation);
+            return true;
+        }
+        // A historical hash is not a duplicate after the document has moved
+        // through another valid state (C -> D -> C).
+        ihnLiveAppliedHashes.delete(envelope.contentHash);
+    }
+    while (ihnCanEditLiveDocument() && hasSmoothInteraction()) {
+        // Never reorder page/content arrays underneath an active pen,
+        // selection transform or inertial gesture. The queued snapshot is
+        // applied immediately after that atomic local interaction finishes.
+        await new Promise(resolve => setTimeout(resolve, 32));
+        if (!ihnLiveOperationContextIsCurrent(operation)) return false;
+    }
     ihnLiveApplying = true;
     try {
-        const preserveLocal = !state.isReadOnly && hasUnsyncedLocalDriveChanges();
-        const previousCalendar = JSON.stringify(state.calendarPageConfig || null);
-        const result = await applyRemotePages(envelope.pages, { preserveLocalUnsynced: preserveLocal });
+        ihnAssertLiveOperationContext(operation);
+        const canEditDocument = ihnCanEditLiveDocument();
+        const preserveLocal = canEditDocument && hasUnsyncedLocalDriveChanges();
+        const result = await applyRemotePages(envelope.pages, {
+            preserveLocalUnsynced: preserveLocal,
+            // Live snapshots are anti-entropy state, not authoritative
+            // replacements. Absence never deletes content; explicit
+            // tombstones and deterministic same-ID resolution do.
+            additiveById: canEditDocument,
+            remoteStructure: envelope.structure || null,
+            remoteFields: envelope.fields || null,
+            remoteCalendarPageConfig: cloneTimelineValue(envelope.calendarPageConfig || null, null),
+            remoteExportName: envelope.exportName || ''
+        });
+        ihnAssertLiveOperationContext(operation);
         if (result?.changed
             && typeof clearPublicInlinePreview === 'function'
             && document.getElementById('public-inline-preview')) {
@@ -540,31 +1801,46 @@ async function ihnHandleLiveEnvelope(envelope, transport = '') {
             updateViewerModeUI();
             showEditorView();
         }
-        if (!preserveLocal) {
-            state.calendarPageConfig = cloneTimelineValue(envelope.calendarPageConfig || null, null);
-            if (envelope.exportName) { state.exportName = envelope.exportName; updateDocTitle(); }
-        }
-        const calendarChanged = previousCalendar !== JSON.stringify(state.calendarPageConfig || null);
-        if (calendarChanged && !result?.changed) {
-            const savedAt = Date.now();
-            const payload = buildMetaPayload(savedAt);
-            await saveToIndexedDb(payload, savedAt);
-            scheduleLocalStorageBackup(payload);
-        }
-        if (result?.changed || calendarChanged) showStatus(transport === 'tab' ? 'Live changes from another tab' : 'Live changes from collaborator', { savedAt: Number(envelope.sentAt) || Date.now() });
-        const mergedHash = timelineSnapshotHash(
+        if (result?.changed) showStatus(transport === 'tab' ? 'Live changes from another tab' : 'Live changes from collaborator', { savedAt: Number(envelope.sentAt) || Date.now() });
+        const mergedHash = ihnCanonicalDocumentHash(
             state.pages.map(page => sanitizePageForStorage(page)),
+            getCollabStructureSnapshot(),
             state.calendarPageConfig,
-            state.exportName
+            state.exportName,
+            getCollabFieldSnapshot()
         );
-        ihnLiveLastHash = mergedHash;
-        if (result?.hasLocalMerges && !state.isReadOnly) {
-            driveDirty = true;
-            requestImmediateDriveSave();
-            ihnLiveBroadcastQueued = true;
+        // Advance causal/dedupe state only after the merge completed. A failed
+        // IDB/hydration pass can therefore be retried with the same sequence.
+        ihnLiveSeen.set(envelope.actorId, sequence);
+        if (envelope.contentHash) ihnLiveAppliedHashes.set(envelope.contentHash, Date.now());
+        ihnLiveLastAppliedHash = mergedHash;
+        ihnTrackMergeCurrentState(mergedHash);
+        const needsConvergenceBroadcast = canEditDocument && (
+            result?.hasLocalMerges
+            || (envelope.contentHash && mergedHash !== envelope.contentHash)
+        );
+        if (needsConvergenceBroadcast) {
+            if (ihnShouldQueueMergeUpload(mergedHash)) {
+                if (typeof bumpDriveContentVersion === 'function') {
+                    bumpDriveContentVersion();
+                    const refreshedGuard = ihnTrackMergeCurrentState(mergedHash);
+                    if (refreshedGuard) refreshedGuard.requestedHash = refreshedGuard.currentHash;
+                }
+                ihnAssertLiveOperationContext(operation);
+                driveDirty = true;
+                requestImmediateDriveSave();
+            }
+            scheduleLiveDocumentBroadcast({ immediate: true, force: true });
+        } else {
+            ihnScheduleLiveFanOut(envelope, transport, peerId, operation);
         }
+        return true;
     } finally {
-        ihnLiveApplying = false;
-        if (ihnLiveBroadcastQueued) scheduleLiveDocumentBroadcast({ immediate: true });
+        if (!applyRecord || ihnLiveActiveApply === applyRecord) {
+            ihnLiveApplying = false;
+            if (ihnLiveBroadcastQueued && ihnLiveOperationContextIsCurrent(operation)) {
+                scheduleLiveDocumentBroadcast({ immediate: true, internal: true });
+            }
+        }
     }
 }

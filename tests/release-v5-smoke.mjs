@@ -4,11 +4,14 @@ import vm from 'node:vm';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
+const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.5.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.3.0.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.2\.5';/);
+assert.match(html, /const APP_VERSION = '5\.3\.0';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
+assert.match(html, /collaboration-core-v5\.js\?v=5\.3\.0/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.3\.0/);
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
 assert.match(html, /function normalizeTimelineHistory\(/);
@@ -71,18 +74,58 @@ assert.match(live, /ihn_live_key_v1/);
 assert.match(live, /comments/);
 assert.match(live, /bufferedAmountLowThreshold/);
 assert.match(live, /applyRemotePages/);
-assert.match(live, /snapshot\.contentHash = timelineSnapshotHash/);
+assert.match(live, /snapshot\.contentHash = ihnCanonicalDocumentHash/);
 assert.match(live, /ihnLiveBroadcastQueued = true/);
-assert.match(live, /if \(ihnLiveBroadcastQueued\) scheduleLiveDocumentBroadcast\(\{ immediate: true \}\)/);
-assert.match(live, /envelope\.contentHash === ihnLiveLastHash/);
+assert.match(live, /scheduleLiveDocumentBroadcast\(\{ immediate: true, internal: true \}\)/);
+assert.match(live, /let ihnLiveLastAppliedHash = '';/);
+assert.match(live, /peer\.lastAckedHash === hash/);
+assert.match(live, /snapshot-ack/);
+assert.match(live, /function ihnSuperviseConnections\(/);
+assert.match(live, /IHN_LIVE_CONNECT_TIMEOUT/);
+assert.match(live, /ihnComputeReconnectDelay/);
+assert.match(live, /startModifiedTime/);
+assert.match(live, /pageToken/);
+assert.doesNotMatch(live, /for \(let page = 0; page < 3;/);
+assert.match(live, /ihnGetAuthoritativeSignalKeyForWrite/);
+assert.match(
+  live,
+  /const canEditDocument = ihnCanEditLiveDocument\(\)[\s\S]{0,700}additiveById: canEditDocument/
+);
+assert.doesNotMatch(live, /ihnLiveLastHash/);
 assert.match(live, /function getLiveCollaborationConnectionInfo\(/);
 assert.match(live, /local-network/);
 assert.match(live, /isMain:/);
+assert.match(live, /function ihnFanOutAppliedEnvelope\(/);
+assert.match(live, /function ihnStartLiveApplyDrain\(/);
+assert.match(live, /snapshot-received/);
+assert.match(live, /IHN_LIVE_APPLY_ACK_TIMEOUT/);
 
 assert.match(html, /const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';/);
 assert.match(html, /remoteSyncEnvelope\.contentHash === driveConfirmedContentHash/);
-assert.match(html, /const localOnlyStrokes = structuralIdentityChanged \|\| !preserveLocalUnsynced/);
-assert.match(html, /const pageHasLocalMerges = preserveLocalUnsynced &&/);
+assert.match(html, /const localOnlyStrokes = structuralIdentityChanged \|\| !preserveLocalContent/);
+assert.match(html, /const pageHasLocalMerges = preserveLocalContent &&/);
+assert.match(html, /const preserveLocalAtApply = preserveLocalUnsynced/);
+assert.match(html, /additiveById,/);
+assert.match(
+  html,
+  /function chooseCollaborativeItemLocation[\s\S]{0,700}ihnChooseConcurrentItem/,
+  'cross-page locations must resolve by causal item stamp and stable fingerprint'
+);
+assert.match(
+  html,
+  /function reconcileDuplicateItemsAcrossPages[\s\S]{0,6500}trackDeletedStrokeIds\(page, causalLosers\)/,
+  'cross-page moves must choose one causal winner and tombstone losing locations'
+);
+assert.match(
+  html,
+  /const itemLocationResolution = await reconcileDuplicateItemsAcrossPages\(\{[\s\S]{0,700}hasLocalMerges = true;/,
+  'remote merges must publish deterministic item-location reconciliation'
+);
+assert.match(
+  html,
+  /function removeCalendarImportedImages[\s\S]{0,900}trackDeletedStrokeIds\(page, removed\)/,
+  'clearing legacy calendar cards must persist causal tombstones'
+);
 assert.match(html, /Saving the last document to Drive in the background/);
 assert.match(html, /await backgroundExitSavePromise/);
 assert.match(html, /Finishing the previous Drive save/);
@@ -148,6 +191,179 @@ for (let index = 0; index < inlineScripts.length; index += 1) {
 new vm.Script(live, { filename: 'live-collaboration-v5.js' });
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
+new vm.Script(collaborationCore, { filename: 'collaboration-core-v5.js' });
+assert.match(collaborationCore, /function ihnMergeStructureMeta\(/);
+assert.match(collaborationCore, /function ihnMergeFieldMeta\(/);
+assert.match(collaborationCore, /function ihnFieldMetaHash\(/);
+assert.match(collaborationCore, /function ihnNormalizeDeletionStamps\(/);
+assert.match(collaborationCore, /function ihnMergeDeletionStamps\(/);
+assert.match(collaborationCore, /function ihnDeletionWinsItem\(/);
+assert.match(collaborationCore, /function ihnCanonicalDocumentHash\(/);
+assert.match(collaborationCore, /function ihnComputeReconnectDelay\(/);
+assert.match(html, /IH_STRUCT:/);
+assert.match(html, /IH_FIELDS:/);
+assert.equal(
+  (html.match(/IH_FIELDS:\$\{encodedFields\}/g) || []).length,
+  2,
+  'both PDF creation paths must persist scalar collaboration fields'
+);
+assert.match(html, /remoteFields: remoteCollabFields/);
+assert.match(html, /getCollabFieldSnapshot\(\)/);
+assert.match(html, /persistPendingCollabPageStoreRewrite/);
+assert.match(html, /db\.transaction\(\[PAGE_STORE, OPS_STORE, DB_STORE\], 'readwrite'\)/);
+assert.match(html, /collabPageOrderMutationInProgress \|\| collabPageStoreRewritePending/);
+assert.match(html, /generateLegacyDocumentPageId\(idbCacheKey, i\)/);
+assert.match(html, /function generateLegacyDocumentItemId\(/);
+assert.match(html, /deletedStrokeStamps:/);
+assert.match(html, /ihnDeletionWinsItem\(mergedDeletionStamps, candidate\)/);
+assert.match(html, /function acquireLocalPageStructureMutation\(/);
+assert.match(html, /function acquireRemotePageMerge\(/);
+assert.match(html, /releaseRemotePageMerge\(mergeToken\)/);
+assert.match(html, /reconcileConcurrentCalendarPanels\(\{/);
+assert.match(html, /const activePageStoreTransactions = new Set\(\);/);
+assert.match(html, /let strokeOpsFlushPromise = null;/);
+assert.match(html, /let activeStrokeOpsTransaction = null;/);
+assert.match(html, /localPageStructureMutationToken === structureToken/);
+assert.match(html, /remotePageMergeToken === structureToken/);
+assert.match(html, /activePageStoreTransactions\.forEach\(tx =>/);
+assert.match(html, /activeStrokeOpsTransactions\.forEach\(tx =>[\s\S]{0,160}tx\.abort\(\)/);
+assert.match(
+  html,
+  /async function flushStrokeOpsQueue[\s\S]{0,2200}while \(strokeOpsFlushPromise\)[\s\S]{0,2200}strokeOpsFlushPromise = flushPromise/,
+  'stroke-op persistence callers must coalesce onto one durable transaction'
+);
+assert.match(
+  html,
+  /async function appendStrokeOpsToIndexedDb[\s\S]{0,1800}structureVersion !== pageStructureVersion[\s\S]{0,1800}tx\.onabort = \(\) => finish\(false\)/,
+  'stroke-op writes must reject a stale page mapping and remain abortable on document switches'
+);
+assert.match(html, /loadDriveSession\(\);\s*\/\/ The Drive file ID[\s\S]{0,220}await loadFromStorage\(\);/);
+assert.match(html, /function resolveHistoryPageIndex\(/);
+assert.match(html, /function removeHistoryItems\(/);
+assert.match(html, /fromPageId: fromPage\.pageId/);
+assert.match(html, /strokeIds: movedStrokes\.map/);
+assert.match(html, /pageIdToDelete = String\(state\.pages\[pageIndex\]\?\.pageId/);
+assert.match(html, /pageStructureDragInProgress = true/);
+assert.match(html, /invalidatePageStructureAsyncState\(\);\s*\/\/ Clear per-page IDB/);
+assert.match(html, /importedPages\.forEach\(\(page, index\) => \{/);
+assert.match(html, /strokeCollabFingerprint\(/);
+assert.match(html, /noteCollabPageMoved\(movedPage\?\.pageId, toIndex\)/);
+assert.match(html, /noteCollabPageDeleted\(removedPage\?\.pageId\)/);
+assert.match(html, /remoteStructure: remoteCollabStructure/);
+
+const restoreTombstoneStart = html.indexOf('function addRestoreTombstones');
+const restoreTombstoneEnd = html.indexOf('async function restoreVersion', restoreTombstoneStart);
+assert.ok(
+  restoreTombstoneStart > 0 && restoreTombstoneEnd > restoreTombstoneStart,
+  'restore tombstone reconciliation must be extractable'
+);
+const restoreTombstoneSource = html.slice(restoreTombstoneStart, restoreTombstoneEnd);
+assert.match(restoreTombstoneSource, /const currentPageId = String\(currentPage\?\.pageId \|\| ''\);/);
+assert.match(
+  restoreTombstoneSource,
+  /const targetPage = currentPageId\s*\? \(targetByPageId\.get\(currentPageId\) \|\| null\)\s*: \(restoredPages\[pageIndex\] \|\| null\);/,
+  'restore tombstones may use an index fallback only for legacy pages without a pageId'
+);
+assert.doesNotMatch(
+  restoreTombstoneSource,
+  /targetByPageId\.get\(currentPage\.pageId\)\)\s*\|\|\s*restoredPages\[pageIndex\]/,
+  'identified pages must never fall through to a different page at the same index'
+);
+
+const timelineAdoptionStart = html.indexOf('async function adoptVersionHistory');
+const timelineAdoptionEnd = html.indexOf('function sanitizePageForStorage', timelineAdoptionStart);
+assert.ok(
+  timelineAdoptionStart > 0 && timelineAdoptionEnd > timelineAdoptionStart,
+  'timeline adoption must be extractable'
+);
+const timelineAdoptionSource = html.slice(timelineAdoptionStart, timelineAdoptionEnd);
+assert.match(timelineAdoptionSource, /const documentKey = options\.documentKey \|\| getTimelineDocumentKey\(\);/);
+assert.match(timelineAdoptionSource, /const sessionToken = Number\.isFinite\(options\.sessionToken\)/);
+assert.match(timelineAdoptionSource, /loadTimelineFromIndexedDb\(documentKey\)/);
+assert.match(timelineAdoptionSource, /saveTimelineToIndexedDb\(mergedHistory, documentKey\)/);
+assert.ok(
+  (timelineAdoptionSource.match(/if \(!isCurrentDocument\(\)\)/g) || []).length >= 2,
+  'timeline adoption must revalidate its captured document after every await'
+);
+assert.doesNotMatch(
+  timelineAdoptionSource,
+  /await[\s\S]{0,180}getTimelineDocumentKey\(\)/,
+  'timeline adoption must not recalculate its persistence key after an await'
+);
+
+const remotePageApplyStart = html.indexOf('async function applyRemotePages');
+const remotePageApplyEnd = html.indexOf('function setsEqual', remotePageApplyStart);
+assert.ok(
+  remotePageApplyStart > 0 && remotePageApplyEnd > remotePageApplyStart,
+  'remote page reconciliation must be extractable'
+);
+const remotePageApplySource = html.slice(remotePageApplyStart, remotePageApplyEnd);
+assert.match(remotePageApplySource, /const activePageIdBeforeReorder = String\(/);
+assert.match(
+  remotePageApplySource,
+  /page => String\(page\?\.pageId \|\| ''\) === activePageIdBeforeReorder/,
+  'remote reorder must find the active page by stable pageId'
+);
+assert.match(
+  remotePageApplySource,
+  /state\.activePageIndex = remappedActivePageIndex >= 0/,
+  'remote reorder must update the active index after remapping'
+);
+assert.match(
+  remotePageApplySource,
+  /remotePageStructureApplyInProgress = true;[\s\S]{0,1800}ensureAllPagesLoadedForStructureChange\(\{[\s\S]{0,300}assertContext: assertRemoteMergeContext[\s\S]{0,900}flushStrokeOpsQueue\(\{\s*structureToken: mergeToken/,
+  'remote structure reconciliation must block new edits before checkpointing the old numeric mapping'
+);
+assert.match(
+  remotePageApplySource,
+  /const currentMergedFieldMetadata = ihnMergeFieldMeta\([\s\S]{0,900}state\.collabFields = currentMergedFieldMetadata/,
+  'page fields must be re-merged after asynchronous page hydration'
+);
+
+const deferredPullStart = html.indexOf('async function flushDeferredRemotePull');
+const deferredPullEnd = html.indexOf('function isRemoteMetaNewerThanTracked', deferredPullStart);
+assert.ok(deferredPullStart > 0 && deferredPullEnd > deferredPullStart, 'deferred Drive pull must be extractable');
+const deferredPullSource = html.slice(deferredPullStart, deferredPullEnd);
+assert.match(deferredPullSource, /const pendingGeneration = deferredRemotePullGeneration;/);
+assert.match(deferredPullSource, /if \(!result \|\| result\.error \|\| result\.deferred \|\| result\.busy\)/);
+assert.match(
+  deferredPullSource,
+  /if \(deferredRemotePullGeneration === pendingGeneration\) \{\s*deferredRemotePullPending = false;/,
+  'only the exact successfully applied Drive notification may be retired'
+);
+
+const fieldsCodecStart = html.indexOf('function encodeCollabFieldsForKeywords');
+const fieldsCodecEnd = html.indexOf('// ── § 4.4', fieldsCodecStart);
+assert.ok(fieldsCodecStart > 0 && fieldsCodecEnd > fieldsCodecStart, 'IH_FIELDS codec must be extractable');
+const sampleFields = {
+  v: 1,
+  clock: 42,
+  fields: {
+    'doc:exportName': { value: 'Diseño · 東京', stamp: { clock: 41, actor: 'peer-a' } },
+    'page:p1:sidePanel': { value: null, stamp: { clock: 42, actor: 'peer-b' } }
+  }
+};
+const fieldsCodecContext = vm.createContext({
+  console,
+  btoa,
+  atob,
+  escape,
+  unescape,
+  encodeURIComponent,
+  decodeURIComponent,
+  getCollabFieldSnapshot: () => sampleFields,
+  ihnNormalizeFieldMeta: value => value
+});
+vm.runInContext(
+  html.slice(fieldsCodecStart, fieldsCodecEnd),
+  fieldsCodecContext,
+  { filename: 'collaboration-fields-codec.js' }
+);
+const encodedFields = fieldsCodecContext.encodeCollabFieldsForKeywords();
+const decodedFields = fieldsCodecContext.decodeCollabFieldsFromKeywords(
+  `prefix;IH_FIELDS:${encodedFields};IH_SYNC:later-metadata`
+);
+assert.equal(JSON.stringify(decodedFields), JSON.stringify(sampleFields), 'IH_FIELDS must round-trip Unicode and null values');
 
 const timelineStart = html.indexOf('const TIMELINE_SCHEMA_VERSION = 2;');
 const timelineEnd = html.indexOf('async function encodeVersionHistoryForKeywords', timelineStart);
@@ -164,6 +380,16 @@ const timelineContext = vm.createContext({
   },
   normalizeTemplateKind: value => value || 'blank',
   normalizePageDimension: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback,
+  ihnStableStringify(value) {
+    const normalize = current => {
+      if (Array.isArray(current)) return current.map(normalize);
+      if (!current || typeof current !== 'object') return current;
+      return Object.fromEntries(
+        Object.keys(current).sort().map(key => [key, normalize(current[key])])
+      );
+    };
+    return JSON.stringify(normalize(value));
+  },
   getPresenceClientId: () => 'test-device',
   driveUserProfile: null,
   persistTimelineHistory: async () => true,
@@ -184,12 +410,126 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
   { id: 'milestone-b', ts: 4, author: { email: 'a@example.com' }, contentHash: 'milestone', kind: 'restore', isMilestone: true, pages: basePage }
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
+const concurrentTimelineLeft = [{
+  id: 'shared-coalesce-id',
+  ts: 10,
+  author: { email: 'same@example.com', name: 'Same account' },
+  contentHash: 'left-content',
+  deviceId: 'device-a',
+  pages: basePage
+}];
+const concurrentTimelineRight = [{
+  id: 'shared-coalesce-id',
+  ts: 10,
+  author: { email: 'same@example.com', name: 'Same account' },
+  contentHash: 'right-content',
+  deviceId: 'device-b',
+  pages: [{ ...basePage[0], pageWidth: 211 }]
+}];
+const concurrentTimelineAB = timelineContext.mergeVersionHistories(
+  concurrentTimelineLeft,
+  concurrentTimelineRight
+);
+const concurrentTimelineBA = timelineContext.mergeVersionHistories(
+  concurrentTimelineRight,
+  concurrentTimelineLeft
+);
+assert.equal(concurrentTimelineAB.length, 2, 'same-account devices must keep both concurrent timeline branches');
+assert.equal(
+  JSON.stringify(concurrentTimelineAB),
+  JSON.stringify(concurrentTimelineBA),
+  'timeline ID collisions must resolve independently of merge arrival order'
+);
+const convergedSameContentTimeline = [{
+  id: 'same-origin',
+  ts: 20,
+  author: { email: 'same@example.com', name: 'Same account' },
+  contentHash: 'converged-content',
+  deviceId: 'device-a',
+  pages: basePage
+}, {
+  id: 'same-origin',
+  ts: 20,
+  author: { email: 'same@example.com', name: 'Same account' },
+  contentHash: 'converged-content',
+  deviceId: 'device-b',
+  pages: basePage
+}];
+const convergedTimelineOnce = timelineContext.pruneTimelineHistory(convergedSameContentTimeline);
+const convergedTimelineTwice = timelineContext.pruneTimelineHistory(convergedTimelineOnce);
+assert.equal(convergedTimelineOnce.length, 1, 'equivalent device branches should collapse once converged');
+assert.equal(
+  JSON.stringify(convergedTimelineOnce),
+  JSON.stringify(convergedTimelineTwice),
+  'timeline normalization must remain idempotent after logical deduplication'
+);
 
-assert.equal(update.publishedAppVersion, '5.2.5');
+const localStructureAcquireStart = html.indexOf('async function acquireLocalPageStructureMutation');
+const localStructureAcquireEnd = html.indexOf('function assertLocalPageStructureContext', localStructureAcquireStart);
+const localStructureAcquireSource = html.slice(localStructureAcquireStart, localStructureAcquireEnd);
+assert.match(localStructureAcquireSource, /expectedContext = captureLocalPageStructureDocumentContext\(\)/);
+assert.match(localStructureAcquireSource, /isLocalPageStructureDocumentContextCurrent\(expectedContext\)/);
+assert.match(html, /beginDocumentSession\(\{ preserveLocalStructureToken: structureToken \}\)/);
+
+assert.match(
+  remotePageApplySource,
+  /materializableFallbackId[\s\S]{0,500}structureResolution\.recoveredFallbackPageId = materializableFallbackId/,
+  'an all-deleted fallback must select a page body that can actually be materialized'
+);
+
+const driveMetaStart = html.indexOf('function normalizeDriveVersion');
+const driveMetaEnd = html.indexOf('function isDriveHydratedForCurrentFile', driveMetaStart);
+const driveMetaSource = html.slice(driveMetaStart, driveMetaEnd);
+assert.match(driveMetaSource, /compareDriveVersions/);
+assert.match(driveMetaSource, /revisions\/\$\{encodeURIComponent\(revisionId\)\}/);
+assert.match(driveMetaSource, /revisionUrl\.searchParams\.set\('alt', 'media'\)/);
+assert.match(driveMetaSource, /driveExactRevisionUnavailableFiles\.add\(fileId\)/);
+assert.match(driveMetaSource, /headRevisionId,modifiedTime,version,md5Checksum,size/);
+
+const md5Start = html.indexOf('const MD5_SHIFT_AMOUNTS');
+const md5End = html.indexOf('function getPublicDriveResourceHeaders', md5Start);
+const md5Context = vm.createContext({ Blob, Uint8Array, Uint32Array });
+vm.runInContext(
+  `${html.slice(md5Start, md5End)}; this.md5BlobHex = md5BlobHex;`,
+  md5Context
+);
+assert.equal(
+  await md5Context.md5BlobHex(new Blob(['abc'])),
+  '900150983cd24fb0d6963f7d28e17f72',
+  'the incremental Drive checksum must match the MD5 standard vector'
+);
+
+const pullStart = html.indexOf('async function pullRemoteChanges');
+const pullEnd = html.indexOf('async function updateLocalRevisionId', pullStart);
+const pullSource = html.slice(pullStart, pullEnd);
+assert.match(pullSource, /const metaAtApplyBoundary = await fetchDriveRevisionMeta\(fileIdAtStart\)/);
+assert.match(pullSource, /metaAfterApply = await fetchDriveRevisionMeta\(fileIdAtStart\)/);
+assert.match(pullSource, /if \(!driveRevisionMetaMatches\(metaData, metaAfterApply\)/);
+assert.match(pullSource, /if \(!backgroundRendered\)/);
+assert.match(pullSource, /documentKey: `drive:\$\{fileIdAtStart\}`/);
+
+const exportFetchStart = html.indexOf('async function fetchLatestDrivePdfForExport');
+const exportFetchEnd = html.indexOf('async function exportDrivePdf', exportFetchStart);
+const exportFetchSource = html.slice(exportFetchStart, exportFetchEnd);
+assert.doesNotMatch(
+  exportFetchSource,
+  /applyDriveRemoteMeta/,
+  'an export observation must never advance the applied Drive content baseline'
+);
+assert.match(exportFetchSource, /fetchStableDrivePdfSnapshot/);
+assert.match(html, /decodeCollabStructureFromKeywords\(keywords, pageIds = \[\], options = \{\}\)/);
+assert.match(html, /if \(options\.throwOnInvalid\) throw error;/);
+assert.match(
+  html,
+  /page\.sidePanel\.title = titleEl\.textContent;[\s\S]{0,180}markPageDirty\(pageIndex, 'full'\);/,
+  'side-panel title edits must be durable in PAGE_STORE'
+);
+
+assert.equal(update.publishedAppVersion, '5.3.0');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.2\.5/);
-assert.match(notes, /two-finger pinch/i);
-assert.match(notes, /compact zoom controls/i);
-assert.match(notes, /responsive sign-in notice/i);
+assert.match(update.releaseNotes, /v5\.3\.0/);
+assert.match(notes, /recovers from Drive fallback/i);
+assert.match(notes, /first simultaneous edit/i);
+assert.match(notes, /Page additions, deletions and reordering/i);
 
-console.log('v5.2.5 smoke checks passed.');
+console.log('v5.3.0 smoke checks passed.');
