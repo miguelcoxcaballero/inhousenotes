@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.1.0.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.0.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.1\.0';/);
+assert.match(html, /const APP_VERSION = '5\.2\.0';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -69,6 +69,29 @@ assert.match(html, /This device\$\{overview\.isMain \? ' · Main device'/);
 assert.match(html, /Google Drive<\/div>/);
 assert.match(html, /connection\?\.transport/);
 assert.doesNotMatch(html, />Admin mode</);
+assert.match(html, /const PENDING_EXIT_UPLOAD_KEY = 'drive-pending-exit-upload-v1';/);
+assert.match(html, /async function persistExitLocalCheckpoint\(/);
+assert.match(html, /function resumePendingExitUploadIfNeeded\(/);
+assert.match(html, /await localCheckpoint;/);
+assert.doesNotMatch(
+  html.slice(html.indexOf('const localCheckpoint = persistExitLocalCheckpoint'), html.indexOf('// Clear presence before leaving document')),
+  /Promise\.race/,
+  'Home must wait for the durable local checkpoint'
+);
+assert.match(html, /event\.returnValue = '';/);
+assert.match(html, /clearPendingExitUpload\(state\.driveFileId/);
+assert.match(html, /className = 'public-inline-preview'/);
+assert.match(html, /fingerprintPublicPdfBlob/);
+assert.match(html, /setInterval\(poll, PUBLIC_DRIVE_API_KEY \? 1800 : 2500\)/);
+assert.match(html, /startLiveCollaboration\(\);\s*showStatus\('Public document opened/);
+const publicOpenStart = html.indexOf('function openPublicDrivePreview');
+const publicOpenEnd = html.indexOf('function startPublicSharedPolling', publicOpenStart);
+assert.doesNotMatch(
+  html.slice(publicOpenStart, publicOpenEnd),
+  /getPublicPreviewOverlay\(/,
+  'anonymous fallback must remain inside the standard editor UI'
+);
+assert.match(live, /document\.getElementById\('public-inline-preview'\)/);
 
 const inlineScripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
   .filter(match => match.index > 6500 && match[1].trim())
@@ -116,11 +139,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.1.0');
+assert.equal(update.publishedAppVersion, '5.2.0');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.1\.0/);
-assert.match(notes, /multi-device/i);
-assert.match(notes, /update loops/i);
-assert.match(notes, /background/i);
+assert.match(update.releaseNotes, /v5\.2\.0/);
+assert.match(notes, /durable IndexedDB/i);
+assert.match(notes, /public links/i);
+assert.match(notes, /2\.5 seconds/i);
 
-console.log('v5.1.0 smoke checks passed.');
+console.log('v5.2.0 smoke checks passed.');

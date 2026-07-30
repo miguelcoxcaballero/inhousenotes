@@ -532,6 +532,14 @@ async function ihnHandleLiveEnvelope(envelope, transport = '') {
         const preserveLocal = !state.isReadOnly && hasUnsyncedLocalDriveChanges();
         const previousCalendar = JSON.stringify(state.calendarPageConfig || null);
         const result = await applyRemotePages(envelope.pages, { preserveLocalUnsynced: preserveLocal });
+        if (result?.changed
+            && typeof clearPublicInlinePreview === 'function'
+            && document.getElementById('public-inline-preview')) {
+            clearPublicInlinePreview();
+            setReadOnlyMode(true, { force: true });
+            updateViewerModeUI();
+            showEditorView();
+        }
         if (!preserveLocal) {
             state.calendarPageConfig = cloneTimelineValue(envelope.calendarPageConfig || null, null);
             if (envelope.exportName) { state.exportName = envelope.exportName; updateDocTitle(); }

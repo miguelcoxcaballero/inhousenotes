@@ -3,6 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.1.0",
-  "releaseNotes": "Inhouse Notes v5.1.0: immediate multi-device edits, loop-free Drive synchronization, connection and per-device save status, and near-instant return to Home with safe background saving."
+  "publishedAppVersion": "5.2.0",
+  "releaseNotes": "Inhouse Notes v5.2.0: crash-safe background Drive saves, automatic recovery after closing the app, and a faster anonymous public viewer that keeps the full Inhouse Notes interface."
 }
