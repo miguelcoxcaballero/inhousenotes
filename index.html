@@ -411,25 +411,34 @@
             }
 
             #readonly-banner {
-                flex-wrap: wrap !important;
-                gap: 8px !important;
-                padding: 8px 10px !important;
-                font-size: 0.82rem !important;
+                gap: 8px;
+                min-height: 34px;
+                padding: 4px 8px;
+                font-size: clamp(0.68rem, 3vw, 0.76rem);
             }
 
-            #readonly-banner>div:first-child {
-                width: 100%;
+            .readonly-banner-copy {
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
 
-            #readonly-banner>div:last-child {
-                width: 100%;
-                justify-content: flex-end;
-                gap: 8px !important;
+            .readonly-banner-actions {
+                flex: 0 0 auto;
+                gap: 6px;
             }
 
             #readonly-banner button {
                 min-width: 0;
-                flex: 1 1 auto;
+                min-height: 28px;
+                padding: 4px 9px;
+                font-size: 0.72rem;
+                white-space: nowrap;
+            }
+
+            #readonly-banner[data-shared-editor-gate="true"] #btn-make-copy {
+                display: none !important;
             }
         }
 
@@ -1346,6 +1355,53 @@
             cursor: default;
         }
 
+        #readonly-banner {
+            display: flex;
+            min-height: 38px;
+            flex: 0 0 auto;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 6px 12px;
+            border-bottom: 1px solid color-mix(in srgb, var(--accent-yellow) 28%, transparent);
+            background: color-mix(in srgb, var(--accent-yellow) 18%, var(--bg-primary));
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            line-height: 1.25;
+        }
+
+        [data-theme="dark"] #readonly-banner {
+            border-bottom-color: color-mix(in srgb, var(--accent-yellow) 22%, transparent);
+            background: color-mix(in srgb, var(--accent-yellow) 11%, var(--bg-primary));
+        }
+
+        .readonly-banner-copy,
+        .readonly-banner-actions {
+            display: flex;
+            align-items: center;
+        }
+
+        .readonly-banner-actions {
+            flex: 0 0 auto;
+            gap: 8px;
+        }
+
+        #readonly-banner button {
+            min-height: 30px;
+            padding: 4px 10px;
+            border: 1px solid color-mix(in srgb, var(--accent-yellow) 34%, transparent);
+            background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+            color: var(--text-primary);
+            font-size: 0.75rem;
+            box-shadow: none;
+        }
+
+        #readonly-banner #btn-ask-edit {
+            border-color: transparent;
+            background: var(--text-primary);
+            color: var(--bg-primary);
+        }
+
         /* ┄ § 2.3d  Shared button base styles & editor read-only overrides ──
            Base .btn rules (used across all views) plus the rules that disable
            toolbar buttons and hide the add-page indicator when the doc is
@@ -1493,8 +1549,22 @@
             z-index: 8;
             overflow: hidden;
             background: var(--bg-primary);
-            touch-action: pan-x pan-y pinch-zoom;
+            cursor: grab;
+            touch-action: none;
             overscroll-behavior: contain;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .public-inline-preview.dragging {
+            cursor: grabbing;
+        }
+
+        .public-preview-stage {
+            position: absolute;
+            inset: 0;
+            transform-origin: 50% 50%;
+            will-change: transform;
         }
 
         #canvas-viewport.public-preview-active {
@@ -1516,12 +1586,67 @@
             background: #202124;
             opacity: 0;
             transition: opacity 120ms ease;
-            pointer-events: auto;
-            touch-action: auto;
+            pointer-events: none;
+            touch-action: none;
         }
 
         .public-inline-preview iframe.ready {
             opacity: 1;
+        }
+
+        .public-preview-controls {
+            position: absolute;
+            right: max(10px, env(safe-area-inset-right, 0px));
+            bottom: max(10px, env(safe-area-inset-bottom, 0px));
+            z-index: 3;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 3px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
+            box-shadow: var(--shadow-medium);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        [data-theme="dark"] .public-preview-controls {
+            border-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .public-preview-control {
+            display: grid;
+            min-width: 34px;
+            height: 32px;
+            padding: 0 9px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            color: var(--text-primary);
+            font: 700 0.78rem 'DM Sans', sans-serif;
+            cursor: pointer;
+            place-items: center;
+            touch-action: manipulation;
+        }
+
+        .public-preview-control:hover,
+        .public-preview-control:active {
+            background: color-mix(in srgb, var(--accent-orange) 14%, transparent);
+            color: var(--accent-orange);
+        }
+
+        @media (max-width: 420px) {
+            .public-preview-controls {
+                right: 8px;
+                bottom: 8px;
+            }
+
+            .public-preview-control {
+                min-width: 31px;
+                height: 30px;
+                padding: 0 8px;
+            }
         }
 
         #editor-view .mode-toggle-group.public-read-only-mode {
@@ -7238,25 +7363,35 @@
             }
 
             #readonly-banner {
-                flex-wrap: wrap !important;
+                flex-wrap: nowrap !important;
                 gap: 8px !important;
-                padding: 8px 10px !important;
-                font-size: 0.82rem !important;
+                min-height: 34px !important;
+                padding: 4px 8px !important;
+                font-size: clamp(0.68rem, 3vw, 0.76rem) !important;
             }
 
             #readonly-banner>div:first-child {
-                width: 100%;
+                width: auto;
+                min-width: 0;
+                flex: 1 1 auto;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
 
             #readonly-banner>div:last-child {
-                width: 100%;
+                width: auto;
+                flex: 0 0 auto;
                 justify-content: flex-end;
-                gap: 8px !important;
+                gap: 6px !important;
             }
 
             #readonly-banner button {
                 min-width: 0;
-                flex: 1 1 auto;
+                min-height: 28px;
+                flex: 0 0 auto;
+                padding: 4px 9px;
+                font-size: 0.72rem;
             }
         }
 
@@ -7556,18 +7691,13 @@
 
     <!-- ── § 3.3  Editor view ──────────────────────────────────────────────── -->
     <div id="editor-view" class="hidden">
-        <div id="readonly-banner" class="hidden"
-            style="background:var(--accent-yellow);color:#000;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;font-size:0.95rem;border-bottom:1px solid rgba(0,0,0,0.1);">
-            <div style="display:flex;align-items:center;">
+        <div id="readonly-banner" class="hidden" role="status">
+            <div class="readonly-banner-copy">
                 <span id="readonly-banner-message"><strong>View Only</strong> You don't have permission to edit this file.</span>
             </div>
-            <div style="display:flex;gap:12px;">
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-make-copy"
-                    style="background:rgba(255,255,255,0.7);color:#000;border:none;padding:6px 12px;font-size:0.85rem;">Make
-                    a Copy</button>
-                <button type="button" class="btn btn-primary btn-sm" id="btn-ask-edit"
-                    style="background:#000;color:#fff;border:none;padding:6px 12px;font-size:0.85rem;">Ask to
-                    Edit</button>
+            <div class="readonly-banner-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-make-copy">Make a Copy</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btn-ask-edit">Ask to Edit</button>
             </div>
         </div>
         <div id="app">
@@ -8444,7 +8574,7 @@
             </div>
         </div>
     </div>
-    <script src="live-collaboration-v5.js?v=5.2.4"></script>
+    <script src="live-collaboration-v5.js?v=5.2.5"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8512,7 +8642,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.2.4';
+        const APP_VERSION = '5.2.5';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -14467,6 +14597,12 @@
         let publicSharedPreviewModifiedTime = 0;
         let publicSharedPreviewFingerprint = '';
         let publicSharedIframeRefreshAt = 0;
+        const publicPreviewPointers = new Map();
+        let publicPreviewScale = 1;
+        let publicPreviewPanX = 0;
+        let publicPreviewPanY = 0;
+        let publicPreviewLastCenter = null;
+        let publicPreviewLastDistance = 0;
 
         function pausePublicSharedPolling() {
             if (publicSharedPollTimer) clearInterval(publicSharedPollTimer);
@@ -14501,8 +14637,180 @@
             return `${blob.size}:${(hash >>> 0).toString(36)}`;
         }
 
+        function clampPublicPreviewPan(host) {
+            if (!host) return;
+            const rect = host.getBoundingClientRect();
+            const scaleOverflow = Math.max(0, publicPreviewScale - 1);
+            const maxX = rect.width * (0.16 + scaleOverflow * 0.5);
+            const maxY = rect.height * (0.2 + scaleOverflow * 0.5);
+            publicPreviewPanX = Math.max(-maxX, Math.min(maxX, publicPreviewPanX));
+            publicPreviewPanY = Math.max(-maxY, Math.min(maxY, publicPreviewPanY));
+        }
+
+        function applyPublicPreviewTransform(host) {
+            if (!host) return;
+            clampPublicPreviewPan(host);
+            const stage = host.querySelector('.public-preview-stage');
+            if (!stage) return;
+            stage.style.transform = `translate3d(${publicPreviewPanX}px, ${publicPreviewPanY}px, 0) scale(${publicPreviewScale})`;
+            const fitButton = host.querySelector('[data-public-preview-action="fit"]');
+            if (fitButton) fitButton.textContent = publicPreviewScale === 1 ? 'Fit' : `${Math.round(publicPreviewScale * 100)}%`;
+        }
+
+        function setPublicPreviewZoom(host, nextScale, clientX, clientY) {
+            if (!host) return;
+            const rect = host.getBoundingClientRect();
+            const next = Math.max(0.7, Math.min(4, Number(nextScale) || 1));
+            const anchorX = Number.isFinite(clientX) ? clientX - rect.left - rect.width / 2 : 0;
+            const anchorY = Number.isFinite(clientY) ? clientY - rect.top - rect.height / 2 : 0;
+            const contentX = (anchorX - publicPreviewPanX) / publicPreviewScale;
+            const contentY = (anchorY - publicPreviewPanY) / publicPreviewScale;
+            publicPreviewScale = next;
+            publicPreviewPanX = anchorX - contentX * next;
+            publicPreviewPanY = anchorY - contentY * next;
+            applyPublicPreviewTransform(host);
+        }
+
+        function resetPublicPreviewTransform(host) {
+            publicPreviewPointers.clear();
+            publicPreviewScale = 1;
+            publicPreviewPanX = 0;
+            publicPreviewPanY = 0;
+            publicPreviewLastCenter = null;
+            publicPreviewLastDistance = 0;
+            host?.classList.remove('dragging');
+            applyPublicPreviewTransform(host);
+        }
+
+        function getPublicPreviewPointerMetrics() {
+            const points = Array.from(publicPreviewPointers.values());
+            if (points.length === 0) return { center: null, distance: 0 };
+            const center = points.reduce((value, point) => ({
+                x: value.x + point.x / points.length,
+                y: value.y + point.y / points.length
+            }), { x: 0, y: 0 });
+            const distance = points.length >= 2
+                ? Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+                : 0;
+            return { center, distance };
+        }
+
+        function installPublicPreviewGestures(host) {
+            if (!host || host.dataset.gesturesReady === 'true') return;
+            host.dataset.gesturesReady = 'true';
+
+            const rememberMetrics = () => {
+                const metrics = getPublicPreviewPointerMetrics();
+                publicPreviewLastCenter = metrics.center;
+                publicPreviewLastDistance = metrics.distance;
+            };
+
+            host.addEventListener('pointerdown', event => {
+                event.stopPropagation();
+                if (event.target?.closest?.('.public-preview-controls')) return;
+                event.preventDefault();
+                try { host.setPointerCapture?.(event.pointerId); } catch (error) { }
+                publicPreviewPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                rememberMetrics();
+                host.classList.add('dragging');
+            });
+
+            host.addEventListener('pointermove', event => {
+                event.stopPropagation();
+                if (!publicPreviewPointers.has(event.pointerId)) return;
+                event.preventDefault();
+                const previousCenter = publicPreviewLastCenter;
+                const previousDistance = publicPreviewLastDistance;
+                publicPreviewPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                const metrics = getPublicPreviewPointerMetrics();
+                if (previousCenter && metrics.center) {
+                    publicPreviewPanX += metrics.center.x - previousCenter.x;
+                    publicPreviewPanY += metrics.center.y - previousCenter.y;
+                }
+                if (publicPreviewPointers.size >= 2 && previousDistance > 0 && metrics.distance > 0) {
+                    setPublicPreviewZoom(
+                        host,
+                        publicPreviewScale * (metrics.distance / previousDistance),
+                        metrics.center.x,
+                        metrics.center.y
+                    );
+                } else {
+                    applyPublicPreviewTransform(host);
+                }
+                publicPreviewLastCenter = metrics.center;
+                publicPreviewLastDistance = metrics.distance;
+            });
+
+            const finishPointer = event => {
+                event.stopPropagation();
+                publicPreviewPointers.delete(event.pointerId);
+                try { host.releasePointerCapture?.(event.pointerId); } catch (error) { }
+                rememberMetrics();
+                if (publicPreviewPointers.size === 0) host.classList.remove('dragging');
+            };
+            host.addEventListener('pointerup', finishPointer);
+            host.addEventListener('pointercancel', finishPointer);
+
+            host.addEventListener('wheel', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.ctrlKey || event.metaKey) {
+                    const factor = Math.exp(-event.deltaY * 0.002);
+                    setPublicPreviewZoom(host, publicPreviewScale * factor, event.clientX, event.clientY);
+                } else {
+                    publicPreviewPanX -= event.deltaX;
+                    publicPreviewPanY -= event.deltaY;
+                    applyPublicPreviewTransform(host);
+                }
+            }, { passive: false });
+
+            host.addEventListener('dblclick', event => {
+                event.stopPropagation();
+                if (event.target?.closest?.('.public-preview-controls')) return;
+                setPublicPreviewZoom(
+                    host,
+                    publicPreviewScale >= 2 ? 1 : publicPreviewScale * 1.5,
+                    event.clientX,
+                    event.clientY
+                );
+            });
+        }
+
+        function ensurePublicPreviewControls(host) {
+            if (!host || host.querySelector('.public-preview-controls')) return;
+            const controls = document.createElement('div');
+            controls.className = 'public-preview-controls';
+            controls.setAttribute('aria-label', 'Public document zoom');
+            const actions = [
+                { action: 'out', label: 'Zoom out', text: '−' },
+                { action: 'fit', label: 'Fit document', text: 'Fit' },
+                { action: 'in', label: 'Zoom in', text: '+' }
+            ];
+            actions.forEach(item => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'public-preview-control';
+                button.dataset.publicPreviewAction = item.action;
+                button.setAttribute('aria-label', item.label);
+                button.textContent = item.text;
+                controls.appendChild(button);
+            });
+            controls.addEventListener('click', event => {
+                const action = event.target?.closest?.('[data-public-preview-action]')?.dataset.publicPreviewAction;
+                if (action === 'fit') {
+                    resetPublicPreviewTransform(host);
+                } else if (action === 'in') {
+                    setPublicPreviewZoom(host, publicPreviewScale * 1.25);
+                } else if (action === 'out') {
+                    setPublicPreviewZoom(host, publicPreviewScale / 1.25);
+                }
+            });
+            host.appendChild(controls);
+        }
+
         function clearPublicInlinePreview() {
             document.getElementById('public-inline-preview')?.remove();
+            resetPublicPreviewTransform(null);
             canvasViewport?.classList.remove('public-preview-active');
             document.body.classList.remove('public-preview-mode');
             if (canvasContainer) canvasContainer.style.visibility = '';
@@ -14520,13 +14828,20 @@
                 host.id = 'public-inline-preview';
                 host.className = 'public-inline-preview';
                 canvasViewport.appendChild(host);
+                const stage = document.createElement('div');
+                stage.className = 'public-preview-stage';
+                host.appendChild(stage);
+                resetPublicPreviewTransform(host);
             }
+            const stage = host.querySelector('.public-preview-stage');
+            installPublicPreviewGestures(host);
+            ensurePublicPreviewControls(host);
             canvasViewport?.classList.add('public-preview-active');
             document.body.classList.add('public-preview-mode');
             if (canvasContainer) canvasContainer.style.visibility = 'hidden';
             const managePages = document.getElementById('btn-edit-pages');
             if (managePages) managePages.disabled = true;
-            const previousFrames = Array.from(host.querySelectorAll('iframe'));
+            const previousFrames = Array.from(stage.querySelectorAll('iframe'));
             const frame = document.createElement('iframe');
             frame.title = 'Public shared PDF';
             frame.referrerPolicy = 'strict-origin-when-cross-origin';
@@ -14537,7 +14852,7 @@
                 frame.classList.add('ready');
                 setTimeout(() => previousFrames.forEach(previous => previous.remove()), 140);
             }, { once: true });
-            host.appendChild(frame);
+            stage.appendChild(frame);
             publicSharedIframeRefreshAt = Date.now();
 
             state.driveFileId = fileId;
@@ -14567,12 +14882,12 @@
                 message.replaceChildren();
                 const strong = document.createElement('strong');
                 strong.textContent = 'Editor link';
-                message.append(strong, document.createTextNode(' Sign in with Google to edit and save this PDF in Drive.'));
+                message.append(strong, document.createTextNode(' Sign in to edit and save.'));
             }
             if (copyButton) copyButton.style.display = 'none';
             if (editButton) {
                 editButton.style.display = '';
-                editButton.textContent = 'Sign in to edit';
+                editButton.textContent = 'Sign in';
             }
         }
 
