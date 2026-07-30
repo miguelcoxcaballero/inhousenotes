@@ -5,9 +5,9 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.0.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.2.1.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.2\.0';/);
+assert.match(html, /const APP_VERSION = '5\.2\.1';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
@@ -34,7 +34,17 @@ assert.doesNotMatch(
 );
 
 assert.match(html, /allowFileDiscovery: false/);
-assert.match(html, /Public link copied/);
+assert.match(html, /const requestedRole = roleSelect\?\.value === 'writer' \? 'writer' : 'reader';/);
+assert.match(html, /params\.set\('role', requestedRole\)/);
+assert.match(html, /params\.set\('mode', 'edit'\)/);
+assert.match(html, /Editor link copied/);
+assert.match(html, /function showSharedEditorSignInGate\(/);
+assert.match(html, /Sign in to edit/);
+assert.doesNotMatch(
+  html.slice(html.indexOf("copyBtn.addEventListener('click'"), html.indexOf('// Setup event listeners')),
+  /setDriveLinkPermission\(state\.driveFileId, 'reader'\)/,
+  'copying an editor link must not silently downgrade it to viewer'
+);
 assert.match(html, /no sign-in required/);
 assert.match(html, /resourcekey/);
 assert.match(html, /openPublicDrivePreview\(/);
@@ -83,7 +93,8 @@ assert.match(html, /clearPendingExitUpload\(state\.driveFileId/);
 assert.match(html, /className = 'public-inline-preview'/);
 assert.match(html, /fingerprintPublicPdfBlob/);
 assert.match(html, /setInterval\(poll, PUBLIC_DRIVE_API_KEY \? 1800 : 2500\)/);
-assert.match(html, /startLiveCollaboration\(\);\s*showStatus\('Public document opened/);
+assert.match(html, /startLiveCollaboration\(\);\s*showStatus\(/);
+assert.match(html, /Public document opened/);
 const publicOpenStart = html.indexOf('function openPublicDrivePreview');
 const publicOpenEnd = html.indexOf('function startPublicSharedPolling', publicOpenStart);
 assert.doesNotMatch(
@@ -139,11 +150,11 @@ const mergedTimeline = timelineContext.mergeVersionHistories([
 ]);
 assert.deepEqual(Array.from(mergedTimeline, entry => entry.id), ['milestone-a', 'new-copy', 'milestone-b']);
 
-assert.equal(update.publishedAppVersion, '5.2.0');
+assert.equal(update.publishedAppVersion, '5.2.1');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.2\.0/);
-assert.match(notes, /durable IndexedDB/i);
-assert.match(notes, /public links/i);
-assert.match(notes, /2\.5 seconds/i);
+assert.match(update.releaseNotes, /v5\.2\.1/);
+assert.match(notes, /preserves the selected role/i);
+assert.match(notes, /real Inhouse Notes editor/i);
+assert.match(notes, /OAuth/i);
 
-console.log('v5.2.0 smoke checks passed.');
+console.log('v5.2.1 smoke checks passed.');

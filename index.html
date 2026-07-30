@@ -7067,7 +7067,7 @@
         <div id="readonly-banner" class="hidden"
             style="background:var(--accent-yellow);color:#000;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;font-size:0.95rem;border-bottom:1px solid rgba(0,0,0,0.1);">
             <div style="display:flex;align-items:center;">
-                <span><strong>View Only</strong> You don't have permission to edit this file.</span>
+                <span id="readonly-banner-message"><strong>View Only</strong> You don't have permission to edit this file.</span>
             </div>
             <div style="display:flex;gap:12px;">
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-make-copy"
@@ -7949,7 +7949,7 @@
             </div>
         </div>
     </div>
-    <script src="live-collaboration-v5.js?v=5.2.0"></script>
+    <script src="live-collaboration-v5.js?v=5.2.1"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8017,7 +8017,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.2.0';
+        const APP_VERSION = '5.2.1';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -9335,6 +9335,8 @@
         let sharedLinkSignInPrompted = false;
         let lastPendingSharedPublicAttemptId = null;
         let pendingSharedDriveResourceKey = null;
+        let pendingSharedDriveRole = 'reader';
+        let sharedEditorSignInGateActive = false;
         let coverModalSelection = null;
         let coverModalSelectionToken = 0;
         let coverApplyInProgress = false;
@@ -9502,11 +9504,16 @@
             const urlParams = new URLSearchParams(window.location.search);
             const sharedDriveId = urlParams.get('drive');
             const sharedDriveResourceKey = urlParams.get('resourcekey') || urlParams.get('rk');
+            const sharedDriveRole = (
+                urlParams.get('role') === 'writer'
+                || urlParams.get('mode') === 'edit'
+            ) ? 'writer' : 'reader';
             if (sharedDriveId) {
                 window.pendingSharedDriveId = sharedDriveId;
                 sharedLinkSignInPrompted = false;
                 lastPendingSharedPublicAttemptId = null;
                 pendingSharedDriveResourceKey = sharedDriveResourceKey || null;
+                pendingSharedDriveRole = sharedDriveRole;
                 // Keep the share parameters in the address bar so reloads and
                 // copied links retain the file/resource key until opening succeeds.
             }
@@ -12459,6 +12466,7 @@
             closePresencePopup();
             closeDriveProfileMenus();
             clearPublicInlinePreview();
+            clearSharedEditorSignInGate();
             stopCollabPolling();
             clearDriveSyncTimers();
             saveViewMode('drive');
@@ -12880,8 +12888,13 @@
                 if (driveFolderEmptyEl) driveFolderEmptyEl.classList.add('hidden');
                 closeDriveProfileMenus();
                 if (hasPendingShared) {
-                    showDriveHome();
-                    tryOpenPendingSharedWithoutSignIn();
+                    if (sharedEditorSignInGateActive) {
+                        showEditorView();
+                        updateSharedEditorSignInGateUI();
+                    } else {
+                        showDriveHome();
+                        tryOpenPendingSharedWithoutSignIn();
+                    }
                 }
             } else if (state.driveAutosave && !state.isReadOnly && driveDirty) {
                 clearTimeout(driveSaveTimeout);
@@ -12926,6 +12939,8 @@
                                 .then(() => {
                                     window.pendingSharedDriveId = null;
                                     pendingSharedDriveResourceKey = null;
+                                    pendingSharedDriveRole = 'reader';
+                                    clearSharedEditorSignInGate();
                                 })
                                 .catch(err => {
                                     console.error('Failed to open shared file:', err);
@@ -12938,6 +12953,8 @@
                                 .then(() => {
                                     window.pendingSharedDriveId = null;
                                     pendingSharedDriveResourceKey = null;
+                                    pendingSharedDriveRole = 'reader';
+                                    clearSharedEditorSignInGate();
                                 })
                                 .catch(openErr => {
                                     console.error('Fallback open failed:', openErr);
@@ -13145,6 +13162,8 @@
             sharedLinkSignInPrompted = false;
             lastPendingSharedPublicAttemptId = null;
             pendingSharedDriveResourceKey = null;
+            pendingSharedDriveRole = 'reader';
+            clearSharedEditorSignInGate();
             updateDriveProfileUI(null);
             closeDriveProfileMenus();
             clearDriveTokenStorage();
@@ -14024,6 +14043,62 @@
             showEditorView();
         }
 
+        function updateSharedEditorSignInGateUI() {
+            if (!sharedEditorSignInGateActive) return;
+            const banner = document.getElementById('readonly-banner');
+            const message = document.getElementById('readonly-banner-message');
+            const copyButton = document.getElementById('btn-make-copy');
+            const editButton = document.getElementById('btn-ask-edit');
+            if (banner) {
+                banner.dataset.sharedEditorGate = 'true';
+                banner.classList.remove('hidden');
+            }
+            if (message) {
+                message.replaceChildren();
+                const strong = document.createElement('strong');
+                strong.textContent = 'Editor link';
+                message.append(strong, document.createTextNode(' Sign in with Google to edit and save this PDF in Drive.'));
+            }
+            if (copyButton) copyButton.style.display = 'none';
+            if (editButton) {
+                editButton.style.display = '';
+                editButton.textContent = 'Sign in to edit';
+            }
+        }
+
+        function clearSharedEditorSignInGate() {
+            sharedEditorSignInGateActive = false;
+            const banner = document.getElementById('readonly-banner');
+            const message = document.getElementById('readonly-banner-message');
+            const copyButton = document.getElementById('btn-make-copy');
+            const editButton = document.getElementById('btn-ask-edit');
+            if (banner) delete banner.dataset.sharedEditorGate;
+            if (message) {
+                message.innerHTML = "<strong>View Only</strong> You don't have permission to edit this file.";
+            }
+            if (copyButton) copyButton.style.display = '';
+            if (editButton) {
+                editButton.style.display = '';
+                editButton.textContent = 'Ask to Edit';
+            }
+        }
+
+        function showSharedEditorSignInGate(fileId, resourceKey = '') {
+            window.pendingSharedDriveId = fileId;
+            pendingSharedDriveResourceKey = resourceKey || null;
+            pendingSharedDriveRole = 'writer';
+            sharedEditorSignInGateActive = true;
+            state.driveFileId = fileId;
+            state.driveResourceKey = resourceKey || '';
+            state.driveCanEdit = false;
+            state.driveAutosave = false;
+            setReadOnlyMode(true, { force: true });
+            updateDocTitle();
+            updateViewerModeUI();
+            updateSharedEditorSignInGateUI();
+            showEditorView();
+        }
+
         function getPublicPreviewOverlay() {
             let overlay = document.getElementById('public-drive-preview-overlay');
             if (overlay) return overlay;
@@ -14069,16 +14144,27 @@
         }
 
         function openPublicDrivePreview(fileId, resourceKey = '', options = {}) {
+            const requestedRole = options.requestedRole === 'writer' ? 'writer' : 'reader';
             publicSharedPreviewFileId = fileId;
             publicSharedPreviewResourceKey = resourceKey || '';
             showPublicInlinePreview(fileId, resourceKey, options);
-            window.pendingSharedDriveId = null;
-            pendingSharedDriveResourceKey = null;
+            if (requestedRole === 'writer') {
+                showSharedEditorSignInGate(fileId, resourceKey);
+            } else {
+                window.pendingSharedDriveId = null;
+                pendingSharedDriveResourceKey = null;
+                pendingSharedDriveRole = 'reader';
+            }
             sharedLinkSignInPrompted = false;
-            lastPendingSharedPublicAttemptId = null;
+            lastPendingSharedPublicAttemptId = requestedRole === 'writer' ? fileId : null;
             startPublicSharedPolling(fileId, resourceKey, { previewOnly: true });
             startLiveCollaboration();
-            showStatus('Public document opened — no sign-in required.', { preserveState: true });
+            showStatus(
+                requestedRole === 'writer'
+                    ? 'Sign in to activate this editor link.'
+                    : 'Public document opened — no sign-in required.',
+                { preserveState: true }
+            );
             return true;
         }
 
@@ -14160,9 +14246,10 @@
             poll();
             publicSharedPollTimer = setInterval(poll, PUBLIC_DRIVE_API_KEY ? 1800 : 2500);
         }
-        async function openSharedFileWithoutSignIn(fileId, resourceKey = '') {
+        async function openSharedFileWithoutSignIn(fileId, resourceKey = '', options = {}) {
             if (!fileId) return false;
             if (driveOpenInProgress) return false;
+            const requestedRole = options.requestedRole === 'writer' ? 'writer' : 'reader';
             closeDriveCardMenu();
             driveOpenInProgress = true;
             driveOpenFileId = fileId;
@@ -14224,11 +14311,21 @@
                 saveDriveSession();
                 updateViewerModeUI();
                 showEditorView();
-                window.pendingSharedDriveId = null;
-                pendingSharedDriveResourceKey = null;
+                if (requestedRole === 'writer') {
+                    showSharedEditorSignInGate(fileId, resourceKey);
+                } else {
+                    window.pendingSharedDriveId = null;
+                    pendingSharedDriveResourceKey = null;
+                    pendingSharedDriveRole = 'reader';
+                }
                 sharedLinkSignInPrompted = false;
-                lastPendingSharedPublicAttemptId = null;
-                showStatus('Shared PDF loaded (View Only)', { preserveState: true });
+                lastPendingSharedPublicAttemptId = requestedRole === 'writer' ? fileId : null;
+                showStatus(
+                    requestedRole === 'writer'
+                        ? 'Shared PDF loaded. Sign in to edit and save.'
+                        : 'Shared PDF loaded (View Only)',
+                    { preserveState: true }
+                );
                 return true;
             } catch (err) {
                 console.warn('Public PDF import unavailable; opening the anonymous Drive preview:', err);
@@ -14236,7 +14333,10 @@
                 if (driveStatusEl) {
                     driveStatusEl.textContent = 'Opening public view — no sign-in required.';
                 }
-                return openPublicDrivePreview(fileId, resourceKey, { fileName: 'Shared document' });
+                return openPublicDrivePreview(fileId, resourceKey, {
+                    fileName: 'Shared document',
+                    requestedRole
+                });
             } finally {
                 hideLoading();
                 driveOpenInProgress = false;
@@ -14248,10 +14348,11 @@
             const force = !!options.force;
             const fileId = window.pendingSharedDriveId;
             const resourceKey = pendingSharedDriveResourceKey || '';
+            const requestedRole = pendingSharedDriveRole === 'writer' ? 'writer' : 'reader';
             if (!fileId || driveAccessToken || driveOpenInProgress) return;
             if (!force && lastPendingSharedPublicAttemptId === fileId) return;
             lastPendingSharedPublicAttemptId = fileId;
-            openSharedFileWithoutSignIn(fileId, resourceKey).catch(err => {
+            openSharedFileWithoutSignIn(fileId, resourceKey, { requestedRole }).catch(err => {
                 console.error('Public shared open attempt failed:', err);
             });
         }
@@ -15542,6 +15643,7 @@
             driveOpenFileId = file.id;
             const sessionToken = beginDocumentSession();
             clearPublicInlinePreview();
+            clearSharedEditorSignInGate();
             const requestedResourceKey = file.resourceKey || '';
             state.zoom = 1;
             state.panX = 0;
@@ -15815,6 +15917,9 @@
                     dt.style.pointerEvents = 'auto';
                 }
             }
+            if (sharedEditorSignInGateActive) {
+                updateSharedEditorSignInGateUI();
+            }
             updateCalendarFeatureAvailability();
         }
 
@@ -15854,6 +15959,10 @@
 
         async function askToEdit() {
             if (!state.driveFileId) return;
+            if (sharedEditorSignInGateActive && !driveAccessToken) {
+                await signInDrive();
+                return;
+            }
             window.open(`https://drive.google.com/open?id=${state.driveFileId}`, '_blank');
         }
 
@@ -19364,10 +19473,10 @@
                 copyBtn.disabled = true;
                 copyBtn.textContent = 'Preparing public link...';
                 try {
-                    // A public-view link is only copied after Drive confirms the
-                    // anyone/reader ACL. This prevents links that immediately ask
-                    // the recipient to sign in.
-                    await setDriveLinkPermission(state.driveFileId, 'reader');
+                    // Preserve the role selected in the sharing dialog. Previous
+                    // releases silently downgraded every copied link to Viewer.
+                    const requestedRole = roleSelect?.value === 'writer' ? 'writer' : 'reader';
+                    await setDriveLinkPermission(state.driveFileId, requestedRole);
                     const permissions = await fetchDrivePermissions(state.driveFileId);
                     const publicPermission = permissions.permissions?.find(permission => (
                         permission.type === 'anyone'
@@ -19375,6 +19484,9 @@
                     ));
                     if (!publicPermission) {
                         throw new Error('Google Drive did not confirm public access. Your organisation may block public sharing.');
+                    }
+                    if (requestedRole === 'writer' && publicPermission.role !== 'writer') {
+                        throw new Error('Google Drive did not confirm editor access for this link.');
                     }
                     const metadataUrl = new URL(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}`);
                     metadataUrl.searchParams.set('fields', 'id,name,resourceKey');
@@ -19384,16 +19496,23 @@
                     const params = new URLSearchParams();
                     params.set('drive', state.driveFileId);
                     params.set('public', '1');
+                    params.set('role', requestedRole);
+                    if (requestedRole === 'writer') params.set('mode', 'edit');
                     if (state.driveResourceKey) params.set('resourcekey', state.driveResourceKey);
                     const link = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
                     await navigator.clipboard.writeText(link);
                     if (accessSelect) accessSelect.value = 'anyone';
                     if (roleSelect) {
-                        roleSelect.value = 'reader';
+                        roleSelect.value = requestedRole;
                         roleSelect.classList.remove('hidden');
                     }
                     saveDriveSession();
-                    showStatus('Public link copied — no sign-in required.', { icon: 'check' });
+                    showStatus(
+                        requestedRole === 'writer'
+                            ? 'Editor link copied. Recipients sign in to save changes to Drive.'
+                            : 'Public viewer link copied — no sign-in required.',
+                        { icon: 'check' }
+                    );
                 } catch (err) {
                     console.error('Public link error:', err);
                     showStatus(err?.message || 'Could not create a public link.', { error: true });
