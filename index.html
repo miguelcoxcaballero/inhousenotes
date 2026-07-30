@@ -1487,6 +1487,44 @@
             gap: 30px;
         }
 
+        .public-inline-preview {
+            position: absolute;
+            inset: 0;
+            z-index: 8;
+            overflow: hidden;
+            background: var(--bg-primary);
+        }
+
+        .public-inline-preview iframe {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #202124;
+            opacity: 0;
+            transition: opacity 120ms ease;
+        }
+
+        .public-inline-preview iframe.ready {
+            opacity: 1;
+        }
+
+        .public-inline-status {
+            position: absolute;
+            z-index: 1;
+            left: 50%;
+            top: 16px;
+            transform: translateX(-50%);
+            padding: 7px 11px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
+            color: var(--text-secondary);
+            box-shadow: var(--shadow-light);
+            font-size: 0.75rem;
+            pointer-events: none;
+        }
+
         /* ┄ § 2.9a  Page rows & wrappers ────────────────────────────────────
            Each notebook page lives inside a .page-row flex container so the
            optional calendar side-panel can sit beside it. The .page-wrapper
@@ -7911,7 +7949,7 @@
             </div>
         </div>
     </div>
-    <script src="live-collaboration-v5.js?v=5.1.0"></script>
+    <script src="live-collaboration-v5.js?v=5.2.0"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -7979,7 +8017,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.1.0';
+        const APP_VERSION = '5.2.0';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -8481,6 +8519,7 @@
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = 'drive-session-v1';
+        const PENDING_EXIT_UPLOAD_KEY = 'drive-pending-exit-upload-v1';
         const DRIVE_REFRESH_TOKEN_KEY = 'drive-refresh-token-v1';
         const DRIVE_PKCE_VERIFIER_KEY = 'drive-pkce-verifier-v1';
         const GOOGLE_SCOPE_VERSION_KEY = 'google-scope-version-v1';
@@ -9226,6 +9265,7 @@
         let backgroundExitSavePromise = null;
         let backgroundExitSaveFailed = false;
         let backgroundExitSaveFileId = null;
+        let pendingExitResumeInProgress = false;
         let preparedDrivePdf = null;
         let preparedDrivePdfBuild = null;
         let preparedDrivePdfTimer = null;
@@ -12418,6 +12458,7 @@
             closeSaveDebugPopup();
             closePresencePopup();
             closeDriveProfileMenus();
+            clearPublicInlinePreview();
             stopCollabPolling();
             clearDriveSyncTimers();
             saveViewMode('drive');
@@ -12858,6 +12899,9 @@
                 sharedLinkSignInPrompted = false;
                 loadDriveProfile();
                 restorePdfBackgroundsIfNeeded();
+                // If the app/browser was closed while the Home screen was
+                // finishing an upload, continue from the durable local copy.
+                setTimeout(resumePendingExitUploadIfNeeded, 0);
                 // Start collab polling if we have a Drive file (even in read-only/view mode)
                 if (state.driveFileId) {
                     startCollabPolling();
@@ -13805,9 +13849,10 @@
             return headers;
         }
 
-        function buildPublicDrivePreviewUrl(fileId, resourceKey = '') {
+        function buildPublicDrivePreviewUrl(fileId, resourceKey = '', cacheBust = '') {
             const params = new URLSearchParams({ embedded: 'true' });
             if (resourceKey) params.set('resourcekey', resourceKey);
+            if (cacheBust) params.set('ihn_refresh', String(cacheBust));
             return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview?${params.toString()}`;
         }
 
@@ -13896,14 +13941,87 @@
         let publicSharedPreviewFileId = '';
         let publicSharedPreviewResourceKey = '';
         let publicSharedPreviewModifiedTime = 0;
+        let publicSharedPreviewFingerprint = '';
+        let publicSharedIframeRefreshAt = 0;
 
-        function stopPublicSharedPolling() {
+        function pausePublicSharedPolling() {
             if (publicSharedPollTimer) clearInterval(publicSharedPollTimer);
             publicSharedPollTimer = null;
             publicSharedPollInFlight = false;
+        }
+
+        function stopPublicSharedPolling() {
+            pausePublicSharedPolling();
             publicSharedPreviewFileId = '';
             publicSharedPreviewResourceKey = '';
             publicSharedPreviewModifiedTime = 0;
+            publicSharedPreviewFingerprint = '';
+            publicSharedIframeRefreshAt = 0;
+        }
+
+        async function fingerprintPublicPdfBlob(blob) {
+            if (!blob) return '';
+            const sampleSize = Math.min(65536, blob.size);
+            const tailStart = Math.max(0, blob.size - sampleSize);
+            const [head, tail] = await Promise.all([
+                blob.slice(0, sampleSize).arrayBuffer(),
+                blob.slice(tailStart).arrayBuffer()
+            ]);
+            let hash = 2166136261;
+            for (const bytes of [new Uint8Array(head), new Uint8Array(tail)]) {
+                for (let index = 0; index < bytes.length; index += 1) {
+                    hash ^= bytes[index];
+                    hash = Math.imul(hash, 16777619);
+                }
+            }
+            return `${blob.size}:${(hash >>> 0).toString(36)}`;
+        }
+
+        function clearPublicInlinePreview() {
+            document.getElementById('public-inline-preview')?.remove();
+            if (canvasContainer) canvasContainer.style.visibility = '';
+            const managePages = document.getElementById('btn-edit-pages');
+            if (managePages) managePages.disabled = false;
+        }
+
+        function showPublicInlinePreview(fileId, resourceKey = '', options = {}) {
+            let host = document.getElementById('public-inline-preview');
+            if (!host) {
+                state.pages = [];
+                activePageIndices.clear();
+                if (canvasContainer) canvasContainer.innerHTML = '';
+                host = document.createElement('div');
+                host.id = 'public-inline-preview';
+                host.className = 'public-inline-preview';
+                host.innerHTML = '<div class="public-inline-status">Public view · updates automatically</div>';
+                canvasViewport.appendChild(host);
+            }
+            if (canvasContainer) canvasContainer.style.visibility = 'hidden';
+            const managePages = document.getElementById('btn-edit-pages');
+            if (managePages) managePages.disabled = true;
+            const previousFrames = Array.from(host.querySelectorAll('iframe'));
+            const frame = document.createElement('iframe');
+            frame.title = 'Public shared PDF';
+            frame.referrerPolicy = 'strict-origin-when-cross-origin';
+            frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey, Date.now());
+            frame.addEventListener('load', () => {
+                frame.classList.add('ready');
+                setTimeout(() => previousFrames.forEach(previous => previous.remove()), 140);
+            }, { once: true });
+            host.appendChild(frame);
+            publicSharedIframeRefreshAt = Date.now();
+
+            state.driveFileId = fileId;
+            state.driveResourceKey = resourceKey || '';
+            state.driveCanEdit = false;
+            state.driveAutosave = false;
+            state.driveOwnedByMe = false;
+            state.driveFileName = options.fileName || state.driveFileName || 'Shared document';
+            state.exportName = state.driveFileName.replace(/\.pdf$/i, '') || 'Shared document';
+            updateDocTitle();
+            setReadOnlyMode(true, { force: true });
+            updateViewerModeUI();
+            showEditorView();
         }
 
         function getPublicPreviewOverlay() {
@@ -13951,26 +14069,15 @@
         }
 
         function openPublicDrivePreview(fileId, resourceKey = '', options = {}) {
-            const overlay = getPublicPreviewOverlay();
             publicSharedPreviewFileId = fileId;
             publicSharedPreviewResourceKey = resourceKey || '';
-            const title = overlay.querySelector('#public-preview-title');
-            if (title) title.textContent = options.fileName || 'Shared document';
-            const open = overlay.querySelector('#public-preview-open');
-            if (open) open.href = buildPublicDriveOpenUrl(fileId, resourceKey);
-            const frame = overlay.querySelector('#public-drive-preview-frame');
-            frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey);
-            overlay.hidden = false;
-            state.driveFileId = fileId;
-            state.driveResourceKey = resourceKey || '';
-            state.driveCanEdit = false;
-            state.driveAutosave = false;
-            setReadOnlyMode(true, { force: true });
+            showPublicInlinePreview(fileId, resourceKey, options);
             window.pendingSharedDriveId = null;
             pendingSharedDriveResourceKey = null;
             sharedLinkSignInPrompted = false;
             lastPendingSharedPublicAttemptId = null;
             startPublicSharedPolling(fileId, resourceKey, { previewOnly: true });
+            startLiveCollaboration();
             showStatus('Public document opened — no sign-in required.', { preserveState: true });
             return true;
         }
@@ -13979,44 +14086,79 @@
             stopPublicSharedPolling();
             publicSharedPreviewFileId = fileId;
             publicSharedPreviewResourceKey = resourceKey || '';
-            const previewOnly = !!options.previewOnly;
+            publicSharedPreviewFingerprint = options.initialFingerprint || '';
+            publicSharedPreviewModifiedTime = Number(options.initialModifiedTime) || 0;
+            let previewOnly = !!options.previewOnly;
+
+            const applyPublicPdfUpdate = async (refreshed, fingerprint) => {
+                const objectUrl = URL.createObjectURL(refreshed.blob);
+                try {
+                    await importPDFData(objectUrl, true, {
+                        fileSize: refreshed.blob.size,
+                        driveFileId: fileId,
+                        sourceBlob: refreshed.blob,
+                        sessionToken: getDocumentSessionToken()
+                    });
+                } finally {
+                    URL.revokeObjectURL(objectUrl);
+                }
+                publicSharedPreviewFingerprint = fingerprint;
+                state.driveFileId = fileId;
+                state.driveAutosave = false;
+                state.driveCanEdit = false;
+                state.driveOwnedByMe = false;
+                state.driveResourceKey = resourceKey || '';
+                if (refreshed.fileName) {
+                    state.driveFileName = refreshed.fileName;
+                    state.exportName = refreshed.fileName.replace(/\.pdf$/i, '') || state.exportName;
+                    updateDocTitle();
+                }
+                if (refreshed.metadata?.modifiedTime) {
+                    publicSharedPreviewModifiedTime = new Date(refreshed.metadata.modifiedTime).getTime();
+                    state.driveLastKnownModified = publicSharedPreviewModifiedTime;
+                }
+                clearPublicInlinePreview();
+                setReadOnlyMode(true, { force: true });
+                updateViewerModeUI();
+                showEditorView();
+                previewOnly = false;
+                showStatus('Public document updated.', { preserveState: true });
+            };
+
             const poll = async () => {
                 if (publicSharedPollInFlight || document.visibilityState === 'hidden') return;
                 publicSharedPollInFlight = true;
                 try {
+                    let shouldFetchPdf = !PUBLIC_DRIVE_API_KEY;
+                    let observedModifiedTime = 0;
                     if (PUBLIC_DRIVE_API_KEY) {
                         const metadata = await fetchPublicSharedMetadata(fileId, resourceKey);
                         const modified = metadata?.modifiedTime ? new Date(metadata.modifiedTime).getTime() : 0;
-                        if (modified && publicSharedPreviewModifiedTime && modified > publicSharedPreviewModifiedTime) {
-                            if (previewOnly) {
-                                const overlay = document.getElementById('public-drive-preview-overlay');
-                                const frame = overlay?.querySelector('#public-drive-preview-frame');
-                                if (frame) frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey);
-                            } else {
-                                const refreshed = await fetchPublicSharedPdf(fileId, resourceKey);
-                                const objectUrl = URL.createObjectURL(refreshed.blob);
-                                try {
-                                    await importPDFData(objectUrl, true, { fileSize: refreshed.blob.size, driveFileId: fileId });
-                                } finally {
-                                    URL.revokeObjectURL(objectUrl);
-                                }
-                                showStatus('Public document updated.', { preserveState: true });
-                            }
+                        observedModifiedTime = modified;
+                        shouldFetchPdf = !publicSharedPreviewModifiedTime
+                            || (modified && modified > publicSharedPreviewModifiedTime);
+                    }
+                    if (shouldFetchPdf) {
+                        const refreshed = await fetchPublicSharedPdf(fileId, resourceKey);
+                        const fingerprint = await fingerprintPublicPdfBlob(refreshed.blob);
+                        if (fingerprint && fingerprint !== publicSharedPreviewFingerprint) {
+                            await applyPublicPdfUpdate(refreshed, fingerprint);
                         }
-                        if (modified) publicSharedPreviewModifiedTime = modified;
-                    } else if (previewOnly) {
-                        const overlay = document.getElementById('public-drive-preview-overlay');
-                        const frame = overlay?.querySelector('#public-drive-preview-frame');
-                        if (frame) frame.src = buildPublicDrivePreviewUrl(fileId, resourceKey);
+                        if (observedModifiedTime) publicSharedPreviewModifiedTime = observedModifiedTime;
                     }
                 } catch (err) {
                     console.warn('Public document refresh failed:', err);
+                    if (previewOnly && Date.now() - publicSharedIframeRefreshAt >= 7000) {
+                        showPublicInlinePreview(fileId, resourceKey, {
+                            fileName: state.driveFileName || 'Shared document'
+                        });
+                    }
                 } finally {
                     publicSharedPollInFlight = false;
                 }
             };
             poll();
-            publicSharedPollTimer = setInterval(poll, PUBLIC_DRIVE_API_KEY ? 5000 : 60000);
+            publicSharedPollTimer = setInterval(poll, PUBLIC_DRIVE_API_KEY ? 1800 : 2500);
         }
         async function openSharedFileWithoutSignIn(fileId, resourceKey = '') {
             if (!fileId) return false;
@@ -14024,6 +14166,7 @@
             closeDriveCardMenu();
             driveOpenInProgress = true;
             driveOpenFileId = fileId;
+            const sessionToken = beginDocumentSession();
             state.zoom = 1;
             state.panX = 0;
             state.panY = 0;
@@ -14037,12 +14180,14 @@
             showLoading('Opening shared document...');
             try {
                 const publicPdf = await fetchPublicSharedPdf(fileId, resourceKey);
+                const initialFingerprint = await fingerprintPublicPdfBlob(publicPdf.blob);
                 const objectUrl = URL.createObjectURL(publicPdf.blob);
                 try {
                     await importPDFData(objectUrl, true, {
                         fileSize: publicPdf.blob.size,
                         driveFileId: fileId,
-                        sourceBlob: publicPdf.blob
+                        sourceBlob: publicPdf.blob,
+                        sessionToken
                     });
                 } finally {
                     URL.revokeObjectURL(objectUrl);
@@ -14065,7 +14210,13 @@
                 state.driveLastKnownModified = publicPdf.metadata?.modifiedTime
                     ? new Date(publicPdf.metadata.modifiedTime).getTime()
                     : null;
-                startPublicSharedPolling(fileId, resourceKey, { previewOnly: false });
+                clearPublicInlinePreview();
+                startPublicSharedPolling(fileId, resourceKey, {
+                    previewOnly: false,
+                    initialFingerprint,
+                    initialModifiedTime: state.driveLastKnownModified || 0
+                });
+                startLiveCollaboration();
 
                 const baseName = state.driveFileName.replace(/\.pdf$/i, '');
                 state.exportName = baseName || state.exportName;
@@ -15360,6 +15511,7 @@
                 })()
                     .then(success => {
                         backgroundExitSaveFailed = !success;
+                        if (success) clearPendingExitUpload(backgroundExitSaveFileId);
                         return success;
                     })
                     .catch(() => {
@@ -15389,6 +15541,7 @@
             }
             driveOpenFileId = file.id;
             const sessionToken = beginDocumentSession();
+            clearPublicInlinePreview();
             const requestedResourceKey = file.resourceKey || '';
             state.zoom = 1;
             state.panX = 0;
@@ -19554,11 +19707,11 @@
                         clearTimeout(state.saveTimeout);
                         state.saveTimeout = null;
                         const exitingFileId = state.driveFileId || null;
-                        const localCheckpoint = (async () => {
-                            await queueSave();
-                            await waitForLocalSaveCompletion();
-                            await flushDirtyPages({ force: true });
-                        })();
+                        // Do not reveal Home until the latest operation and
+                        // page metadata are durable. This is normally a tiny
+                        // IndexedDB transaction and survives an immediate app
+                        // kill; the heavier PDF upload remains in background.
+                        const localCheckpoint = persistExitLocalCheckpoint(exitingFileId);
 
                         backgroundExitSaveFileId = exitingFileId;
                         backgroundExitSaveFailed = false;
@@ -19583,6 +19736,7 @@
                         backgroundExitSavePromise = exitSaveTask
                             .then(success => {
                                 backgroundExitSaveFailed = !success;
+                                if (success) clearPendingExitUpload(exitingFileId);
                                 return success;
                             })
                             .catch(err => {
@@ -19606,10 +19760,13 @@
                                 }
                             });
 
-                        await Promise.race([
-                            localCheckpoint.catch(() => {}),
-                            new Promise(resolve => setTimeout(resolve, 450))
-                        ]);
+                        try {
+                            await localCheckpoint;
+                        } catch (error) {
+                            console.error('Exit checkpoint failed:', error);
+                            showStatus('Could not secure the latest changes locally. Please try Home again.', { error: true });
+                            return;
+                        }
                         showDriveHome();
                         if (driveStatusEl) {
                             driveStatusEl.textContent = state.driveAutosave
@@ -20169,9 +20326,13 @@
             document.addEventListener('msfullscreenchange', handleFullscreenChange);
             handleFullscreenChange();
 
-            window.addEventListener('beforeunload', () => {
+            window.addEventListener('beforeunload', (event) => {
                 clearPresence();
                 flushOnClose();
+                if (backgroundExitSavePromise || readPendingExitUpload()) {
+                    event.preventDefault();
+                    event.returnValue = '';
+                }
             });
 
             window.addEventListener('pagehide', () => {
@@ -20184,7 +20345,11 @@
                     // Release memory when tab is hidden
                     releaseMemoryOnHide();
                     // Pause collab polling when tab is not visible
-                    stopCollabPolling();
+                    if (publicSharedPreviewFileId && !driveAccessToken) {
+                        pausePublicSharedPolling();
+                    } else {
+                        stopCollabPolling();
+                    }
                 } else if (document.visibilityState === 'visible') {
                     // Resume collab polling when tab becomes visible again
                     if (state.driveFileId && driveAccessToken) {
@@ -20192,6 +20357,16 @@
                         // Immediately poll once to catch up on changes
                         pollDriveRevision();
                         scheduleCollabFastCatchup();
+                    } else if (publicSharedPreviewFileId) {
+                        startPublicSharedPolling(
+                            publicSharedPreviewFileId,
+                            publicSharedPreviewResourceKey,
+                            {
+                                previewOnly: !!document.getElementById('public-inline-preview'),
+                                initialFingerprint: publicSharedPreviewFingerprint,
+                                initialModifiedTime: publicSharedPreviewModifiedTime
+                            }
+                        );
                     }
                     spStartAutoSync();
                 } else {
@@ -24279,6 +24454,103 @@
             }
         }
 
+        function readPendingExitUpload() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(PENDING_EXIT_UPLOAD_KEY) || 'null');
+                return parsed?.fileId ? parsed : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function persistPendingExitUploadMarker(fileId = state.driveFileId) {
+            if (!fileId || !state.driveAutosave) return null;
+            const marker = {
+                fileId,
+                fileName: state.driveFileName || '',
+                contentVersion: Math.max(1, Number(driveContentVersion) || 0),
+                savedAt: Date.now()
+            };
+            try {
+                localStorage.setItem(PENDING_EXIT_UPLOAD_KEY, JSON.stringify(marker));
+            } catch (error) {
+                console.warn('Could not persist pending Drive upload marker:', error);
+            }
+            return marker;
+        }
+
+        function clearPendingExitUpload(fileId = '') {
+            const pending = readPendingExitUpload();
+            if (fileId && pending?.fileId && pending.fileId !== fileId) return;
+            try {
+                localStorage.removeItem(PENDING_EXIT_UPLOAD_KEY);
+            } catch (error) { }
+        }
+
+        function isDriveUploadFullySettled() {
+            return !driveSaveInProgress
+                && !driveSaveQueued
+                && !driveDirty
+                && !deferredDriveSave
+                && driveContentVersion === driveUploadedContentVersion;
+        }
+
+        async function persistExitLocalCheckpoint(fileId = state.driveFileId) {
+            const marker = persistPendingExitUploadMarker(fileId);
+            const waitStartedAt = Date.now();
+            while (strokeOpsFlushInProgress && Date.now() - waitStartedAt < 5000) {
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            const operationsSaved = await flushStrokeOpsQueue();
+            const pagesSaved = await flushDirtyPages({ force: true });
+            const savedAt = Date.now();
+            const payload = buildMetaPayload(savedAt);
+            const indexedDbSaved = await saveToIndexedDb(payload, savedAt);
+            const backupSaved = scheduleLocalStorageBackup(payload, { immediate: true });
+            await persistTimelineHistory().catch(() => false);
+            state.lastSavedAt = savedAt;
+            saveDriveSession();
+            updateSaveTimestamp();
+            if (!operationsSaved || !pagesSaved || (!indexedDbSaved && !backupSaved)) {
+                throw new Error('Could not create a durable local save checkpoint');
+            }
+            return marker;
+        }
+
+        function resumePendingExitUploadIfNeeded() {
+            const marker = readPendingExitUpload();
+            if (!marker || !driveAccessToken || pendingExitResumeInProgress || backgroundExitSavePromise) return;
+            if (!state.driveFileId || state.driveFileId !== marker.fileId || !state.driveAutosave) return;
+            pendingExitResumeInProgress = true;
+            forceFlushingForExit = true;
+            backgroundExitSaveFileId = marker.fileId;
+            driveContentVersion = Math.max(Number(marker.contentVersion) || 1, driveContentVersion || 0);
+            driveUploadedContentVersion = Math.min(driveUploadedContentVersion, driveContentVersion - 1);
+            driveDirty = true;
+            deferredDriveSave = false;
+            backgroundExitSavePromise = (async () => {
+                await queueDriveSave(true);
+                return isDriveUploadFullySettled();
+            })()
+                .then(success => {
+                    backgroundExitSaveFailed = !success;
+                    if (success) clearPendingExitUpload(marker.fileId);
+                    return success;
+                })
+                .catch(error => {
+                    console.warn('Pending Drive upload resume failed:', error);
+                    backgroundExitSaveFailed = true;
+                    return false;
+                })
+                .finally(() => {
+                    pendingExitResumeInProgress = false;
+                    forceFlushingForExit = false;
+                    backgroundExitSavePromise = null;
+                    if (!backgroundExitSaveFailed) backgroundExitSaveFileId = null;
+                    if (isDriveHomeVisible()) void refreshDriveFiles();
+                });
+        }
+
         function loadDriveSession() {
             try {
                 const raw = localStorage.getItem(DRIVE_SESSION_KEY);
@@ -26555,6 +26827,11 @@
 
         function flushOnClose() {
             if (state.isReadOnly) return;
+            if (state.driveAutosave && state.driveFileId
+                && (driveDirty || deferredDriveSave || driveSaveInProgress
+                    || driveSaveQueued || driveContentVersion !== driveUploadedContentVersion)) {
+                persistPendingExitUploadMarker(state.driveFileId);
+            }
             saveViewState();
             flushStrokeOpsQueue();
             const savedAt = Date.now();
@@ -27149,6 +27426,7 @@
             if (driveSaveSucceeded) {
                 scheduleCollabFastCatchup();
                 if (!driveDirty && !deferredDriveSave && !driveSaveQueued) {
+                    clearPendingExitUpload(state.driveFileId || '');
                     reconcileSavedIndicator();
                 }
             }
