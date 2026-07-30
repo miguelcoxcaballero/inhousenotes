@@ -3,6 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.2.3",
-  "releaseNotes": "Inhouse Notes v5.2.3: a cleaner anonymous public viewer without the floating status banner or external-open controls, plus a passive Read only pill."
+  "publishedAppVersion": "5.2.4",
+  "releaseNotes": "Inhouse Notes v5.2.4: public links now keep the document name and restore touch navigation without sign-in, while the sharing menu is compact again."
 }
