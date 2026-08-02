@@ -3,6 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.4.0",
-  "releaseNotes": "Inhouse Notes v5.4.0: lower-bandwidth peer-to-peer page deltas with full-snapshot recovery, resilient mobile resume, improved ICE gathering, final live delivery on exit, and durable Drive upload recovery after closing."
+  "publishedAppVersion": "5.4.2",
+  "releaseNotes": "Inhouse Notes v5.4.2: continuous live handwriting plus fast peer-to-peer recovery when switching between Wi-Fi, mobile data, or another network."
 }

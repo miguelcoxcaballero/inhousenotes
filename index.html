@@ -2373,7 +2373,8 @@
             pointer-events: none;
         }
 
-        .cursor-overlay {
+        .cursor-overlay,
+        .remote-live-overlay {
             position: absolute;
             inset: 0;
             pointer-events: none;
@@ -8574,8 +8575,8 @@
             </div>
         </div>
     </div>
-    <script src="collaboration-core-v5.js?v=5.4.0"></script>
-    <script src="live-collaboration-v5.js?v=5.4.0"></script>
+    <script src="collaboration-core-v5.js?v=5.4.2"></script>
+    <script src="live-collaboration-v5.js?v=5.4.2"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8643,7 +8644,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.4.0';
+        const APP_VERSION = '5.4.2';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -11041,6 +11042,14 @@
                 const appliedCursorScale = cursorOverlay.width / Math.max(1, width);
                 cursorOverlay.dataset.overlayScale = `${appliedCursorScale || cursorOverlayScale}`;
             }
+            const remoteLiveOverlay = wrapper.querySelector('canvas.remote-live-overlay');
+            if (remoteLiveOverlay) {
+                const remoteOverlayScale = getCursorOverlayScale(state.zoom);
+                resizeOverlayCanvas(remoteLiveOverlay, width, height, remoteOverlayScale);
+                const appliedRemoteScale = remoteLiveOverlay.width / Math.max(1, width);
+                remoteLiveOverlay.dataset.overlayScale = `${appliedRemoteScale || remoteOverlayScale}`;
+                redrawRemoteLiveStrokePreviews(pageIndex);
+            }
 
             if (canvasResized) {
                 const page = state.pages[pageIndex];
@@ -11251,6 +11260,15 @@
             cursorOverlay.style.width = '100%';
             cursorOverlay.style.height = '100%';
 
+            const remoteLiveOverlay = document.createElement('canvas');
+            remoteLiveOverlay.className = 'remote-live-overlay';
+            remoteLiveOverlay.dataset.page = pageIndex;
+            remoteLiveOverlay.width = cursorOverlay.width;
+            remoteLiveOverlay.height = cursorOverlay.height;
+            remoteLiveOverlay.dataset.overlayScale = cursorOverlay.dataset.overlayScale;
+            remoteLiveOverlay.style.width = '100%';
+            remoteLiveOverlay.style.height = '100%';
+
             const selectionBox = document.createElement('div');
             selectionBox.className = 'selection-box hidden';
             selectionBox.dataset.page = pageIndex;
@@ -11298,6 +11316,7 @@
             wrapper.insertBefore(canvas, wrapper.firstChild);
             wrapper.insertBefore(lassoOverlay, wrapper.lastChild);
             wrapper.insertBefore(cursorOverlay, wrapper.lastChild);
+            wrapper.insertBefore(remoteLiveOverlay, wrapper.lastChild);
             wrapper.insertBefore(selectionBox, wrapper.lastChild);
 
             // Setup context with scale
@@ -11308,6 +11327,7 @@
 
             setupCanvasEvents(canvas, pageIndex);
             setupSelectionBoxEvents(selectionBox, pageIndex);
+            redrawRemoteLiveStrokePreviews(pageIndex);
 
             const page = state.pages[pageIndex];
             if (!defer) {
@@ -11468,7 +11488,7 @@
             }
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (wrapper) {
-                wrapper.querySelectorAll('canvas.page-canvas, canvas.lasso-overlay, canvas.cursor-overlay, .selection-box').forEach(el => {
+                wrapper.querySelectorAll('canvas.page-canvas, canvas.lasso-overlay, canvas.cursor-overlay, canvas.remote-live-overlay, .selection-box').forEach(el => {
                     el.remove();
                 });
             }
@@ -12058,6 +12078,95 @@
             });
         }
 
+        const remoteLiveStrokePreviews = new Map();
+        const REMOTE_LIVE_STROKE_TTL_MS = 15000;
+
+        function redrawRemoteLiveStrokePreviews(pageIndex) {
+            const overlay = document.querySelector(`canvas.remote-live-overlay[data-page="${pageIndex}"]`);
+            if (!overlay) return;
+            const page = state.pages[pageIndex];
+            const ctx = overlay.getContext('2d');
+            const { width: pageWidth } = getPageDimensions(pageIndex);
+            const overlayScale = getOverlayCanvasRenderScale(overlay, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
+            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
+            ctx.clearRect(0, 0, overlay.width / overlayScale, overlay.height / overlayScale);
+            if (!page?.pageId) return;
+            remoteLiveStrokePreviews.forEach(record => {
+                if (record.pageId !== page.pageId || !record.points.length) return;
+                const stroke = {
+                    tool: record.tool,
+                    color: record.color,
+                    width: record.width,
+                    points: record.points
+                };
+                if (stroke.points.length === 1) {
+                    drawSinglePointStroke(ctx, stroke);
+                } else {
+                    drawSmoothStroke(ctx, stroke);
+                }
+            });
+        }
+
+        function applyRemoteLiveStrokePreview(packet) {
+            if (!packet?.actorId || !packet?.strokeId || !packet?.pageId) return false;
+            const key = `${packet.actorId}:${packet.strokeId}`;
+            const previous = remoteLiveStrokePreviews.get(key);
+            if (Number(packet.sequence) <= Number(previous?.sequence || 0)) return true;
+            const affectedPageIds = new Set([String(packet.pageId)]);
+            if (previous?.pageId) affectedPageIds.add(previous.pageId);
+            if (packet.cancel) {
+                remoteLiveStrokePreviews.delete(key);
+            } else {
+                const points = previous ? previous.points.slice() : [];
+                const offset = Math.max(0, Math.min(points.length, Number(packet.offset) || 0));
+                const incoming = (Array.isArray(packet.points) ? packet.points : []).map(point => ({
+                    x: Number(point?.x) || 0,
+                    y: Number(point?.y) || 0,
+                    p: Number.isFinite(Number(point?.p)) ? Number(point.p) : 0.5
+                }));
+                points.splice(offset, points.length - offset, ...incoming);
+                const record = {
+                    actorId: String(packet.actorId),
+                    strokeId: String(packet.strokeId),
+                    pageId: String(packet.pageId),
+                    sequence: Number(packet.sequence) || 0,
+                    tool: String(packet.tool || 'pen'),
+                    color: String(packet.color || '#111111'),
+                    width: Math.max(0.1, Number(packet.width) || 1),
+                    points,
+                    sentAt: Number(packet.sentAt) || 0,
+                    updatedAt: Date.now()
+                };
+                remoteLiveStrokePreviews.set(key, record);
+                setTimeout(() => {
+                    const current = remoteLiveStrokePreviews.get(key);
+                    if (!current || current.updatedAt !== record.updatedAt) return;
+                    remoteLiveStrokePreviews.delete(key);
+                    const pageIndex = state.pages.findIndex(page => page?.pageId === current.pageId);
+                    if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
+                }, REMOTE_LIVE_STROKE_TTL_MS);
+            }
+            affectedPageIds.forEach(pageId => {
+                const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
+                if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
+            });
+            return true;
+        }
+
+        function clearRemoteLiveStrokePreviews(actorId = '', throughSentAt = Infinity) {
+            const affectedPageIds = new Set();
+            remoteLiveStrokePreviews.forEach((record, key) => {
+                if (actorId && record.actorId !== actorId) return;
+                if (Number(record.sentAt) > Number(throughSentAt)) return;
+                affectedPageIds.add(record.pageId);
+                remoteLiveStrokePreviews.delete(key);
+            });
+            affectedPageIds.forEach(pageId => {
+                const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
+                if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
+            });
+        }
+
         // Setup canvas pointer events with improved drawing
         // ── § 4.11  Canvas pointer events & live stroke drawing ──────────────
         // Wires up pen/touch/mouse events on each page canvas: start stroke,
@@ -12232,6 +12341,7 @@
                     drawEraserPreview(pageIndex, pos);
                 } else {
                     currentStroke = {
+                        id: generateStrokeId(),
                         tool: state.currentTool,
                         color: state.currentColor,
                         width: state.currentWidth,
@@ -12243,6 +12353,9 @@
                     // page across remote reorders that may land mid-draw.
                     currentStrokePageId = state.pages[pageIndex]?.pageId || null;
                     updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
+                    if (typeof publishLiveStrokePreview === 'function') {
+                        publishLiveStrokePreview(currentStrokePageId, currentStroke);
+                    }
                 }
             });
 
@@ -12293,10 +12406,16 @@
                     currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
                 });
                 updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
+                if (typeof publishLiveStrokePreview === 'function') {
+                    publishLiveStrokePreview(currentStrokePageId, currentStroke);
+                }
             });
 
             const endDrawing = (e) => {
                 if (state.isReadOnly) {
+                    if (currentStroke && typeof publishLiveStrokePreview === 'function') {
+                        publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
+                    }
                     isDrawing = false;
                     if (isLassoing) {
                         isLassoing = false;
@@ -12394,6 +12513,9 @@
                     }
                     const targetPage = state.pages[targetPageIndex];
                     if (!targetPage) {
+                        if (typeof publishLiveStrokePreview === 'function') {
+                            publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
+                        }
                         // Page was deleted while we were drawing — drop the stroke.
                         currentStroke = null;
                         currentStrokePageId = null;
@@ -12406,7 +12528,7 @@
                     simplifyStrokePoints(currentStroke);
 
                     const finalizedStroke = {
-                        id: generateStrokeId(),
+                        id: currentStroke.id || generateStrokeId(),
                         tool: currentStroke.tool,
                         color: currentStroke.color,
                         width: currentStroke.width,
@@ -12414,6 +12536,9 @@
                     };
                     targetPage.strokes.push(finalizedStroke);
                     stampCollaborativeItems([finalizedStroke]);
+                    if (typeof publishLiveStrokePreview === 'function') {
+                        publishLiveStrokePreview(targetPage.pageId, finalizedStroke, { final: true });
+                    }
                     if (typeof targetPage.strokeCount === 'number') {
                         targetPage.strokeCount += 1;
                     } else {

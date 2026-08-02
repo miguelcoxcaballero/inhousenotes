@@ -23,9 +23,14 @@ const IHN_LIVE_FAILED_SIGNAL_MAX = 256;
 const IHN_LIVE_BROADCAST_RETRY_LIMIT = 4;
 const IHN_LIVE_APPLY_COALESCE_MS = 36;
 const IHN_LIVE_RESUME_GRACE_MS = 10_000;
+const IHN_LIVE_NETWORK_PROBE_MS = 550;
+const IHN_LIVE_NETWORK_RECOVERY_GRACE_MS = 1800;
 const IHN_LIVE_ICE_GATHER_TIMEOUT = 7000;
+const IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 1200;
 const IHN_LIVE_SNAPSHOT_CACHE_LIMIT = 3;
 const IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS = 16_000_000;
+const IHN_LIVE_STROKE_FRAME_MS = 18;
+const IHN_LIVE_STROKE_MAX_POINTS = 700;
 const IHN_LIVE_STUN = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' }
@@ -79,6 +84,8 @@ const ihnLiveFailedSignals = new Map();
 const ihnLivePendingApplies = new Map();
 const ihnLiveFanOutTasks = new Set();
 const ihnLiveSnapshotCache = new Map();
+const ihnLiveStrokeSends = new Map();
+const ihnLiveStrokeSeen = new Map();
 
 function ihnCreatePeerConnection() {
     return new RTCPeerConnection({
@@ -147,6 +154,10 @@ function ihnEnsureTabChannel() {
     ihnLiveBroadcastFileId = state.driveFileId;
     ihnLiveBroadcastChannel = new BroadcastChannel(`inhousenotes-live-v5:${simpleHash(state.driveFileId)}`);
     ihnLiveBroadcastChannel.onmessage = event => {
+        if (event.data?.type === 'live-stroke') {
+            ihnHandleRealtimeStrokePacket(event.data, 'tab');
+            return;
+        }
         ihnHandleLiveEnvelope(event.data, 'tab').catch(error => console.warn('Same-device live update failed:', error));
     };
 }
@@ -649,6 +660,139 @@ function ihnSendControl(peer, payload) {
     }
 }
 
+function ihnSanitizeLiveStrokePoints(points) {
+    if (!Array.isArray(points)) return [];
+    return points.map(point => ({
+        x: Number(point?.x) || 0,
+        y: Number(point?.y) || 0,
+        p: Number.isFinite(Number(point?.p)) ? Number(point.p) : 0.5
+    }));
+}
+
+function ihnSendRealtimeStrokePacket(packet, excludePeerId = '') {
+    if (!packet || packet.fileId !== state?.driveFileId) return false;
+    ihnEnsureTabChannel();
+    try { ihnLiveBroadcastChannel?.postMessage(packet); } catch (error) {}
+    let sent = false;
+    ihnLivePeers.forEach((peer, peerId) => {
+        if (peerId === excludePeerId) return;
+        sent = ihnSendControl(peer, packet) || sent;
+    });
+    return sent;
+}
+
+function ihnFlushLiveStrokePreview(strokeId, options = {}) {
+    const record = ihnLiveStrokeSends.get(String(strokeId || ''));
+    if (!record || !record.latest) return false;
+    clearTimeout(record.timer);
+    record.timer = null;
+    const latest = record.latest;
+    const allPoints = ihnSanitizeLiveStrokePoints(latest.points);
+    // Repeat the previous endpoint so quadratic rendering joins batches without
+    // a visible seam. A final packet always carries the complete stroke and is
+    // therefore independently recoverable after a dropped preview frame.
+    const offset = options.final
+        ? 0
+        : Math.max(0, Math.min(allPoints.length, record.sentPoints) - 1);
+    const basePacket = {
+        v: 1, type: 'live-stroke', fileId: state?.driveFileId || '',
+        actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`,
+        strokeId: record.strokeId, pageId: record.pageId,
+        tool: String(latest.tool || 'pen'), color: String(latest.color || '#111111'),
+        width: Math.max(0.1, Number(latest.width) || 1), sentAt: Date.now()
+    };
+    if (!basePacket.fileId || !basePacket.pageId || !basePacket.strokeId) return false;
+    if (options.cancel) {
+        ihnSendRealtimeStrokePacket({
+            ...basePacket, sequence: ++record.sequence, offset: 0,
+            points: [], final: false, cancel: true
+        });
+    } else {
+        // Keep every RTCDataChannel message comfortably below mobile browser
+        // limits. Long strokes are split into ordered point ranges; the final
+        // range carries the completion flag.
+        let chunkOffset = offset;
+        do {
+            const chunkEnd = Math.min(allPoints.length, chunkOffset + IHN_LIVE_STROKE_MAX_POINTS);
+            ihnSendRealtimeStrokePacket({
+                ...basePacket,
+                sequence: ++record.sequence,
+                offset: chunkOffset,
+                points: allPoints.slice(chunkOffset, chunkEnd),
+                final: !!options.final && chunkEnd >= allPoints.length,
+                cancel: false
+            });
+            chunkOffset = chunkEnd;
+        } while (chunkOffset < allPoints.length);
+    }
+    record.sentPoints = allPoints.length;
+    if (options.final || options.cancel) ihnLiveStrokeSends.delete(record.strokeId);
+    return true;
+}
+
+function publishLiveStrokePreview(pageId, stroke, options = {}) {
+    if (!state?.driveFileId || !ihnCanEditLiveDocument() || !stroke?.id || !pageId) return false;
+    startLiveCollaboration();
+    const strokeId = String(stroke.id);
+    let record = ihnLiveStrokeSends.get(strokeId);
+    if (!record) {
+        record = { strokeId, pageId: String(pageId), sequence: 0, sentPoints: 0, latest: null, timer: null };
+        ihnLiveStrokeSends.set(strokeId, record);
+    }
+    record.pageId = String(pageId);
+    record.latest = {
+        tool: stroke.tool,
+        color: stroke.color,
+        width: stroke.width,
+        points: Array.isArray(stroke.points) ? stroke.points : []
+    };
+    if (options.final || options.cancel) {
+        return ihnFlushLiveStrokePreview(strokeId, options);
+    }
+    if (!record.timer) {
+        record.timer = setTimeout(() => ihnFlushLiveStrokePreview(strokeId), IHN_LIVE_STROKE_FRAME_MS);
+    }
+    return true;
+}
+
+function ihnHandleRealtimeStrokePacket(packet, transport = '', sourcePeerId = '') {
+    if (!packet
+        || packet.v !== 1
+        || packet.type !== 'live-stroke'
+        || packet.fileId !== state?.driveFileId
+        || !packet.actorId
+        || !packet.strokeId
+        || !packet.pageId
+        || !Array.isArray(packet.points)) return false;
+    const ownActorId = `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`;
+    if (packet.actorId === ownActorId) return true;
+    const sequence = Number(packet.sequence) || 0;
+    const key = `${packet.actorId}:${packet.strokeId}`;
+    if (sequence <= Number(ihnLiveStrokeSeen.get(key) || 0)) return true;
+    ihnLiveStrokeSeen.set(key, sequence);
+    if (packet.final || packet.cancel) {
+        setTimeout(() => {
+            if (Number(ihnLiveStrokeSeen.get(key) || 0) === sequence) ihnLiveStrokeSeen.delete(key);
+        }, 30_000);
+    }
+    if (typeof applyRemoteLiveStrokePreview === 'function') {
+        applyRemoteLiveStrokePreview(packet);
+    }
+    // The peer graph can be temporarily non-meshed during recovery. Relay the
+    // tiny preview packet so every connected collaborator still sees the pen.
+    if (transport === 'webrtc') {
+        ihnEnsureTabChannel();
+        try { ihnLiveBroadcastChannel?.postMessage(packet); } catch (error) {}
+    }
+    ihnLivePeers.forEach((peer, peerId) => {
+        if (transport === 'webrtc' && peerId === sourcePeerId) return;
+        const originPeerId = String(packet.actorId).split(':')[0];
+        if (peerId === originPeerId) return;
+        ihnSendControl(peer, packet);
+    });
+    return true;
+}
+
 function ihnObservePeerDocumentHash(peerId, contentHash) {
     const peer = ihnLivePeers.get(peerId);
     const observedHash = String(contentHash || '');
@@ -676,9 +820,11 @@ function ihnConfigurePeer(peerId, pc, peer) {
         peer.status = connectionState;
         if (connectionState === 'connected' || connectionState === 'completed') {
             peer.disconnectedAt = 0;
+            peer.networkRecoveryProbeAt = 0;
             ihnRefreshPeerPath(peer).catch(() => {});
         } else if (connectionState === 'disconnected') {
             if (!peer.disconnectedAt) peer.disconnectedAt = Date.now();
+            ihnProbePeerForFastRecovery(peerId, peer, 'ICE path disconnected');
         } else if (connectionState === 'failed' || connectionState === 'closed') {
             ihnClosePeer(peerId, connectionState, { retry: true });
         }
@@ -747,7 +893,7 @@ function ihnConfigureChannel(peerId, channel, peer) {
     };
 }
 
-async function ihnCreateOffer(targetPeerId) {
+async function ihnCreateOffer(targetPeerId, options = {}) {
     if (!ihnIsLiveLeader() || !state.driveCanEdit || !driveAccessToken || !state.driveFileId) return;
     const ownId = ihnGetLivePeerId();
     if (!targetPeerId || ownId >= targetPeerId) return;
@@ -768,14 +914,18 @@ async function ihnCreateOffer(targetPeerId) {
     ihnConfigureChannel(targetPeerId, pc.createDataChannel('inhousenotes-live-v5', { ordered: true }), peer);
     try {
         await pc.setLocalDescription(await pc.createOffer());
-        await ihnWaitForIce(pc);
+        await ihnWaitForIce(pc, options.fastRecovery
+            ? IHN_LIVE_FAST_ICE_GATHER_TIMEOUT
+            : IHN_LIVE_ICE_GATHER_TIMEOUT);
         ihnAssertLiveSessionContext(fileId, generation);
         if (ihnLivePeers.get(targetPeerId) !== peer) {
             throw new Error('Live peer connection was replaced');
         }
         const content = await ihnEncodeSignal({ v: 1, type: 'offer', fileId,
             from: ownId, to: targetPeerId, sessionId: peer.sessionId,
-            expiresAt: Date.now() + IHN_LIVE_SIGNAL_TTL, description: pc.localDescription });
+            expiresAt: Date.now() + IHN_LIVE_SIGNAL_TTL,
+            fastRecovery: !!options.fastRecovery,
+            description: pc.localDescription });
         ihnAssertLiveSessionContext(fileId, generation);
         if (ihnLivePeers.get(targetPeerId) !== peer) {
             throw new Error('Live peer connection was replaced');
@@ -811,8 +961,9 @@ async function ihnAcceptOffer(comment, offer) {
     if (ihnLiveProcessedOffers.has(offerKey)) return;
     ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
     const existingPeer = ihnLivePeers.get(offer.from);
-    if (existingPeer?.status === 'open') return;
+    if (existingPeer?.status === 'open' && !offer.fastRecovery) return;
     if (existingPeer
+        && !offer.fastRecovery
         && Date.now() - Number(existingPeer.createdAt || 0) < IHN_LIVE_CONNECT_TIMEOUT) return;
     ihnClosePeer(offer.from, 'new offer', { retry: false });
     const fileId = state.driveFileId;
@@ -829,7 +980,9 @@ async function ihnAcceptOffer(comment, offer) {
     try {
         await pc.setRemoteDescription(offer.description);
         await pc.setLocalDescription(await pc.createAnswer());
-        await ihnWaitForIce(pc);
+        await ihnWaitForIce(pc, offer.fastRecovery
+            ? IHN_LIVE_FAST_ICE_GATHER_TIMEOUT
+            : IHN_LIVE_ICE_GATHER_TIMEOUT);
         ihnAssertLiveSessionContext(fileId, generation);
         if (ihnLivePeers.get(offer.from) !== peer) {
             throw new Error('Live peer connection was replaced');
@@ -1079,7 +1232,8 @@ function ihnSuperviseConnections(options = {}) {
         // Reserve a future slot immediately; the peer map itself prevents a
         // second in-flight offer once ihnCreateOffer starts.
         retry.nextAttemptAt = now + IHN_LIVE_CONNECT_TIMEOUT;
-        ihnCreateOffer(peerId).catch(error => {
+        const fastRecovery = /network|ICE path|browser online/i.test(String(retry.lastReason || ''));
+        ihnCreateOffer(peerId, { fastRecovery }).catch(error => {
             console.warn('Live reconnect attempt failed:', error);
             ihnSchedulePeerRetry(peerId, 'reconnect failed');
         });
@@ -1090,7 +1244,20 @@ function ihnSuperviseConnections(options = {}) {
 function ihnWakeLiveCollaboration(reason = 'network available') {
     if (!state?.driveFileId) return;
     const now = Date.now();
+    const networkRouteChanged = reason === 'network changed' || reason === 'browser online';
     ihnLivePeers.forEach((peer, peerId) => {
+        if (networkRouteChanged) {
+            if (peer.channel?.readyState === 'open') {
+                ihnProbePeerForFastRecovery(peerId, peer, reason);
+            } else {
+                ihnClosePeer(peerId, reason, {
+                    retry: true,
+                    immediate: true,
+                    preserveFailures: true
+                });
+            }
+            return;
+        }
         if (peer.channel?.readyState !== 'open') return;
         // Background tabs and mobile WebViews can suspend timers and sockets
         // without emitting a useful WebRTC state transition. Give the resumed
@@ -1107,7 +1274,60 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
         retry.lastReason = reason;
     });
     ihnSuperviseConnections({ immediate: true });
-    setTimeout(() => ihnSuperviseConnections({ immediate: true }), 1200);
+    if (networkRouteChanged) {
+        ihnScheduleRapidSignalPolls(reason);
+    } else {
+        setTimeout(() => ihnSuperviseConnections({ immediate: true }), 1200);
+    }
+}
+
+function ihnScheduleRapidSignalPolls(reason = 'network recovery') {
+    const fileId = state?.driveFileId || '';
+    const generation = ihnLiveGeneration;
+    [180, 650, 1400, 2400].forEach(delay => {
+        setTimeout(() => {
+            if (generation !== ihnLiveGeneration || state?.driveFileId !== fileId) return;
+            ihnLiveRetryState.forEach((retry, peerId) => {
+                if (!ihnCanInitiatePeer(peerId) || ihnLivePeers.has(peerId)) return;
+                retry.nextAttemptAt = Date.now();
+                retry.lastReason = reason;
+            });
+            ihnSuperviseConnections({ immediate: true });
+        }, delay);
+    });
+}
+
+function ihnProbePeerForFastRecovery(peerId, peer, reason = 'network path changed') {
+    if (!peer
+        || ihnLivePeers.get(peerId) !== peer
+        || peer.closing
+        || peer.channel?.readyState !== 'open') return false;
+    const now = Date.now();
+    if (now - Number(peer.networkRecoveryProbeAt || 0) < IHN_LIVE_NETWORK_PROBE_MS) return true;
+    peer.networkRecoveryProbeAt = now;
+    peer.resumeGraceUntil = now + IHN_LIVE_NETWORK_RECOVERY_GRACE_MS;
+    peer.lastPingAt = now;
+    ihnTouchKnownPeerFromChannel(peerId, now);
+    try { peer.pc?.restartIce?.(); } catch (error) { /* replacement route remains available */ }
+    ihnSendControl(peer, { t: 'ping', at: now, reason, networkProbe: true });
+    setTimeout(() => {
+        if (ihnLivePeers.get(peerId) !== peer || peer.closing) return;
+        if (Number(peer.lastPongAt || 0) >= now) {
+            peer.networkRecoveryProbeAt = 0;
+            peer.resumeGraceUntil = 0;
+            scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
+            return;
+        }
+        // The old candidate pair did not survive the route change. Replace it
+        // immediately instead of waiting for the normal 5–20 second watchdog.
+        ihnClosePeer(peerId, reason, {
+            retry: true,
+            immediate: true,
+            preserveFailures: true
+        });
+        ihnSuperviseConnections({ immediate: true });
+    }, IHN_LIVE_NETWORK_PROBE_MS);
+    return true;
 }
 
 let ihnLiveLifecycleListenersInstalled = false;
@@ -1278,6 +1498,9 @@ function stopLiveCollaboration() {
     [...ihnLivePeers.keys()].forEach(peerId => ihnClosePeer(peerId, 'document closed', { retry: false }));
     ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveAppliedHashes.clear(); ihnLiveProcessedOffers.clear();
     ihnLiveFailedSignals.clear();
+    ihnLiveStrokeSends.forEach(record => clearTimeout(record.timer));
+    ihnLiveStrokeSends.clear(); ihnLiveStrokeSeen.clear();
+    if (typeof clearRemoteLiveStrokePreviews === 'function') clearRemoteLiveStrokePreviews();
     ihnLiveFailedSignalRefreshAt = 0; ihnLiveFailedSignalRefreshKey = '';
     ihnLiveKnownPeers.clear(); ihnLiveRetryState.clear();
     ihnLiveSnapshotCache.clear();
@@ -1653,6 +1876,10 @@ async function ihnHandleWireMessage(
         });
         return;
     }
+    if (message?.type === 'live-stroke') {
+        ihnHandleRealtimeStrokePacket(message, 'webrtc', peerId);
+        return;
+    }
     const key = `${peerId}:${peer.sessionId || ''}:${message?.id || ''}`;
     if (message?.t === 'start') {
         const total = Number(message.total), chars = Number(message.chars);
@@ -1996,6 +2223,9 @@ async function ihnApplyLiveEnvelope(
             showEditorView();
         }
         if (result?.changed) showStatus(transport === 'tab' ? 'Live changes from another tab' : 'Live changes from collaborator', { savedAt: Number(envelope.sentAt) || Date.now() });
+        if (typeof clearRemoteLiveStrokePreviews === 'function') {
+            clearRemoteLiveStrokePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
+        }
         const mergedHash = ihnCanonicalDocumentHash(
             state.pages.map(page => sanitizePageForStorage(page)),
             getCollabStructureSnapshot(),
