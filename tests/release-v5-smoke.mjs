@@ -6,12 +6,12 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.3.0.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.4.0.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.3\.0';/);
+assert.match(html, /const APP_VERSION = '5\.4\.0';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.3\.0/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.3\.0/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.4\.0/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.4\.0/);
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
 assert.match(html, /function normalizeTimelineHistory\(/);
@@ -99,6 +99,13 @@ assert.match(live, /function ihnFanOutAppliedEnvelope\(/);
 assert.match(live, /function ihnStartLiveApplyDrain\(/);
 assert.match(live, /snapshot-received/);
 assert.match(live, /IHN_LIVE_APPLY_ACK_TIMEOUT/);
+assert.match(live, /function ihnBuildPeerSnapshot\(/);
+assert.match(live, /partial: true/);
+assert.match(live, /snapshot-nack/);
+assert.match(live, /IHN_LIVE_SNAPSHOT_CACHE_LIMIT/);
+assert.match(live, /IHN_LIVE_RESUME_GRACE_MS/);
+assert.match(live, /iceCandidatePoolSize: 4/);
+assert.match(live, /async function flushLiveCollaborationBeforeExit\(/);
 
 assert.match(html, /const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';/);
 assert.match(html, /remoteSyncEnvelope\.contentHash === driveConfirmedContentHash/);
@@ -135,7 +142,18 @@ assert.match(html, /connection\?\.transport/);
 assert.doesNotMatch(html, />Admin mode</);
 assert.match(html, /const PENDING_EXIT_UPLOAD_KEY = 'drive-pending-exit-upload-v1';/);
 assert.match(html, /async function persistExitLocalCheckpoint\(/);
+assert.match(html, /function getLifecycleLocalCheckpoint\(/);
 assert.match(html, /function resumePendingExitUploadIfNeeded\(/);
+assert.match(html, /function startLifecycleExitSave\(/);
+assert.match(html, /function pauseCollabPollingForBackground\(/);
+assert.match(html, /flushLiveCollaborationBeforeExit\(650\)/);
+assert.match(html, /addEventListener\('online',[\s\S]{0,160}resumePendingExitUploadIfNeeded\(\)/);
+const closeFlushStart = html.indexOf('function flushOnClose');
+const closeFlushEnd = html.indexOf('// \u2500\u2500 \u00a7 4.17', closeFlushStart);
+const closeFlushSource = html.slice(closeFlushStart, closeFlushEnd);
+assert.match(closeFlushSource, /startLifecycleExitSave\(state\.driveFileId, localCheckpoint\)/);
+assert.doesNotMatch(closeFlushSource, /keepalive: true/);
+assert.doesNotMatch(closeFlushSource, /if \(state\.isReadOnly\) return/);
 assert.match(html, /await localCheckpoint;/);
 assert.doesNotMatch(
   html.slice(html.indexOf('const localCheckpoint = persistExitLocalCheckpoint'), html.indexOf('// Clear presence before leaving document')),
@@ -525,11 +543,11 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.3.0');
+assert.equal(update.publishedAppVersion, '5.4.0');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.3\.0/);
-assert.match(notes, /recovers from Drive fallback/i);
-assert.match(notes, /first simultaneous edit/i);
-assert.match(notes, /Page additions, deletions and reordering/i);
+assert.match(update.releaseNotes, /v5\.4\.0/);
+assert.match(notes, /page deltas/i);
+assert.match(notes, /background/i);
+assert.match(notes, /pending upload/i);
 
-console.log('v5.3.0 smoke checks passed.');
+console.log('v5.4.0 smoke checks passed.');

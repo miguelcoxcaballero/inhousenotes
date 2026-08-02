@@ -8574,8 +8574,8 @@
             </div>
         </div>
     </div>
-    <script src="collaboration-core-v5.js?v=5.3.0"></script>
-    <script src="live-collaboration-v5.js?v=5.3.0"></script>
+    <script src="collaboration-core-v5.js?v=5.4.0"></script>
+    <script src="live-collaboration-v5.js?v=5.4.0"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8643,7 +8643,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.3.0';
+        const APP_VERSION = '5.4.0';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -10372,6 +10372,11 @@
         let backgroundExitSavePromise = null;
         let backgroundExitSaveFailed = false;
         let backgroundExitSaveFileId = null;
+        let lifecycleExitSavePromise = null;
+        let lifecycleExitSaveFileId = null;
+        let lifecycleLocalCheckpointPromise = null;
+        let lifecycleLocalCheckpointFileId = null;
+        let lifecycleLocalCheckpointVersion = -1;
         let pendingExitResumeInProgress = false;
         let preparedDrivePdf = null;
         let preparedDrivePdfBuild = null;
@@ -17242,6 +17247,22 @@
             if (driveOpenInProgress) return;
             closeDriveCardMenu();
             driveOpenInProgress = true;
+            if (lifecycleExitSavePromise) {
+                if (driveStatusEl) {
+                    driveStatusEl.textContent = 'Finishing the previous Drive save...';
+                }
+                showLoading('Finishing previous save...');
+                const lifecycleSaveCompleted = await lifecycleExitSavePromise;
+                hideLoading();
+                if (!lifecycleSaveCompleted && readPendingExitUpload()) {
+                    driveOpenInProgress = false;
+                    if (driveStatusEl) {
+                        driveStatusEl.textContent = 'The previous document is safe locally, but Drive has not finished saving it yet. Tap it again to retry.';
+                    }
+                    resumePendingExitUploadIfNeeded();
+                    return;
+                }
+            }
             if (!backgroundExitSavePromise && backgroundExitSaveFailed && backgroundExitSaveFileId) {
                 forceFlushingForExit = true;
                 backgroundExitSavePromise = (async () => {
@@ -21630,6 +21651,9 @@
                         // IndexedDB transaction and survives an immediate app
                         // kill; the heavier PDF upload remains in background.
                         const localCheckpoint = persistExitLocalCheckpoint(exitingFileId);
+                        const liveExitFlush = typeof flushLiveCollaborationBeforeExit === 'function'
+                            ? flushLiveCollaborationBeforeExit(650).catch(() => false)
+                            : Promise.resolve(true);
 
                         backgroundExitSaveFileId = exitingFileId;
                         backgroundExitSaveFailed = false;
@@ -21680,6 +21704,7 @@
 
                         try {
                             await localCheckpoint;
+                            await liveExitFlush;
                         } catch (error) {
                             console.error('Exit checkpoint failed:', error);
                             showStatus('Could not secure the latest changes locally. Please try Home again.', { error: true });
@@ -22247,7 +22272,7 @@
             window.addEventListener('beforeunload', (event) => {
                 clearPresence();
                 flushOnClose();
-                if (backgroundExitSavePromise || readPendingExitUpload()) {
+                if (backgroundExitSavePromise || lifecycleExitSavePromise || readPendingExitUpload()) {
                     event.preventDefault();
                     event.returnValue = '';
                 }
@@ -22257,16 +22282,25 @@
                 flushOnClose();
             });
 
+            window.addEventListener('online', () => {
+                if (readPendingExitUpload()) {
+                    resumePendingExitUploadIfNeeded();
+                }
+            });
+
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'hidden') {
-                    flushOnClose();
-                    // Release memory when tab is hidden
-                    releaseMemoryOnHide();
+                    const hiddenCheckpoint = flushOnClose();
+                    // Do not unload page bodies while their final IndexedDB
+                    // checkpoint is still reading them.
+                    Promise.resolve(hiddenCheckpoint)
+                        .catch(() => false)
+                        .finally(() => releaseMemoryOnHide());
                     // Pause collab polling when tab is not visible
                     if (publicSharedPreviewFileId && !driveAccessToken) {
                         pausePublicSharedPolling();
                     } else {
-                        stopCollabPolling();
+                        pauseCollabPollingForBackground();
                     }
                 } else if (document.visibilityState === 'visible') {
                     // Resume collab polling when tab becomes visible again
@@ -22275,6 +22309,7 @@
                         // Immediately poll once to catch up on changes
                         pollDriveRevision();
                         scheduleCollabFastCatchup();
+                        resumePendingExitUploadIfNeeded();
                     } else if (publicSharedPreviewFileId) {
                         startPublicSharedPolling(
                             publicSharedPreviewFileId,
@@ -26997,9 +27032,88 @@
             return marker;
         }
 
+        function getLifecycleLocalCheckpoint(fileId = state.driveFileId) {
+            const checkpointFileId = String(fileId || state.driveFileId || 'local-document');
+            const checkpointVersion = Number(driveContentVersion) || 0;
+            if (lifecycleLocalCheckpointPromise
+                && lifecycleLocalCheckpointFileId === checkpointFileId
+                && lifecycleLocalCheckpointVersion === checkpointVersion) {
+                return lifecycleLocalCheckpointPromise;
+            }
+            lifecycleLocalCheckpointFileId = checkpointFileId;
+            lifecycleLocalCheckpointVersion = checkpointVersion;
+            const task = persistExitLocalCheckpoint(fileId).catch(error => {
+                console.warn('Close checkpoint did not finish:', error);
+                return false;
+            });
+            lifecycleLocalCheckpointPromise = task;
+            task.then(result => {
+                if (result !== false || lifecycleLocalCheckpointPromise !== task) return;
+                lifecycleLocalCheckpointPromise = null;
+                lifecycleLocalCheckpointFileId = null;
+                lifecycleLocalCheckpointVersion = -1;
+            });
+            return task;
+        }
+
+        async function waitForLifecycleDriveSave(timeoutMs = 20000) {
+            const startedAt = Date.now();
+            while ((driveSaveInProgress || driveSaveQueued)
+                && Date.now() - startedAt < timeoutMs) {
+                await new Promise(resolve => setTimeout(resolve, 80));
+            }
+            return !(driveSaveInProgress || driveSaveQueued);
+        }
+
+        function startLifecycleExitSave(fileId = state.driveFileId, localCheckpoint = null) {
+            if (!fileId || state.driveCanEdit === false || !state.driveAutosave) return null;
+            if (lifecycleExitSavePromise && lifecycleExitSaveFileId === fileId) {
+                return lifecycleExitSavePromise;
+            }
+            persistPendingExitUploadMarker(fileId);
+            lifecycleExitSaveFileId = fileId;
+            const persistenceContext = captureDocumentPersistenceContext();
+            const task = (async () => {
+                try {
+                    const checkpointResult = await (localCheckpoint || persistExitLocalCheckpoint(fileId));
+                    if (checkpointResult === false) return false;
+                } catch (error) {
+                    console.warn('Lifecycle local checkpoint did not finish:', error);
+                    return false;
+                }
+                if (!isDocumentPersistenceContextCurrent(persistenceContext)
+                    || state.driveFileId !== fileId
+                    || !driveAccessToken) {
+                    return false;
+                }
+                if (!await waitForLifecycleDriveSave()) return false;
+                if (isDriveUploadFullySettled()) {
+                    clearPendingExitUpload(fileId);
+                    return true;
+                }
+                driveDirty = true;
+                deferredDriveSave = false;
+                await queueDriveSave(true);
+                if (!await waitForLifecycleDriveSave()) return false;
+                const success = isDriveUploadFullySettled();
+                if (success) clearPendingExitUpload(fileId);
+                return success;
+            })().finally(() => {
+                if (lifecycleExitSavePromise !== task) return;
+                lifecycleExitSavePromise = null;
+                lifecycleExitSaveFileId = null;
+                if (document.visibilityState === 'visible' && readPendingExitUpload()) {
+                    setTimeout(resumePendingExitUploadIfNeeded, 0);
+                }
+            });
+            lifecycleExitSavePromise = task;
+            return task;
+        }
+
         function resumePendingExitUploadIfNeeded() {
             const marker = readPendingExitUpload();
-            if (!marker || !driveAccessToken || pendingExitResumeInProgress || backgroundExitSavePromise) return;
+            if (!marker || !driveAccessToken || pendingExitResumeInProgress
+                || backgroundExitSavePromise || lifecycleExitSavePromise) return;
             if (!state.driveFileId || state.driveFileId !== marker.fileId || !state.driveAutosave) return;
             pendingExitResumeInProgress = true;
             forceFlushingForExit = true;
@@ -27009,7 +27123,10 @@
             driveDirty = true;
             deferredDriveSave = false;
             backgroundExitSavePromise = (async () => {
+                if (!await waitForLifecycleDriveSave(30000)) return false;
+                if (isDriveUploadFullySettled()) return true;
                 await queueDriveSave(true);
+                if (!await waitForLifecycleDriveSave(30000)) return false;
                 return isDriveUploadFullySettled();
             })()
                 .then(success => {
@@ -30307,25 +30424,31 @@
         }
 
         function flushOnClose() {
-            if (state.isReadOnly) return;
-            if (state.driveAutosave && state.driveFileId
+            const hasPendingDriveContent = state.driveAutosave
+                && state.driveCanEdit !== false
+                && state.driveFileId
                 && (driveDirty || deferredDriveSave || driveSaveInProgress
-                    || driveSaveQueued || driveContentVersion !== driveUploadedContentVersion)) {
+                    || driveSaveQueued || driveContentVersion !== driveUploadedContentVersion);
+            if (hasPendingDriveContent) {
                 persistPendingExitUploadMarker(state.driveFileId);
             }
             saveViewState();
-            flushStrokeOpsQueue();
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             scheduleLocalStorageBackup(payload, { immediate: true });
-            saveToIndexedDb(payload, savedAt);
-            persistTimelineHistory().catch(() => {});
             state.lastSavedAt = savedAt;
             updateSaveTimestamp();
-            flushDirtyPages({ force: true });
-            if (driveDirty) {
-                queueDriveSave(true, { keepalive: true });
+            const localCheckpoint = getLifecycleLocalCheckpoint(
+                hasPendingDriveContent ? state.driveFileId : null
+            );
+            if (hasPendingDriveContent) {
+                // A full PDF is far larger than the browser keepalive request
+                // budget. Start a normal upload while the page is merely
+                // hidden and keep the durable marker for a cold-start retry if
+                // the browser terminates the request during unload.
+                startLifecycleExitSave(state.driveFileId, localCheckpoint);
             }
+            return localCheckpoint;
         }
 
         // ── § 4.17  Drive sync & save ─────────────────────────────────────────
@@ -31057,6 +31180,7 @@
             // it even when fallback polling is already alive so a recovered
             // network path upgrades immediately without reopening the document.
             startLiveCollaboration();
+            if (document.visibilityState === 'hidden') return;
             if (state.collabPollInterval) return; // Drive polling already active
             state.collabEnabled = true;
             clearCollabFastCatchup();
@@ -31064,6 +31188,21 @@
             startPresencePing();
             pollDriveRevision();
             console.log('Collab polling started (interval:', COLLAB_POLL_INTERVAL, 'ms)');
+        }
+
+        function pauseCollabPollingForBackground() {
+            if (state.collabPollInterval) {
+                clearInterval(state.collabPollInterval);
+                state.collabPollInterval = null;
+            }
+            state.collabEnabled = false;
+            clearCollabFastCatchup();
+            stopPresencePing();
+            // Keep WebRTC peers, retry state and deferred Drive merges alive.
+            // Mobile WebViews frequently emit visibilitychange for short app
+            // switches; destroying the peer graph here caused avoidable
+            // signalling round-trips and missed first edits after returning.
+            console.log('Drive collaboration polling paused in background');
         }
 
         function stopCollabPolling() {

@@ -22,6 +22,10 @@ const IHN_LIVE_FAILED_SIGNAL_RETRY_MS = 5000;
 const IHN_LIVE_FAILED_SIGNAL_MAX = 256;
 const IHN_LIVE_BROADCAST_RETRY_LIMIT = 4;
 const IHN_LIVE_APPLY_COALESCE_MS = 36;
+const IHN_LIVE_RESUME_GRACE_MS = 10_000;
+const IHN_LIVE_ICE_GATHER_TIMEOUT = 7000;
+const IHN_LIVE_SNAPSHOT_CACHE_LIMIT = 3;
+const IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS = 16_000_000;
 const IHN_LIVE_STUN = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' }
@@ -52,12 +56,14 @@ let ihnLiveBroadcastQueued = false;
 let ihnLiveBroadcastForce = false;
 let ihnLiveBroadcastRetryAttempt = 0;
 const ihnLiveBroadcastTargets = new Set();
+const ihnLiveBroadcastExclusions = new Set();
 let ihnLiveApplying = false;
 let ihnLiveApplyQueue = Promise.resolve();
 let ihnLiveApplyDrainPromise = null;
 let ihnLiveActiveApply = null;
 let ihnLiveSequence = Date.now();
 let ihnLiveLastAppliedHash = '';
+let ihnLiveCurrentHash = '';
 let ihnLiveLastTabSentHash = '';
 let ihnLiveMergeUploadGuard = null;
 let ihnLiveMainPeerId = '';
@@ -72,6 +78,16 @@ const ihnLiveProcessedOffers = new Map();
 const ihnLiveFailedSignals = new Map();
 const ihnLivePendingApplies = new Map();
 const ihnLiveFanOutTasks = new Set();
+const ihnLiveSnapshotCache = new Map();
+
+function ihnCreatePeerConnection() {
+    return new RTCPeerConnection({
+        iceServers: IHN_LIVE_STUN,
+        iceCandidatePoolSize: 4,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
+    });
+}
 
 function ihnGetLiveTabId() {
     if (ihnLiveTabId) return ihnLiveTabId;
@@ -491,7 +507,7 @@ async function ihnDecodeSignal(content) {
     }
 }
 
-function ihnWaitForIce(pc, timeout = 3800) {
+function ihnWaitForIce(pc, timeout = IHN_LIVE_ICE_GATHER_TIMEOUT) {
     if (pc.iceGatheringState === 'complete') return Promise.resolve();
     return new Promise(resolve => {
         let done = false;
@@ -590,6 +606,7 @@ function ihnMarkPeerHealthy(peerId, peer, reason = '') {
     }
     ihnResetPeerRetry(peerId);
     peer.healthyAt = Date.now();
+    peer.resumeGraceUntil = 0;
     return true;
 }
 
@@ -691,6 +708,7 @@ function ihnConfigureChannel(peerId, channel, peer) {
         peer.pendingAckAt = 0;
         peer.pendingAckReceivedHash = '';
         peer.pendingAckReceivedAt = 0;
+        peer.resumeGraceUntil = 0;
         peer.sendQueue = Promise.resolve();
         ihnTouchKnownPeerFromChannel(peerId, now);
         ihnRefreshPeerPath(peer).catch(() => {});
@@ -738,7 +756,7 @@ async function ihnCreateOffer(targetPeerId) {
     if (current) ihnClosePeer(targetPeerId, 'reconnect', { retry: false });
     const fileId = state.driveFileId;
     const generation = ihnLiveGeneration;
-    const pc = new RTCPeerConnection({ iceServers: IHN_LIVE_STUN });
+    const pc = ihnCreatePeerConnection();
     const peer = { pc, channel: null, status: 'connecting', initiator: true,
         sessionId: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
         commentId: '', createdAt: Date.now(), fileId, generation, closing: false,
@@ -799,7 +817,7 @@ async function ihnAcceptOffer(comment, offer) {
     ihnClosePeer(offer.from, 'new offer', { retry: false });
     const fileId = state.driveFileId;
     const generation = ihnLiveGeneration;
-    const pc = new RTCPeerConnection({ iceServers: IHN_LIVE_STUN });
+    const pc = ihnCreatePeerConnection();
     const peer = { pc, channel: null, status: 'connecting', initiator: false,
         sessionId: offer.sessionId, commentId: comment.id, createdAt: Date.now(),
         fileId, generation, closing: false,
@@ -987,7 +1005,10 @@ function ihnSuperviseConnections(options = {}) {
             ihnClosePeer(peerId, 'connection timeout', { retry: true });
             return;
         }
-        if (peer.disconnectedAt && now - peer.disconnectedAt > IHN_LIVE_DISCONNECTED_GRACE) {
+        const resumeGraceActive = now < Number(peer.resumeGraceUntil || 0);
+        if (!resumeGraceActive
+            && peer.disconnectedAt
+            && now - peer.disconnectedAt > IHN_LIVE_DISCONNECTED_GRACE) {
             ihnClosePeer(peerId, 'connection interrupted', { retry: true });
             return;
         }
@@ -1006,6 +1027,7 @@ function ihnSuperviseConnections(options = {}) {
             && pendingAckAge <= IHN_LIVE_APPLY_ACK_TIMEOUT
             && applyReceiptMatches;
         if (peer.protocolV2
+            && !resumeGraceActive
             && now - Number(peer.lastReceivedAt || peer.openedAt || 0) > IHN_LIVE_HEALTH_TIMEOUT
             && !remoteApplyInProgress) {
             ihnClosePeer(peerId, 'health check timeout', { retry: true });
@@ -1067,12 +1089,25 @@ function ihnSuperviseConnections(options = {}) {
 
 function ihnWakeLiveCollaboration(reason = 'network available') {
     if (!state?.driveFileId) return;
+    const now = Date.now();
+    ihnLivePeers.forEach((peer, peerId) => {
+        if (peer.channel?.readyState !== 'open') return;
+        // Background tabs and mobile WebViews can suspend timers and sockets
+        // without emitting a useful WebRTC state transition. Give the resumed
+        // channel one fresh ping round-trip before classifying it as stale.
+        peer.resumeGraceUntil = now + IHN_LIVE_RESUME_GRACE_MS;
+        peer.disconnectedAt = 0;
+        peer.lastPingAt = now;
+        ihnTouchKnownPeerFromChannel(peerId, now);
+        ihnSendControl(peer, { t: 'ping', at: now, reason });
+    });
     ihnLiveRetryState.forEach((retry, peerId) => {
         if (!ihnCanInitiatePeer(peerId)) return;
-        retry.nextAttemptAt = Date.now();
+        retry.nextAttemptAt = now;
         retry.lastReason = reason;
     });
     ihnSuperviseConnections({ immediate: true });
+    setTimeout(() => ihnSuperviseConnections({ immediate: true }), 1200);
 }
 
 let ihnLiveLifecycleListenersInstalled = false;
@@ -1200,6 +1235,29 @@ function startLiveCollaboration() {
     ihnPollSignals();
 }
 
+async function flushLiveCollaborationBeforeExit(timeoutMs = 900) {
+    if (!state?.driveFileId || !ihnCanEditLiveDocument()) return true;
+    const deadline = Date.now() + Math.max(120, Number(timeoutMs) || 900);
+    scheduleLiveDocumentBroadcast({ immediate: true, force: true });
+    while (Date.now() < deadline) {
+        if (!ihnLiveBroadcastBusy
+            && !ihnLiveApplying
+            && ihnLiveBroadcastQueued
+            && !hasSmoothInteraction()) {
+            try { await ihnBroadcastDocument(); } catch (error) { /* Drive fallback remains authoritative */ }
+        }
+        const deliveries = [...ihnLivePeers.values()]
+            .map(peer => peer.sendQueue)
+            .filter(Boolean);
+        if (!ihnLiveBroadcastBusy && !ihnLiveBroadcastQueued) {
+            await Promise.allSettled([...deliveries, ...ihnLiveFanOutTasks]);
+            return true;
+        }
+        await new Promise(resolve => setTimeout(resolve, 24));
+    }
+    return false;
+}
+
 function stopLiveCollaboration() {
     ihnLiveGeneration += 1;
     ihnLiveSignalRunId += 1;
@@ -1215,20 +1273,89 @@ function stopLiveCollaboration() {
     ihnLiveBroadcastQueued = false;
     if (!ihnLiveActiveApply) ihnLiveApplying = false;
     ihnCancelPendingLiveApplies();
-    ihnLiveBroadcastForce = false; ihnLiveBroadcastTargets.clear();
+    ihnLiveBroadcastForce = false; ihnLiveBroadcastTargets.clear(); ihnLiveBroadcastExclusions.clear();
     ihnLiveBroadcastRetryAttempt = 0;
     [...ihnLivePeers.keys()].forEach(peerId => ihnClosePeer(peerId, 'document closed', { retry: false }));
     ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveAppliedHashes.clear(); ihnLiveProcessedOffers.clear();
     ihnLiveFailedSignals.clear();
     ihnLiveFailedSignalRefreshAt = 0; ihnLiveFailedSignalRefreshKey = '';
     ihnLiveKnownPeers.clear(); ihnLiveRetryState.clear();
+    ihnLiveSnapshotCache.clear();
     try { ihnLiveBroadcastChannel?.close(); } catch (error) {}
     ihnLiveBroadcastChannel = null; ihnLiveBroadcastFileId = '';
     ihnInvalidateSignalKey();
     ihnLiveCryptoKeyLoad = null; ihnLiveCryptoKeyLoadFileId = '';
     ihnLiveCryptoKeyRefresh = null; ihnLiveCryptoKeyRefreshFileId = '';
-    ihnLiveLastAppliedHash = ''; ihnLiveLastTabSentHash = '';
+    ihnLiveLastAppliedHash = ''; ihnLiveCurrentHash = ''; ihnLiveLastTabSentHash = '';
     ihnLiveMergeUploadGuard = null; ihnLiveMainPeerId = '';
+}
+
+function ihnSerializeSnapshotPage(page) {
+    try {
+        return typeof ihnStableStringify === 'function'
+            ? ihnStableStringify(page)
+            : JSON.stringify(page);
+    } catch (error) {
+        return JSON.stringify(page);
+    }
+}
+
+function ihnRememberLiveSnapshot(snapshot) {
+    const hash = String(snapshot?.contentHash || '');
+    if (!hash || !Array.isArray(snapshot.pages)) return null;
+    const pagePayloads = new Map();
+    let pageChars = 0;
+    snapshot.pages.forEach((page, index) => {
+        const pageId = String(page?.pageId || `legacy-page-${index + 1}`);
+        const serialized = ihnSerializeSnapshotPage(page);
+        pagePayloads.set(pageId, serialized);
+        pageChars += serialized.length;
+    });
+    const record = { pagePayloads, pageChars };
+    ihnLiveSnapshotCache.delete(hash);
+    ihnLiveSnapshotCache.set(hash, record);
+    const cachedChars = () => [...ihnLiveSnapshotCache.values()]
+        .reduce((total, entry) => total + Number(entry?.pageChars || 0), 0);
+    while (ihnLiveSnapshotCache.size > IHN_LIVE_SNAPSHOT_CACHE_LIMIT
+        || (ihnLiveSnapshotCache.size > 1
+            && cachedChars() > IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS)) {
+        const oldestHash = ihnLiveSnapshotCache.keys().next().value;
+        if (oldestHash === undefined) break;
+        ihnLiveSnapshotCache.delete(oldestHash);
+    }
+    return record;
+}
+
+function ihnBuildPeerSnapshot(snapshot, peer, forceFull = false) {
+    const current = ihnLiveSnapshotCache.get(String(snapshot?.contentHash || ''))
+        || ihnRememberLiveSnapshot(snapshot);
+    if (!current || forceFull) return snapshot;
+    const baseHash = [peer?.lastAckedHash, peer?.remoteCurrentHash]
+        .map(value => String(value || ''))
+        .find(hash => hash && hash !== snapshot.contentHash && ihnLiveSnapshotCache.has(hash));
+    if (!baseHash) return snapshot;
+    const base = ihnLiveSnapshotCache.get(baseHash);
+    const changedPages = [];
+    let changedChars = 0;
+    snapshot.pages.forEach((page, index) => {
+        const pageId = String(page?.pageId || `legacy-page-${index + 1}`);
+        const serialized = current.pagePayloads.get(pageId) || ihnSerializeSnapshotPage(page);
+        if (base.pagePayloads.get(pageId) === serialized) return;
+        changedPages.push(page);
+        changedChars += serialized.length;
+    });
+    // Full snapshots remain the recovery format. Use a delta only when it is
+    // materially smaller and the peer has explicitly acknowledged its base.
+    if (changedPages.length === snapshot.pages.length
+        || changedChars + 2048 >= Math.max(1, current.pageChars) * 0.8) {
+        return snapshot;
+    }
+    return {
+        ...snapshot,
+        partial: true,
+        baseHash,
+        pages: changedPages
+    };
 }
 
 async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()) {
@@ -1252,7 +1379,12 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
             exportName: state.exportName || '', calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
             structure: getCollabStructureSnapshot(),
             fields: getCollabFieldSnapshot(),
-            pages: state.pages.map(page => sanitizePageForStorage(page)) };
+            pages: state.pages.map(page => {
+                if (typeof cloneSanitizedPageForStorage === 'function') {
+                    return cloneSanitizedPageForStorage(page);
+                }
+                return JSON.parse(JSON.stringify(sanitizePageForStorage(page)));
+            }) };
         snapshot.snapshotId = `${snapshot.actorId}:${snapshot.sequence}`;
         snapshot.contentHash = ihnCanonicalDocumentHash(
             snapshot.pages,
@@ -1262,6 +1394,7 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
             snapshot.fields
         );
         ihnAssertLiveOperationContext(operation);
+        ihnLiveCurrentHash = snapshot.contentHash;
         return snapshot;
     } finally {
         if (structureToken && typeof releaseRemotePageMerge === 'function') {
@@ -1272,6 +1405,9 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
 
 function scheduleLiveDocumentBroadcast(options = {}) {
     if (!state?.driveFileId || !ihnCanEditLiveDocument()) return;
+    if (!options.internal && !options.retry && !options.targetPeerId) {
+        ihnLiveCurrentHash = '';
+    }
     startLiveCollaboration();
     if (!options.retry && !options.internal) {
         ihnLiveBroadcastRetryAttempt = 0;
@@ -1279,6 +1415,7 @@ function scheduleLiveDocumentBroadcast(options = {}) {
     ihnLiveBroadcastQueued = true;
     if (options.force) ihnLiveBroadcastForce = true;
     if (options.targetPeerId) ihnLiveBroadcastTargets.add(options.targetPeerId);
+    if (options.excludePeerId) ihnLiveBroadcastExclusions.add(options.excludePeerId);
     clearTimeout(ihnLiveBroadcastTimer);
     ihnLiveBroadcastTimer = setTimeout(() => {
         ihnLiveBroadcastTimer = null;
@@ -1305,14 +1442,17 @@ async function ihnBroadcastDocument() {
     ihnLiveBroadcastBusy = true; ihnLiveBroadcastQueued = false;
     const force = ihnLiveBroadcastForce;
     const targetPeerIds = new Set(ihnLiveBroadcastTargets);
+    const excludedPeerIds = new Set(ihnLiveBroadcastExclusions);
     ihnLiveBroadcastForce = false;
     ihnLiveBroadcastTargets.clear();
+    ihnLiveBroadcastExclusions.clear();
     let retryScheduled = false;
     let suppressAutomaticSchedule = false;
     try {
         const snapshot = await ihnBuildLiveSnapshot(operation);
         ihnAssertLiveOperationContext(operation);
         const hash = snapshot.contentHash;
+        ihnRememberLiveSnapshot(snapshot);
         ihnEnsureTabChannel();
         if (targetPeerIds.size === 0 && (force || hash !== ihnLiveLastTabSentHash)) {
             ihnAssertLiveOperationContext(operation);
@@ -1324,10 +1464,12 @@ async function ihnBroadcastDocument() {
         const deliveries = [];
         ihnLivePeers.forEach((peer, peerId) => {
             if (peer.channel?.readyState !== 'open') return;
+            if (excludedPeerIds.has(peerId)) return;
             if (targetPeerIds.size > 0 && !targetPeerIds.has(peerId)) return;
             if (!force && peer.lastAckedHash === hash) return;
             if (!force && peer.pendingAckHash === hash) return;
-            deliveries.push(ihnQueuePeerPayload(peerId, peer, snapshot, operation, {
+            const peerSnapshot = ihnBuildPeerSnapshot(snapshot, peer, force);
+            deliveries.push(ihnQueuePeerPayload(peerId, peer, peerSnapshot, operation, {
                 trackAcknowledgement: true
             }));
         });
@@ -1339,6 +1481,7 @@ async function ihnBroadcastDocument() {
             ihnLiveBroadcastQueued = true;
             if (force) ihnLiveBroadcastForce = true;
             targetPeerIds.forEach(peerId => ihnLiveBroadcastTargets.add(peerId));
+            excludedPeerIds.forEach(peerId => ihnLiveBroadcastExclusions.add(peerId));
             if (ihnLiveBroadcastRetryAttempt < IHN_LIVE_BROADCAST_RETRY_LIMIT) {
                 ihnLiveBroadcastRetryAttempt += 1;
                 retryScheduled = true;
@@ -1491,6 +1634,25 @@ async function ihnHandleWireMessage(
         ihnMarkPeerHealthy(peerId, peer, 'ack');
         return;
     }
+    if (message?.t === 'snapshot-nack') {
+        if (!peer) return;
+        peer.protocolV2 = true;
+        const rejectedHash = String(message.hash || '');
+        if (rejectedHash && peer.pendingAckHash === rejectedHash) {
+            peer.pendingAckHash = '';
+            peer.pendingAckAt = 0;
+            peer.pendingAckReceivedHash = '';
+            peer.pendingAckReceivedAt = 0;
+        }
+        const currentHash = String(message.currentHash || '');
+        if (currentHash) ihnObservePeerDocumentHash(peerId, currentHash);
+        scheduleLiveDocumentBroadcast({
+            immediate: true,
+            targetPeerId: peerId,
+            force: true
+        });
+        return;
+    }
     const key = `${peerId}:${peer.sessionId || ''}:${message?.id || ''}`;
     if (message?.t === 'start') {
         const total = Number(message.total), chars = Number(message.chars);
@@ -1594,7 +1756,7 @@ function ihnHandleLiveEnvelope(envelope, transport = '', peerId = '') {
         || envelope.fileId !== state?.driveFileId
         || !envelope.actorId
         || !Array.isArray(envelope.pages)
-        || !envelope.pages.length) {
+        || (!envelope.pages.length && !envelope.partial)) {
         return Promise.resolve(false);
     }
     const operation = ihnCaptureLiveOperationContext(envelope.fileId);
@@ -1688,6 +1850,16 @@ function ihnPeerAlreadyHasLiveHash(peer, hash) {
 
 async function ihnFanOutAppliedEnvelope(envelope, transport, sourcePeerId, operation) {
     ihnAssertLiveOperationContext(operation);
+    if (envelope?.partial) {
+        // A page delta is valid only for the peer that acknowledged its base.
+        // Rebuild current state before relaying to tabs or a third peer.
+        scheduleLiveDocumentBroadcast({
+            immediate: true,
+            force: true,
+            excludePeerId: transport === 'webrtc' ? sourcePeerId : ''
+        });
+        return;
+    }
     if (transport === 'webrtc') {
         ihnEnsureTabChannel();
         ihnAssertLiveOperationContext(operation);
@@ -1745,7 +1917,29 @@ async function ihnApplyLiveEnvelope(
     ihnAssertLiveOperationContext(operation);
     if (envelope.fileId !== operation.fileId) return false;
     const ownActorId = `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`;
-    if (!Array.isArray(envelope.pages) || !envelope.pages.length || envelope.actorId === ownActorId) return false;
+    if (!Array.isArray(envelope.pages)
+        || (!envelope.pages.length && !envelope.partial)
+        || envelope.actorId === ownActorId) return false;
+    if (envelope.partial) {
+        const currentHash = ihnLiveCurrentHash || ihnCanonicalDocumentHash(
+                state.pages.map(page => sanitizePageForStorage(page)),
+                getCollabStructureSnapshot(),
+                state.calendarPageConfig,
+                state.exportName,
+                getCollabFieldSnapshot()
+            );
+        if (!envelope.baseHash || currentHash !== envelope.baseHash) {
+            const peer = transport === 'webrtc' ? ihnLivePeers.get(peerId) : null;
+            ihnSendControl(peer, {
+                t: 'snapshot-nack',
+                hash: String(envelope.contentHash || ''),
+                baseHash: String(envelope.baseHash || ''),
+                currentHash,
+                at: Date.now()
+            });
+            return false;
+        }
+    }
     const sequence = Number(envelope.sequence) || 0, previous = ihnLiveSeen.get(envelope.actorId) || 0;
     if (sequence <= previous) return true;
     const now = Date.now();
@@ -1813,8 +2007,12 @@ async function ihnApplyLiveEnvelope(
         // IDB/hydration pass can therefore be retried with the same sequence.
         ihnLiveSeen.set(envelope.actorId, sequence);
         if (envelope.contentHash) ihnLiveAppliedHashes.set(envelope.contentHash, Date.now());
-        ihnLiveLastAppliedHash = mergedHash;
-        ihnTrackMergeCurrentState(mergedHash);
+        const resolvedCurrentHash = result?.hasLocalMerges
+            ? mergedHash
+            : String(envelope.contentHash || mergedHash);
+        ihnLiveLastAppliedHash = resolvedCurrentHash;
+        ihnLiveCurrentHash = resolvedCurrentHash;
+        ihnTrackMergeCurrentState(resolvedCurrentHash);
         const needsConvergenceBroadcast = canEditDocument && (
             result?.hasLocalMerges
             || (envelope.contentHash && mergedHash !== envelope.contentHash)

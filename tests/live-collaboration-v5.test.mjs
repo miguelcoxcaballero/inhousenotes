@@ -218,10 +218,13 @@ globalThis.__liveTest = {
     if (options.targetPeerId) ihnLiveBroadcastTargets.add(options.targetPeerId);
   },
   buildSnapshot: ihnBuildLiveSnapshot,
+  rememberSnapshot: ihnRememberLiveSnapshot,
+  buildPeerSnapshot: ihnBuildPeerSnapshot,
   broadcast: ihnBroadcastDocument,
   wire: ihnHandleWireMessage,
   envelope: ihnHandleLiveEnvelope,
   supervise: ihnSuperviseConnections,
+  wake: ihnWakeLiveCollaboration,
   claimLeader: ihnClaimLiveLeader,
   pollSignals: ihnPollSignals,
   ownId: ihnGetLivePeerId,
@@ -373,6 +376,133 @@ test('delivery bookkeeping is per peer, so a new peer gets current state without
   assert.equal(firstChannel.sent.length, firstMessageCount, 'acked peer is not sent the same state again');
   assert.ok(secondChannel.sent.length > 0, 'new peer receives current snapshot immediately');
   assert.equal(api.getPeer('peer-second').pendingAckHash, api.getPeer('peer-first').lastAckedHash);
+});
+
+test('an acknowledged peer receives only changed pages and keeps a full snapshot fallback', async () => {
+  const { api, state } = createHarness();
+  state.pages = ['p1', 'p2', 'p3'].map((pageId, index) => ({
+    pageId,
+    strokes: Array.from({ length: 24 }, (_, strokeIndex) => ({
+      id: `stroke-${index}-${strokeIndex}`,
+      points: Array.from({ length: 10 }, (__, pointIndex) => ({
+        x: pointIndex + index,
+        y: pointIndex + strokeIndex
+      }))
+    })),
+    images: [],
+    deletedStrokeIds: [],
+    backgroundSource: 'template',
+    pageWidth: 210,
+    pageHeight: 297
+  }));
+  state.collabStructure = core.ihnNormalizeStructureMeta(null, state.pages.map(page => page.pageId));
+
+  const base = await api.buildSnapshot();
+  api.rememberSnapshot(base);
+  const peer = peerWithChannel(createChannel(), { lastAckedHash: base.contentHash });
+
+  state.pages[1].strokes = [
+    ...state.pages[1].strokes,
+    { id: 'stroke-new', points: [{ x: 20, y: 30 }] }
+  ];
+  const current = await api.buildSnapshot();
+  api.rememberSnapshot(current);
+  const delta = api.buildPeerSnapshot(current, peer, false);
+
+  assert.equal(delta.partial, true);
+  assert.equal(delta.baseHash, base.contentHash);
+  assert.equal(delta.contentHash, current.contentHash);
+  assert.equal(delta.pages.map(page => page.pageId).join(','), 'p2');
+  assert.equal(api.buildPeerSnapshot(current, peer, true).partial, undefined);
+});
+
+test('a page delta with the wrong base is rejected and requests a full snapshot', async () => {
+  let applyCalls = 0;
+  const harness = createHarness({
+    applyRemotePages: async () => {
+      applyCalls += 1;
+      return { changed: true, hasLocalMerges: false, pagesNeedingPdfBackground: [] };
+    }
+  });
+  const { api, state } = harness;
+  const channel = createChannel();
+  api.addPeer('peer-remote', peerWithChannel(channel, {
+    pendingAckHash: 'target-hash',
+    pendingAckAt: Date.now()
+  }));
+  const delta = liveEnvelope(state, {
+    partial: true,
+    baseHash: 'different-base',
+    contentHash: 'target-hash',
+    pages: []
+  });
+
+  assert.equal(await api.envelope(delta, 'webrtc', 'peer-remote'), false);
+  assert.equal(applyCalls, 0);
+  assert.equal(JSON.parse(channel.sent.at(-1)).t, 'snapshot-nack');
+
+  await api.wire(JSON.stringify({
+    t: 'snapshot-nack',
+    hash: 'target-hash',
+    currentHash: 'receiver-current'
+  }), 'peer-remote');
+  assert.equal(api.queued(), true);
+  assert.equal(api.forced(), true);
+  assert.equal(api.targets().join(','), 'peer-remote');
+});
+
+test('a page delta with the confirmed base applies and advances to the advertised full hash', async () => {
+  let targetState = null;
+  let targetPages = null;
+  let applyCalls = 0;
+  const harness = createHarness({
+    applyRemotePages: async pages => {
+      applyCalls += 1;
+      assert.equal(pages.length, 1);
+      targetState.pages = JSON.parse(JSON.stringify(targetPages));
+      return { changed: true, hasLocalMerges: false, pagesNeedingPdfBackground: [] };
+    }
+  });
+  const { api, state } = harness;
+  targetState = state;
+  const baseHash = api.canonicalHash();
+  targetPages = JSON.parse(JSON.stringify(state.pages));
+  targetPages[0].strokes.push({ id: 'remote-stroke', points: [{ x: 4, y: 8 }] });
+  const targetHash = core.ihnCanonicalDocumentHash(
+    targetPages,
+    state.collabStructure,
+    state.calendarPageConfig,
+    state.exportName,
+    state.collabFields
+  );
+  const delta = liveEnvelope(state, {
+    partial: true,
+    baseHash,
+    contentHash: targetHash,
+    pages: JSON.parse(JSON.stringify(targetPages))
+  });
+
+  assert.equal(await api.envelope(delta, 'webrtc', 'peer-remote'), true);
+  assert.equal(applyCalls, 1);
+  assert.equal(api.lastApplied(), targetHash);
+  assert.equal(api.canonicalHash(), targetHash);
+});
+
+test('resuming gives an open peer a ping grace period before stale eviction', () => {
+  const { api } = createHarness();
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, {
+    protocolV2: true,
+    lastReceivedAt: Date.now() - 60_000,
+    lastPongAt: Date.now() - 60_000
+  });
+  api.addPeer('peer-remote', peer);
+
+  api.wake('app visible');
+
+  assert.equal(api.getPeer('peer-remote'), peer);
+  assert.ok(peer.resumeGraceUntil > Date.now());
+  assert.equal(JSON.parse(channel.sent.at(-1)).t, 'ping');
 });
 
 test('C to D to C sends C again instead of treating an old ACK as current state', async () => {
