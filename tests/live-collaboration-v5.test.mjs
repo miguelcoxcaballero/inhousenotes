@@ -92,6 +92,7 @@ function createHarness(overrides = {}) {
   let documentSessionId = 1;
   const pendingTimers = new Map();
   const broadcastChannels = [];
+  const receivedStrokePreviews = [];
   class FakeBroadcastChannel {
     constructor(name) {
       this.name = name;
@@ -199,6 +200,8 @@ function createHarness(overrides = {}) {
     updateViewerModeUI() {},
     showEditorView() {},
     updateDocTitle() {},
+    applyRemoteLiveStrokePreview(packet) { receivedStrokePreviews.push(packet); },
+    clearRemoteLiveStrokePreviews() {},
     setReadOnly: false,
     ...overrides
   });
@@ -244,6 +247,8 @@ globalThis.__liveTest = {
   ensureTabChannel: ihnEnsureTabChannel,
   tabChannel() { return ihnLiveBroadcastChannel; },
   flushFanOut: ihnFlushLiveFanOutTasks,
+  publishStroke: publishLiveStrokePreview,
+  receiveStroke: ihnHandleRealtimeStrokePacket,
   stop: stopLiveCollaboration,
   signalBusy() { return ihnLiveSignalBusy; },
   broadcastBusy() { return ihnLiveBroadcastBusy; },
@@ -278,6 +283,7 @@ globalThis.__liveTest = {
     state,
     pendingTimers,
     broadcastChannels,
+    receivedStrokePreviews,
     runNextTimer,
     advanceDocumentSession() { documentSessionId += 1; }
   };
@@ -322,6 +328,80 @@ function liveEnvelope(state, overrides = {}) {
     ...overrides
   };
 }
+
+test('an in-progress stroke is streamed in frames and finalized with a complete recovery packet', async () => {
+  const harness = createHarness();
+  const channel = createChannel();
+  harness.api.addPeer('peer-remote', peerWithChannel(channel));
+  const stroke = {
+    id: 'stroke-live-1',
+    tool: 'pen',
+    color: '#123456',
+    width: 2,
+    points: [{ x: 1, y: 2, p: 0.4 }]
+  };
+  const livePackets = () => channel.sent
+    .map(value => JSON.parse(value))
+    .filter(message => message.type === 'live-stroke');
+
+  assert.equal(harness.api.publishStroke('p1', stroke), true);
+  assert.equal(livePackets().length, 0, 'preview points are coalesced into a frame');
+  await harness.runNextTimer();
+  const first = livePackets().at(-1);
+  assert.equal(first.type, 'live-stroke');
+  assert.equal(first.final, false);
+  assert.deepEqual(first.points.map(point => [point.x, point.y]), [[1, 2]]);
+
+  stroke.points.push({ x: 3, y: 4, p: 0.6 }, { x: 5, y: 6, p: 0.7 });
+  assert.equal(harness.api.publishStroke('p1', stroke, { final: true }), true);
+  const finalPacket = livePackets().at(-1);
+  assert.equal(finalPacket.final, true);
+  assert.equal(finalPacket.offset, 0);
+  assert.deepEqual(finalPacket.points.map(point => [point.x, point.y]), [[1, 2], [3, 4], [5, 6]]);
+
+  const longStroke = {
+    ...stroke,
+    id: 'stroke-live-long',
+    points: Array.from({ length: 1505 }, (_, index) => ({ x: index, y: index / 2, p: 0.5 }))
+  };
+  assert.equal(harness.api.publishStroke('p1', longStroke, { final: true }), true);
+  const longPackets = livePackets().filter(packet => packet.strokeId === longStroke.id);
+  assert.equal(longPackets.length, 3, 'large recovery strokes are split into safe channel messages');
+  assert.ok(longPackets.every(packet => packet.points.length <= 700));
+  assert.equal(longPackets.at(-1).final, true);
+  assert.equal(longPackets.at(-1).offset, 1400);
+});
+
+test('live stroke packets render once and relay without echoing to their source peer', () => {
+  const harness = createHarness();
+  const sourceChannel = createChannel();
+  const relayChannel = createChannel();
+  harness.api.addPeer('peer-source', peerWithChannel(sourceChannel));
+  harness.api.addPeer('peer-relay', peerWithChannel(relayChannel));
+  const packet = {
+    v: 1,
+    type: 'live-stroke',
+    fileId: 'file-1',
+    actorId: 'peer-source:remote-tab',
+    strokeId: 'remote-stroke',
+    pageId: 'p1',
+    sequence: 1,
+    offset: 0,
+    points: [{ x: 8, y: 9, p: 0.5 }],
+    tool: 'pen',
+    color: '#000000',
+    width: 1
+  };
+
+  assert.equal(harness.api.receiveStroke(packet, 'webrtc', 'peer-source'), true);
+  assert.equal(harness.receivedStrokePreviews.length, 1);
+  assert.equal(sourceChannel.sent.length, 0, 'the source does not receive its own preview back');
+  assert.equal(JSON.parse(relayChannel.sent.at(-1)).strokeId, 'remote-stroke');
+
+  assert.equal(harness.api.receiveStroke(packet, 'webrtc', 'peer-source'), true);
+  assert.equal(harness.receivedStrokePreviews.length, 1, 'duplicate sequence is ignored');
+  assert.equal(relayChannel.sent.length, 1, 'duplicate sequence is not relayed again');
+});
 
 test('live snapshots hold and always release the page-structure lock', async () => {
   const events = [];
@@ -503,6 +583,44 @@ test('resuming gives an open peer a ping grace period before stale eviction', ()
   assert.equal(api.getPeer('peer-remote'), peer);
   assert.ok(peer.resumeGraceUntil > Date.now());
   assert.equal(JSON.parse(channel.sent.at(-1)).t, 'ping');
+});
+
+test('a network change keeps a responsive route and immediately resends current state', async () => {
+  const { api, runNextTimer } = createHarness();
+  const channel = createChannel();
+  let restartCalls = 0;
+  const peer = peerWithChannel(channel, {
+    protocolV2: true,
+    pc: { close() {}, restartIce() { restartCalls += 1; }, getStats: async () => new Map() }
+  });
+  api.addPeer('peer-remote', peer);
+
+  api.wake('network changed');
+  const probe = channel.sent.map(value => JSON.parse(value)).find(message => message.networkProbe);
+  assert.ok(probe, 'the existing route is probed immediately');
+  assert.equal(restartCalls, 1, 'ICE gathering is restarted for the new interface');
+  peer.lastPongAt = probe.at;
+  await runNextTimer();
+
+  assert.equal(api.getPeer('peer-remote'), peer, 'a route that answers the probe is preserved');
+  assert.equal(api.queued(), true);
+  assert.equal(api.forced(), true);
+  assert.equal(api.targets().join(','), 'peer-remote');
+});
+
+test('a dead route is replaced after the short network probe instead of the normal watchdog', async () => {
+  const { api, runNextTimer } = createHarness();
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, {
+    protocolV2: true,
+    lastPongAt: Date.now() - 60_000
+  });
+  api.addPeer('peer-remote', peer);
+
+  api.wake('network changed');
+  assert.equal(api.getPeer('peer-remote'), peer, 'the old path remains available during the probe');
+  await runNextTimer();
+  assert.equal(api.getPeer('peer-remote'), undefined, 'the dead path is replaced after 550 ms');
 });
 
 test('C to D to C sends C again instead of treating an old ACK as current state', async () => {

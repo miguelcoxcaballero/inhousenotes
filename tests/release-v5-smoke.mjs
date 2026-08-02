@@ -6,12 +6,12 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.4.0.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.4.2.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.4\.0';/);
+assert.match(html, /const APP_VERSION = '5\.4\.2';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.4\.0/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.4\.0/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.4\.2/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.4\.2/);
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
 assert.match(html, /function normalizeTimelineHistory\(/);
@@ -106,6 +106,19 @@ assert.match(live, /IHN_LIVE_SNAPSHOT_CACHE_LIMIT/);
 assert.match(live, /IHN_LIVE_RESUME_GRACE_MS/);
 assert.match(live, /iceCandidatePoolSize: 4/);
 assert.match(live, /async function flushLiveCollaborationBeforeExit\(/);
+assert.match(live, /function publishLiveStrokePreview\(/);
+assert.match(live, /function ihnHandleRealtimeStrokePacket\(/);
+assert.match(live, /IHN_LIVE_STROKE_FRAME_MS = 18/);
+assert.match(live, /IHN_LIVE_NETWORK_PROBE_MS = 550/);
+assert.match(live, /IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 1200/);
+assert.match(live, /function ihnProbePeerForFastRecovery\(/);
+assert.match(live, /function ihnScheduleRapidSignalPolls\(/);
+assert.match(live, /peer\.pc\?\.restartIce\?\.\(\)/);
+assert.match(live, /existingPeer\?\.status === 'open' && !offer\.fastRecovery/);
+assert.match(html, /className = 'remote-live-overlay'/);
+assert.match(html, /function applyRemoteLiveStrokePreview\(/);
+assert.match(html, /publishLiveStrokePreview\(currentStrokePageId, currentStroke\)/);
+assert.match(html, /publishLiveStrokePreview\(targetPage\.pageId, finalizedStroke, \{ final: true \}\)/);
 
 assert.match(html, /const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';/);
 assert.match(html, /remoteSyncEnvelope\.contentHash === driveConfirmedContentHash/);
@@ -543,11 +556,11 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.4.0');
+assert.equal(update.publishedAppVersion, '5.4.2');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.4\.0/);
-assert.match(notes, /page deltas/i);
-assert.match(notes, /background/i);
-assert.match(notes, /pending upload/i);
+assert.match(update.releaseNotes, /v5\.4\.2/);
+assert.match(notes, /immediately probes every open peer route/i);
+assert.match(notes, /550 ms probe/i);
+assert.match(notes, /recovery burst/i);
 
-console.log('v5.4.0 smoke checks passed.');
+console.log('v5.4.2 smoke checks passed.');
