@@ -9,7 +9,7 @@ const IHN_LIVE_MAX_CHUNKS = 5000;
 const IHN_LIVE_MAX_CHARS = 50_000_000;
 const IHN_LIVE_LEADER_TTL = 7000;
 const IHN_LIVE_SUPERVISOR_MS = 2000;
-const IHN_LIVE_CONNECT_TIMEOUT = 12_000;
+const IHN_LIVE_CONNECT_TIMEOUT = 15_000;
 const IHN_LIVE_DISCONNECTED_GRACE = 5000;
 const IHN_LIVE_PING_INTERVAL = 4000;
 const IHN_LIVE_HEALTH_TIMEOUT = 20_000;
@@ -25,9 +25,11 @@ const IHN_LIVE_APPLY_COALESCE_MS = 36;
 const IHN_LIVE_RESUME_GRACE_MS = 10_000;
 const IHN_LIVE_NETWORK_PROBE_MS = 550;
 const IHN_LIVE_NETWORK_RECOVERY_GRACE_MS = 1800;
-const IHN_LIVE_ICE_GATHER_TIMEOUT = 2600;
-const IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 900;
-const IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 650;
+const IHN_LIVE_ICE_GATHER_TIMEOUT = 180;
+const IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 80;
+const IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 90;
+const IHN_LIVE_ICE_BATCH_MS = 90;
+const IHN_LIVE_ICE_BATCH_RETRY_LIMIT = 4;
 const IHN_LIVE_SNAPSHOT_CACHE_LIMIT = 3;
 const IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS = 16_000_000;
 const IHN_LIVE_STROKE_FRAME_MS = 18;
@@ -549,6 +551,198 @@ function ihnWaitForIce(pc, timeout = IHN_LIVE_ICE_GATHER_TIMEOUT) {
     });
 }
 
+function ihnSerializeIceCandidate(candidate) {
+    if (!candidate) return null;
+    const source = typeof candidate.toJSON === 'function' ? candidate.toJSON() : candidate;
+    const serialized = {
+        candidate: String(source?.candidate || ''),
+        sdpMid: source?.sdpMid === null || source?.sdpMid === undefined
+            ? null
+            : String(source.sdpMid),
+        sdpMLineIndex: Number.isFinite(Number(source?.sdpMLineIndex))
+            ? Number(source.sdpMLineIndex)
+            : null
+    };
+    if (source?.usernameFragment) serialized.usernameFragment = String(source.usernameFragment);
+    return serialized.candidate ? serialized : null;
+}
+
+function ihnIceCandidateKey(candidate) {
+    return [
+        String(candidate?.candidate || ''),
+        String(candidate?.sdpMid ?? ''),
+        String(candidate?.sdpMLineIndex ?? ''),
+        String(candidate?.usernameFragment || '')
+    ].join('|');
+}
+
+function ihnTouchPeerSignalling(peer, at = Date.now()) {
+    if (!peer) return;
+    const now = Number(at) || Date.now();
+    peer.lastSignalActivityAt = now;
+    const createdAt = Number(peer.createdAt || now);
+    const minimumDeadline = createdAt + IHN_LIVE_CONNECT_TIMEOUT;
+    const absoluteDeadline = createdAt + 30_000;
+    peer.connectionDeadlineAt = Math.min(
+        absoluteDeadline,
+        Math.max(Number(peer.connectionDeadlineAt || minimumDeadline), now + 6000)
+    );
+}
+
+function ihnScheduleLocalIceFlush(peerId, peer, delay = IHN_LIVE_ICE_BATCH_MS) {
+    if (!peer
+        || peer.closing
+        || ihnLivePeers.get(peerId) !== peer
+        || !peer.commentId
+        || peer.channel?.readyState === 'open'
+        || peer.localIceFlushTimer
+        || peer.localIceFlushBusy
+        || !peer.pendingLocalIceCandidates?.length) return;
+    peer.localIceFlushTimer = setTimeout(() => {
+        peer.localIceFlushTimer = null;
+        ihnFlushLocalIceCandidates(peerId, peer).catch(error => {
+            console.warn('Live ICE candidate batch deferred:', error);
+        });
+    }, Math.max(0, delay));
+}
+
+async function ihnFlushLocalIceCandidates(peerId, peer) {
+    if (!peer
+        || peer.closing
+        || ihnLivePeers.get(peerId) !== peer
+        || !peer.commentId
+        || peer.channel?.readyState === 'open'
+        || peer.localIceFlushBusy) return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    const queued = Array.isArray(peer.pendingLocalIceCandidates)
+        ? peer.pendingLocalIceCandidates.splice(0)
+        : [];
+    const signalledSdp = String(peer.signalledLocalSdp || '');
+    const candidates = queued.filter(candidate => {
+        const candidateLine = String(candidate?.candidate || '');
+        return candidateLine && !signalledSdp.includes(candidateLine);
+    });
+    if (candidates.length === 0) return true;
+    const operation = ihnCaptureLiveOperationContext(peer.fileId);
+    peer.localIceFlushBusy = true;
+    try {
+        const content = await ihnEncodeSignal({
+            v: 1,
+            type: 'candidates',
+            fileId: peer.fileId,
+            from: ihnGetLivePeerId(),
+            to: peerId,
+            sessionId: peer.sessionId,
+            expiresAt: Date.now() + IHN_LIVE_SIGNAL_TTL,
+            candidates
+        });
+        ihnAssertLiveOperationContext(operation);
+        if (ihnLivePeers.get(peerId) !== peer || peer.closing || !peer.commentId) return false;
+        await driveFetch(`https://www.googleapis.com/drive/v3/files/${peer.fileId}/comments/${peer.commentId}/replies?fields=id,createdTime`, {
+            method: 'POST',
+            timeout: DRIVE_META_TIMEOUT,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content })
+        });
+        peer.localIceRetryAttempt = 0;
+        peer.localIceRetryDelay = 0;
+        peer.localIceLastFailureAt = 0;
+        ihnTouchPeerSignalling(peer);
+        return true;
+    } catch (error) {
+        if (ihnLiveOperationContextIsCurrent(operation)
+            && ihnLivePeers.get(peerId) === peer
+            && !peer.closing) {
+            const existingKeys = new Set((peer.pendingLocalIceCandidates || []).map(ihnIceCandidateKey));
+            const retryCandidates = candidates.filter(candidate => !existingKeys.has(ihnIceCandidateKey(candidate)));
+            peer.pendingLocalIceCandidates = [...retryCandidates, ...(peer.pendingLocalIceCandidates || [])];
+            peer.localIceRetryAttempt = Number(peer.localIceRetryAttempt || 0) + 1;
+            peer.localIceRetryDelay = Math.min(
+                2400,
+                250 * (2 ** Math.max(0, peer.localIceRetryAttempt - 1))
+            );
+            peer.localIceLastFailureAt = Date.now();
+        }
+        return false;
+    } finally {
+        peer.localIceFlushBusy = false;
+        if (ihnLivePeers.get(peerId) === peer
+            && !peer.closing
+            && peer.pendingLocalIceCandidates?.length
+            && peer.localIceRetryAttempt <= IHN_LIVE_ICE_BATCH_RETRY_LIMIT) {
+            ihnScheduleLocalIceFlush(peerId, peer, peer.localIceRetryDelay || IHN_LIVE_ICE_BATCH_MS);
+        }
+    }
+}
+
+function ihnQueueLocalIceCandidate(peerId, peer, candidate) {
+    if (!peer || peer.closing || ihnLivePeers.get(peerId) !== peer) return;
+    if (!candidate) {
+        peer.localIceGatheringComplete = true;
+        ihnScheduleLocalIceFlush(peerId, peer, 0);
+        return;
+    }
+    const serialized = ihnSerializeIceCandidate(candidate);
+    if (!serialized) return;
+    if (!peer.localIceCandidateKeys) peer.localIceCandidateKeys = new Set();
+    const key = ihnIceCandidateKey(serialized);
+    if (peer.localIceCandidateKeys.has(key)) return;
+    peer.localIceCandidateKeys.add(key);
+    if (!Array.isArray(peer.pendingLocalIceCandidates)) peer.pendingLocalIceCandidates = [];
+    peer.pendingLocalIceCandidates.push(serialized);
+    ihnTouchPeerSignalling(peer);
+    ihnScheduleLocalIceFlush(peerId, peer);
+}
+
+async function ihnDrainRemoteIceCandidates(peerId, peer) {
+    if (!peer?.pc?.remoteDescription || typeof peer.pc.addIceCandidate !== 'function') return false;
+    const pending = peer.pendingRemoteIceCandidates instanceof Map
+        ? [...peer.pendingRemoteIceCandidates.entries()]
+        : [];
+    if (pending.length === 0) return true;
+    for (const [key, candidate] of pending) {
+        if (ihnLivePeers.get(peerId) !== peer || peer.closing) return false;
+        try {
+            await peer.pc.addIceCandidate(candidate);
+            peer.remoteIceCandidateKeys.add(key);
+            peer.pendingRemoteIceCandidates.delete(key);
+            ihnTouchPeerSignalling(peer);
+        } catch (error) {
+            // One browser-specific candidate must not poison the whole route;
+            // the SDP and every other candidate remain usable.
+            peer.remoteIceCandidateKeys.add(key);
+            peer.pendingRemoteIceCandidates.delete(key);
+            console.warn('A remote ICE candidate was not usable:', error);
+        }
+    }
+    return true;
+}
+
+async function ihnApplyCandidateSignal(signal) {
+    const ownId = ihnGetLivePeerId();
+    if (!signal
+        || signal.type !== 'candidates'
+        || signal.to !== ownId
+        || signal.from === ownId
+        || signal.fileId !== state?.driveFileId
+        || Number(signal.expiresAt) < Date.now()
+        || !Array.isArray(signal.candidates)) return false;
+    const peer = ihnLivePeers.get(signal.from);
+    if (!peer || peer.sessionId !== signal.sessionId || peer.closing) return false;
+    if (!(peer.pendingRemoteIceCandidates instanceof Map)) peer.pendingRemoteIceCandidates = new Map();
+    if (!(peer.remoteIceCandidateKeys instanceof Set)) peer.remoteIceCandidateKeys = new Set();
+    for (const rawCandidate of signal.candidates) {
+        const candidate = ihnSerializeIceCandidate(rawCandidate);
+        if (!candidate) continue;
+        const key = ihnIceCandidateKey(candidate);
+        if (peer.remoteIceCandidateKeys.has(key) || peer.pendingRemoteIceCandidates.has(key)) continue;
+        peer.pendingRemoteIceCandidates.set(key, candidate);
+    }
+    ihnTouchPeerSignalling(peer);
+    if (peer.pc.remoteDescription) await ihnDrainRemoteIceCandidates(signal.from, peer);
+    return true;
+}
+
 function ihnGetRetryState(peerId) {
     if (!ihnLiveRetryState.has(peerId)) {
         ihnLiveRetryState.set(peerId, {
@@ -673,6 +867,10 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
     if (peer.closing) return;
     peer.closing = true;
     ihnLivePeers.delete(peerId);
+    clearTimeout(peer.localIceFlushTimer);
+    peer.localIceFlushTimer = null;
+    if (Array.isArray(peer.pendingLocalIceCandidates)) peer.pendingLocalIceCandidates.length = 0;
+    peer.pendingRemoteIceCandidates?.clear?.();
     ihnDeleteSignalComment(peer);
     try { peer.channel?.close(); } catch (error) {}
     try { peer.pc?.close(); } catch (error) {}
@@ -868,6 +1066,7 @@ function ihnConfigurePeer(peerId, pc, peer) {
     };
     pc.onconnectionstatechange = updateConnectionState;
     pc.oniceconnectionstatechange = updateConnectionState;
+    pc.onicecandidate = event => ihnQueueLocalIceCandidate(peerId, peer, event?.candidate || null);
     pc.ondatachannel = event => ihnConfigureChannel(peerId, event.channel, peer);
 }
 
@@ -945,7 +1144,13 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
         commentId: '', createdAt: Date.now(), fileId, generation, closing: false,
         lastReceivedAt: 0, lastPongAt: 0, lastSentHash: '', lastAckedHash: '',
         remoteCurrentHash: '', pendingAckHash: '', pendingAckAt: 0,
-        pendingAckReceivedHash: '', pendingAckReceivedAt: 0, disconnectedAt: 0 };
+        pendingAckReceivedHash: '', pendingAckReceivedAt: 0, disconnectedAt: 0,
+        pendingLocalIceCandidates: [], localIceCandidateKeys: new Set(),
+        pendingRemoteIceCandidates: new Map(), remoteIceCandidateKeys: new Set(),
+        localIceFlushTimer: null, localIceFlushBusy: false, localIceRetryAttempt: 0,
+        localIceRetryDelay: 0, localIceLastFailureAt: 0,
+        signalledLocalSdp: '', lastSignalActivityAt: Date.now() };
+    ihnTouchPeerSignalling(peer);
     ihnLivePeers.set(targetPeerId, peer);
     ihnConfigurePeer(targetPeerId, pc, peer);
     try {
@@ -954,6 +1159,7 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
         await ihnWaitForIce(pc, options.fastRecovery
             ? IHN_LIVE_FAST_ICE_GATHER_TIMEOUT
             : IHN_LIVE_ICE_GATHER_TIMEOUT);
+        peer.signalledLocalSdp = String(pc.localDescription?.sdp || '');
         ihnAssertLiveSessionContext(fileId, generation);
         if (ihnLivePeers.get(targetPeerId) !== peer) {
             throw new Error('Live peer connection was replaced');
@@ -983,6 +1189,9 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
             return;
         }
         peer.commentId = responseData.id || '';
+        ihnTouchPeerSignalling(peer);
+        ihnScheduleLocalIceFlush(targetPeerId, peer, 0);
+        ihnScheduleRapidSignalPolls('offer posted');
     } catch (error) {
         console.warn('Direct connection unavailable; Drive fallback remains active:', error);
         if (ihnLivePeers.get(targetPeerId) === peer) {
@@ -1023,15 +1232,23 @@ async function ihnAcceptOffer(comment, offer) {
         fileId, generation, closing: false,
         lastReceivedAt: 0, lastPongAt: 0, lastSentHash: '', lastAckedHash: '',
         remoteCurrentHash: '', pendingAckHash: '', pendingAckAt: 0,
-        pendingAckReceivedHash: '', pendingAckReceivedAt: 0, disconnectedAt: 0 };
+        pendingAckReceivedHash: '', pendingAckReceivedAt: 0, disconnectedAt: 0,
+        pendingLocalIceCandidates: [], localIceCandidateKeys: new Set(),
+        pendingRemoteIceCandidates: new Map(), remoteIceCandidateKeys: new Set(),
+        localIceFlushTimer: null, localIceFlushBusy: false, localIceRetryAttempt: 0,
+        localIceRetryDelay: 0, localIceLastFailureAt: 0,
+        signalledLocalSdp: '', lastSignalActivityAt: Date.now() };
+    ihnTouchPeerSignalling(peer);
     ihnLivePeers.set(offer.from, peer);
     ihnConfigurePeer(offer.from, pc, peer);
     try {
         await pc.setRemoteDescription(offer.description);
+        await ihnDrainRemoteIceCandidates(offer.from, peer);
         await pc.setLocalDescription(await pc.createAnswer());
         await ihnWaitForIce(pc, offer.fastRecovery
             ? IHN_LIVE_FAST_ICE_GATHER_TIMEOUT
             : IHN_LIVE_ICE_GATHER_TIMEOUT);
+        peer.signalledLocalSdp = String(pc.localDescription?.sdp || '');
         ihnAssertLiveSessionContext(fileId, generation);
         if (ihnLivePeers.get(offer.from) !== peer) {
             throw new Error('Live peer connection was replaced');
@@ -1046,6 +1263,8 @@ async function ihnAcceptOffer(comment, offer) {
         await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${comment.id}/replies?fields=id,createdTime`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
         });
+        ihnTouchPeerSignalling(peer);
+        ihnScheduleLocalIceFlush(offer.from, peer, 0);
         ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
     } catch (error) {
         console.warn('Direct offer could not be accepted:', error);
@@ -1065,6 +1284,7 @@ async function ihnApplyAnswer(answer) {
     const operation = ihnCaptureLiveOperationContext(peer.fileId);
     try {
         await peer.pc.setRemoteDescription(answer.description);
+        await ihnDrainRemoteIceCandidates(answer.from, peer);
         ihnAssertLiveOperationContext(operation);
         if (ihnLivePeers.get(answer.from) !== peer) return;
     } catch (error) {
@@ -1135,10 +1355,11 @@ async function ihnPollSignals() {
                     continue;
                 }
                 if (offer.to === ownId) await ihnAcceptOffer(comment, offer);
-                if (offer.from !== ownId) continue;
                 for (const reply of comment.replies || []) {
-                    const answer = await ihnDecodeSignal(reply.content);
-                    if (answer) await ihnApplyAnswer(answer);
+                    const signal = await ihnDecodeSignal(reply.content);
+                    if (!signal) continue;
+                    if (signal.type === 'answer') await ihnApplyAnswer(signal);
+                    else if (signal.type === 'candidates') await ihnApplyCandidateSignal(signal);
                 }
             }
             pageToken = String(data.nextPageToken || '');
@@ -1218,9 +1439,19 @@ function ihnSuperviseConnections(options = {}) {
             return;
         }
         const channelOpen = peer.channel?.readyState === 'open';
-        if (!channelOpen && now - Number(peer.createdAt || 0) > IHN_LIVE_CONNECT_TIMEOUT) {
+        const connectionDeadlineAt = Number(peer.connectionDeadlineAt)
+            || (Number(peer.createdAt || 0) + IHN_LIVE_CONNECT_TIMEOUT);
+        if (!channelOpen && now > connectionDeadlineAt) {
             ihnClosePeer(peerId, 'connection timeout', { retry: true });
             return;
+        }
+        if (!channelOpen
+            && peer.pendingLocalIceCandidates?.length
+            && !peer.localIceFlushBusy
+            && !peer.localIceFlushTimer
+            && now - Number(peer.localIceLastFailureAt || 0) > 5000) {
+            peer.localIceRetryAttempt = 0;
+            ihnScheduleLocalIceFlush(peerId, peer, 0);
         }
         const resumeGraceActive = now < Number(peer.resumeGraceUntil || 0);
         if (!resumeGraceActive
@@ -1314,6 +1545,8 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
     const networkRouteChanged = reason === 'network changed' || reason === 'browser online';
     ihnLivePeers.forEach((peer, peerId) => {
         if (networkRouteChanged) {
+            peer.localIceRetryAttempt = 0;
+            ihnScheduleLocalIceFlush(peerId, peer, 0);
             if (peer.channel?.readyState === 'open') {
                 ihnProbePeerForFastRecovery(peerId, peer, reason);
             } else {
