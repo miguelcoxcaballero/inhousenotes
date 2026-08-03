@@ -6,16 +6,24 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.3.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.4.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.3';/);
+assert.match(html, /const APP_VERSION = '5\.9\.4';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.3/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.3/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.4/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.4/);
+assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
+assert.match(html, /@keyframes presence-peer-connecting/);
+assert.match(html, /\.presence-peer-badge/);
+assert.match(html, /@media \(prefers-reduced-motion: reduce\)/);
+assert.match(html, /const peerConnected = !!connection\?\.directConnected;/);
+assert.match(html, /const peerConnecting = !peerConnected && !!\(u\.isOnline \|\| connection\?\.recovering\);/);
+assert.match(html, /peerBadge\.innerHTML = getPresencePeerLinkSvg\(\);/);
+assert.match(live, /const directConnected = !own[\s\S]{0,140}peer\?\.channel\?\.readyState === 'open';/);
 assert.ok(
   html.indexOf('jspdf.umd.min.js') > html.indexOf('</style>'),
   'PDF libraries must not block the first CSS/body paint'
@@ -652,13 +660,13 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.9.3');
+assert.equal(update.publishedAppVersion, '5.9.4');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.3/);
-assert.match(notes, /encrypted rendezvous/i);
-assert.match(notes, /warm-start/i);
-assert.match(notes, /sub-second/i);
+assert.match(update.releaseNotes, /v5\.9\.4/);
+assert.match(notes, /blue halo/i);
+assert.match(notes, /chain badge/i);
+assert.match(notes, /open RTCDataChannel/i);
 
-console.log('v5.9.3 smoke checks passed.');
+console.log('v5.9.4 smoke checks passed.');

@@ -499,6 +499,43 @@
             margin-left: 0;
         }
 
+        .presence-avatar-wrapper.p2p-connecting::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border: 1.7px solid rgba(66, 133, 244, 0.9);
+            border-radius: 50%;
+            box-shadow:
+                0 0 0 1px rgba(66, 133, 244, 0.08),
+                0 0 9px rgba(66, 133, 244, 0.42);
+            opacity: 0.3;
+            transform: scale(0.97);
+            transform-origin: center;
+            pointer-events: none;
+            z-index: 1;
+            animation: presence-peer-connecting 2.6s ease-in-out infinite;
+            will-change: opacity, transform, box-shadow;
+        }
+
+        @keyframes presence-peer-connecting {
+            0%,
+            100% {
+                opacity: 0.25;
+                transform: scale(0.97);
+                box-shadow:
+                    0 0 0 1px rgba(66, 133, 244, 0.06),
+                    0 0 4px rgba(66, 133, 244, 0.18);
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1.1);
+                box-shadow:
+                    0 0 0 2px rgba(66, 133, 244, 0.12),
+                    0 0 11px rgba(66, 133, 244, 0.48);
+            }
+        }
+
         .presence-save-ring {
             position: absolute;
             inset: -4px;
@@ -640,6 +677,41 @@
 
         .presence-device-badge.live svg {
             stroke: #ffffff;
+        }
+
+        .presence-peer-badge {
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--bg-primary);
+            border: 1.25px solid rgba(66, 133, 244, 0.42);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .presence-peer-badge svg {
+            width: 7.5px;
+            height: 7.5px;
+            fill: none;
+            stroke: #4285f4;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .presence-avatar-wrapper.p2p-connecting::before {
+                animation: none;
+                opacity: 0.82;
+                transform: none;
+            }
         }
 
         .presence-overflow {
@@ -7164,6 +7236,17 @@
                 height: 6px;
             }
 
+            #editor-view .presence-peer-badge {
+                width: 10px;
+                height: 10px;
+                left: 0;
+            }
+
+            #editor-view .presence-peer-badge svg {
+                width: 6.5px;
+                height: 6.5px;
+            }
+
             #editor-view .presence-overflow {
                 width: 24px;
                 height: 24px;
@@ -8650,8 +8733,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.9.3"></script>
-    <script src="live-collaboration-v5.js?v=5.9.3"></script>
+    <script src="collaboration-core-v5.js?v=5.9.4"></script>
+    <script src="live-collaboration-v5.js?v=5.9.4"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8719,7 +8802,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.9.3';
+        const APP_VERSION = '5.9.4';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -32618,10 +32701,15 @@
             const visibleUsers = users.slice(0, maxShow);
             for (let i = visibleUsers.length - 1, visualIndex = 0; i >= 0; i--, visualIndex++) {
                 const u = visibleUsers[i];
+                const connection = getPresenceConnectionInfo(u);
+                const peerConnected = !!connection?.directConnected;
+                const peerConnecting = !peerConnected && !!(u.isOnline || connection?.recovering);
                 const wrapper = document.createElement('div');
                 wrapper.className = 'presence-avatar-wrapper';
+                wrapper.classList.toggle('p2p-connecting', peerConnecting);
+                wrapper.classList.toggle('p2p-connected', peerConnected);
                 wrapper.style.setProperty('--presence-z', String(visualIndex + 1));
-                wrapper.title = `${u.n || u.e || 'Unknown'}${u.d ? ' (' + u.d + ')' : ''}`;
+                wrapper.title = `${u.n || u.e || 'Unknown'}${u.d ? ' (' + u.d + ')' : ''}${peerConnected ? ' · Peer-to-peer connected' : (peerConnecting ? ' · Connecting peer-to-peer' : '')}`;
 
                 const savePhase = getPresenceVisibleSavePhase(u);
                 if (savePhase) {
@@ -32650,6 +32738,14 @@
                 badge.innerHTML = getDeviceBadgeSvg(u.d || 'pc');
                 wrapper.appendChild(badge);
 
+                if (peerConnected) {
+                    const peerBadge = document.createElement('span');
+                    peerBadge.className = 'presence-peer-badge';
+                    peerBadge.setAttribute('aria-hidden', 'true');
+                    peerBadge.innerHTML = getPresencePeerLinkSvg();
+                    wrapper.appendChild(peerBadge);
+                }
+
                 container.appendChild(wrapper);
             }
         }
@@ -32662,6 +32758,10 @@
             }
             // pc
             return '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+        }
+
+        function getPresencePeerLinkSvg() {
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.6 14.4l4.8-4.8"/><path d="M7.2 16.8l-1.1 1.1a3.4 3.4 0 0 1-4.8-4.8l3.1-3.1a3.4 3.4 0 0 1 4.8 0"/><path d="M16.8 7.2l1.1-1.1a3.4 3.4 0 0 1 4.8 4.8L19.6 14a3.4 3.4 0 0 1-4.8 0"/></svg>';
         }
 
         function formatPresenceLastActivity(timestamp) {
