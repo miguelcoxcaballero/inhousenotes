@@ -230,6 +230,8 @@ globalThis.__liveTest = {
   wake: ihnWakeLiveCollaboration,
   claimLeader: ihnClaimLiveLeader,
   pollSignals: ihnPollSignals,
+  acceptOffer: ihnAcceptOffer,
+  overview: getLiveCollaborationOverview,
   ownId: ihnGetLivePeerId,
   generation() { return ihnLiveGeneration; },
   cryptoFileId() { return ihnLiveCryptoFileId; },
@@ -251,6 +253,7 @@ globalThis.__liveTest = {
   receiveStroke: ihnHandleRealtimeStrokePacket,
   stop: stopLiveCollaboration,
   signalBusy() { return ihnLiveSignalBusy; },
+  signalQueued() { return ihnLiveSignalQueued; },
   broadcastBusy() { return ihnLiveBroadcastBusy; },
   retryAttempt() { return ihnLiveBroadcastRetryAttempt; },
   targets() { return [...ihnLiveBroadcastTargets]; },
@@ -1194,6 +1197,30 @@ test('a healthy peer survives stale Drive presence and stays eligible for autono
   assert.ok(api.retry(remoteId).nextAttemptAt > Date.now(), 'recent P2P activity keeps retry eligibility');
 });
 
+test('either endpoint may initiate recovery after an established route closes', () => {
+  const { api } = createHarness();
+  const remoteId = '0-lexically-lower-peer';
+  assert.ok(api.ownId() > remoteId, 'this device would not own deterministic first contact');
+  api.addKnown(remoteId);
+  assert.equal(api.claimLeader(), true);
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, {
+    initiator: false,
+    generation: api.generation()
+  });
+  api.addPeer(remoteId, peer);
+  api.configureChannel(remoteId, channel, peer);
+  channel.onopen();
+
+  channel.readyState = 'closed';
+  channel.onclose();
+
+  const retry = api.retry(remoteId);
+  assert.ok(retry, 'a retry is retained for the non-deterministic endpoint');
+  assert.equal(retry.allowReverse, true);
+  assert.ok(retry.nextAttemptAt > Date.now());
+});
+
 test('backoff resets only after a valid ACK, not on open or mismatched ACK', async () => {
   const { api, context } = createHarness();
   context.driveAccessToken = null;
@@ -1519,6 +1546,98 @@ test('signal polling follows every Drive page and accepts an offer after more th
   assert.deepEqual(listPageTokens, ['', 'page-2', 'page-3', 'page-4']);
   assert.equal(api.processedOfferCount(), 1);
   assert.equal(answerPosts, 1, 'the later-page offer is accepted and answered');
+});
+
+test('a signal request arriving during a slow poll is drained immediately afterwards', async () => {
+  const keyEncoded = bytesToBase64Url(new Uint8Array(32).fill(0x75));
+  let releaseFirstComments;
+  const firstCommentsGate = new Promise(resolve => { releaseFirstComments = resolve; });
+  let announceFirstComments;
+  const firstCommentsStarted = new Promise(resolve => { announceFirstComments = resolve; });
+  let commentsReads = 0;
+  const harness = createHarness({
+    driveFetch: async url => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (requestUrl.includes('/comments?')) {
+        commentsReads += 1;
+        if (commentsReads === 1) {
+          announceFirstComments();
+          await firstCommentsGate;
+        }
+        return { json: async () => ({ comments: [] }) };
+      }
+      throw new Error(`Unexpected Drive request: ${requestUrl}`);
+    }
+  });
+
+  assert.equal(harness.api.claimLeader(), true);
+  const firstPoll = harness.api.pollSignals();
+  await firstCommentsStarted;
+  await harness.api.pollSignals();
+  assert.equal(harness.api.signalQueued(), true, 'a trailing poll is remembered');
+
+  releaseFirstComments();
+  await firstPoll;
+  assert.equal(harness.api.signalBusy(), false);
+  assert.equal(await harness.runNextTimer(), true, 'the trailing poll is scheduled immediately');
+  for (let i = 0; i < 6 && commentsReads < 2; i += 1) await Promise.resolve();
+  assert.equal(commentsReads, 2, 'the queued request is not dropped');
+});
+
+test('a transient answer failure leaves the same offer retryable', async () => {
+  const keyEncoded = bytesToBase64Url(new Uint8Array(32).fill(0x76));
+  let answerAttempts = 0;
+  class RetriablePeerConnection {
+    constructor() {
+      this.connectionState = 'connecting';
+      this.iceConnectionState = 'checking';
+      this.iceGatheringState = 'complete';
+      this.localDescription = null;
+      this.remoteDescription = null;
+    }
+    async setRemoteDescription(description) { this.remoteDescription = description; }
+    async setLocalDescription(description) { this.localDescription = description; }
+    async createAnswer() { return { type: 'answer', sdp: 'answer' }; }
+    close() { this.connectionState = 'closed'; }
+    addEventListener() {}
+    removeEventListener() {}
+    getStats() { return Promise.resolve(new Map()); }
+  }
+  const { api } = createHarness({
+    RTCPeerConnection: RetriablePeerConnection,
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if ((options.method || 'GET') === 'POST' && requestUrl.includes('/replies?')) {
+        answerAttempts += 1;
+        if (answerAttempts === 1) throw new Error('temporary Drive failure');
+        return { json: async () => ({ id: 'answer-ok' }) };
+      }
+      throw new Error(`Unexpected Drive request: ${requestUrl}`);
+    }
+  });
+  const offer = {
+    v: 1,
+    type: 'offer',
+    fileId: 'file-1',
+    from: 'peer-retry',
+    to: api.ownId(),
+    sessionId: 'retryable-offer',
+    expiresAt: Date.now() + 60_000,
+    description: { type: 'offer', sdp: 'offer' }
+  };
+  const comment = { id: 'retryable-comment' };
+
+  await api.acceptOffer(comment, offer);
+  assert.equal(api.processedOfferCount(), 0, 'failed offers are not retired');
+  await api.acceptOffer(comment, offer);
+  assert.equal(answerAttempts, 2);
+  assert.equal(api.processedOfferCount(), 1, 'the offer is retired only after its answer is posted');
 });
 
 test('a stale signal poll cannot clear the busy owner of the next document', async () => {
