@@ -14,11 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android app" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android app" / "Inhouse Notes Logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.7.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.8.apk"
 APP_NAME = "Inhouse Notes"
 PACKAGE_ID = "com.local.inhousenotes"
-ANDROID_VERSION_NAME = "1.0.7"
-ANDROID_VERSION_CODE = 8
+ANDROID_VERSION_NAME = "1.0.8"
+ANDROID_VERSION_CODE = 9
 
 
 class Value:
@@ -76,6 +76,7 @@ def main() -> None:
 
     builder.patch_manifest(project_dir, APP_NAME, PACKAGE_ID)
     builder.patch_oauth_persistence(project_dir, PACKAGE_ID)
+    builder.patch_startup_theme(project_dir)
     builder.patch_gradle_versions(project_dir)
     builder.patch_android_dependencies(project_dir)
     builder.write_gradle_properties(project_dir)

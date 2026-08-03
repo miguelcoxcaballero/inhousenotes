@@ -6,12 +6,43 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.7.0.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.8.0.md', import.meta.url), 'utf8');
+const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
+const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
+const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.7\.0';/);
+assert.match(html, /const APP_VERSION = '5\.8\.0';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.7\.0/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.7\.0/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.8\.0/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.8\.0/);
+assert.ok(
+  html.indexOf('jspdf.umd.min.js') > html.indexOf('</style>'),
+  'PDF libraries must not block the first CSS/body paint'
+);
+assert.match(html, /document\.documentElement\.dataset\.theme = theme;/);
+assert.match(html, /function showFastInitialView\(/);
+assert.ok(
+  html.indexOf('initDriveAuth();', html.indexOf('async function init()'))
+    < html.indexOf('await loadFromStorage();', html.indexOf('async function init()')),
+  'Drive loading must begin before hidden editor restoration'
+);
+const pullRefreshSource = html.slice(
+  html.indexOf('function setupMobileHomePullToRefresh'),
+  html.indexOf('function isDriveHomeAutoRefreshBlocked')
+);
+assert.doesNotMatch(pullRefreshSource, /max-width:\s*720px/, 'touch tablets must support pull-to-refresh');
+assert.match(pullRefreshSource, /navigator\.maxTouchPoints/);
+assert.match(androidBuilder, /def patch_startup_theme\(/);
+assert.match(androidBuilder, /webView\.setBackgroundColor\(bootColor\)/);
+assert.match(androidBuilder, /local Inhouse Notes launch shell/);
+assert.doesNotMatch(
+  androidBuilder.slice(androidBuilder.indexOf('def write_node_project'), androidBuilder.indexOf('def patch_manifest')),
+  /"url": "https:\/\/inhousenotes\.com/,
+  'Android must paint its bundled launch shell before navigating to the web app'
+);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.8"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 9/);
+assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
 assert.match(html, /function normalizeTimelineHistory\(/);
@@ -296,7 +327,11 @@ assert.match(
   /async function appendStrokeOpsToIndexedDb[\s\S]{0,1800}structureVersion !== pageStructureVersion[\s\S]{0,1800}tx\.onabort = \(\) => finish\(false\)/,
   'stroke-op writes must reject a stale page mapping and remain abortable on document switches'
 );
-assert.match(html, /loadDriveSession\(\);\s*\/\/ The Drive file ID[\s\S]{0,220}await loadFromStorage\(\);/);
+assert.ok(
+  html.indexOf('loadDriveSession();', html.indexOf('async function init()'))
+    < html.indexOf('await loadFromStorage();', html.indexOf('async function init()')),
+  'the Drive file ID must still be restored before local migration'
+);
 assert.match(html, /function resolveHistoryPageIndex\(/);
 assert.match(html, /function removeHistoryItems\(/);
 assert.match(html, /fromPageId: fromPage\.pageId/);
@@ -587,8 +622,8 @@ assert.match(
 assert.equal(update.publishedAppVersion, '5.7.0');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
 assert.match(update.releaseNotes, /v5\.7\.0/);
-assert.match(notes, /250 ms peer heartbeat/i);
-assert.match(notes, /every 220 ms/i);
-assert.match(notes, /compact 9 px status dot/i);
+assert.match(notes, /first frame/i);
+assert.match(notes, /tablets/i);
+assert.match(notes, /Android 1\.0\.8/i);
 
-console.log('v5.7.0 smoke checks passed.');
+console.log('v5.8.0 smoke checks passed.');
