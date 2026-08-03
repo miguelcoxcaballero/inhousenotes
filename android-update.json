@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.9.3",
-  "releaseNotes": "Inhouse Notes v5.9.3 / Android 1.0.10: adds encrypted rendezvous discovery, warm peer reconnection and sub-second stale-route probes so live collaboration reconnects reliably without reopening the document."
+  "publishedAppVersion": "5.9.4",
+  "releaseNotes": "Inhouse Notes v5.9.4 / Android 1.0.10: adds a slow blue avatar halo while a remote device is reconnecting and a blue chain badge only when its direct peer-to-peer channel is active."
 }

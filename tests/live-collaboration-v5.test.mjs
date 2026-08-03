@@ -244,6 +244,8 @@ globalThis.__liveTest = {
   flushLocalCandidates: ihnFlushLocalIceCandidates,
   drainRemoteCandidates: ihnDrainRemoteIceCandidates,
   overview: getLiveCollaborationOverview,
+  connectionInfo: getLiveCollaborationConnectionInfo,
+  presencePeerId: ihnGetPresencePeerId,
   ownId: ihnGetLivePeerId,
   generation() { return ihnLiveGeneration; },
   cryptoFileId() { return ihnLiveCryptoFileId; },
@@ -346,6 +348,26 @@ function liveEnvelope(state, overrides = {}) {
     ...overrides
   };
 }
+
+test('connection info exposes a direct link only for an open remote peer channel', () => {
+  const { api } = createHarness();
+  const record = {
+    e: 'remote@example.com',
+    c: 'remote-device'
+  };
+  const peerId = api.presencePeerId(record);
+  api.addKnown(peerId);
+
+  const recovering = api.connectionInfo(record);
+  assert.equal(recovering.directConnected, false);
+  assert.equal(recovering.recovering, true);
+
+  api.addPeer(peerId, peerWithChannel(createChannel()));
+  const connected = api.connectionInfo(record);
+  assert.equal(connected.directConnected, true);
+  assert.equal(connected.connected, true);
+  assert.equal(connected.recovering, false);
+});
 
 test('an in-progress stroke is streamed in frames and finalized with a complete recovery packet', async () => {
   const harness = createHarness();

@@ -2144,12 +2144,16 @@ function getLiveCollaborationConnectionInfo(record = null) {
         transport = 'Reconnecting peer-to-peer · Drive active';
     }
     const mainPeerId = ihnLiveMainPeerId || ownId;
+    const directConnected = !own
+        && !sameDevice
+        && peer?.channel?.readyState === 'open';
     return {
         peerId,
         transport,
         transportCode,
         isMain: peerId === mainPeerId,
         connected: own || sameDevice || peer?.channel?.readyState === 'open',
+        directConnected,
         recovering: !own && !sameDevice && ihnPeerIsExpected(peerId) && peer?.channel?.readyState !== 'open',
         rttMs: Number.isFinite(peer?.rttMs) ? peer.rttMs : null
     };
