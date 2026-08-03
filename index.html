@@ -4356,6 +4356,32 @@
             visibility: visible;
         }
 
+        #loading-overlay.home-save-transition {
+            background: var(--bg-primary);
+            transition: opacity 0.16s ease, visibility 0.16s ease;
+        }
+
+        #loading-overlay .loading-home-brand {
+            display: none;
+        }
+
+        #loading-overlay.home-save-transition .loading-home-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+            color: var(--text-primary);
+            font-family: 'Comfortaa', cursive;
+            font-size: clamp(1.05rem, 3.5vw, 1.35rem);
+            font-weight: 600;
+        }
+
+        #loading-overlay.home-save-transition .loading-home-brand svg {
+            width: 36px;
+            height: 24px;
+            flex: 0 0 auto;
+        }
+
         .spinner {
             width: 48px;
             height: 48px;
@@ -4375,6 +4401,21 @@
             color: white;
             margin-top: 16px;
             font-size: 0.875rem;
+        }
+
+        #loading-overlay.home-save-transition .spinner {
+            width: 38px;
+            height: 38px;
+            border-width: 3px;
+            border-color: rgba(128, 128, 128, 0.22);
+            border-top-color: var(--accent-orange);
+        }
+
+        #loading-overlay.home-save-transition #loading-text {
+            color: var(--text-secondary);
+            margin-top: 14px;
+            font-size: 0.9rem;
+            font-weight: 500;
         }
 
         /* ── § 2.4  Welcome / sign-in screen ────────────────────────────────
@@ -8566,7 +8607,14 @@
          Full-screen dimmed overlay with a spinner shown during long operations
          (opening a PDF, saving to Drive, adding calendar events, etc.).
     ─── -->
-    <div id="loading-overlay">
+    <div id="loading-overlay" role="status" aria-live="polite" aria-busy="false">
+        <div class="loading-home-brand" aria-hidden="true">
+            <svg viewBox="0 0 40 24" fill="none">
+                <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2" stroke-linecap="round"
+                    stroke-linejoin="round" />
+            </svg>
+            <span>inhouse notes</span>
+        </div>
         <div class="spinner"></div>
         <div id="loading-text">Loading PDF...</div>
     </div>
@@ -8733,8 +8781,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.9.7"></script>
-    <script src="live-collaboration-v5.js?v=5.9.7"></script>
+    <script src="collaboration-core-v5.js?v=5.9.8"></script>
+    <script src="live-collaboration-v5.js?v=5.9.8"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8802,7 +8850,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.9.7';
+        const APP_VERSION = '5.9.8';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -10819,6 +10867,7 @@
         let coverApplyInProgress = false;
         let docTitleEditing = false;
         let docTitleOriginal = '';
+        let pendingDriveRenamePromise = null;
         let activeDriveCardMenu = null;
         let activeBinMenu = null;
         let folderPickerMode = null;
@@ -14276,7 +14325,13 @@
                 noteCollabDocumentFieldChanged('exportName');
                 const nextFileName = `${nextBase}.pdf`;
                 if (state.driveFileId) {
-                    renameDriveFile(nextBase, originalBase);
+                    const renameTask = renameDriveFile(nextBase, originalBase);
+                    pendingDriveRenamePromise = renameTask;
+                    renameTask.finally(() => {
+                        if (pendingDriveRenamePromise === renameTask) {
+                            pendingDriveRenamePromise = null;
+                        }
+                    });
                 } else {
                     state.driveFileName = nextFileName;
                 }
@@ -22372,7 +22427,7 @@
                 const waitForDriveSaveCompletion = async (timeoutMs = 30000) => {
                     const start = Date.now();
                     while ((driveSaveInProgress || driveSaveQueued) && (Date.now() - start < timeoutMs)) {
-                        await new Promise(r => setTimeout(r, 100));
+                        await new Promise(r => setTimeout(r, 32));
                     }
                     return !(driveSaveInProgress || driveSaveQueued);
                 };
@@ -22390,13 +22445,29 @@
                     }
                     return true;
                 };
-                const waitForLocalSaveCompletion = async (timeoutMs = 12000) => {
-                    const start = Date.now();
-                    while ((saveInProgress || saveQueued || strokeOpsFlushInProgress)
-                        && (Date.now() - start < timeoutMs)) {
-                        await new Promise(r => setTimeout(r, 40));
+                const saveLatestDriveState = async () => {
+                    if (!state.driveAutosave) return true;
+                    clearDriveSyncTimers();
+                    const maxAttempts = 3;
+                    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+                        if (!(await waitForDriveSaveCompletion(30000))) continue;
+                        if (isDriveFullySaved()) return true;
+
+                        // This explicit save supersedes any delayed autosave.
+                        // queueDriveSave reuses the already prepared PDF when
+                        // its content version is current, which makes the
+                        // normal Home transition only an upload round-trip.
+                        deferredDriveSave = false;
+                        driveDirty = true;
+                        await queueDriveSave(true);
+                        if ((await waitForDriveSaveCompletion(30000)) && isDriveFullySaved()) {
+                            return true;
+                        }
+                        if (attempt + 1 < maxAttempts) {
+                            await new Promise(resolve => setTimeout(resolve, 120));
+                        }
                     }
-                    return !(saveInProgress || saveQueued || strokeOpsFlushInProgress);
+                    return isDriveFullySaved();
                 };
                 const goHome = async () => {
                     if (goHomeInProgress) return;
@@ -22408,8 +22479,6 @@
                     // all honour this flag.
                     forceFlushingForExit = true;
                     try {
-                        {
-                        void clearPresence();
                         isPenWriting = false;
                         isGestureInteracting = false;
                         penWritingIdleDeadline = 0;
@@ -22418,43 +22487,42 @@
 
                         const needsSave = hasPendingLocalSave() || hasPendingDriveSave() || driveDirty;
                         if (!needsSave && isDriveFullySaved()) {
+                            backgroundExitSaveFailed = false;
+                            backgroundExitSaveFileId = null;
+                            clearPendingExitUpload(state.driveFileId || '');
+                            void clearPresence();
                             showDriveHome();
                             void refreshDriveFiles();
-                            forceFlushingForExit = false;
                             return;
                         }
 
+                        showHomeSaveLoading(state.driveAutosave
+                            ? 'Saving changes to Drive...'
+                            : 'Saving changes...');
                         clearTimeout(state.saveTimeout);
                         state.saveTimeout = null;
                         const exitingFileId = state.driveFileId || null;
-                        // Do not reveal Home until the latest operation and
-                        // page metadata are durable. This is normally a tiny
-                        // IndexedDB transaction and survives an immediate app
-                        // kill; the heavier PDF upload remains in background.
+                        // Local durability, auth refresh and the final peer
+                        // flush begin together. Starting these independent
+                        // operations in parallel keeps the transition short.
                         const localCheckpoint = persistExitLocalCheckpoint(exitingFileId);
                         const liveExitFlush = typeof flushLiveCollaborationBeforeExit === 'function'
                             ? flushLiveCollaborationBeforeExit(650).catch(() => false)
                             : Promise.resolve(true);
+                        const driveRenameReady = pendingDriveRenamePromise || Promise.resolve(null);
+                        const driveTokenReady = state.driveAutosave
+                            ? driveRenameReady.then(() => ensureDriveToken(false))
+                            : Promise.resolve(null);
 
                         backgroundExitSaveFileId = exitingFileId;
                         backgroundExitSaveFailed = false;
                         const exitSaveTask = (async () => {
-                            await localCheckpoint;
-                            if (!state.driveAutosave || !driveAccessToken) {
-                                return !state.driveAutosave;
-                            }
-                            clearDriveSyncTimers();
-                            const MAX_BACKGROUND_ATTEMPTS = 2;
-                            for (let attempt = 0; attempt < MAX_BACKGROUND_ATTEMPTS; attempt += 1) {
-                                if (!(await waitForDriveSaveCompletion(30000))) continue;
-                                if (isDriveFullySaved()) return true;
-                                driveDirty = true;
-                                await queueDriveSave(true);
-                                if ((await waitForDriveSaveCompletion(30000)) && isDriveFullySaved()) {
-                                    return true;
-                                }
-                            }
-                            return isDriveFullySaved();
+                            await Promise.all([localCheckpoint, driveTokenReady, driveRenameReady]);
+                            const [driveSaved] = await Promise.all([
+                                saveLatestDriveState(),
+                                liveExitFlush
+                            ]);
+                            return driveSaved;
                         })();
                         backgroundExitSavePromise = exitSaveTask
                             .then(success => {
@@ -22463,170 +22531,36 @@
                                 return success;
                             })
                             .catch(err => {
-                                console.warn('Background Drive save failed:', err);
+                                console.warn('Save before Home failed:', err);
                                 backgroundExitSaveFailed = true;
                                 return false;
                             })
                             .finally(() => {
-                                forceFlushingForExit = false;
                                 backgroundExitSavePromise = null;
                                 if (!backgroundExitSaveFailed) {
                                     backgroundExitSaveFileId = null;
                                 }
-                                if (!isDriveHomeVisible()) return;
-                                if (backgroundExitSaveFailed) {
-                                    if (driveStatusEl) {
-                                        driveStatusEl.textContent = 'Saved locally. Drive will retry when the connection is available.';
-                                    }
-                                } else {
-                                    void refreshDriveFiles();
-                                }
                             });
 
-                        try {
-                            await localCheckpoint;
-                            await liveExitFlush;
-                        } catch (error) {
-                            console.error('Exit checkpoint failed:', error);
-                            showStatus('Could not secure the latest changes locally. Please try Home again.', { error: true });
+                        const saveCompleted = await backgroundExitSavePromise;
+                        if (!saveCompleted || backgroundExitSaveFailed) {
+                            showStatus('Could not finish saving. The document is still open; please try Home again.', { error: true });
                             return;
                         }
+
+                        // The editor remains visible beneath the save screen
+                        // until Drive has confirmed the exact latest content
+                        // version. Only then do we reveal the real Home view.
+                        void clearPresence();
                         showDriveHome();
                         if (driveStatusEl) {
                             driveStatusEl.textContent = state.driveAutosave
-                                ? 'Saving the last document to Drive in the background...'
+                                ? 'All changes saved to Drive.'
                                 : 'Changes saved locally.';
                         }
+                        void refreshDriveFiles();
+                        await new Promise(resolve => requestAnimationFrame(resolve));
                         return;
-                        }
-
-                        // Clear presence before leaving document
-                        clearPresence();
-                        // Force-end interaction state so paused saves can resume.
-                        isPenWriting = false;
-                        isGestureInteracting = false;
-                        penWritingIdleDeadline = 0;
-                        if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
-                        if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
-
-                        const needsSave = hasPendingLocalSave() || hasPendingDriveSave() || driveDirty;
-                        if (!needsSave && isDriveFullySaved()) {
-                            // Fast path — nothing to do.
-                            showDriveHome();
-                            refreshDriveFiles();
-                            return;
-                        }
-
-                        showLoading('Saving to Drive...');
-                        clearTimeout(state.saveTimeout);
-                        state.saveTimeout = null;
-
-                        // Local-first: this never fails on us. Persist to
-                        // IndexedDB so the doc is recoverable on the next
-                        // open even if Drive upload later fails.
-                        await queueSave();
-                        await flushDirtyPages({ force: true });
-
-                        // If autosave isn't enabled (read-only file or signed
-                        // out), don't try to push to Drive — just go home.
-                        if (!state.driveAutosave) {
-                            showDriveHome();
-                            refreshDriveFiles();
-                            return;
-                        }
-
-                        if (!driveAccessToken) {
-                            showStatus('Drive sign-in required before leaving', { error: true });
-                            return;
-                        }
-
-                        // Drive save retry loop. A single save can be marked
-                        // dirty again *during* its own upload (collab pull,
-                        // concurrent stroke ops, ResizeObserver-triggered
-                        // version bumps, etc.). Instead of giving up after
-                        // one attempt and stranding the user in the editor
-                        // with a red dot, retry up to MAX_ATTEMPTS times.
-                        clearDriveSyncTimers();
-                        const MAX_ATTEMPTS = 4;
-                        const PER_ATTEMPT_TIMEOUT_MS = 45000;
-                        let attempt = 0;
-                        let success = false;
-                        let lastErrorReason = '';
-                        while (attempt < MAX_ATTEMPTS) {
-                            attempt += 1;
-                            if (attempt > 1) {
-                                showLoading(`Saving to Drive (attempt ${attempt}/${MAX_ATTEMPTS})...`);
-                            }
-
-                            // Drain anything already in flight before starting our forced save.
-                            const settledBeforeSave = await waitForDriveSaveCompletion(PER_ATTEMPT_TIMEOUT_MS);
-                            if (!settledBeforeSave) {
-                                lastErrorReason = 'prior-save-stuck';
-                                continue;
-                            }
-
-                            // If something between attempts already brought
-                            // the doc to a clean state, we're done.
-                            if (isDriveFullySaved()) {
-                                success = true;
-                                break;
-                            }
-
-                            // Mark dirty + queue a forced save. queueDriveSave
-                            // is fire-and-forget internally — it returns after
-                            // starting the save. waitForDriveSaveCompletion
-                            // below blocks until the actual upload finishes.
-                            //
-                            // IMPORTANT: do NOT pass keepalive:true here. The
-                            // fetch keepalive flag caps the request body at
-                            // ~64 KB per the spec, so any real notebook PDF
-                            // (which is several MB) fails immediately with
-                            // `TypeError: Failed to fetch`. This was the
-                            // hidden reason every goHome save was failing
-                            // while autosave (no keepalive) worked perfectly.
-                            // We don't need keepalive here anyway — clicking
-                            // the logo doesn't unload the page, it just
-                            // switches the visible view.
-                            driveDirty = true;
-                            try {
-                                await queueDriveSave(true);
-                            } catch (err) {
-                                console.warn('queueDriveSave threw:', err);
-                                lastErrorReason = (err && err.message) || 'queue-failed';
-                            }
-
-                            const settledAfterSave = await waitForDriveSaveCompletion(PER_ATTEMPT_TIMEOUT_MS);
-                            if (!settledAfterSave) {
-                                lastErrorReason = 'save-timeout';
-                                continue;
-                            }
-
-                            if (isDriveFullySaved()) {
-                                success = true;
-                                break;
-                            }
-
-                            lastErrorReason = driveDirty
-                                ? 'dirty-after-save'
-                                : 'version-mismatch';
-                            // Small backoff before next attempt so we don't
-                            // hammer the API on a transient failure.
-                            await new Promise(r => setTimeout(r, 400));
-                        }
-
-                        if (!success) {
-                            console.warn('goHome: save incomplete after retries -',
-                                { reason: lastErrorReason, dirty: driveDirty,
-                                  inProgress: driveSaveInProgress, queued: driveSaveQueued });
-                            showStatus('Could not finish saving to Drive. Changes are saved locally and will upload when connectivity allows.', { error: true });
-                            // Stay in the editor so the user can retry —
-                            // local data is safe, but we don't want to hide
-                            // an unfinished upload behind the home screen.
-                            return;
-                        }
-
-                        showDriveHome();
-                        refreshDriveFiles();
                     } finally {
                         hideLoading();
                         if (!backgroundExitSavePromise) {
@@ -35947,13 +35881,43 @@
             refreshSaveIndicatorState(requestedSemanticState);
         }
 
+        let homeSaveLoadingCleanupTimer = null;
+
         function showLoading(text) {
+            if (homeSaveLoadingCleanupTimer) {
+                clearTimeout(homeSaveLoadingCleanupTimer);
+                homeSaveLoadingCleanupTimer = null;
+            }
+            loadingOverlay.classList.remove('home-save-transition');
             loadingText.textContent = text;
+            loadingOverlay.setAttribute('aria-busy', 'true');
             loadingOverlay.classList.add('visible');
         }
 
+        function showHomeSaveLoading(text = 'Saving changes to Drive...') {
+            if (homeSaveLoadingCleanupTimer) {
+                clearTimeout(homeSaveLoadingCleanupTimer);
+                homeSaveLoadingCleanupTimer = null;
+            }
+            loadingText.textContent = text;
+            loadingOverlay.setAttribute('aria-busy', 'true');
+            loadingOverlay.classList.add('home-save-transition', 'visible');
+        }
+
         function hideLoading() {
+            const wasHomeTransition = loadingOverlay.classList.contains('home-save-transition');
             loadingOverlay.classList.remove('visible');
+            loadingOverlay.setAttribute('aria-busy', 'false');
+            if (!wasHomeTransition) {
+                loadingOverlay.classList.remove('home-save-transition');
+                return;
+            }
+            homeSaveLoadingCleanupTimer = setTimeout(() => {
+                homeSaveLoadingCleanupTimer = null;
+                if (!loadingOverlay.classList.contains('visible')) {
+                    loadingOverlay.classList.remove('home-save-transition');
+                }
+            }, 180);
         }
 
         function sanitizeFilename(name) {
