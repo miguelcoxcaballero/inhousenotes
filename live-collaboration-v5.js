@@ -8,10 +8,12 @@ const IHN_LIVE_CHUNK = 16_000;
 const IHN_LIVE_MAX_CHUNKS = 5000;
 const IHN_LIVE_MAX_CHARS = 50_000_000;
 const IHN_LIVE_LEADER_TTL = 7000;
-const IHN_LIVE_SUPERVISOR_MS = 2000;
+const IHN_LIVE_SUPERVISOR_MS = 180;
+const IHN_LIVE_SIGNAL_POLL_MS = 220;
 const IHN_LIVE_CONNECT_TIMEOUT = 15_000;
 const IHN_LIVE_DISCONNECTED_GRACE = 5000;
-const IHN_LIVE_PING_INTERVAL = 4000;
+const IHN_LIVE_PING_INTERVAL = 250;
+const IHN_LIVE_ROUTE_STALE_MS = 900;
 const IHN_LIVE_HEALTH_TIMEOUT = 20_000;
 const IHN_LIVE_ACK_TIMEOUT = 20_000;
 const IHN_LIVE_APPLY_ACK_TIMEOUT = 120_000;
@@ -23,12 +25,12 @@ const IHN_LIVE_FAILED_SIGNAL_MAX = 256;
 const IHN_LIVE_BROADCAST_RETRY_LIMIT = 4;
 const IHN_LIVE_APPLY_COALESCE_MS = 36;
 const IHN_LIVE_RESUME_GRACE_MS = 10_000;
-const IHN_LIVE_NETWORK_PROBE_MS = 550;
-const IHN_LIVE_NETWORK_RECOVERY_GRACE_MS = 1800;
-const IHN_LIVE_ICE_GATHER_TIMEOUT = 180;
-const IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 80;
-const IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 90;
-const IHN_LIVE_ICE_BATCH_MS = 90;
+const IHN_LIVE_NETWORK_PROBE_MS = 220;
+const IHN_LIVE_NETWORK_RECOVERY_GRACE_MS = 650;
+const IHN_LIVE_ICE_GATHER_TIMEOUT = 90;
+const IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 35;
+const IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 45;
+const IHN_LIVE_ICE_BATCH_MS = 45;
 const IHN_LIVE_ICE_BATCH_RETRY_LIMIT = 4;
 const IHN_LIVE_SNAPSHOT_CACHE_LIMIT = 3;
 const IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS = 16_000_000;
@@ -77,6 +79,8 @@ let ihnLiveLastTabSentHash = '';
 let ihnLiveMergeUploadGuard = null;
 let ihnLiveMainPeerId = '';
 let ihnLiveGeneration = 0;
+let ihnLiveNetworkSignature = '';
+let ihnLiveNetworkWakeAt = 0;
 const ihnLivePeers = new Map();
 const ihnLiveKnownPeers = new Map();
 const ihnLiveRetryState = new Map();
@@ -540,9 +544,8 @@ function ihnWaitForIce(pc, timeout = IHN_LIVE_ICE_GATHER_TIMEOUT) {
         const check = () => { if (pc.iceGatheringState === 'complete') finish(); };
         const onCandidate = event => {
             if (!event?.candidate || settleTimer) return;
-            // Non-trickle signalling sends one SDP through Drive. Waiting a
-            // short window after the first candidate gives STUN candidates a
-            // chance to arrive without paying the old seven-second worst case.
+            // Publish the SDP as soon as the first useful candidates settle;
+            // later candidates continue through encrypted trickle batches.
             settleTimer = setTimeout(finish, Math.min(IHN_LIVE_ICE_CANDIDATE_SETTLE_MS, timeout));
         };
         const timer = setTimeout(finish, timeout);
@@ -871,6 +874,7 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
     peer.localIceFlushTimer = null;
     if (Array.isArray(peer.pendingLocalIceCandidates)) peer.pendingLocalIceCandidates.length = 0;
     peer.pendingRemoteIceCandidates?.clear?.();
+    peer.pendingHealthPings?.clear?.();
     ihnDeleteSignalComment(peer);
     try { peer.channel?.close(); } catch (error) {}
     try { peer.pc?.close(); } catch (error) {}
@@ -893,6 +897,23 @@ function ihnSendControl(peer, payload) {
     } catch (error) {
         return false;
     }
+}
+
+function ihnSendHealthPing(peer, payload = {}) {
+    if (!peer || peer.channel?.readyState !== 'open') return 0;
+    const at = Date.now();
+    if (!(peer.pendingHealthPings instanceof Set)) peer.pendingHealthPings = new Set();
+    // Bound the set even if a browser silently drops an old route without
+    // emitting an ICE state transition.
+    for (const sentAt of peer.pendingHealthPings) {
+        if (at - Number(sentAt || 0) > IHN_LIVE_HEALTH_TIMEOUT) {
+            peer.pendingHealthPings.delete(sentAt);
+        }
+    }
+    if (!ihnSendControl(peer, { t: 'ping', ...payload, at })) return 0;
+    peer.pendingHealthPings.add(at);
+    peer.lastPingAt = at;
+    return at;
 }
 
 function ihnSanitizeLiveStrokePoints(points) {
@@ -1083,7 +1104,9 @@ function ihnConfigureChannel(peerId, channel, peer) {
         peer.openedAt = now;
         peer.lastReceivedAt = now;
         peer.lastPongAt = now;
+        peer.lastPongEchoAt = 0;
         peer.lastPingAt = 0;
+        peer.pendingHealthPings = new Set();
         peer.disconnectedAt = 0;
         peer.lastSentHash = '';
         peer.pendingAckHash = '';
@@ -1211,11 +1234,11 @@ async function ihnAcceptOffer(comment, offer) {
         return;
     }
     if (existingPeer
-        && !offer.fastRecovery
         && Date.now() - Number(existingPeer.createdAt || 0) < IHN_LIVE_CONNECT_TIMEOUT) {
         // Perfect negotiation without a signalling server: if simultaneous
-        // offers cross, the lower peer's offer wins. The other endpoint drops
-        // its local offer and answers the deterministic winner.
+        // offers cross (including fast network recovery), the lower peer's
+        // offer wins. The other endpoint drops its local offer and answers the
+        // deterministic winner instead of both endpoints discarding each other.
         const localOfferWins = !!existingPeer.initiator && ownId < offer.from;
         if (!existingPeer.initiator || localOfferWins) {
             ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
@@ -1303,7 +1326,12 @@ async function ihnPollSignals() {
         ihnLiveSignalQueued = true;
         return;
     }
-    if (!ihnIsLiveLeader() || !state.driveCanEdit || !driveAccessToken || !state.driveFileId || document.visibilityState === 'hidden') return;
+    if (!ihnIsLiveLeader()
+        || !state.driveCanEdit
+        || !driveAccessToken
+        || !state.driveFileId
+        || document.visibilityState === 'hidden'
+        || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
     const runId = ++ihnLiveSignalRunId;
     ihnLiveSignalBusy = true;
     ihnLiveSignalQueued = false;
@@ -1397,7 +1425,11 @@ function liveCollabUpdatePeers(users) {
         if (!wasExpected) {
             ihnSchedulePeerRetry(peerId, 'peer online', {
                 immediate: true,
-                preserveFailures: true
+                preserveFailures: true,
+                // The device that first discovers the other device must be
+                // allowed to offer regardless of lexical peer order. Glare is
+                // resolved deterministically in ihnAcceptOffer.
+                allowReverse: true
             });
         }
     }
@@ -1407,8 +1439,10 @@ function liveCollabUpdatePeers(users) {
 
 function ihnSuperviseConnections(options = {}) {
     if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit || typeof RTCPeerConnection === 'undefined') return;
+    ihnCheckNetworkRouteSignature();
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     const now = Date.now();
-    if (!ihnClaimLiveLeader()) {
+    if (!ihnIsLiveLeader() && !ihnClaimLiveLeader()) {
         // Only the elected tab owns network peers. Other tabs remain fully
         // current through BroadcastChannel and can take over after the lease.
         [...ihnLivePeers.keys()].forEach(peerId => {
@@ -1510,9 +1544,29 @@ function ihnSuperviseConnections(options = {}) {
             ihnClosePeer(peerId, 'legacy peer health probe', { retry: true });
             return;
         }
+        const routeLastSeenAt = Math.max(
+            Number(peer.lastPongAt || 0),
+            Number(peer.lastReceivedAt || 0),
+            Number(peer.openedAt || 0)
+        );
+        if (peer.protocolV2
+            && document.visibilityState !== 'hidden'
+            && !resumeGraceActive
+            && now - routeLastSeenAt > IHN_LIVE_ROUTE_STALE_MS) {
+            // Some mobile browsers never emit navigator.connection.change when
+            // moving between Wi-Fi and cellular. The fast heartbeat is the
+            // portable route-change detector and replaces the dead path before
+            // the browser's multi-second ICE timeout.
+            ihnClosePeer(peerId, 'live route watchdog', {
+                retry: true,
+                immediate: true,
+                preserveFailures: true,
+                allowReverse: true
+            });
+            return;
+        }
         if (now - Number(peer.lastPingAt || 0) >= IHN_LIVE_PING_INTERVAL) {
-            peer.lastPingAt = now;
-            ihnSendControl(peer, { t: 'ping', at: now });
+            ihnSendHealthPing(peer);
         }
         if (now - Number(peer.lastPathRefreshAt || 0) > 15_000) {
             peer.lastPathRefreshAt = now;
@@ -1530,7 +1584,7 @@ function ihnSuperviseConnections(options = {}) {
         // Reserve a future slot immediately; the peer map itself prevents a
         // second in-flight offer once ihnCreateOffer starts.
         retry.nextAttemptAt = now + IHN_LIVE_CONNECT_TIMEOUT;
-        const fastRecovery = /network|ICE path|browser online/i.test(String(retry.lastReason || ''));
+        const fastRecovery = /network|route|ICE path|browser/i.test(String(retry.lastReason || ''));
         ihnCreateOffer(peerId, { fastRecovery, allowReverse: reverseRecovery }).catch(error => {
             console.warn('Live reconnect attempt failed:', error);
             ihnSchedulePeerRetry(peerId, 'reconnect failed');
@@ -1542,12 +1596,26 @@ function ihnSuperviseConnections(options = {}) {
 function ihnWakeLiveCollaboration(reason = 'network available') {
     if (!state?.driveFileId) return;
     const now = Date.now();
-    const networkRouteChanged = reason === 'network changed' || reason === 'browser online';
+    const browserOffline = reason === 'browser offline';
+    const networkRouteChanged = /network|browser online/i.test(String(reason));
+    const replaceRouteImmediately = reason === 'network transport changed'
+        || reason === 'browser online';
+    if (browserOffline) {
+        ihnLivePeers.forEach((_peer, peerId) => {
+            ihnClosePeer(peerId, reason, {
+                retry: true,
+                immediate: true,
+                preserveFailures: true,
+                allowReverse: true
+            });
+        });
+        return;
+    }
     ihnLivePeers.forEach((peer, peerId) => {
         if (networkRouteChanged) {
             peer.localIceRetryAttempt = 0;
             ihnScheduleLocalIceFlush(peerId, peer, 0);
-            if (peer.channel?.readyState === 'open') {
+            if (peer.channel?.readyState === 'open' && !replaceRouteImmediately) {
                 ihnProbePeerForFastRecovery(peerId, peer, reason);
             } else {
                 ihnClosePeer(peerId, reason, {
@@ -1564,12 +1632,12 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
         // channel one fresh ping round-trip before classifying it as stale.
         peer.resumeGraceUntil = now + IHN_LIVE_RESUME_GRACE_MS;
         peer.disconnectedAt = 0;
-        peer.lastPingAt = now;
         ihnTouchKnownPeerFromChannel(peerId, now);
-        ihnSendControl(peer, { t: 'ping', at: now, reason });
+        ihnSendHealthPing(peer, { reason });
     });
     ihnLiveRetryState.forEach((retry, peerId) => {
-        if (!ihnCanInitiatePeer(peerId)) return;
+        if (!ihnCanInitiatePeer(peerId)
+            && !(retry.allowReverse && ihnCanRecoverPeer(peerId))) return;
         retry.nextAttemptAt = now;
         retry.lastReason = reason;
     });
@@ -1584,11 +1652,13 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
 function ihnScheduleRapidSignalPolls(reason = 'network recovery') {
     const fileId = state?.driveFileId || '';
     const generation = ihnLiveGeneration;
-    [180, 650, 1400, 2400].forEach(delay => {
+    [40, 120, 260, 480, 800].forEach(delay => {
         setTimeout(() => {
             if (generation !== ihnLiveGeneration || state?.driveFileId !== fileId) return;
             ihnLiveRetryState.forEach((retry, peerId) => {
-                if (!ihnCanInitiatePeer(peerId) || ihnLivePeers.has(peerId)) return;
+                const mayInitiate = ihnCanInitiatePeer(peerId)
+                    || (retry.allowReverse && ihnCanRecoverPeer(peerId));
+                if (!mayInitiate || ihnLivePeers.has(peerId)) return;
                 retry.nextAttemptAt = Date.now();
                 retry.lastReason = reason;
             });
@@ -1604,15 +1674,27 @@ function ihnProbePeerForFastRecovery(peerId, peer, reason = 'network path change
         || peer.channel?.readyState !== 'open') return false;
     const now = Date.now();
     if (now - Number(peer.networkRecoveryProbeAt || 0) < IHN_LIVE_NETWORK_PROBE_MS) return true;
+    const knownRtt = Number(peer.rttMs);
+    const probeDelay = Number.isFinite(knownRtt) && knownRtt > 0
+        ? Math.min(700, Math.max(IHN_LIVE_NETWORK_PROBE_MS, Math.round((knownRtt * 2.5) + 80)))
+        : 320;
     peer.networkRecoveryProbeAt = now;
-    peer.resumeGraceUntil = now + IHN_LIVE_NETWORK_RECOVERY_GRACE_MS;
-    peer.lastPingAt = now;
+    peer.resumeGraceUntil = now + Math.max(IHN_LIVE_NETWORK_RECOVERY_GRACE_MS, probeDelay + 180);
     ihnTouchKnownPeerFromChannel(peerId, now);
-    try { peer.pc?.restartIce?.(); } catch (error) { /* replacement route remains available */ }
-    ihnSendControl(peer, { t: 'ping', at: now, reason, networkProbe: true });
+    const probeAt = ihnSendHealthPing(peer, { reason, networkProbe: true });
+    if (!probeAt) {
+        ihnClosePeer(peerId, reason, {
+            retry: true,
+            immediate: true,
+            preserveFailures: true,
+            allowReverse: true
+        });
+        ihnSuperviseConnections({ immediate: true });
+        return true;
+    }
     setTimeout(() => {
         if (ihnLivePeers.get(peerId) !== peer || peer.closing) return;
-        if (Number(peer.lastPongAt || 0) >= now) {
+        if (Number(peer.lastPongEchoAt || 0) >= probeAt) {
             peer.networkRecoveryProbeAt = 0;
             peer.resumeGraceUntil = 0;
             scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
@@ -1627,21 +1709,69 @@ function ihnProbePeerForFastRecovery(peerId, peer, reason = 'network path change
             allowReverse: true
         });
         ihnSuperviseConnections({ immediate: true });
-    }, IHN_LIVE_NETWORK_PROBE_MS);
+    }, probeDelay);
     return true;
 }
 
 let ihnLiveLifecycleListenersInstalled = false;
+function ihnReadNetworkSignature() {
+    try {
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (!connection) return '';
+        return [
+            String(connection.type || ''),
+            String(connection.effectiveType || ''),
+            connection.saveData ? 'save' : 'normal'
+        ].join('|');
+    } catch (error) {
+        return '';
+    }
+}
+
+function ihnHandleNetworkRouteChange(reason = 'network changed') {
+    const now = Date.now();
+    const previousSignature = ihnLiveNetworkSignature;
+    const nextSignature = ihnReadNetworkSignature();
+    ihnLiveNetworkSignature = nextSignature;
+    if (reason === 'network changed'
+        && previousSignature
+        && nextSignature
+        && previousSignature === nextSignature) return false;
+    if (reason !== 'browser online' && now - ihnLiveNetworkWakeAt < 120) return false;
+    ihnLiveNetworkWakeAt = now;
+    const previousTransport = String(previousSignature || '').split('|')[0];
+    const nextTransport = String(nextSignature || '').split('|')[0];
+    const confirmedTransportChange = previousTransport
+        && nextTransport
+        && previousTransport !== nextTransport;
+    ihnWakeLiveCollaboration(confirmedTransportChange ? 'network transport changed' : reason);
+    return true;
+}
+
+function ihnCheckNetworkRouteSignature() {
+    const next = ihnReadNetworkSignature();
+    if (!next) return false;
+    if (!ihnLiveNetworkSignature) {
+        ihnLiveNetworkSignature = next;
+        return false;
+    }
+    if (next === ihnLiveNetworkSignature) return false;
+    return ihnHandleNetworkRouteChange('network signature changed');
+}
+
 function ihnInstallLiveLifecycleListeners() {
     if (ihnLiveLifecycleListenersInstalled || typeof window === 'undefined') return;
     ihnLiveLifecycleListenersInstalled = true;
-    window.addEventListener('online', () => ihnWakeLiveCollaboration('browser online'));
+    ihnLiveNetworkSignature = ihnReadNetworkSignature();
+    window.addEventListener('online', () => ihnHandleNetworkRouteChange('browser online'));
+    window.addEventListener('offline', () => ihnHandleNetworkRouteChange('browser offline'));
     window.addEventListener('pageshow', () => ihnWakeLiveCollaboration('page resumed'));
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') ihnWakeLiveCollaboration('app visible');
     });
     try {
-        navigator.connection?.addEventListener?.('change', () => ihnWakeLiveCollaboration('network changed'));
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        connection?.addEventListener?.('change', () => ihnHandleNetworkRouteChange('network changed'));
     } catch (error) { /* optional Network Information API */ }
 }
 
@@ -1763,9 +1893,11 @@ function startLiveCollaboration() {
     ihnInstallLiveLifecycleListeners();
     if (!ihnLiveLeaderTimer) {
         ihnClaimLiveLeader();
-        ihnLiveLeaderTimer = setInterval(() => { if (ihnClaimLiveLeader()) ihnPollSignals(); }, 2000);
+        ihnLiveLeaderTimer = setInterval(() => ihnClaimLiveLeader(), 1000);
     }
-    if (!ihnLiveSignalTimer) ihnLiveSignalTimer = setInterval(ihnPollSignals, 2000);
+    if (!ihnLiveSignalTimer) {
+        ihnLiveSignalTimer = setInterval(ihnPollSignals, IHN_LIVE_SIGNAL_POLL_MS);
+    }
     if (!ihnLiveCapabilityTimer) ihnLiveCapabilityTimer = setInterval(ihnVerifyLiveCapability, 30_000);
     if (!ihnLiveSupervisorTimer) {
         ihnLiveSupervisorTimer = setInterval(ihnSuperviseConnections, IHN_LIVE_SUPERVISOR_MS);
@@ -1832,6 +1964,7 @@ function stopLiveCollaboration() {
     ihnLiveCryptoKeyRefresh = null; ihnLiveCryptoKeyRefreshFileId = '';
     ihnLiveLastAppliedHash = ''; ihnLiveCurrentHash = ''; ihnLiveLastTabSentHash = '';
     ihnLiveMergeUploadGuard = null; ihnLiveMainPeerId = '';
+    ihnLiveNetworkSignature = ''; ihnLiveNetworkWakeAt = 0;
 }
 
 function ihnSerializeSnapshotPage(page) {
@@ -2134,12 +2267,18 @@ async function ihnHandleWireMessage(
             const receivedAt = Date.now();
             const sentAt = Number(message.at) || 0;
             const expectedAt = Number(peer.lastPingAt) || 0;
+            const pendingPings = peer.pendingHealthPings instanceof Set
+                ? peer.pendingHealthPings
+                : null;
             const validPong = sentAt > 0
-                && sentAt === expectedAt
+                && (pendingPings?.has(sentAt)
+                    || (!pendingPings?.size && sentAt === expectedAt))
                 && sentAt >= Number(peer.openedAt || 0)
                 && sentAt <= receivedAt;
             if (validPong) {
+                pendingPings?.delete(sentAt);
                 peer.lastPongAt = receivedAt;
+                peer.lastPongEchoAt = sentAt;
                 const rtt = Math.max(0, receivedAt - sentAt);
                 peer.rttMs = Number.isFinite(peer.rttMs)
                     ? Math.round(peer.rttMs * 0.7 + rtt * 0.3)

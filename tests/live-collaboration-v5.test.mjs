@@ -213,6 +213,9 @@ globalThis.__liveTest = {
   addKnown(id, at = Date.now()) { ihnLiveKnownPeers.set(id, { lastSeenAt: at, record: {} }); },
   configureChannel: ihnConfigureChannel,
   observePeerHash: ihnObservePeerDocumentHash,
+  updatePeers: liveCollabUpdatePeers,
+  sendHealthPing: ihnSendHealthPing,
+  checkNetworkRoute: ihnCheckNetworkRouteSignature,
   trackMergeCurrentState: ihnTrackMergeCurrentState,
   shouldQueueMergeUpload: ihnShouldQueueMergeUpload,
   queue(options = {}) {
@@ -595,18 +598,16 @@ test('resuming gives an open peer a ping grace period before stale eviction', ()
 test('a network change keeps a responsive route and immediately resends current state', async () => {
   const { api, runNextTimer } = createHarness();
   const channel = createChannel();
-  let restartCalls = 0;
   const peer = peerWithChannel(channel, {
     protocolV2: true,
-    pc: { close() {}, restartIce() { restartCalls += 1; }, getStats: async () => new Map() }
+    pc: { close() {}, getStats: async () => new Map() }
   });
   api.addPeer('peer-remote', peer);
 
   api.wake('network changed');
   const probe = channel.sent.map(value => JSON.parse(value)).find(message => message.networkProbe);
   assert.ok(probe, 'the existing route is probed immediately');
-  assert.equal(restartCalls, 1, 'ICE gathering is restarted for the new interface');
-  peer.lastPongAt = probe.at;
+  await api.wire(JSON.stringify({ t: 'pong', at: probe.at }), 'peer-remote');
   await runNextTimer();
 
   assert.equal(api.getPeer('peer-remote'), peer, 'a route that answers the probe is preserved');
@@ -627,7 +628,104 @@ test('a dead route is replaced after the short network probe instead of the norm
   api.wake('network changed');
   assert.equal(api.getPeer('peer-remote'), peer, 'the old path remains available during the probe');
   await runNextTimer();
-  assert.equal(api.getPeer('peer-remote'), undefined, 'the dead path is replaced after 550 ms');
+  assert.equal(api.getPeer('peer-remote'), undefined, 'the dead path is replaced after the short adaptive probe');
+});
+
+test('a confirmed Wi-Fi to cellular switch replaces the route without a probe delay', () => {
+  const { api, context } = createHarness();
+  context.navigator.connection = { type: 'wifi', effectiveType: '4g', saveData: false };
+  assert.equal(api.checkNetworkRoute(), false, 'the initial transport is remembered');
+  const remoteId = 'peer-network-switch';
+  api.addKnown(remoteId);
+  assert.equal(api.claimLeader(), true);
+  let closed = false;
+  const channel = {
+    ...createChannel(),
+    close() { closed = true; this.readyState = 'closed'; }
+  };
+  api.addPeer(remoteId, peerWithChannel(channel, {
+    protocolV2: true,
+    generation: api.generation()
+  }));
+
+  context.navigator.connection.type = 'cellular';
+  assert.equal(api.checkNetworkRoute(), true);
+
+  assert.equal(closed, true, 'a confirmed interface change does not retain the obsolete path');
+  assert.equal(api.retry(remoteId).allowReverse, true);
+});
+
+test('a newly discovered peer may offer immediately regardless of lexical peer order', () => {
+  const { api, context } = createHarness();
+  assert.equal(api.claimLeader(), true);
+  context.RTCPeerConnection = undefined;
+  const record = {
+    isOnline: true,
+    a: 'remote-account',
+    c: 'remote-client',
+    e: 'remote@example.com'
+  };
+  const remoteId = `peer_${simpleHash(`${record.a}:${record.c}`)}`;
+
+  api.updatePeers([record]);
+
+  const retry = api.retry(remoteId);
+  assert.ok(retry, 'discovery creates an immediate connection attempt');
+  assert.equal(retry.allowReverse, true, 'the new device does not wait for lexical ownership');
+  assert.ok(retry.nextAttemptAt <= Date.now());
+});
+
+test('simultaneous fast-recovery offers resolve glare deterministically', async () => {
+  const { api } = createHarness();
+  const ownId = api.ownId();
+  const remoteId = `${ownId}z`;
+  const localOffer = peerWithChannel({ ...createChannel(), readyState: 'connecting' }, {
+    status: 'connecting',
+    initiator: true,
+    sessionId: 'local-recovery',
+    createdAt: Date.now(),
+    generation: api.generation()
+  });
+  api.addPeer(remoteId, localOffer);
+
+  await api.acceptOffer({ id: 'crossed-fast-offer' }, {
+    v: 1,
+    type: 'offer',
+    fileId: 'file-1',
+    from: remoteId,
+    to: ownId,
+    sessionId: 'remote-recovery',
+    fastRecovery: true,
+    expiresAt: Date.now() + 60_000,
+    description: { type: 'offer', sdp: 'remote' }
+  });
+
+  assert.equal(api.getPeer(remoteId), localOffer, 'the lower peer keeps the winning local offer');
+  assert.equal(api.processedOfferCount(), 1, 'the crossed losing offer is retired');
+});
+
+test('the heartbeat watchdog replaces a silent route without waiting for browser ICE timeout', () => {
+  const { api } = createHarness();
+  const remoteId = 'peer-silent-route';
+  api.addKnown(remoteId);
+  assert.equal(api.claimLeader(), true);
+  let closed = false;
+  const channel = {
+    ...createChannel(),
+    close() { closed = true; this.readyState = 'closed'; }
+  };
+  api.addPeer(remoteId, peerWithChannel(channel, {
+    protocolV2: true,
+    generation: api.generation(),
+    openedAt: Date.now() - 5000,
+    lastReceivedAt: Date.now() - 1000,
+    lastPongAt: Date.now() - 1000
+  }));
+
+  api.supervise();
+
+  assert.equal(closed, true);
+  assert.equal(api.retry(remoteId).allowReverse, true);
 });
 
 test('C to D to C sends C again instead of treating an old ACK as current state', async () => {
