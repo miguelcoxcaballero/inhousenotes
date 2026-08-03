@@ -6,12 +6,12 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.5.1.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.6.0.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.5\.1';/);
+assert.match(html, /const APP_VERSION = '5\.6\.0';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.5\.1/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.5\.1/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.6\.0/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.6\.0/);
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
 assert.match(html, /function normalizeTimelineHistory\(/);
@@ -110,9 +110,15 @@ assert.match(live, /function publishLiveStrokePreview\(/);
 assert.match(live, /function ihnHandleRealtimeStrokePacket\(/);
 assert.match(live, /IHN_LIVE_STROKE_FRAME_MS = 18/);
 assert.match(live, /IHN_LIVE_NETWORK_PROBE_MS = 550/);
-assert.match(live, /IHN_LIVE_ICE_GATHER_TIMEOUT = 2600/);
-assert.match(live, /IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 900/);
-assert.match(live, /IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 650/);
+assert.match(live, /IHN_LIVE_ICE_GATHER_TIMEOUT = 180/);
+assert.match(live, /IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 80/);
+assert.match(live, /IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 90/);
+assert.match(live, /IHN_LIVE_ICE_BATCH_RETRY_LIMIT = 4/);
+assert.match(live, /function ihnQueueLocalIceCandidate\(/);
+assert.match(live, /async function ihnFlushLocalIceCandidates\(/);
+assert.match(live, /async function ihnApplyCandidateSignal\(/);
+assert.match(live, /type: 'candidates'/);
+assert.match(live, /ihnScheduleRapidSignalPolls\('offer posted'\)/);
 assert.match(live, /function ihnProbePeerForFastRecovery\(/);
 assert.match(live, /function ihnScheduleRapidSignalPolls\(/);
 assert.match(live, /peer\.pc\?\.restartIce\?\.\(\)/);
@@ -568,11 +574,11 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.5.1');
+assert.equal(update.publishedAppVersion, '5.6.0');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.5\.1/);
-assert.match(notes, /plain 9 px coloured dot/i);
-assert.match(notes, /symbols introduced in v5\.5\.0 have been removed/i);
-assert.match(notes, /reliability fixes from v5\.5\.0 remain unchanged/i);
+assert.match(update.releaseNotes, /v5\.6\.0/);
+assert.match(notes, /80–180 ms initial window/i);
+assert.match(notes, /encrypted Drive reply batches/i);
+assert.match(notes, /original compact 9 px dot design/i);
 
-console.log('v5.5.1 smoke checks passed.');
+console.log('v5.6.0 smoke checks passed.');

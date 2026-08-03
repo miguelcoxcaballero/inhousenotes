@@ -231,6 +231,10 @@ globalThis.__liveTest = {
   claimLeader: ihnClaimLiveLeader,
   pollSignals: ihnPollSignals,
   acceptOffer: ihnAcceptOffer,
+  applyCandidates: ihnApplyCandidateSignal,
+  queueLocalCandidate: ihnQueueLocalIceCandidate,
+  flushLocalCandidates: ihnFlushLocalIceCandidates,
+  drainRemoteCandidates: ihnDrainRemoteIceCandidates,
   overview: getLiveCollaborationOverview,
   ownId: ihnGetLivePeerId,
   generation() { return ihnLiveGeneration; },
@@ -1096,7 +1100,7 @@ test('supervisor evicts a stuck connecting peer and schedules autonomous retry',
     initiator: true,
     fileId: 'file-1',
     generation: api.generation(),
-    createdAt: Date.now() - 13_000,
+    createdAt: Date.now() - 16_000,
     commentId: ''
   });
 
@@ -1219,6 +1223,111 @@ test('either endpoint may initiate recovery after an established route closes', 
   assert.ok(retry, 'a retry is retained for the non-deterministic endpoint');
   assert.equal(retry.allowReverse, true);
   assert.ok(retry.nextAttemptAt > Date.now());
+});
+
+test('late ICE candidates wait for the answer, then apply once without duplicates', async () => {
+  const { api } = createHarness();
+  const remoteId = 'peer-late-ice';
+  const addedCandidates = [];
+  const pc = {
+    remoteDescription: null,
+    async addIceCandidate(candidate) { addedCandidates.push(candidate); },
+    close() {},
+    getStats: async () => new Map()
+  };
+  const peer = peerWithChannel({ ...createChannel(), readyState: 'connecting' }, {
+    pc,
+    status: 'connecting',
+    initiator: true,
+    sessionId: 'late-ice-session',
+    pendingRemoteIceCandidates: new Map(),
+    remoteIceCandidateKeys: new Set()
+  });
+  api.addPeer(remoteId, peer);
+  const signal = {
+    v: 1,
+    type: 'candidates',
+    fileId: 'file-1',
+    from: remoteId,
+    to: api.ownId(),
+    sessionId: 'late-ice-session',
+    expiresAt: Date.now() + 60_000,
+    candidates: [{
+      candidate: 'candidate:late 1 udp 2122260223 192.0.2.1 5000 typ srflx',
+      sdpMid: '0',
+      sdpMLineIndex: 0
+    }]
+  };
+
+  assert.equal(await api.applyCandidates(signal), true);
+  assert.equal(addedCandidates.length, 0, 'a candidate cannot race ahead of remoteDescription');
+  assert.equal(peer.pendingRemoteIceCandidates.size, 1);
+
+  pc.remoteDescription = { type: 'answer', sdp: 'answer' };
+  assert.equal(await api.drainRemoteCandidates(remoteId, peer), true);
+  assert.equal(addedCandidates.length, 1);
+  assert.equal(peer.pendingRemoteIceCandidates.size, 0);
+
+  assert.equal(await api.applyCandidates(signal), true);
+  assert.equal(addedCandidates.length, 1, 'repeated Drive polls do not re-add the same candidate');
+});
+
+test('a failed local ICE batch is retained, encrypted and retried', async () => {
+  const keyBytes = new Uint8Array(32).fill(0x77);
+  const keyEncoded = bytesToBase64Url(keyBytes);
+  let replyAttempts = 0;
+  let postedContent = '';
+  const { api } = createHarness({
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if ((options.method || 'GET') === 'POST' && requestUrl.includes('/replies?')) {
+        replyAttempts += 1;
+        if (replyAttempts === 1) throw new Error('temporary candidate post failure');
+        postedContent = JSON.parse(options.body).content;
+        return { json: async () => ({ id: 'candidate-reply' }) };
+      }
+      throw new Error(`Unexpected Drive request: ${requestUrl}`);
+    }
+  });
+  const remoteId = 'peer-candidate-retry';
+  const peer = {
+    pc: { close() {} },
+    channel: { readyState: 'connecting', close() {} },
+    status: 'connecting',
+    initiator: true,
+    sessionId: 'candidate-retry-session',
+    commentId: 'offer-comment',
+    fileId: 'file-1',
+    generation: api.generation(),
+    createdAt: Date.now(),
+    closing: false,
+    pendingLocalIceCandidates: [],
+    localIceCandidateKeys: new Set(),
+    pendingRemoteIceCandidates: new Map(),
+    remoteIceCandidateKeys: new Set(),
+    signalledLocalSdp: ''
+  };
+  api.addPeer(remoteId, peer);
+  api.queueLocalCandidate(remoteId, peer, {
+    candidate: 'candidate:retry 1 udp 2122260223 198.51.100.2 6000 typ srflx',
+    sdpMid: '0',
+    sdpMLineIndex: 0
+  });
+
+  assert.equal(await api.flushLocalCandidates(remoteId, peer), false);
+  assert.equal(peer.pendingLocalIceCandidates.length, 1, 'the failed batch remains queued');
+  assert.equal(await api.flushLocalCandidates(remoteId, peer), true);
+  assert.equal(peer.pendingLocalIceCandidates.length, 0);
+  assert.equal(replyAttempts, 2);
+
+  const decoded = await decryptTestSignal(postedContent, keyBytes);
+  assert.equal(decoded.type, 'candidates');
+  assert.equal(decoded.sessionId, 'candidate-retry-session');
+  assert.equal(decoded.candidates.length, 1);
+  assert.match(decoded.candidates[0].candidate, /candidate:retry/);
 });
 
 test('backoff resets only after a valid ACK, not on open or mismatched ACK', async () => {

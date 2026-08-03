@@ -3,6 +3,6 @@
   "versionCode": 8,
   "required": true,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.5.1",
-  "releaseNotes": "Inhouse Notes v5.5.1: restores the original compact save-status dot while retaining the v5.5 live-sync and saving fixes."
+  "publishedAppVersion": "5.6.0",
+  "releaseNotes": "Inhouse Notes v5.6.0: progressive WebRTC negotiation sends late network candidates automatically for faster, more reliable peer-to-peer connections."
 }
