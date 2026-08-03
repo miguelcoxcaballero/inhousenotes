@@ -6,15 +6,16 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.8.3.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.0.md', import.meta.url), 'utf8');
+const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.8\.3';/);
+assert.match(html, /const APP_VERSION = '5\.9\.0';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.8\.3/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.8\.3/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.0/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.0/);
 assert.ok(
   html.indexOf('jspdf.umd.min.js') > html.indexOf('</style>'),
   'PDF libraries must not block the first CSS/body paint'
@@ -40,8 +41,10 @@ assert.doesNotMatch(
   /"url": "https:\/\/inhousenotes\.com/,
   'Android must paint its bundled launch shell before navigating to the web app'
 );
-assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.9"/);
-assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 10/);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.10"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 11/);
+assert.match(androidLoader, /html, body \{ margin: 0; width: 100%; height: 100%;/);
+assert.match(androidLoader, /position: fixed;\s*inset: 0;\s*display: grid;\s*place-items: center;/);
 assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
 assert.match(html, /data-update-progressbar/);
 assert.match(html, /function formatAndroidUpdateMegabytes\(/);
@@ -70,6 +73,13 @@ assert.match(html, /sourceBlob: blob/);
 assert.match(html, /function getEmbeddedMetadataWorker\(/);
 assert.match(html, /parseEmbeddedMetadataPayload\(encodedData, true\)/);
 assert.match(html, /awaitAllPages: false/);
+assert.match(html, /const DRIVE_OPEN_CACHE_STORE = 'drive-open-cache';/);
+assert.match(html, /function driveOpenCacheMatchesCard\(/);
+assert.match(html, /cachedModified >= cardModified/);
+assert.match(html, /cachedAnalysis: cachedOpen\.analysis \|\| null/);
+assert.match(html, /setTimeout\(\(\) => revalidateCachedDriveOpen\(file, cachedOpen, sessionToken\), 0\)/);
+assert.match(html, /blob\.inhouseOpenCacheAnalysis =/);
+assert.match(html, /pdfResult\.inhouseOpenCacheAnalysis =/);
 assert.doesNotMatch(
   html.slice(html.indexOf('async function importPDFData'), html.indexOf('async function importPDF(e)')),
   /const fetchRes = await fetch\(pdfData\);\s*const buf = await fetchRes\.arrayBuffer\(\);[\s\S]{0,500}pdfjsLib\.getDocument/,
@@ -633,8 +643,8 @@ assert.equal(update.version, '1.0.9');
 assert.equal(update.versionCode, 10);
 assert.equal(update.apkSizeBytes, 3159541);
 assert.match(update.releaseNotes, /v5\.8\.3/);
-assert.match(notes, /percentage/i);
-assert.match(notes, /APK size in MB/i);
-assert.match(notes, /real byte counts/i);
+assert.match(notes, /already-decoded stroke metadata/i);
+assert.match(notes, /exact Drive revision/i);
+assert.match(notes, /centers the Inhouse Notes mark/i);
 
-console.log('v5.8.3 smoke checks passed.');
+console.log('v5.9.0 smoke checks passed.');
