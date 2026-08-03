@@ -25,8 +25,9 @@ const IHN_LIVE_APPLY_COALESCE_MS = 36;
 const IHN_LIVE_RESUME_GRACE_MS = 10_000;
 const IHN_LIVE_NETWORK_PROBE_MS = 550;
 const IHN_LIVE_NETWORK_RECOVERY_GRACE_MS = 1800;
-const IHN_LIVE_ICE_GATHER_TIMEOUT = 7000;
-const IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 1200;
+const IHN_LIVE_ICE_GATHER_TIMEOUT = 2600;
+const IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 900;
+const IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 650;
 const IHN_LIVE_SNAPSHOT_CACHE_LIMIT = 3;
 const IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS = 16_000_000;
 const IHN_LIVE_STROKE_FRAME_MS = 18;
@@ -43,6 +44,7 @@ let ihnLiveSignalTimer = null;
 let ihnLiveCapabilityTimer = null;
 let ihnLiveSupervisorTimer = null;
 let ihnLiveSignalBusy = false;
+let ihnLiveSignalQueued = false;
 let ihnLiveSignalRunId = 0;
 let ihnLiveCryptoKey = null;
 let ihnLiveCryptoFileId = '';
@@ -80,6 +82,7 @@ const ihnLiveSeen = new Map();
 const ihnLiveAppliedHashes = new Map();
 const ihnLiveChunks = new Map();
 const ihnLiveProcessedOffers = new Map();
+const ihnLiveOffersInFlight = new Set();
 const ihnLiveFailedSignals = new Map();
 const ihnLivePendingApplies = new Map();
 const ihnLiveFanOutTasks = new Set();
@@ -522,14 +525,27 @@ function ihnWaitForIce(pc, timeout = IHN_LIVE_ICE_GATHER_TIMEOUT) {
     if (pc.iceGatheringState === 'complete') return Promise.resolve();
     return new Promise(resolve => {
         let done = false;
+        let settleTimer = null;
         const finish = () => {
             if (done) return;
-            done = true; clearTimeout(timer);
-            pc.removeEventListener('icegatheringstatechange', check); resolve();
+            done = true;
+            clearTimeout(timer);
+            clearTimeout(settleTimer);
+            pc.removeEventListener('icegatheringstatechange', check);
+            pc.removeEventListener('icecandidate', onCandidate);
+            resolve();
         };
         const check = () => { if (pc.iceGatheringState === 'complete') finish(); };
+        const onCandidate = event => {
+            if (!event?.candidate || settleTimer) return;
+            // Non-trickle signalling sends one SDP through Drive. Waiting a
+            // short window after the first candidate gives STUN candidates a
+            // chance to arrive without paying the old seven-second worst case.
+            settleTimer = setTimeout(finish, Math.min(IHN_LIVE_ICE_CANDIDATE_SETTLE_MS, timeout));
+        };
         const timer = setTimeout(finish, timeout);
         pc.addEventListener('icegatheringstatechange', check);
+        pc.addEventListener('icecandidate', onCandidate);
     });
 }
 
@@ -538,7 +554,8 @@ function ihnGetRetryState(peerId) {
         ihnLiveRetryState.set(peerId, {
             failures: 0,
             nextAttemptAt: 0,
-            lastReason: ''
+            lastReason: '',
+            allowReverse: false
         });
     }
     return ihnLiveRetryState.get(peerId);
@@ -584,12 +601,26 @@ function ihnCanInitiatePeer(peerId) {
     );
 }
 
+function ihnCanRecoverPeer(peerId) {
+    return !!(
+        peerId
+        && ihnPeerIsExpected(peerId)
+        && ihnIsLiveLeader()
+        && state?.driveFileId
+        && state.driveCanEdit
+        && driveAccessToken
+        && ihnGetLivePeerId() !== peerId
+    );
+}
+
 function ihnSchedulePeerRetry(peerId, reason = '', options = {}) {
-    if (!ihnCanInitiatePeer(peerId)) return;
+    const allowReverse = !!options.allowReverse;
+    if (!ihnCanInitiatePeer(peerId) && !(allowReverse && ihnCanRecoverPeer(peerId))) return;
     const retry = ihnGetRetryState(peerId);
     if (options.reset) retry.failures = 0;
     else if (!options.preserveFailures) retry.failures = Math.min(7, retry.failures + 1);
     retry.lastReason = reason;
+    retry.allowReverse = allowReverse;
     retry.nextAttemptAt = options.immediate
         ? Date.now()
         : Date.now() + ihnComputeReconnectDelay(Math.max(0, retry.failures - 1), peerId);
@@ -600,6 +631,7 @@ function ihnResetPeerRetry(peerId) {
     retry.failures = 0;
     retry.nextAttemptAt = 0;
     retry.lastReason = '';
+    retry.allowReverse = false;
 }
 
 function ihnPeerChannelIsHealthy(peer, now = Date.now()) {
@@ -635,7 +667,7 @@ function ihnDeleteSignalComment(peer) {
 function ihnClosePeer(peerId, reason = '', options = {}) {
     const peer = ihnLivePeers.get(peerId);
     if (!peer) {
-        if (options.retry) ihnSchedulePeerRetry(peerId, reason, options);
+        if (options.retry) ihnSchedulePeerRetry(peerId, reason, { ...options, allowReverse: true });
         return;
     }
     if (peer.closing) return;
@@ -644,7 +676,12 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
     ihnDeleteSignalComment(peer);
     try { peer.channel?.close(); } catch (error) {}
     try { peer.pc?.close(); } catch (error) {}
-    if (options.retry !== false) ihnSchedulePeerRetry(peerId, reason, options);
+    if (options.retry !== false) {
+        // After first contact either endpoint may recover a broken route. The
+        // lower-id peer still owns first contact, while glare handling resolves
+        // the rare case where both recovered endpoints offer simultaneously.
+        ihnSchedulePeerRetry(peerId, reason, { ...options, allowReverse: true });
+    }
     if (reason) console.info(`Live peer ${peerId} closed: ${reason}`);
     if (typeof refreshPresenceViews === 'function') refreshPresenceViews();
 }
@@ -896,7 +933,7 @@ function ihnConfigureChannel(peerId, channel, peer) {
 async function ihnCreateOffer(targetPeerId, options = {}) {
     if (!ihnIsLiveLeader() || !state.driveCanEdit || !driveAccessToken || !state.driveFileId) return;
     const ownId = ihnGetLivePeerId();
-    if (!targetPeerId || ownId >= targetPeerId) return;
+    if (!targetPeerId || ownId === targetPeerId || (!options.allowReverse && ownId >= targetPeerId)) return;
     const current = ihnLivePeers.get(targetPeerId);
     if (current && ['new', 'connecting', 'open'].includes(current.status)) return;
     if (current) ihnClosePeer(targetPeerId, 'reconnect', { retry: false });
@@ -911,8 +948,8 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
         pendingAckReceivedHash: '', pendingAckReceivedAt: 0, disconnectedAt: 0 };
     ihnLivePeers.set(targetPeerId, peer);
     ihnConfigurePeer(targetPeerId, pc, peer);
-    ihnConfigureChannel(targetPeerId, pc.createDataChannel('inhousenotes-live-v5', { ordered: true }), peer);
     try {
+        ihnConfigureChannel(targetPeerId, pc.createDataChannel('inhousenotes-live-v5', { ordered: true }), peer);
         await pc.setLocalDescription(await pc.createOffer());
         await ihnWaitForIce(pc, options.fastRecovery
             ? IHN_LIVE_FAST_ICE_GATHER_TIMEOUT
@@ -958,13 +995,25 @@ async function ihnAcceptOffer(comment, offer) {
     const ownId = ihnGetLivePeerId();
     if (!offer || offer.to !== ownId || offer.from === ownId || offer.fileId !== state.driveFileId || Number(offer.expiresAt) < Date.now()) return;
     const offerKey = `${comment.id}:${offer.sessionId}`;
-    if (ihnLiveProcessedOffers.has(offerKey)) return;
-    ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
+    if (ihnLiveProcessedOffers.has(offerKey) || ihnLiveOffersInFlight.has(offerKey)) return;
     const existingPeer = ihnLivePeers.get(offer.from);
-    if (existingPeer?.status === 'open' && !offer.fastRecovery) return;
+    if (existingPeer?.status === 'open' && !offer.fastRecovery) {
+        ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
+        return;
+    }
     if (existingPeer
         && !offer.fastRecovery
-        && Date.now() - Number(existingPeer.createdAt || 0) < IHN_LIVE_CONNECT_TIMEOUT) return;
+        && Date.now() - Number(existingPeer.createdAt || 0) < IHN_LIVE_CONNECT_TIMEOUT) {
+        // Perfect negotiation without a signalling server: if simultaneous
+        // offers cross, the lower peer's offer wins. The other endpoint drops
+        // its local offer and answers the deterministic winner.
+        const localOfferWins = !!existingPeer.initiator && ownId < offer.from;
+        if (!existingPeer.initiator || localOfferWins) {
+            ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
+            return;
+        }
+    }
+    ihnLiveOffersInFlight.add(offerKey);
     ihnClosePeer(offer.from, 'new offer', { retry: false });
     const fileId = state.driveFileId;
     const generation = ihnLiveGeneration;
@@ -997,11 +1046,14 @@ async function ihnAcceptOffer(comment, offer) {
         await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${comment.id}/replies?fields=id,createdTime`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
         });
+        ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
     } catch (error) {
         console.warn('Direct offer could not be accepted:', error);
         if (ihnLivePeers.get(offer.from) === peer) {
             ihnClosePeer(offer.from, 'answer failed', { retry: false });
         }
+    } finally {
+        ihnLiveOffersInFlight.delete(offerKey);
     }
 }
 
@@ -1024,9 +1076,17 @@ async function ihnApplyAnswer(answer) {
 }
 
 async function ihnPollSignals() {
-    if (ihnLiveSignalBusy || !ihnIsLiveLeader() || !state.driveCanEdit || !driveAccessToken || !state.driveFileId || document.visibilityState === 'hidden') return;
+    if (ihnLiveSignalBusy) {
+        // A recovery burst often lands while Drive is still returning the
+        // previous comments page. Keep one trailing poll so a fresh answer is
+        // consumed immediately instead of waiting for the periodic interval.
+        ihnLiveSignalQueued = true;
+        return;
+    }
+    if (!ihnIsLiveLeader() || !state.driveCanEdit || !driveAccessToken || !state.driveFileId || document.visibilityState === 'hidden') return;
     const runId = ++ihnLiveSignalRunId;
     ihnLiveSignalBusy = true;
+    ihnLiveSignalQueued = false;
     const fileId = state.driveFileId;
     const generation = ihnLiveGeneration;
     const operation = ihnCaptureLiveOperationContext(fileId);
@@ -1089,6 +1149,10 @@ async function ihnPollSignals() {
     } finally {
         if (runId === ihnLiveSignalRunId) {
             ihnLiveSignalBusy = false;
+            if (ihnLiveSignalQueued) {
+                ihnLiveSignalQueued = false;
+                setTimeout(() => ihnPollSignals(), 0);
+            }
         }
     }
 }
@@ -1226,14 +1290,17 @@ function ihnSuperviseConnections(options = {}) {
     });
 
     ihnLiveKnownPeers.forEach((known, peerId) => {
-        if (!ihnCanInitiatePeer(peerId) || ihnLivePeers.has(peerId)) return;
+        if (ihnLivePeers.has(peerId)) return;
         const retry = ihnGetRetryState(peerId);
+        const deterministicInitiator = ihnCanInitiatePeer(peerId);
+        const reverseRecovery = !!retry.allowReverse && ihnCanRecoverPeer(peerId);
+        if (!deterministicInitiator && !reverseRecovery) return;
         if (Number(retry.nextAttemptAt || 0) > now) return;
         // Reserve a future slot immediately; the peer map itself prevents a
         // second in-flight offer once ihnCreateOffer starts.
         retry.nextAttemptAt = now + IHN_LIVE_CONNECT_TIMEOUT;
         const fastRecovery = /network|ICE path|browser online/i.test(String(retry.lastReason || ''));
-        ihnCreateOffer(peerId, { fastRecovery }).catch(error => {
+        ihnCreateOffer(peerId, { fastRecovery, allowReverse: reverseRecovery }).catch(error => {
             console.warn('Live reconnect attempt failed:', error);
             ihnSchedulePeerRetry(peerId, 'reconnect failed');
         });
@@ -1323,7 +1390,8 @@ function ihnProbePeerForFastRecovery(peerId, peer, reason = 'network path change
         ihnClosePeer(peerId, reason, {
             retry: true,
             immediate: true,
-            preserveFailures: true
+            preserveFailures: true,
+            allowReverse: true
         });
         ihnSuperviseConnections({ immediate: true });
     }, IHN_LIVE_NETWORK_PROBE_MS);
@@ -1405,11 +1473,29 @@ function getLiveCollaborationConnectionInfo(record = null) {
 }
 
 function getLiveCollaborationOverview() {
+    const peers = [...ihnLivePeers.values()];
+    const openPeers = peers.filter(peer => peer.channel?.readyState === 'open');
+    const expectedPeerCount = [...ihnLiveKnownPeers.keys()].filter(ihnPeerIsExpected).length;
+    const connectingPeerCount = peers.filter(peer => peer.channel?.readyState !== 'open').length;
+    const bestRttMs = openPeers.reduce((best, peer) => {
+        const rtt = Number(peer?.rttMs);
+        return Number.isFinite(rtt) ? Math.min(best, rtt) : best;
+    }, Infinity);
+    const connectionState = openPeers.length > 0
+        ? 'live'
+        : ((expectedPeerCount > 0 || connectingPeerCount > 0 || ihnLiveSignalBusy || ihnLiveSignalQueued)
+            ? 'reconnecting'
+            : 'solo');
     return {
         ownPeerId: ihnGetLivePeerId(),
         mainPeerId: ihnLiveMainPeerId || ihnGetLivePeerId(),
         isMain: (ihnLiveMainPeerId || ihnGetLivePeerId()) === ihnGetLivePeerId(),
-        openPeerCount: [...ihnLivePeers.values()].filter(peer => peer.channel?.readyState === 'open').length
+        openPeerCount: openPeers.length,
+        expectedPeerCount,
+        connectingPeerCount,
+        connectionState,
+        signallingBusy: ihnLiveSignalBusy || ihnLiveSignalQueued,
+        bestRttMs: Number.isFinite(bestRttMs) ? bestRttMs : null
     };
 }
 
@@ -1489,6 +1575,7 @@ function stopLiveCollaboration() {
     if (ihnLiveSupervisorTimer) clearInterval(ihnLiveSupervisorTimer);
     ihnLiveLeaderTimer = ihnLiveSignalTimer = ihnLiveCapabilityTimer = ihnLiveSupervisorTimer = null;
     ihnLiveSignalBusy = false;
+    ihnLiveSignalQueued = false;
     ihnLiveBroadcastBusy = false;
     ihnLiveBroadcastQueued = false;
     if (!ihnLiveActiveApply) ihnLiveApplying = false;
@@ -1497,6 +1584,7 @@ function stopLiveCollaboration() {
     ihnLiveBroadcastRetryAttempt = 0;
     [...ihnLivePeers.keys()].forEach(peerId => ihnClosePeer(peerId, 'document closed', { retry: false }));
     ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveAppliedHashes.clear(); ihnLiveProcessedOffers.clear();
+    ihnLiveOffersInFlight.clear();
     ihnLiveFailedSignals.clear();
     ihnLiveStrokeSends.forEach(record => clearTimeout(record.timer));
     ihnLiveStrokeSends.clear(); ihnLiveStrokeSeen.clear();
