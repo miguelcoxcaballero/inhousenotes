@@ -216,6 +216,7 @@ globalThis.__liveTest = {
   updatePeers: liveCollabUpdatePeers,
   sendHealthPing: ihnSendHealthPing,
   checkNetworkRoute: ihnCheckNetworkRouteSignature,
+  handleNetworkRouteChange: ihnHandleNetworkRouteChange,
   trackMergeCurrentState: ihnTrackMergeCurrentState,
   shouldQueueMergeUpload: ihnShouldQueueMergeUpload,
   queue(options = {}) {
@@ -233,6 +234,10 @@ globalThis.__liveTest = {
   wake: ihnWakeLiveCollaboration,
   claimLeader: ihnClaimLiveLeader,
   pollSignals: ihnPollSignals,
+  publishRendezvous: ihnPublishRendezvous,
+  applyRendezvous: ihnApplyRendezvousSignal,
+  restoreCachedPeers: ihnRestoreCachedPeers,
+  rememberCachedPeer: ihnRememberCachedPeer,
   acceptOffer: ihnAcceptOffer,
   applyCandidates: ihnApplyCandidateSignal,
   queueLocalCandidate: ihnQueueLocalIceCandidate,
@@ -261,6 +266,9 @@ globalThis.__liveTest = {
   stop: stopLiveCollaboration,
   signalBusy() { return ihnLiveSignalBusy; },
   signalQueued() { return ihnLiveSignalQueued; },
+  rendezvousCommentId() { return ihnLiveRendezvousCommentId; },
+  rendezvousBusy() { return ihnLiveRendezvousBusy; },
+  known(id) { return ihnLiveKnownPeers.get(id); },
   broadcastBusy() { return ihnLiveBroadcastBusy; },
   retryAttempt() { return ihnLiveBroadcastRetryAttempt; },
   targets() { return [...ihnLiveBroadcastTargets]; },
@@ -578,7 +586,7 @@ test('a page delta with the confirmed base applies and advances to the advertise
   assert.equal(api.canonicalHash(), targetHash);
 });
 
-test('resuming gives an open peer a ping grace period before stale eviction', () => {
+test('resuming verifies an apparently open peer with a sub-second probe', () => {
   const { api } = createHarness();
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
@@ -593,6 +601,27 @@ test('resuming gives an open peer a ping grace period before stale eviction', ()
   assert.equal(api.getPeer('peer-remote'), peer);
   assert.ok(peer.resumeGraceUntil > Date.now());
   assert.equal(JSON.parse(channel.sent.at(-1)).t, 'ping');
+  assert.equal(JSON.parse(channel.sent.at(-1)).networkProbe, true);
+});
+
+test('a dead WebView route is replaced immediately after app resume', async () => {
+  const { api, runNextTimer } = createHarness();
+  const remoteId = 'peer-dead-after-resume';
+  api.addKnown(remoteId);
+  const channel = createChannel();
+  api.addPeer(remoteId, peerWithChannel(channel, {
+    protocolV2: true,
+    generation: api.generation(),
+    lastReceivedAt: Date.now() - 60_000,
+    lastPongAt: Date.now() - 60_000
+  }));
+
+  api.wake('app visible');
+  assert.equal(api.getPeer(remoteId)?.channel, channel);
+  await runNextTimer();
+
+  assert.equal(api.getPeer(remoteId), undefined, 'resume no longer waits for the old ten-second grace');
+  assert.equal(api.retry(remoteId).allowReverse, true);
 });
 
 test('a network change keeps a responsive route and immediately resends current state', async () => {
@@ -653,6 +682,190 @@ test('a confirmed Wi-Fi to cellular switch replaces the route without a probe de
 
   assert.equal(closed, true, 'a confirmed interface change does not retain the obsolete path');
   assert.equal(api.retry(remoteId).allowReverse, true);
+});
+
+test('a network change event probes the route even when Android reports the same signature', () => {
+  const { api, context } = createHarness();
+  context.navigator.connection = { type: 'wifi', effectiveType: '4g', saveData: false };
+  assert.equal(api.checkNetworkRoute(), false);
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, { protocolV2: true });
+  api.addPeer('peer-same-signature', peer);
+
+  assert.equal(api.handleNetworkRouteChange('network changed'), true);
+
+  const probe = channel.sent.map(value => JSON.parse(value)).find(message => message.networkProbe);
+  assert.ok(probe, 'the coarse Network Information value does not hide a real route switch');
+});
+
+test('an encrypted rendezvous discovers a peer before Drive presence arrives', async () => {
+  const keyBytes = new Uint8Array(32).fill(0x79);
+  const keyEncoded = bytesToBase64Url(keyBytes);
+  const remoteId = 'peer-rendezvous-first';
+  let rendezvousContent = '';
+  const { api } = createHarness({
+    driveFetch: async url => {
+      const requestUrl = String(url);
+      if (requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (requestUrl.includes('/comments?')) {
+        return {
+          json: async () => ({
+            comments: [{ id: 'rendezvous-comment', content: rendezvousContent, replies: [] }]
+          })
+        };
+      }
+      throw new Error(`Unexpected Drive request: ${requestUrl}`);
+    }
+  });
+  const now = Date.now();
+  rendezvousContent = await encryptTestSignal(keyBytes, {
+    v: 1,
+    type: 'rendezvous',
+    fileId: 'file-1',
+    from: remoteId,
+    to: '*',
+    epoch: 'remote-route-1',
+    announcedAt: now,
+    expiresAt: now + 24_000
+  });
+
+  assert.equal(api.claimLeader(), true);
+  await api.pollSignals();
+
+  assert.ok(api.known(remoteId), 'signalling itself is now a peer-discovery source');
+  assert.equal(api.retry(remoteId).allowReverse, true);
+  assert.ok(api.retry(remoteId).nextAttemptAt <= Date.now());
+});
+
+test('a new remote rendezvous epoch wakes a stale route without reopening the document', () => {
+  const { api } = createHarness();
+  const remoteId = 'peer-remote-route-epoch';
+  const firstAt = Date.now();
+  assert.equal(api.applyRendezvous({
+    v: 1,
+    type: 'rendezvous',
+    fileId: 'file-1',
+    from: remoteId,
+    to: '*',
+    epoch: 'route-a',
+    announcedAt: firstAt,
+    expiresAt: firstAt + 24_000
+  }), true);
+  const channel = createChannel();
+  api.addPeer(remoteId, peerWithChannel(channel, { protocolV2: true }));
+
+  assert.equal(api.applyRendezvous({
+    v: 1,
+    type: 'rendezvous',
+    fileId: 'file-1',
+    from: remoteId,
+    to: '*',
+    epoch: 'route-b',
+    announcedAt: firstAt + 1,
+    expiresAt: firstAt + 24_001
+  }), true);
+
+  const probe = channel.sent.map(value => JSON.parse(value)).find(message => message.networkProbe);
+  assert.ok(probe, 'the endpoint that missed its own network event is actively woken by the remote epoch');
+});
+
+test('a previously verified peer is attempted immediately on the next document open', () => {
+  const { api } = createHarness();
+  const remoteId = 'peer-warm-start';
+  api.rememberCachedPeer(remoteId);
+  assert.equal(api.claimLeader(), true);
+  api.restoreCachedPeers();
+
+  assert.ok(api.known(remoteId));
+  assert.equal(api.retry(remoteId).allowReverse, true);
+  assert.ok(api.retry(remoteId).nextAttemptAt <= Date.now());
+});
+
+test('rendezvous refreshes one Drive comment and rotates it only for a new route', async () => {
+  const keyEncoded = bytesToBase64Url(new Uint8Array(32).fill(0x7a));
+  let keyReads = 0;
+  let posts = 0;
+  let patches = 0;
+  let deletes = 0;
+  const { api } = createHarness({
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      const method = options.method || 'GET';
+      if (requestUrl.includes('fields=properties')) {
+        keyReads += 1;
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (method === 'POST' && requestUrl.includes('/comments?')) {
+        posts += 1;
+        return { json: async () => ({ id: `rendezvous-${posts}` }) };
+      }
+      if (method === 'PATCH' && requestUrl.includes('/comments/')) {
+        patches += 1;
+        return { json: async () => ({ id: 'rendezvous-1' }) };
+      }
+      if (method === 'DELETE') {
+        deletes += 1;
+        return { json: async () => ({}) };
+      }
+      throw new Error(`Unexpected Drive request: ${method} ${requestUrl}`);
+    }
+  });
+  assert.equal(api.claimLeader(), true);
+
+  assert.equal(await api.publishRendezvous({ force: true }), true);
+  assert.equal(await api.publishRendezvous({ force: true }), true);
+  assert.equal(api.rendezvousCommentId(), 'rendezvous-1');
+  assert.equal(keyReads, 1, 'the verified key stays local after its initial load');
+  assert.equal(posts, 1, 'ordinary refresh edits the existing beacon');
+  assert.equal(patches, 1);
+
+  assert.equal(await api.publishRendezvous({ force: true, rotate: true }), true);
+  assert.equal(api.rendezvousCommentId(), 'rendezvous-2');
+  assert.equal(posts, 2, 'a route epoch gets a fresh comment to bypass stale Drive caches');
+  assert.equal(deletes, 1, 'the previous route beacon is cleaned up');
+});
+
+test('an old rendezvous completion cannot clear the next document owner', async () => {
+  const keyEncoded = bytesToBase64Url(new Uint8Array(32).fill(0x7b));
+  let releaseFileOnePost;
+  const fileOnePostGate = new Promise(resolve => { releaseFileOnePost = resolve; });
+  let announceFileOnePost;
+  const fileOnePostStarted = new Promise(resolve => { announceFileOnePost = resolve; });
+  const { api, state } = createHarness({
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      const method = options.method || 'GET';
+      if (requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (method === 'POST' && requestUrl.includes('/files/file-1/comments?')) {
+        announceFileOnePost();
+        await fileOnePostGate;
+        return { json: async () => ({ id: 'old-document-rendezvous' }) };
+      }
+      if (method === 'POST' && requestUrl.includes('/files/file-2/comments?')) {
+        return { json: async () => ({ id: 'new-document-rendezvous' }) };
+      }
+      if (method === 'DELETE') return { json: async () => ({}) };
+      throw new Error(`Unexpected Drive request: ${method} ${requestUrl}`);
+    }
+  });
+  assert.equal(api.claimLeader(), true);
+  const oldPublish = api.publishRendezvous({ force: true });
+  await fileOnePostStarted;
+
+  api.stop();
+  state.driveFileId = 'file-2';
+  assert.equal(api.claimLeader(), true);
+  const newPublish = api.publishRendezvous({ force: true });
+  await newPublish;
+  releaseFileOnePost();
+  await oldPublish;
+
+  assert.equal(api.rendezvousCommentId(), 'new-document-rendezvous');
+  assert.equal(api.rendezvousBusy(), false);
 });
 
 test('a newly discovered peer may offer immediately regardless of lexical peer order', () => {
@@ -1545,6 +1758,27 @@ test('a losing initiator adopts the final Drive key on its second offer', async 
     ),
     'the retry is no longer encrypted with the losing cached key'
   );
+});
+
+test('a verified existing signalling key is reused without a Drive GET per message', async () => {
+  const keyBytes = new Uint8Array(32).fill(0x6a);
+  const keyEncoded = bytesToBase64Url(keyBytes);
+  let getCount = 0;
+  const { api } = createHarness({
+    driveFetch: async () => {
+      getCount += 1;
+      return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+    }
+  });
+
+  const first = { v: 1, type: 'offer', fileId: 'file-1', sessionId: 'cached-key-1' };
+  const second = { v: 1, type: 'candidates', fileId: 'file-1', sessionId: 'cached-key-1', candidates: [] };
+  const firstSignal = await api.encodeSignal(first);
+  const secondSignal = await api.encodeSignal(second);
+
+  assert.equal(getCount, 1, 'only the initial key load touches Drive');
+  assert.deepEqual(await decryptTestSignal(firstSignal, keyBytes), first);
+  assert.deepEqual(await decryptTestSignal(secondSignal, keyBytes), second);
 });
 
 test('parallel local key requests share one compare-after-write creation', async () => {
