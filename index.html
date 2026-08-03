@@ -875,55 +875,45 @@
         }
 
         .mode-toggle-status .save-indicator::after {
-            display: none;
-        }
-
-        .mode-toggle-status .save-state-glyph {
-            width: 18px;
-            height: 18px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
+            content: "";
+            width: 9px;
+            height: 9px;
             border-radius: 50%;
             background: var(--accent-green);
-            color: #fff;
-            font-size: 0.7rem;
-            font-weight: 800;
-            line-height: 1;
             box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
-            transition: background-color 0.25s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            transition: background-color 0.25s ease, transform 0.2s ease;
         }
 
-        .mode-toggle-status:hover .save-state-glyph,
-        .mode-toggle-status:focus-within .save-state-glyph {
+        .mode-toggle-status:hover .save-indicator::after,
+        .mode-toggle-status:focus-within .save-indicator::after {
             transform: scale(1.16);
         }
 
-        .mode-toggle-status .save-indicator.paused .save-state-glyph {
+        .mode-toggle-status .save-indicator.paused::after {
             background: #aaa;
         }
 
-        .mode-toggle-status .save-indicator.building .save-state-glyph {
+        .mode-toggle-status .save-indicator.building::after {
             background: #e6c619;
         }
 
-        .mode-toggle-status .save-indicator.uploading .save-state-glyph {
+        .mode-toggle-status .save-indicator.uploading::after {
             background: var(--accent-orange);
         }
 
-        .mode-toggle-status .save-indicator.saving .save-state-glyph {
+        .mode-toggle-status .save-indicator.saving::after {
             background: #e6c619;
         }
 
-        .mode-toggle-status .save-indicator.syncing .save-state-glyph {
+        .mode-toggle-status .save-indicator.syncing::after {
             background: #4a90d9;
         }
 
-        .mode-toggle-status .save-indicator.saved .save-state-glyph {
+        .mode-toggle-status .save-indicator.saved::after {
             background: var(--accent-green);
         }
 
-        .mode-toggle-status .save-indicator.error .save-state-glyph {
+        .mode-toggle-status .save-indicator.error::after {
             background: var(--accent-red);
         }
 
@@ -7777,7 +7767,6 @@
                             aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
                             <span class="mode-toggle-status">
                                 <span class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved">
-                                    <span class="save-state-glyph" aria-hidden="true">&#10003;</span>
                                 </span>
                                 <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
                             </span>
@@ -8605,8 +8594,8 @@
             </div>
         </div>
     </div>
-    <script src="collaboration-core-v5.js?v=5.5.0"></script>
-    <script src="live-collaboration-v5.js?v=5.5.0"></script>
+    <script src="collaboration-core-v5.js?v=5.5.1"></script>
+    <script src="live-collaboration-v5.js?v=5.5.1"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8674,7 +8663,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.5.0';
+        const APP_VERSION = '5.5.1';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -35138,20 +35127,9 @@
                 syncing: 'Receiving changes',
                 error: 'Save needs attention'
             };
-            const glyphs = {
-                saved: '\u2713',
-                paused: '\u2026',
-                building: '\u2026',
-                saving: '\u2026',
-                uploading: '\u2191',
-                syncing: '\u21c4',
-                error: '!'
-            };
             for (const stateName of SAVE_STATES) indicator.classList.remove(stateName);
             indicator.classList.add(semanticState);
             indicator.dataset.liveState = overview.connectionState || 'solo';
-            const glyph = indicator.querySelector('.save-state-glyph');
-            if (glyph) glyph.textContent = glyphs[semanticState] || '\u2022';
             const connectionText = overview.openPeerCount > 0
                 ? `Live with ${overview.openPeerCount} other device${overview.openPeerCount === 1 ? '' : 's'}`
                 : (overview.connectionState === 'reconnecting'

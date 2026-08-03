@@ -6,12 +6,12 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.5.0.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.5.1.md', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.5\.0';/);
+assert.match(html, /const APP_VERSION = '5\.5\.1';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.5\.0/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.5\.0/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.5\.1/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.5\.1/);
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
 assert.match(html, /function normalizeTimelineHistory\(/);
@@ -159,7 +159,8 @@ assert.match(html, /This device\$\{overview\.isMain \? ' · Main device'/);
 assert.match(html, /Google Drive<\/div>/);
 assert.match(html, /connection\?\.transport/);
 assert.doesNotMatch(html, />Admin mode</);
-assert.match(html, /class="save-state-glyph"/);
+assert.doesNotMatch(html, /save-state-glyph/);
+assert.match(html, /\.mode-toggle-status \.save-indicator::after \{\s*content: "";\s*width: 9px;\s*height: 9px;/);
 assert.match(html, /function getSaveIndicatorSemanticState\(/);
 assert.match(html, /function refreshSaveIndicatorState\(/);
 assert.match(html, /Live connection<\/div>/);
@@ -567,11 +568,11 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.5.0');
+assert.equal(update.publishedAppVersion, '5.5.1');
 assert.equal(update.version, '1.0.7', 'Android wrapper version is intentionally unchanged');
-assert.match(update.releaseNotes, /v5\.5\.0/);
-assert.match(notes, /either endpoint/i);
-assert.match(notes, /queued and drained immediately/i);
-assert.match(notes, /version mismatch/i);
+assert.match(update.releaseNotes, /v5\.5\.1/);
+assert.match(notes, /plain 9 px coloured dot/i);
+assert.match(notes, /symbols introduced in v5\.5\.0 have been removed/i);
+assert.match(notes, /reliability fixes from v5\.5\.0 remain unchanged/i);
 
-console.log('v5.5.0 smoke checks passed.');
+console.log('v5.5.1 smoke checks passed.');
