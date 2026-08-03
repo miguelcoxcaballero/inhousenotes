@@ -42,6 +42,10 @@ const IHN_LIVE_SNAPSHOT_CACHE_LIMIT = 3;
 const IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS = 16_000_000;
 const IHN_LIVE_STROKE_FRAME_MS = 18;
 const IHN_LIVE_STROKE_MAX_POINTS = 700;
+const IHN_LIVE_ERASE_FRAME_MS = 18;
+const IHN_LIVE_ERASE_MAX_IDS = 500;
+const IHN_LIVE_ERASE_MAX_STROKES = 200;
+const IHN_LIVE_ERASE_MAX_POINTS = 1200;
 const IHN_LIVE_STUN = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -113,6 +117,8 @@ const ihnLiveFanOutTasks = new Set();
 const ihnLiveSnapshotCache = new Map();
 const ihnLiveStrokeSends = new Map();
 const ihnLiveStrokeSeen = new Map();
+const ihnLiveEraseSends = new Map();
+const ihnLiveEraseSeen = new Map();
 
 function ihnCreatePeerConnection() {
     return new RTCPeerConnection({
@@ -183,6 +189,10 @@ function ihnEnsureTabChannel() {
     ihnLiveBroadcastChannel.onmessage = event => {
         if (event.data?.type === 'live-stroke') {
             ihnHandleRealtimeStrokePacket(event.data, 'tab');
+            return;
+        }
+        if (event.data?.type === 'live-erase') {
+            ihnHandleRealtimeErasePacket(event.data, 'tab');
             return;
         }
         ihnHandleLiveEnvelope(event.data, 'tab').catch(error => console.warn('Same-device live update failed:', error));
@@ -1289,6 +1299,148 @@ function publishLiveStrokePreview(pageId, stroke, options = {}) {
     return true;
 }
 
+function ihnSanitizeLiveEraseId(value) {
+    const id = String(value || '').trim();
+    return id && id.length <= 240 ? id : '';
+}
+
+function ihnSanitizeLiveEraseStroke(stroke) {
+    const id = ihnSanitizeLiveEraseId(stroke?.id);
+    if (!id || !Array.isArray(stroke?.points)) return null;
+    const sourcePoints = stroke.points;
+    let selectedPoints = sourcePoints;
+    if (sourcePoints.length > IHN_LIVE_ERASE_MAX_POINTS) {
+        const stride = (sourcePoints.length - 1) / (IHN_LIVE_ERASE_MAX_POINTS - 1);
+        selectedPoints = Array.from({ length: IHN_LIVE_ERASE_MAX_POINTS }, (_, index) => (
+            sourcePoints[Math.min(sourcePoints.length - 1, Math.round(index * stride))]
+        ));
+    }
+    return {
+        id,
+        tool: String(stroke.tool || 'pen'),
+        color: String(stroke.color || '#111111'),
+        width: Math.max(0.1, Number(stroke.width) || 1),
+        points: ihnSanitizeLiveStrokePoints(selectedPoints)
+    };
+}
+
+function ihnFlushLiveErasePreview(gestureId, options = {}) {
+    const record = ihnLiveEraseSends.get(String(gestureId || ''));
+    if (!record) return false;
+    clearTimeout(record.timer);
+    record.timer = null;
+    const pendingRemoved = [...record.pendingRemoved];
+    const pendingAdded = [...record.pendingAdded.values()];
+    record.pendingRemoved.clear();
+    record.pendingAdded.clear();
+    const fileId = state?.driveFileId || '';
+    if (!fileId || !record.pageId || !record.gestureId) return false;
+    let sent = false;
+    do {
+        const removedStrokeIds = pendingRemoved.splice(0, IHN_LIVE_ERASE_MAX_IDS);
+        const addedStrokes = pendingAdded.splice(0, IHN_LIVE_ERASE_MAX_STROKES);
+        const isLast = pendingRemoved.length === 0 && pendingAdded.length === 0;
+        const packet = {
+            v: 1,
+            type: 'live-erase',
+            fileId,
+            actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`,
+            gestureId: record.gestureId,
+            pageId: record.pageId,
+            sequence: ++record.sequence,
+            removedStrokeIds,
+            addedStrokes,
+            final: !!options.final && isLast,
+            sentAt: Date.now()
+        };
+        sent = ihnSendRealtimeStrokePacket(packet) || sent;
+    } while (pendingRemoved.length > 0 || pendingAdded.length > 0);
+    if (options.final) ihnLiveEraseSends.delete(record.gestureId);
+    return sent;
+}
+
+function publishLiveErasePreview(pageId, gestureId, changeSet = {}, options = {}) {
+    if (!state?.driveFileId || !ihnCanEditLiveDocument() || !pageId || !gestureId) return false;
+    startLiveCollaboration();
+    const id = String(gestureId);
+    let record = ihnLiveEraseSends.get(id);
+    if (!record) {
+        record = {
+            gestureId: id,
+            pageId: String(pageId),
+            sequence: 0,
+            pendingRemoved: new Set(),
+            pendingAdded: new Map(),
+            timer: null
+        };
+        ihnLiveEraseSends.set(id, record);
+    }
+    record.pageId = String(pageId);
+    (Array.isArray(changeSet.removedStrokeIds) ? changeSet.removedStrokeIds : []).forEach(value => {
+        const strokeId = ihnSanitizeLiveEraseId(value);
+        if (!strokeId) return;
+        record.pendingRemoved.add(strokeId);
+        record.pendingAdded.delete(strokeId);
+    });
+    (Array.isArray(changeSet.addedStrokes) ? changeSet.addedStrokes : []).forEach(value => {
+        const stroke = ihnSanitizeLiveEraseStroke(value);
+        if (!stroke || record.pendingRemoved.has(stroke.id)) return;
+        record.pendingAdded.set(stroke.id, stroke);
+    });
+    if (options.final) return ihnFlushLiveErasePreview(id, { final: true });
+    if (!record.timer) {
+        record.timer = setTimeout(() => ihnFlushLiveErasePreview(id), IHN_LIVE_ERASE_FRAME_MS);
+    }
+    return true;
+}
+
+function ihnHandleRealtimeErasePacket(packet, transport = '', sourcePeerId = '') {
+    if (!packet
+        || packet.v !== 1
+        || packet.type !== 'live-erase'
+        || packet.fileId !== state?.driveFileId
+        || !packet.actorId
+        || !packet.gestureId
+        || !packet.pageId
+        || !Array.isArray(packet.removedStrokeIds)
+        || !Array.isArray(packet.addedStrokes)) return false;
+    const ownActorId = `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`;
+    if (packet.actorId === ownActorId) return true;
+    const sequence = Number(packet.sequence) || 0;
+    const key = `${packet.actorId}:${packet.gestureId}`;
+    if (sequence <= Number(ihnLiveEraseSeen.get(key) || 0)) return true;
+    const sanitizedPacket = {
+        ...packet,
+        sequence,
+        removedStrokeIds: packet.removedStrokeIds
+            .slice(0, IHN_LIVE_ERASE_MAX_IDS)
+            .map(ihnSanitizeLiveEraseId)
+            .filter(Boolean),
+        addedStrokes: packet.addedStrokes
+            .slice(0, IHN_LIVE_ERASE_MAX_STROKES)
+            .map(ihnSanitizeLiveEraseStroke)
+            .filter(Boolean)
+    };
+    ihnLiveEraseSeen.set(key, sequence);
+    setTimeout(() => {
+        if (Number(ihnLiveEraseSeen.get(key) || 0) === sequence) ihnLiveEraseSeen.delete(key);
+    }, 30_000);
+    if (typeof applyRemoteLiveErasePreview === 'function') {
+        applyRemoteLiveErasePreview(sanitizedPacket);
+    }
+    if (transport === 'webrtc') {
+        ihnEnsureTabChannel();
+        try { ihnLiveBroadcastChannel?.postMessage(sanitizedPacket); } catch (error) {}
+    }
+    ihnLivePeers.forEach((peer, peerId) => {
+        if (transport === 'webrtc' && peerId === sourcePeerId) return;
+        const originPeerId = String(packet.actorId).split(':')[0];
+        if (peerId === originPeerId) return;
+        ihnSendControl(peer, sanitizedPacket);
+    });
+    return true;
+}
+
 function ihnHandleRealtimeStrokePacket(packet, transport = '', sourcePeerId = '') {
     if (!packet
         || packet.v !== 1
@@ -2282,7 +2434,10 @@ function stopLiveCollaboration() {
     ihnLiveFailedSignals.clear();
     ihnLiveStrokeSends.forEach(record => clearTimeout(record.timer));
     ihnLiveStrokeSends.clear(); ihnLiveStrokeSeen.clear();
+    ihnLiveEraseSends.forEach(record => clearTimeout(record.timer));
+    ihnLiveEraseSends.clear(); ihnLiveEraseSeen.clear();
     if (typeof clearRemoteLiveStrokePreviews === 'function') clearRemoteLiveStrokePreviews();
+    if (typeof clearRemoteLiveErasePreviews === 'function') clearRemoteLiveErasePreviews();
     ihnLiveFailedSignalRefreshAt = 0; ihnLiveFailedSignalRefreshKey = '';
     ihnLiveKnownPeers.clear(); ihnLiveRetryState.clear();
     ihnLiveSnapshotCache.clear();
@@ -2673,6 +2828,10 @@ async function ihnHandleWireMessage(
         ihnHandleRealtimeStrokePacket(message, 'webrtc', peerId);
         return;
     }
+    if (message?.type === 'live-erase') {
+        ihnHandleRealtimeErasePacket(message, 'webrtc', peerId);
+        return;
+    }
     const key = `${peerId}:${peer.sessionId || ''}:${message?.id || ''}`;
     if (message?.t === 'start') {
         const total = Number(message.total), chars = Number(message.chars);
@@ -2961,7 +3120,12 @@ async function ihnApplyLiveEnvelope(
         }
     }
     const sequence = Number(envelope.sequence) || 0, previous = ihnLiveSeen.get(envelope.actorId) || 0;
-    if (sequence <= previous) return true;
+    if (sequence <= previous) {
+        if (typeof clearRemoteLiveErasePreviews === 'function') {
+            clearRemoteLiveErasePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
+        }
+        return true;
+    }
     const now = Date.now();
     ihnLiveAppliedHashes.forEach((appliedAt, hash) => {
         if (now - Number(appliedAt || 0) > 120_000) ihnLiveAppliedHashes.delete(hash);
@@ -2976,6 +3140,9 @@ async function ihnApplyLiveEnvelope(
         );
         if (currentHash === envelope.contentHash) {
             ihnLiveSeen.set(envelope.actorId, sequence);
+            if (typeof clearRemoteLiveErasePreviews === 'function') {
+                clearRemoteLiveErasePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
+            }
             ihnScheduleLiveFanOut(envelope, transport, peerId, operation);
             return true;
         }
@@ -3018,6 +3185,9 @@ async function ihnApplyLiveEnvelope(
         if (result?.changed) showStatus(transport === 'tab' ? 'Live changes from another tab' : 'Live changes from collaborator', { savedAt: Number(envelope.sentAt) || Date.now() });
         if (typeof clearRemoteLiveStrokePreviews === 'function') {
             clearRemoteLiveStrokePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
+        }
+        if (typeof clearRemoteLiveErasePreviews === 'function') {
+            clearRemoteLiveErasePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
         }
         const mergedHash = ihnCanonicalDocumentHash(
             state.pages.map(page => sanitizePageForStorage(page)),

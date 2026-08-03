@@ -8733,8 +8733,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.9.4"></script>
-    <script src="live-collaboration-v5.js?v=5.9.4"></script>
+    <script src="collaboration-core-v5.js?v=5.9.5"></script>
+    <script src="live-collaboration-v5.js?v=5.9.5"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8802,7 +8802,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.9.4';
+        const APP_VERSION = '5.9.5';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -12464,6 +12464,7 @@
         }
 
         const remoteLiveStrokePreviews = new Map();
+        const remoteLiveErasePreviews = new Map();
         const REMOTE_LIVE_STROKE_TTL_MS = 15000;
 
         function redrawRemoteLiveStrokePreviews(pageIndex) {
@@ -12552,6 +12553,99 @@
             });
         }
 
+        function getRemoteLiveErasePreviewStrokes(page) {
+            const sourceStrokes = Array.isArray(page?.strokes) ? page.strokes : [];
+            if (!page?.pageId || remoteLiveErasePreviews.size === 0) return sourceStrokes;
+            const records = [];
+            remoteLiveErasePreviews.forEach(record => {
+                if (record.pageId === page.pageId) records.push(record);
+            });
+            if (records.length === 0) return sourceStrokes;
+            records.sort((a, b) => Number(a.createdAt) - Number(b.createdAt));
+            let visibleStrokes = sourceStrokes.slice();
+            records.forEach(record => {
+                record.operations.forEach(operation => {
+                    const removedIds = new Set(operation.removedStrokeIds);
+                    const addedIds = new Set(operation.addedStrokes.map(stroke => String(stroke?.id || '')).filter(Boolean));
+                    let insertAt = visibleStrokes.length;
+                    visibleStrokes.forEach((stroke, index) => {
+                        const strokeId = String(stroke?.id || '');
+                        if ((removedIds.has(strokeId) || addedIds.has(strokeId)) && index < insertAt) {
+                            insertAt = index;
+                        }
+                    });
+                    visibleStrokes = visibleStrokes.filter(stroke => {
+                        const strokeId = String(stroke?.id || '');
+                        return !removedIds.has(strokeId) && !addedIds.has(strokeId);
+                    });
+                    visibleStrokes.splice(
+                        Math.min(insertAt, visibleStrokes.length),
+                        0,
+                        ...operation.addedStrokes
+                    );
+                });
+            });
+            return visibleStrokes;
+        }
+
+        function applyRemoteLiveErasePreview(packet) {
+            if (!packet?.actorId || !packet?.gestureId || !packet?.pageId) return false;
+            const key = `${packet.actorId}:${packet.gestureId}`;
+            const previous = remoteLiveErasePreviews.get(key);
+            if (Number(packet.sequence) <= Number(previous?.sequence || 0)) return true;
+            const affectedPageIds = new Set([String(packet.pageId)]);
+            if (previous?.pageId) affectedPageIds.add(previous.pageId);
+            const record = previous || {
+                actorId: String(packet.actorId),
+                gestureId: String(packet.gestureId),
+                pageId: String(packet.pageId),
+                sequence: 0,
+                operations: [],
+                createdAt: Date.now(),
+                sentAt: 0,
+                updatedAt: 0
+            };
+            record.pageId = String(packet.pageId);
+            record.sequence = Number(packet.sequence) || 0;
+            record.sentAt = Number(packet.sentAt) || 0;
+            const removedStrokeIds = (Array.isArray(packet.removedStrokeIds) ? packet.removedStrokeIds : [])
+                .map(value => String(value || ''))
+                .filter(Boolean);
+            const removedIds = new Set(removedStrokeIds);
+            const addedStrokes = (Array.isArray(packet.addedStrokes) ? packet.addedStrokes : [])
+                .filter(stroke => stroke?.id && !removedIds.has(String(stroke.id)));
+            record.operations.push({ removedStrokeIds, addedStrokes });
+            record.updatedAt = Date.now();
+            remoteLiveErasePreviews.set(key, record);
+            const expiresForUpdate = record.updatedAt;
+            setTimeout(() => {
+                const current = remoteLiveErasePreviews.get(key);
+                if (!current || current.updatedAt !== expiresForUpdate) return;
+                remoteLiveErasePreviews.delete(key);
+                const pageIndex = state.pages.findIndex(page => page?.pageId === current.pageId);
+                if (pageIndex >= 0) redrawPage(pageIndex);
+            }, REMOTE_LIVE_STROKE_TTL_MS);
+            affectedPageIds.forEach(pageId => {
+                const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
+                if (pageIndex >= 0) redrawPage(pageIndex);
+            });
+            return true;
+        }
+
+        function clearRemoteLiveErasePreviews(actorId = '', throughSentAt = Infinity) {
+            const affectedPageIds = new Set();
+            remoteLiveErasePreviews.forEach((record, key) => {
+                if (actorId && record.actorId !== actorId) return;
+                if (Number(record.sentAt) > Number(throughSentAt)) return;
+                affectedPageIds.add(record.pageId);
+                remoteLiveErasePreviews.delete(key);
+            });
+            affectedPageIds.forEach(pageId => {
+                const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
+                if (pageIndex >= 0) redrawPage(pageIndex);
+            });
+        }
+
         // Setup canvas pointer events with improved drawing
         // ── § 4.11  Canvas pointer events & live stroke drawing ──────────────
         // Wires up pen/touch/mouse events on each page canvas: start stroke,
@@ -12565,6 +12659,9 @@
             // reorders state.pages.
             let currentStrokePageId = null;
             let erasedStrokes = []; // For eraser tools to track what was erased
+            let currentErasePageId = null;
+            let currentEraseGestureId = null;
+            let liveErasePublished = false;
             let areaEraseBefore = null;
             let areaEraseChanged = false;
             let lastEraserPoint = null;
@@ -12628,6 +12725,7 @@
             const applyEraserPositions = (positions) => {
                 if (!positions || positions.length === 0) return false;
                 let changed = false;
+                const changeSet = { removedStrokeIds: [], addedStrokes: [] };
                 for (const pos of positions) {
                     if (state.currentTool === 'eraser-stroke') {
                         const beforeCount = erasedStrokes.length;
@@ -12637,7 +12735,7 @@
                             pos.y,
                             erasedStrokes,
                             state.eraserWidth / 2,
-                            { deferRedraw: true }
+                            { deferRedraw: true, changeSet }
                         );
                         changed = changed || erasedStrokes.length !== beforeCount;
                     } else {
@@ -12646,12 +12744,18 @@
                             pos.x,
                             pos.y,
                             state.eraserWidth / 2,
-                            { deferRedraw: true }
+                            { deferRedraw: true, changeSet }
                         ) || changed;
                     }
                 }
                 if (changed) {
                     scheduleEraserRedraw(pageIndex);
+                    if (typeof publishLiveErasePreview === 'function'
+                        && currentErasePageId
+                        && currentEraseGestureId) {
+                        publishLiveErasePreview(currentErasePageId, currentEraseGestureId, changeSet);
+                        liveErasePublished = true;
+                    }
                 }
                 const lastPos = positions[positions.length - 1];
                 if (lastPos) {
@@ -12704,13 +12808,28 @@
                 notePenActivity();
 
                 if (state.currentTool === 'eraser-stroke') {
+                    currentErasePageId = state.pages[pageIndex]?.pageId || null;
+                    currentEraseGestureId = `erase-${generateStrokeId()}`;
+                    liveErasePublished = false;
+                    const changeSet = { removedStrokeIds: [], addedStrokes: [] };
                     lastEraserPoint = pos;
-                    eraseStrokeAtPoint(pageIndex, pos.x, pos.y, erasedStrokes, state.eraserWidth / 2, { deferRedraw: true });
+                    eraseStrokeAtPoint(pageIndex, pos.x, pos.y, erasedStrokes, state.eraserWidth / 2, {
+                        deferRedraw: true,
+                        changeSet
+                    });
                     if (erasedStrokes.length > 0) {
                         scheduleEraserRedraw(pageIndex);
+                        if (typeof publishLiveErasePreview === 'function' && currentErasePageId) {
+                            publishLiveErasePreview(currentErasePageId, currentEraseGestureId, changeSet);
+                            liveErasePublished = true;
+                        }
                     }
                     drawEraserPreview(pageIndex, pos);
                 } else if (state.currentTool === 'eraser-area') {
+                    currentErasePageId = state.pages[pageIndex]?.pageId || null;
+                    currentEraseGestureId = `erase-${generateStrokeId()}`;
+                    liveErasePublished = false;
+                    const changeSet = { removedStrokeIds: [], addedStrokes: [] };
                     areaEraseBefore = cloneStrokesArray(state.pages[pageIndex].strokes);
                     lastEraserPoint = pos;
                     areaEraseChanged = eraseAreaAtPoint(
@@ -12718,10 +12837,14 @@
                         pos.x,
                         pos.y,
                         state.eraserWidth / 2,
-                        { deferRedraw: true }
+                        { deferRedraw: true, changeSet }
                     ) || areaEraseChanged;
                     if (areaEraseChanged) {
                         scheduleEraserRedraw(pageIndex);
+                        if (typeof publishLiveErasePreview === 'function' && currentErasePageId) {
+                            publishLiveErasePreview(currentErasePageId, currentEraseGestureId, changeSet);
+                            liveErasePublished = true;
+                        }
                     }
                     drawEraserPreview(pageIndex, pos);
                 } else {
@@ -12812,6 +12935,9 @@
                     currentStrokePageId = null;
                     drawGeometry = null;
                     erasedStrokes = [];
+                    currentErasePageId = null;
+                    currentEraseGestureId = null;
+                    liveErasePublished = false;
                     areaEraseBefore = null;
                     areaEraseChanged = false;
                     return;
@@ -12852,6 +12978,9 @@
                         });
                         scheduleSave(false, pageIndex);
                     }
+                    if (liveErasePublished && typeof publishLiveErasePreview === 'function') {
+                        publishLiveErasePreview(currentErasePageId, currentEraseGestureId, {}, { final: true });
+                    }
                     clearEraserPreview(pageIndex);
                 } else if (state.currentTool === 'eraser-area') {
                     if (areaEraseChanged && areaEraseBefore) {
@@ -12871,6 +13000,9 @@
                             after
                         });
                         scheduleSave(false, pageIndex);
+                    }
+                    if (liveErasePublished && typeof publishLiveErasePreview === 'function') {
+                        publishLiveErasePreview(currentErasePageId, currentEraseGestureId, {}, { final: true });
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
@@ -12953,6 +13085,9 @@
 	                currentStrokePageId = null;
                     drawGeometry = null;
 	                erasedStrokes = [];
+	                currentErasePageId = null;
+	                currentEraseGestureId = null;
+	                liveErasePublished = false;
 	                areaEraseBefore = null;
 	                areaEraseChanged = false;
                     lastEraserPoint = null;
@@ -19751,7 +19886,13 @@
                     newStrokes.push(stroke);
                 } else {
                     changed = true;
-                    segments.forEach(seg => newStrokes.push(seg));
+                    if (options.changeSet && stroke.id) {
+                        options.changeSet.removedStrokeIds.push(stroke.id);
+                    }
+                    segments.forEach(seg => {
+                        newStrokes.push(seg);
+                        if (options.changeSet) options.changeSet.addedStrokes.push(seg);
+                    });
                 }
             }
 
@@ -19777,6 +19918,9 @@
                 if (!strokeHitsPoint(stroke, x, y, hitRadius)) continue;
                 const removed = page.strokes.splice(i, 1)[0];
                 erasedList.push({ index: i, stroke: cloneStroke(removed) });
+                if (options.changeSet && removed?.id) {
+                    options.changeSet.removedStrokeIds.push(removed.id);
+                }
                 changed = true;
             }
             if (changed) {
@@ -20179,7 +20323,7 @@
 
             drawImagesOnContext(ctx, page, pageIndex, redrawPage);
 
-            for (const stroke of page.strokes) {
+            for (const stroke of getRemoteLiveErasePreviewStrokes(page)) {
                 const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
                 if (!stroke.points || stroke.points.length < minPoints) continue;
                 if (stroke.tool === 'eraser-stroke') continue;

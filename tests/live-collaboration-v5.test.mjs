@@ -93,6 +93,7 @@ function createHarness(overrides = {}) {
   const pendingTimers = new Map();
   const broadcastChannels = [];
   const receivedStrokePreviews = [];
+  const receivedErasePreviews = [];
   class FakeBroadcastChannel {
     constructor(name) {
       this.name = name;
@@ -202,6 +203,8 @@ function createHarness(overrides = {}) {
     updateDocTitle() {},
     applyRemoteLiveStrokePreview(packet) { receivedStrokePreviews.push(packet); },
     clearRemoteLiveStrokePreviews() {},
+    applyRemoteLiveErasePreview(packet) { receivedErasePreviews.push(packet); },
+    clearRemoteLiveErasePreviews() {},
     setReadOnly: false,
     ...overrides
   });
@@ -265,6 +268,8 @@ globalThis.__liveTest = {
   flushFanOut: ihnFlushLiveFanOutTasks,
   publishStroke: publishLiveStrokePreview,
   receiveStroke: ihnHandleRealtimeStrokePacket,
+  publishErase: publishLiveErasePreview,
+  receiveErase: ihnHandleRealtimeErasePacket,
   stop: stopLiveCollaboration,
   signalBusy() { return ihnLiveSignalBusy; },
   signalQueued() { return ihnLiveSignalQueued; },
@@ -304,6 +309,7 @@ globalThis.__liveTest = {
     pendingTimers,
     broadcastChannels,
     receivedStrokePreviews,
+    receivedErasePreviews,
     runNextTimer,
     advanceDocumentSession() { documentSessionId += 1; }
   };
@@ -441,6 +447,73 @@ test('live stroke packets render once and relay without echoing to their source 
   assert.equal(harness.api.receiveStroke(packet, 'webrtc', 'peer-source'), true);
   assert.equal(harness.receivedStrokePreviews.length, 1, 'duplicate sequence is ignored');
   assert.equal(relayChannel.sent.length, 1, 'duplicate sequence is not relayed again');
+});
+
+test('an active eraser streams each removal frame and flushes the last change immediately', async () => {
+  const harness = createHarness();
+  const channel = createChannel();
+  harness.api.addPeer('peer-remote', peerWithChannel(channel));
+  const liveErasePackets = () => channel.sent
+    .map(value => JSON.parse(value))
+    .filter(message => message.type === 'live-erase');
+  const firstSegment = {
+    id: 'segment-1',
+    tool: 'pen',
+    color: '#112233',
+    width: 2,
+    points: [{ x: 1, y: 1, p: 0.5 }, { x: 4, y: 4, p: 0.5 }]
+  };
+
+  assert.equal(harness.api.publishErase('p1', 'erase-gesture-1', {
+    removedStrokeIds: ['original-stroke'],
+    addedStrokes: [firstSegment]
+  }), true);
+  assert.equal(liveErasePackets().length, 0, 'erase changes share the drawing frame cadence');
+  await harness.runNextTimer();
+  const first = liveErasePackets().at(-1);
+  assert.deepEqual(first.removedStrokeIds, ['original-stroke']);
+  assert.deepEqual(first.addedStrokes.map(stroke => stroke.id), ['segment-1']);
+  assert.equal(first.final, false);
+
+  assert.equal(harness.api.publishErase('p1', 'erase-gesture-1', {
+    removedStrokeIds: ['segment-1'],
+    addedStrokes: [{ ...firstSegment, id: 'segment-2' }]
+  }, { final: true }), true);
+  const finalPacket = liveErasePackets().at(-1);
+  assert.deepEqual(finalPacket.removedStrokeIds, ['segment-1']);
+  assert.deepEqual(finalPacket.addedStrokes.map(stroke => stroke.id), ['segment-2']);
+  assert.equal(finalPacket.final, true);
+  assert.ok(finalPacket.sequence > first.sequence);
+});
+
+test('live erase packets render once and relay without echoing to their source peer', () => {
+  const harness = createHarness();
+  const sourceChannel = createChannel();
+  const relayChannel = createChannel();
+  harness.api.addPeer('peer-source', peerWithChannel(sourceChannel));
+  harness.api.addPeer('peer-relay', peerWithChannel(relayChannel));
+  const packet = {
+    v: 1,
+    type: 'live-erase',
+    fileId: 'file-1',
+    actorId: 'peer-source:remote-tab',
+    gestureId: 'remote-erase',
+    pageId: 'p1',
+    sequence: 1,
+    removedStrokeIds: ['local-stroke'],
+    addedStrokes: [],
+    final: false,
+    sentAt: Date.now()
+  };
+
+  assert.equal(harness.api.receiveErase(packet, 'webrtc', 'peer-source'), true);
+  assert.equal(harness.receivedErasePreviews.length, 1);
+  assert.equal(sourceChannel.sent.length, 0, 'the source does not receive its own erase back');
+  assert.equal(JSON.parse(relayChannel.sent.at(-1)).gestureId, 'remote-erase');
+
+  assert.equal(harness.api.receiveErase(packet, 'webrtc', 'peer-source'), true);
+  assert.equal(harness.receivedErasePreviews.length, 1, 'duplicate erase sequence is ignored');
+  assert.equal(relayChannel.sent.length, 1, 'duplicate erase sequence is not relayed again');
 });
 
 test('live snapshots hold and always release the page-structure lock', async () => {
