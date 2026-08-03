@@ -6,16 +6,16 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.2.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.3.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.2';/);
+assert.match(html, /const APP_VERSION = '5\.9\.3';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.2/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.2/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.3/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.3/);
 assert.ok(
   html.indexOf('jspdf.umd.min.js') > html.indexOf('</style>'),
   'PDF libraries must not block the first CSS/body paint'
@@ -161,6 +161,14 @@ assert.match(live, /snapshot-nack/);
 assert.match(live, /IHN_LIVE_SNAPSHOT_CACHE_LIMIT/);
 assert.match(live, /IHN_LIVE_RESUME_GRACE_MS/);
 assert.match(live, /iceCandidatePoolSize: 4/);
+assert.match(live, /IHN_LIVE_RENDEZVOUS_TTL/);
+assert.match(live, /function ihnPublishRendezvous\(/);
+assert.match(live, /function ihnApplyRendezvousSignal\(/);
+assert.match(live, /function ihnRestoreCachedPeers\(/);
+assert.match(live, /remote network rendezvous/);
+assert.match(live, /const mustConfirmCandidate = hasCachedKey && ihnLiveCryptoKeyNeedsConfirmation/);
+assert.match(live, /Android often fires a real Wi-Fi\/AP switch/);
+assert.match(live, /ihnProbePeerForFastRecovery\(peerId, peer, reason\)/);
 assert.match(live, /async function flushLiveCollaborationBeforeExit\(/);
 assert.match(live, /function publishLiveStrokePreview\(/);
 assert.match(live, /function ihnHandleRealtimeStrokePacket\(/);
@@ -644,13 +652,13 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.9.2');
+assert.equal(update.publishedAppVersion, '5.9.3');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.2/);
-assert.match(notes, /surface-specific dark ink/i);
-assert.match(notes, /currentColor/i);
-assert.match(notes, /eraser, lasso, undo and redo/i);
+assert.match(update.releaseNotes, /v5\.9\.3/);
+assert.match(notes, /encrypted rendezvous/i);
+assert.match(notes, /warm-start/i);
+assert.match(notes, /sub-second/i);
 
-console.log('v5.9.2 smoke checks passed.');
+console.log('v5.9.3 smoke checks passed.');
