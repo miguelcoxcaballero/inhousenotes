@@ -1,9 +1,9 @@
 {
-  "version": "1.0.8",
-  "versionCode": 9,
+  "version": "1.0.9",
+  "versionCode": 10,
   "required": true,
-  "apkSizeBytes": 3158721,
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.8/inhouse-notes-release-v1.0.8.apk",
-  "publishedAppVersion": "5.8.1",
-  "releaseNotes": "Inhouse Notes v5.8.1 / Android 1.0.8: opens on a painted local launch shell, shows the home immediately, removes black and white startup flashes, and enables pull-to-refresh on touch tablets."
+  "apkSizeBytes": 3159541,
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.9/inhouse-notes-release-v1.0.9.apk",
+  "publishedAppVersion": "5.8.3",
+  "releaseNotes": "Inhouse Notes v5.8.3 / Android 1.0.9: mandatory updates now show real download percentage, a progress bar, and downloaded/total MB."
 }
