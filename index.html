@@ -8322,8 +8322,8 @@
             </svg>
             <h2 class="download-app-title">Download the inhouse notes Android app</h2>
             <a class="btn btn-primary download-app-btn" id="download-app-link"
-                href="https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.9/inhouse-notes-release-v1.0.9.apk"
-                download="inhouse-notes-release-v1.0.9.apk" rel="noopener">
+                href="https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk"
+                download="inhouse-notes-release-v1.0.10.apk" rel="noopener">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -8643,8 +8643,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.8.3"></script>
-    <script src="live-collaboration-v5.js?v=5.8.3"></script>
+    <script src="collaboration-core-v5.js?v=5.9.0"></script>
+    <script src="live-collaboration-v5.js?v=5.9.0"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8712,7 +8712,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.8.3';
+        const APP_VERSION = '5.9.0';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -9315,8 +9315,9 @@
         // text-preserving export pipeline (pdf-lib). Kept in its own database so
         // a schema bump here does not interact with the existing notebook DB.
         const ORIG_PDF_DB_NAME = 'inhouse-original-pdfs-v1';
-        const ORIG_PDF_DB_VERSION = 1;
+        const ORIG_PDF_DB_VERSION = 2;
         const ORIG_PDF_STORE = 'originals';
+        const DRIVE_OPEN_CACHE_STORE = 'drive-open-cache';
         let _origPdfDbPromise = null;
 
         function openOriginalPdfDb() {
@@ -9328,6 +9329,10 @@
                     const db = req.result;
                     if (!db.objectStoreNames.contains(ORIG_PDF_STORE)) {
                         db.createObjectStore(ORIG_PDF_STORE);
+                    }
+                    if (!db.objectStoreNames.contains(DRIVE_OPEN_CACHE_STORE)) {
+                        const cacheStore = db.createObjectStore(DRIVE_OPEN_CACHE_STORE, { keyPath: 'fileId' });
+                        cacheStore.createIndex('cachedAt', 'cachedAt', { unique: false });
                     }
                 };
                 req.onsuccess = () => resolve(req.result);
@@ -9378,6 +9383,121 @@
                 const tx = db.transaction(ORIG_PDF_STORE, 'readwrite');
                 tx.objectStore(ORIG_PDF_STORE).delete(key);
             } catch (err) { /* ignore */ }
+        }
+
+        function normalizeDriveOpenCacheMeta(meta = {}) {
+            const modifiedValue = meta.modifiedTime ?? meta.driveLastKnownModified;
+            const modifiedTime = typeof modifiedValue === 'number'
+                ? modifiedValue
+                : (Date.parse(modifiedValue || '') || 0);
+            return {
+                headRevisionId: meta.headRevisionId || meta.driveHeadRevisionId || '',
+                version: normalizeDriveVersion(meta.version ?? meta.driveRevisionVersion) || null,
+                modifiedTime,
+                md5Checksum: meta.md5Checksum || '',
+                size: Number(meta.size) || 0
+            };
+        }
+
+        async function loadDriveOpenCache(fileId) {
+            if (!fileId) return null;
+            const db = await openOriginalPdfDb();
+            if (!db || !db.objectStoreNames.contains(DRIVE_OPEN_CACHE_STORE)) return null;
+            return new Promise(resolve => {
+                try {
+                    const tx = db.transaction(DRIVE_OPEN_CACHE_STORE, 'readonly');
+                    const req = tx.objectStore(DRIVE_OPEN_CACHE_STORE).get(fileId);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => resolve(null);
+                } catch (err) {
+                    resolve(null);
+                }
+            });
+        }
+
+        function driveOpenCacheMatchesCard(cache, file) {
+            if (!cache?.blob || !(cache.blob instanceof Blob) || !file?.id || cache.fileId !== file.id) {
+                return false;
+            }
+            const cardModified = Date.parse(file.modifiedTime || '') || 0;
+            const cachedModified = Number(cache.meta?.modifiedTime) || 0;
+            // Drive list results always include modifiedTime. A locally confirmed
+            // snapshot may be newer than a card rendered just before an upload;
+            // the immediate background revision check covers that small race.
+            return cardModified > 0 && cachedModified >= cardModified;
+        }
+
+        async function trimDriveOpenCache(maxEntries = 6) {
+            const db = await openOriginalPdfDb();
+            if (!db || !db.objectStoreNames.contains(DRIVE_OPEN_CACHE_STORE)) return;
+            try {
+                const tx = db.transaction(DRIVE_OPEN_CACHE_STORE, 'readwrite');
+                const store = tx.objectStore(DRIVE_OPEN_CACHE_STORE);
+                const index = store.index('cachedAt');
+                const keys = [];
+                index.openKeyCursor().onsuccess = event => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        keys.push(cursor.primaryKey);
+                        cursor.continue();
+                        return;
+                    }
+                    keys.slice(0, Math.max(0, keys.length - maxEntries)).forEach(key => store.delete(key));
+                };
+            } catch (err) { /* best-effort cache cleanup */ }
+        }
+
+        async function saveDriveOpenCache(fileId, blob, meta = {}, analysis = null, details = {}) {
+            if (!fileId || !(blob instanceof Blob) || !blob.size) return false;
+            const db = await openOriginalPdfDb();
+            if (!db || !db.objectStoreNames.contains(DRIVE_OPEN_CACHE_STORE)) return false;
+            const record = {
+                fileId,
+                blob,
+                meta: normalizeDriveOpenCacheMeta(meta),
+                analysis: analysis && typeof analysis.keywords === 'string'
+                    ? {
+                        keywords: analysis.keywords,
+                        embeddedStrokes: Array.isArray(analysis.embeddedStrokes)
+                            ? analysis.embeddedStrokes
+                            : null
+                    }
+                    : null,
+                details: {
+                    canEdit: details.canEdit !== false,
+                    ownedByMe: details.ownedByMe !== false,
+                    ownerName: details.ownerName || '',
+                    ownerEmail: details.ownerEmail || '',
+                    ownerPhoto: details.ownerPhoto || '',
+                    resourceKey: details.resourceKey || '',
+                    parentIds: Array.isArray(details.parentIds) ? details.parentIds.filter(Boolean) : [],
+                    folderKind: details.folderKind || null,
+                    fileName: details.fileName || ''
+                },
+                cachedAt: Date.now()
+            };
+            const saved = await new Promise(resolve => {
+                try {
+                    const tx = db.transaction(DRIVE_OPEN_CACHE_STORE, 'readwrite');
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                    tx.onabort = () => resolve(false);
+                    tx.objectStore(DRIVE_OPEN_CACHE_STORE).put(record);
+                } catch (err) {
+                    resolve(false);
+                }
+            });
+            if (saved) setTimeout(() => trimDriveOpenCache().catch(() => {}), 0);
+            return saved;
+        }
+
+        function scheduleDriveOpenCacheSave(fileId, blob, meta = {}, analysis = null, details = {}) {
+            const run = () => saveDriveOpenCache(fileId, blob, meta, analysis, details).catch(() => {});
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(run, { timeout: 1200 });
+            } else {
+                setTimeout(run, 40);
+            }
         }
 
         const imageCache = new Map();
@@ -17537,6 +17657,77 @@
             driveHomeAutoRefreshInProgress = false;
         }
 
+        function applyCachedDriveOpenMetadata(cache, file, requestedResourceKey = '') {
+            const meta = normalizeDriveOpenCacheMeta(cache?.meta || {});
+            const details = cache?.details || {};
+            state.driveHeadRevisionId = meta.headRevisionId || null;
+            state.driveRevisionVersion = meta.version || null;
+            state.driveLastKnownModified = meta.modifiedTime || null;
+            state.driveParentIds = Array.isArray(details.parentIds)
+                ? details.parentIds.filter(Boolean)
+                : (Array.isArray(file?.parents) ? file.parents.filter(Boolean) : []);
+            state.driveFolderId = state.driveParentIds[0] || null;
+            state.driveFolderKind = normalizeDriveQuickAccessKind(details.folderKind) || null;
+            state.driveCanEdit = details.canEdit !== false;
+            state.driveOwnedByMe = details.ownedByMe !== false;
+            state.driveOwnerName = details.ownerName || '';
+            state.driveOwnerEmail = details.ownerEmail || '';
+            state.driveOwnerPhoto = details.ownerPhoto || '';
+            state.driveResourceKey = details.resourceKey || requestedResourceKey || '';
+            updateCalendarFeatureAvailability();
+            return state.driveCanEdit;
+        }
+
+        async function revalidateCachedDriveOpen(file, cache, sessionToken) {
+            try {
+                await ensureDriveToken(false);
+                if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== file.id) return;
+                const resourceKey = state.driveResourceKey || file.resourceKey || '';
+                const metaUrl = new URL(`https://www.googleapis.com/drive/v3/files/${file.id}`);
+                metaUrl.searchParams.set('fields', 'capabilities(canEdit),ownedByMe,owners(displayName,emailAddress,photoLink),resourceKey,headRevisionId,modifiedTime,version,md5Checksum,size,parents');
+                if (resourceKey) metaUrl.searchParams.set('resourceKey', resourceKey);
+                const remoteMeta = await driveFetch(metaUrl.toString(), {
+                    timeout: DRIVE_META_TIMEOUT,
+                    headers: { 'Cache-Control': 'no-cache' }
+                }).then(response => response.json());
+                if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== file.id) return;
+
+                const cachedMeta = normalizeDriveOpenCacheMeta(cache?.meta || {});
+                const remote = normalizeDriveOpenCacheMeta(remoteMeta);
+                const remoteChanged = !!(
+                    (remote.headRevisionId && cachedMeta.headRevisionId && remote.headRevisionId !== cachedMeta.headRevisionId)
+                    || (remote.version && cachedMeta.version && remote.version !== cachedMeta.version)
+                    || (remote.modifiedTime && remote.modifiedTime > cachedMeta.modifiedTime)
+                    || (remote.md5Checksum && cachedMeta.md5Checksum && remote.md5Checksum !== cachedMeta.md5Checksum)
+                );
+                if (remoteChanged) {
+                    await pullRemoteChanges(remoteMeta, {
+                        allowWhileLocalPending: true,
+                        preserveLocalUnsynced: true,
+                        visualSync: true
+                    });
+                    return;
+                }
+
+                if (remoteMeta.headRevisionId) state.driveHeadRevisionId = remoteMeta.headRevisionId;
+                state.driveRevisionVersion = normalizeDriveVersion(remoteMeta.version) || state.driveRevisionVersion;
+                if (remoteMeta.modifiedTime) state.driveLastKnownModified = new Date(remoteMeta.modifiedTime).getTime();
+                if (remoteMeta.capabilities?.canEdit === false) {
+                    state.driveCanEdit = false;
+                    state.driveAutosave = false;
+                }
+                if (typeof remoteMeta.resourceKey === 'string' && remoteMeta.resourceKey) {
+                    state.driveResourceKey = remoteMeta.resourceKey;
+                }
+                saveDriveSession();
+                updateViewerModeUI();
+            } catch (err) {
+                // Collaboration polling keeps retrying; a transient validation
+                // failure must never turn a fast cached open into a blocking one.
+                console.warn('Cached Drive snapshot validation deferred:', err);
+            }
+        }
+
         // ── § 4.16  Drive file open ───────────────────────────────────────────
         // Downloads the PDF from Drive, extracts embedded strokes from the
         // PDF metadata (STROKES_Z), reconstructs the page state, and renders
@@ -17546,6 +17737,9 @@
             if (driveOpenInProgress) return;
             closeDriveCardMenu();
             driveOpenInProgress = true;
+            // Start the local lookup at click time. IndexedDB usually resolves
+            // before the editor transition has finished painting.
+            const cachedOpenPromise = loadDriveOpenCache(file.id);
             if (lifecycleExitSavePromise) {
                 if (driveStatusEl) {
                     driveStatusEl.textContent = 'Finishing the previous Drive save...';
@@ -17671,6 +17865,37 @@
             }
             showLoading('Opening PDF...');
             try {
+                const cachedOpen = await cachedOpenPromise;
+                if (driveOpenCacheMatchesCard(cachedOpen, file)) {
+                    const canEdit = applyCachedDriveOpenMetadata(cachedOpen, file, requestedResourceKey);
+                    state.lastExportSize = cachedOpen.blob.size;
+                    showLoading(cachedOpen.analysis ? 'Restoring document...' : 'Analyzing local copy...');
+                    const objectUrl = URL.createObjectURL(cachedOpen.blob);
+                    await importPDFData(objectUrl, true, {
+                        fileSize: cachedOpen.blob.size,
+                        sessionToken,
+                        driveFileId: file.id,
+                        sourceBlob: cachedOpen.blob,
+                        strictCollabMetadata: true,
+                        cachedAnalysis: cachedOpen.analysis || null
+                    });
+                    if (!isDocumentSessionTokenValid(sessionToken) || driveOpenFileId !== file.id) {
+                        throw createAbortError('Drive open superseded');
+                    }
+                    state.driveFileId = file.id;
+                    markDriveHydrated(file.id);
+                    state.driveAutosave = canEdit;
+                    saveDriveSession();
+                    updateDocTitle();
+                    updateViewerModeUI();
+                    startCollabPolling();
+                    updateSyncBaseline();
+                    resetDriveContentSyncVersion();
+                    showStatus(canEdit ? 'PDF loaded' : 'PDF loaded (View Only)', { preserveState: true });
+                    setTimeout(() => revalidateCachedDriveOpen(file, cachedOpen, sessionToken), 0);
+                    return;
+                }
+
                 await ensureDriveToken(false);
 
                 // Start metadata and file content downloads in parallel
@@ -17797,6 +18022,29 @@
                         renderAllPages();
                     }
                 }
+                // Persist the exact confirmed Drive snapshot together with the
+                // already-decoded vectors. Subsequent opens avoid both the
+                // network download and STROKES_Z decompression.
+                scheduleDriveOpenCacheSave(
+                    file.id,
+                    blob,
+                    metaResult.value,
+                    {
+                        keywords: activePdfEmbeddedKeywords || '',
+                        embeddedStrokes: activePdfEmbeddedStrokesCache
+                    },
+                    {
+                        canEdit,
+                        ownedByMe,
+                        ownerName,
+                        ownerEmail,
+                        ownerPhoto,
+                        resourceKey: resolvedResourceKey,
+                        parentIds: resolvedParentIds,
+                        folderKind: resolvedFolderKind,
+                        fileName: state.driveFileName
+                    }
+                );
                 // Migration: if PDF used old uncompressed format, re-save with compression
                 if (state.needsMigrationResave && canEdit) {
                     state.needsMigrationResave = false;
@@ -31232,6 +31480,30 @@
                 if (uploadedContentHash) {
                     driveConfirmedContentHash = uploadedContentHash;
                 }
+                if (pdfBlob instanceof Blob && fileId) {
+                    scheduleDriveOpenCacheSave(
+                        fileId,
+                        pdfBlob,
+                        {
+                            driveHeadRevisionId: state.driveHeadRevisionId,
+                            driveRevisionVersion: state.driveRevisionVersion,
+                            driveLastKnownModified: state.driveLastKnownModified,
+                            size: pdfBlob.size
+                        },
+                        pdfBlob.inhouseOpenCacheAnalysis || null,
+                        {
+                            canEdit: state.driveCanEdit,
+                            ownedByMe: state.driveOwnedByMe,
+                            ownerName: state.driveOwnerName,
+                            ownerEmail: state.driveOwnerEmail,
+                            ownerPhoto: state.driveOwnerPhoto,
+                            resourceKey: state.driveResourceKey,
+                            parentIds: state.driveParentIds,
+                            folderKind: state.driveFolderKind,
+                            fileName: state.driveFileName
+                        }
+                    );
+                }
                 // Use Drive's modifiedTime as the universal timestamp
                 const savedAt = state.driveLastKnownModified || Date.now();
                 updateSaveTimestamp();
@@ -35734,9 +36006,13 @@
                 let embeddedStrokes = null;
                 let pdfKeywordsString = '';
                 let collabMetadataAdvertised = false;
+                const cachedAnalysis = options.cachedAnalysis
+                    && typeof options.cachedAnalysis.keywords === 'string'
+                    ? options.cachedAnalysis
+                    : null;
                 try {
-                    const metadata = await pdf.getMetadata();
-                    const keywords = metadata?.info?.Keywords || '';
+                    const metadata = cachedAnalysis ? null : await pdf.getMetadata();
+                    const keywords = cachedAnalysis?.keywords || metadata?.info?.Keywords || '';
                     pdfKeywordsString = keywords;
                     collabMetadataAdvertised = keywords.startsWith('STROKES_Z:')
                         || keywords.startsWith('STROKES_DATA:')
@@ -35745,13 +36021,17 @@
                         || keywords.includes(';IH_CAL:');
 
                     if (keywords.startsWith('STROKES_Z:')) {
-                        embeddedStrokes = await decodeEmbeddedStrokesFromPdfKeywords(keywords);
+                        embeddedStrokes = Array.isArray(cachedAnalysis?.embeddedStrokes)
+                            ? cachedAnalysis.embeddedStrokes
+                            : await decodeEmbeddedStrokesFromPdfKeywords(keywords);
                         if (strictCollabMetadata && !Array.isArray(embeddedStrokes)) {
                             throw new Error('Embedded stroke metadata is invalid');
                         }
                         showLoading('PDF with strokes detected...');
                     } else if (keywords.startsWith('STROKES_DATA:')) {
-                        embeddedStrokes = await decodeEmbeddedStrokesFromPdfKeywords(keywords);
+                        embeddedStrokes = Array.isArray(cachedAnalysis?.embeddedStrokes)
+                            ? cachedAnalysis.embeddedStrokes
+                            : await decodeEmbeddedStrokesFromPdfKeywords(keywords);
                         if (strictCollabMetadata && !Array.isArray(embeddedStrokes)) {
                             throw new Error('Embedded stroke metadata is invalid');
                         }
@@ -35964,7 +36244,7 @@
                 const pageSizeRefinement = [];
                 for (let i = 1; i <= numPages; i++) {
                     throwIfSessionInvalid();
-                    if (i % 4 === 0) {
+                    if (i % (cachedAnalysis ? 24 : 4) === 0) {
                         await yieldToMainThread();
                         throwIfSessionInvalid();
                     }
@@ -37627,6 +37907,10 @@
             blob.inhouseContentHash = pagesParsedForSync.length
                 ? createDriveSyncEnvelope(pagesParsedForSync).contentHash
                 : '';
+            blob.inhouseOpenCacheAnalysis = {
+                keywords: keywordsPayload,
+                embeddedStrokes: pagesParsedForSync
+            };
             state.lastExportSize = blob.size;
             return blob;
         }
@@ -38084,6 +38368,10 @@
             pdfResult.inhouseContentHash = rasterPagesParsedForSync.length
                 ? createDriveSyncEnvelope(rasterPagesParsedForSync).contentHash
                 : '';
+            pdfResult.inhouseOpenCacheAnalysis = {
+                keywords: metaPrefix + encodedMetadata,
+                embeddedStrokes: rasterPagesParsedForSync
+            };
             state.lastExportSize = pdfResult.size;
             return pdfResult;
         }
