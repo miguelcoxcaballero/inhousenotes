@@ -1,9 +1,9 @@
 {
-  "version": "1.0.9",
-  "versionCode": 10,
+  "version": "1.0.10",
+  "versionCode": 11,
   "required": true,
-  "apkSizeBytes": 3159541,
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.9/inhouse-notes-release-v1.0.9.apk",
-  "publishedAppVersion": "5.8.3",
-  "releaseNotes": "Inhouse Notes v5.8.3 / Android 1.0.9: mandatory updates now show real download percentage, a progress bar, and downloaded/total MB."
+  "apkSizeBytes": 3159597,
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
+  "publishedAppVersion": "5.9.1",
+  "releaseNotes": "Inhouse Notes v5.9.1 / Android 1.0.10: the native launch logo is centered and recent Drive documents reopen from a revision-safe local PDF and decoded-stroke cache, with background validation for newer collaborative changes."
 }
