@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.9.6",
-  "releaseNotes": "Inhouse Notes v5.9.6 / Android 1.0.10: makes direct collaboration reconnect reliably, tolerates delayed network responses, speeds up peer discovery and replays edits already in progress when a device joins."
+  "publishedAppVersion": "5.9.7",
+  "releaseNotes": "Inhouse Notes v5.9.7 / Android 1.0.10: adds directed P2P signalling for fast connection setup, avoids false disconnects on slow links and keeps the encrypted Drive history route as an automatic fallback."
 }

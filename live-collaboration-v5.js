@@ -3,6 +3,7 @@
  * rendezvous. The existing Drive PDF remains the durable source of truth and
  * automatic fallback. OAuth tokens never leave the device. */
 const IHN_LIVE_SIGNAL_PREFIX = 'IHN_LIVE_V1:';
+const IHN_LIVE_MAILBOX_PREFIX = 'ihn_lm1_';
 const IHN_LIVE_SIGNAL_TTL = 90_000;
 const IHN_LIVE_RENDEZVOUS_TTL = 45_000;
 const IHN_LIVE_RENDEZVOUS_REFRESH_MS = 15_000;
@@ -15,7 +16,10 @@ const IHN_LIVE_MAX_CHARS = 50_000_000;
 const IHN_LIVE_LEADER_TTL = 7000;
 const IHN_LIVE_LEADER_STALE_MS = 2500;
 const IHN_LIVE_SUPERVISOR_MS = 250;
-const IHN_LIVE_SIGNAL_POLL_MS = 550;
+// Directed mailboxes and exact-comment reads are the fast path. The heavier
+// paginated history walk is deliberately a slower compatibility fallback so
+// it cannot starve metadata/answer requests on a weak connection.
+const IHN_LIVE_SIGNAL_POLL_MS = 2500;
 const IHN_LIVE_CONNECT_TIMEOUT = 18_000;
 const IHN_LIVE_FAST_CONNECT_TIMEOUT = 12_000;
 const IHN_LIVE_DISCONNECTED_GRACE = 5000;
@@ -50,6 +54,8 @@ const IHN_LIVE_ERASE_MAX_STROKES = 200;
 const IHN_LIVE_ERASE_MAX_POINTS = 1200;
 const IHN_LIVE_REALTIME_BACKLOG_TTL = 12_000;
 const IHN_LIVE_REALTIME_BACKLOG_LIMIT = 192;
+const IHN_LIVE_FAST_MAILBOX_DELAYS = [0, 70, 150, 260, 420, 650, 950, 1400, 2100, 3200, 5000];
+const IHN_LIVE_DIRECT_REPLY_DELAYS = [0, 80, 170, 290, 460, 700, 1000, 1450, 2100, 3000, 4500, 6500];
 const IHN_LIVE_STUN = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -66,6 +72,10 @@ let ihnLiveSupervisorTimer = null;
 let ihnLiveSignalBusy = false;
 let ihnLiveSignalQueued = false;
 let ihnLiveSignalRunId = 0;
+let ihnLiveMailboxBusy = false;
+let ihnLiveMailboxQueued = false;
+let ihnLiveMailboxRunId = 0;
+const ihnLiveMailboxTimers = new Set();
 let ihnLiveCryptoKey = null;
 let ihnLiveCryptoFileId = '';
 let ihnLiveCryptoKeyLoad = null;
@@ -116,6 +126,8 @@ const ihnLiveChunks = new Map();
 const ihnLiveProcessedOffers = new Map();
 const ihnLiveOffersInFlight = new Set();
 const ihnLiveFailedSignals = new Map();
+const ihnLiveMailboxSeen = new Map();
+const ihnLiveMailboxInFlight = new Set();
 const ihnLivePendingApplies = new Map();
 const ihnLiveFanOutTasks = new Set();
 const ihnLiveSnapshotCache = new Map();
@@ -657,6 +669,109 @@ function ihnIsFastRecoveryReason(reason = '') {
         .test(String(reason));
 }
 
+function ihnMailboxPeerHash(peerId) {
+    return simpleHash(String(peerId || '')).slice(0, 10);
+}
+
+function ihnMailboxPrefixFor(targetPeerId) {
+    return `${IHN_LIVE_MAILBOX_PREFIX}${ihnMailboxPeerHash(targetPeerId)}_`;
+}
+
+function ihnMailboxKeyFor(targetPeerId, sourcePeerId = ihnGetLivePeerId()) {
+    return `${ihnMailboxPrefixFor(targetPeerId)}${ihnMailboxPeerHash(sourcePeerId)}`;
+}
+
+function ihnEncodeMailboxValue(commentId, expiresAt = Date.now() + IHN_LIVE_SIGNAL_TTL) {
+    const id = String(commentId || '').trim();
+    return id ? `${id}|${Math.max(0, Number(expiresAt) || 0).toString(36)}` : '';
+}
+
+function ihnMailboxPropertyFits(key, value) {
+    // Drive counts the UTF-8 bytes of key + value. Mailbox keys, comment IDs
+    // and base36 expiries are ASCII, so their JS string length is byte-exact.
+    return String(key || '').length + String(value || '').length <= 124;
+}
+
+function ihnDecodeMailboxValue(value) {
+    const [commentId, encodedExpiry] = String(value || '').split('|');
+    const expiresAt = parseInt(encodedExpiry || '', 36);
+    if (!commentId || !Number.isFinite(expiresAt)) return null;
+    return { commentId, expiresAt };
+}
+
+function ihnPruneMailboxSeen(now = Date.now()) {
+    ihnLiveMailboxSeen.forEach((expiresAt, key) => {
+        if (Number(expiresAt || 0) <= now) ihnLiveMailboxSeen.delete(key);
+    });
+}
+
+async function ihnPublishOfferMailbox(targetPeerId, peer) {
+    if (!targetPeerId
+        || !peer?.commentId
+        || peer.closing
+        || ihnLivePeers.get(targetPeerId) !== peer
+        || !driveAccessToken) return false;
+    const operation = ihnCaptureLiveOperationContext(peer.fileId);
+    const mailboxKey = ihnMailboxKeyFor(targetPeerId);
+    const mailboxValue = ihnEncodeMailboxValue(peer.commentId);
+    if (!ihnMailboxPropertyFits(mailboxKey, mailboxValue)) return false;
+    peer.mailboxKey = mailboxKey;
+    peer.mailboxValue = mailboxValue;
+    try {
+        await driveFetch(`https://www.googleapis.com/drive/v3/files/${peer.fileId}?fields=id`, {
+            method: 'PATCH',
+            timeout: DRIVE_META_TIMEOUT,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appProperties: { [mailboxKey]: mailboxValue } })
+        });
+        ihnAssertLiveOperationContext(operation);
+        if (ihnLivePeers.get(targetPeerId) !== peer || peer.closing) return false;
+        ihnTouchPeerSignalling(peer);
+        return true;
+    } catch (error) {
+        // The ordinary encrypted-comments discovery path remains active.
+        return false;
+    }
+}
+
+function ihnClearMailboxEntry(fileId, mailboxKey) {
+    if (!fileId || !mailboxKey || !driveAccessToken) return;
+    driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=id`, {
+        method: 'PATCH',
+        timeout: DRIVE_META_TIMEOUT,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appProperties: { [mailboxKey]: null } })
+    }).catch(() => {});
+}
+
+function ihnClearPeerMailboxAfterPublish(peer) {
+    const fileId = String(peer?.fileId || '');
+    const mailboxKey = String(peer?.mailboxKey || '');
+    if (!fileId || !mailboxKey) return;
+    const pendingPublish = peer.mailboxPublishPromise;
+    peer.mailboxKey = '';
+    peer.mailboxValue = '';
+    Promise.resolve(pendingPublish).catch(() => false).finally(() => {
+        ihnClearMailboxEntry(fileId, mailboxKey);
+    });
+}
+
+function ihnScheduleMailboxPollBurst() {
+    if (!state?.driveFileId || !driveAccessToken || !state.driveCanEdit) return;
+    const runId = ++ihnLiveMailboxRunId;
+    const fileId = state.driveFileId;
+    ihnLiveMailboxTimers.forEach(timer => clearTimeout(timer));
+    ihnLiveMailboxTimers.clear();
+    IHN_LIVE_FAST_MAILBOX_DELAYS.forEach(delay => {
+        const timer = setTimeout(() => {
+            ihnLiveMailboxTimers.delete(timer);
+            if (runId !== ihnLiveMailboxRunId || state?.driveFileId !== fileId) return;
+            ihnPollSignalMailbox();
+        }, delay);
+        ihnLiveMailboxTimers.add(timer);
+    });
+}
+
 function ihnDeleteRendezvousComment(commentId = ihnLiveRendezvousCommentId, fileId = ihnLiveRendezvousFileId) {
     const id = String(commentId || '');
     const targetFileId = String(fileId || '');
@@ -831,6 +946,7 @@ function ihnApplyRendezvousSignal(signal) {
             preserveFailures: true,
             allowReverse: true
         });
+        ihnScheduleMailboxPollBurst();
     }
     return true;
 }
@@ -1185,6 +1301,8 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
     if (peer.closing) return;
     peer.closing = true;
     ihnLivePeers.delete(peerId);
+    clearTimeout(peer.directSignalPollTimer);
+    peer.directSignalPollTimer = null;
     clearTimeout(peer.localIceFlushTimer);
     peer.localIceFlushTimer = null;
     if (Array.isArray(peer.pendingLocalIceCandidates)) peer.pendingLocalIceCandidates.length = 0;
@@ -1605,10 +1723,13 @@ function ihnConfigureChannel(peerId, channel, peer) {
         peer.resumeGraceUntil = 0;
         peer.networkRecoveryProbeAt = 0;
         peer.networkRecoveryMisses = 0;
+        clearTimeout(peer.directSignalPollTimer);
+        peer.directSignalPollTimer = null;
         peer.sendQueue = Promise.resolve();
         ihnTouchKnownPeerFromChannel(peerId, now);
         ihnRememberCachedPeer(peerId, now);
         ihnRefreshPeerPath(peer).catch(() => {});
+        ihnClearPeerMailboxAfterPublish(peer);
         ihnDeleteSignalComment(peer);
         ihnSendControl(peer, { t: 'hello', at: now });
         ihnSendControl(peer, { t: 'state-request', at: now });
@@ -1674,10 +1795,15 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
     ihnConfigurePeer(targetPeerId, pc, peer);
     try {
         ihnConfigureChannel(targetPeerId, pc.createDataChannel('inhousenotes-live-v5', { ordered: true }), peer);
-        await pc.setLocalDescription(await pc.createOffer());
-        await ihnWaitForIce(pc, options.fastRecovery
+        const offerDescription = await pc.createOffer();
+        // Subscribe before setLocalDescription starts ICE gathering. Some
+        // Android WebViews emit their only host candidate before its promise
+        // resolves; attaching afterwards forced every handshake to the timeout.
+        const iceReady = ihnWaitForIce(pc, options.fastRecovery
             ? IHN_LIVE_FAST_ICE_GATHER_TIMEOUT
             : IHN_LIVE_ICE_GATHER_TIMEOUT);
+        await pc.setLocalDescription(offerDescription);
+        await iceReady;
         peer.signalledLocalSdp = String(pc.localDescription?.sdp || '');
         ihnAssertLiveSessionContext(fileId, generation);
         if (ihnLivePeers.get(targetPeerId) !== peer) {
@@ -1709,6 +1835,12 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
         }
         peer.commentId = responseData.id || '';
         ihnTouchPeerSignalling(peer);
+        const mailboxPublish = ihnPublishOfferMailbox(targetPeerId, peer);
+        peer.mailboxPublishPromise = mailboxPublish;
+        mailboxPublish.finally(() => {
+            if (peer.mailboxPublishPromise === mailboxPublish) peer.mailboxPublishPromise = null;
+        });
+        ihnScheduleDirectCommentPoll(targetPeerId, peer, { reset: true });
         ihnScheduleLocalIceFlush(targetPeerId, peer, 0);
         ihnScheduleRapidSignalPolls('offer posted');
     } catch (error) {
@@ -1721,13 +1853,14 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
 
 async function ihnAcceptOffer(comment, offer) {
     const ownId = ihnGetLivePeerId();
-    if (!offer || offer.to !== ownId || offer.from === ownId || offer.fileId !== state.driveFileId || Number(offer.expiresAt) < Date.now()) return;
+    if (!offer || offer.to !== ownId || offer.from === ownId || offer.fileId !== state.driveFileId || Number(offer.expiresAt) < Date.now()) return false;
     const offerKey = `${comment.id}:${offer.sessionId}`;
-    if (ihnLiveProcessedOffers.has(offerKey) || ihnLiveOffersInFlight.has(offerKey)) return;
+    if (ihnLiveProcessedOffers.has(offerKey)) return true;
+    if (ihnLiveOffersInFlight.has(offerKey)) return false;
     const existingPeer = ihnLivePeers.get(offer.from);
     if (existingPeer?.status === 'open' && !offer.fastRecovery) {
         ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
-        return;
+        return true;
     }
     if (existingPeer
         && Date.now() - Number(existingPeer.createdAt || 0) < IHN_LIVE_CONNECT_TIMEOUT) {
@@ -1738,7 +1871,7 @@ async function ihnAcceptOffer(comment, offer) {
         const localOfferWins = !!existingPeer.initiator && ownId < offer.from;
         if (!existingPeer.initiator || localOfferWins) {
             ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
-            return;
+            return true;
         }
     }
     ihnLiveOffersInFlight.add(offerKey);
@@ -1764,10 +1897,12 @@ async function ihnAcceptOffer(comment, offer) {
     try {
         await pc.setRemoteDescription(offer.description);
         await ihnDrainRemoteIceCandidates(offer.from, peer);
-        await pc.setLocalDescription(await pc.createAnswer());
-        await ihnWaitForIce(pc, offer.fastRecovery
+        const answerDescription = await pc.createAnswer();
+        const iceReady = ihnWaitForIce(pc, offer.fastRecovery
             ? IHN_LIVE_FAST_ICE_GATHER_TIMEOUT
             : IHN_LIVE_ICE_GATHER_TIMEOUT);
+        await pc.setLocalDescription(answerDescription);
+        await iceReady;
         peer.signalledLocalSdp = String(pc.localDescription?.sdp || '');
         ihnAssertLiveSessionContext(fileId, generation);
         if (ihnLivePeers.get(offer.from) !== peer) {
@@ -1784,13 +1919,16 @@ async function ihnAcceptOffer(comment, offer) {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
         });
         ihnTouchPeerSignalling(peer);
+        ihnScheduleDirectCommentPoll(offer.from, peer, { reset: true });
         ihnScheduleLocalIceFlush(offer.from, peer, 0);
         ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
+        return true;
     } catch (error) {
         console.warn('Direct offer could not be accepted:', error);
         if (ihnLivePeers.get(offer.from) === peer) {
             ihnClosePeer(offer.from, 'answer failed', { retry: false });
         }
+        return false;
     } finally {
         ihnLiveOffersInFlight.delete(offerKey);
     }
@@ -1811,6 +1949,171 @@ async function ihnApplyAnswer(answer) {
         if (ihnLiveOperationContextIsCurrent(operation)
             && ihnLivePeers.get(answer.from) === peer) {
             ihnClosePeer(answer.from, 'invalid answer', { retry: true });
+        }
+    }
+}
+
+async function ihnProcessSignalComment(comment, now = Date.now(), ownId = ihnGetLivePeerId()) {
+    if (!String(comment?.content || '').startsWith(IHN_LIVE_SIGNAL_PREFIX)) return false;
+    const offer = await ihnDecodeSignal(comment.content);
+    if (!offer || offer.v !== 1) return false;
+    if (offer.type === 'rendezvous') {
+        ihnApplyRendezvousSignal(offer);
+        return true;
+    }
+    if (offer.type !== 'offer') return false;
+    if (Number(offer.expiresAt) < now) {
+        if (offer.from === ownId || offer.to === ownId) {
+            driveFetch(`https://www.googleapis.com/drive/v3/files/${state.driveFileId}/comments/${comment.id}`, {
+                method: 'DELETE'
+            }).catch(() => {});
+        }
+        return true;
+    }
+    if (offer.to === ownId && !(await ihnAcceptOffer(comment, offer))) return false;
+    for (const reply of comment.replies || []) {
+        const signal = await ihnDecodeSignal(reply.content);
+        if (!signal) continue;
+        if (signal.type === 'answer') await ihnApplyAnswer(signal);
+        else if (signal.type === 'candidates') await ihnApplyCandidateSignal(signal);
+    }
+    return true;
+}
+
+async function ihnFetchAndProcessSignalComment(fileId, commentId) {
+    if (!fileId || !commentId || state?.driveFileId !== fileId) return false;
+    const fields = encodeURIComponent('id,content,createdTime,modifiedTime,resolved,replies(id,content,createdTime)');
+    const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${encodeURIComponent(commentId)}?fields=${fields}`, {
+        method: 'GET',
+        timeout: DRIVE_POLL_TIMEOUT,
+        headers: { 'Cache-Control': 'no-cache' }
+    });
+    const comment = await response.json();
+    if (state?.driveFileId !== fileId) return false;
+    return ihnProcessSignalComment(comment);
+}
+
+async function ihnConsumeSignalMailboxesFromProperties(properties) {
+    if (!ihnIsLiveLeader()
+        || !state?.driveFileId
+        || !state.driveCanEdit
+        || !driveAccessToken
+        || !ihnDocumentIsVisible()
+        || (typeof navigator !== 'undefined' && navigator.onLine === false)) return false;
+    const fileId = state.driveFileId;
+    const operation = ihnCaptureLiveOperationContext(fileId);
+    const now = Date.now();
+    ihnPruneMailboxSeen(now);
+    const ownPrefix = ihnMailboxPrefixFor(ihnGetLivePeerId());
+    const entries = Object.entries(properties || {})
+        .filter(([key]) => key.startsWith(ownPrefix));
+    if (entries.length === 0) return false;
+    // Warm the shared AES key in parallel with the exact comment GET. On a
+    // freshly opened editor this removes an otherwise serial metadata roundtrip.
+    const signalKeyReady = ihnEnsureSignalKey().catch(() => null);
+    const results = await Promise.allSettled(entries.map(async ([mailboxKey, value]) => {
+        const mailbox = ihnDecodeMailboxValue(value);
+        if (!mailbox || mailbox.expiresAt < now) {
+            ihnClearMailboxEntry(fileId, mailboxKey);
+            return false;
+        }
+        const seenKey = `${mailboxKey}:${value}`;
+        if (ihnLiveMailboxSeen.has(seenKey) || ihnLiveMailboxInFlight.has(seenKey)) return false;
+        ihnLiveMailboxInFlight.add(seenKey);
+        try {
+            const [handled] = await Promise.all([
+                ihnFetchAndProcessSignalComment(fileId, mailbox.commentId),
+                signalKeyReady
+            ]);
+            ihnAssertLiveOperationContext(operation);
+            if (!handled) return false;
+            // Keep the value until its short TTL (or until the channel opens).
+            // Avoiding a receiver-side delete prevents a late cleanup PATCH
+            // from erasing a newer retry written under the same pair key.
+            ihnLiveMailboxSeen.set(seenKey, mailbox.expiresAt);
+            return true;
+        } finally {
+            ihnLiveMailboxInFlight.delete(seenKey);
+        }
+    }));
+    return results.some(result => result.status === 'fulfilled' && result.value === true);
+}
+
+function ihnScheduleDirectCommentPoll(peerId, peer, options = {}) {
+    if (!peer
+        || !peer.commentId
+        || peer.closing
+        || ihnLivePeers.get(peerId) !== peer
+        || peer.channel?.readyState === 'open') return;
+    if (options.reset) {
+        clearTimeout(peer.directSignalPollTimer);
+        peer.directSignalPollTimer = null;
+        peer.directSignalPollAttempt = 0;
+    }
+    if (peer.directSignalPollTimer || peer.directSignalPollBusy) return;
+    const attempt = Math.max(0, Number(peer.directSignalPollAttempt || 0));
+    if (attempt >= IHN_LIVE_DIRECT_REPLY_DELAYS.length) return;
+    const delay = IHN_LIVE_DIRECT_REPLY_DELAYS[attempt];
+    peer.directSignalPollAttempt = attempt + 1;
+    peer.directSignalPollTimer = setTimeout(async () => {
+        peer.directSignalPollTimer = null;
+        if (ihnLivePeers.get(peerId) !== peer
+            || peer.closing
+            || !peer.commentId
+            || peer.channel?.readyState === 'open') return;
+        peer.directSignalPollBusy = true;
+        try {
+            await ihnFetchAndProcessSignalComment(peer.fileId, peer.commentId);
+        } catch (error) {
+            // A periodic comments scan remains the durable fallback.
+        } finally {
+            peer.directSignalPollBusy = false;
+            if (ihnLivePeers.get(peerId) === peer
+                && !peer.closing
+                && peer.commentId
+                && peer.channel?.readyState !== 'open') {
+                ihnScheduleDirectCommentPoll(peerId, peer);
+            }
+        }
+    }, delay);
+}
+
+async function ihnPollSignalMailbox() {
+    if (ihnLiveMailboxBusy) {
+        ihnLiveMailboxQueued = true;
+        return;
+    }
+    if (!ihnIsLiveLeader()
+        || !state?.driveFileId
+        || !state.driveCanEdit
+        || !driveAccessToken
+        || !ihnDocumentIsVisible()
+        || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+    const runId = ihnLiveMailboxRunId;
+    const fileId = state.driveFileId;
+    const operation = ihnCaptureLiveOperationContext(fileId);
+    ihnLiveMailboxBusy = true;
+    ihnLiveMailboxQueued = false;
+    try {
+        const [, response] = await Promise.all([
+            ihnEnsureSignalKey(),
+            driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=appProperties`, {
+                method: 'GET',
+                timeout: DRIVE_POLL_TIMEOUT,
+                headers: { 'Cache-Control': 'no-cache' }
+            })
+        ]);
+        ihnAssertLiveOperationContext(operation);
+        const data = await response.json();
+        ihnAssertLiveOperationContext(operation);
+        await ihnConsumeSignalMailboxesFromProperties(data?.appProperties || {});
+    } catch (error) {
+        // Fast discovery is best-effort; ihnPollSignals remains authoritative.
+    } finally {
+        ihnLiveMailboxBusy = false;
+        if (runId === ihnLiveMailboxRunId && ihnLiveMailboxQueued) {
+            ihnLiveMailboxQueued = false;
+            setTimeout(() => ihnPollSignalMailbox(), 0);
         }
     }
 }
@@ -1866,31 +2169,9 @@ async function ihnPollSignals() {
             ihnAssertLiveSessionContext(fileId, generation);
             ihnAssertLiveOperationContext(operation);
             for (const comment of data.comments || []) {
-                if (!String(comment?.content || '').startsWith(IHN_LIVE_SIGNAL_PREFIX)) continue;
-                const offer = await ihnDecodeSignal(comment.content);
                 ihnAssertLiveSessionContext(fileId, generation);
                 ihnAssertLiveOperationContext(operation);
-                if (!offer || offer.v !== 1) continue;
-                if (offer.type === 'rendezvous') {
-                    ihnApplyRendezvousSignal(offer);
-                    continue;
-                }
-                if (offer.type !== 'offer') continue;
-                if (Number(offer.expiresAt) < now) {
-                    if (offer.from === ownId || offer.to === ownId) {
-                        driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${comment.id}`, {
-                            method: 'DELETE'
-                        }).catch(() => {});
-                    }
-                    continue;
-                }
-                if (offer.to === ownId) await ihnAcceptOffer(comment, offer);
-                for (const reply of comment.replies || []) {
-                    const signal = await ihnDecodeSignal(reply.content);
-                    if (!signal) continue;
-                    if (signal.type === 'answer') await ihnApplyAnswer(signal);
-                    else if (signal.type === 'candidates') await ihnApplyCandidateSignal(signal);
-                }
+                await ihnProcessSignalComment(comment, now, ownId);
             }
             pageToken = String(data.nextPageToken || '');
             if (!pageToken) break;
@@ -1936,6 +2217,7 @@ function liveCollabUpdatePeers(users) {
                 // resolved deterministically in ihnAcceptOffer.
                 allowReverse: true
             });
+            ihnScheduleMailboxPollBurst();
         }
     }
     ihnLiveMainPeerId = [...active, ownId].sort()[0] || ownId;
@@ -2173,6 +2455,7 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
     ihnSuperviseConnections({ immediate: true });
     if (networkRouteChanged) {
         ihnScheduleRapidSignalPolls(reason);
+        ihnScheduleMailboxPollBurst();
     } else {
         setTimeout(() => ihnSuperviseConnections({ immediate: true }), 1200);
     }
@@ -2203,9 +2486,15 @@ function ihnProbePeerForFastRecovery(peerId, peer, reason = 'network path change
         || peer.channel?.readyState !== 'open') return false;
     const now = Date.now();
     if (now - Number(peer.networkRecoveryProbeAt || 0) < IHN_LIVE_NETWORK_PROBE_MS) return true;
-    const knownRtt = Number(peer.rttMs);
+    let networkRtt = 0;
+    try {
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        networkRtt = Number(connection?.rtt) || 0;
+    } catch (error) { /* Network Information API is optional */ }
+    const measuredRtt = Number(peer.rttMs) || 0;
+    const knownRtt = Math.max(measuredRtt, networkRtt);
     const probeDelay = Number.isFinite(knownRtt) && knownRtt > 0
-        ? Math.min(700, Math.max(IHN_LIVE_NETWORK_PROBE_MS, Math.round((knownRtt * 2.5) + 80)))
+        ? Math.min(5000, Math.max(IHN_LIVE_NETWORK_PROBE_MS, Math.round((knownRtt * 2.5) + 160)))
         : 320;
     peer.networkRecoveryProbeAt = now;
     peer.resumeGraceUntil = now + Math.max(IHN_LIVE_NETWORK_RECOVERY_GRACE_MS, probeDelay + 180);
@@ -2346,6 +2635,12 @@ async function ihnRefreshPeerPath(peer) {
         if (!selectedPair) return;
         const local = stats.get(selectedPair.localCandidateId);
         const remote = stats.get(selectedPair.remoteCandidateId);
+        const statsRttMs = Number(selectedPair.currentRoundTripTime) * 1000;
+        if (Number.isFinite(statsRttMs) && statsRttMs > 0) {
+            peer.rttMs = Number.isFinite(peer.rttMs)
+                ? Math.round((Number(peer.rttMs) * 0.7) + (statsRttMs * 0.3))
+                : Math.round(statsRttMs);
+        }
         peer.networkPath = local?.candidateType === 'host' && remote?.candidateType === 'host'
             ? 'local-network'
             : 'peer';
@@ -2464,6 +2759,7 @@ function startLiveCollaboration() {
     }
     ihnSuperviseConnections({ immediate: true });
     if (!wasRunning) ihnPublishRendezvous({ force: true }).catch(() => {});
+    if (!wasRunning) ihnScheduleMailboxPollBurst();
     ihnPollSignals();
 }
 
@@ -2499,6 +2795,7 @@ function stopLiveCollaboration() {
     } catch (error) { /* another tab will recover from the bounded lease */ }
     ihnLiveGeneration += 1;
     ihnLiveSignalRunId += 1;
+    ihnLiveMailboxRunId += 1;
     ihnLiveBroadcastRunId += 1;
     ihnLiveRendezvousRunId += 1;
     clearTimeout(ihnLiveBroadcastTimer); ihnLiveBroadcastTimer = null;
@@ -2509,6 +2806,12 @@ function stopLiveCollaboration() {
     ihnLiveLeaderTimer = ihnLiveSignalTimer = ihnLiveCapabilityTimer = ihnLiveSupervisorTimer = null;
     ihnLiveSignalBusy = false;
     ihnLiveSignalQueued = false;
+    ihnLiveMailboxBusy = false;
+    ihnLiveMailboxQueued = false;
+    ihnLiveMailboxTimers.forEach(timer => clearTimeout(timer));
+    ihnLiveMailboxTimers.clear();
+    ihnLiveMailboxSeen.clear();
+    ihnLiveMailboxInFlight.clear();
     ihnLiveBroadcastBusy = false;
     ihnLiveBroadcastQueued = false;
     if (!ihnLiveActiveApply) ihnLiveApplying = false;

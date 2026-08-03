@@ -8733,8 +8733,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.9.6"></script>
-    <script src="live-collaboration-v5.js?v=5.9.6"></script>
+    <script src="collaboration-core-v5.js?v=5.9.7"></script>
+    <script src="live-collaboration-v5.js?v=5.9.7"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8802,7 +8802,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.9.6';
+        const APP_VERSION = '5.9.7';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -32724,6 +32724,12 @@
 
         function updatePresenceFromProps(appProperties) {
             if (!appProperties) return;
+            // The same 600 ms metadata response also carries the directed P2P
+            // mailbox. Reuse it instead of issuing another Drive request, so
+            // discovery stays fast even when the connection or API is busy.
+            if (typeof ihnConsumeSignalMailboxesFromProperties === 'function') {
+                ihnConsumeSignalMailboxesFromProperties(appProperties).catch(() => {});
+            }
             const now = Date.now();
             const myKey = driveUserProfile ? getPresenceKey() : null;
             const myLegacyKey = driveUserProfile ? getLegacyPresenceKey() : null;
