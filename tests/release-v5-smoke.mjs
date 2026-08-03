@@ -6,16 +6,16 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.1.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.2.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.1';/);
+assert.match(html, /const APP_VERSION = '5\.9\.2';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.1/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.1/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.2/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.2/);
 assert.ok(
   html.indexOf('jspdf.umd.min.js') > html.indexOf('</style>'),
   'PDF libraries must not block the first CSS/body paint'
@@ -45,6 +45,12 @@ assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.10"/);
 assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 11/);
 assert.match(androidLoader, /html, body \{ margin: 0; width: 100%; height: 100%;/);
 assert.match(androidLoader, /position: fixed;\s*inset: 0;\s*display: grid;\s*place-items: center;/);
+assert.match(html, /#toolbar \{[\s\S]{0,500}--toolbar-ink: #1a1a1a;/);
+assert.match(html, /#toolbar \{[\s\S]{0,900}color: var\(--toolbar-ink\);/);
+assert.match(html, /\.tool-btn \{[\s\S]{0,300}color: var\(--toolbar-ink, var\(--text-primary\)\);/);
+assert.match(html, /#toolbar-handle \{[\s\S]{0,400}color: var\(--toolbar-muted-ink\);/);
+assert.match(html, /#toolbar \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
+assert.match(html, /#toolbar \.tool-btn\.active \.color-dot \{\s*border-color: var\(--toolbar-ink\);/);
 assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
 assert.match(html, /data-update-progressbar/);
 assert.match(html, /function formatAndroidUpdateMegabytes\(/);
@@ -638,13 +644,13 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.9.1');
+assert.equal(update.publishedAppVersion, '5.9.2');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.1/);
-assert.match(notes, /already-decoded stroke metadata/i);
-assert.match(notes, /exact Drive revision/i);
-assert.match(notes, /centers the Inhouse Notes mark/i);
+assert.match(update.releaseNotes, /v5\.9\.2/);
+assert.match(notes, /surface-specific dark ink/i);
+assert.match(notes, /currentColor/i);
+assert.match(notes, /eraser, lasso, undo and redo/i);
 
-console.log('v5.9.1 smoke checks passed.');
+console.log('v5.9.2 smoke checks passed.');

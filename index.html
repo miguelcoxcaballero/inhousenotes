@@ -2656,12 +2656,18 @@
             position: fixed;
             left: 20px;
             top: 50%;
+            /* The tray intentionally stays light in both app themes. Keep its
+               outline icons tied to that surface instead of inheriting the
+               editor's white dark-theme text colour through currentColor. */
+            --toolbar-ink: #1a1a1a;
+            --toolbar-muted-ink: #666666;
             --toolbar-scale: 1;
             --toolbar-translate: -50%;
             --toolbar-rotate: 0deg;
             transform: translateY(var(--toolbar-translate)) scale(var(--toolbar-scale)) rotate(var(--toolbar-rotate));
             transform-origin: top left;
             background: rgba(255, 255, 255, 0.92);
+            color: var(--toolbar-ink);
             border: 1px solid rgba(0, 0, 0, 0.06);
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-medium);
@@ -2717,7 +2723,7 @@
             align-items: center;
             justify-content: center;
             cursor: grab;
-            color: var(--text-secondary);
+            color: var(--toolbar-muted-ink);
             border-radius: var(--radius-sm);
             transition: background 0.2s;
         }
@@ -2761,6 +2767,7 @@
             border: none;
             border-radius: var(--radius-md);
             background: transparent;
+            color: var(--toolbar-ink, var(--text-primary));
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -2817,10 +2824,10 @@
             height: calc(var(--tool-size) * 0.7);
         }
 
-        .size-dot {
+        #toolbar .size-dot {
             display: inline-block;
             border-radius: 50%;
-            background: var(--text-primary);
+            background: var(--toolbar-ink);
             opacity: 0.7;
         }
 
@@ -2851,8 +2858,8 @@
             border: 3px solid transparent;
         }
 
-        .tool-btn.active .color-dot {
-            border-color: var(--text-primary);
+        #toolbar .tool-btn.active .color-dot {
+            border-color: var(--toolbar-ink);
         }
 
         .tool-btn:disabled {
@@ -8643,8 +8650,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.9.1"></script>
-    <script src="live-collaboration-v5.js?v=5.9.1"></script>
+    <script src="collaboration-core-v5.js?v=5.9.2"></script>
+    <script src="live-collaboration-v5.js?v=5.9.2"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8712,7 +8719,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.9.1';
+        const APP_VERSION = '5.9.2';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
