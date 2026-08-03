@@ -81,13 +81,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
+    <script>
+        // Apply the saved colour scheme before CSS or the WebView paints. This
+        // keeps the native launch surface and the first web frame continuous.
+        (function () {
+            var dark = false;
+            try {
+                var storedTheme = localStorage.getItem('inhouse-theme');
+                dark = storedTheme === 'dark'
+                    || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            } catch (e) {
+                dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            var theme = dark ? 'dark' : 'light';
+            var color = dark ? '#151515' : '#f5f5f0';
+            document.documentElement.dataset.theme = theme;
+            document.documentElement.style.backgroundColor = color;
+            document.getElementById('app-theme-color').setAttribute('content', color);
+        })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap"></noscript>
     <script src="https://accounts.google.com/gsi/client" async defer data-auto_prompt="false"></script>
     <style>
         /*
@@ -138,8 +157,6 @@
           2.17  Responsive overrides (≤ 720 px & touch) ........ (§ 2.17)
         ════════════════════════════════════════════════════════════════════════
         */
-
-        @import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
 
         /* ── § 2.1  Global reset & utility classes ─────────────────────── */
 
@@ -7524,6 +7541,7 @@
             } catch (e) {
                 window.__INHOUSE_BOOT_SIGNED_IN__ = false;
             }
+            document.documentElement.dataset.bootDestination = window.__INHOUSE_BOOT_SIGNED_IN__ ? 'drive' : 'welcome';
         })();
     </script>
 
@@ -7708,6 +7726,34 @@
             </section>
         </div>
     </div>
+
+    <script>
+        // Paint the signed-in home before the runtime restores the hidden editor.
+        (function () {
+            if (!window.__INHOUSE_BOOT_SIGNED_IN__) return;
+            var home = document.getElementById('drive-home');
+            var welcome = document.getElementById('welcome-view');
+            if (welcome) welcome.classList.add('hidden');
+            if (home) home.classList.remove('hidden');
+
+            var cardMarkup = '<div class="drive-card-skeleton" aria-hidden="true"><div class="skeleton-bar title"></div><div class="skeleton-preview"></div></div>';
+            var folderMarkup = '<div class="drive-folder-card-skeleton" aria-hidden="true"><div class="skeleton-icon"></div><div class="skeleton-bar"></div></div>';
+            var fill = function (id, markup, count) {
+                var container = document.getElementById(id);
+                if (container) container.innerHTML = new Array(count + 1).join(markup);
+            };
+            fill('drive-recents', cardMarkup, 6);
+            fill('drive-starred', cardMarkup, 6);
+            fill('drive-shared', cardMarkup, 6);
+            fill('drive-folders', folderMarkup, 4);
+            fill('drive-folder-files', cardMarkup, 8);
+            var status = document.getElementById('drive-status');
+            if (status) {
+                status.innerHTML = '<span class="drive-status-skeleton" aria-hidden="true"></span>';
+                status.setAttribute('aria-label', 'Loading your Drive');
+            }
+        })();
+    </script>
 
     <!-- ── § 3.3  Editor view ──────────────────────────────────────────────── -->
     <div id="editor-view" class="hidden">
@@ -8594,8 +8640,11 @@
             </div>
         </div>
     </div>
-    <script src="collaboration-core-v5.js?v=5.7.0"></script>
-    <script src="live-collaboration-v5.js?v=5.7.0"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="collaboration-core-v5.js?v=5.8.0"></script>
+    <script src="live-collaboration-v5.js?v=5.8.0"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8663,7 +8712,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.7.0';
+        const APP_VERSION = '5.8.0';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -10627,25 +10676,63 @@
         // init() is the single entry point called at the bottom of the script.
         // It loads saved data, renders all pages, wires up event listeners,
         // starts Drive auth, and navigates to today's calendar page.
+        function showFastInitialView() {
+            const params = new URLSearchParams(window.location.search);
+            const sharedDriveId = params.get('drive');
+            const hasSharedDocument = !!sharedDriveId;
+            if (sharedDriveId) {
+                window.pendingSharedDriveId = sharedDriveId;
+                pendingSharedDriveResourceKey = params.get('resourcekey') || params.get('rk') || null;
+                pendingSharedDriveName = (params.get('name') || '').trim().slice(0, 240);
+                pendingSharedDriveRole = (
+                    params.get('role') === 'writer' || params.get('mode') === 'edit'
+                ) ? 'writer' : 'reader';
+            }
+            const hasStoredSession = (() => {
+                try {
+                    const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
+                    const token = raw ? JSON.parse(raw) : null;
+                    const hasToken = !!(token && token.token && token.expiry && Date.now() < token.expiry - 60000);
+                    return hasToken || !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY);
+                } catch (e) {
+                    return false;
+                }
+            })();
+
+            if (hasSharedDocument) {
+                if (driveAccessToken) showEditorView();
+                else showDriveHome();
+            } else if (driveAccessToken || hasStoredSession) {
+                showDriveHome();
+            } else {
+                showWelcomeView();
+            }
+        }
+
         async function init() {
             pendingViewState = loadViewState();
             initTheme();
             loadDriveSession();
+            updateDriveProfileUI(null);
+            showFastInitialView();
+            initDriveAuth();
+            setupMobileHomePullToRefresh();
+            document.documentElement.dataset.appReady = 'true';
             // The Drive file ID is part of deterministic legacy page/item IDs.
             // Restore it before migrating any old local payload.
             await loadFromStorage();
             bakeLegacyEraserAreaStrokes();
-            if (state.pages.length === 0) {
-                addPage();
-            } else {
-                renderAllPages();
+            const editorVisibleAtBoot = !!(editorView && !editorView.classList.contains('hidden'));
+            if (editorVisibleAtBoot) {
+                if (state.pages.length === 0) {
+                    await addPage();
+                } else {
+                    renderAllPages();
+                }
             }
             setupEventListeners();
-            setupMobileHomePullToRefresh();
             syncEraserMenuState();
-            initDriveAuth();
             updateDocTitle();
-            updateDriveProfileUI(null);
             if (!saveTimestampInterval) {
                 saveTimestampInterval = setInterval(updateSaveTimestamp, 60000);
             }
@@ -10717,7 +10804,7 @@
             // is unreliable on slower machines (canvasViewport may have 0
             // height when it fires), so we wait for an actual measurable
             // viewport before measuring page offsets.
-            whenViewportReady(() => {
+            if (editorVisibleAtBoot) whenViewportReady(() => {
                 const wentToToday = scrollToTodayCalendarPage();
                 if (!wentToToday) {
                     if (!applyViewState(pendingViewState)) {
@@ -17186,7 +17273,6 @@
 
         function setupMobileHomePullToRefresh() {
             if (!driveHome || !driveMain || !homePullRefresh) return;
-            if (!window.matchMedia('(max-width: 720px)').matches) return;
             if (navigator.maxTouchPoints <= 0 && !('ontouchstart' in window)) return;
 
             const threshold = 96;
@@ -17273,7 +17359,7 @@
             requestAnimationFrame(updateTop);
 
             driveMain.addEventListener('touchstart', event => {
-                if (refreshing || event.touches.length !== 1 || driveMain.scrollTop > 0) return;
+                if (refreshing || event.touches.length !== 1 || driveMain.scrollTop > 1) return;
                 const touch = event.touches[0];
                 startX = touch.clientX;
                 startY = touch.clientY;
@@ -17293,7 +17379,7 @@
 
             driveMain.addEventListener('touchmove', event => {
                 if (refreshing || startX === null || startY === null || event.touches.length !== 1) return;
-                if (driveMain.scrollTop > 0) {
+                if (driveMain.scrollTop > 1) {
                     reset();
                     return;
                 }

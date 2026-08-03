@@ -1301,6 +1301,7 @@ class ApkBuilderApp(tk.Tk):
         self._begin_phase("patch", "Applying Android settings", 38)
         self.patch_manifest(project_dir, app_name, package_id)
         self.patch_oauth_persistence(project_dir, package_id)
+        self.patch_startup_theme(project_dir)
         self.patch_gradle_versions(project_dir)
         self.patch_android_dependencies(project_dir)
         self.write_gradle_properties(project_dir)
@@ -1430,13 +1431,8 @@ class ApkBuilderApp(tk.Tk):
                 "*.gstatic.com",
             ]
             capacitor_config["allowNavigation"] = allow_navigation
-            capacitor_config["server"] = {
-                "url": "https://inhousenotes.com/?inhouse_app=1",
-                "cleartext": False,
-                "androidScheme": "https",
-                "allowNavigation": allow_navigation,
-            }
-            self.log("Configured Inhouse Notes to load inside the app WebView.", "ok")
+            capacitor_config["server"]["allowNavigation"] = allow_navigation
+            self.log("Configured the local Inhouse Notes launch shell and remote WebView navigation.", "ok")
         (project_dir / "package.json").write_text(json.dumps(package_json, indent=2), encoding="utf-8")
         (project_dir / "capacitor.config.json").write_text(
             json.dumps(capacitor_config, indent=2), encoding="utf-8"
@@ -1565,6 +1561,7 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 
 import androidx.browser.customtabs.CustomTabsIntent;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.BridgeActivity;
@@ -1584,6 +1581,10 @@ public class MainActivity extends BridgeActivity {{
         super.onCreate(savedInstanceState);
 
         WebView webView = getBridge().getWebView();
+        int bootColor = ContextCompat.getColor(this, R.color.ihn_boot_background);
+        getWindow().setStatusBarColor(bootColor);
+        getWindow().setNavigationBarColor(bootColor);
+        webView.setBackgroundColor(bootColor);
         WebSettings settings = webView.getSettings();
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
@@ -1908,6 +1909,7 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.getcapacitor.BridgeActivity
 import java.io.File
@@ -1917,6 +1919,10 @@ class MainActivity : BridgeActivity() {{
         super.onCreate(savedInstanceState)
 
         val webView = bridge.webView
+        val bootColor = ContextCompat.getColor(this, R.color.ihn_boot_background)
+        window.statusBarColor = bootColor
+        window.navigationBarColor = bootColor
+        webView.setBackgroundColor(bootColor)
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
         val appUserAgent = webView.settings.userAgentString
@@ -2119,6 +2125,58 @@ class MainActivity : BridgeActivity() {{
             return
 
         self.log("MainActivity not found; skipped OAuth persistence patch.", "warn")
+
+    def patch_startup_theme(self, project_dir: Path):
+        """Use one launch/WebView colour so Android never exposes black or white frames."""
+        res_root = project_dir / "android" / "app" / "src" / "main" / "res"
+        values_dir = res_root / "values"
+        values_night_dir = res_root / "values-night"
+        values_dir.mkdir(parents=True, exist_ok=True)
+        values_night_dir.mkdir(parents=True, exist_ok=True)
+        (values_dir / "ihn_boot_colors.xml").write_text(
+            """<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ihn_boot_background">#F5F5F0</color>
+</resources>
+""",
+            encoding="utf-8",
+        )
+        (values_night_dir / "ihn_boot_colors.xml").write_text(
+            """<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ihn_boot_background">#151515</color>
+</resources>
+""",
+            encoding="utf-8",
+        )
+
+        styles_path = values_dir / "styles.xml"
+        if not styles_path.exists():
+            self.log("Android styles.xml not found; skipped launch-theme colour patch.", "warn")
+            return
+        tree = ET.parse(styles_path)
+        root = tree.getroot()
+        style_count = 0
+        for style in root.findall("style"):
+            name = style.get("name", "")
+            if not (name.startswith("AppTheme") or name.startswith("Theme.")):
+                continue
+            desired = {
+                "android:windowBackground": "@color/ihn_boot_background",
+                "android:statusBarColor": "@color/ihn_boot_background",
+                "android:navigationBarColor": "@color/ihn_boot_background",
+                "android:windowSplashScreenBackground": "@color/ihn_boot_background",
+            }
+            existing = {item.get("name"): item for item in style.findall("item")}
+            for item_name, item_value in desired.items():
+                item = existing.get(item_name)
+                if item is None:
+                    item = ET.SubElement(style, "item", {"name": item_name})
+                item.text = item_value
+            style_count += 1
+        ET.indent(tree, space="    ")
+        tree.write(styles_path, encoding="utf-8", xml_declaration=True)
+        self.log(f"Aligned {style_count} Android launch theme(s) with the first web frame.", "ok")
 
     def patch_gradle_versions(self, project_dir: Path):
         gradle_file = project_dir / "android" / "app" / "build.gradle"
