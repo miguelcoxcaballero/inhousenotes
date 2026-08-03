@@ -6,16 +6,16 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.7.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.8.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.7';/);
+assert.match(html, /const APP_VERSION = '5\.9\.8';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.7/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.7/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.8/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.8/);
 assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
 assert.match(html, /@keyframes presence-peer-connecting/);
 assert.match(html, /\.presence-peer-badge/);
@@ -269,7 +269,16 @@ assert.match(
   /function removeCalendarImportedImages[\s\S]{0,900}trackDeletedStrokeIds\(page, removed\)/,
   'clearing legacy calendar cards must persist causal tombstones'
 );
-assert.match(html, /Saving the last document to Drive in the background/);
+assert.doesNotMatch(html, /Saving the last document to Drive in the background/);
+assert.match(html, /#loading-overlay\.home-save-transition/);
+assert.match(html, /function showHomeSaveLoading\(/);
+const goHomeStart = html.indexOf('const goHome = async () =>');
+const goHomeEnd = html.indexOf("driveHomeBtn.addEventListener('click'", goHomeStart);
+const goHomeSource = html.slice(goHomeStart, goHomeEnd);
+assert.match(goHomeSource, /showHomeSaveLoading\(/);
+assert.match(goHomeSource, /const saveCompleted = await backgroundExitSavePromise;[\s\S]{0,700}showDriveHome\(\);/);
+assert.match(goHomeSource, /Could not finish saving\. The document is still open/);
+assert.doesNotMatch(goHomeSource, /showDriveHome\(\);[\s\S]{0,500}Saving the last document to Drive/);
 assert.match(html, /await backgroundExitSavePromise/);
 assert.match(html, /Finishing the previous Drive save/);
 assert.match(html, /This device\$\{overview\.isMain \? ' · Main device'/);
@@ -296,12 +305,8 @@ const closeFlushSource = html.slice(closeFlushStart, closeFlushEnd);
 assert.match(closeFlushSource, /startLifecycleExitSave\(state\.driveFileId, localCheckpoint\)/);
 assert.doesNotMatch(closeFlushSource, /keepalive: true/);
 assert.doesNotMatch(closeFlushSource, /if \(state\.isReadOnly\) return/);
-assert.match(html, /await localCheckpoint;/);
-assert.doesNotMatch(
-  html.slice(html.indexOf('const localCheckpoint = persistExitLocalCheckpoint'), html.indexOf('// Clear presence before leaving document')),
-  /Promise\.race/,
-  'Home must wait for the durable local checkpoint'
-);
+assert.match(goHomeSource, /await Promise\.all\(\[localCheckpoint, driveTokenReady, driveRenameReady\]\)/);
+assert.doesNotMatch(goHomeSource, /Promise\.race/, 'Home must wait for the durable local checkpoint');
 assert.match(html, /event\.returnValue = '';/);
 assert.match(html, /clearPendingExitUpload\(state\.driveFileId/);
 assert.match(html, /className = 'public-inline-preview'/);
@@ -689,15 +694,13 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.9.7');
+assert.equal(update.publishedAppVersion, '5.9.8');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.7/);
-assert.match(notes, /directed mailbox/i);
-assert.match(notes, /exact encrypted offer comment/i);
-assert.match(notes, /first host candidate/i);
-assert.match(notes, /candidate-pair RTT/i);
-assert.match(notes, /compatibility fallback/i);
+assert.match(update.releaseNotes, /v5\.9\.8/);
+assert.match(notes, /confirmed in Drive/i);
+assert.match(notes, /prepared PDF/i);
+assert.match(notes, /editor remains open/i);
 
-console.log('v5.9.7 smoke checks passed.');
+console.log('v5.9.8 smoke checks passed.');
