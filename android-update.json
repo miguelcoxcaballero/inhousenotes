@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.9.5",
-  "releaseNotes": "Inhouse Notes v5.9.5 / Android 1.0.10: streams whole-stroke and area-eraser changes to connected devices during the gesture, with the final durable snapshot retained as automatic recovery."
+  "publishedAppVersion": "5.9.6",
+  "releaseNotes": "Inhouse Notes v5.9.6 / Android 1.0.10: makes direct collaboration reconnect reliably, tolerates delayed network responses, speeds up peer discovery and replays edits already in progress when a device joins."
 }

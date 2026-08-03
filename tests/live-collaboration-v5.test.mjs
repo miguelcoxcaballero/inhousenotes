@@ -248,6 +248,7 @@ globalThis.__liveTest = {
   drainRemoteCandidates: ihnDrainRemoteIceCandidates,
   overview: getLiveCollaborationOverview,
   connectionInfo: getLiveCollaborationConnectionInfo,
+  isFastRecoveryReason: ihnIsFastRecoveryReason,
   presencePeerId: ihnGetPresencePeerId,
   ownId: ihnGetLivePeerId,
   generation() { return ihnLiveGeneration; },
@@ -302,6 +303,16 @@ globalThis.__liveTest = {
     return true;
   }
 
+  async function runTimerMatching(predicate) {
+    const next = [...pendingTimers.entries()].find(([, timer]) => predicate(timer));
+    if (!next) return false;
+    const [id, timer] = next;
+    pendingTimers.delete(id);
+    timer.fn();
+    await Promise.resolve();
+    return true;
+  }
+
   return {
     context,
     api: context.__liveTest,
@@ -311,6 +322,7 @@ globalThis.__liveTest = {
     receivedStrokePreviews,
     receivedErasePreviews,
     runNextTimer,
+    runTimerMatching,
     advanceDocumentSession() { documentSessionId += 1; }
   };
 }
@@ -373,6 +385,40 @@ test('connection info exposes a direct link only for an open remote peer channel
   assert.equal(connected.directConnected, true);
   assert.equal(connected.connected, true);
   assert.equal(connected.recovering, false);
+});
+
+test('a visible tab immediately takes signalling leadership from a hidden or suspended tab', () => {
+  const { api, context } = createHarness();
+  const key = 'ihn-live-leader-v1:file-1';
+  context.localStorage.setItem(key, JSON.stringify({
+    tabId: 'hidden-tab',
+    expiresAt: Date.now() + 7000,
+    heartbeatAt: Date.now(),
+    visible: false
+  }));
+
+  assert.equal(api.claimLeader(), true);
+  const owner = JSON.parse(context.localStorage.getItem(key));
+  assert.notEqual(owner.tabId, 'hidden-tab');
+  assert.equal(owner.visible, true);
+
+  context.localStorage.setItem(key, JSON.stringify({
+    tabId: 'other-visible-tab',
+    expiresAt: Date.now() + 7000,
+    heartbeatAt: Date.now(),
+    visible: true
+  }));
+  assert.equal(api.claimLeader(), false, 'a live visible owner is not stolen from');
+});
+
+test('first contact gets the tolerant negotiation window while broken established routes recover fast', () => {
+  const { api } = createHarness();
+  assert.equal(api.isFastRecoveryReason('peer online'), false);
+  assert.equal(api.isFastRecoveryReason('rendezvous peer'), false);
+  assert.equal(api.isFastRecoveryReason('cached peer'), false);
+  assert.equal(api.isFastRecoveryReason('remote network rendezvous'), true);
+  assert.equal(api.isFastRecoveryReason('app visible'), true);
+  assert.equal(api.isFastRecoveryReason('live route watchdog'), true);
 });
 
 test('an in-progress stroke is streamed in frames and finalized with a complete recovery packet', async () => {
@@ -514,6 +560,28 @@ test('live erase packets render once and relay without echoing to their source p
   assert.equal(harness.api.receiveErase(packet, 'webrtc', 'peer-source'), true);
   assert.equal(harness.receivedErasePreviews.length, 1, 'duplicate erase sequence is ignored');
   assert.equal(relayChannel.sent.length, 1, 'duplicate erase sequence is not relayed again');
+});
+
+test('a peer that opens during an edit receives the recent realtime stroke and erase backlog', () => {
+  const harness = createHarness();
+  const stroke = {
+    id: 'stroke-before-connect', tool: 'pen', color: '#123456', width: 2,
+    points: [{ x: 1, y: 2, p: 0.5 }, { x: 3, y: 4, p: 0.5 }]
+  };
+  assert.equal(harness.api.publishStroke('p1', stroke, { final: true }), true);
+  harness.api.publishErase('p1', 'erase-before-connect', {
+    removedStrokeIds: ['old-stroke'], addedStrokes: []
+  }, { final: true });
+
+  const channel = createChannel();
+  const peer = peerWithChannel(channel);
+  harness.api.addPeer('peer-late', peer);
+  harness.api.configureChannel('peer-late', channel, peer);
+  channel.onopen();
+
+  const packets = channel.sent.map(value => JSON.parse(value));
+  assert.ok(packets.some(packet => packet.type === 'live-stroke' && packet.strokeId === stroke.id));
+  assert.ok(packets.some(packet => packet.type === 'live-erase' && packet.gestureId === 'erase-before-connect'));
 });
 
 test('live snapshots hold and always release the page-structure lock', async () => {
@@ -686,6 +754,7 @@ test('resuming verifies an apparently open peer with a sub-second probe', () => 
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
     protocolV2: true,
+    openedAt: Date.now() - 60_000,
     lastReceivedAt: Date.now() - 60_000,
     lastPongAt: Date.now() - 60_000
   });
@@ -695,28 +764,70 @@ test('resuming verifies an apparently open peer with a sub-second probe', () => 
 
   assert.equal(api.getPeer('peer-remote'), peer);
   assert.ok(peer.resumeGraceUntil > Date.now());
-  assert.equal(JSON.parse(channel.sent.at(-1)).t, 'ping');
-  assert.equal(JSON.parse(channel.sent.at(-1)).networkProbe, true);
+  const probe = channel.sent.map(value => JSON.parse(value)).find(message => message.networkProbe);
+  assert.equal(probe?.t, 'ping');
+  assert.equal(probe?.networkProbe, true);
 });
 
-test('a dead WebView route is replaced immediately after app resume', async () => {
-  const { api, runNextTimer } = createHarness();
+test('a dead WebView route is replaced after two bounded checks on app resume', async () => {
+  const { api, runTimerMatching } = createHarness();
   const remoteId = 'peer-dead-after-resume';
   api.addKnown(remoteId);
   const channel = createChannel();
   api.addPeer(remoteId, peerWithChannel(channel, {
     protocolV2: true,
     generation: api.generation(),
+    openedAt: Date.now() - 60_000,
     lastReceivedAt: Date.now() - 60_000,
     lastPongAt: Date.now() - 60_000
   }));
 
   api.wake('app visible');
   assert.equal(api.getPeer(remoteId)?.channel, channel);
-  await runNextTimer();
+  assert.equal(await runTimerMatching(timer => timer.ms === 320), true);
+  assert.equal(api.getPeer(remoteId)?.channel, channel, 'one delayed response does not destroy the route');
+  assert.equal(await runTimerMatching(timer => timer.ms === 120), true);
+  assert.equal(await runTimerMatching(timer => timer.ms === 320), true);
 
-  assert.equal(api.getPeer(remoteId), undefined, 'resume no longer waits for the old ten-second grace');
+  assert.equal(api.getPeer(remoteId), undefined, 'two failed checks replace the stale route in under a second');
   assert.equal(api.retry(remoteId).allowReverse, true);
+});
+
+test('a delayed first probe response cancels recovery without replacing a healthy peer', async () => {
+  const { api, runTimerMatching } = createHarness();
+  const remoteId = 'peer-delayed-pong';
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, {
+    protocolV2: true,
+    openedAt: Date.now() - 60_000,
+    lastReceivedAt: Date.now() - 60_000,
+    lastPongAt: Date.now() - 60_000
+  });
+  api.addPeer(remoteId, peer);
+
+  api.wake('app visible');
+  const probe = channel.sent.map(value => JSON.parse(value)).find(message => message.networkProbe);
+  assert.ok(probe);
+  assert.equal(await runTimerMatching(timer => timer.ms === 320), true);
+  await api.wire(JSON.stringify({ t: 'pong', at: probe.at }), remoteId);
+  assert.equal(await runTimerMatching(timer => timer.ms === 120), true);
+
+  assert.equal(api.getPeer(remoteId), peer);
+  assert.equal(peer.networkRecoveryMisses, 0);
+  assert.equal(channel.sent.filter(value => JSON.parse(value).networkProbe).length, 1);
+});
+
+test('resuming a recently responsive peer keeps the route without a destructive network probe', () => {
+  const { api } = createHarness();
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, { protocolV2: true });
+  api.addPeer('peer-recent', peer);
+
+  api.wake('window focused');
+
+  assert.equal(api.getPeer('peer-recent'), peer);
+  assert.equal(channel.sent.some(value => JSON.parse(value).networkProbe), false);
+  assert.ok(peer.resumeGraceUntil > Date.now());
 });
 
 test('a network change keeps a responsive route and immediately resends current state', async () => {
@@ -740,19 +851,29 @@ test('a network change keeps a responsive route and immediately resends current 
   assert.equal(api.targets().join(','), 'peer-remote');
 });
 
-test('a dead route is replaced after the short network probe instead of the normal watchdog', async () => {
-  const { api, runNextTimer } = createHarness();
+test('a dead route is replaced after two short network probes instead of one false-positive check', async () => {
+  const { api, runTimerMatching } = createHarness();
   const channel = createChannel();
   const peer = peerWithChannel(channel, {
     protocolV2: true,
+    openedAt: Date.now() - 60_000,
+    lastReceivedAt: Date.now() - 60_000,
     lastPongAt: Date.now() - 60_000
   });
   api.addPeer('peer-remote', peer);
 
   api.wake('network changed');
   assert.equal(api.getPeer('peer-remote'), peer, 'the old path remains available during the probe');
-  await runNextTimer();
-  assert.equal(api.getPeer('peer-remote'), undefined, 'the dead path is replaced after the short adaptive probe');
+  assert.equal(await runTimerMatching(timer => timer.ms === 320), true);
+  assert.equal(api.getPeer('peer-remote'), peer);
+  // Network recovery also schedules a 120 ms Drive poll; drain it before the
+  // peer-probe retry that uses the same delay.
+  assert.equal(await runTimerMatching(timer => timer.ms === 120), true);
+  if (channel.sent.filter(value => JSON.parse(value).networkProbe).length < 2) {
+    assert.equal(await runTimerMatching(timer => timer.ms === 120), true);
+  }
+  assert.equal(await runTimerMatching(timer => timer.ms === 320), true);
+  assert.equal(api.getPeer('peer-remote'), undefined, 'the dead path is replaced after both adaptive probes fail');
 });
 
 test('a confirmed Wi-Fi to cellular switch replaces the route without a probe delay', () => {
@@ -1012,8 +1133,8 @@ test('simultaneous fast-recovery offers resolve glare deterministically', async 
   assert.equal(api.processedOfferCount(), 1, 'the crossed losing offer is retired');
 });
 
-test('the heartbeat watchdog replaces a silent route without waiting for browser ICE timeout', () => {
-  const { api } = createHarness();
+test('the heartbeat watchdog verifies twice before replacing a silent route', async () => {
+  const { api, runTimerMatching } = createHarness();
   const remoteId = 'peer-silent-route';
   api.addKnown(remoteId);
   assert.equal(api.claimLeader(), true);
@@ -1026,12 +1147,16 @@ test('the heartbeat watchdog replaces a silent route without waiting for browser
     protocolV2: true,
     generation: api.generation(),
     openedAt: Date.now() - 5000,
-    lastReceivedAt: Date.now() - 1000,
-    lastPongAt: Date.now() - 1000
+    lastReceivedAt: Date.now() - 5000,
+    lastPongAt: Date.now() - 5000
   }));
 
   api.supervise();
-
+  assert.equal(closed, false, 'the first watchdog pass starts a check instead of closing');
+  assert.equal(await runTimerMatching(timer => timer.ms === 320), true);
+  assert.equal(closed, false, 'one missed heartbeat is tolerated');
+  assert.equal(await runTimerMatching(timer => timer.ms === 120), true);
+  assert.equal(await runTimerMatching(timer => timer.ms === 320), true);
   assert.equal(closed, true);
   assert.equal(api.retry(remoteId).allowReverse, true);
 });
@@ -1506,7 +1631,7 @@ test('supervisor evicts a stuck connecting peer and schedules autonomous retry',
     initiator: true,
     fileId: 'file-1',
     generation: api.generation(),
-    createdAt: Date.now() - 16_000,
+    createdAt: Date.now() - 31_000,
     commentId: ''
   });
 
@@ -1530,7 +1655,9 @@ test('supervisor replaces an apparently open but silent zombie channel', () => {
   }, {
     generation: api.generation(),
     protocolV2: true,
-    lastReceivedAt: Date.now() - 21_000
+    openedAt: Date.now() - 31_000,
+    lastReceivedAt: Date.now() - 31_000,
+    lastPongAt: Date.now() - 31_000
   }));
 
   api.supervise();
