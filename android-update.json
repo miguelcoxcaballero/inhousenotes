@@ -1,8 +1,8 @@
 {
-  "version": "1.0.7",
-  "versionCode": 8,
+  "version": "1.0.8",
+  "versionCode": 9,
   "required": true,
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.7/inhouse-notes-release-v1.0.7.apk",
-  "publishedAppVersion": "5.7.0",
-  "releaseNotes": "Inhouse Notes v5.7.0: reconnects peer-to-peer immediately after Wi-Fi or mobile-data changes and establishes new device connections without peer-order delays."
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.8/inhouse-notes-release-v1.0.8.apk",
+  "publishedAppVersion": "5.8.1",
+  "releaseNotes": "Inhouse Notes v5.8.1 / Android 1.0.8: opens on a painted local launch shell, shows the home immediately, removes black and white startup flashes, and enables pull-to-refresh on touch tablets."
 }
