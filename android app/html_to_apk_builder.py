@@ -1699,12 +1699,16 @@ public class MainActivity extends BridgeActivity {{
                     if (responseCode < 200 || responseCode >= 300) {{
                         throw new Exception("Update download failed (" + responseCode + ")");
                     }}
+                    long expectedBytes = connection.getContentLengthLong();
+                    notifyAppUpdateProgress(0, expectedBytes);
                     File updateDir = new File(getCacheDir(), "updates");
                     if (!updateDir.exists() && !updateDir.mkdirs()) {{
                         throw new Exception("Could not prepare update storage");
                     }}
                     File apkFile = new File(updateDir, "inhouse-notes-update.apk");
                     long totalBytes = 0;
+                    long lastProgressAt = 0;
+                    int lastProgressPercent = -1;
                     try (InputStream input = new BufferedInputStream(connection.getInputStream());
                          FileOutputStream output = new FileOutputStream(apkFile)) {{
                         byte[] buffer = new byte[32768];
@@ -1712,6 +1716,17 @@ public class MainActivity extends BridgeActivity {{
                         while ((read = input.read(buffer)) != -1) {{
                             output.write(buffer, 0, read);
                             totalBytes += read;
+                            long now = System.currentTimeMillis();
+                            int progressPercent = expectedBytes > 0
+                                ? (int) Math.min(99, (totalBytes * 100L) / expectedBytes)
+                                : 0;
+                            if ((expectedBytes <= 0 && now - lastProgressAt >= 120)
+                                    || (progressPercent != lastProgressPercent && now - lastProgressAt >= 120)
+                                    || (expectedBytes > 0 && totalBytes >= expectedBytes)) {{
+                                notifyAppUpdateProgress(totalBytes, expectedBytes);
+                                lastProgressAt = now;
+                                lastProgressPercent = progressPercent;
+                            }}
                         }}
                     }}
                     if (totalBytes < 100000) throw new Exception("Downloaded update is incomplete");
@@ -1720,7 +1735,8 @@ public class MainActivity extends BridgeActivity {{
                         getPackageName() + ".fileprovider",
                         apkFile
                     );
-                    notifyAppUpdateResult("ready", "Update downloaded");
+                    notifyAppUpdateResult("ready", "Update downloaded", totalBytes,
+                        expectedBytes > 0 ? expectedBytes : totalBytes, 100);
                     runOnUiThread(() -> {{
                         Intent installIntent = new Intent(Intent.ACTION_VIEW);
                         installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
@@ -1738,10 +1754,25 @@ public class MainActivity extends BridgeActivity {{
         }}
 
         private void notifyAppUpdateResult(String status, String message) {{
+            notifyAppUpdateResult(status, message, -1, -1, -1);
+        }}
+
+        private void notifyAppUpdateProgress(long downloadedBytes, long totalBytes) {{
+            int percent = totalBytes > 0
+                ? (int) Math.min(100, (downloadedBytes * 100L) / totalBytes)
+                : -1;
+            notifyAppUpdateResult("downloading", "Downloading update", downloadedBytes, totalBytes, percent);
+        }}
+
+        private void notifyAppUpdateResult(String status, String message,
+                long downloadedBytes, long totalBytes, int percent) {{
             JSONObject payload = new JSONObject();
             try {{
                 payload.put("status", status);
                 payload.put("message", message == null ? "" : message);
+                if (downloadedBytes >= 0) payload.put("downloadedBytes", downloadedBytes);
+                if (totalBytes > 0) payload.put("totalBytes", totalBytes);
+                if (percent >= 0) payload.put("percent", percent);
             }} catch (Exception ignored) {{}}
             WebView webView = getBridge().getWebView();
             webView.post(() -> webView.evaluateJavascript(

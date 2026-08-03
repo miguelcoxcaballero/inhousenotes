@@ -6,15 +6,15 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.8.1.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.8.2.md', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.8\.1';/);
+assert.match(html, /const APP_VERSION = '5\.8\.2';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.8\.1/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.8\.1/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.8\.2/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.8\.2/);
 assert.ok(
   html.indexOf('jspdf.umd.min.js') > html.indexOf('</style>'),
   'PDF libraries must not block the first CSS/body paint'
@@ -40,9 +40,18 @@ assert.doesNotMatch(
   /"url": "https:\/\/inhousenotes\.com/,
   'Android must paint its bundled launch shell before navigating to the web app'
 );
-assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.8"/);
-assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 9/);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.9"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 10/);
 assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
+assert.match(html, /data-update-progressbar/);
+assert.match(html, /function formatAndroidUpdateMegabytes\(/);
+assert.match(html, /function renderAndroidUpdateProgress\(/);
+assert.match(html, /formatAndroidUpdateMegabytes\(downloadedBytes\)/);
+assert.match(androidBuilder, /connection\.getContentLengthLong\(\)/);
+assert.match(androidBuilder, /notifyAppUpdateProgress\(totalBytes, expectedBytes\)/);
+assert.match(androidBuilder, /payload\.put\("downloadedBytes", downloadedBytes\)/);
+assert.match(androidBuilder, /payload\.put\("totalBytes", totalBytes\)/);
+assert.match(androidBuilder, /payload\.put\("percent", percent\)/);
 assert.match(html, /const DB_VERSION = 4;/);
 assert.match(html, /const TIMELINE_STORE = 'timeline-history';/);
 assert.match(html, /function normalizeTimelineHistory\(/);
@@ -622,9 +631,10 @@ assert.match(
 assert.equal(update.publishedAppVersion, '5.8.1');
 assert.equal(update.version, '1.0.8');
 assert.equal(update.versionCode, 9);
+assert.equal(update.apkSizeBytes, 3158721);
 assert.match(update.releaseNotes, /v5\.8\.1/);
-assert.match(notes, /first frame/i);
-assert.match(notes, /tablets/i);
-assert.match(notes, /Android 1\.0\.8/i);
+assert.match(notes, /percentage/i);
+assert.match(notes, /APK size in MB/i);
+assert.match(notes, /real byte counts/i);
 
-console.log('v5.8.1 smoke checks passed.');
+console.log('v5.8.2 smoke checks passed.');
