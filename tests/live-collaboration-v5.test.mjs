@@ -239,9 +239,16 @@ globalThis.__liveTest = {
   pollSignals: ihnPollSignals,
   publishRendezvous: ihnPublishRendezvous,
   applyRendezvous: ihnApplyRendezvousSignal,
+  mailboxKey: ihnMailboxKeyFor,
+  encodeMailbox: ihnEncodeMailboxValue,
+  consumeMailboxes: ihnConsumeSignalMailboxesFromProperties,
+  pollMailbox: ihnPollSignalMailbox,
+  processSignalComment: ihnProcessSignalComment,
+  scheduleDirectCommentPoll: ihnScheduleDirectCommentPoll,
   restoreCachedPeers: ihnRestoreCachedPeers,
   rememberCachedPeer: ihnRememberCachedPeer,
   acceptOffer: ihnAcceptOffer,
+  createOffer: ihnCreateOffer,
   applyCandidates: ihnApplyCandidateSignal,
   queueLocalCandidate: ihnQueueLocalIceCandidate,
   flushLocalCandidates: ihnFlushLocalIceCandidates,
@@ -249,6 +256,7 @@ globalThis.__liveTest = {
   overview: getLiveCollaborationOverview,
   connectionInfo: getLiveCollaborationConnectionInfo,
   isFastRecoveryReason: ihnIsFastRecoveryReason,
+  refreshPeerPath: ihnRefreshPeerPath,
   presencePeerId: ihnGetPresencePeerId,
   ownId: ihnGetLivePeerId,
   generation() { return ihnLiveGeneration; },
@@ -298,7 +306,8 @@ globalThis.__liveTest = {
     if (!next) return false;
     const [id, timer] = next;
     pendingTimers.delete(id);
-    timer.fn();
+    const result = timer.fn();
+    if (result && typeof result.then === 'function') await result;
     await Promise.resolve();
     return true;
   }
@@ -308,7 +317,8 @@ globalThis.__liveTest = {
     if (!next) return false;
     const [id, timer] = next;
     pendingTimers.delete(id);
-    timer.fn();
+    const result = timer.fn();
+    if (result && typeof result.then === 'function') await result;
     await Promise.resolve();
     return true;
   }
@@ -438,7 +448,7 @@ test('an in-progress stroke is streamed in frames and finalized with a complete 
 
   assert.equal(harness.api.publishStroke('p1', stroke), true);
   assert.equal(livePackets().length, 0, 'preview points are coalesced into a frame');
-  await harness.runNextTimer();
+  await harness.runTimerMatching(timer => timer.ms === 18);
   const first = livePackets().at(-1);
   assert.equal(first.type, 'live-stroke');
   assert.equal(first.final, false);
@@ -515,7 +525,7 @@ test('an active eraser streams each removal frame and flushes the last change im
     addedStrokes: [firstSegment]
   }), true);
   assert.equal(liveErasePackets().length, 0, 'erase changes share the drawing frame cadence');
-  await harness.runNextTimer();
+  await harness.runTimerMatching(timer => timer.ms === 18);
   const first = liveErasePackets().at(-1);
   assert.deepEqual(first.removedStrokeIds, ['original-stroke']);
   assert.deepEqual(first.addedStrokes.map(stroke => stroke.id), ['segment-1']);
@@ -914,6 +924,54 @@ test('a network change event probes the route even when Android reports the same
   assert.ok(probe, 'the coarse Network Information value does not hide a real route switch');
 });
 
+test('a slow route gets an RTT-sized recovery window instead of the old 700 ms cutoff', async () => {
+  const harness = createHarness();
+  harness.context.navigator.connection = {
+    type: 'cellular', effectiveType: '3g', rtt: 1600, saveData: false
+  };
+  const remoteId = 'peer-slow-route';
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, {
+    protocolV2: true,
+    openedAt: Date.now() - 60_000,
+    lastReceivedAt: Date.now() - 60_000,
+    lastPongAt: Date.now() - 60_000
+  });
+  harness.api.addPeer(remoteId, peer);
+
+  harness.api.wake('app visible');
+  const probe = channel.sent.map(value => JSON.parse(value)).find(message => message.networkProbe);
+  assert.ok(probe);
+  assert.ok([...harness.pendingTimers.values()].some(timer => timer.ms === 4160));
+  await harness.api.wire(JSON.stringify({ t: 'pong', at: probe.at }), remoteId);
+  assert.equal(await harness.runTimerMatching(timer => timer.ms === 4160), true);
+
+  assert.equal(harness.api.getPeer(remoteId), peer);
+  assert.equal(peer.networkRecoveryMisses, 0);
+});
+
+test('WebRTC candidate-pair stats feed the adaptive RTT estimate', async () => {
+  const harness = createHarness();
+  const pair = {
+    id: 'pair', type: 'candidate-pair', state: 'succeeded', nominated: true,
+    localCandidateId: 'local', remoteCandidateId: 'remote', currentRoundTripTime: 0.8
+  };
+  const stats = new Map([
+    ['pair', pair],
+    ['local', { id: 'local', candidateType: 'host' }],
+    ['remote', { id: 'remote', candidateType: 'host' }]
+  ]);
+  const peer = peerWithChannel(createChannel(), {
+    rttMs: undefined,
+    pc: { close() {}, getStats: async () => stats }
+  });
+
+  await harness.api.refreshPeerPath(peer);
+
+  assert.equal(peer.rttMs, 800);
+  assert.equal(peer.networkPath, 'local-network');
+});
+
 test('an encrypted rendezvous discovers a peer before Drive presence arrives', async () => {
   const keyBytes = new Uint8Array(32).fill(0x79);
   const keyEncoded = bytesToBase64Url(keyBytes);
@@ -953,6 +1011,220 @@ test('an encrypted rendezvous discovers a peer before Drive presence arrives', a
   assert.ok(api.known(remoteId), 'signalling itself is now a peer-discovery source');
   assert.equal(api.retry(remoteId).allowReverse, true);
   assert.ok(api.retry(remoteId).nextAttemptAt <= Date.now());
+});
+
+test('the directed mailbox reuses file metadata and answers without listing comment history', async () => {
+  const keyBytes = new Uint8Array(32).fill(0x6d);
+  const keyEncoded = bytesToBase64Url(keyBytes);
+  const remoteId = 'peer-mailbox-remote';
+  let mailboxProperties = {};
+  let offerContent = '';
+  let directCommentReads = 0;
+  let commentListReads = 0;
+  let mailboxMetadataReads = 0;
+  let answerPosts = 0;
+
+  class AcceptingPeerConnection {
+    constructor() {
+      this.connectionState = 'connecting';
+      this.iceConnectionState = 'checking';
+      this.iceGatheringState = 'complete';
+      this.localDescription = null;
+      this.remoteDescription = null;
+    }
+    async setRemoteDescription(description) { this.remoteDescription = description; }
+    async setLocalDescription(description) { this.localDescription = description; }
+    async createAnswer() { return { type: 'answer', sdp: 'mailbox-answer' }; }
+    close() { this.connectionState = 'closed'; }
+    addEventListener() {}
+    removeEventListener() {}
+    getStats() { return Promise.resolve(new Map()); }
+  }
+
+  const harness = createHarness({
+    RTCPeerConnection: AcceptingPeerConnection,
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      const method = options.method || 'GET';
+      if (method === 'GET' && requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (method === 'GET' && requestUrl.includes('fields=appProperties')) {
+        mailboxMetadataReads += 1;
+        return { json: async () => ({ appProperties: mailboxProperties }) };
+      }
+      if (method === 'GET' && requestUrl.includes('/comments/mailbox-offer?')) {
+        directCommentReads += 1;
+        return { json: async () => ({ id: 'mailbox-offer', content: offerContent, replies: [] }) };
+      }
+      if (method === 'GET' && requestUrl.includes('/comments?')) {
+        commentListReads += 1;
+        return { json: async () => ({ comments: [] }) };
+      }
+      if (method === 'POST' && requestUrl.includes('/replies?')) {
+        answerPosts += 1;
+        return { json: async () => ({ id: 'mailbox-answer' }) };
+      }
+      if (method === 'PATCH' && options.body) return { json: async () => ({ id: 'file-1' }) };
+      throw new Error(`Unexpected Drive request: ${requestUrl}`);
+    }
+  });
+  const ownId = harness.api.ownId();
+  offerContent = await encryptTestSignal(keyBytes, {
+    v: 1,
+    type: 'offer',
+    fileId: 'file-1',
+    from: remoteId,
+    to: ownId,
+    sessionId: 'mailbox-session',
+    expiresAt: Date.now() + 60_000,
+    description: { type: 'offer', sdp: 'mailbox-offer-sdp' }
+  });
+  const mailboxKey = harness.api.mailboxKey(ownId, remoteId);
+  const mailboxValue = harness.api.encodeMailbox('mailbox-offer', Date.now() + 60_000);
+  mailboxProperties = { [mailboxKey]: mailboxValue };
+
+  assert.ok(new TextEncoder().encode(mailboxKey + mailboxValue).length <= 124);
+  assert.equal(harness.api.claimLeader(), true);
+  await harness.api.consumeMailboxes(mailboxProperties);
+
+  assert.equal(directCommentReads, 1);
+  assert.equal(mailboxMetadataReads, 0, 'the existing revision metadata is reused');
+  assert.equal(commentListReads, 0, 'fast discovery never scans the comment collection');
+  assert.equal(answerPosts, 1);
+  assert.equal(harness.api.getPeer(remoteId)?.pc?.remoteDescription?.sdp, 'mailbox-offer-sdp');
+});
+
+test('an initiator polls its exact offer comment and applies the answer directly', async () => {
+  const keyBytes = new Uint8Array(32).fill(0x4f);
+  const keyEncoded = bytesToBase64Url(keyBytes);
+  const remoteId = 'peer-direct-answer';
+  let comment = null;
+  let directReads = 0;
+  const harness = createHarness({
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      const method = options.method || 'GET';
+      if (method === 'GET' && requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (method === 'GET' && requestUrl.includes('/comments/direct-offer?')) {
+        directReads += 1;
+        return { json: async () => comment };
+      }
+      throw new Error(`Unexpected Drive request: ${requestUrl}`);
+    }
+  });
+  const ownId = harness.api.ownId();
+  const sessionId = 'direct-answer-session';
+  const offerContent = await encryptTestSignal(keyBytes, {
+    v: 1, type: 'offer', fileId: 'file-1', from: ownId, to: remoteId,
+    sessionId, expiresAt: Date.now() + 60_000,
+    description: { type: 'offer', sdp: 'direct-offer-sdp' }
+  });
+  const answerContent = await encryptTestSignal(keyBytes, {
+    v: 1, type: 'answer', fileId: 'file-1', from: remoteId, to: ownId,
+    sessionId, expiresAt: Date.now() + 60_000,
+    description: { type: 'answer', sdp: 'direct-answer-sdp' }
+  });
+  comment = {
+    id: 'direct-offer', content: offerContent,
+    replies: [{ id: 'direct-answer', content: answerContent }]
+  };
+  const pc = {
+    remoteDescription: null,
+    async setRemoteDescription(description) { this.remoteDescription = description; },
+    async addIceCandidate() {},
+    close() {},
+    getStats: async () => new Map()
+  };
+  const peer = {
+    pc,
+    channel: { readyState: 'connecting', close() {} },
+    status: 'connecting', initiator: true, sessionId, commentId: 'direct-offer',
+    fileId: 'file-1', generation: harness.api.generation(), createdAt: Date.now(),
+    pendingRemoteIceCandidates: new Map(), remoteIceCandidateKeys: new Set()
+  };
+  harness.api.addPeer(remoteId, peer);
+  harness.api.scheduleDirectCommentPoll(remoteId, peer, { reset: true });
+  assert.equal(await harness.runTimerMatching(timer => timer.ms === 0), true);
+
+  assert.equal(directReads, 1);
+  assert.equal(pc.remoteDescription?.sdp, 'direct-answer-sdp');
+});
+
+test('offer creation listens for the first ICE candidate before gathering starts', async () => {
+  const keyBytes = new Uint8Array(32).fill(0x38);
+  const keyEncoded = bytesToBase64Url(keyBytes);
+  let listenerInstalledBeforeSet = false;
+  let offerPosts = 0;
+
+  class EarlyCandidatePeerConnection {
+    constructor() {
+      this.connectionState = 'connecting';
+      this.iceConnectionState = 'checking';
+      this.iceGatheringState = 'new';
+      this.localDescription = null;
+      this.remoteDescription = null;
+      this.listeners = new Map();
+    }
+    createDataChannel() {
+      return { readyState: 'connecting', close() {}, send() {}, addEventListener() {}, removeEventListener() {} };
+    }
+    async createOffer() { return { type: 'offer', sdp: 'v=0' }; }
+    async setLocalDescription(description) {
+      listenerInstalledBeforeSet = (this.listeners.get('icecandidate')?.size || 0) > 0;
+      const candidate = {
+        candidate: 'candidate:1 1 UDP 2122252543 192.0.2.1 5000 typ host',
+        sdpMid: '0', sdpMLineIndex: 0,
+        toJSON() { return { candidate: this.candidate, sdpMid: this.sdpMid, sdpMLineIndex: this.sdpMLineIndex }; }
+      };
+      this.localDescription = { ...description, sdp: `${description.sdp}\r\na=${candidate.candidate}` };
+      this.iceGatheringState = 'gathering';
+      this.onicecandidate?.({ candidate });
+      for (const listener of this.listeners.get('icecandidate') || []) listener({ candidate });
+    }
+    addEventListener(type, listener) {
+      if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+      this.listeners.get(type).add(listener);
+    }
+    removeEventListener(type, listener) { this.listeners.get(type)?.delete(listener); }
+    close() { this.connectionState = 'closed'; }
+    getStats() { return Promise.resolve(new Map()); }
+  }
+
+  const harness = createHarness({
+    RTCPeerConnection: EarlyCandidatePeerConnection,
+    driveFetch: async (url, options = {}) => {
+      const requestUrl = String(url);
+      const method = options.method || 'GET';
+      if (method === 'GET' && requestUrl.includes('fields=properties')) {
+        return { json: async () => ({ properties: { ihn_live_key_v1: keyEncoded } }) };
+      }
+      if (method === 'POST' && requestUrl.includes('/comments?fields=')) {
+        offerPosts += 1;
+        return { json: async () => ({ id: 'early-candidate-offer' }) };
+      }
+      if (method === 'PATCH') return { json: async () => ({ id: 'file-1' }) };
+      throw new Error(`Unexpected Drive request: ${requestUrl}`);
+    }
+  });
+  assert.equal(harness.api.claimLeader(), true);
+
+  const creating = harness.api.createOffer('peer-early-candidate', { allowReverse: true });
+  for (let turn = 0; turn < 10 && !listenerInstalledBeforeSet; turn += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(listenerInstalledBeforeSet, true);
+  assert.equal(await harness.runTimerMatching(timer => timer.ms === 70), true);
+  await creating;
+
+  assert.equal(offerPosts, 1);
+  assert.equal(
+    [...harness.pendingTimers.values()].some(timer => timer.ms === 650),
+    false,
+    'the full ICE timeout is cancelled after the early host candidate settles'
+  );
 });
 
 test('a new remote rendezvous epoch wakes a stale route without reopening the document', () => {
@@ -2296,9 +2568,9 @@ test('a transient answer failure leaves the same offer retryable', async () => {
   };
   const comment = { id: 'retryable-comment' };
 
-  await api.acceptOffer(comment, offer);
+  assert.equal(await api.acceptOffer(comment, offer), false);
   assert.equal(api.processedOfferCount(), 0, 'failed offers are not retired');
-  await api.acceptOffer(comment, offer);
+  assert.equal(await api.acceptOffer(comment, offer), true);
   assert.equal(answerAttempts, 2);
   assert.equal(api.processedOfferCount(), 1, 'the offer is retired only after its answer is posted');
 });

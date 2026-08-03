@@ -6,16 +6,16 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.6.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.7.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.6';/);
+assert.match(html, /const APP_VERSION = '5\.9\.7';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.6/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.6/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.7/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.7/);
 assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
 assert.match(html, /@keyframes presence-peer-connecting/);
 assert.match(html, /\.presence-peer-badge/);
@@ -186,6 +186,14 @@ assert.match(live, /function ihnApplyRendezvousSignal\(/);
 assert.match(live, /function ihnIsFastRecoveryReason\(/);
 assert.match(live, /function ihnRestoreCachedPeers\(/);
 assert.match(live, /remote network rendezvous/);
+assert.match(live, /const IHN_LIVE_MAILBOX_PREFIX = 'ihn_lm1_';/);
+assert.match(live, /const IHN_LIVE_FAST_MAILBOX_DELAYS = \[0, 70, 150/);
+assert.match(live, /function ihnPublishOfferMailbox\(/);
+assert.match(live, /function ihnScheduleDirectCommentPoll\(/);
+assert.match(live, /async function ihnFetchAndProcessSignalComment\(/);
+assert.match(live, /async function ihnConsumeSignalMailboxesFromProperties\(/);
+assert.match(live, /function ihnMailboxPropertyFits\(/);
+assert.match(html, /ihnConsumeSignalMailboxesFromProperties\(appProperties\)/);
 assert.match(live, /const mustConfirmCandidate = hasCachedKey && ihnLiveCryptoKeyNeedsConfirmation/);
 assert.match(live, /Android often fires a real Wi-Fi\/AP switch/);
 assert.match(live, /ihnProbePeerForFastRecovery\(peerId, peer, reason\)/);
@@ -194,14 +202,20 @@ assert.match(live, /function publishLiveStrokePreview\(/);
 assert.match(live, /function ihnHandleRealtimeStrokePacket\(/);
 assert.match(live, /IHN_LIVE_STROKE_FRAME_MS = 18/);
 assert.match(live, /IHN_LIVE_SUPERVISOR_MS = 250/);
-assert.match(live, /IHN_LIVE_SIGNAL_POLL_MS = 550/);
+assert.match(live, /IHN_LIVE_SIGNAL_POLL_MS = 2500/);
 assert.match(live, /IHN_LIVE_PING_INTERVAL = 500/);
 assert.match(live, /IHN_LIVE_ROUTE_STALE_MS = 2500/);
 assert.match(live, /IHN_LIVE_ROUTE_PROBE_MAX_MISSES = 2/);
 assert.match(live, /IHN_LIVE_NETWORK_PROBE_MS = 220/);
+assert.match(live, /Math\.min\(5000, Math\.max\(IHN_LIVE_NETWORK_PROBE_MS/);
+assert.match(live, /selectedPair\.currentRoundTripTime/);
 assert.match(live, /IHN_LIVE_ICE_GATHER_TIMEOUT = 650/);
 assert.match(live, /IHN_LIVE_FAST_ICE_GATHER_TIMEOUT = 280/);
 assert.match(live, /IHN_LIVE_ICE_CANDIDATE_SETTLE_MS = 70/);
+assert.ok(
+  live.indexOf('const iceReady = ihnWaitForIce') < live.indexOf('await pc.setLocalDescription(offerDescription)'),
+  'offer ICE listeners must be installed before gathering starts'
+);
 assert.match(live, /IHN_LIVE_ICE_BATCH_RETRY_LIMIT = 4/);
 assert.match(live, /function ihnQueueLocalIceCandidate\(/);
 assert.match(live, /async function ihnFlushLocalIceCandidates\(/);
@@ -675,14 +689,15 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.9.6');
+assert.equal(update.publishedAppVersion, '5.9.7');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.6/);
-assert.match(notes, /two progressive health checks/i);
-assert.match(notes, /visible tab/i);
-assert.match(notes, /ICE candidates/i);
-assert.match(notes, /realtime backlog/i);
+assert.match(update.releaseNotes, /v5\.9\.7/);
+assert.match(notes, /directed mailbox/i);
+assert.match(notes, /exact encrypted offer comment/i);
+assert.match(notes, /first host candidate/i);
+assert.match(notes, /candidate-pair RTT/i);
+assert.match(notes, /compatibility fallback/i);
 
-console.log('v5.9.6 smoke checks passed.');
+console.log('v5.9.7 smoke checks passed.');
