@@ -62,14 +62,14 @@ jobs:
 
       - name: Verify APK exists
         run: |
-          test -s inhouse-notes-release-v1.0.8.apk
-          ls -lh inhouse-notes-release-v1.0.8.apk
+          test -s inhouse-notes-release-v1.0.9.apk
+          ls -lh inhouse-notes-release-v1.0.9.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: inhouse-notes-android-v1.0.8
-          path: inhouse-notes-release-v1.0.8.apk
+          name: inhouse-notes-android-v1.0.9
+          path: inhouse-notes-release-v1.0.9.apk
           if-no-files-found: error
 
 
@@ -77,11 +77,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.8 >/dev/null 2>&1; then
-            gh release upload android-v1.0.8 inhouse-notes-release-v1.0.8.apk --clobber
+          if gh release view android-v1.0.9 >/dev/null 2>&1; then
+            gh release upload android-v1.0.9 inhouse-notes-release-v1.0.9.apk --clobber
           else
-            gh release create android-v1.0.8 inhouse-notes-release-v1.0.8.apk \
-              --title "Inhouse Notes Android 1.0.8" \
-              --notes "Faster, seamless startup with launch colours matched to the app in light and dark mode." \
+            gh release create android-v1.0.9 inhouse-notes-release-v1.0.9.apk \
+              --title "Inhouse Notes Android 1.0.9" \
+              --notes "Required updates now show real download percentage, progress, and transferred megabytes." \
               --latest=false
           fi
