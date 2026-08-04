@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.9.8",
-  "releaseNotes": "Inhouse Notes v5.9.8 / Android 1.0.10: the Home transition now waits for the exact latest document version to be confirmed in Drive, with a short branded saving screen and a fast prepared-PDF upload path."
+  "publishedAppVersion": "5.9.9",
+  "releaseNotes": "Inhouse Notes v5.9.9 / Android 1.0.10: PDFs now use compact object streams, shared backgrounds and pixel-perfect cropped overlays; document opening paints before background persistence and can reuse the exact uploaded PDF already in memory."
 }
