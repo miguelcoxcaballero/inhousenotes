@@ -8781,8 +8781,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.9.8"></script>
-    <script src="live-collaboration-v5.js?v=5.9.8"></script>
+    <script src="collaboration-core-v5.js?v=5.9.9"></script>
+    <script src="live-collaboration-v5.js?v=5.9.9"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8850,7 +8850,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.9.8';
+        const APP_VERSION = '5.9.9';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -9563,6 +9563,41 @@
             // snapshot may be newer than a card rendered just before an upload;
             // the immediate background revision check covers that small race.
             return cardModified > 0 && cachedModified >= cardModified;
+        }
+
+        function getPreparedDriveOpenCache(file) {
+            if (!file?.id || state.driveFileId !== file.id) return null;
+            if (!(preparedDrivePdf?.blob instanceof Blob) || !preparedDrivePdf.blob.size) return null;
+            if (preparedDrivePdf.version !== driveUploadedContentVersion
+                || driveContentVersion !== driveUploadedContentVersion) {
+                return null;
+            }
+            const modifiedTime = Number(state.driveLastKnownModified)
+                || Date.parse(file.modifiedTime || '')
+                || Date.now();
+            return {
+                fileId: file.id,
+                blob: preparedDrivePdf.blob,
+                meta: normalizeDriveOpenCacheMeta({
+                    driveHeadRevisionId: state.driveHeadRevisionId,
+                    driveRevisionVersion: state.driveRevisionVersion,
+                    driveLastKnownModified: modifiedTime,
+                    size: preparedDrivePdf.blob.size
+                }),
+                analysis: preparedDrivePdf.blob.inhouseOpenCacheAnalysis || null,
+                details: {
+                    canEdit: state.driveCanEdit,
+                    ownedByMe: state.driveOwnedByMe,
+                    ownerName: state.driveOwnerName,
+                    ownerEmail: state.driveOwnerEmail,
+                    ownerPhoto: state.driveOwnerPhoto,
+                    resourceKey: state.driveResourceKey,
+                    parentIds: Array.isArray(state.driveParentIds) ? [...state.driveParentIds] : [],
+                    folderKind: state.driveFolderKind,
+                    fileName: state.driveFileName || file.name || ''
+                },
+                cachedAt: Date.now()
+            };
         }
 
         async function trimDriveOpenCache(maxEntries = 6) {
@@ -15487,6 +15522,9 @@
         }
 
         const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';
+        // Marks metadata produced after all page/stroke identities and legacy
+        // duplicates have already been normalized. Older clients ignore suffixes.
+        const PDF_NORMALIZED_METADATA_KEYWORD = 'IH_NORM:1';
 
         function createDriveSyncEnvelope(pages) {
             const safePages = Array.isArray(pages) ? pages : [];
@@ -18017,9 +18055,10 @@
             if (driveOpenInProgress) return;
             closeDriveCardMenu();
             driveOpenInProgress = true;
-            // Start the local lookup at click time. IndexedDB usually resolves
-            // before the editor transition has finished painting.
-            const cachedOpenPromise = loadDriveOpenCache(file.id);
+            // Start the persistent lookup at click time. If this is the document
+            // we just saved, the exact uploaded Blob is still in memory and wins
+            // below without waiting for IndexedDB or copying it again.
+            const persistedOpenPromise = loadDriveOpenCache(file.id);
             if (lifecycleExitSavePromise) {
                 if (driveStatusEl) {
                     driveStatusEl.textContent = 'Finishing the previous Drive save...';
@@ -18078,6 +18117,10 @@
                     return;
                 }
             }
+            const preparedOpen = getPreparedDriveOpenCache(file);
+            const cachedOpenPromise = preparedOpen
+                ? Promise.resolve(preparedOpen)
+                : persistedOpenPromise;
             driveOpenFileId = file.id;
             const sessionToken = beginDocumentSession();
             clearPublicInlinePreview();
@@ -29391,6 +29434,7 @@
             const pages = Array.isArray(payload?.pages) ? payload.pages : [];
             const sessionToken = getDocumentSessionToken();
             const awaitAllPages = !!options.awaitAllPages;
+            const deferPageWrites = !!options.deferPageWrites && !awaitAllPages;
             const pageStoreCleared = await clearPageStore();
             if (!pageStoreCleared || !isDocumentSessionTokenValid(sessionToken)) return false;
             pageDirty.clear();
@@ -29437,22 +29481,31 @@
                     strokeCount: getVisibleStrokeCount(fullPage),
                     unloaded: false
                 };
-                const saved = await savePageToIndexedDb(i, fullPage);
-                if (!isDocumentSessionTokenValid(sessionToken)) return false;
-                if (saved) {
-                    legacyPagesCache[i] = null;
+                if (!deferPageWrites) {
+                    const saved = await savePageToIndexedDb(i, fullPage);
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
+                    if (saved) {
+                        legacyPagesCache[i] = null;
+                    }
                 }
                 touchPageAccess(i);
             }
             pruneLegacyPagesCache();
 
-            let index = keepCount;
+            // PDF import already has every parsed page safely in memory. Let the
+            // visible working set paint immediately, then persist it alongside
+            // the remaining pages in idle batches.
+            let index = deferPageWrites ? 0 : keepCount;
             const batchSize = 10;
             const migratePageRange = async (limit) => {
                 let count = 0;
                 while (index < pages.length && count < limit) {
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
-                    const fullPage = normalizeLegacyPage(pages[index], index);
+                    const livePage = state.pages[index];
+                    const sourcePage = deferPageWrites && isPageLoaded(livePage)
+                        ? livePage
+                        : pages[index];
+                    const fullPage = normalizeLegacyPage(sourcePage, index);
                     if (awaitAllPages) {
                         state.pages[index] = {
                             ...fullPage,
@@ -36115,6 +36168,10 @@
                 // PDF.js could even display page 1.
                 const ORIGINAL_BYTES_MAX = 60 * 1024 * 1024;
                 const sourceBlob = options.sourceBlob instanceof Blob ? options.sourceBlob : null;
+                const cachedAnalysis = options.cachedAnalysis
+                    && typeof options.cachedAnalysis.keywords === 'string'
+                    ? options.cachedAnalysis
+                    : null;
                 let capturedOriginalBytes = null;
                 let originalBytesPromise = null;
                 const getCapturedOriginalBytes = async () => {
@@ -36168,7 +36225,17 @@
 
                 let firstPageWidth = A4_WIDTH;
                 let firstPageHeight = A4_HEIGHT;
-                if (numPages > 0) {
+                const cachedFirstPage = Array.isArray(cachedAnalysis?.embeddedStrokes)
+                    ? cachedAnalysis.embeddedStrokes[0]
+                    : null;
+                const hasCachedFirstPageSize = Number.isFinite(Number(cachedFirstPage?.pageWidth))
+                    && Number(cachedFirstPage.pageWidth) > 0
+                    && Number.isFinite(Number(cachedFirstPage?.pageHeight))
+                    && Number(cachedFirstPage.pageHeight) > 0;
+                if (hasCachedFirstPageSize) {
+                    firstPageWidth = Math.max(1, Math.round(Number(cachedFirstPage.pageWidth)));
+                    firstPageHeight = Math.max(1, Math.round(Number(cachedFirstPage.pageHeight)));
+                } else if (numPages > 0) {
                     try {
                         const firstPdfPage = await pdf.getPage(1);
                         const firstViewport = firstPdfPage.getViewport({ scale: 1 });
@@ -36227,14 +36294,12 @@
                 let embeddedStrokes = null;
                 let pdfKeywordsString = '';
                 let collabMetadataAdvertised = false;
-                const cachedAnalysis = options.cachedAnalysis
-                    && typeof options.cachedAnalysis.keywords === 'string'
-                    ? options.cachedAnalysis
-                    : null;
+                let metadataAlreadyNormalized = false;
                 try {
                     const metadata = cachedAnalysis ? null : await pdf.getMetadata();
                     const keywords = cachedAnalysis?.keywords || metadata?.info?.Keywords || '';
                     pdfKeywordsString = keywords;
+                    metadataAlreadyNormalized = keywords.includes(`;${PDF_NORMALIZED_METADATA_KEYWORD}`);
                     collabMetadataAdvertised = keywords.startsWith('STROKES_Z:')
                         || keywords.startsWith('STROKES_DATA:')
                         || keywords.includes(';IH_STRUCT:')
@@ -36342,6 +36407,8 @@
                 state.cleanOriginalPageSizes = null;
                 state.hasLegacyBakedOverlay = false;
                 let needsCleanOriginalSwap = false;
+                const needsCleanOriginalRecovery = Array.isArray(embeddedStrokes)
+                    && embeddedStrokes.some(pageEntryNeedsPdfBackground);
                 // Drive file ID is set by openDriveFile *after* importPDFData returns,
                 // so prefer the option passed in via options.driveFileId for IDB cache
                 // operations; fall back to state.driveFileId for non-Drive flows.
@@ -36351,7 +36418,7 @@
                     if (idbCacheKey) {
                         saveOriginalPdfBytes(idbCacheKey, capturedOriginalBytes).catch(() => { });
                     }
-                } else if (embeddedStrokes) {
+                } else if (needsCleanOriginalRecovery) {
                     // Saved-by-this-app document. Recover clean original via, in order:
                     //   1. IndexedDB cache for an instant reopen.
                     //   2. IH_CLEAN_ORIGINAL.pdf embedded attachment.
@@ -36407,7 +36474,7 @@
                     state.hasLegacyBakedOverlay = true;
                 } else if (needsCleanOriginalSwap) {
                     await swapDisplayDocToCleanOriginal();
-                } else if (embeddedStrokes && !state.cleanOriginalPdfBytes) {
+                } else if (needsCleanOriginalRecovery && !state.cleanOriginalPdfBytes) {
                     // Legacy doc that was previously saved by this app but we no longer
                     // have the clean original. The strokes are baked into the saved
                     // PDF as an overlay PNG AND restored as vectors here. Mark legacy
@@ -36417,7 +36484,7 @@
                 }
 
                 // Fix legacy same-ID strokes and deduplicate truly identical ones
-                if (embeddedStrokes) {
+                if (embeddedStrokes && !metadataAlreadyNormalized) {
                     for (const pageData of embeddedStrokes) {
                         if (pageData && Array.isArray(pageData.strokes) && pageData.strokes.length > 1) {
                             // First: assign new IDs to same-ID strokes (legacy bug)
@@ -36595,7 +36662,7 @@
                     pages: importedPages,
                     collabStructure: state.collabStructure,
                     collabFields: state.collabFields
-                }, { awaitAllPages: false });
+                }, { awaitAllPages: false, deferPageWrites: true });
                 await yieldToMainThread();
                 throwIfSessionInvalid();
                 renderAllPages();
@@ -37624,7 +37691,7 @@
                 }
                 if (removedCount === 0) return null;
                 const cleanedBytes = await doc.save({
-                    useObjectStreams: false,
+                    useObjectStreams: true,
                     addDefaultPage: false
                 });
                 return cleanedBytes;
@@ -37637,7 +37704,7 @@
         // Cache of overlay PNG bytes per page for the pdf-lib export path.
         // Mirrors `pdfExportCache` so consecutive Drive saves don't re-render
         // unchanged pages. Cleared on document switch / state reset.
-        const pdfLibOverlayCache = new Map(); // pageIndex -> { hash, pngBytes }
+        const pdfLibOverlayCache = new Map(); // pageIndex -> { hash, pngBytes, bounds }
 
         // Cache of the parsed pdf-lib document for the clean original bytes —
         // avoids re-parsing the source PDF on every autosave (saves hundreds of
@@ -37664,6 +37731,91 @@
             }
         }
 
+        function getPdfOverlayContentBounds(pageData, exportStrokes, pageWidth, pageHeight, scale) {
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            const includeRect = (x1, y1, x2, y2) => {
+                if (![x1, y1, x2, y2].every(Number.isFinite)) return;
+                minX = Math.min(minX, x1, x2);
+                minY = Math.min(minY, y1, y2);
+                maxX = Math.max(maxX, x1, x2);
+                maxY = Math.max(maxY, y1, y2);
+            };
+
+            for (const stroke of Array.isArray(exportStrokes) ? exportStrokes : []) {
+                if (!stroke || stroke.tool === 'eraser-stroke') continue;
+                const points = Array.isArray(stroke.points) ? stroke.points : [];
+                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
+                if (points.length < minPoints) continue;
+                let strokeMinX = Infinity;
+                let strokeMinY = Infinity;
+                let strokeMaxX = -Infinity;
+                let strokeMaxY = -Infinity;
+                for (const point of points) {
+                    const x = Number(point?.x);
+                    const y = Number(point?.y);
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                    strokeMinX = Math.min(strokeMinX, x);
+                    strokeMinY = Math.min(strokeMinY, y);
+                    strokeMaxX = Math.max(strokeMaxX, x);
+                    strokeMaxY = Math.max(strokeMaxY, y);
+                }
+                if (!Number.isFinite(strokeMinX)) continue;
+                const renderedWidth = stroke.tool === 'highlighter'
+                    ? Math.max(4, Number(stroke.width) || 12)
+                    : Math.max(1, Number(stroke.width) || 1);
+                // Two logical pixels cover round caps and Canvas antialiasing,
+                // so cropping cannot clip or soften edge pixels.
+                const padding = renderedWidth * 0.52 + 2;
+                includeRect(
+                    strokeMinX - padding,
+                    strokeMinY - padding,
+                    strokeMaxX + padding,
+                    strokeMaxY + padding
+                );
+            }
+
+            for (const image of Array.isArray(pageData?.images) ? pageData.images : []) {
+                const x = Number(image?.x);
+                const y = Number(image?.y);
+                const width = Number(image?.width);
+                const height = Number(image?.height);
+                if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) continue;
+                const angle = Number(image.rotation) || 0;
+                const cos = Math.abs(Math.cos(angle));
+                const sin = Math.abs(Math.sin(angle));
+                const halfWidth = (width * cos + height * sin) / 2;
+                const halfHeight = (width * sin + height * cos) / 2;
+                includeRect(x - halfWidth - 2, y - halfHeight - 2, x + halfWidth + 2, y + halfHeight + 2);
+            }
+
+            if (!Number.isFinite(minX) || !Number.isFinite(minY)
+                || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+                return null;
+            }
+            const safeWidth = Math.max(1, Number(pageWidth) || 1);
+            const safeHeight = Math.max(1, Number(pageHeight) || 1);
+            const safeScale = Math.max(1, Number(scale) || 1);
+            const x1 = Math.floor(Math.max(0, minX) * safeScale) / safeScale;
+            const y1 = Math.floor(Math.max(0, minY) * safeScale) / safeScale;
+            const x2 = Math.min(safeWidth, Math.ceil(Math.min(safeWidth, maxX) * safeScale) / safeScale);
+            const y2 = Math.min(safeHeight, Math.ceil(Math.min(safeHeight, maxY) * safeScale) / safeScale);
+            if (x2 <= x1 || y2 <= y1) return null;
+            return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+        }
+
+        function canBuildCurrentPdfWithPdfLib() {
+            if (!window.PDFLib || !Array.isArray(state.pages) || state.pages.length === 0) return false;
+            if (state.cleanOriginalPdfBytes?.byteLength) return true;
+            return state.pages.every(page => {
+                const source = page?.backgroundSource
+                    || (page?.pdfPageIndex ? 'pdf' : (page?.backgroundImage ? 'custom' : 'template'));
+                return source === 'template' || !!page?.backgroundImage;
+            });
+        }
+
         // Text-preserving export pipeline. Uses pdf-lib to keep the original PDF
         // pages intact (selectable text, vector graphics, forms, fonts) and lays
         // the user's strokes/images on top as a transparent PNG overlay per page.
@@ -37672,9 +37824,7 @@
         async function buildPdfBlobWithPdfLib(options = {}) {
             const PDFLib = window.PDFLib;
             if (!PDFLib) throw new Error('pdf-lib not loaded');
-            if (!state.cleanOriginalPdfBytes || !state.cleanOriginalPdfBytes.byteLength) {
-                throw new Error('No clean original PDF bytes available');
-            }
+            if (!canBuildCurrentPdfWithPdfLib()) throw new Error('PDF backgrounds are not available');
 
             const abortSignal = options.signal || null;
             const sessionToken = Number.isFinite(options.sessionToken)
@@ -37735,10 +37885,14 @@
             // 200-500ms and would otherwise be re-done on every autosave.
             // copyPages() doesn't mutate the source doc's page tree, so reusing
             // the same instance is safe.
-            let originalDoc = (_pdfLibOriginalCache.bytesRef === state.cleanOriginalPdfBytes)
+            const cleanOriginalBytes = state.cleanOriginalPdfBytes?.byteLength
+                ? state.cleanOriginalPdfBytes
+                : null;
+            let originalDoc = cleanOriginalBytes
+                && _pdfLibOriginalCache.bytesRef === cleanOriginalBytes
                 ? _pdfLibOriginalCache.doc
                 : null;
-            if (!originalDoc) {
+            if (!originalDoc && cleanOriginalBytes) {
                 const cleanBytesCopy = state.cleanOriginalPdfBytes.slice(0);
                 originalDoc = await PDFLib.PDFDocument.load(cleanBytesCopy, {
                     ignoreEncryption: true,
@@ -37753,7 +37907,7 @@
             // Plan which original pages to copy (batch copy is much faster than per-page).
             const sourceIndices = [];
             const stateToSourceIdx = [];
-            const originalPageCount = originalDoc.getPageCount();
+            const originalPageCount = originalDoc ? originalDoc.getPageCount() : 0;
             for (let i = 0; i < pageCount; i++) {
                 const p = state.pages[i];
                 if (p?.backgroundSource === 'pdf'
@@ -37767,7 +37921,7 @@
                 }
             }
             let copiedPages = [];
-            if (sourceIndices.length > 0) {
+            if (sourceIndices.length > 0 && originalDoc) {
                 copiedPages = await outDoc.copyPages(originalDoc, sourceIndices);
                 throwIfAborted();
                 throwIfSessionInvalid();
@@ -37778,6 +37932,8 @@
             const overlayCanvas = createProcessingCanvas(1, 1);
             const overlayCtx = overlayCanvas.getContext('2d');
             const metadataParts = [];
+            const templateBackgroundImageCache = new Map();
+            const customBackgroundImageCache = new Map();
             // Track each overlay XObject's ref number so future reopens can
             // surgically remove the overlay from page resources (no white
             // covers, no doubled strokes).
@@ -37816,44 +37972,63 @@
                     });
 
                     if (pageData.backgroundImage) {
-                        const bgImg = await fetchBytesAsImage(pageData.backgroundImage);
-                        if (bgImg) {
+                        let embedded = customBackgroundImageCache.get(pageData.backgroundImage) || null;
+                        if (!embedded) {
+                            const bgImg = await fetchBytesAsImage(pageData.backgroundImage);
                             try {
-                                const embedded = bgImg.kind === 'png'
-                                    ? await outDoc.embedPng(bgImg.bytes)
-                                    : await outDoc.embedJpg(bgImg.bytes);
-                                outPage.drawImage(embedded, {
-                                    x: 0, y: 0,
-                                    width: pageWidthPt, height: pageHeightPt
-                                });
+                                if (bgImg) {
+                                    embedded = bgImg.kind === 'png'
+                                        ? await outDoc.embedPng(bgImg.bytes)
+                                        : await outDoc.embedJpg(bgImg.bytes);
+                                    customBackgroundImageCache.set(pageData.backgroundImage, embedded);
+                                }
                             } catch (embedErr) {
                                 console.warn('Failed to embed page background:', embedErr);
                             }
                         }
-                    } else if (pageData.backgroundSource === 'template') {
-                        const tplCanvas = createProcessingCanvas(
-                            Math.max(1, Math.round(pageWidthPx * overlayScale)),
-                            Math.max(1, Math.round(pageHeightPx * overlayScale))
-                        );
-                        const tplCtx = tplCanvas.getContext('2d');
-                        tplCtx.fillStyle = 'white';
-                        tplCtx.fillRect(0, 0, tplCanvas.width, tplCanvas.height);
-                        drawTemplateBackground(tplCtx, pageWidthPx, pageHeightPx,
-                            overlayScale, normalizeTemplateKind(pageData.templateKind));
-                        const tplBlob = await canvasToBlobSafe(tplCanvas, 'image/jpeg', 0.85);
-                        if (tplBlob) {
-                            try {
-                                const buf = await tplBlob.arrayBuffer();
-                                const embedded = await outDoc.embedJpg(buf);
-                                outPage.drawImage(embedded, {
-                                    x: 0, y: 0,
-                                    width: pageWidthPt, height: pageHeightPt
-                                });
-                            } catch (tplErr) {
-                                console.warn('Failed to embed template background:', tplErr);
-                            }
+                        if (embedded) {
+                            outPage.drawImage(embedded, {
+                                x: 0, y: 0,
+                                width: pageWidthPt, height: pageHeightPt
+                            });
                         }
-                        tplCanvas.width = 0; tplCanvas.height = 0;
+                    } else if (pageData.backgroundSource === 'template') {
+                        const templateKind = normalizeTemplateKind(pageData.templateKind);
+                        const templateKey = `${templateKind}|${pageWidthPx}x${pageHeightPx}|${overlayScale}`;
+                        let embedded = templateBackgroundImageCache.get(templateKey) || null;
+                        if (!embedded) {
+                            const tplCanvas = createProcessingCanvas(
+                                Math.max(1, Math.round(pageWidthPx * overlayScale)),
+                                Math.max(1, Math.round(pageHeightPx * overlayScale))
+                            );
+                            const tplCtx = tplCanvas.getContext('2d');
+                            tplCtx.fillStyle = 'white';
+                            tplCtx.fillRect(0, 0, tplCanvas.width, tplCanvas.height);
+                            drawTemplateBackground(
+                                tplCtx,
+                                tplCanvas.width,
+                                tplCanvas.height,
+                                1,
+                                templateKind
+                            );
+                            const tplBlob = await canvasToBlobSafe(tplCanvas, 'image/jpeg', 0.85);
+                            if (tplBlob) {
+                                try {
+                                    embedded = await outDoc.embedJpg(await tplBlob.arrayBuffer());
+                                    templateBackgroundImageCache.set(templateKey, embedded);
+                                } catch (tplErr) {
+                                    console.warn('Failed to embed template background:', tplErr);
+                                }
+                            }
+                            tplCanvas.width = 0;
+                            tplCanvas.height = 0;
+                        }
+                        if (embedded) {
+                            outPage.drawImage(embedded, {
+                                x: 0, y: 0,
+                                width: pageWidthPt, height: pageHeightPt
+                            });
+                        }
                     }
                 }
 
@@ -37922,27 +38097,43 @@
                 };
                 metadataParts.push(JSON.stringify(pageStrokeEntry));
 
-                // Skip overlay entirely if there's nothing to draw.
-                const hasContent = (Array.isArray(pageData.strokes) && pageData.strokes.length > 0)
-                    || (Array.isArray(pageData.images) && pageData.images.length > 0);
-                if (!hasContent) continue;
+                // Keep the original 2x/2.5x resolution, but encode only the
+                // occupied rectangle instead of a transparent full-page PNG.
+                // Pixel-aligned bounds make this visually identical while sparse
+                // handwritten pages become dramatically smaller and faster to decode.
+                let overlayBounds = getPdfOverlayContentBounds(
+                    pageData,
+                    exportStrokes,
+                    logicalPageWidthPx,
+                    logicalPageHeightPx,
+                    overlayScale
+                );
+                if (!overlayBounds) continue;
 
                 // Try cache: same content hash => reuse the prior PNG bytes.
                 const pageHash = `${computePageHash(pageData)}|${exportProfile}|logical:${logicalPageWidthPx}x${logicalPageHeightPx}|pdf:${pageWidthPx}x${pageHeightPx}`;
                 const cached = pdfLibOverlayCache.get(i);
                 let pngBytes = null;
-                if (cached && cached.hash === pageHash && cached.pngBytes) {
+                if (cached && cached.hash === pageHash && cached.pngBytes && cached.bounds) {
                     pngBytes = cached.pngBytes;
+                    overlayBounds = cached.bounds;
                 }
 
                 if (!pngBytes) {
-                    const overlayPxW = Math.max(1, Math.round(logicalPageWidthPx * overlayScale));
-                    const overlayPxH = Math.max(1, Math.round(logicalPageHeightPx * overlayScale));
+                    const overlayPxW = Math.max(1, Math.round(overlayBounds.width * overlayScale));
+                    const overlayPxH = Math.max(1, Math.round(overlayBounds.height * overlayScale));
                     overlayCanvas.width = overlayPxW;
                     overlayCanvas.height = overlayPxH;
                     overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
                     overlayCtx.clearRect(0, 0, overlayPxW, overlayPxH);
-                    overlayCtx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
+                    overlayCtx.setTransform(
+                        overlayScale,
+                        0,
+                        0,
+                        overlayScale,
+                        -overlayBounds.x * overlayScale,
+                        -overlayBounds.y * overlayScale
+                    );
                     overlayCtx.lineCap = 'round';
                     overlayCtx.lineJoin = 'round';
 
@@ -37976,15 +38167,19 @@
                         throw new Error('Failed to encode overlay PNG');
                     }
                     pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
-                    pdfLibOverlayCache.set(i, { hash: pageHash, pngBytes });
+                    pdfLibOverlayCache.set(i, { hash: pageHash, pngBytes, bounds: overlayBounds });
                 }
 
                 throwIfAborted();
                 throwIfSessionInvalid();
                 const overlayImg = await outDoc.embedPng(pngBytes);
+                const scaleX = pageWidthPt / logicalPageWidthPx;
+                const scaleY = pageHeightPt / logicalPageHeightPx;
                 outPage.drawImage(overlayImg, {
-                    x: 0, y: 0,
-                    width: pageWidthPt, height: pageHeightPt
+                    x: overlayBounds.x * scaleX,
+                    y: pageHeightPt - ((overlayBounds.y + overlayBounds.height) * scaleY),
+                    width: overlayBounds.width * scaleX,
+                    height: overlayBounds.height * scaleY
                 });
                 // Capture the XObject NAME pdf-lib assigned for our overlay so the
                 // reopen path can surgically strip it via Resources/XObject delete.
@@ -38048,6 +38243,7 @@
                 metaPrefix = 'STROKES_DATA:';
             }
             let keywordsPayload = metaPrefix + encodedMetadata;
+            keywordsPayload += `;${PDF_NORMALIZED_METADATA_KEYWORD}`;
             if (overlayRefs.length > 0) {
                 const refsStr = overlayRefs
                     .map(r => `${r.pageIdx}=${r.name || r.refNum || ''}`)
@@ -38118,7 +38314,7 @@
 
             await yieldToUI(true);
             const finalBytes = await outDoc.save({
-                useObjectStreams: false,
+                useObjectStreams: true,
                 addDefaultPage: false
             });
             throwIfAborted();
@@ -38137,13 +38333,10 @@
         }
 
         async function buildPdfBlob(options = {}) {
-            // Prefer the text-preserving pdf-lib path when we have the clean
-            // original PDF bytes (cached in IndexedDB or captured this session).
-            // On any failure, fall through to the existing raster pipeline so
-            // the user never loses a save.
-            if (window.PDFLib
-                && state.cleanOriginalPdfBytes
-                && state.cleanOriginalPdfBytes.byteLength) {
+            // Prefer the compact text/vector-preserving path whenever every
+            // background can be reproduced losslessly. On any failure, fall
+            // through to the existing raster pipeline so a save cannot be lost.
+            if (canBuildCurrentPdfWithPdfLib()) {
                 try {
                     const result = await buildPdfBlobWithPdfLib(options);
                     if (result) return result;
@@ -38546,6 +38739,7 @@
             // thus always use this raster path) would lose their calendar
             // config and version history on every save, leaving the timeline
             // permanently stuck on a "legacy" baseline.
+            encodedMetadata += `;${PDF_NORMALIZED_METADATA_KEYWORD}`;
             if (state.calendarPageConfig && canUseAgendaCalendarForCurrentDocument()) {
                 try {
                     const calStr = JSON.stringify(state.calendarPageConfig);

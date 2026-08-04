@@ -6,16 +6,16 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.8.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.9.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.8';/);
+assert.match(html, /const APP_VERSION = '5\.9\.9';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.8/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.8/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.9/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.9/);
 assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
 assert.match(html, /@keyframes presence-peer-connecting/);
 assert.match(html, /\.presence-peer-badge/);
@@ -98,10 +98,15 @@ assert.match(html, /sourceBlob: blob/);
 assert.match(html, /function getEmbeddedMetadataWorker\(/);
 assert.match(html, /parseEmbeddedMetadataPayload\(encodedData, true\)/);
 assert.match(html, /awaitAllPages: false/);
+assert.match(html, /deferPageWrites: true/);
+assert.match(html, /const deferPageWrites = !!options\.deferPageWrites/);
 assert.match(html, /const DRIVE_OPEN_CACHE_STORE = 'drive-open-cache';/);
 assert.match(html, /function driveOpenCacheMatchesCard\(/);
+assert.match(html, /function getPreparedDriveOpenCache\(/);
+assert.match(html, /const preparedOpen = getPreparedDriveOpenCache\(file\);/);
 assert.match(html, /cachedModified >= cardModified/);
 assert.match(html, /cachedAnalysis: cachedOpen\.analysis \|\| null/);
+assert.match(html, /const hasCachedFirstPageSize =/);
 assert.match(html, /setTimeout\(\(\) => revalidateCachedDriveOpen\(file, cachedOpen, sessionToken\), 0\)/);
 assert.match(html, /blob\.inhouseOpenCacheAnalysis =/);
 assert.match(html, /pdfResult\.inhouseOpenCacheAnalysis =/);
@@ -244,6 +249,15 @@ assert.match(html, /publishLiveStrokePreview\(currentStrokePageId, currentStroke
 assert.match(html, /publishLiveStrokePreview\(targetPage\.pageId, finalizedStroke, \{ final: true \}\)/);
 
 assert.match(html, /const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';/);
+assert.match(html, /const PDF_NORMALIZED_METADATA_KEYWORD = 'IH_NORM:1';/);
+assert.match(html, /metadataAlreadyNormalized = keywords\.includes/);
+assert.match(html, /embeddedStrokes && !metadataAlreadyNormalized/);
+assert.match(html, /function getPdfOverlayContentBounds\(/);
+assert.match(html, /pdfLibOverlayCache\.set\(i, \{ hash: pageHash, pngBytes, bounds: overlayBounds \}\)/);
+assert.match(html, /const templateBackgroundImageCache = new Map\(\);/);
+assert.match(html, /function canBuildCurrentPdfWithPdfLib\(/);
+assert.ok((html.match(/useObjectStreams: true/g) || []).length >= 2);
+assert.doesNotMatch(html, /useObjectStreams: false/);
 assert.match(html, /remoteSyncEnvelope\.contentHash === driveConfirmedContentHash/);
 assert.match(html, /const localOnlyStrokes = structuralIdentityChanged \|\| !preserveLocalContent/);
 assert.match(html, /const pageHasLocalMerges = preserveLocalContent &&/);
@@ -357,6 +371,31 @@ new vm.Script(live, { filename: 'live-collaboration-v5.js' });
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
 new vm.Script(collaborationCore, { filename: 'collaboration-core-v5.js' });
+const pdfBoundsStart = html.indexOf('function getPdfOverlayContentBounds');
+const pdfBoundsEnd = html.indexOf('function canBuildCurrentPdfWithPdfLib', pdfBoundsStart);
+const pdfBoundsContext = vm.createContext({});
+vm.runInContext(html.slice(pdfBoundsStart, pdfBoundsEnd), pdfBoundsContext, {
+  filename: 'pdf-overlay-bounds-v5.js'
+});
+const sparseBounds = pdfBoundsContext.getPdfOverlayContentBounds(
+  { images: [] },
+  [{ tool: 'pen', width: 4, points: [{ x: 100, y: 200 }, { x: 140, y: 240 }] }],
+  794,
+  1123,
+  2
+);
+assert.ok(sparseBounds.width < 60 && sparseBounds.height < 60, 'sparse overlay must be tightly cropped');
+assert.equal(
+  pdfBoundsContext.getPdfOverlayContentBounds(
+    { images: [] },
+    [{ tool: 'eraser-stroke', width: 40, points: [{ x: 10, y: 10 }, { x: 50, y: 50 }] }],
+    794,
+    1123,
+    2
+  ),
+  null,
+  'non-rendered eraser history must not create a transparent PDF overlay'
+);
 assert.match(collaborationCore, /function ihnMergeStructureMeta\(/);
 assert.match(collaborationCore, /function ihnMergeFieldMeta\(/);
 assert.match(collaborationCore, /function ihnFieldMetaHash\(/);
@@ -694,13 +733,13 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.9.8');
+assert.equal(update.publishedAppVersion, '5.9.9');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.8/);
-assert.match(notes, /confirmed in Drive/i);
-assert.match(notes, /prepared PDF/i);
-assert.match(notes, /editor remains open/i);
+assert.match(update.releaseNotes, /v5\.9\.9/);
+assert.match(notes, /cropped overlays/i);
+assert.match(notes, /object streams/i);
+assert.match(notes, /before IndexedDB persistence/i);
 
-console.log('v5.9.8 smoke checks passed.');
+console.log('v5.9.9 smoke checks passed.');
