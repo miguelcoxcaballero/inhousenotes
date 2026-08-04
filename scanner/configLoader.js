@@ -262,8 +262,13 @@
 
   // Load configuration from values.config
   SP.loadConfig = async function loadConfig() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch('values.config', { cache: 'no-store' });
+      const response = await fetch('values.config', {
+        cache: 'no-store',
+        signal: controller.signal
+      });
       if (!response.ok) {
         throw new Error('Config file not found');
       }
@@ -277,6 +282,8 @@
       console.warn('Failed to load values.config, using defaults:', err);
       // Return default configuration
       return convertToTechnicalConfig({});
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
