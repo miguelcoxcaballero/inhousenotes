@@ -452,18 +452,29 @@
   const loadImg = (src, revokeOnLoad = false) => new Promise((res, rej) => {
     const img = new Image();
     img.decoding = "async";
+    let settled = false;
     let url = src;
     if (src instanceof Blob) {
       url = URL.createObjectURL(src);
       revokeOnLoad = true;
     }
-    img.onload = () => {
+    let timeoutId = null;
+    const finish = (ok, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      img.onload = null;
+      img.onerror = null;
       if (revokeOnLoad) URL.revokeObjectURL(url);
-      res(img);
+      if (ok) res(value);
+      else rej(value);
+    };
+    timeoutId = setTimeout(() => finish(false, new Error("Image decode timed out")), 30000);
+    img.onload = () => {
+      finish(true, img);
     };
     img.onerror = e => {
-      if (revokeOnLoad) URL.revokeObjectURL(url);
-      rej(e);
+      finish(false, e);
     };
     img.src = url;
   });
@@ -493,7 +504,19 @@
   };
 
   const toURL = (c, m = "image/jpeg", q = 0.92) =>
-    new Promise(r => c.toBlob(b => r(URL.createObjectURL(b)), m, q));
+    new Promise((resolve, reject) => {
+      try {
+        c.toBlob(blob => {
+          if (!blob) {
+            reject(new Error("Canvas encoding failed"));
+            return;
+          }
+          resolve(URL.createObjectURL(blob));
+        }, m, q);
+      } catch (error) {
+        reject(error);
+      }
+    });
 
   const resizeC = (c, w) => {
     const t = document.createElement("canvas");
@@ -1097,24 +1120,39 @@
       card.dataset.id = p.id;
 
       const thumbSrc = getThumbSrc(p);
-      const thumbHtml = thumbSrc
-        ? `<img src="${thumbSrc}" class="thumb" alt="">`
-        : '<div class="thumb-placeholder"><span class="material-symbols-rounded">description</span></div>';
-      const spinnerHtml = p.status === "processing"
-        ? '<div class="page-spinner spinner" aria-hidden="true"></div>'
-        : '';
-      const thumbWrap = `<div class="thumb-wrap">${thumbHtml}${spinnerHtml}</div>`;
-
       card.innerHTML = `
         <span class="material-symbols-rounded drag-handle">drag_indicator</span>
-        ${thumbWrap}
+        <div class="thumb-wrap"></div>
         <div class="info">
-          <div class="filename">${p.name}</div>
-          <div class="page-meta">Page ${i + 1}</div>
+          <div class="filename"></div>
+          <div class="page-meta"></div>
         </div>
-        <button class="btn-del" type="button" aria-label="Delete page ${i + 1}">
+        <button class="btn-del" type="button">
           <span class="material-symbols-rounded" style="font-size:18px">delete</span>
         </button>`;
+
+      const thumbWrap = card.querySelector(".thumb-wrap");
+      if (thumbSrc) {
+        const thumb = document.createElement("img");
+        thumb.src = thumbSrc;
+        thumb.className = "thumb";
+        thumb.alt = "";
+        thumbWrap.appendChild(thumb);
+      } else {
+        const placeholder = document.createElement("div");
+        placeholder.className = "thumb-placeholder";
+        placeholder.innerHTML = '<span class="material-symbols-rounded">description</span>';
+        thumbWrap.appendChild(placeholder);
+      }
+      if (p.status === "processing") {
+        const spinner = document.createElement("div");
+        spinner.className = "page-spinner spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        thumbWrap.appendChild(spinner);
+      }
+      card.querySelector(".filename").textContent = p.name || "Untitled";
+      card.querySelector(".page-meta").textContent = `Page ${i + 1}`;
+      card.querySelector(".btn-del").setAttribute("aria-label", `Delete page ${i + 1}`);
 
       card.addEventListener("click", e => { if (!e.target.closest(".btn-del")) select(i); });
 
@@ -1224,14 +1262,23 @@
     const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const img = new Image();
-    img.onload = () => {
+    let settled = false;
+    const finish = (value, error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      img.onload = null;
+      img.onerror = null;
       URL.revokeObjectURL(url);
-      res(img);
+      if (error) rej(error);
+      else res(value);
     };
-    img.onerror = e => {
-      URL.revokeObjectURL(url);
-      rej(e);
-    };
+    const timeoutId = setTimeout(
+      () => finish(null, new Error("Stencil image decode timed out")),
+      30000
+    );
+    img.onload = () => finish(img);
+    img.onerror = () => finish(null, new Error("Stencil image decode failed"));
     img.src = url;
   });
 
@@ -1829,35 +1876,52 @@
       toast("Applying…");
 
       setTimeout(async () => {
-        const src = p.src || await ensureSrcCanvas(p);
-        if (!src) return;
-        const out = await process(src, { overridePageQuad: p.quad, forceNoYellow: false });
-        const processed = out.canvas;
+        let thumbCanvas = null;
+        let processed = null;
+        try {
+          const src = p.src || await ensureSrcCanvas(p);
+          if (!src) throw new Error("Source image is unavailable");
+          const out = await process(src, { overridePageQuad: p.quad, forceNoYellow: false });
+          processed = out.canvas;
 
-        const thumbCanvas = resizeC(processed, 100);
-        const [displayUrl, thumbUrl] = await Promise.all([
-          toURL(processed, "image/jpeg", 0.92),
-          toURL(thumbCanvas, "image/jpeg", 0.85)
-        ]);
+          thumbCanvas = resizeC(processed, 100);
+          const [displayUrl, thumbUrl] = await Promise.all([
+            toURL(processed, "image/jpeg", 0.92),
+            toURL(thumbCanvas, "image/jpeg", 0.85)
+          ]);
           releaseCanvas(thumbCanvas);
+          thumbCanvas = null;
 
           releaseStencilUrl(p);
           releaseStencilCache(p.id);
           setPageUrls(p, displayUrl, thumbUrl);
-        p.processed = processed;
-        p.processedW = processed.width;
-        p.processedH = processed.height;
-        p.yellowUsed = out.usedYellow;
-        p.marker = out.marker;
-        p.status = "done";
+          p.processed = processed;
+          p.processedW = processed.width;
+          p.processedH = processed.height;
+          p.yellowUsed = out.usedYellow;
+          p.marker = out.marker;
+          p.status = "done";
+          processed = null;
 
-        dropCanvasesIfLowMem(p);
-        trimCanvasCache(p.id);
+          dropCanvasesIfLowMem(p);
+          trimCanvasCache(p.id);
 
-        select(S.i);
-        renderList();
-        stageOff();
-        scheduleUi(syncFinalView);
+          const currentIndex = S.pages.indexOf(p);
+          if (currentIndex >= 0 && S.pages[S.i] === p) select(currentIndex);
+          renderList();
+          scheduleUi(syncFinalView);
+        } catch (error) {
+          console.error(error);
+          if (S.pages.includes(p)) {
+            p.status = "error";
+            renderList();
+          }
+          if (processed) releaseCanvas(processed);
+          toast("Could not apply crop");
+        } finally {
+          if (thumbCanvas) releaseCanvas(thumbCanvas);
+          stageOff();
+        }
       }, 10);
     }
 
@@ -2077,61 +2141,84 @@
   $("autoCropBtn").onclick = autoCrop;
   $("stencilBtn").onclick = toggleStencil;
 
-  $("exportBtn").onclick = async () => {
+  const exportBtn = $("exportBtn");
+  exportBtn.onclick = async () => {
     if (!S.pages.length) return;
 
-    toast("Generating PDF…");
-    await new Promise(r => setTimeout(r, 100));
+    exportBtn.disabled = true;
+    let workCanvas = null;
+    try {
+      toast("Generating PDF…");
+      await new Promise(r => setTimeout(r, 100));
 
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    const pdfW = doc.internal.pageSize.getWidth();
-    const pdfH = doc.internal.pageSize.getHeight();
-
-    // Reuse canvas for all pages
-    const t = document.createElement("canvas");
-    const tctx = t.getContext("2d", { willReadFrequently: true });
-
-    const drawPageImage = async p => {
-      if (p.processed) {
-        t.width = p.processed.width;
-        t.height = p.processed.height;
-        tctx.drawImage(p.processed, 0, 0);
-        return true;
+      const jsPdfConstructor = window.jspdf?.jsPDF;
+      if (typeof jsPdfConstructor !== "function") {
+        throw new Error("PDF library is unavailable");
       }
-      if (!p.displayUrl) return false;
-      const img = await loadImg(p.displayUrl);
-      const w = p.processedW || img.naturalWidth || img.width;
-      const h = p.processedH || img.naturalHeight || img.height;
-      if (!w || !h) return false;
-      t.width = w;
-      t.height = h;
-      tctx.drawImage(img, 0, 0, w, h);
-      return true;
-    };
+      const doc = new jsPdfConstructor();
+      const pdfW = doc.internal.pageSize.getWidth();
+      const pdfH = doc.internal.pageSize.getHeight();
 
-    const pagesLen = S.pages.length;
-    for (let i = 0; i < pagesLen; i++) {
-      if (i) doc.addPage();
+      // Reuse one canvas for every page and always release its backing store.
+      workCanvas = document.createElement("canvas");
+      const workContext = workCanvas.getContext("2d", { willReadFrequently: true });
+      if (!workContext) throw new Error("Canvas is unavailable");
 
-      const p = S.pages[i];
-      const ok = await drawPageImage(p);
-      if (!ok) continue;
+      const drawPageImage = async p => {
+        if (p.processed) {
+          workCanvas.width = p.processed.width;
+          workCanvas.height = p.processed.height;
+          workContext.drawImage(p.processed, 0, 0);
+          return true;
+        }
+        if (!p.displayUrl) return false;
+        const img = await loadImg(p.displayUrl);
+        const w = p.processedW || img.naturalWidth || img.width;
+        const h = p.processedH || img.naturalHeight || img.height;
+        if (!w || !h) return false;
+        workCanvas.width = w;
+        workCanvas.height = h;
+        workContext.drawImage(img, 0, 0, w, h);
+        return true;
+      };
 
-        if (S.stencil) await applyStencilToContext(tctx, t.width, t.height, t);
+      const pagesLen = S.pages.length;
+      let exportedPages = 0;
+      for (let i = 0; i < pagesLen; i++) {
+        const p = S.pages[i];
+        const ok = await drawPageImage(p);
+        if (!ok) continue;
+        if (exportedPages > 0) doc.addPage();
 
-      const r = Math.min(pdfW / t.width, pdfH / t.height);
-      const w = t.width * r;
-      const h = t.height * r;
-      const pdfX = (pdfW - w) * 0.5;
-      const pdfY = (pdfH - h) * 0.5;
-      const data = t.toDataURL("image/jpeg", 0.82);
+        if (S.stencil) {
+          await applyStencilToContext(
+            workContext,
+            workCanvas.width,
+            workCanvas.height,
+            workCanvas
+          );
+        }
 
-      doc.addImage(data, "JPEG", pdfX, pdfY, w, h);
+        const r = Math.min(pdfW / workCanvas.width, pdfH / workCanvas.height);
+        const w = workCanvas.width * r;
+        const h = workCanvas.height * r;
+        const pdfX = (pdfW - w) * 0.5;
+        const pdfY = (pdfH - h) * 0.5;
+        const data = workCanvas.toDataURL("image/jpeg", 0.82);
+        doc.addImage(data, "JPEG", pdfX, pdfY, w, h);
+        exportedPages += 1;
+      }
+
+      if (exportedPages === 0) throw new Error("No page could be decoded");
+      doc.save(($("docTitle").value || "scan") + ".pdf");
+      toast("PDF Downloaded");
+    } catch (error) {
+      console.error("Scanner PDF export failed:", error);
+      toast("Could not generate PDF");
+    } finally {
+      if (workCanvas) releaseCanvas(workCanvas);
+      exportBtn.disabled = false;
     }
-
-    doc.save(($("docTitle").value || "scan") + ".pdf");
-    toast("PDF Downloaded");
   };
 
   /* handleFiles */
@@ -2197,11 +2284,5 @@
   window.handleFiles = handleFiles;
 
 })();
-
-
-
-
-
-
 
 

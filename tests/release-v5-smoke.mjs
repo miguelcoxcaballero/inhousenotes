@@ -5,17 +5,19 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
+const scanner = fs.readFileSync(new URL('../scanner/script.js', import.meta.url), 'utf8');
+const scannerConfig = fs.readFileSync(new URL('../scanner/configLoader.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.9.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.10.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.9';/);
+assert.match(html, /const APP_VERSION = '5\.9\.10';/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.9/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.9/);
+assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.10/);
+assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.10/);
 assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
 assert.match(html, /@keyframes presence-peer-connecting/);
 assert.match(html, /\.presence-peer-badge/);
@@ -319,6 +321,11 @@ const closeFlushSource = html.slice(closeFlushStart, closeFlushEnd);
 assert.match(closeFlushSource, /startLifecycleExitSave\(state\.driveFileId, localCheckpoint\)/);
 assert.doesNotMatch(closeFlushSource, /keepalive: true/);
 assert.doesNotMatch(closeFlushSource, /if \(state\.isReadOnly\) return/);
+assert.match(
+  closeFlushSource,
+  /if \(!hasPendingLocalSave\(\)\) \{[\s\S]{0,350}scheduleLocalStorageBackup\(payload, \{ immediate: true \}\)/,
+  'close handling must not publish metadata while page bodies are still pending'
+);
 assert.match(goHomeSource, /await Promise\.all\(\[localCheckpoint, driveTokenReady, driveRenameReady\]\)/);
 assert.doesNotMatch(goHomeSource, /Promise\.race/, 'Home must wait for the durable local checkpoint');
 assert.match(html, /event\.returnValue = '';/);
@@ -540,7 +547,7 @@ assert.match(
   'only the exact successfully applied Drive notification may be retired'
 );
 
-const fieldsCodecStart = html.indexOf('function encodeCollabFieldsForKeywords');
+const fieldsCodecStart = html.indexOf('const COLLAB_KEYWORD_SECTION_MAX_CHARS');
 const fieldsCodecEnd = html.indexOf('// ── § 4.4', fieldsCodecStart);
 assert.ok(fieldsCodecStart > 0 && fieldsCodecEnd > fieldsCodecStart, 'IH_FIELDS codec must be extractable');
 const sampleFields = {
@@ -733,13 +740,241 @@ assert.match(
   'side-panel title edits must be durable in PAGE_STORE'
 );
 
-assert.equal(update.publishedAppVersion, '5.9.9');
+const storageSaveStart = html.indexOf('async function saveToStorage');
+const storageSaveEnd = html.indexOf('async function loadFromStorage', storageSaveStart);
+const storageSaveSource = html.slice(storageSaveStart, storageSaveEnd);
+const storageEvents = [];
+const storageSaveContext = vm.createContext({
+  console,
+  Date,
+  state: { lastSavedAt: null },
+  pageDirty: new Set(),
+  hasPendingLegacyPageMigration: () => false,
+  captureDocumentPersistenceContext: () => ({ session: 1 }),
+  isDocumentPersistenceContextCurrent: () => true,
+  flushStrokeOpsQueue: async () => { storageEvents.push('ops'); return true; },
+  flushDirtyPages: async () => { storageEvents.push('pages'); return true; },
+  buildMetaPayload: () => { storageEvents.push('metadata'); return { pages: [] }; },
+  saveToIndexedDb: async () => { storageEvents.push('indexeddb'); return true; },
+  persistTimelineHistory: () => Promise.resolve(),
+  scheduleLocalStorageBackup: () => { storageEvents.push('backup'); return true; },
+  updateSaveTimestamp: () => storageEvents.push('timestamp')
+});
+vm.runInContext(`${storageSaveSource}; this.saveToStorage = saveToStorage;`, storageSaveContext);
+const storageSaveResult = await storageSaveContext.saveToStorage();
+assert.equal(storageSaveResult.ok, true);
+assert.ok(
+  storageEvents.indexOf('pages') < storageEvents.indexOf('metadata'),
+  'page bodies must commit before their metadata checkpoint'
+);
+
+const queueSaveStart = html.indexOf('async function queueSave');
+const queueSaveEnd = html.indexOf('function flushOnClose', queueSaveStart);
+const queueSaveSource = html.slice(queueSaveStart, queueSaveEnd);
+const queueStatuses = [];
+const queueSaveContext = vm.createContext({
+  console: { error: () => {} },
+  state: { isReadOnly: false },
+  recordSaveDebug: () => {},
+  saveToStorage: async () => { throw new Error('simulated storage failure'); },
+  showPendingSaveStatus: () => {},
+  showStatus: message => queueStatuses.push(message),
+  isDriveSyncPending: () => false,
+  hasSmoothInteraction: () => false,
+  reconcileSavedIndicator: () => {}
+});
+vm.runInContext(
+  `let saveInProgress = false;
+   let saveQueued = false;
+   let activeLocalSaveController = null;
+   ${queueSaveSource}
+   this.queueSave = queueSave;
+   this.isSaveInProgress = () => saveInProgress;`,
+  queueSaveContext
+);
+await queueSaveContext.queueSave();
+assert.equal(queueSaveContext.isSaveInProgress(), false, 'a rejected save must release the save lock');
+assert.ok(queueStatuses.includes('Save failed'));
+
+const pageSaveStart = html.indexOf('async function savePageToIndexedDb');
+const pageSaveEnd = html.indexOf('async function loadPageFromIndexedDb', pageSaveStart);
+const pageSaveSource = html.slice(pageSaveStart, pageSaveEnd);
+let releasePageDatabase;
+let pageTransactionStarts = 0;
+const pageDatabaseGate = new Promise(resolve => { releasePageDatabase = resolve; });
+const pageUnderTest = { pageId: 'page-1', strokes: [], images: [] };
+const pageDirty = new Set([0]);
+const pageDirtyMode = new Map([[0, 'full']]);
+const pageDirtyGeneration = new Map([[0, 1]]);
+const pageSaveContext = vm.createContext({
+  console,
+  state: { pages: [pageUnderTest] },
+  pageDirty,
+  pageDirtyMode,
+  pageDirtyGeneration,
+  localPageStructureMutationToken: null,
+  remotePageMergeToken: null,
+  collabPageOrderMutationInProgress: false,
+  collabPageStoreRewritePending: false,
+  pageStructureVersion: 1,
+  activePageStoreTransactions: new Set(),
+  activePageStoreWrites: 0,
+  PAGE_STORE: 'pages',
+  getDocumentSessionToken: () => 1,
+  isDocumentSessionTokenValid: token => token === 1,
+  cloneSanitizedPageForStorage: page => ({ ...page }),
+  openNotebookDb: () => pageDatabaseGate
+});
+vm.runInContext(`${pageSaveSource}; this.savePageToIndexedDb = savePageToIndexedDb;`, pageSaveContext);
+const pendingPageSave = pageSaveContext.savePageToIndexedDb(0, pageUnderTest);
+pageDirtyGeneration.set(0, 2);
+releasePageDatabase({ transaction: () => { pageTransactionStarts += 1; throw new Error('must not start'); } });
+assert.equal(await pendingPageSave, false, 'an edit made during a page snapshot must keep that page pending');
+assert.equal(pageTransactionStarts, 0, 'a stale page snapshot must not start an IndexedDB transaction');
+assert.equal(pageDirtyMode.get(0), 'full');
+
+const originalDbStart = html.indexOf('function openOriginalPdfDb');
+const originalDbEnd = html.indexOf('async function saveOriginalPdfBytes', originalDbStart);
+const originalDbSource = html.slice(originalDbStart, originalDbEnd);
+let originalDbOpenCalls = 0;
+const originalDbContext = vm.createContext({
+  console: { warn: () => {} },
+  window: { indexedDB: true },
+  indexedDB: { open: () => { originalDbOpenCalls += 1; throw new Error('unavailable'); } },
+  clearTimeout,
+  setTimeout
+});
+vm.runInContext(
+  `const ORIG_PDF_DB_NAME = 'test';
+   const ORIG_PDF_DB_VERSION = 1;
+   const ORIG_PDF_STORE = 'originals';
+   const DRIVE_OPEN_CACHE_STORE = 'cache';
+   const INDEXED_DB_BLOCKED_TIMEOUT_MS = 1;
+   let _origPdfDbPromise = null;
+   ${originalDbSource}
+   this.openOriginalPdfDb = openOriginalPdfDb;`,
+  originalDbContext
+);
+assert.equal(await originalDbContext.openOriginalPdfDb(), null);
+assert.equal(await originalDbContext.openOriginalPdfDb(), null);
+assert.equal(originalDbOpenCalls, 2, 'a failed IndexedDB open must be retryable');
+
+const folderPickerSource = html.slice(
+  html.indexOf('function renderFolderPickerList'),
+  html.indexOf('async function confirmFolderPicker')
+);
+const driveBinSource = html.slice(
+  html.indexOf('async function refreshDriveBin'),
+  html.indexOf('function toggleBinItemMenu')
+);
+const scannerListSource = scanner.slice(
+  scanner.indexOf('function renderList'),
+  scanner.indexOf('function select', scanner.indexOf('function renderList'))
+);
+assert.doesNotMatch(folderPickerSource, /\$\{folder\.name/);
+assert.match(folderPickerSource, /textContent = folder\.name/);
+assert.doesNotMatch(driveBinSource, /\$\{file\.name/);
+assert.match(driveBinSource, /textContent = file\.name/);
+assert.doesNotMatch(scannerListSource, /\$\{p\.name/);
+assert.match(scannerListSource, /textContent = p\.name/);
+const sidePanelSanitizerStart = html.indexOf('const SIDE_PANEL_ALLOWED_TAGS');
+const sidePanelSanitizerEnd = html.indexOf('function spPanelStructureMatches', sidePanelSanitizerStart);
+const sidePanelSanitizerSource = html.slice(sidePanelSanitizerStart, sidePanelSanitizerEnd);
+assert.match(sidePanelSanitizerSource, /document\.createElement\('template'\)/);
+assert.match(sidePanelSanitizerSource, /SIDE_PANEL_ALLOWED_ATTRIBUTES/);
+assert.match(sidePanelSanitizerSource, /element\.removeAttribute\(attribute\.name\)/);
+assert.match(sidePanelSanitizerSource, /--sp-event-color/);
+assert.doesNotMatch(
+  html.slice(html.indexOf('function buildSidePanelElement'), html.indexOf('function refreshPageSidePanelLayout')),
+  /body\.innerHTML = panelData\.html/,
+  'persisted calendar HTML must be sanitized before it reaches the live DOM'
+);
+const driveTokenRequestSource = html.slice(
+  html.indexOf('function ensureDriveToken'),
+  html.indexOf('function signInDrive', html.indexOf('function ensureDriveToken'))
+);
+assert.match(driveTokenRequestSource, /if \(driveTokenRequestPromise\)/);
+assert.match(driveTokenRequestSource, /request\.then\(clearRequest, clearRequest\)/);
+assert.match(driveTokenRequestSource, /requestGeneration !== driveTokenRequestGeneration/);
+assert.match(html, /async function fetchWithDeadline\(/);
+assert.match(html, /fetchWithDeadline\(\s*'https:\/\/oauth2\.googleapis\.com\/token'/);
+assert.match(html, /const INDEXED_DB_BLOCKED_TIMEOUT_MS = 1500;/);
+assert.match(html, /const INDEXED_DB_OPEN_TIMEOUT_MS = 5000;/);
+assert.match(html, /const EMBEDDED_METADATA_WORKER_TIMEOUT_MS = 30000;/);
+assert.match(html, /const EMBEDDED_METADATA_MAX_ENCODED_CHARS = 48 \* 1024 \* 1024;/);
+assert.match(html, /const EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES = 96 \* 1024 \* 1024;/);
+assert.match(html, /if \(!workerUnavailable\) throw workerErr;/);
+assert.match(html, /const stride = Math\.max\(1, Math\.floor\(text\.length \/ 4096\)\);/);
+assert.match(html, /documentSessionId \+= 1;\s*embeddedMetadataCache\.clear\(\);/);
+assert.match(html, /if \(isDocumentSessionTokenValid\(cacheSessionToken\)\) \{\s*embeddedMetadataCache\.set/);
+assert.match(html, /if \(raw\.length > 16384\) return null;/);
+assert.match(html, /const COLLAB_KEYWORD_SECTION_MAX_CHARS = 8 \* 1024 \* 1024;/);
+assert.match(html, /const CALENDAR_KEYWORD_SECTION_MAX_CHARS = 64 \* 1024;/);
+assert.equal(
+  (html.match(/calB64\.length > CALENDAR_KEYWORD_SECTION_MAX_CHARS/g) || []).length,
+  2,
+  'both local-open and remote-merge calendar metadata parsers must be bounded'
+);
+assert.match(html, /if \(Number\(content\.byteLength\) > maxOriginalBytes\) return null;/);
+assert.match(html, /const PDF_ASSEMBLY_WORKER_TIMEOUT_MS = 120000;/);
+assert.match(html, /function failPdfAssemblyWorker\(/);
+assert.match(html, /let pdfExportInProgress = false;/);
+assert.match(html, /Timed out preparing PDF for Android/);
+assert.match(html, /if \(inputObjectUrl && state\.activePdfObjectUrl !== inputObjectUrl\) \{\s*try \{ URL\.revokeObjectURL\(inputObjectUrl\);/);
+assert.match(html, /const timeoutMs = Number\.isFinite\(options\.timeoutMs\)[\s\S]{0,120}: 20000;/);
+assert.match(scanner, /Image decode timed out/);
+assert.match(scanner, /Stencil image decode timed out/);
+assert.match(scanner, /Canvas encoding failed/);
+assert.match(scanner, /Could not apply crop/);
+assert.match(scanner, /Scanner PDF export failed:/);
+assert.match(scanner, /if \(exportedPages === 0\) throw new Error\("No page could be decoded"\)/);
+assert.match(scannerConfig, /setTimeout\(\(\) => controller\.abort\(\), 5000\)/);
+const htmlLines = html.split(/\r?\n/);
+const unguardedTransactions = [];
+htmlLines.forEach((line, index) => {
+  if (!/\bdb\.transaction\(/.test(line)) return;
+  const nearbySource = htmlLines.slice(Math.max(0, index - 12), index + 1).join('\n');
+  if (!/try\s*\{/.test(nearbySource)) unguardedTransactions.push(index + 1);
+});
+assert.deepEqual(
+  unguardedTransactions,
+  [],
+  'every IndexedDB transaction must degrade to a result instead of rejecting from a closed database'
+);
+assert.match(html, /return allSaved && pageDirty\.size === 0;/);
+const exitCheckpointSource = html.slice(
+  html.indexOf('async function persistExitLocalCheckpoint'),
+  html.indexOf('function getLifecycleLocalCheckpoint')
+);
+assert.ok(
+  exitCheckpointSource.indexOf('flushLegacyPagesCacheForCheckpoint()')
+    < exitCheckpointSource.indexOf('buildMetaPayload(savedAt)'),
+  'Home/close checkpoints must persist deferred pages before publishing metadata'
+);
+assert.match(html, /function hasPendingLegacyPageMigration\(/);
+assert.match(html, /if \(!cachedLegacyPage\) \{\s*index \+= 1;/);
+assert.match(html, /let legacyPageMigrationPromise = null;/);
+assert.match(html, /let legacyPageMigrationCheckpointPromise = null;/);
+assert.match(html, /if \(legacyPageMigrationCheckpointPromise\) \{\s*return legacyPageMigrationCheckpointPromise;/);
+const remoteMergeCheckpointSource = html.slice(
+  html.indexOf("if (changed) {\n                // Publish metadata only after every merged page body is durable."),
+  html.indexOf('if (!hasLocalMerges)', html.indexOf("if (changed) {\n                // Publish metadata only after every merged page body is durable."))
+);
+assert.ok(remoteMergeCheckpointSource.length > 0, 'remote merge durable checkpoint must exist');
+assert.ok(
+  remoteMergeCheckpointSource.indexOf('flushDirtyPages({')
+    < remoteMergeCheckpointSource.indexOf('buildMetaPayload(savedAt)'),
+  'remote merges must persist page bodies before publishing their metadata'
+);
+assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
+
+assert.equal(update.publishedAppVersion, '5.9.10');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.9/);
-assert.match(notes, /cropped overlays/i);
-assert.match(notes, /object streams/i);
-assert.match(notes, /before IndexedDB persistence/i);
+assert.match(update.releaseNotes, /v5\.9\.10/);
+assert.match(notes, /blocked IndexedDB/i);
+assert.match(notes, /failed.*storage transactions/i);
+assert.match(notes, /without interpreting untrusted content as active HTML/i);
 
-console.log('v5.9.9 smoke checks passed.');
+console.log('v5.9.10 smoke checks passed.');

@@ -8781,8 +8781,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
-    <script src="collaboration-core-v5.js?v=5.9.9"></script>
-    <script src="live-collaboration-v5.js?v=5.9.9"></script>
+    <script src="collaboration-core-v5.js?v=5.9.10"></script>
+    <script src="live-collaboration-v5.js?v=5.9.10"></script>
     <script>
         /*
         ════════════════════════════════════════════════════════════════════════
@@ -8850,7 +8850,7 @@
 
         // ── § 4.2  Constants & configuration ─────────────────────────────────
         // Configure PDF.js worker + external assets
-        const APP_VERSION = '5.9.9';
+        const APP_VERSION = '5.9.10';
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -9093,9 +9093,13 @@
             if (!isInhouseApp || !window.InhouseNative) return;
             if (androidUpdateCheckPromise) return androidUpdateCheckPromise;
             androidUpdateCheckPromise = (async () => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
                 try {
                     const response = await fetch(`${ANDROID_UPDATE_MANIFEST_URL}?check=${Date.now()}`, {
-                        cache: 'no-store', headers: { 'Cache-Control': 'no-cache' }
+                        cache: 'no-store',
+                        headers: { 'Cache-Control': 'no-cache' },
+                        signal: controller.signal
                     });
                     if (!response.ok) throw new Error(`Update check failed (${response.status})`);
                     const manifest = await response.json();
@@ -9112,6 +9116,8 @@
                     }
                 } catch (err) {
                     console.warn('Android update check failed:', err);
+                } finally {
+                    clearTimeout(timeoutId);
                 }
             })().finally(() => { androidUpdateCheckPromise = null; });
             return androidUpdateCheckPromise;
@@ -9448,6 +9454,8 @@
         const PAGE_STORE = 'pages';
         const OPS_STORE = 'stroke-ops';
         const TIMELINE_STORE = 'timeline-history';
+        const INDEXED_DB_BLOCKED_TIMEOUT_MS = 1500;
+        const INDEXED_DB_OPEN_TIMEOUT_MS = 5000;
 
         // Separate IndexedDB for caching clean original PDF bytes used by the
         // text-preserving export pipeline (pdf-lib). Kept in its own database so
@@ -9461,8 +9469,25 @@
         function openOriginalPdfDb() {
             if (!('indexedDB' in window)) return Promise.resolve(null);
             if (_origPdfDbPromise) return _origPdfDbPromise;
-            _origPdfDbPromise = new Promise((resolve) => {
-                const req = indexedDB.open(ORIG_PDF_DB_NAME, ORIG_PDF_DB_VERSION);
+            const openingPromise = new Promise((resolve) => {
+                let settled = false;
+                let blockedTimer = null;
+                let openTimer = null;
+                let req = null;
+                const finishUnavailable = (message, error = null) => {
+                    if (settled) return;
+                    settled = true;
+                    if (blockedTimer) clearTimeout(blockedTimer);
+                    if (openTimer) clearTimeout(openTimer);
+                    if (message) console.warn(message, error || '');
+                    resolve(null);
+                };
+                try {
+                    req = indexedDB.open(ORIG_PDF_DB_NAME, ORIG_PDF_DB_VERSION);
+                } catch (error) {
+                    finishUnavailable('Original PDF cache is unavailable:', error);
+                    return;
+                }
                 req.onupgradeneeded = () => {
                     const db = req.result;
                     if (!db.objectStoreNames.contains(ORIG_PDF_STORE)) {
@@ -9473,11 +9498,41 @@
                         cacheStore.createIndex('cachedAt', 'cachedAt', { unique: false });
                     }
                 };
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => { _origPdfDbPromise = null; resolve(null); };
-                req.onblocked = () => { /* ignore */ };
+                req.onsuccess = () => {
+                    const db = req.result;
+                    if (settled) {
+                        try { db.close(); } catch (error) {}
+                        return;
+                    }
+                    settled = true;
+                    if (blockedTimer) clearTimeout(blockedTimer);
+                    if (openTimer) clearTimeout(openTimer);
+                    db.onversionchange = () => {
+                        try { db.close(); } catch (error) {}
+                        _origPdfDbPromise = null;
+                    };
+                    db.onclose = () => { _origPdfDbPromise = null; };
+                    resolve(db);
+                };
+                req.onerror = () => finishUnavailable('Original PDF cache could not be opened:', req.error);
+                req.onblocked = () => {
+                    if (blockedTimer || settled) return;
+                    console.warn('Original PDF cache upgrade is blocked by another tab; continuing without the cache.');
+                    if (openTimer) clearTimeout(openTimer);
+                    blockedTimer = setTimeout(() => finishUnavailable(), INDEXED_DB_BLOCKED_TIMEOUT_MS);
+                };
+                openTimer = setTimeout(
+                    () => finishUnavailable('Original PDF cache open timed out; continuing without the cache.'),
+                    INDEXED_DB_OPEN_TIMEOUT_MS
+                );
             });
-            return _origPdfDbPromise;
+            _origPdfDbPromise = openingPromise;
+            openingPromise.then((db) => {
+                if (!db && _origPdfDbPromise === openingPromise) {
+                    _origPdfDbPromise = null;
+                }
+            });
+            return openingPromise;
         }
 
         async function saveOriginalPdfBytes(key, bytes) {
@@ -9686,6 +9741,10 @@
         const pendingStrokeOps = new Map();
         let pendingStrokeOpSequence = 0;
         let legacyPagesCache = null;
+        let legacyPageMigrationPromise = null;
+        let legacyPageMigrationSessionToken = null;
+        let legacyPageMigrationCheckpointPromise = null;
+        let legacyMigrationCheckpointInProgress = false;
 
         // ============= MEMORY OPTIMIZATION UTILITIES =============
 
@@ -10584,6 +10643,9 @@
             state.pages.forEach(noteAllCollabPageFields);
         }
 
+        const COLLAB_KEYWORD_SECTION_MAX_CHARS = 8 * 1024 * 1024;
+        const CALENDAR_KEYWORD_SECTION_MAX_CHARS = 64 * 1024;
+
         function encodeCollabStructureForKeywords() {
             try {
                 const serialized = JSON.stringify(getCollabStructureSnapshot());
@@ -10602,6 +10664,9 @@
                 const start = markerIndex + marker.length;
                 const end = String(keywords).indexOf(';', start);
                 const encoded = String(keywords).slice(start, end >= 0 ? end : undefined);
+                if (encoded.length > COLLAB_KEYWORD_SECTION_MAX_CHARS) {
+                    throw new Error('Collaboration structure metadata is too large');
+                }
                 const parsed = JSON.parse(decodeURIComponent(escape(atob(encoded))));
                 return ihnNormalizeStructureMeta(parsed, pageIds);
             } catch (error) {
@@ -10629,6 +10694,9 @@
                 const start = markerIndex + marker.length;
                 const end = String(keywords).indexOf(';', start);
                 const encoded = String(keywords).slice(start, end >= 0 ? end : undefined);
+                if (encoded.length > COLLAB_KEYWORD_SECTION_MAX_CHARS) {
+                    throw new Error('Collaboration field metadata is too large');
+                }
                 return ihnNormalizeFieldMeta(
                     JSON.parse(decodeURIComponent(escape(atob(encoded))))
                 );
@@ -10780,6 +10848,9 @@
         let driveAccessToken = null;
         let driveTokenExpiry = 0;
         let driveTokenRefreshTimer = null;
+        let driveTokenRequestPromise = null;
+        let driveTokenRequestInteractive = false;
+        let driveTokenRequestGeneration = 0;
         let driveSignedOut = false;
         let driveAuthNeedsReconnect = false;
         let driveSaveTimeout = null;
@@ -14547,6 +14618,43 @@
             return false;
         }
 
+        async function fetchWithDeadline(url, options = {}, timeoutMs = 30000, consumeResponse = null) {
+            const controller = new AbortController();
+            const sourceSignal = options.signal || null;
+            const safeTimeoutMs = Number.isFinite(timeoutMs) ? Math.max(1000, timeoutMs) : 30000;
+            let timedOut = false;
+            const timeoutId = setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+            }, safeTimeoutMs);
+            let sourceAbortHandler = null;
+            if (sourceSignal) {
+                if (sourceSignal.aborted) controller.abort();
+                else {
+                    sourceAbortHandler = () => controller.abort();
+                    sourceSignal.addEventListener('abort', sourceAbortHandler, { once: true });
+                }
+            }
+            try {
+                const response = await fetch(url, { ...options, signal: controller.signal });
+                return typeof consumeResponse === 'function'
+                    ? await consumeResponse(response)
+                    : response;
+            } catch (error) {
+                if (error?.name === 'AbortError' && timedOut) {
+                    const timeoutError = new Error('Network request timed out');
+                    timeoutError.name = 'TimeoutError';
+                    throw timeoutError;
+                }
+                throw error;
+            } finally {
+                clearTimeout(timeoutId);
+                if (sourceAbortHandler && sourceSignal) {
+                    sourceSignal.removeEventListener('abort', sourceAbortHandler);
+                }
+            }
+        }
+
         // ---- PKCE + refresh-token flow (Android client only) ----
         function generatePkceVerifier() {
             const bytes = new Uint8Array(32);
@@ -14616,22 +14724,28 @@
             body.set('code_verifier', verifier);
             body.set('grant_type', 'authorization_code');
             body.set('redirect_uri', ANDROID_PKCE_REDIRECT_URI);
-            const res = await fetch('https://oauth2.googleapis.com/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: body.toString()
-            });
+            const { response: res, responseText } = await fetchWithDeadline(
+                'https://oauth2.googleapis.com/token',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body.toString()
+                },
+                20000,
+                async response => ({ response, responseText: await response.text() })
+            );
             if (!res.ok) {
-                const text = await res.text().catch(() => '');
-                throw new Error(`Token exchange failed: ${res.status} ${text}`);
+                throw new Error(`Token exchange failed: ${res.status} ${responseText.slice(0, 500)}`);
             }
-            const data = await res.json();
+            let data = null;
+            try { data = JSON.parse(responseText); } catch (error) {}
+            if (!data || typeof data !== 'object') throw new Error('Token exchange returned an invalid response');
             try { localStorage.removeItem(DRIVE_PKCE_VERIFIER_KEY); } catch (err) {}
             applyTokenResponse(data, /*isRefresh*/ false);
             return data;
         }
 
-        async function refreshDriveAccessTokenWithRefreshToken() {
+        async function refreshDriveAccessTokenWithRefreshToken(requestGeneration = driveTokenRequestGeneration) {
             let refreshToken = '';
             try { refreshToken = localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY) || ''; } catch (err) {}
             if (!refreshToken) throw new Error('No refresh token stored');
@@ -14640,20 +14754,29 @@
             body.set('client_id', ANDROID_OAUTH_CLIENT_ID);
             body.set('grant_type', 'refresh_token');
             body.set('refresh_token', refreshToken);
-            const res = await fetch('https://oauth2.googleapis.com/token', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: body.toString()
-            });
+            const { response: res, responseText } = await fetchWithDeadline(
+                'https://oauth2.googleapis.com/token',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body.toString()
+                },
+                20000,
+                async response => ({ response, responseText: await response.text() })
+            );
             if (!res.ok) {
-                const text = await res.text().catch(() => '');
                 if (res.status === 400 || res.status === 401) {
                     // Refresh token revoked or invalid — drop it so user re-auths.
                     try { localStorage.removeItem(DRIVE_REFRESH_TOKEN_KEY); } catch (err) {}
                 }
-                throw new Error(`Refresh failed: ${res.status} ${text}`);
+                throw new Error(`Refresh failed: ${res.status} ${responseText.slice(0, 500)}`);
             }
-            const data = await res.json();
+            let data = null;
+            try { data = JSON.parse(responseText); } catch (error) {}
+            if (!data || typeof data !== 'object') throw new Error('Token refresh returned an invalid response');
+            if (requestGeneration !== driveTokenRequestGeneration || driveSignedOut) {
+                throw new Error('Drive sign-in request was cancelled');
+            }
             applyTokenResponse(data, /*isRefresh*/ true);
             return driveAccessToken;
         }
@@ -14943,6 +15066,32 @@
             if (driveAccessToken && Date.now() < driveTokenExpiry - 60000) {
                 return Promise.resolve(driveAccessToken);
             }
+            if (driveTokenRequestPromise) {
+                if (!interactive || driveTokenRequestInteractive) {
+                    return driveTokenRequestPromise;
+                }
+                // Let the existing silent request finish first. If Google
+                // rejects it, immediately upgrade to one interactive request
+                // instead of overwriting the shared token-client callback.
+                return driveTokenRequestPromise.then(
+                    token => token,
+                    () => ensureDriveToken(true)
+                );
+            }
+            const requestGeneration = driveTokenRequestGeneration;
+            const request = requestDriveToken(interactive, requestGeneration);
+            driveTokenRequestPromise = request;
+            driveTokenRequestInteractive = interactive;
+            const clearRequest = () => {
+                if (driveTokenRequestPromise !== request) return;
+                driveTokenRequestPromise = null;
+                driveTokenRequestInteractive = false;
+            };
+            request.then(clearRequest, clearRequest);
+            return request;
+        }
+
+        function requestDriveToken(interactive = false, requestGeneration = driveTokenRequestGeneration) {
             // Android PKCE path: silently refresh using stored refresh_token, no popup ever.
             if (useAndroidPkceFlow()) {
                 let hasRefresh = false;
@@ -14951,7 +15100,7 @@
                         && !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY);
                 } catch (err) {}
                 if (hasRefresh) {
-                    return refreshDriveAccessTokenWithRefreshToken().catch(err => {
+                    return refreshDriveAccessTokenWithRefreshToken(requestGeneration).catch(err => {
                         if (!interactive) markDriveAuthNeedsReconnect(err?.message || 'refresh failed');
                         throw err;
                     });
@@ -14970,6 +15119,10 @@
                 const timeoutId = setTimeout(() => {
                     if (settled) return;
                     settled = true;
+                    if (requestGeneration !== driveTokenRequestGeneration || driveSignedOut) {
+                        reject(new Error('Drive sign-in request was cancelled'));
+                        return;
+                    }
                     const err = new Error('Silent token refresh timed out');
                     if (!interactive) markDriveAuthNeedsReconnect(err.message);
                     reject(err);
@@ -14978,6 +15131,10 @@
                     if (settled) return;
                     settled = true;
                     clearTimeout(timeoutId);
+                    if (requestGeneration !== driveTokenRequestGeneration || driveSignedOut) {
+                        reject(new Error('Drive sign-in request was cancelled'));
+                        return;
+                    }
                     if (resp.error) {
                         if (!interactive) markDriveAuthNeedsReconnect(resp.error);
                         reject(resp);
@@ -15009,7 +15166,13 @@
                     const email = driveUserProfile?.email || localStorage.getItem('drive-hint-email');
                     if (email) reqOptions.login_hint = email;
                 }
-                driveTokenClient.requestAccessToken(reqOptions);
+                try {
+                    driveTokenClient.requestAccessToken(reqOptions);
+                } catch (error) {
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    reject(error);
+                }
             });
         }
 
@@ -15031,6 +15194,9 @@
         function signOutDrive() {
             driveSignedOut = true;
             driveAuthNeedsReconnect = false;
+            driveTokenRequestGeneration += 1;
+            driveTokenRequestPromise = null;
+            driveTokenRequestInteractive = false;
             stopDriveHomeAutoRefresh();
             stopCollabPolling();
             clearDriveSyncTimers();
@@ -15558,6 +15724,7 @@
             const end = text.indexOf(';', start);
             try {
                 const raw = text.substring(start, end >= 0 ? end : undefined);
+                if (raw.length > 16384) return null;
                 const parsed = JSON.parse(decodeURIComponent(escape(atob(raw))));
                 if (parsed?.v !== 1 || !parsed.contentHash) return null;
                 return {
@@ -15575,23 +15742,70 @@
         let embeddedMetadataWorkerId = 0;
         const embeddedMetadataWorkerRequests = new Map();
         const embeddedMetadataCache = new Map();
+        const EMBEDDED_METADATA_WORKER_TIMEOUT_MS = 30000;
+        const EMBEDDED_METADATA_MAX_ENCODED_CHARS = 48 * 1024 * 1024;
+        const EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES = 96 * 1024 * 1024;
+
+        function failEmbeddedMetadataWorker(error) {
+            const failure = error instanceof Error
+                ? error
+                : new Error(String(error || 'PDF metadata worker failed'));
+            const worker = embeddedMetadataWorker;
+            embeddedMetadataWorker = null;
+            if (worker) {
+                try { worker.terminate(); } catch (terminateError) {}
+            }
+            embeddedMetadataWorkerRequests.forEach(request => {
+                if (request.timeoutId) clearTimeout(request.timeoutId);
+                request.reject(failure);
+            });
+            embeddedMetadataWorkerRequests.clear();
+        }
 
         function getEmbeddedMetadataWorker() {
             if (embeddedMetadataWorker) return embeddedMetadataWorker;
             const workerSource = `
                 async function inflateBase64(value) {
+                    if (value.length > ${EMBEDDED_METADATA_MAX_ENCODED_CHARS}) {
+                        throw new Error('PDF metadata payload is too large');
+                    }
                     const binary = atob(value);
                     const bytes = new Uint8Array(binary.length);
                     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
                     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
-                    return new TextDecoder().decode(await new Response(stream).arrayBuffer());
+                    const reader = stream.getReader();
+                    const chunks = [];
+                    let totalLength = 0;
+                    for (;;) {
+                        const { done, value: chunk } = await reader.read();
+                        if (done) break;
+                        totalLength += chunk.byteLength;
+                        if (totalLength > ${EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES}) {
+                            try { await reader.cancel(); } catch (error) {}
+                            throw new Error('PDF metadata expands beyond the safe limit');
+                        }
+                        chunks.push(chunk);
+                    }
+                    const combined = new Uint8Array(totalLength);
+                    let offset = 0;
+                    for (const chunk of chunks) {
+                        combined.set(chunk, offset);
+                        offset += chunk.byteLength;
+                    }
+                    return new TextDecoder().decode(combined);
                 }
                 self.onmessage = async (event) => {
                     const { id, payload, compressed } = event.data;
                     try {
+                        if (String(payload || '').length > ${EMBEDDED_METADATA_MAX_ENCODED_CHARS}) {
+                            throw new Error('PDF metadata payload is too large');
+                        }
                         const json = compressed
                             ? await inflateBase64(payload)
                             : decodeURIComponent(escape(atob(payload)));
+                        if (json.length > ${EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES}) {
+                            throw new Error('PDF metadata expands beyond the safe limit');
+                        }
                         self.postMessage({ id, ok: true, value: JSON.parse(json) });
                     } catch (error) {
                         self.postMessage({ id, ok: false, error: error?.message || String(error) });
@@ -15599,49 +15813,85 @@
                 };
             `;
             const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
-            embeddedMetadataWorker = new Worker(workerUrl);
-            URL.revokeObjectURL(workerUrl);
-            embeddedMetadataWorker.onmessage = (event) => {
+            let worker = null;
+            try {
+                worker = new Worker(workerUrl);
+            } finally {
+                URL.revokeObjectURL(workerUrl);
+            }
+            embeddedMetadataWorker = worker;
+            worker.onmessage = (event) => {
                 const request = embeddedMetadataWorkerRequests.get(event.data?.id);
                 if (!request) return;
                 embeddedMetadataWorkerRequests.delete(event.data.id);
+                if (request.timeoutId) clearTimeout(request.timeoutId);
                 if (event.data.ok) request.resolve(event.data.value);
                 else request.reject(new Error(event.data.error || 'PDF metadata worker failed'));
             };
-            embeddedMetadataWorker.onerror = (event) => {
-                const error = new Error(event?.message || 'PDF metadata worker failed');
-                embeddedMetadataWorkerRequests.forEach(request => request.reject(error));
-                embeddedMetadataWorkerRequests.clear();
-                try { embeddedMetadataWorker.terminate(); } catch (e) {}
-                embeddedMetadataWorker = null;
+            worker.onerror = (event) => {
+                if (embeddedMetadataWorker !== worker) return;
+                failEmbeddedMetadataWorker(new Error(event?.message || 'PDF metadata worker failed'));
             };
-            return embeddedMetadataWorker;
+            return worker;
         }
 
         async function parseEmbeddedMetadataPayload(payload, compressed) {
             const text = String(payload || '');
-            const edgeSignature = `${text.slice(0, 192)}|${text.slice(-192)}`;
-            const cacheKey = `${compressed ? 'z' : 'u'}:${text.length}:${simpleHash(edgeSignature)}`;
+            const cacheSessionToken = getDocumentSessionToken();
+            if (text.length > EMBEDDED_METADATA_MAX_ENCODED_CHARS) {
+                throw new Error('PDF metadata payload is too large');
+            }
+            // Sample across the whole payload. Matching only the edges can reuse
+            // stale uncompressed metadata when a same-sized edit changes the
+            // middle of a document or timeline.
+            const stride = Math.max(1, Math.floor(text.length / 4096));
+            let sampledSignature = '';
+            for (let index = 0; index < text.length; index += stride) {
+                sampledSignature += text[index];
+            }
+            const cacheKey = `${compressed ? 'z' : 'u'}:${text.length}:${simpleHash(sampledSignature)}`;
             if (embeddedMetadataCache.has(cacheKey)) {
                 return embeddedMetadataCache.get(cacheKey);
             }
+            let workerStarted = false;
             try {
                 const worker = getEmbeddedMetadataWorker();
+                workerStarted = true;
                 const id = ++embeddedMetadataWorkerId;
                 const parsed = await new Promise((resolve, reject) => {
-                    embeddedMetadataWorkerRequests.set(id, { resolve, reject });
-                    worker.postMessage({ id, payload: text, compressed });
+                    const timeoutId = setTimeout(() => {
+                        if (!embeddedMetadataWorkerRequests.has(id)) return;
+                        failEmbeddedMetadataWorker(new Error('PDF metadata worker timed out'));
+                    }, EMBEDDED_METADATA_WORKER_TIMEOUT_MS);
+                    embeddedMetadataWorkerRequests.set(id, { resolve, reject, timeoutId });
+                    try {
+                        worker.postMessage({ id, payload: text, compressed });
+                    } catch (error) {
+                        embeddedMetadataWorkerRequests.delete(id);
+                        clearTimeout(timeoutId);
+                        reject(error);
+                    }
                 });
-                embeddedMetadataCache.set(cacheKey, parsed);
-                if (embeddedMetadataCache.size > 4) {
-                    embeddedMetadataCache.delete(embeddedMetadataCache.keys().next().value);
+                if (isDocumentSessionTokenValid(cacheSessionToken)) {
+                    embeddedMetadataCache.set(cacheKey, parsed);
+                    if (embeddedMetadataCache.size > 4) {
+                        embeddedMetadataCache.delete(embeddedMetadataCache.keys().next().value);
+                    }
                 }
                 return parsed;
             } catch (workerErr) {
-                console.warn('PDF metadata worker unavailable, using main thread:', workerErr);
+                const workerUnavailable = !workerStarted
+                    || /Worker is not defined|DecompressionStream is not defined|SecurityError/i.test(
+                        String(workerErr?.message || workerErr)
+                    );
+                if (!workerUnavailable) throw workerErr;
+                console.warn('PDF metadata worker unavailable, using bounded main-thread fallback:', workerErr);
                 const json = compressed
                     ? await decompressFromBase64(text)
                     : decodeURIComponent(escape(atob(text)));
+                if (json.length > EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES) {
+                    throw new Error('PDF metadata expands beyond the safe limit');
+                }
                 return JSON.parse(json);
             }
         }
@@ -16007,20 +16257,26 @@
             url.searchParams.set('key', PUBLIC_DRIVE_API_KEY);
             url.searchParams.set('supportsAllDrives', 'true');
             url.searchParams.set('fields', 'id,name,mimeType,size,md5Checksum,modifiedTime,headRevisionId,version,resourceKey,capabilities(canDownload)');
-            const res = await fetch(url.toString(), {
-                method: 'GET',
-                headers: getPublicDriveResourceHeaders(fileId, resourceKey),
-                credentials: 'omit',
-                cache: 'no-store'
-            });
-            if (!res.ok) {
-                const error = new Error(res.status === 403 || res.status === 404
-                    ? 'This document is not public or its owner disabled downloads.'
-                    : `Public Drive metadata failed (${res.status}).`);
-                error.status = res.status;
-                throw error;
-            }
-            return res.json();
+            return fetchWithDeadline(
+                url.toString(),
+                {
+                    method: 'GET',
+                    headers: getPublicDriveResourceHeaders(fileId, resourceKey),
+                    credentials: 'omit',
+                    cache: 'no-store'
+                },
+                20000,
+                async res => {
+                    if (!res.ok) {
+                        const error = new Error(res.status === 403 || res.status === 404
+                            ? 'This document is not public or its owner disabled downloads.'
+                            : `Public Drive metadata failed (${res.status}).`);
+                        error.status = res.status;
+                        throw error;
+                    }
+                    return res.json();
+                }
+            );
         }
 
         async function fetchPublicSharedPdf(fileId, resourceKey = '') {
@@ -16054,18 +16310,25 @@
                 }
                 for (const endpoint of endpoints) {
                     try {
-                        const res = await fetch(endpoint.url, {
-                            method: 'GET',
-                            redirect: 'follow',
-                            cache: 'no-store',
-                            credentials: 'omit',
-                            headers: endpoint.headers
-                        });
+                        const { response: res, blob } = await fetchWithDeadline(
+                            endpoint.url,
+                            {
+                                method: 'GET',
+                                redirect: 'follow',
+                                cache: 'no-store',
+                                credentials: 'omit',
+                                headers: endpoint.headers
+                            },
+                            45000,
+                            async response => ({
+                                response,
+                                blob: response.ok ? await response.blob() : null
+                            })
+                        );
                         if (!res.ok) {
                             lastError = Object.assign(new Error(`Public PDF request failed (${res.status}).`), { status: res.status });
                             continue;
                         }
-                        const blob = await res.blob();
                         const headerSlice = await blob.slice(0, 1024).arrayBuffer();
                         if (!isPdfArrayBuffer(headerSlice)) {
                             lastError = new Error('The public response was not a PDF.');
@@ -18862,13 +19125,17 @@
             folders.forEach(folder => {
                 const item = document.createElement('div');
                 item.className = 'folder-picker-item';
-                const iconColor = folder.folderColorRgb ? ` style="color:${folder.folderColorRgb}"` : '';
                 item.innerHTML = `
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"${iconColor}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                         <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                     </svg>
-                    <span>${folder.name || 'Folder'}</span>
+                    <span></span>
                 `;
+                const safeFolderColor = String(folder.folderColorRgb || '').trim();
+                if (/^#[0-9a-f]{6}$/i.test(safeFolderColor)) {
+                    item.querySelector('svg').style.color = safeFolderColor;
+                }
+                item.querySelector('span').textContent = folder.name || 'Folder';
                 item.addEventListener('click', () => enterFolderPickerFolder(folder));
                 folderPickerList.appendChild(item);
             });
@@ -18974,10 +19241,12 @@
                             : '<path d="M6 2h8l4 4v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/>'}
                         </svg>
                         <div>
-                            <div>${file.name || 'Untitled'}</div>
-                            <div class="bin-item-meta">Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}</div>
+                            <div class="bin-item-name"></div>
+                            <div class="bin-item-meta"></div>
                         </div>
                     `;
+                    item.querySelector('.bin-item-name').textContent = file.name || 'Untitled';
+                    item.querySelector('.bin-item-meta').textContent = `Modified ${formatDriveDate(file.modifiedTime || file.createdTime)}`;
                     const menuWrap = document.createElement('div');
                     menuWrap.className = 'bin-item-menu';
                     const menuBtn = document.createElement('button');
@@ -19119,18 +19388,50 @@
             return !!editableEl;
         }
 
+        async function settleWithTimeout(promise, timeoutMs, fallback = null) {
+            let timeoutId = null;
+            try {
+                return await Promise.race([
+                    Promise.resolve(promise),
+                    new Promise(resolve => {
+                        timeoutId = setTimeout(() => resolve(fallback), timeoutMs);
+                    })
+                ]);
+            } catch (error) {
+                return fallback;
+            } finally {
+                if (timeoutId) clearTimeout(timeoutId);
+            }
+        }
+
         async function canvasToBlobSafe(canvas, type, quality) {
             if (!canvas) return null;
             try {
                 if (typeof canvas.convertToBlob === 'function') {
-                    return await canvas.convertToBlob({ type, quality });
+                    return await settleWithTimeout(
+                        canvas.convertToBlob({ type, quality }),
+                        30000,
+                        null
+                    );
                 }
             } catch (err) { }
             return new Promise(resolve => {
-                if (typeof canvas.toBlob === 'function') {
-                    canvas.toBlob(resolve, type, quality);
-                } else {
+                if (typeof canvas.toBlob !== 'function') {
                     resolve(null);
+                    return;
+                }
+                let settled = false;
+                const finish = blob => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    resolve(blob || null);
+                };
+                const timeoutId = setTimeout(() => finish(null), 30000);
+                try {
+                    canvas.toBlob(finish, type, quality);
+                } catch (error) {
+                    finish(null);
                 }
             });
         }
@@ -19150,9 +19451,26 @@
         async function dataUrlFromBlob(blob) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-                reader.onerror = () => resolve(null);
-                reader.readAsDataURL(blob);
+                let settled = false;
+                const finish = value => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    reader.onload = null;
+                    reader.onerror = null;
+                    resolve(value);
+                };
+                const timeoutId = setTimeout(() => {
+                    try { reader.abort(); } catch (error) {}
+                    finish(null);
+                }, 30000);
+                reader.onload = () => finish(typeof reader.result === 'string' ? reader.result : null);
+                reader.onerror = () => finish(null);
+                try {
+                    reader.readAsDataURL(blob);
+                } catch (error) {
+                    finish(null);
+                }
             });
         }
 
@@ -19160,23 +19478,39 @@
             if (!blob) return null;
             if ('createImageBitmap' in window) {
                 try {
-                    const bitmap = await createImageBitmap(blob);
-                    return {
-                        source: bitmap,
-                        width: bitmap.width,
-                        height: bitmap.height,
-                        cleanup: () => {
-                            try { bitmap.close?.(); } catch (e) { }
-                        }
-                    };
+                    const bitmap = await settleWithTimeout(createImageBitmap(blob), 30000, null);
+                    if (bitmap) {
+                        return {
+                            source: bitmap,
+                            width: bitmap.width,
+                            height: bitmap.height,
+                            cleanup: () => {
+                                try { bitmap.close?.(); } catch (e) { }
+                            }
+                        };
+                    }
                 } catch (err) { }
             }
             const url = URL.createObjectURL(blob);
             try {
                 const img = await new Promise((resolve, reject) => {
                     const el = new Image();
-                    el.onload = () => resolve(el);
-                    el.onerror = () => reject(new Error('Image decode failed'));
+                    let settled = false;
+                    const finish = (value, error = null) => {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timeoutId);
+                        el.onload = null;
+                        el.onerror = null;
+                        if (error) reject(error);
+                        else resolve(value);
+                    };
+                    const timeoutId = setTimeout(
+                        () => finish(null, new Error('Image decode timed out')),
+                        30000
+                    );
+                    el.onload = () => finish(el);
+                    el.onerror = () => finish(null, new Error('Image decode failed'));
                     el.src = url;
                 });
                 return {
@@ -24907,7 +25241,9 @@
 
             const body = document.createElement('div');
             body.className = 'page-side-panel-body';
-            body.innerHTML = panelData.html || '';
+            const safePanelHtml = sanitizeSidePanelHtmlForDuplicates(panelData.html || '');
+            if (safePanelHtml !== panelData.html) panelData.html = safePanelHtml;
+            body.innerHTML = safePanelHtml;
             // Refresh the "today" class so it stays correct across date changes
             // (the html was baked when the panel was created — re-evaluate now).
             (function applyTodayClass() {
@@ -24990,17 +25326,56 @@
             refreshPageSidePanelLayout();
         }
 
-        // Strip duplicate <button class="sp-event" data-sp-event="ID"> nodes
-        // within each day section, keeping the first occurrence per event id.
-        // Returns the original string unchanged when nothing is duplicated.
-        // Cheap: a panel has at most ~50 small DOM nodes; running this on
-        // every render adds no perceptible cost.
+        const SIDE_PANEL_ALLOWED_TAGS = new Set(['DIV', 'SPAN', 'BUTTON']);
+        const SIDE_PANEL_ALLOWED_CLASSES = new Set([
+            'sp-day-section', 'today', 'sp-day-header', 'sp-day-label',
+            'sp-add-btn', 'sp-events-list', 'sp-no-events', 'sp-event',
+            'sp-event-time', 'sp-event-title'
+        ]);
+        const SIDE_PANEL_ALLOWED_ATTRIBUTES = new Set([
+            'class', 'data-day-key', 'data-sp-add', 'data-sp-event',
+            'data-sp-day', 'style', 'type', 'title', 'aria-label'
+        ]);
+
+        // Calendar panel markup is persisted inside the PDF and can arrive
+        // from another device. Treat it as untrusted: retain only the small
+        // DOM vocabulary generated by buildSidePanelHtml, then deduplicate
+        // event buttons. This blocks scripts, event handlers and CSS URLs.
         function sanitizeSidePanelHtmlForDuplicates(html) {
-            if (typeof html !== 'string' || html.indexOf('data-sp-event="') === -1) return html;
-            const container = document.createElement('div');
-            container.innerHTML = html;
+            if (typeof html !== 'string' || !html) return '';
+            const template = document.createElement('template');
+            template.innerHTML = html;
+            const content = template.content;
+            Array.from(content.querySelectorAll('*')).forEach(element => {
+                if (!SIDE_PANEL_ALLOWED_TAGS.has(element.tagName)) {
+                    element.remove();
+                    return;
+                }
+                Array.from(element.attributes).forEach(attribute => {
+                    if (!SIDE_PANEL_ALLOWED_ATTRIBUTES.has(attribute.name)) {
+                        element.removeAttribute(attribute.name);
+                    }
+                });
+                const safeClasses = Array.from(element.classList)
+                    .filter(className => SIDE_PANEL_ALLOWED_CLASSES.has(className));
+                element.className = safeClasses.join(' ');
+                if (element.hasAttribute('style')) {
+                    const colorMatch = element.getAttribute('style')
+                        .match(/(?:^|;)\s*--sp-event-color\s*:\s*(#[0-9a-f]{6})\s*(?:;|$)/i);
+                    element.removeAttribute('style');
+                    if (colorMatch) element.style.setProperty('--sp-event-color', colorMatch[1]);
+                }
+                ['data-day-key', 'data-sp-add', 'data-sp-event', 'data-sp-day', 'title', 'aria-label']
+                    .forEach(attributeName => {
+                        if (!element.hasAttribute(attributeName)) return;
+                        const value = element.getAttribute(attributeName) || '';
+                        element.setAttribute(attributeName, value.slice(0, 512));
+                    });
+                if (element.tagName === 'BUTTON') element.setAttribute('type', 'button');
+                else element.removeAttribute('type');
+            });
             let removed = 0;
-            container.querySelectorAll('.sp-day-section').forEach(section => {
+            content.querySelectorAll('.sp-day-section').forEach(section => {
                 const list = section.querySelector('.sp-events-list') || section;
                 const seen = new Set();
                 list.querySelectorAll('.sp-event[data-sp-event]').forEach(btn => {
@@ -25010,7 +25385,7 @@
                     else seen.add(id);
                 });
             });
-            return removed > 0 ? container.innerHTML : html;
+            return template.innerHTML;
         }
 
         function spPanelStructureMatches(panelEl, panelData) {
@@ -25037,8 +25412,10 @@
             // back to the top on every 5-second sync tick.
             const prevScroll = body.scrollTop;
             // Only replace innerHTML if the rendered HTML actually differs.
-            if (body.innerHTML !== (panelData.html || '')) {
-                body.innerHTML = panelData.html || '';
+            const safePanelHtml = sanitizeSidePanelHtmlForDuplicates(panelData.html || '');
+            if (safePanelHtml !== panelData.html) panelData.html = safePanelHtml;
+            if (body.innerHTML !== safePanelHtml) {
+                body.innerHTML = safePanelHtml;
             }
             // Re-apply the "today" highlight (date may have rolled over).
             const todayKey = formatCalendarDateKey(new Date());
@@ -25714,33 +26091,59 @@
             const token = await ensureDriveToken(false);
             const headers = new Headers(options.headers || {});
             headers.set('Authorization', `Bearer ${token}`);
-            const res = await fetch(url, { ...options, headers });
-            if (res.status === 401 && !retried) {
-                driveAccessToken = null;
-                driveTokenExpiry = 0;
-                await ensureDriveToken(false);
-                return calendarFetch(url, options, true);
-            }
-            if (!res.ok) {
-                const message = await res.text().catch(() => '');
-                let detail = message;
-                let reason = '';
-                try {
-                    const parsed = JSON.parse(message);
-                    detail = parsed?.error?.message || message;
-                    reason = parsed?.error?.errors?.[0]?.reason || parsed?.error?.status || '';
-                } catch (err) {}
-                if (res.status === 403 && /insufficient|forbidden/i.test(`${reason} ${detail}`)) {
-                    try { localStorage.removeItem(GOOGLE_SCOPE_VERSION_KEY); } catch (err) {}
-                    clearDriveTokenStorage();
-                    throw new Error('Calendar access was not granted by Google. Sign in again from the app login and accept Calendar access.');
+            const timeoutMs = Number.isFinite(options.timeout) ? Math.max(1000, options.timeout) : 30000;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            let externalAbortHandler = null;
+            if (options.signal) {
+                if (options.signal.aborted) controller.abort();
+                else {
+                    externalAbortHandler = () => controller.abort();
+                    options.signal.addEventListener('abort', externalAbortHandler, { once: true });
                 }
-                if (res.status === 403 && /not been used|disabled|not enabled|accessNotConfigured/i.test(detail)) {
-                    throw new Error('Google Calendar API is not enabled for this app project.');
-                }
-                throw new Error(`Calendar API error ${res.status}: ${detail}`);
             }
-            return res;
+            try {
+                const fetchOptions = { ...options };
+                delete fetchOptions.timeout;
+                delete fetchOptions.signal;
+                const res = await fetch(url, { ...fetchOptions, headers, signal: controller.signal });
+                if (res.status === 401 && !retried) {
+                    driveAccessToken = null;
+                    driveTokenExpiry = 0;
+                    await ensureDriveToken(false);
+                    return calendarFetch(url, options, true);
+                }
+                if (!res.ok) {
+                    const message = await res.text().catch(() => '');
+                    let detail = message;
+                    let reason = '';
+                    try {
+                        const parsed = JSON.parse(message);
+                        detail = parsed?.error?.message || message;
+                        reason = parsed?.error?.errors?.[0]?.reason || parsed?.error?.status || '';
+                    } catch (err) {}
+                    if (res.status === 403 && /insufficient|forbidden/i.test(`${reason} ${detail}`)) {
+                        try { localStorage.removeItem(GOOGLE_SCOPE_VERSION_KEY); } catch (err) {}
+                        clearDriveTokenStorage();
+                        throw new Error('Calendar access was not granted by Google. Sign in again from the app login and accept Calendar access.');
+                    }
+                    if (res.status === 403 && /not been used|disabled|not enabled|accessNotConfigured/i.test(detail)) {
+                        throw new Error('Google Calendar API is not enabled for this app project.');
+                    }
+                    throw new Error(`Calendar API error ${res.status}: ${detail}`);
+                }
+                return res;
+            } catch (error) {
+                if (error?.name === 'AbortError' && !options.signal?.aborted) {
+                    throw new Error('Calendar request timed out');
+                }
+                throw error;
+            } finally {
+                clearTimeout(timeoutId);
+                if (externalAbortHandler && options.signal) {
+                    options.signal.removeEventListener('abort', externalAbortHandler);
+                }
+            }
         }
 
         async function fetchCalendarEventsForMonth(monthDate, options = {}) {
@@ -26561,38 +26964,44 @@
             }
             const lastIndex = totalPages - 1;
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readwrite');
-                activePageStoreTransactions.add(tx);
-                activePageStoreWrites = activePageStoreTransactions.size;
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activePageStoreTransactions.delete(tx);
+                    if (tx) activePageStoreTransactions.delete(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(
-                    isDocumentSessionTokenValid(sessionToken)
-                    && structureVersion === pageStructureVersion
-                );
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(PAGE_STORE);
-                // Shift pages from lastIndex-1 down to insertAt up by one slot (read high to low)
-                let current = lastIndex - 1;
-                const shiftNext = () => {
-                    if (current < insertAt) return;
-                    const req = store.get(current);
-                    req.onsuccess = () => {
-                        if (req.result) store.put(req.result, current + 1);
-                        else store.delete(current + 1);
-                        current -= 1;
-                        shiftNext();
+                try {
+                    tx = db.transaction(PAGE_STORE, 'readwrite');
+                    activePageStoreTransactions.add(tx);
+                    activePageStoreWrites = activePageStoreTransactions.size;
+                    tx.oncomplete = () => finish(
+                        isDocumentSessionTokenValid(sessionToken)
+                        && structureVersion === pageStructureVersion
+                    );
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    const store = tx.objectStore(PAGE_STORE);
+                    // Shift pages from lastIndex-1 down to insertAt up by one slot (read high to low)
+                    let current = lastIndex - 1;
+                    const shiftNext = () => {
+                        if (current < insertAt) return;
+                        const req = store.get(current);
+                        req.onsuccess = () => {
+                            if (req.result) store.put(req.result, current + 1);
+                            else store.delete(current + 1);
+                            current -= 1;
+                            shiftNext();
+                        };
+                        req.onerror = () => { current -= 1; shiftNext(); };
                     };
-                    req.onerror = () => { current -= 1; shiftNext(); };
-                };
-                shiftNext();
+                    shiftNext();
+                } catch (error) {
+                    console.error('Failed to start page-insert reindex transaction:', error);
+                    finish(false);
+                }
             });
         }
 
@@ -26907,24 +27316,30 @@
             const rangeSize = maxIdx - minIdx + 1;
 
             const pages = await new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readonly');
-                const store = tx.objectStore(PAGE_STORE);
-                const results = new Array(rangeSize).fill(null);
-                let pending = rangeSize;
-                for (let i = 0; i < rangeSize; i++) {
-                    const key = minIdx + i;
-                    const capturedI = i;
-                    const req = store.get(key);
-                    req.onsuccess = () => {
-                        results[capturedI] = req.result || null;
-                        if (--pending === 0) resolve(results);
-                    };
-                    req.onerror = () => {
-                        if (--pending === 0) resolve(results);
-                    };
+                try {
+                    const tx = db.transaction(PAGE_STORE, 'readonly');
+                    const store = tx.objectStore(PAGE_STORE);
+                    const results = new Array(rangeSize).fill(null);
+                    let pending = rangeSize;
+                    for (let i = 0; i < rangeSize; i++) {
+                        const key = minIdx + i;
+                        const capturedI = i;
+                        const req = store.get(key);
+                        req.onsuccess = () => {
+                            results[capturedI] = req.result || null;
+                            if (--pending === 0) resolve(results);
+                        };
+                        req.onerror = () => {
+                            if (--pending === 0) resolve(results);
+                        };
+                    }
+                } catch (error) {
+                    console.error('Failed to read pages for reindexing:', error);
+                    resolve(null);
                 }
             });
 
+            if (!Array.isArray(pages)) return false;
             const fromRel = fromIndex - minIdx;
             const toRel = toIndex - minIdx;
             const [moved] = pages.splice(fromRel, 1);
@@ -26935,29 +27350,35 @@
             }
 
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readwrite');
-                activePageStoreTransactions.add(tx);
-                activePageStoreWrites = activePageStoreTransactions.size;
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activePageStoreTransactions.delete(tx);
+                    if (tx) activePageStoreTransactions.delete(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(
-                    isDocumentSessionTokenValid(sessionToken)
-                    && structureVersion === pageStructureVersion
-                );
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(PAGE_STORE);
-                for (let i = 0; i < pages.length; i++) {
-                    const data = pages[i];
-                    const key = minIdx + i;
-                    if (data) store.put(data, key);
-                    else store.delete(key);
+                try {
+                    tx = db.transaction(PAGE_STORE, 'readwrite');
+                    activePageStoreTransactions.add(tx);
+                    activePageStoreWrites = activePageStoreTransactions.size;
+                    tx.oncomplete = () => finish(
+                        isDocumentSessionTokenValid(sessionToken)
+                        && structureVersion === pageStructureVersion
+                    );
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    const store = tx.objectStore(PAGE_STORE);
+                    for (let i = 0; i < pages.length; i++) {
+                        const data = pages[i];
+                        const key = minIdx + i;
+                        if (data) store.put(data, key);
+                        else store.delete(key);
+                    }
+                } catch (error) {
+                    console.error('Failed to start page-move reindex transaction:', error);
+                    finish(false);
                 }
             });
         }
@@ -27766,10 +28187,14 @@
             while (strokeOpsFlushInProgress && Date.now() - waitStartedAt < 5000) {
                 await new Promise(resolve => setTimeout(resolve, 20));
             }
+            const legacyPagesSaved = await flushLegacyPagesCacheForCheckpoint();
             const operationsSaved = await flushStrokeOpsQueue();
             const pagesSaved = await flushDirtyPages({ force: true });
             if (!isDocumentPersistenceContextCurrent(persistenceContext)) {
                 throw new Error('Document changed before the local checkpoint completed');
+            }
+            if (!legacyPagesSaved || !operationsSaved || !pagesSaved || pageDirty.size > 0) {
+                throw new Error('Could not save every changed page locally');
             }
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
@@ -27784,7 +28209,7 @@
             state.lastSavedAt = savedAt;
             saveDriveSession();
             updateSaveTimestamp();
-            if (!operationsSaved || !pagesSaved || (!indexedDbSaved && !backupSaved)) {
+            if (!indexedDbSaved && !backupSaved) {
                 throw new Error('Could not create a durable local save checkpoint');
             }
             return marker;
@@ -27856,7 +28281,10 @@
                 const success = isDriveUploadFullySettled();
                 if (success) clearPendingExitUpload(fileId);
                 return success;
-            })().finally(() => {
+            })().catch(error => {
+                console.warn('Lifecycle Drive save failed:', error);
+                return false;
+            }).finally(() => {
                 if (lifecycleExitSavePromise !== task) return;
                 lifecycleExitSavePromise = null;
                 lifecycleExitSaveFileId = null;
@@ -28007,8 +28435,26 @@
         function openNotebookDb() {
             if (!('indexedDB' in window)) return Promise.resolve(null);
             if (notebookDbPromise) return notebookDbPromise;
-            notebookDbPromise = new Promise((resolve) => {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
+            const openingPromise = new Promise((resolve) => {
+                let settled = false;
+                let blockedTimer = null;
+                let openTimer = null;
+                let request = null;
+                const finishUnavailable = (message, error = null) => {
+                    if (settled) return;
+                    settled = true;
+                    if (blockedTimer) clearTimeout(blockedTimer);
+                    if (openTimer) clearTimeout(openTimer);
+                    notebookDbInstance = null;
+                    if (message) console.warn(message, error || '');
+                    resolve(null);
+                };
+                try {
+                    request = indexedDB.open(DB_NAME, DB_VERSION);
+                } catch (error) {
+                    finishUnavailable('Notebook storage is unavailable:', error);
+                    return;
+                }
                 request.onupgradeneeded = () => {
                     const db = request.result;
                     if (!db.objectStoreNames.contains(DB_STORE)) {
@@ -28035,6 +28481,13 @@
                 };
                 request.onsuccess = () => {
                     const db = request.result;
+                    if (settled) {
+                        try { db.close(); } catch (error) {}
+                        return;
+                    }
+                    settled = true;
+                    if (blockedTimer) clearTimeout(blockedTimer);
+                    if (openTimer) clearTimeout(openTimer);
                     if (notebookDbInstance !== db) {
                         db.onversionchange = () => {
                             try {
@@ -28051,17 +28504,25 @@
                     notebookDbInstance = db;
                     resolve(db);
                 };
-                request.onerror = () => {
-                    console.error('Failed to open IndexedDB:', request.error);
-                    notebookDbInstance = null;
-                    notebookDbPromise = null;
-                    resolve(null);
-                };
+                request.onerror = () => finishUnavailable('Failed to open IndexedDB:', request.error);
                 request.onblocked = () => {
-                    console.warn('IndexedDB open blocked. Close other tabs using this notebook.');
+                    if (blockedTimer || settled) return;
+                    console.warn('IndexedDB upgrade is blocked by another tab; continuing with the local backup.');
+                    if (openTimer) clearTimeout(openTimer);
+                    blockedTimer = setTimeout(() => finishUnavailable(), INDEXED_DB_BLOCKED_TIMEOUT_MS);
                 };
+                openTimer = setTimeout(
+                    () => finishUnavailable('IndexedDB open timed out; continuing with the local backup.'),
+                    INDEXED_DB_OPEN_TIMEOUT_MS
+                );
             });
-            return notebookDbPromise;
+            notebookDbPromise = openingPromise;
+            openingPromise.then((db) => {
+                if (!db && notebookDbPromise === openingPromise) {
+                    notebookDbPromise = null;
+                }
+            });
+            return openingPromise;
         }
 
         async function saveToIndexedDb(payload, savedAt, options = {}) {
@@ -28069,28 +28530,34 @@
             const db = await openNotebookDb();
             if (!db || !isDocumentPersistenceContextCurrent(context)) return false;
             return new Promise((resolve) => {
-                const tx = db.transaction(DB_STORE, 'readwrite');
-                activeMetaStoreTransactions.add(tx);
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activeMetaStoreTransactions.delete(tx);
+                    if (tx) activeMetaStoreTransactions.delete(tx);
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(isDocumentPersistenceContextCurrent(context));
-                tx.onerror = () => {
-                    console.error('Failed to save to IndexedDB:', tx.error);
+                try {
+                    tx = db.transaction(DB_STORE, 'readwrite');
+                    activeMetaStoreTransactions.add(tx);
+                    tx.oncomplete = () => finish(isDocumentPersistenceContextCurrent(context));
+                    tx.onerror = () => {
+                        console.error('Failed to save to IndexedDB:', tx.error);
+                        finish(false);
+                    };
+                    tx.onabort = () => finish(false);
+                    const store = tx.objectStore(DB_STORE);
+                    store.put({
+                        key: DB_KEY,
+                        data: payload,
+                        savedAt,
+                        version: 3
+                    });
+                } catch (error) {
+                    console.error('Failed to start metadata save transaction:', error);
                     finish(false);
-                };
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(DB_STORE);
-                store.put({
-                    key: DB_KEY,
-                    data: payload,
-                    savedAt,
-                    version: 3
-                });
+                }
             });
         }
 
@@ -28098,11 +28565,15 @@
             const db = await openNotebookDb();
             if (!db) return null;
             return new Promise((resolve) => {
-                const tx = db.transaction(DB_STORE, 'readonly');
-                const store = tx.objectStore(DB_STORE);
-                const request = store.get(DB_KEY);
-                request.onsuccess = () => resolve(request.result || null);
-                request.onerror = () => resolve(null);
+                try {
+                    const tx = db.transaction(DB_STORE, 'readonly');
+                    const store = tx.objectStore(DB_STORE);
+                    const request = store.get(DB_KEY);
+                    request.onsuccess = () => resolve(request.result || null);
+                    request.onerror = () => resolve(null);
+                } catch (error) {
+                    resolve(null);
+                }
             });
         }
 
@@ -28279,6 +28750,7 @@
             const sessionToken = getDocumentSessionToken();
             const structureVersion = pageStructureVersion;
             const pageId = String(page?.pageId || '');
+            const mutationGenerationAtSnapshot = pageDirtyGeneration.get(pageIndex) || 0;
             const hasStrokeArray = Array.isArray(page?.strokes);
             const hasImageArray = Array.isArray(page?.images);
             const hasContentHint = !!(
@@ -28308,6 +28780,7 @@
                 || (remotePageMergeToken && !ownsRemoteMerge)
                 || collabPageOrderMutationInProgress
                 || collabPageStoreRewritePending
+                || (pageDirtyGeneration.get(pageIndex) || 0) !== mutationGenerationAtSnapshot
                 || !currentPageMatches) {
                 const currentIndex = pageId
                     ? state.pages.findIndex(candidate => candidate?.pageId === pageId)
@@ -28319,28 +28792,45 @@
                 return false;
             }
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readwrite');
-                activePageStoreTransactions.add(tx);
-                activePageStoreWrites = activePageStoreTransactions.size;
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activePageStoreTransactions.delete(tx);
+                    if (tx) activePageStoreTransactions.delete(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
+                    if (!saved && isDocumentSessionTokenValid(sessionToken)) {
+                        const retryIndex = pageId
+                            ? state.pages.findIndex(candidate => candidate?.pageId === pageId)
+                            : pageIndex;
+                        if (Number.isFinite(retryIndex) && retryIndex >= 0) {
+                            pageDirty.add(retryIndex);
+                            pageDirtyMode.set(retryIndex, 'full');
+                        }
+                    }
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(
-                    isDocumentSessionTokenValid(sessionToken)
-                    && !structureToken?.cancelled
-                );
-                tx.onerror = () => {
-                    console.error('Failed to save page to IndexedDB:', tx.error);
+                try {
+                    tx = db.transaction(PAGE_STORE, 'readwrite');
+                    activePageStoreTransactions.add(tx);
+                    activePageStoreWrites = activePageStoreTransactions.size;
+                    tx.oncomplete = () => finish(
+                        isDocumentSessionTokenValid(sessionToken)
+                        && structureVersion === pageStructureVersion
+                        && (pageDirtyGeneration.get(pageIndex) || 0) === mutationGenerationAtSnapshot
+                        && !structureToken?.cancelled
+                    );
+                    tx.onerror = () => {
+                        console.error('Failed to save page to IndexedDB:', tx.error);
+                        finish(false);
+                    };
+                    tx.onabort = () => finish(false);
+                    const store = tx.objectStore(PAGE_STORE);
+                    store.put(storedPageRecord, pageIndex);
+                } catch (error) {
+                    console.error('Failed to start page save transaction:', error);
                     finish(false);
-                };
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(PAGE_STORE);
-                store.put(storedPageRecord, pageIndex);
+                }
             });
         }
 
@@ -28348,23 +28838,27 @@
             const db = await openNotebookDb();
             if (!db) return null;
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readonly');
-                const store = tx.objectStore(PAGE_STORE);
-                const request = store.get(pageIndex);
-                request.onsuccess = () => {
-                    const result = request.result || null;
-                    if (!result) {
-                        resolve(null);
-                        return;
-                    }
-                    const storedSessionId = Number(result.__sessionId);
-                    if (Number.isFinite(storedSessionId) && storedSessionId !== getDocumentSessionToken()) {
-                        resolve(null);
-                        return;
-                    }
-                    resolve(stripStoredPageSession(result));
-                };
-                request.onerror = () => resolve(null);
+                try {
+                    const tx = db.transaction(PAGE_STORE, 'readonly');
+                    const store = tx.objectStore(PAGE_STORE);
+                    const request = store.get(pageIndex);
+                    request.onsuccess = () => {
+                        const result = request.result || null;
+                        if (!result) {
+                            resolve(null);
+                            return;
+                        }
+                        const storedSessionId = Number(result.__sessionId);
+                        if (Number.isFinite(storedSessionId) && storedSessionId !== getDocumentSessionToken()) {
+                            resolve(null);
+                            return;
+                        }
+                        resolve(stripStoredPageSession(result));
+                    };
+                    request.onerror = () => resolve(null);
+                } catch (error) {
+                    resolve(null);
+                }
             });
         }
 
@@ -28379,34 +28873,40 @@
                 return false;
             }
             return new Promise((resolve) => {
-                const tx = db.transaction(OPS_STORE, 'readwrite');
-                activeStrokeOpsTransaction = tx;
-                activeStrokeOpsTransactions.add(tx);
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activeStrokeOpsTransactions.delete(tx);
+                    if (tx) activeStrokeOpsTransactions.delete(tx);
                     if (activeStrokeOpsTransaction === tx) {
                         activeStrokeOpsTransaction = [...activeStrokeOpsTransactions].at(-1) || null;
                     }
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(
-                    isDocumentSessionTokenValid(sessionToken)
-                    && structureVersion === pageStructureVersion
-                );
-                tx.onerror = () => {
-                    console.error('Failed to append stroke ops:', tx.error);
+                try {
+                    tx = db.transaction(OPS_STORE, 'readwrite');
+                    activeStrokeOpsTransaction = tx;
+                    activeStrokeOpsTransactions.add(tx);
+                    tx.oncomplete = () => finish(
+                        isDocumentSessionTokenValid(sessionToken)
+                        && structureVersion === pageStructureVersion
+                    );
+                    tx.onerror = () => {
+                        console.error('Failed to append stroke ops:', tx.error);
+                        finish(false);
+                    };
+                    tx.onabort = () => finish(false);
+                    const store = tx.objectStore(OPS_STORE);
+                    for (const op of ops) {
+                        store.add({
+                            ...op,
+                            sessionId: Number.isFinite(op?.sessionId) ? op.sessionId : sessionToken
+                        });
+                    }
+                } catch (error) {
+                    console.error('Failed to start stroke-op transaction:', error);
                     finish(false);
-                };
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(OPS_STORE);
-                for (const op of ops) {
-                    store.add({
-                        ...op,
-                        sessionId: Number.isFinite(op?.sessionId) ? op.sessionId : sessionToken
-                    });
                 }
             });
         }
@@ -28415,15 +28915,19 @@
             const db = await openNotebookDb();
             if (!db) return [];
             return new Promise((resolve) => {
-                const tx = db.transaction(OPS_STORE, 'readonly');
-                const store = tx.objectStore(OPS_STORE);
-                const request = store.getAll();
-                request.onsuccess = () => {
-                    const sessionId = getDocumentSessionToken();
-                    const ops = Array.isArray(request.result) ? request.result : [];
-                    resolve(ops.filter(op => !Number.isFinite(Number(op?.sessionId)) || Number(op.sessionId) === sessionId));
-                };
-                request.onerror = () => resolve([]);
+                try {
+                    const tx = db.transaction(OPS_STORE, 'readonly');
+                    const store = tx.objectStore(OPS_STORE);
+                    const request = store.getAll();
+                    request.onsuccess = () => {
+                        const sessionId = getDocumentSessionToken();
+                        const ops = Array.isArray(request.result) ? request.result : [];
+                        resolve(ops.filter(op => !Number.isFinite(Number(op?.sessionId)) || Number(op.sessionId) === sessionId));
+                    };
+                    request.onerror = () => resolve([]);
+                } catch (error) {
+                    resolve([]);
+                }
             });
         }
 
@@ -28470,38 +28974,44 @@
             const db = await openNotebookDb();
             if (!db || !isDocumentSessionTokenValid(sessionToken)) return false;
             return new Promise((resolve) => {
-                const tx = db.transaction(OPS_STORE, 'readwrite');
-                activeStrokeOpsTransaction = tx;
-                activeStrokeOpsTransactions.add(tx);
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activeStrokeOpsTransactions.delete(tx);
+                    if (tx) activeStrokeOpsTransactions.delete(tx);
                     if (activeStrokeOpsTransaction === tx) {
                         activeStrokeOpsTransaction = [...activeStrokeOpsTransactions].at(-1) || null;
                     }
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(
-                    isDocumentSessionTokenValid(sessionToken)
-                    && !structureToken?.cancelled
-                );
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(OPS_STORE);
-                const index = store.index('pageIndex');
-                const request = index.openCursor(IDBKeyRange.only(pageIndex));
-                request.onsuccess = (event) => {
-                    const cursor = event.target.result;
-                    if (!cursor) return;
-                    const key = getStrokeOpPersistenceKey(cursor.value?.stroke);
-                    if (!capturedKeys || capturedKeys.has(key)) {
-                        cursor.delete();
-                    }
-                    cursor.continue();
-                };
-                request.onerror = () => { };
+                try {
+                    tx = db.transaction(OPS_STORE, 'readwrite');
+                    activeStrokeOpsTransaction = tx;
+                    activeStrokeOpsTransactions.add(tx);
+                    tx.oncomplete = () => finish(
+                        isDocumentSessionTokenValid(sessionToken)
+                        && !structureToken?.cancelled
+                    );
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    const store = tx.objectStore(OPS_STORE);
+                    const index = store.index('pageIndex');
+                    const request = index.openCursor(IDBKeyRange.only(pageIndex));
+                    request.onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (!cursor) return;
+                        const key = getStrokeOpPersistenceKey(cursor.value?.stroke);
+                        if (!capturedKeys || capturedKeys.has(key)) {
+                            cursor.delete();
+                        }
+                        cursor.continue();
+                    };
+                    request.onerror = () => { };
+                } catch (error) {
+                    console.error('Failed to start stroke-op cleanup transaction:', error);
+                    finish(false);
+                }
             });
         }
 
@@ -28514,33 +29024,38 @@
             const db = await openNotebookDb();
             if (!db || !isDocumentSessionTokenValid(sessionToken)) return false;
             return new Promise((resolve) => {
-                const tx = db.transaction(OPS_STORE, 'readwrite');
-                activeStrokeOpsTransaction = tx;
-                activeStrokeOpsTransactions.add(tx);
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activeStrokeOpsTransactions.delete(tx);
+                    if (tx) activeStrokeOpsTransactions.delete(tx);
                     if (activeStrokeOpsTransaction === tx) {
                         activeStrokeOpsTransaction = [...activeStrokeOpsTransactions].at(-1) || null;
                     }
                     resolve(saved);
                 };
-                tx.oncomplete = () => {
-                    if (!isDocumentSessionTokenValid(sessionToken)) {
-                        finish(false);
-                        return;
-                    }
-                    pendingStrokeOps.clear();
-                    strokeOpsQueue.length = 0;
-                    strokeOpsFlushScheduled = false;
-                    finish(true);
-                };
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(OPS_STORE);
-                store.clear();
+                try {
+                    tx = db.transaction(OPS_STORE, 'readwrite');
+                    activeStrokeOpsTransaction = tx;
+                    activeStrokeOpsTransactions.add(tx);
+                    tx.oncomplete = () => {
+                        if (!isDocumentSessionTokenValid(sessionToken)) {
+                            finish(false);
+                            return;
+                        }
+                        pendingStrokeOps.clear();
+                        strokeOpsQueue.length = 0;
+                        strokeOpsFlushScheduled = false;
+                        finish(true);
+                    };
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    tx.objectStore(OPS_STORE).clear();
+                } catch (error) {
+                    console.error('Failed to start stroke-op store cleanup transaction:', error);
+                    finish(false);
+                }
             });
         }
 
@@ -28581,27 +29096,85 @@
             legacyPagesCache = null;
         }
 
+        function hasPendingLegacyPageMigration() {
+            return Array.isArray(legacyPagesCache) && legacyPagesCache.some(Boolean);
+        }
+
+        function flushLegacyPagesCacheForCheckpoint(options = {}) {
+            if (!hasPendingLegacyPageMigration()) return Promise.resolve(true);
+            if (legacyPageMigrationCheckpointPromise) {
+                return legacyPageMigrationCheckpointPromise;
+            }
+            const structureToken = options.structureToken || null;
+            const assertContext = typeof options.assertContext === 'function'
+                ? options.assertContext
+                : null;
+            const sessionToken = getDocumentSessionToken();
+            legacyMigrationCheckpointInProgress = true;
+            const checkpoint = (async () => {
+                if (legacyPageMigrationPromise) {
+                    try { await legacyPageMigrationPromise; } catch (error) {}
+                }
+                assertContext?.();
+                if (!hasPendingLegacyPageMigration()) return true;
+                for (let pageIndex = 0; pageIndex < legacyPagesCache.length; pageIndex += 1) {
+                    const legacyPage = legacyPagesCache[pageIndex];
+                    if (!legacyPage) continue;
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
+                    const livePage = state.pages[pageIndex];
+                    const persistedPage = isPageLoaded(livePage)
+                        ? null
+                        : await loadPageFromIndexedDb(pageIndex);
+                    assertContext?.();
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
+                    const fullPage = isPageLoaded(livePage)
+                        ? livePage
+                        : (persistedPage || normalizeLegacyPage(legacyPage, pageIndex));
+                    const saved = await savePageToIndexedDb(pageIndex, fullPage, { structureToken });
+                    assertContext?.();
+                    if (!saved || !isDocumentSessionTokenValid(sessionToken)) return false;
+                    legacyPagesCache[pageIndex] = null;
+                    if ((pageIndex + 1) % 8 === 0) await yieldToMainThread();
+                }
+                pruneLegacyPagesCache();
+                return !hasPendingLegacyPageMigration();
+            })();
+            legacyPageMigrationCheckpointPromise = checkpoint;
+            const clearCheckpoint = () => {
+                if (legacyPageMigrationCheckpointPromise !== checkpoint) return;
+                legacyPageMigrationCheckpointPromise = null;
+                legacyMigrationCheckpointInProgress = false;
+            };
+            checkpoint.then(clearCheckpoint, clearCheckpoint);
+            return checkpoint;
+        }
+
         async function deletePageFromIndexedDb(pageIndex) {
             const sessionToken = getDocumentSessionToken();
             const db = await openNotebookDb();
             if (!db || !isDocumentSessionTokenValid(sessionToken)) return false;
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readwrite');
-                activePageStoreTransactions.add(tx);
-                activePageStoreWrites = activePageStoreTransactions.size;
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activePageStoreTransactions.delete(tx);
+                    if (tx) activePageStoreTransactions.delete(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(isDocumentSessionTokenValid(sessionToken));
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(PAGE_STORE);
-                store.delete(pageIndex);
+                try {
+                    tx = db.transaction(PAGE_STORE, 'readwrite');
+                    activePageStoreTransactions.add(tx);
+                    activePageStoreWrites = activePageStoreTransactions.size;
+                    tx.oncomplete = () => finish(isDocumentSessionTokenValid(sessionToken));
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    tx.objectStore(PAGE_STORE).delete(pageIndex);
+                } catch (error) {
+                    console.error('Failed to start page-delete transaction:', error);
+                    finish(false);
+                }
             });
         }
 
@@ -28613,31 +29186,37 @@
             const db = await openNotebookDb();
             if (!db || !isDocumentSessionTokenValid(sessionToken)) return false;
             return new Promise((resolve) => {
-                const tx = db.transaction([PAGE_STORE, OPS_STORE], 'readwrite');
-                activePageStoreTransactions.add(tx);
-                activePageStoreWrites = activePageStoreTransactions.size;
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activePageStoreTransactions.delete(tx);
+                    if (tx) activePageStoreTransactions.delete(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
                     resolve(saved);
                 };
-                tx.oncomplete = () => {
-                    if (!isDocumentSessionTokenValid(sessionToken)) {
-                        finish(false);
-                        return;
-                    }
-                    pendingStrokeOps.clear();
-                    strokeOpsQueue.length = 0;
-                    strokeOpsFlushScheduled = false;
-                    finish(true);
-                };
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                tx.objectStore(PAGE_STORE).clear();
-                tx.objectStore(OPS_STORE).clear();
+                try {
+                    tx = db.transaction([PAGE_STORE, OPS_STORE], 'readwrite');
+                    activePageStoreTransactions.add(tx);
+                    activePageStoreWrites = activePageStoreTransactions.size;
+                    tx.oncomplete = () => {
+                        if (!isDocumentSessionTokenValid(sessionToken)) {
+                            finish(false);
+                            return;
+                        }
+                        pendingStrokeOps.clear();
+                        strokeOpsQueue.length = 0;
+                        strokeOpsFlushScheduled = false;
+                        finish(true);
+                    };
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    tx.objectStore(PAGE_STORE).clear();
+                    tx.objectStore(OPS_STORE).clear();
+                } catch (error) {
+                    console.error('Failed to start page-store cleanup transaction:', error);
+                    finish(false);
+                }
             });
         }
 
@@ -28646,21 +29225,27 @@
             const db = await openNotebookDb();
             if (!db || !isDocumentSessionTokenValid(sessionToken)) return false;
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readwrite');
-                activePageStoreTransactions.add(tx);
-                activePageStoreWrites = activePageStoreTransactions.size;
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activePageStoreTransactions.delete(tx);
+                    if (tx) activePageStoreTransactions.delete(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(isDocumentSessionTokenValid(sessionToken));
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                tx.objectStore(PAGE_STORE).clear();
+                try {
+                    tx = db.transaction(PAGE_STORE, 'readwrite');
+                    activePageStoreTransactions.add(tx);
+                    activePageStoreWrites = activePageStoreTransactions.size;
+                    tx.oncomplete = () => finish(isDocumentSessionTokenValid(sessionToken));
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    tx.objectStore(PAGE_STORE).clear();
+                } catch (error) {
+                    console.error('Failed to start page-data cleanup transaction:', error);
+                    finish(false);
+                }
             });
         }
 
@@ -28670,8 +29255,14 @@
             collabPageStoreRewriteRetryTimer = setTimeout(async () => {
                 collabPageStoreRewriteRetryTimer = null;
                 if (!collabPageStoreRewritePending || !isDocumentSessionTokenValid(sessionToken)) return;
-                const saved = await persistPendingCollabPageStoreRewrite();
-                if (!saved && collabPageStoreRewritePending) {
+                let saved = false;
+                try {
+                    saved = await persistPendingCollabPageStoreRewrite();
+                } catch (error) {
+                    console.warn('Collaborative page checkpoint retry failed:', error);
+                }
+                if (!saved && collabPageStoreRewritePending
+                    && isDocumentSessionTokenValid(sessionToken)) {
                     scheduleCollabPageStoreRewriteRetry();
                 }
             }, 350);
@@ -28726,29 +29317,38 @@
                 const saved = await new Promise((resolve) => {
                     // Page bodies, their numeric order, retired numeric ops and
                     // the metadata describing that order commit together.
-                    const tx = db.transaction([PAGE_STORE, OPS_STORE, DB_STORE], 'readwrite');
-                    collabPageStoreRewriteTransaction = tx;
+                    let tx = null;
+                    let settled = false;
                     const finish = result => {
+                        if (settled) return;
+                        settled = true;
                         if (collabPageStoreRewriteTransaction === tx) {
                             collabPageStoreRewriteTransaction = null;
                         }
                         resolve(result);
                     };
-                    tx.oncomplete = () => finish(true);
-                    tx.onerror = () => finish(false);
-                    tx.onabort = () => finish(false);
-                    const pageStore = tx.objectStore(PAGE_STORE);
-                    pageStore.clear();
-                    storedPages.forEach((page, index) => pageStore.put(page, index));
-                    // Old op rows contain the old numeric page indices. Their
-                    // content is already present in storedPages at this boundary.
-                    tx.objectStore(OPS_STORE).clear();
-                    tx.objectStore(DB_STORE).put({
-                        key: DB_KEY,
-                        data: checkpointPayload,
-                        savedAt: checkpointSavedAt,
-                        version: 3
-                    });
+                    try {
+                        tx = db.transaction([PAGE_STORE, OPS_STORE, DB_STORE], 'readwrite');
+                        collabPageStoreRewriteTransaction = tx;
+                        tx.oncomplete = () => finish(true);
+                        tx.onerror = () => finish(false);
+                        tx.onabort = () => finish(false);
+                        const pageStore = tx.objectStore(PAGE_STORE);
+                        pageStore.clear();
+                        storedPages.forEach((page, index) => pageStore.put(page, index));
+                        // Old op rows contain the old numeric page indices. Their
+                        // content is already present in storedPages at this boundary.
+                        tx.objectStore(OPS_STORE).clear();
+                        tx.objectStore(DB_STORE).put({
+                            key: DB_KEY,
+                            data: checkpointPayload,
+                            savedAt: checkpointSavedAt,
+                            version: 3
+                        });
+                    } catch (error) {
+                        console.error('Failed to start collaborative page checkpoint:', error);
+                        finish(false);
+                    }
                 });
                 return saved && isDocumentSessionTokenValid(sessionToken);
             })();
@@ -28809,51 +29409,57 @@
                 return false;
             }
             return new Promise((resolve) => {
-                const tx = db.transaction(PAGE_STORE, 'readwrite');
-                activePageStoreTransactions.add(tx);
-                activePageStoreWrites = activePageStoreTransactions.size;
+                let tx = null;
                 let settled = false;
                 const finish = (saved) => {
                     if (settled) return;
                     settled = true;
-                    activePageStoreTransactions.delete(tx);
+                    if (tx) activePageStoreTransactions.delete(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
                     resolve(saved);
                 };
-                tx.oncomplete = () => finish(
-                    isDocumentSessionTokenValid(sessionToken)
-                    && structureVersion === pageStructureVersion
-                );
-                tx.onerror = () => finish(false);
-                tx.onabort = () => finish(false);
-                const store = tx.objectStore(PAGE_STORE);
-                const lastIndex = totalPages;
-                let current = startIndex;
-                const moveNext = () => {
-                    if (current > lastIndex) {
-                        return;
-                    }
-                    if (current === lastIndex) {
-                        store.delete(lastIndex);
-                        return;
-                    }
-                    const request = store.get(current + 1);
-                    request.onsuccess = () => {
-                        const data = request.result;
-                        if (data) {
-                            store.put(data, current);
-                        } else {
-                            store.delete(current);
+                try {
+                    tx = db.transaction(PAGE_STORE, 'readwrite');
+                    activePageStoreTransactions.add(tx);
+                    activePageStoreWrites = activePageStoreTransactions.size;
+                    tx.oncomplete = () => finish(
+                        isDocumentSessionTokenValid(sessionToken)
+                        && structureVersion === pageStructureVersion
+                    );
+                    tx.onerror = () => finish(false);
+                    tx.onabort = () => finish(false);
+                    const store = tx.objectStore(PAGE_STORE);
+                    const lastIndex = totalPages;
+                    let current = startIndex;
+                    const moveNext = () => {
+                        if (current > lastIndex) {
+                            return;
                         }
-                        current += 1;
-                        moveNext();
+                        if (current === lastIndex) {
+                            store.delete(lastIndex);
+                            return;
+                        }
+                        const request = store.get(current + 1);
+                        request.onsuccess = () => {
+                            const data = request.result;
+                            if (data) {
+                                store.put(data, current);
+                            } else {
+                                store.delete(current);
+                            }
+                            current += 1;
+                            moveNext();
+                        };
+                        request.onerror = () => {
+                            current += 1;
+                            moveNext();
+                        };
                     };
-                    request.onerror = () => {
-                        current += 1;
-                        moveNext();
-                    };
-                };
-                moveNext();
+                    moveNext();
+                } catch (error) {
+                    console.error('Failed to start page-delete reindex transaction:', error);
+                    finish(false);
+                }
             });
         }
 
@@ -29169,7 +29775,6 @@
                 if (!force && mode === 'stroke' && hasPendingOps) {
                     pageDirty.delete(pageIndex);
                     pageDirtyMode.delete(pageIndex);
-                    pageDirtyGeneration.delete(pageIndex);
                     continue;
                 }
                 const saved = await savePageToIndexedDb(pageIndex, page, { structureToken });
@@ -29197,7 +29802,6 @@
                 if (!newerPendingOps && !changedWhileSaving) {
                     pageDirty.delete(pageIndex);
                     pageDirtyMode.delete(pageIndex);
-                    pageDirtyGeneration.delete(pageIndex);
                 } else {
                     pageDirty.add(pageIndex);
                     if (!pageDirtyMode.has(pageIndex)) {
@@ -29205,7 +29809,10 @@
                     }
                 }
             }
-            return allSaved;
+            // A page can change while its transaction is committing. In that
+            // case it deliberately remains dirty and the metadata checkpoint
+            // must wait for the next save rather than describe a stale body.
+            return allSaved && pageDirty.size === 0;
         }
 
         async function hydrateLocalPendingPagesForRemoteMerge(options = {}) {
@@ -29263,6 +29870,17 @@
                 || !isDocumentPersistenceContextCurrent(persistenceContext)) {
                 return { ok: false, savedAt: null, cancelled: true };
             }
+            // Commit page bodies before publishing metadata that describes them.
+            // If a page transaction fails, the previous complete checkpoint stays
+            // authoritative instead of pointing at partially-written content.
+            const flushed = await flushDirtyPages({ abortSignal: controller });
+            if (!flushed && controller?.aborted) {
+                return { ok: false, savedAt: null, cancelled: true };
+            }
+            if (!flushed || pageDirty.size > 0 || hasPendingLegacyPageMigration()
+                || !isDocumentPersistenceContextCurrent(persistenceContext)) {
+                return { ok: false, savedAt: null, cancelled: false };
+            }
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             const dbOk = await saveToIndexedDb(payload, savedAt, { context: persistenceContext });
@@ -29277,13 +29895,6 @@
                     immediate: true,
                     context: persistenceContext
                 });
-            }
-            const flushed = await flushDirtyPages({ abortSignal: controller });
-            if (!flushed && controller?.aborted) {
-                return { ok: false, savedAt: null, cancelled: true };
-            }
-            if (!flushed) {
-                return { ok: false, savedAt: null, cancelled: false };
             }
             const ok = localOk || dbOk;
 
@@ -29484,9 +30095,8 @@
                 if (!deferPageWrites) {
                     const saved = await savePageToIndexedDb(i, fullPage);
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
-                    if (saved) {
-                        legacyPagesCache[i] = null;
-                    }
+                    if (!saved) return false;
+                    legacyPagesCache[i] = null;
                 }
                 touchPageAccess(i);
             }
@@ -29501,10 +30111,19 @@
                 let count = 0;
                 while (index < pages.length && count < limit) {
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
+                    const cachedLegacyPage = legacyPagesCache?.[index] || null;
+                    if (!cachedLegacyPage) {
+                        index += 1;
+                        continue;
+                    }
                     const livePage = state.pages[index];
+                    const persistedPage = isPageLoaded(livePage)
+                        ? null
+                        : await loadPageFromIndexedDb(index);
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     const sourcePage = deferPageWrites && isPageLoaded(livePage)
                         ? livePage
-                        : pages[index];
+                        : (persistedPage || cachedLegacyPage);
                     const fullPage = normalizeLegacyPage(sourcePage, index);
                     if (awaitAllPages) {
                         state.pages[index] = {
@@ -29517,9 +30136,8 @@
                     }
                     const saved = await savePageToIndexedDb(index, fullPage);
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
-                    if (saved) {
-                        legacyPagesCache[index] = null;
-                    }
+                    if (!saved) return false;
+                    legacyPagesCache[index] = null;
                     count += 1;
                     index += 1;
                 }
@@ -29538,23 +30156,56 @@
                 return true;
             }
 
-            const migrateBatch = async () => {
-                const ok = await migratePageRange(batchSize);
-                if (!ok) return;
-                if (index < pages.length) {
-                    if ('requestIdleCallback' in window) {
-                        requestIdleCallback(migrateBatch, { timeout: 500 });
-                    } else {
-                        setTimeout(migrateBatch, 60);
-                    }
+            const scheduleMigrationBatch = (delay = 0) => {
+                const run = () => migrateBatch().catch(error => {
+                    console.warn('Deferred page migration failed:', error);
+                    if (isDocumentSessionTokenValid(sessionToken)) scheduleMigrationBatch(500);
+                });
+                if (delay > 0) {
+                    setTimeout(run, delay);
+                } else if ('requestIdleCallback' in window) {
+                    requestIdleCallback(run, { timeout: 500 });
                 } else {
-                    saveToStorage();
+                    setTimeout(run, 60);
                 }
             };
 
-            if (index < pages.length) {
-                migrateBatch();
-            }
+            const migrateBatch = () => {
+                if (legacyMigrationCheckpointInProgress) {
+                    scheduleMigrationBatch(200);
+                    return Promise.resolve(false);
+                }
+                if (legacyPageMigrationPromise) {
+                    if (legacyPageMigrationSessionToken === sessionToken) {
+                        return legacyPageMigrationPromise;
+                    }
+                    return legacyPageMigrationPromise.catch(() => false).then(() => migrateBatch());
+                }
+                const task = (async () => {
+                    const ok = await migratePageRange(batchSize);
+                    if (!ok) {
+                        if (isDocumentSessionTokenValid(sessionToken)) scheduleMigrationBatch(500);
+                        return false;
+                    }
+                    if (index < pages.length) {
+                        scheduleMigrationBatch();
+                    } else {
+                        await saveToStorage();
+                    }
+                    return true;
+                })();
+                legacyPageMigrationPromise = task;
+                legacyPageMigrationSessionToken = sessionToken;
+                const clearMigration = () => {
+                    if (legacyPageMigrationPromise !== task) return;
+                    legacyPageMigrationPromise = null;
+                    legacyPageMigrationSessionToken = null;
+                };
+                task.then(clearMigration, clearMigration);
+                return task;
+            };
+
+            if (index < pages.length) scheduleMigrationBatch();
             return true;
         }
 
@@ -29699,11 +30350,12 @@
                 return next;
             })();
             pageLoadQueue.set(pageIndex, loadPromise);
-            loadPromise.finally(() => {
+            const clearQueuedLoad = () => {
                 if (pageLoadQueue.get(pageIndex) === loadPromise) {
                     pageLoadQueue.delete(pageIndex);
                 }
-            });
+            };
+            loadPromise.then(clearQueuedLoad, clearQueuedLoad);
             return loadPromise;
         }
 
@@ -29784,7 +30436,6 @@
             } else {
                 pageDirtyMode.delete(pageIndex);
                 pageDirty.delete(pageIndex);
-                pageDirtyGeneration.delete(pageIndex);
             }
             latestPage.strokes = null;
             latestPage.images = null;
@@ -29860,7 +30511,13 @@
                     }
                     const batchSize = Math.min(STROKE_OP_FLUSH_BATCH_SIZE, strokeOpsQueue.length);
                     const batch = strokeOpsQueue.splice(0, batchSize);
-                    const ok = await appendStrokeOpsToIndexedDb(batch);
+                    let ok = false;
+                    try {
+                        ok = await appendStrokeOpsToIndexedDb(batch);
+                    } catch (error) {
+                        console.error('Stroke-op checkpoint failed unexpectedly:', error);
+                        ok = false;
+                    }
                     if (!isDocumentSessionTokenValid(sessionToken)) {
                         pausedByAbort = true;
                         return false;
@@ -30106,6 +30763,7 @@
                 localPageStructureMutationToken = null;
             }
             documentSessionId += 1;
+            embeddedMetadataCache.clear();
             if (pdfRestoreOperation) {
                 pdfRestoreOperation.cancelled = true;
                 pdfRestoreOperation = null;
@@ -30453,6 +31111,7 @@
                 || strokeOpsFlushInProgress
                 || strokeOpsQueue.length > 0
                 || pageDirty.size > 0
+                || hasPendingLegacyPageMigration()
             );
         }
 
@@ -31175,8 +31834,19 @@
             recordSaveDebug('Local save started');
             const controller = { aborted: false };
             activeLocalSaveController = controller;
-            const result = await saveToStorage(controller);
-            activeLocalSaveController = null;
+            let result = { ok: false, savedAt: null, cancelled: false };
+            try {
+                result = await saveToStorage(controller);
+            } catch (error) {
+                console.error('Local save failed unexpectedly:', error);
+                recordSaveDebug(`Local save failed: ${error?.message || error}`);
+                result = { ok: false, savedAt: null, cancelled: !!controller.aborted };
+            } finally {
+                if (activeLocalSaveController === controller) {
+                    activeLocalSaveController = null;
+                }
+                saveInProgress = false;
+            }
             if (result.cancelled) {
                 saveQueued = true;
                 recordSaveDebug('Local save paused');
@@ -31192,7 +31862,6 @@
             } else {
                 showStatus('Save failed', { error: true });
             }
-            saveInProgress = false;
             if (saveQueued) {
                 if (hasSmoothInteraction()) {
                     return;
@@ -31215,11 +31884,16 @@
                 persistPendingExitUploadMarker(state.driveFileId);
             }
             saveViewState();
-            const savedAt = Date.now();
-            const payload = buildMetaPayload(savedAt);
-            scheduleLocalStorageBackup(payload, { immediate: true });
-            state.lastSavedAt = savedAt;
-            updateSaveTimestamp();
+            // Never publish fresh metadata until its page bodies and operation
+            // log are durable. An immediate metadata-only backup can otherwise
+            // describe edits that were never checkpointed if the process dies.
+            if (!hasPendingLocalSave()) {
+                const savedAt = Date.now();
+                const payload = buildMetaPayload(savedAt);
+                scheduleLocalStorageBackup(payload, { immediate: true });
+                state.lastSavedAt = savedAt;
+                updateSaveTimestamp();
+            }
             const localCheckpoint = getLifecycleLocalCheckpoint(
                 hasPendingDriveContent ? state.driveFileId : null
             );
@@ -33257,6 +33931,9 @@
                                 const calStart = calIdx + ';IH_CAL:'.length;
                                 const calEnd = keywords.indexOf(';', calStart);
                                 const calB64 = keywords.substring(calStart, calEnd >= 0 ? calEnd : undefined);
+                                if (calB64.length > CALENDAR_KEYWORD_SECTION_MAX_CHARS) {
+                                    throw new Error('Calendar metadata is too large');
+                                }
                                 const calStr = decodeURIComponent(escape(atob(calB64)));
                                 const parsedCfg = JSON.parse(calStr);
                                 if (parsedCfg && typeof parsedCfg.mode === 'string') {
@@ -34951,12 +35628,33 @@
             assertRemoteMergeContext();
 
             if (changed) {
-                // Save metadata and refresh visible pages
+                // Publish metadata only after every merged page body is durable.
+                // A failed page transaction must leave the previous complete
+                // checkpoint authoritative rather than exposing a torn merge.
+                const legacyPagesSaved = await flushLegacyPagesCacheForCheckpoint({
+                    structureToken: mergeToken,
+                    assertContext: assertRemoteMergeContext
+                });
+                assertRemoteMergeContext();
+                const mergedPagesSaved = await flushDirtyPages({
+                    force: true,
+                    structureToken: mergeToken,
+                    assertContext: assertRemoteMergeContext
+                });
+                assertRemoteMergeContext();
+                if (!legacyPagesSaved || !mergedPagesSaved || pageDirty.size > 0) {
+                    throw new Error('Could not durably persist every merged page');
+                }
                 const savedAt = Date.now();
                 const payload = buildMetaPayload(savedAt);
-                await saveToIndexedDb(payload, savedAt);
+                const indexedDbSaved = await saveToIndexedDb(payload, savedAt);
                 assertRemoteMergeContext();
-                scheduleLocalStorageBackup(payload);
+                const backupSaved = scheduleLocalStorageBackup(payload, {
+                    immediate: !indexedDbSaved
+                });
+                if (!indexedDbSaved && !backupSaved) {
+                    throw new Error('Could not create a durable merged metadata checkpoint');
+                }
                 state.lastSavedAt = savedAt;
                 if (structureChanged) {
                     renderAllPages();
@@ -36038,28 +36736,38 @@
                     return;
                 }
                 if (img.complete) {
-                    resolve(img);
+                    resolve(img.naturalWidth > 0 ? img : null);
                     return;
                 }
+                let settled = false;
+                const timeoutMs = Number.isFinite(options.timeoutMs)
+                    ? Math.max(1000, options.timeoutMs)
+                    : 20000;
+                let timeoutId = null;
                 const cleanup = () => {
+                    if (timeoutId) clearTimeout(timeoutId);
                     img.removeEventListener('load', onLoad);
                     img.removeEventListener('error', onError);
                     if (abortSignal) {
                         abortSignal.removeEventListener('abort', onAbort);
                     }
                 };
-                const onLoad = () => {
+                const finish = value => {
+                    if (settled) return;
+                    settled = true;
                     cleanup();
-                    resolve(img);
+                    resolve(value);
+                };
+                const onLoad = () => {
+                    finish(img.naturalWidth > 0 ? img : null);
                 };
                 const onError = () => {
-                    cleanup();
-                    resolve(null);
+                    finish(null);
                 };
                 const onAbort = () => {
-                    cleanup();
-                    resolve(null);
+                    finish(null);
                 };
+                timeoutId = setTimeout(() => finish(null), timeoutMs);
                 img.addEventListener('load', onLoad, { once: true });
                 img.addEventListener('error', onError, { once: true });
                 if (abortSignal) {
@@ -36150,6 +36858,11 @@
         // a PDF onto the editor or picks one via the file picker.
         async function importPDFData(pdfData, isUrl = false, options = {}) {
             if (!pdfData) return;
+            const inputObjectUrl = isUrl
+                && typeof pdfData === 'string'
+                && pdfData.startsWith('blob:')
+                ? pdfData
+                : null;
             const strictCollabMetadata = !!options.strictCollabMetadata;
             const sessionToken = Number.isFinite(options.sessionToken)
                 ? options.sessionToken
@@ -36184,8 +36897,12 @@
                                 return await sourceBlob.arrayBuffer();
                             }
                             if (isUrl) {
-                                const fetchRes = await fetch(pdfData);
-                                const buf = await fetchRes.arrayBuffer();
+                                const buf = await fetchWithDeadline(
+                                    pdfData,
+                                    {},
+                                    45000,
+                                    async fetchRes => fetchRes.ok ? fetchRes.arrayBuffer() : null
+                                );
                                 return buf?.byteLength <= ORIGINAL_BYTES_MAX ? buf : null;
                             }
                             return null;
@@ -36332,6 +37049,9 @@
                             const calStart = calIdx + ';IH_CAL:'.length;
                             const calEnd = keywords.indexOf(';', calStart);
                             const calB64 = keywords.substring(calStart, calEnd >= 0 ? calEnd : undefined);
+                            if (calB64.length > CALENDAR_KEYWORD_SECTION_MAX_CHARS) {
+                                throw new Error('Calendar metadata is too large');
+                            }
                             const calStr = decodeURIComponent(escape(atob(calB64)));
                             const parsedCfg = JSON.parse(calStr);
                             if (parsedCfg && typeof parsedCfg.mode === 'string') {
@@ -36775,6 +37495,13 @@
                 console.error('Error importing PDF:', err);
                 hideLoading();
                 showStatus('Error importing PDF', { preserveState: true });
+            } finally {
+                // Successful small imports are retained as the active PDF source
+                // and resetPdfState owns their lifetime. Failed, superseded, and
+                // large imports must not leak their temporary Blob URL.
+                if (inputObjectUrl && state.activePdfObjectUrl !== inputObjectUrl) {
+                    try { URL.revokeObjectURL(inputObjectUrl); } catch (error) {}
+                }
             }
         }
 
@@ -36845,12 +37572,11 @@
         }
 
         async function compressToBase64(str) {
-            const stream = new CompressionStream('deflate');
-            const writer = stream.writable.getWriter();
-            writer.write(new TextEncoder().encode(str));
-            writer.close();
             const chunks = [];
-            const reader = stream.readable.getReader();
+            const reader = new Blob([new TextEncoder().encode(str)])
+                .stream()
+                .pipeThrough(new CompressionStream('deflate'))
+                .getReader();
             for (; ;) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -36876,21 +37602,28 @@
         }
 
         async function decompressFromBase64(b64) {
+            if (String(b64 || '').length > EMBEDDED_METADATA_MAX_ENCODED_CHARS) {
+                throw new Error('PDF metadata payload is too large');
+            }
             const binary = atob(b64);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const stream = new DecompressionStream('deflate');
-            const writer = stream.writable.getWriter();
-            writer.write(bytes);
-            writer.close();
             const chunks = [];
-            const reader = stream.readable.getReader();
+            let totalLength = 0;
+            const reader = new Blob([bytes])
+                .stream()
+                .pipeThrough(new DecompressionStream('deflate'))
+                .getReader();
             for (; ;) {
                 const { done, value } = await reader.read();
                 if (done) break;
+                totalLength += value.byteLength;
+                if (totalLength > EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES) {
+                    try { await reader.cancel(); } catch (error) {}
+                    throw new Error('PDF metadata expands beyond the safe limit');
+                }
                 chunks.push(value);
             }
-            const totalLength = chunks.reduce((n, c) => n + c.length, 0);
             const combined = new Uint8Array(totalLength);
             let offset = 0;
             for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.length; }
@@ -37076,6 +37809,23 @@
         // so the main thread stays responsive for pen/touch input.
         let _pdfWorker = null;
         let _pdfWorkerIdCounter = 0;
+        const _pdfWorkerRequests = new Map();
+        const PDF_ASSEMBLY_WORKER_TIMEOUT_MS = 120000;
+
+        function failPdfAssemblyWorker(error) {
+            const failure = error instanceof Error ? error : new Error(String(error || 'PDF worker failed'));
+            const worker = _pdfWorker;
+            _pdfWorker = null;
+            if (worker) {
+                try { worker.terminate(); } catch (terminateError) {}
+            }
+            _pdfWorkerRequests.forEach(request => {
+                clearTimeout(request.timeoutId);
+                request.reject(failure);
+            });
+            _pdfWorkerRequests.clear();
+        }
+
         function getPdfWorker() {
             if (_pdfWorker) return _pdfWorker;
             const workerCode = `
@@ -37116,34 +37866,51 @@
                 };
             `;
             const blob = new Blob([workerCode], { type: 'application/javascript' });
-            _pdfWorker = new Worker(URL.createObjectURL(blob));
-            return _pdfWorker;
+            const workerUrl = URL.createObjectURL(blob);
+            let worker = null;
+            try {
+                worker = new Worker(workerUrl);
+            } finally {
+                URL.revokeObjectURL(workerUrl);
+            }
+            _pdfWorker = worker;
+            worker.onmessage = event => {
+                const request = _pdfWorkerRequests.get(event.data?.id);
+                if (!request) return;
+                _pdfWorkerRequests.delete(event.data.id);
+                clearTimeout(request.timeoutId);
+                if (event.data.error) request.reject(new Error(event.data.error));
+                else request.resolve(new Blob([event.data.buf], { type: 'application/pdf' }));
+            };
+            worker.onerror = event => {
+                if (_pdfWorker !== worker) return;
+                failPdfAssemblyWorker(new Error('PDF worker error: ' + (event?.message || event)));
+            };
+            worker.onmessageerror = () => {
+                if (_pdfWorker !== worker) return;
+                failPdfAssemblyWorker(new Error('PDF worker returned an unreadable response'));
+            };
+            return worker;
         }
 
         function assemblePdfInWorker(pages, metadata, metaPrefix) {
             return new Promise((resolve, reject) => {
                 const worker = getPdfWorker();
                 const id = ++_pdfWorkerIdCounter;
-                const handler = (e) => {
-                    if (e.data.id !== id) return;
-                    worker.removeEventListener('message', handler);
-                    worker.removeEventListener('error', errHandler);
-                    if (e.data.error) {
-                        reject(new Error(e.data.error));
-                    } else {
-                        resolve(new Blob([e.data.buf], { type: 'application/pdf' }));
-                    }
-                };
-                const errHandler = (e) => {
-                    worker.removeEventListener('message', handler);
-                    worker.removeEventListener('error', errHandler);
-                    reject(new Error('PDF worker error: ' + (e.message || e)));
-                };
-                worker.addEventListener('message', handler);
-                worker.addEventListener('error', errHandler);
+                const timeoutId = setTimeout(() => {
+                    if (!_pdfWorkerRequests.has(id)) return;
+                    failPdfAssemblyWorker(new Error('PDF assembly timed out'));
+                }, PDF_ASSEMBLY_WORKER_TIMEOUT_MS);
+                _pdfWorkerRequests.set(id, { resolve, reject, timeoutId });
                 // Transfer JPEG ArrayBuffers to worker (zero-copy)
                 const transfers = pages.map(pg => pg.jpegData.buffer);
-                worker.postMessage({ id, pages, metadata, metaPrefix }, transfers);
+                try {
+                    worker.postMessage({ id, pages, metadata, metaPrefix }, transfers);
+                } catch (error) {
+                    _pdfWorkerRequests.delete(id);
+                    clearTimeout(timeoutId);
+                    reject(error);
+                }
             });
         }
 
@@ -37578,6 +38345,8 @@
                 if (!entry) return null;
                 const content = entry.content;
                 if (!content) return null;
+                const maxOriginalBytes = 60 * 1024 * 1024;
+                if (Number(content.byteLength) > maxOriginalBytes) return null;
                 // content is typically a Uint8Array.
                 if (content instanceof Uint8Array && content.byteLength > 0) {
                     return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
@@ -37714,10 +38483,19 @@
         async function fetchBytesAsImage(srcUrl) {
             // Returns { bytes: ArrayBuffer, kind: 'png'|'jpg' } or null.
             try {
-                const res = await fetch(srcUrl);
-                if (!res.ok) return null;
-                const ct = (res.headers.get('content-type') || '').toLowerCase();
-                const buf = await res.arrayBuffer();
+                const result = await fetchWithDeadline(
+                    srcUrl,
+                    {},
+                    20000,
+                    async res => ({
+                        ok: res.ok,
+                        contentType: res.headers.get('content-type') || '',
+                        buffer: res.ok ? await res.arrayBuffer() : null
+                    })
+                );
+                if (!result.ok || !result.buffer) return null;
+                const ct = result.contentType.toLowerCase();
+                const buf = result.buffer;
                 let kind = 'png';
                 if (ct.includes('jpeg') || ct.includes('jpg')) kind = 'jpg';
                 else if (!ct.includes('png')) {
@@ -38880,7 +39658,17 @@
             await deliverExportedPdf(drivePdf, fileName);
         }
 
+        let pdfExportInProgress = false;
+
         async function exportPDF(fileName) {
+            if (pdfExportInProgress) {
+                showStatus('A PDF export is already in progress', {
+                    error: true,
+                    preserveState: true
+                });
+                return;
+            }
+            pdfExportInProgress = true;
             const safeName = fileName || 'cuaderno.pdf';
             try {
                 if (state.driveFileId) {
@@ -38896,17 +39684,38 @@
                 showStatus(err?.message || 'PDF export failed', { error: true, preserveState: true });
             } finally {
                 hideLoading();
+                pdfExportInProgress = false;
             }
         }
         function blobToBase64(blob) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
+                let settled = false;
+                const finish = (value, error = null) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    reader.onload = null;
+                    reader.onerror = null;
+                    reader.onabort = null;
+                    if (error) reject(error);
+                    else resolve(value);
+                };
+                const timeoutId = setTimeout(() => {
+                    try { reader.abort(); } catch (error) {}
+                    finish(null, new Error('Timed out preparing PDF for Android'));
+                }, 30000);
                 reader.onload = () => {
                     const result = String(reader.result || '');
-                    resolve(result.includes(',') ? result.split(',')[1] : result);
+                    finish(result.includes(',') ? result.split(',')[1] : result);
                 };
-                reader.onerror = () => reject(reader.error || new Error('Failed to read PDF'));
-                reader.readAsDataURL(blob);
+                reader.onerror = () => finish(null, reader.error || new Error('Failed to read PDF'));
+                reader.onabort = () => finish(null, new Error('PDF preparation was aborted'));
+                try {
+                    reader.readAsDataURL(blob);
+                } catch (error) {
+                    finish(null, error);
+                }
             });
         }
 
