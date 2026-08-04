@@ -2,22 +2,34 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const indexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const app = fs.readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
+const boot = fs.readFileSync(new URL('../boot-v5.js', import.meta.url), 'utf8');
+const runtimeCore = fs.readFileSync(new URL('../runtime-core-v5.js', import.meta.url), 'utf8');
+const securityCore = fs.readFileSync(new URL('../security-core-v5.js', import.meta.url), 'utf8');
+const timelineCore = fs.readFileSync(new URL('../timeline-core-v5.js', import.meta.url), 'utf8');
+const html = [indexHtml, app, boot, runtimeCore, securityCore, timelineCore].join('\n');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
 const scanner = fs.readFileSync(new URL('../scanner/script.js', import.meta.url), 'utf8');
 const scannerConfig = fs.readFileSync(new URL('../scanner/configLoader.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.9.10.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.10.0.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(html, /const APP_VERSION = '5\.9\.10';/);
+assert.match(indexHtml, /const APP_VERSION = '5\.10\.0';/);
+assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(html, /collaboration-core-v5\.js\?v=5\.9\.10/);
-assert.match(html, /live-collaboration-v5\.js\?v=5\.9\.10/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.10\.0/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.10\.0/);
+assert.match(indexHtml, /app-v5\.js\?v=5\.10\.0/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.10\.0/);
+assert.match(indexHtml, /Content-Security-Policy/);
+assert.match(indexHtml, /script-src-attr 'none'/);
+assert.equal((indexHtml.match(/integrity="sha384-/g) || []).length, 3);
 assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
 assert.match(html, /@keyframes presence-peer-connecting/);
 assert.match(html, /\.presence-peer-badge/);
@@ -41,7 +53,7 @@ assert.ok(
   html.indexOf('jspdf.umd.min.js') > html.indexOf('</style>'),
   'PDF libraries must not block the first CSS/body paint'
 );
-assert.match(html, /document\.documentElement\.dataset\.theme = theme;/);
+assert.match(boot, /documentRef\.documentElement\.dataset\.theme = theme;/);
 assert.match(html, /function showFastInitialView\(/);
 assert.ok(
   html.indexOf('initDriveAuth();', html.indexOf('async function init()'))
@@ -368,12 +380,24 @@ assert.doesNotMatch(
 );
 assert.match(live, /document\.getElementById\('public-inline-preview'\)/);
 
-const inlineScripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
-  .filter(match => match.index > 6500 && match[1].trim())
-  .map(match => match[1]);
+const documentHtml = html.slice(html.indexOf('<!DOCTYPE html>'));
+const inlineScriptMatches = [...documentHtml.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
+  .filter(match => match[1].trim());
+const inlineScripts = inlineScriptMatches.map(match => match[1]);
+assert.equal(inlineScripts.length, 1, 'only the non-executable version data block may remain inline');
+assert.match(
+  inlineScriptMatches[0][0],
+  /type="application\/x-inhouse-config"[^>]*id="inhouse-app-version"/,
+  'the remaining inline block must be inert version data'
+);
 for (let index = 0; index < inlineScripts.length; index += 1) {
   new vm.Script(inlineScripts[index], { filename: `index-inline-${index + 1}.js` });
 }
+new vm.Script(app, { filename: 'app-v5.js' });
+new vm.Script(boot, { filename: 'boot-v5.js' });
+new vm.Script(runtimeCore, { filename: 'runtime-core-v5.js' });
+new vm.Script(securityCore, { filename: 'security-core-v5.js' });
+new vm.Script(timelineCore, { filename: 'timeline-core-v5.js' });
 new vm.Script(live, { filename: 'live-collaboration-v5.js' });
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
@@ -580,9 +604,11 @@ const decodedFields = fieldsCodecContext.decodeCollabFieldsFromKeywords(
 );
 assert.equal(JSON.stringify(decodedFields), JSON.stringify(sampleFields), 'IH_FIELDS must round-trip Unicode and null values');
 
-const timelineStart = html.indexOf('const TIMELINE_SCHEMA_VERSION = 2;');
+const timelineStart = html.indexOf('const TIMELINE_SCHEMA_VERSION = timelineArchiveCore.ARCHIVE_SCHEMA_VERSION;');
 const timelineEnd = html.indexOf('async function encodeVersionHistoryForKeywords', timelineStart);
 assert.ok(timelineStart > 0 && timelineEnd > timelineStart, 'timeline implementation must be extractable');
+const timelineCoreContext = vm.createContext({ console });
+vm.runInContext(timelineCore, timelineCoreContext, { filename: 'timeline-core-v5.js' });
 const timelineContext = vm.createContext({
   console,
   A4_WIDTH: 210,
@@ -608,7 +634,8 @@ const timelineContext = vm.createContext({
   getPresenceClientId: () => 'test-device',
   driveUserProfile: null,
   persistTimelineHistory: async () => true,
-  ensureAllPagesLoadedForStructureChange: async () => true
+  ensureAllPagesLoadedForStructureChange: async () => true,
+  timelineArchiveCore: timelineCoreContext.InhouseTimelineCore
 });
 vm.runInContext(html.slice(timelineStart, timelineEnd), timelineContext, { filename: 'timeline-v5.js' });
 const basePage = [{ pageId: 'page-a', strokes: [], images: [], backgroundSource: 'template', pageWidth: 210, pageHeight: 297 }];
@@ -877,11 +904,11 @@ assert.doesNotMatch(driveBinSource, /\$\{file\.name/);
 assert.match(driveBinSource, /textContent = file\.name/);
 assert.doesNotMatch(scannerListSource, /\$\{p\.name/);
 assert.match(scannerListSource, /textContent = p\.name/);
-const sidePanelSanitizerStart = html.indexOf('const SIDE_PANEL_ALLOWED_TAGS');
-const sidePanelSanitizerEnd = html.indexOf('function spPanelStructureMatches', sidePanelSanitizerStart);
+const sidePanelSanitizerStart = html.indexOf('const CALENDAR_ALLOWED_TAGS');
+const sidePanelSanitizerEnd = html.indexOf('function byteLengthOfPdfData', sidePanelSanitizerStart);
 const sidePanelSanitizerSource = html.slice(sidePanelSanitizerStart, sidePanelSanitizerEnd);
-assert.match(sidePanelSanitizerSource, /document\.createElement\('template'\)/);
-assert.match(sidePanelSanitizerSource, /SIDE_PANEL_ALLOWED_ATTRIBUTES/);
+assert.match(sidePanelSanitizerSource, /documentRef\.createElement\('template'\)/);
+assert.match(sidePanelSanitizerSource, /CALENDAR_ALLOWED_ATTRIBUTES/);
 assert.match(sidePanelSanitizerSource, /element\.removeAttribute\(attribute\.name\)/);
 assert.match(sidePanelSanitizerSource, /--sp-event-color/);
 assert.doesNotMatch(
@@ -968,13 +995,13 @@ assert.ok(
 );
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
-assert.equal(update.publishedAppVersion, '5.9.10');
+assert.equal(update.publishedAppVersion, '5.10.0');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.9\.10/);
-assert.match(notes, /blocked IndexedDB/i);
-assert.match(notes, /failed.*storage transactions/i);
-assert.match(notes, /without interpreting untrusted content as active HTML/i);
+assert.match(update.releaseNotes, /v5\.10\.0/);
+assert.match(notes, /incremental/i);
+assert.match(notes, /chaos/i);
+assert.match(notes, /Content Security Policy|CSP/i);
 
-console.log('v5.9.10 smoke checks passed.');
+console.log('v5.10.0 smoke checks passed.');
