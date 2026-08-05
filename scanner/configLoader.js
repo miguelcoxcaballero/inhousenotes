@@ -263,7 +263,7 @@
   // Load configuration from values.config
   SP.loadConfig = async function loadConfig() {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
       const response = await fetch('values.config', {
         cache: 'no-store',

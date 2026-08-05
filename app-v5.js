@@ -17688,7 +17688,7 @@
                     if (!scannerEditorSessionId && !scannerEditorOverlay?.classList.contains('visible')) {
                         frame.src = 'about:blank';
                     }
-                }, options.force ? 0 : 180);
+                }, 0);
             }
             if (options.force) scannerImportInProgress = false;
             return true;

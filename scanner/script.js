@@ -212,7 +212,7 @@
   const mctx = E.mag.getContext("2d", { willReadFrequently: true });
 
   const next = U.next || (() => new Promise(requestAnimationFrame));
-  const MIN_UI_MS = 200;
+  const MIN_UI_MS = 32;
   const uiSleep = ms => new Promise(r => setTimeout(r, ms));
   let uiQueue = Promise.resolve();
   let lastUiStamp = 0;
@@ -233,10 +233,12 @@
   const MEM = (() => {
     const touch = typeof navigator.maxTouchPoints === "number" && navigator.maxTouchPoints > 0;
     const low = isMobile() || (touch && innerWidth <= 1024) || (DEVICE_MEM_GB && DEVICE_MEM_GB <= 4);
-    const baseMax = DEVICE_MEM_GB && DEVICE_MEM_GB <= 2 ? 1600 : 2000;
+    const baseMax = DEVICE_MEM_GB && DEVICE_MEM_GB <= 2 ? 1500 : 2200;
     return {
       low,
-      maxDim: low ? baseMax : 0
+      // Camera photos can exceed 12 MP. Keeping that bitmap alive beside the
+      // editor made pointer events stall without improving the exported page.
+      maxDim: low ? baseMax : 2600
     };
   })();
 
@@ -296,6 +298,34 @@
     return STENCIL_BG_SVG;
   }
 
+  const loadOptionalScript = (src, globalName) => new Promise(resolve => {
+    if (globalName && window[globalName]) { resolve(true); return; }
+    const existing = document.querySelector(`script[data-optional-src="${src}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true), { once: true });
+      existing.addEventListener("error", () => resolve(false), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.optionalSrc = src;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+
+  const ensurePdfLibrary = async () => {
+    if (typeof window.jspdf?.jsPDF === "function") return true;
+    try {
+      if (window.parent !== window && typeof window.parent.jspdf?.jsPDF === "function") {
+        window.jspdf = window.parent.jspdf;
+        return true;
+      }
+    } catch (error) { }
+    return loadOptionalScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "jspdf");
+  };
+
   window.downloadStencil = async (type) => {
     const svg = getStencilSVGString();
 
@@ -317,7 +347,7 @@
     const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(svgBlob);
 
-    img.onload = () => {
+    img.onload = async () => {
       const c = document.createElement("canvas");
       c.width = SP.Dims.A4_W;
       c.height = SP.Dims.A4_H;
@@ -335,7 +365,9 @@
         a.click();
         a.remove();
       } else {
-        const { jsPDF } = window.jspdf;
+        await ensurePdfLibrary();
+        const { jsPDF } = window.jspdf || {};
+        if (typeof jsPDF !== "function") throw new Error("PDF library is unavailable");
         const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
         const data = c.toDataURL("image/jpeg", 0.95);
         pdf.addImage(data, "JPEG", 0, 0, 210, 297);
@@ -406,6 +438,7 @@
   /* Sortable */
   let sortable = null;
   const setupSortable = () => {
+    if (typeof window.Sortable !== "function") return;
     if (sortable) sortable.destroy();
 
     sortable = new Sortable(E.list, {
@@ -502,9 +535,9 @@
       setTheme(payload.theme);
     }
     if (payload.openSource !== false && S.cv && !S.pages.length) {
-      // Let the OpenCV loading veil finish its short fade first, otherwise the
-      // source sheet briefly appears dimmed and untappable underneath it.
-      setTimeout(showSourceModal, 460);
+      // Let the opening veil finish its short fade so the source sheet is
+      // immediately tappable when it appears.
+      setTimeout(showSourceModal, 150);
     }
   }
 
@@ -924,7 +957,7 @@
     });
   }
 
-  /* Initialize app when both config and OpenCV are ready */
+  /* Initialize as soon as the bundled config is available. */
     async function initializeApp() {
     if (appInitialized) return;
     appInitialized = true;
@@ -935,13 +968,14 @@
 
     S.cv = 1;
     E.loading.style.opacity = "0";
-    setTimeout(() => E.loading.remove(), 400);
+    setTimeout(() => E.loading.remove(), 140);
     E.file.disabled = false;
 
     const sys = matchMedia("(prefers-color-scheme: dark)").matches;
     setTheme(localStorage.getItem("theme") || (sys ? "dark" : "light"));
 
-      setupSortable();
+      loadOptionalScript("https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js", "Sortable")
+        .then(ok => { if (ok) setupSortable(); });
       ensureStencilAssets().catch(() => {});
 
       new ResizeObserver(() => { if (S.i >= 0) fit(); }).observe(E.viewport);
@@ -952,14 +986,12 @@
       }
     }
 
-  /* CV ready */
-  window.__cvReady = () => {
-    initializeApp();
-  };
-
-  if (window.__cvReadyFlag) {
-    try { window.__cvReady(); } catch(e) {}
-  }
+  initializeApp().catch(error => {
+    console.error("Scanner initialization failed:", error);
+    if (E.loading) E.loading.remove();
+    S.cv = 1;
+    E.file.disabled = false;
+  });
 
   /* File input & drag-drop */
   const trig = () => { isMobile() ? showSourceModal() : E.file.click(); };
@@ -1045,117 +1077,25 @@
     }
   });
 
-  /* Processing pipeline (delegates to /processing/*.js) */
+  /* Lightweight processing pipeline. Detection runs on a <=640px analysis
+     image; only the final A4 canvas is generated at document resolution. */
   async function process(srcCanvas, opts = {}) {
-    const previewGuard = opts.previewGuard || null;
-    const previewTarget = opts.previewTarget || null;
-    await refreshConfig();
-    ALG.keys.forEach(k => ALG.cal[k].src = null);
-
-    await showTemp(srcCanvas, "Original", previewGuard, previewTarget);
-
-    const yR = SP.detectYellow(srcCanvas);
-    await showTemp(yR.viz, "Yellow mask", previewGuard, previewTarget);
-    releaseCanvas(yR.viz);
-
-    let usedYellow = !!(yR.contourPoints && yR.contourPoints.length > 100);
-    if (opts.forceNoYellow) usedYellow = false;
-
-    let corners = yR.corners;
-    let edges = yR.edges;
-
-    let pageQuad;
-    if (usedYellow) {
-      pageQuad = corners ? SP.extrapolatePage(corners) : SP.detectPageEdges(srcCanvas);
-    } else {
-      pageQuad = opts.overridePageQuad || SP.detectPageEdges(srcCanvas);
-    }
-
-    const detViz = SP.detectionViz(srcCanvas, corners, pageQuad, yR.contourPoints);
-    await showTemp(detViz, "Detection", previewGuard, previewTarget);
-    releaseCanvas(detViz);
-
-    let wrp = null;
-    if (usedYellow && corners && edges) {
-      const grid = SP.optimizeGrid(edges, ALG.CFG.ROWS, ALG.CFG.COLS);
-      const meshViz = SP.meshViz(srcCanvas, grid, corners, edges);
-      await showTemp(meshViz, "Mesh", previewGuard, previewTarget);
-      releaseCanvas(meshViz);
-      wrp = SP.warpGrid(srcCanvas, grid);
-    } else {
-      const meshViz = SP.detectionViz(srcCanvas, corners, pageQuad, yR.contourPoints);
-      await showTemp(meshViz, "Mesh", previewGuard, previewTarget);
-      releaseCanvas(meshViz);
-      wrp = SP.warpSimple(srcCanvas, pageQuad);
-    }
-
-    await showTemp(wrp, "Warp", previewGuard, previewTarget);
-
-    const col = SP.scanColors(wrp);
-    let dotCenters = cloneDotCenters(col.dotCenters);
-    let dotLineEdges = cloneDotLineEdges(col.dotLineEdges);
-    await showTemp(col.viz, "Color window", previewGuard, previewTarget);
-    releaseCanvas(col.viz);
-
-    let aligned = wrp;
-    let marker = null;
-
-    if (!usedYellow && col.found && col.blackPt) {
-      const blob = SP.findBlackBlob(wrp, col.blackPt);
-      aligned = SP.alignMarker(wrp, blob);
-      if (dotCenters) {
-        const dx = MARKER_TARGET.x - blob.x;
-        const dy = MARKER_TARGET.y - blob.y;
-        shiftDotCenters(dotCenters, dx, dy);
-      }
-      if (dotLineEdges) {
-        const dx = MARKER_TARGET.x - blob.x;
-        const dy = MARKER_TARGET.y - blob.y;
-        shiftDotLineEdges(dotLineEdges, dx, dy);
-      }
-      marker = { x: MARKER_TARGET.x, y: MARKER_TARGET.y };
-    } else if (usedYellow) {
-      marker = { x: MARKER_TARGET.x, y: MARKER_TARGET.y };
-    }
-
-    const T = SP.buildTransform();
-    const showRecolorStep = async (label, canvas) => showTemp(canvas, label, previewGuard, previewTarget);
-
-    let fin;
-    if (T) fin = await SP.applyColorStepsAsync(aligned, T, showRecolorStep);
-    else fin = await SP.applyBalanceStepsAsync(aligned, showRecolorStep);
-
-    if (usedYellow) {
-      fin = SP.restoreMargins(fin);
-      await showTemp(fin, "Recoloring: Restore margins", previewGuard, previewTarget);
-      if (dotCenters) mapDotsThroughRestore(dotCenters);
-      if (dotLineEdges) mapLineEdgesThroughRestore(dotLineEdges);
-    }
-
-    let remeshControls = null;
-    if (dotCenters && typeof SP.remeshStencil === "function") {
-      remeshControls = buildRemeshControls(dotCenters);
-      if (remeshControls) {
-        const remeshed = SP.remeshStencil(fin, remeshControls);
-        if (remeshed && remeshed !== fin) {
-          await showTemp(remeshed, "Remesh", previewGuard, previewTarget);
-          releaseCanvas(fin);
-          fin = remeshed;
-          remeshDotData(dotCenters, dotLineEdges, remeshControls);
-        }
-      }
-    }
-
-    if (fin && typeof SP.removeEdgeYellowZones === "function") {
-      SP.removeEdgeYellowZones(fin);
-    }
-    if (fin && typeof SP.removeDotGrid === "function") {
-      SP.removeDotGrid(fin);
-    }
-
-    await showTemp(fin, "Final", previewGuard, previewTarget);
-
-    return { canvas: fin, pageQuad, marker, usedYellow };
+    stageOnImmediate("Detecting page...");
+    const detection = opts.overridePageQuad
+      ? { pageQuad: opts.overridePageQuad, confidence: opts.forceNoYellow ? 0 : 1 }
+      : SP.Lightweight.detectPage(srcCanvas);
+    const usedYellow = !opts.forceNoYellow && detection.confidence > 0;
+    const pageQuad = detection.pageQuad;
+    stageOnImmediate(usedYellow ? "Straightening stencil..." : "Straightening page...");
+    const fin = await SP.Lightweight.warp(srcCanvas, pageQuad);
+    stageOnImmediate("Balancing colors...");
+    await SP.Lightweight.correctColors(fin, usedYellow);
+    return {
+      canvas: fin,
+      pageQuad,
+      marker: usedYellow ? { x: MARKER_TARGET.x, y: MARKER_TARGET.y } : null,
+      usedYellow
+    };
   }
 
   /* Page list rendering */
@@ -1977,7 +1917,7 @@
         try {
           const src = p.src || await ensureSrcCanvas(p);
           if (!src) throw new Error("Source image is unavailable");
-          const out = await process(src, { overridePageQuad: p.quad, forceNoYellow: false });
+          const out = await process(src, { overridePageQuad: p.quad, forceNoYellow: !p.yellowUsed });
           processed = out.canvas;
 
           thumbCanvas = resizeC(processed, 100);
@@ -2338,6 +2278,7 @@
       toast("Generating PDF…");
       await new Promise(r => setTimeout(r, 100));
 
+      await ensurePdfLibrary();
       const jsPdfConstructor = window.jspdf?.jsPDF;
       if (typeof jsPdfConstructor !== "function") {
         throw new Error("PDF library is unavailable");

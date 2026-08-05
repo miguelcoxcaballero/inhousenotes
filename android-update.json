@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.0",
-  "releaseNotes": "Inhouse Notes v5.11.0 / Android 1.0.10: Inhouse Scanner is now built into Manage Pages with camera and gallery capture, automatic processing, crop and reference tools, page reordering, and atomic multi-page insertion."
+  "publishedAppVersion": "5.11.1",
+  "releaseNotes": "Inhouse Notes v5.11.1 / Android 1.0.10: fixes Scanner startup and editor stalls with a local lightweight Canvas pipeline, fast yellow-frame detection, six-reference color calibration, and immediate scanner cleanup."
 }
