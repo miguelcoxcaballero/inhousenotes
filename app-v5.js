@@ -3881,29 +3881,49 @@
             if (!packet?.actorId || !packet?.strokeId || !packet?.pageId) return false;
             const key = `${packet.actorId}:${packet.strokeId}`;
             const previous = remoteLiveStrokePreviews.get(key);
-            if (Number(packet.sequence) <= Number(previous?.sequence || 0)) return true;
             const affectedPageIds = new Set([String(packet.pageId)]);
             if (previous?.pageId) affectedPageIds.add(previous.pageId);
             if (packet.cancel) {
                 remoteLiveStrokePreviews.delete(key);
             } else {
-                const points = previous ? previous.points.slice() : [];
-                const offset = Math.max(0, Math.min(points.length, Number(packet.offset) || 0));
+                const pointSlots = previous?.pointSlots
+                    ? previous.pointSlots.slice()
+                    : (previous?.points ? previous.points.slice() : []);
+                const maxPoints = 24_000;
+                const offset = Math.max(0, Math.min(maxPoints, Number(packet.offset) || 0));
                 const incoming = (Array.isArray(packet.points) ? packet.points : []).map(point => ({
                     x: Number(point?.x) || 0,
                     y: Number(point?.y) || 0,
                     p: Number.isFinite(Number(point?.p)) ? Number(point.p) : 0.5
-                }));
-                points.splice(offset, points.length - offset, ...incoming);
+                })).slice(0, Math.max(0, maxPoints - offset));
+                incoming.forEach((point, index) => {
+                    pointSlots[offset + index] = point;
+                });
+                const declaredTotal = packet.finalBatch
+                    ? Math.max(0, Math.min(maxPoints, Number(packet.totalPoints) || 0))
+                    : 0;
+                if (declaredTotal > 0 && pointSlots.length > declaredTotal) {
+                    pointSlots.length = declaredTotal;
+                }
+                const points = [];
+                for (let index = 0; index < pointSlots.length; index += 1) {
+                    if (!pointSlots[index]) break;
+                    points.push(pointSlots[index]);
+                }
                 const record = {
                     actorId: String(packet.actorId),
                     strokeId: String(packet.strokeId),
                     pageId: String(packet.pageId),
-                    sequence: Number(packet.sequence) || 0,
+                    sequence: Math.max(
+                        Number(previous?.sequence) || 0,
+                        Number(packet.sequence) || 0
+                    ),
                     tool: String(packet.tool || 'pen'),
                     color: String(packet.color || '#111111'),
                     width: Math.max(0.1, Number(packet.width) || 1),
                     points,
+                    pointSlots,
+                    totalPoints: declaredTotal || Number(previous?.totalPoints) || 0,
                     sentAt: Number(packet.sentAt) || 0,
                     updatedAt: Date.now()
                 };
@@ -3923,11 +3943,35 @@
             return true;
         }
 
-        function clearRemoteLiveStrokePreviews(actorId = '', throughSentAt = Infinity) {
+        function clearRemoteLiveStrokePreview(actorId, strokeId) {
+            const key = `${String(actorId || '')}:${String(strokeId || '')}`;
+            const record = remoteLiveStrokePreviews.get(key);
+            if (!record) return false;
+            remoteLiveStrokePreviews.delete(key);
+            const pageIndex = state.pages.findIndex(page => page?.pageId === record.pageId);
+            if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
+            return true;
+        }
+
+        function clearRemoteLiveStrokePreviews(actorId = '', throughSentAt = Infinity, authoritativePages = null) {
             const affectedPageIds = new Set();
+            const confirmedByPage = Array.isArray(authoritativePages)
+                ? new Map(authoritativePages.map(page => [
+                    String(page?.pageId || ''),
+                    new Set([
+                        ...(Array.isArray(page?.strokes) ? page.strokes : [])
+                            .map(stroke => String(stroke?.id || '')),
+                        ...(Array.isArray(page?.deletedStrokeIds) ? page.deletedStrokeIds : [])
+                            .map(String),
+                        ...Object.keys(page?.deletedStrokeStamps || {}).map(String)
+                    ].filter(Boolean))
+                ]))
+                : null;
             remoteLiveStrokePreviews.forEach((record, key) => {
                 if (actorId && record.actorId !== actorId) return;
                 if (Number(record.sentAt) > Number(throughSentAt)) return;
+                if (confirmedByPage
+                    && !confirmedByPage.get(record.pageId)?.has(record.strokeId)) return;
                 affectedPageIds.add(record.pageId);
                 remoteLiveStrokePreviews.delete(key);
             });
@@ -3935,6 +3979,195 @@
                 const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
                 if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
             });
+        }
+
+        const pendingRemoteLiveStrokeCommits = new Map();
+        let remoteLiveStrokeCommitDrainPromise = null;
+
+        function hasPendingRemoteLiveStrokeCommits() {
+            return pendingRemoteLiveStrokeCommits.size > 0
+                || !!remoteLiveStrokeCommitDrainPromise;
+        }
+
+        function clearPendingRemoteLiveStrokeCommits() {
+            pendingRemoteLiveStrokeCommits.clear();
+        }
+
+        function commitRemoteLiveStroke(packet) {
+            if (!packet?.actorId
+                || !packet?.strokeId
+                || !packet?.pageId
+                || packet.fileId !== state.driveFileId
+                || !Array.isArray(packet.points)
+                || packet.points.length === 0) return false;
+            const points = packet.points.slice(0, 24_000).map(point => ({
+                x: Number(point?.x) || 0,
+                y: Number(point?.y) || 0,
+                p: Number.isFinite(Number(point?.p)) ? Number(point.p) : 0.5
+            }));
+            if (points.length === 0) return false;
+            const key = `${String(packet.actorId)}:${String(packet.strokeId)}`;
+            const next = {
+                key,
+                actorId: String(packet.actorId),
+                fileId: String(packet.fileId || ''),
+                sessionToken: getDocumentSessionToken(),
+                pageId: String(packet.pageId),
+                stroke: {
+                    id: String(packet.strokeId),
+                    tool: String(packet.tool || 'pen'),
+                    color: String(packet.color || '#111111'),
+                    width: Math.max(0.1, Number(packet.width) || 1),
+                    points,
+                    syncStamp: ihnNormalizeCollabStamp(packet.syncStamp)
+                }
+            };
+            const previous = pendingRemoteLiveStrokeCommits.get(key);
+            if (previous) {
+                const winner = ihnChooseConcurrentItem(
+                    previous.stroke,
+                    next.stroke,
+                    strokeSyncFingerprint(previous.stroke),
+                    strokeSyncFingerprint(next.stroke)
+                );
+                if (winner === previous.stroke) return true;
+            }
+            pendingRemoteLiveStrokeCommits.set(key, next);
+            flushRemoteLiveStrokeCommits().catch(error => {
+                console.warn('Could not checkpoint a remote live stroke:', error);
+            });
+            return true;
+        }
+
+        async function flushRemoteLiveStrokeCommits(timeoutMs = 15_000) {
+            if (remoteLiveStrokeCommitDrainPromise) return remoteLiveStrokeCommitDrainPromise;
+            if (pendingRemoteLiveStrokeCommits.size === 0) return true;
+            const drain = (async () => {
+                const deadline = Date.now() + Math.max(250, Number(timeoutMs) || 15_000);
+                while (pendingRemoteLiveStrokeCommits.size > 0) {
+                    if (Date.now() >= deadline) return false;
+                    if (hasSmoothInteraction()
+                        || localPageStructureMutationToken
+                        || remotePageMergeToken
+                        || remotePageStructureApplyInProgress
+                        || collabPageOrderMutationInProgress
+                        || collabPageStoreRewritePending) {
+                        await new Promise(resolve => setTimeout(resolve, 24));
+                        continue;
+                    }
+                    const first = pendingRemoteLiveStrokeCommits.entries().next().value;
+                    if (!first) break;
+                    const [key, record] = first;
+                    pendingRemoteLiveStrokeCommits.delete(key);
+                    if (!isDocumentSessionTokenValid(record.sessionToken)
+                        || String(state.driveFileId || '') !== record.fileId) continue;
+                    let pageIndex = state.pages.findIndex(page => page?.pageId === record.pageId);
+                    if (pageIndex < 0) {
+                        clearRemoteLiveStrokePreview(record.actorId, record.stroke.id);
+                        continue;
+                    }
+                    if (!isPageLoaded(state.pages[pageIndex])) {
+                        await ensurePageDataLoaded(pageIndex, { keepLoaded: true });
+                        if (!isDocumentSessionTokenValid(record.sessionToken)
+                            || String(state.driveFileId || '') !== record.fileId) continue;
+                        pageIndex = state.pages.findIndex(page => page?.pageId === record.pageId);
+                    }
+                    if (pageIndex < 0
+                        || hasSmoothInteraction()
+                        || localPageStructureMutationToken
+                        || remotePageMergeToken
+                        || remotePageStructureApplyInProgress) {
+                        pendingRemoteLiveStrokeCommits.set(key, record);
+                        continue;
+                    }
+                    const page = state.pages[pageIndex];
+                    if (!page || !Array.isArray(page.strokes)) {
+                        pendingRemoteLiveStrokeCommits.set(key, record);
+                        await new Promise(resolve => setTimeout(resolve, 24));
+                        continue;
+                    }
+                    ensureStrokeIds(page, {
+                        documentId: state.driveFileId,
+                        pageId: page.pageId
+                    });
+                    observeCollaborativeCausalStamps([record.stroke]);
+                    const deletionStamps = ihnNormalizeDeletionStamps(
+                        page.deletedStrokeStamps,
+                        page.deletedStrokeIds
+                    );
+                    if (ihnDeletionWinsItem(deletionStamps, record.stroke)) {
+                        clearRemoteLiveStrokePreview(record.actorId, record.stroke.id);
+                        continue;
+                    }
+                    const existingIndex = page.strokes.findIndex(
+                        stroke => stroke?.id === record.stroke.id
+                    );
+                    let winner = record.stroke;
+                    if (existingIndex >= 0) {
+                        winner = ihnChooseConcurrentItem(
+                            page.strokes[existingIndex],
+                            record.stroke,
+                            strokeSyncFingerprint(page.strokes[existingIndex]),
+                            strokeSyncFingerprint(record.stroke)
+                        );
+                    }
+                    const contentChanged = existingIndex < 0
+                        || strokeCollabFingerprint(page.strokes[existingIndex])
+                            !== strokeCollabFingerprint(winner);
+                    const winningStrokeId = String(winner?.id || record.stroke.id);
+                    const staleDeletionRemoved = !!deletionStamps[winningStrokeId];
+                    if (staleDeletionRemoved) {
+                        delete deletionStamps[winningStrokeId];
+                        page.deletedStrokeStamps = deletionStamps;
+                        page.deletedStrokeIds = Object.keys(deletionStamps).sort();
+                    }
+                    if (contentChanged) {
+                        const durableStroke = cloneStroke(winner);
+                        if (existingIndex >= 0) page.strokes[existingIndex] = durableStroke;
+                        else page.strokes.push(durableStroke);
+                        page.strokes.sort((left, right) => {
+                            const a = String(left?.id || strokeSyncFingerprint(left));
+                            const b = String(right?.id || strokeSyncFingerprint(right));
+                            return a < b ? -1 : (a > b ? 1 : 0);
+                        });
+                        page.strokeCount = getVisibleStrokeCount(page);
+                        page.needsRedraw = true;
+                        page.preview = null;
+                        pdfExportCache.delete(pageIndex);
+                        pdfLibOverlayCache.delete(pageIndex);
+                        if (state.driveCanEdit !== false) {
+                            enqueueStrokeOp(pageIndex, durableStroke, {
+                                skipDriveVersion: true
+                            });
+                        } else {
+                            await savePageToIndexedDb(pageIndex, page);
+                        }
+                        if (activePageIndices.has(pageIndex)) {
+                            redrawPage(pageIndex);
+                        } else {
+                            page.preview = renderPagePreview(pageIndex);
+                            applyPagePreview(pageIndex);
+                        }
+                    } else if (staleDeletionRemoved) {
+                        await savePageToIndexedDb(pageIndex, page);
+                    }
+                    clearRemoteLiveStrokePreview(record.actorId, record.stroke.id);
+                }
+                return pendingRemoteLiveStrokeCommits.size === 0;
+            })();
+            remoteLiveStrokeCommitDrainPromise = drain;
+            try {
+                return await drain;
+            } finally {
+                if (remoteLiveStrokeCommitDrainPromise === drain) {
+                    remoteLiveStrokeCommitDrainPromise = null;
+                }
+                if (pendingRemoteLiveStrokeCommits.size > 0) {
+                    setTimeout(() => {
+                        flushRemoteLiveStrokeCommits().catch(() => {});
+                    }, 40);
+                }
+            }
         }
 
         function getRemoteLiveErasePreviewStrokes(page) {
@@ -21604,7 +21837,7 @@
                 pendingStrokeOpSequence.toString(36),
                 Math.random().toString(36).slice(2, 7)
             ].join('-');
-            bumpDriveContentVersion();
+            if (!options.skipDriveVersion) bumpDriveContentVersion();
             const existing = pendingStrokeOps.get(pageIndex) || [];
             existing.push(cloned);
             pendingStrokeOps.set(pageIndex, existing);
@@ -30997,6 +31230,34 @@
                     page.strokeCount = getVisibleStrokeCount(page);
                     markPageDirty(index, 'full');
                     return id;
+                },
+                async prepareLiveDocument(fileId = 'e2e-live-document') {
+                    await ready();
+                    state.driveFileId = String(fileId || 'e2e-live-document');
+                    state.driveCanEdit = true;
+                    state.driveAutosave = false;
+                    ensurePageIds(state.pages);
+                    return this.snapshot();
+                },
+                async receiveRemoteLiveStrokePackets(packets = []) {
+                    await ready();
+                    for (const packet of Array.isArray(packets) ? packets : []) {
+                        ihnHandleRealtimeStrokePacket(packet, 'tab');
+                    }
+                    await flushRemoteLiveStrokeCommits();
+                    return this.snapshot();
+                },
+                async mergeRemotePagesForTest(pages = []) {
+                    await ready();
+                    const result = await applyRemotePages(cloneTimelineValue(pages, []), {
+                        preserveLocalUnsynced: true,
+                        additiveById: true,
+                        remoteStructure: getCollabStructureSnapshot(),
+                        remoteFields: getCollabFieldSnapshot(),
+                        remoteCalendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
+                        remoteExportName: state.exportName || ''
+                    });
+                    return { result, snapshot: this.snapshot() };
                 },
                 async checkpointBeforeLeaving() {
                     await ready();

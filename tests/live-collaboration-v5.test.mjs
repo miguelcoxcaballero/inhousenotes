@@ -93,6 +93,7 @@ function createHarness(overrides = {}) {
   const pendingTimers = new Map();
   const broadcastChannels = [];
   const receivedStrokePreviews = [];
+  const receivedStrokeCommits = [];
   const receivedErasePreviews = [];
   class FakeBroadcastChannel {
     constructor(name) {
@@ -182,6 +183,9 @@ function createHarness(overrides = {}) {
     sanitizePageForStorage: page => JSON.parse(JSON.stringify(page)),
     cloneTimelineValue: value => JSON.parse(JSON.stringify(value)),
     hasSmoothInteraction: () => false,
+    waitForCollaborativeInteractionIdle: async () => true,
+    flushRemoteLiveStrokeCommits: async () => true,
+    hasPendingRemoteLiveStrokeCommits: () => false,
     hasUnsyncedLocalDriveChanges: () => false,
     applyRemotePages: async () => ({ changed: false, hasLocalMerges: true, pagesNeedingPdfBackground: [] }),
     buildMetaPayload: () => ({}),
@@ -202,6 +206,7 @@ function createHarness(overrides = {}) {
     showEditorView() {},
     updateDocTitle() {},
     applyRemoteLiveStrokePreview(packet) { receivedStrokePreviews.push(packet); },
+    commitRemoteLiveStroke(packet) { receivedStrokeCommits.push(packet); return true; },
     clearRemoteLiveStrokePreviews() {},
     applyRemoteLiveErasePreview(packet) { receivedErasePreviews.push(packet); },
     clearRemoteLiveErasePreviews() {},
@@ -330,6 +335,7 @@ globalThis.__liveTest = {
     pendingTimers,
     broadcastChannels,
     receivedStrokePreviews,
+    receivedStrokeCommits,
     receivedErasePreviews,
     runNextTimer,
     runTimerMatching,
@@ -440,6 +446,7 @@ test('an in-progress stroke is streamed in frames and finalized with a complete 
     tool: 'pen',
     color: '#123456',
     width: 2,
+    syncStamp: { clock: 42, actor: 'peer-local:tab-a' },
     points: [{ x: 1, y: 2, p: 0.4 }]
   };
   const livePackets = () => channel.sent
@@ -458,6 +465,9 @@ test('an in-progress stroke is streamed in frames and finalized with a complete 
   assert.equal(harness.api.publishStroke('p1', stroke, { final: true }), true);
   const finalPacket = livePackets().at(-1);
   assert.equal(finalPacket.final, true);
+  assert.equal(finalPacket.finalBatch, true);
+  assert.equal(finalPacket.totalPoints, 3);
+  assert.deepEqual(finalPacket.syncStamp, stroke.syncStamp);
   assert.equal(finalPacket.offset, 0);
   assert.deepEqual(finalPacket.points.map(point => [point.x, point.y]), [[1, 2], [3, 4], [5, 6]]);
 
@@ -470,6 +480,8 @@ test('an in-progress stroke is streamed in frames and finalized with a complete 
   const longPackets = livePackets().filter(packet => packet.strokeId === longStroke.id);
   assert.equal(longPackets.length, 3, 'large recovery strokes are split into safe channel messages');
   assert.ok(longPackets.every(packet => packet.points.length <= 700));
+  assert.ok(longPackets.every(packet => packet.finalBatch === true));
+  assert.ok(longPackets.every(packet => packet.totalPoints === longStroke.points.length));
   assert.equal(longPackets.at(-1).final, true);
   assert.equal(longPackets.at(-1).offset, 1400);
 });
@@ -503,6 +515,55 @@ test('live stroke packets render once and relay without echoing to their source 
   assert.equal(harness.api.receiveStroke(packet, 'webrtc', 'peer-source'), true);
   assert.equal(harness.receivedStrokePreviews.length, 1, 'duplicate sequence is ignored');
   assert.equal(relayChannel.sent.length, 1, 'duplicate sequence is not relayed again');
+});
+
+test('final stroke chunks commit once even when mesh paths deliver them out of order', () => {
+  const harness = createHarness();
+  const base = {
+    v: 1,
+    type: 'live-stroke',
+    fileId: 'file-1',
+    actorId: 'peer-source:remote-tab',
+    strokeId: 'remote-final-stroke',
+    pageId: 'p1',
+    tool: 'pen',
+    color: '#234567',
+    width: 2,
+    syncStamp: { clock: 500, actor: 'peer-source:remote-tab' },
+    finalBatch: true,
+    totalPoints: 4,
+    cancel: false,
+    sentAt: Date.now()
+  };
+  const tail = {
+    ...base,
+    sequence: 12,
+    offset: 2,
+    points: [{ x: 3, y: 3, p: 0.5 }, { x: 4, y: 4, p: 0.5 }],
+    final: true
+  };
+  const head = {
+    ...base,
+    sequence: 11,
+    offset: 0,
+    points: [{ x: 1, y: 1, p: 0.5 }, { x: 2, y: 2, p: 0.5 }],
+    final: false
+  };
+
+  assert.equal(harness.api.receiveStroke(tail, 'tab'), true);
+  assert.equal(harness.receivedStrokeCommits.length, 0, 'a sparse final batch is not committed');
+  assert.equal(harness.api.receiveStroke(head, 'tab'), true);
+  assert.equal(harness.receivedStrokeCommits.length, 1);
+  assert.equal(
+    JSON.stringify(harness.receivedStrokeCommits[0].points.map(point => [point.x, point.y])),
+    JSON.stringify([[1, 1], [2, 2], [3, 3], [4, 4]])
+  );
+  assert.equal(harness.receivedStrokeCommits[0].syncStamp.clock, base.syncStamp.clock);
+  assert.equal(harness.receivedStrokeCommits[0].syncStamp.actor, base.syncStamp.actor);
+
+  assert.equal(harness.api.receiveStroke(tail, 'tab'), true);
+  assert.equal(harness.api.receiveStroke(head, 'tab'), true);
+  assert.equal(harness.receivedStrokeCommits.length, 1, 'duplicate mesh delivery cannot duplicate a stroke');
 });
 
 test('an active eraser streams each removal frame and flushes the last change immediately', async () => {
@@ -598,6 +659,10 @@ test('live snapshots hold and always release the page-structure lock', async () 
   const events = [];
   const token = { id: 'snapshot-lock' };
   const success = createHarness({
+    flushRemoteLiveStrokeCommits: async () => {
+      events.push('remote-commits');
+      return true;
+    },
     acquireRemotePageMerge: async () => {
       events.push('acquire');
       return token;
@@ -610,10 +675,21 @@ test('live snapshots hold and always release the page-structure lock', async () 
     ensureAllPagesLoadedForStructureChange: async () => {
       events.push('hydrate');
       return true;
+    },
+    waitForCollaborativeInteractionIdle: async () => {
+      events.push('interaction-idle');
+      return true;
     }
   });
   await success.api.buildSnapshot();
-  assert.deepEqual(events, ['acquire', 'flush', 'hydrate', 'release']);
+  assert.deepEqual(events, [
+    'remote-commits',
+    'acquire',
+    'flush',
+    'hydrate',
+    'interaction-idle',
+    'release'
+  ]);
 
   const failureEvents = [];
   const failure = createHarness({
@@ -625,6 +701,29 @@ test('live snapshots hold and always release the page-structure lock', async () 
   });
   await assert.rejects(() => failure.api.buildSnapshot(), /hydrate failed/);
   assert.deepEqual(failureEvents, ['release']);
+});
+
+test('a stroke arriving during hydration aborts the stale snapshot and retries after its commit', async () => {
+  let pendingCommit = false;
+  let released = 0;
+  const harness = createHarness({
+    acquireRemotePageMerge: async () => ({ id: 'snapshot-lock' }),
+    releaseRemotePageMerge() { released += 1; },
+    ensureAllPagesLoadedForStructureChange: async () => {
+      pendingCommit = true;
+      return true;
+    },
+    hasPendingRemoteLiveStrokeCommits: () => pendingCommit
+  });
+  harness.api.queue({ force: true });
+
+  await assert.rejects(
+    harness.api.broadcast(),
+    /remote live stroke is waiting to join the snapshot/
+  );
+  assert.equal(released, 1);
+  assert.equal(harness.api.queued(), true);
+  assert.equal(harness.api.forced(), true);
 });
 
 test('delivery bookkeeping is per peer, so a new peer gets current state without a new edit', async () => {
