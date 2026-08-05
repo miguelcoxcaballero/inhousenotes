@@ -57,6 +57,16 @@ body {
 }
 .font-logo { font-family: Comfortaa, cursive }
 .hidden { display: none !important }
+.embedded-only { display: none !important }
+html[data-embed="true"] .embedded-only { display: flex !important }
+html[data-embed="true"] #landingPage,
+html[data-embed="true"] #modalOverlay { display: none !important }
+html[data-embed="true"] #appContainer {
+  display: flex !important;
+  opacity: 1;
+  transform: none;
+  transition: none
+}
 #appLoading {
   position: fixed;
   inset: 0;
@@ -725,6 +735,10 @@ body {
   transition: opacity .3s var(--ease-slide), transform .3s var(--ease-slide);
   will-change: opacity, transform
 }
+html[data-embed="true"] .bottom-controls {
+  display: grid;
+  gap: 8px
+}
 .btn-main {
   width: 100%;
   height: 48px;
@@ -740,6 +754,16 @@ body {
   justify-content: center;
   gap: 8px;
   transition: .2s
+}
+.btn-main.scanner-secondary-action,
+html[data-embed="true"] #exportBtn {
+  background: var(--surface-2);
+  color: var(--text-main);
+  border: 1px solid var(--outline-variant)
+}
+.btn-main.scanner-secondary-action:hover,
+html[data-embed="true"] #exportBtn:hover {
+  background: var(--surface-3)
 }
 .btn-main:hover { filter: brightness(1.1); box-shadow: 0 4px 10px rgba(0,0,0,.2) }
 .btn-main:disabled {
@@ -903,6 +927,8 @@ body {
   .thumb-wrap { width: 56px; height: 80px }
   #toolbar { padding: 0 8px; height: 56px }
   .doc-title { width: 160px; font-size: 16px; padding: 4px 8px }
+  html[data-embed="true"] .doc-title { width: min(31vw, 118px) }
+  html[data-embed="true"] #closeEmbedBtn { width: 38px; height: 38px }
   .btn-chip { padding: 0 10px; height: 34px }
   .btn-chip span.label-text { display: none }
   .hero-title { font-size: 36px }

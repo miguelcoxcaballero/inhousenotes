@@ -11,10 +11,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0">
 
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=5.11.0">
 
   <!-- OpenCV bootstrap (kept compatible with async load + multi-file) -->
   <script>
+    window.__scannerEmbedMode = new URLSearchParams(window.location.search).get('embed') === '1';
+    if (window.__scannerEmbedMode) document.documentElement.dataset.embed = 'true';
     window.__cvReadyFlag = false;
     window.__cvReady = function(){ window.__cvReadyFlag = true; };
     window.Module = {
@@ -105,6 +107,9 @@
     <div id="toolbar">
       <input type="text" class="doc-title" id="docTitle" value="Untitled Document">
       <div class="actions">
+        <button class="btn-icon embedded-only" id="closeEmbedBtn" title="Back to document" aria-label="Back to document">
+          <span class="material-symbols-rounded">close</span>
+        </button>
         <button class="btn-icon" id="themeBtn" title="Theme">
           <span class="material-symbols-rounded">dark_mode</span>
         </button>
@@ -172,8 +177,14 @@
     </div>
 
     <div class="bottom-controls">
+      <button id="addToDocumentBtn" class="btn-main embedded-only" disabled>
+        <span class="material-symbols-rounded">note_add</span> Add to document
+      </button>
       <button id="exportBtn" class="btn-main" disabled>
         <span class="material-symbols-rounded">picture_as_pdf</span> Export PDF
+      </button>
+      <button id="downloadEmbedStencilBtn" class="btn-main scanner-secondary-action embedded-only">
+        <span class="material-symbols-rounded">download</span> Download stencil
       </button>
       <div class="sidebar-footer-brand">
         <div class="inhouse-badge">
@@ -190,19 +201,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <!-- config loader (must load first) -->
-<script src="./configLoader.js"></script>
+<script src="./configLoader.js?v=5.11.0"></script>
 
 <!-- processing modules (no bundler needed; plain scripts attach to window.ScannerPro) -->
-<script src="./processing/preMesh.js"></script>
-<script src="./processing/yellowMask.js"></script>
-<script src="./processing/yellowRectangle.js"></script>
-<script src="./processing/edgeDetectionFallback.js"></script>
-<script src="./processing/mesh.js"></script>
-<script src="./processing/colourValues.js"></script>
-<script src="./processing/colorTransform.js"></script>
+<script src="./processing/preMesh.js?v=5.11.0"></script>
+<script src="./processing/yellowMask.js?v=5.11.0"></script>
+<script src="./processing/yellowRectangle.js?v=5.11.0"></script>
+<script src="./processing/edgeDetectionFallback.js?v=5.11.0"></script>
+<script src="./processing/mesh.js?v=5.11.0"></script>
+<script src="./processing/colourValues.js?v=5.11.0"></script>
+<script src="./processing/colorTransform.js?v=5.11.0"></script>
 
 <!-- main app script -->
-<script src="./script.js"></script>
+<script src="./script.js?v=5.11.0"></script>
 
 <!-- OpenCV (async is fine because we gate with __cvReadyFlag) -->
 <script async src="https://docs.opencv.org/4.x/opencv.js"></script>

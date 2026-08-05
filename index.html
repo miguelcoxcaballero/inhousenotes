@@ -80,14 +80,14 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' https://accounts.google.com https://cdnjs.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://unpkg.com; img-src 'self' data: blob: https://*.googleusercontent.com https://www.googleapis.com https://drive.google.com; connect-src 'self' blob: https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://drive.google.com https://drive.usercontent.google.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdnjs.cloudflare.com https://unpkg.com stun: turn:; worker-src 'self' blob: https://cdnjs.cloudflare.com; child-src 'self' blob: https://accounts.google.com https://drive.google.com; frame-src https://accounts.google.com https://drive.google.com; form-action 'self' https://accounts.google.com; manifest-src 'self'; media-src 'self' blob: data:; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' https://accounts.google.com https://cdnjs.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://unpkg.com; img-src 'self' data: blob: https://*.googleusercontent.com https://www.googleapis.com https://drive.google.com; connect-src 'self' blob: https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://drive.google.com https://drive.usercontent.google.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdnjs.cloudflare.com https://unpkg.com stun: turn:; worker-src 'self' blob: https://cdnjs.cloudflare.com; child-src 'self' blob: https://accounts.google.com https://drive.google.com; frame-src 'self' https://accounts.google.com https://drive.google.com; form-action 'self' https://accounts.google.com; manifest-src 'self'; media-src 'self' blob: data:; upgrade-insecure-requests">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.10.1';</script>
-    <script src="boot-v5.js?v=5.10.1"></script>
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.11.0';</script>
+    <script src="boot-v5.js?v=5.11.0"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -3336,6 +3336,8 @@
         }
 
         .panel-cover-row {
+            display: grid;
+            gap: 10px;
             padding: 12px 20px 0 20px;
         }
 
@@ -3352,6 +3354,55 @@
         .panel-cover-row .btn svg {
             width: 18px;
             height: 18px;
+        }
+
+        #btn-scan-page {
+            border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+            background: color-mix(in srgb, var(--accent) 7%, var(--bg-secondary));
+        }
+
+        #btn-scan-page:hover {
+            background: color-mix(in srgb, var(--accent) 13%, var(--bg-secondary));
+        }
+
+        #scanner-editor-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 12000;
+            display: block;
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
+            background: #131314;
+            transition: opacity 160ms ease, visibility 0s linear 160ms;
+            overscroll-behavior: none;
+        }
+
+        #scanner-editor-overlay.visible {
+            visibility: visible;
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 160ms ease;
+        }
+
+        #scanner-editor-frame {
+            display: block;
+            width: 100%;
+            height: 100%;
+            height: 100dvh;
+            border: 0;
+            background: #131314;
+        }
+
+        body.scanner-editor-open {
+            overflow: hidden;
+            overscroll-behavior: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #scanner-editor-overlay {
+                transition: none;
+            }
         }
 
         .pages-default-size {
@@ -8241,6 +8292,18 @@
                 </svg>
                 + Photo
             </button>
+            <button class="btn btn-secondary" id="btn-scan-page" title="Scan pages" aria-label="Scan pages">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 8V5a1 1 0 0 1 1-1h3"></path>
+                    <path d="M16 4h3a1 1 0 0 1 1 1v3"></path>
+                    <path d="M20 16v3a1 1 0 0 1-1 1h-3"></path>
+                    <path d="M8 20H5a1 1 0 0 1-1-1v-3"></path>
+                    <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+                    <path d="M9.5 11.5h5M9.5 14h3.5"></path>
+                </svg>
+                Scan Page
+            </button>
         </div>
         <div class="pages-panel-actions">
             <button class="btn btn-secondary" id="btn-import-pdf" title="Import PDF" aria-label="Import PDF">
@@ -8264,6 +8327,10 @@
         </div>
         <div class="pages-default-size" id="pages-default-size" aria-live="polite"></div>
         <div class="pages-list" id="pages-list"></div>
+    </div>
+
+    <div id="scanner-editor-overlay" aria-hidden="true">
+        <iframe id="scanner-editor-frame" title="Inhouse Scanner" allow="camera" referrerpolicy="same-origin"></iframe>
     </div>
 
     <!-- ── § 3.7  Calendar modals ────────────────────────────────────────────
@@ -8676,12 +8743,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script src="collaboration-core-v5.js?v=5.10.1"></script>
-    <script src="live-collaboration-v5.js?v=5.10.1"></script>
-    <script src="runtime-core-v5.js?v=5.10.1"></script>
-    <script src="security-core-v5.js?v=5.10.1"></script>
-    <script src="timeline-core-v5.js?v=5.10.1"></script>
-    <script src="app-v5.js?v=5.10.1"></script>
+    <script src="collaboration-core-v5.js?v=5.11.0"></script>
+    <script src="live-collaboration-v5.js?v=5.11.0"></script>
+    <script src="runtime-core-v5.js?v=5.11.0"></script>
+    <script src="security-core-v5.js?v=5.11.0"></script>
+    <script src="timeline-core-v5.js?v=5.11.0"></script>
+    <script src="app-v5.js?v=5.11.0"></script>
 
 </body>
 
