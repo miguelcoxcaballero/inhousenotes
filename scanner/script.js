@@ -3,6 +3,25 @@
 
   const SP = (window.ScannerPro = window.ScannerPro || {});
   const U = (SP.Util = SP.Util || {});
+  const EMBED_PARAMS = new URLSearchParams(window.location.search);
+  const EMBEDDED = window.__scannerEmbedMode === true;
+  const EMBED_SESSION = EMBED_PARAMS.get("session") || "";
+  const EMBED_SOURCE = "inhouse-scanner";
+  let embeddedMaxPages = 24;
+  let embeddedSubmission = false;
+  let embeddedInitPayload = null;
+  let appInitialized = false;
+
+  const postEmbeddedMessage = (type, payload = {}) => {
+    if (!EMBEDDED || window.parent === window) return false;
+    window.parent.postMessage({
+      source: EMBED_SOURCE,
+      type,
+      sessionId: EMBED_SESSION,
+      ...payload
+    }, window.location.origin);
+    return true;
+  };
 
   /* ╔══════════════════════════════════════════════════════════════════════════════╗
      ║                        USER MODIFIABLE VALUES (EDIT HERE)                   ║
@@ -177,6 +196,10 @@
     togIcon: $("sidebarToggleIcon"),
     addD: $("btnDesktopAdd"),
     addM: $("btnAddMobile"),
+    addToDocument: $("addToDocumentBtn"),
+    closeEmbed: $("closeEmbedBtn"),
+    downloadEmbedStencil: $("downloadEmbedStencilBtn"),
+    docTitle: $("docTitle"),
     head: $("mobileSidebarHeader"),
     dd: $("stencilDropdown"),
     ddBtn: $("btnStencilToggle"),
@@ -224,6 +247,24 @@
     toastEl.classList.add("show");
     setTimeout(() => toastEl.classList.remove("show"), 1800);
   };
+
+  function updateEmbeddedPrimaryAction(label = "") {
+    if (!EMBEDDED || !E.addToDocument) return;
+    const pages = S.pages.length;
+    const complete = pages > 0 && S.pages.every(page => page?.status === "done");
+    const failed = S.pages.some(page => page?.status === "error");
+    const text = label || (
+      failed
+        ? "Remove failed pages"
+        : complete
+          ? `Add ${pages} ${pages === 1 ? "page" : "pages"}`
+          : pages
+            ? `Processing ${S.pages.filter(page => page?.status === "done").length}/${pages}`
+            : "Add to document"
+    );
+    E.addToDocument.innerHTML = `<span class="material-symbols-rounded">note_add</span>${text}`;
+    E.addToDocument.disabled = embeddedSubmission || !complete;
+  }
 
   const stageOnImmediate = t => {
     E.stage.textContent = t;
@@ -447,6 +488,52 @@
   $("btnSourceCamera").onclick = () => { hideSourceModal(); E.camera.click(); };
   $("btnSourceGallery").onclick = () => { hideSourceModal(); E.file.click(); };
   E.sourceModal.addEventListener("click", e => { if (e.target === E.sourceModal) hideSourceModal(); });
+
+  function applyEmbeddedInitialization(payload = {}) {
+    if (!EMBEDDED) return;
+    embeddedInitPayload = payload;
+    const requestedMax = Number(payload.maxPages);
+    if (Number.isFinite(requestedMax)) {
+      embeddedMaxPages = Math.max(1, Math.min(48, Math.round(requestedMax)));
+    }
+    const documentName = String(payload.documentName || "").trim().slice(0, 160);
+    if (E.docTitle) E.docTitle.value = documentName || "Untitled Scan";
+    if (payload.theme === "dark" || payload.theme === "light") {
+      setTheme(payload.theme);
+    }
+    if (payload.openSource !== false && S.cv && !S.pages.length) {
+      // Let the OpenCV loading veil finish its short fade first, otherwise the
+      // source sheet briefly appears dimmed and untappable underneath it.
+      setTimeout(showSourceModal, 460);
+    }
+  }
+
+  if (EMBEDDED) {
+    E.app.classList.remove("hidden");
+    requestAnimationFrame(() => E.app.classList.add("active"));
+    E.closeEmbed?.addEventListener("click", () => {
+      if (embeddedSubmission) return;
+      postEmbeddedMessage("ihn-scanner-close");
+    });
+    E.downloadEmbedStencil?.addEventListener("click", () => window.downloadStencil("pdf"));
+    window.addEventListener("message", event => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.source !== "inhouse-notes" || data.sessionId !== EMBED_SESSION) return;
+      if (data.type === "ihn-scanner-init") {
+        applyEmbeddedInitialization(data);
+      } else if (data.type === "ihn-scanner-result" && data.ok === false) {
+        embeddedSubmission = false;
+        updateEmbeddedPrimaryAction();
+        toast(String(data.message || "Could not add pages"));
+      }
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && !embeddedSubmission && !E.sourceModal.classList.contains("open")) {
+        postEmbeddedMessage("ihn-scanner-close");
+      }
+    });
+  }
 
   /* Image helpers */
   const loadImg = (src, revokeOnLoad = false) => new Promise((res, rej) => {
@@ -839,6 +926,8 @@
 
   /* Initialize app when both config and OpenCV are ready */
     async function initializeApp() {
+    if (appInitialized) return;
+    appInitialized = true;
     // Wait for config to load
     while (!configReady) {
       await new Promise(r => setTimeout(r, 50));
@@ -856,6 +945,11 @@
       ensureStencilAssets().catch(() => {});
 
       new ResizeObserver(() => { if (S.i >= 0) fit(); }).observe(E.viewport);
+      updateEmbeddedPrimaryAction();
+      if (EMBEDDED) {
+        postEmbeddedMessage("ihn-scanner-ready");
+        if (embeddedInitPayload) applyEmbeddedInitialization(embeddedInitPayload);
+      }
     }
 
   /* CV ready */
@@ -1102,6 +1196,8 @@
     E.list.innerHTML = "";
     const n = S.pages.length;
     E.sum.textContent = n ? (n === 1 ? "1 page" : n + " pages") : "No pages";
+    $("exportBtn").disabled = !n || S.pages.some(page => page?.status !== "done");
+    updateEmbeddedPrimaryAction();
 
     if (!n) {
       E.list.innerHTML = '<div style="width:100%;text-align:center;padding:20px;color:var(--text-sub);font-size:13px">No pages</div>';
@@ -2141,6 +2237,97 @@
   $("autoCropBtn").onclick = autoCrop;
   $("stencilBtn").onclick = toggleStencil;
 
+  const drawScannerPageImage = async (p, workCanvas, workContext) => {
+    if (p.processed) {
+      workCanvas.width = p.processed.width;
+      workCanvas.height = p.processed.height;
+      workContext.drawImage(p.processed, 0, 0);
+      return true;
+    }
+    if (!p.displayUrl) return false;
+    const img = await loadImg(p.displayUrl);
+    const w = p.processedW || img.naturalWidth || img.width;
+    const h = p.processedH || img.naturalHeight || img.height;
+    if (!w || !h) return false;
+    workCanvas.width = w;
+    workCanvas.height = h;
+    workContext.drawImage(img, 0, 0, w, h);
+    return true;
+  };
+
+  const canvasToBlob = (canvas, type = "image/jpeg", quality = 0.92) =>
+    new Promise((resolve, reject) => {
+      try {
+        canvas.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error("Canvas encoding failed"));
+        }, type, quality);
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+  async function addScannedPagesToDocument() {
+    if (!EMBEDDED || embeddedSubmission || !S.pages.length) return;
+    if (S.crop) {
+      toast("Finish cropping first");
+      return;
+    }
+    if (Q.running || Q.list.length || S.pages.some(page => page?.status !== "done")) {
+      toast("Wait for processing to finish");
+      return;
+    }
+
+    embeddedSubmission = true;
+    updateEmbeddedPrimaryAction("Preparing pages...");
+    let workCanvas = null;
+    try {
+      workCanvas = document.createElement("canvas");
+      const workContext = workCanvas.getContext("2d", { willReadFrequently: true });
+      if (!workContext) throw new Error("Canvas is unavailable");
+      const pages = [];
+      for (let i = 0; i < S.pages.length; i++) {
+        updateEmbeddedPrimaryAction(`Preparing ${i + 1}/${S.pages.length}`);
+        const page = S.pages[i];
+        const decoded = await drawScannerPageImage(page, workCanvas, workContext);
+        if (!decoded) throw new Error(`Page ${i + 1} could not be decoded`);
+        if (S.stencil) {
+          await applyStencilToContext(
+            workContext,
+            workCanvas.width,
+            workCanvas.height,
+            workCanvas
+          );
+        }
+        const blob = await canvasToBlob(workCanvas, "image/jpeg", 0.92);
+        pages.push({
+          blob,
+          width: workCanvas.width,
+          height: workCanvas.height,
+          name: String(page.name || `Scan ${i + 1}`).slice(0, 160)
+        });
+        await next();
+      }
+      if (!postEmbeddedMessage("ihn-scanner-pages", {
+        pages,
+        documentName: String(E.docTitle?.value || "Untitled Scan").trim().slice(0, 160),
+        stencil: !!S.stencil
+      })) {
+        throw new Error("The document is no longer available");
+      }
+      updateEmbeddedPrimaryAction("Adding to document...");
+    } catch (error) {
+      console.error("Scanner page handoff failed:", error);
+      embeddedSubmission = false;
+      updateEmbeddedPrimaryAction();
+      toast(error?.message || "Could not add pages");
+    } finally {
+      if (workCanvas) releaseCanvas(workCanvas);
+    }
+  }
+
+  if (E.addToDocument) E.addToDocument.onclick = addScannedPagesToDocument;
+
   const exportBtn = $("exportBtn");
   exportBtn.onclick = async () => {
     if (!S.pages.length) return;
@@ -2164,29 +2351,11 @@
       const workContext = workCanvas.getContext("2d", { willReadFrequently: true });
       if (!workContext) throw new Error("Canvas is unavailable");
 
-      const drawPageImage = async p => {
-        if (p.processed) {
-          workCanvas.width = p.processed.width;
-          workCanvas.height = p.processed.height;
-          workContext.drawImage(p.processed, 0, 0);
-          return true;
-        }
-        if (!p.displayUrl) return false;
-        const img = await loadImg(p.displayUrl);
-        const w = p.processedW || img.naturalWidth || img.width;
-        const h = p.processedH || img.naturalHeight || img.height;
-        if (!w || !h) return false;
-        workCanvas.width = w;
-        workCanvas.height = h;
-        workContext.drawImage(img, 0, 0, w, h);
-        return true;
-      };
-
       const pagesLen = S.pages.length;
       let exportedPages = 0;
       for (let i = 0; i < pagesLen; i++) {
         const p = S.pages[i];
-        const ok = await drawPageImage(p);
+        const ok = await drawScannerPageImage(p, workCanvas, workContext);
         if (!ok) continue;
         if (exportedPages > 0) doc.addPage();
 
@@ -2225,8 +2394,17 @@
   async function handleFiles(files) {
     if (!S.cv || !files || !files.length) return;
 
+    const availableSlots = EMBEDDED
+      ? Math.max(0, embeddedMaxPages - S.pages.length)
+      : files.length;
+    if (EMBEDDED && availableSlots <= 0) {
+      toast(`Maximum ${embeddedMaxPages} pages`);
+      return;
+    }
+
     const newPages = [];
     for (let fi = 0; fi < files.length; fi++) {
+      if (newPages.length >= availableSlots) break;
       const file = files[fi];
       if (!isImageFile(file)) continue;
 
@@ -2271,11 +2449,13 @@
     }
 
     if (!newPages.length) return;
+    if (EMBEDDED && newPages.length < files.filter(isImageFile).length) {
+      toast(`Only ${embeddedMaxPages} pages can be added at once`);
+    }
 
     E.empty.style.display = "none";
     S.pages.push(...newPages);
     renderList();
-    $("exportBtn").disabled = !S.pages.length;
 
     newPages.forEach(enqueuePage);
   }
@@ -2284,5 +2464,3 @@
   window.handleFiles = handleFiles;
 
 })();
-
-

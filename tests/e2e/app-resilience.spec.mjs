@@ -11,10 +11,74 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.10.1');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.0');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
+});
+
+test('manage pages opens the embedded Inhouse Scanner below Photo', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  await page.evaluate(async () => {
+    await window.__IHN_TEST_API__.ready();
+    await window.__IHN_TEST_API__.resetLocalDocument(1, 'Scanner UI test');
+    await window.__IHN_TEST_API__.showEditorForTest();
+  });
+
+  await page.locator('#btn-edit-pages').click();
+  await expect(page.locator('#btn-set-cover')).toBeVisible();
+  await expect(page.locator('#btn-scan-page')).toBeVisible();
+  expect(await page.evaluate(() => {
+    const photo = document.getElementById('btn-set-cover');
+    const scan = document.getElementById('btn-scan-page');
+    return !!(photo.compareDocumentPosition(scan) & Node.DOCUMENT_POSITION_FOLLOWING);
+  })).toBe(true);
+
+  await page.locator('#btn-scan-page').click();
+  await expect(page.locator('#scanner-editor-overlay')).toHaveClass(/visible/);
+  await expect(page.locator('#scanner-editor-frame')).toHaveAttribute('src', /scanner\/index\.html.*embed=1/);
+  const closed = await page.evaluate(() => window.__IHN_TEST_API__.closeScannerForTest());
+  expect(closed).toBe(true);
+});
+
+test('multi-page scanner insertion is ordered, durable, and preserves shifted pages', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(async () => {
+    const api = window.__IHN_TEST_API__;
+    await api.ready();
+    await api.resetLocalDocument(2, 'Scanner insertion test');
+    const shiftedStrokeId = await api.addSyntheticStroke(1, 'shifted-page');
+    const insertion = await api.addScannedPagesForTest(2);
+    const checkpoint = await api.checkpointBeforeLeaving();
+    return { shiftedStrokeId, insertion, checkpoint };
+  });
+
+  expect(result.insertion.inserted).toBe(true);
+  expect(result.insertion.snapshot.pages).toHaveLength(4);
+  expect(result.insertion.snapshot.pages.slice(1, 3).every(pageData => (
+    pageData.backgroundSource === 'custom'
+    && /^data:image\/jpeg/.test(pageData.backgroundImage || '')
+  ))).toBe(true);
+  expect(result.insertion.snapshot.pages[3].strokes.map(stroke => stroke.id))
+    .toContain(result.shiftedStrokeId);
+  expect(new Set(result.insertion.snapshot.pages.map(pageData => pageData.pageId)).size).toBe(4);
+  expect(result.checkpoint.snapshot.dirtyPages).toEqual([]);
+});
+
+test('embedded scanner exposes its complete document workflow', async ({ page }) => {
+  await page.goto('/scanner/index.html?embed=1&session=e2e-scanner', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#landingPage')).toBeHidden();
+  await expect(page.locator('#appContainer')).toBeVisible();
+  await expect(page.locator('#closeEmbedBtn')).toBeVisible();
+  await expect(page.locator('#btnDesktopAdd')).toBeAttached();
+  await expect(page.locator('#cropBtn')).toBeAttached();
+  await expect(page.locator('#stencilBtn')).toBeAttached();
+  await expect(page.locator('#pageList')).toBeAttached();
+  await expect(page.locator('#addToDocumentBtn')).toBeVisible();
+  await expect(page.locator('#exportBtn')).toBeVisible();
+  await expect(page.locator('#downloadEmbedStencilBtn')).toBeVisible();
 });
 
 test('blocked IndexedDB cannot trap startup', async ({ page }) => {

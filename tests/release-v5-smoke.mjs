@@ -11,24 +11,48 @@ const timelineCore = fs.readFileSync(new URL('../timeline-core-v5.js', import.me
 const html = [indexHtml, app, boot, runtimeCore, securityCore, timelineCore].join('\n');
 const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
+const scannerHtml = fs.readFileSync(new URL('../scanner/index.html', import.meta.url), 'utf8');
+const scannerStyles = fs.readFileSync(new URL('../scanner/styles.css', import.meta.url), 'utf8');
 const scanner = fs.readFileSync(new URL('../scanner/script.js', import.meta.url), 'utf8');
 const scannerConfig = fs.readFileSync(new URL('../scanner/configLoader.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.10.1.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.11.0.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(indexHtml, /const APP_VERSION = '5\.10\.1';/);
+assert.match(indexHtml, /const APP_VERSION = '5\.11\.0';/);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.10\.1/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.10\.1/);
-assert.match(indexHtml, /app-v5\.js\?v=5\.10\.1/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.10\.1/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.0/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.0/);
+assert.match(indexHtml, /app-v5\.js\?v=5\.11\.0/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.0/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
+assert.match(indexHtml, /frame-src 'self'/);
+assert.ok(
+  indexHtml.indexOf('id="btn-scan-page"') > indexHtml.indexOf('id="btn-set-cover"'),
+  'Scan Page must be directly available below Photo'
+);
+assert.match(indexHtml, /id="scanner-editor-overlay"/);
+assert.match(indexHtml, /id="scanner-editor-frame"[^>]*allow="camera"/);
+assert.match(app, /function openScannerEditor\(/);
+assert.match(app, /function handleScannerBridgeMessage\(/);
+assert.match(app, /function insertScannedPagesAt\(/);
+assert.match(app, /reindexPagesAfterInsert\(insertAt, state\.pages\.length, scannedPages\.length\)/);
+assert.match(app, /noteCollabPageAdded\(page\.pageId, pageIndex\)/);
+assert.match(app, /markAllPagesDirty\('full'\);[\s\S]{0,100}scheduleSave\(true\);/);
+assert.match(scannerHtml, /window\.__scannerEmbedMode/);
+assert.match(scannerHtml, /id="closeEmbedBtn"/);
+assert.match(scannerHtml, /id="addToDocumentBtn"/);
+assert.match(scannerHtml, /id="downloadEmbedStencilBtn"/);
+assert.match(scannerStyles, /html\[data-embed="true"\] #appContainer/);
+assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-ready"\)/);
+assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
+assert.match(scanner, /async function addScannedPagesToDocument\(/);
+assert.match(scanner, /await applyStencilToContext\(/);
 assert.equal((indexHtml.match(/integrity="sha384-/g) || []).length, 3);
 assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
 assert.match(html, /@keyframes presence-peer-connecting/);
@@ -406,6 +430,7 @@ new vm.Script(runtimeCore, { filename: 'runtime-core-v5.js' });
 new vm.Script(securityCore, { filename: 'security-core-v5.js' });
 new vm.Script(timelineCore, { filename: 'timeline-core-v5.js' });
 new vm.Script(live, { filename: 'live-collaboration-v5.js' });
+new vm.Script(scanner, { filename: 'scanner/script.js' });
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
 new vm.Script(collaborationCore, { filename: 'collaboration-core-v5.js' });
@@ -1002,13 +1027,13 @@ assert.ok(
 );
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
-assert.equal(update.publishedAppVersion, '5.10.1');
+assert.equal(update.publishedAppVersion, '5.11.0');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.10\.1/);
-assert.match(notes, /out.of.order/i);
-assert.match(notes, /snapshot/i);
-assert.match(notes, /concurrent/i);
+assert.match(update.releaseNotes, /v5\.11\.0/);
+assert.match(notes, /scanner/i);
+assert.match(notes, /camera/i);
+assert.match(notes, /atomic/i);
 
-console.log('v5.10.1 smoke checks passed.');
+console.log('v5.11.0 smoke checks passed.');

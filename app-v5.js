@@ -653,6 +653,9 @@
         const COVER_RENDER_SCALE = 2;
         const COVER_RENDER_MAX_SIDE = 2200;
         const COVER_JPEG_QUALITY = 0.9;
+        const SCANNER_MAX_PAGES = 24;
+        const SCANNER_MAX_PAGE_BYTES = 18 * 1024 * 1024;
+        const SCANNER_MAX_TOTAL_BYTES = 120 * 1024 * 1024;
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
         const DRIVE_SESSION_KEY = 'drive-session-v1';
@@ -2026,6 +2029,9 @@
         const driveBinClose = document.getElementById('drive-bin-close');
         const driveBinLoading = document.getElementById('drive-bin-loading');
         const setCoverBtn = document.getElementById('btn-set-cover');
+        const scanPageBtn = document.getElementById('btn-scan-page');
+        const scannerEditorOverlay = document.getElementById('scanner-editor-overlay');
+        const scannerEditorFrame = document.getElementById('scanner-editor-frame');
         const coverModal = document.getElementById('modal-cover-image');
         const coverUploadDropzone = document.getElementById('cover-upload-dropzone');
         const coverBrowseBtn = document.getElementById('btn-cover-browse');
@@ -2200,6 +2206,8 @@
         let coverModalSelection = null;
         let coverModalSelectionToken = 0;
         let coverApplyInProgress = false;
+        let scannerEditorSessionId = '';
+        let scannerImportInProgress = false;
         let docTitleEditing = false;
         let docTitleOriginal = '';
         let pendingDriveRenamePromise = null;
@@ -2262,6 +2270,7 @@
 
             const editButtons = [
                 document.getElementById('btn-import-pdf'),
+                scanPageBtn,
                 document.getElementById('btn-undo'),
                 document.getElementById('btn-redo'),
                 document.getElementById('btn-reset-document')
@@ -2302,6 +2311,7 @@
                 }
                 closeEraserMenu();
                 closePagesPanel();
+                closeScannerEditor({ force: true });
                 closeDeleteModal();
                 closeResetModal();
                 clearSelection();
@@ -5914,6 +5924,7 @@
         // Functions that show/hide the three top-level views: welcome screen,
         // Drive home, and the editor. Also handles the sign-in / sign-out flow.
         function showDriveHome() {
+            closeScannerEditor({ force: true });
             const welcomeView = document.getElementById('welcome-view');
             if (welcomeView) welcomeView.classList.add('hidden');
             if (driveHome) driveHome.classList.remove('hidden');
@@ -14605,6 +14616,7 @@
             });
 
             // Pages panel
+            window.addEventListener('message', handleScannerBridgeMessage);
             document.getElementById('btn-edit-pages').addEventListener('click', openPagesPanel);
             document.getElementById('panel-close').addEventListener('click', closePagesPanel);
             document.getElementById('panel-overlay').addEventListener('click', closePagesPanel);
@@ -14640,6 +14652,9 @@
             });
             if (setCoverBtn) {
                 setCoverBtn.addEventListener('click', openCoverModal);
+            }
+            if (scanPageBtn) {
+                scanPageBtn.addEventListener('click', openScannerEditor);
             }
             if (coverBrowseBtn) {
                 coverBrowseBtn.addEventListener('click', (e) => {
@@ -17613,6 +17628,7 @@
             updateCalendarFeatureAvailability();
             renderPagesList();
             if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
+            if (scanPageBtn) scanPageBtn.disabled = !!state.isReadOnly;
             document.getElementById('pages-panel').classList.add('visible');
             document.getElementById('panel-overlay').classList.add('visible');
         }
@@ -17620,6 +17636,196 @@
         function closePagesPanel() {
             document.getElementById('pages-panel').classList.remove('visible');
             document.getElementById('panel-overlay').classList.remove('visible');
+        }
+
+        function createScannerSessionId() {
+            try {
+                if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+            } catch (error) { }
+            return `scan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+        }
+
+        function postToScanner(type, payload = {}) {
+            if (!scannerEditorSessionId || !scannerEditorFrame?.contentWindow) return false;
+            scannerEditorFrame.contentWindow.postMessage({
+                ...payload,
+                source: 'inhouse-notes',
+                type,
+                sessionId: scannerEditorSessionId
+            }, window.location.origin);
+            return true;
+        }
+
+        function openScannerEditor() {
+            if (state.isReadOnly || scannerImportInProgress || !scannerEditorOverlay || !scannerEditorFrame) {
+                return;
+            }
+            closePagesPanel();
+            closeCoverModal();
+            ensurePageIds(state.pages);
+            scannerEditorSessionId = createScannerSessionId();
+            scannerImportInProgress = false;
+            const scannerUrl = new URL('scanner/index.html', document.baseURI);
+            scannerUrl.searchParams.set('embed', '1');
+            scannerUrl.searchParams.set('session', scannerEditorSessionId);
+            scannerUrl.searchParams.set('v', APP_VERSION);
+            scannerEditorOverlay.classList.add('visible');
+            scannerEditorOverlay.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('scanner-editor-open');
+            scannerEditorFrame.src = scannerUrl.href;
+            setTimeout(() => scannerEditorFrame?.focus?.(), 0);
+        }
+
+        function closeScannerEditor(options = {}) {
+            if (scannerImportInProgress && !options.force) return false;
+            scannerEditorSessionId = '';
+            scannerEditorOverlay?.classList.remove('visible');
+            scannerEditorOverlay?.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('scanner-editor-open');
+            if (scannerEditorFrame && scannerEditorFrame.src !== 'about:blank') {
+                const frame = scannerEditorFrame;
+                setTimeout(() => {
+                    if (!scannerEditorSessionId && !scannerEditorOverlay?.classList.contains('visible')) {
+                        frame.src = 'about:blank';
+                    }
+                }, options.force ? 0 : 180);
+            }
+            if (options.force) scannerImportInProgress = false;
+            return true;
+        }
+
+        function validateScannerPages(inputPages) {
+            if (!Array.isArray(inputPages) || inputPages.length < 1) {
+                throw new Error('No scanned pages were received');
+            }
+            if (inputPages.length > SCANNER_MAX_PAGES) {
+                throw new Error(`A scan can contain up to ${SCANNER_MAX_PAGES} pages`);
+            }
+            let totalBytes = 0;
+            return inputPages.map((entry, index) => {
+                const blob = entry?.blob;
+                const blobLike = blob
+                    && typeof blob.size === 'number'
+                    && typeof blob.type === 'string'
+                    && typeof blob.arrayBuffer === 'function';
+                if (!blobLike || !blob.type.startsWith('image/')) {
+                    throw new Error(`Scanned page ${index + 1} is invalid`);
+                }
+                if (blob.size <= 0 || blob.size > SCANNER_MAX_PAGE_BYTES) {
+                    throw new Error(`Scanned page ${index + 1} is too large`);
+                }
+                totalBytes += blob.size;
+                if (totalBytes > SCANNER_MAX_TOTAL_BYTES) {
+                    throw new Error('The complete scan is too large');
+                }
+                const rawWidth = Number(entry.width);
+                const rawHeight = Number(entry.height);
+                if (!Number.isFinite(rawWidth) || rawWidth <= 0
+                    || !Number.isFinite(rawHeight) || rawHeight <= 0) {
+                    throw new Error(`Scanned page ${index + 1} has no dimensions`);
+                }
+                const width = Math.max(1, Math.min(12000, Math.round(rawWidth)));
+                const height = Math.max(1, Math.min(12000, Math.round(rawHeight)));
+                return {
+                    blob,
+                    width,
+                    height,
+                    name: String(entry.name || `Scan ${index + 1}`).slice(0, 160)
+                };
+            });
+        }
+
+        function getScannedPageLogicalSize(width, height) {
+            return width > height
+                ? { pageWidth: A4_HEIGHT, pageHeight: A4_WIDTH }
+                : { pageWidth: A4_WIDTH, pageHeight: A4_HEIGHT };
+        }
+
+        async function importScannedPagesFromBridge(data, sessionId) {
+            if (scannerImportInProgress || sessionId !== scannerEditorSessionId) return;
+            scannerImportInProgress = true;
+            const expectedContext = captureLocalPageStructureDocumentContext();
+            const insertAfter = Number.isFinite(state.activePageIndex)
+                ? state.activePageIndex
+                : state.pages.length - 1;
+            const anchorPageId = String(state.pages[insertAfter]?.pageId || '');
+            try {
+                const incomingPages = validateScannerPages(data.pages);
+                const assets = [];
+                for (let index = 0; index < incomingPages.length; index += 1) {
+                    if (sessionId !== scannerEditorSessionId
+                        || !isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                        throw createAbortError('Scanner document changed');
+                    }
+                    const incoming = incomingPages[index];
+                    const dataUrl = await dataUrlFromBlob(incoming.blob);
+                    if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+                        throw new Error(`Scanned page ${index + 1} could not be read`);
+                    }
+                    assets.push({
+                        dataUrl,
+                        ...getScannedPageLogicalSize(incoming.width, incoming.height)
+                    });
+                    if ((index + 1) % 2 === 0) await yieldToMainThread();
+                }
+                if (sessionId !== scannerEditorSessionId
+                    || state.isReadOnly
+                    || !isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                    throw createAbortError('Scanner document changed');
+                }
+                const inserted = await insertScannedPagesAt(assets, insertAfter, {
+                    expectedContext,
+                    anchorPageId
+                });
+                if (!inserted) throw new Error('Could not insert the scanned pages');
+                if (sessionId === scannerEditorSessionId) {
+                    postToScanner('ihn-scanner-result', { ok: true, count: assets.length });
+                    showStatus(
+                        assets.length === 1 ? 'Scanned page added' : `${assets.length} scanned pages added`,
+                        { preserveState: true }
+                    );
+                    closeScannerEditor({ force: true });
+                }
+            } catch (error) {
+                if (error?.name !== 'AbortError') {
+                    console.error('Failed to add scanned pages:', error);
+                    if (sessionId === scannerEditorSessionId) {
+                        postToScanner('ihn-scanner-result', {
+                            ok: false,
+                            message: error?.message || 'Could not add scanned pages'
+                        });
+                    }
+                    showStatus('Failed to add scanned pages', { preserveState: true, error: true });
+                }
+            } finally {
+                if (sessionId === scannerEditorSessionId) scannerImportInProgress = false;
+            }
+        }
+
+        function handleScannerBridgeMessage(event) {
+            if (!scannerEditorSessionId
+                || event.origin !== window.location.origin
+                || event.source !== scannerEditorFrame?.contentWindow) {
+                return;
+            }
+            const data = event.data;
+            if (!data
+                || data.source !== 'inhouse-scanner'
+                || data.sessionId !== scannerEditorSessionId) {
+                return;
+            }
+            if (data.type === 'ihn-scanner-ready') {
+                postToScanner('ihn-scanner-init', {
+                    documentName: state.exportName || 'Untitled',
+                    theme: document.documentElement.getAttribute('data-theme') || 'light',
+                    maxPages: SCANNER_MAX_PAGES,
+                    openSource: true
+                });
+            } else if (data.type === 'ihn-scanner-close') {
+                closeScannerEditor();
+            } else if (data.type === 'ihn-scanner-pages') {
+                void importScannedPagesFromBridge(data, scannerEditorSessionId);
+            }
         }
 
         function createBlankPageData(options = {}) {
@@ -18308,9 +18514,93 @@
             }
         }
 
-        async function reindexPagesAfterInsert(insertAt, totalPages) {
+        async function insertScannedPagesAt(scanAssets, insertAfterIndex, options = {}) {
+            if (!Array.isArray(scanAssets) || scanAssets.length < 1) return false;
+            const expectedContext = options.expectedContext
+                || captureLocalPageStructureDocumentContext();
+            const anchorPageId = Object.prototype.hasOwnProperty.call(options, 'anchorPageId')
+                ? String(options.anchorPageId || '')
+                : (
+                    Number.isFinite(insertAfterIndex)
+                        ? String(state.pages[insertAfterIndex]?.pageId || '')
+                        : ''
+                );
+            const structureToken = await acquireLocalPageStructureMutation(
+                12_000,
+                expectedContext
+            );
+            if (!structureToken) return false;
+            try {
+                const assertStructureContext = () => assertLocalPageStructureContext(structureToken);
+                if (anchorPageId) {
+                    const currentAnchorIndex = state.pages.findIndex(page => page?.pageId === anchorPageId);
+                    if (currentAnchorIndex >= 0) insertAfterIndex = currentAnchorIndex;
+                }
+                await ensureAllPagesLoadedForStructureChange({ assertContext: assertStructureContext });
+                assertStructureContext();
+
+                clearSelection();
+                state.selectionTransform = null;
+                const clearedOps = await clearStrokeOpsStore();
+                assertStructureContext();
+                if (!clearedOps) {
+                    throw new Error('Could not reset pending page operations');
+                }
+
+                invalidatePageStructureAsyncState();
+                pageDirty.clear();
+                pageDirtyMode.clear();
+                pageAccess.clear();
+                lastSyncedStrokeIds.clear();
+                lastSyncedPageCount = 0;
+
+                const insertAt = Number.isFinite(insertAfterIndex)
+                    ? Math.max(0, Math.min(state.pages.length, insertAfterIndex + 1))
+                    : state.pages.length;
+                const scannedPages = scanAssets.map(asset => {
+                    const page = createBlankPageData({
+                        backgroundImage: asset.dataUrl,
+                        backgroundSource: 'custom',
+                        pageWidth: asset.pageWidth,
+                        pageHeight: asset.pageHeight
+                    });
+                    page.preview = null;
+                    page.bakedBackground = null;
+                    page.strokeCount = 0;
+                    page.unloaded = false;
+                    page.pendingUnload = false;
+                    page.needsRedraw = true;
+                    return page;
+                });
+
+                scannedPages.forEach((page, offset) => {
+                    const pageIndex = insertAt + offset;
+                    state.pages.splice(pageIndex, 0, page);
+                    noteCollabPageAdded(page.pageId, pageIndex);
+                });
+                state.activePageIndex = insertAt;
+                state.history = [];
+                state.historyIndex = -1;
+                updateHistoryButtons();
+
+                await reindexPagesAfterInsert(insertAt, state.pages.length, scannedPages.length);
+                assertStructureContext();
+
+                renderAllPages();
+                renderPagesList();
+                markAllPagesDirty('full');
+                scheduleSave(true);
+                goToPage(insertAt);
+                return true;
+            } finally {
+                releaseLocalPageStructureMutation(structureToken);
+            }
+        }
+
+        async function reindexPagesAfterInsert(insertAt, totalPages, shiftBy = 1) {
             const sessionToken = getDocumentSessionToken();
             const structureVersion = pageStructureVersion;
+            const safeShift = Math.max(1, Math.min(totalPages, Math.round(Number(shiftBy) || 1)));
             const db = await openNotebookDb();
             if (!db
                 || !isDocumentSessionTokenValid(sessionToken)
@@ -18339,14 +18629,15 @@
                     tx.onerror = () => finish(false);
                     tx.onabort = () => finish(false);
                     const store = tx.objectStore(PAGE_STORE);
-                    // Shift pages from lastIndex-1 down to insertAt up by one slot (read high to low)
-                    let current = lastIndex - 1;
+                    // Shift the pre-existing rows high-to-low so a multi-page
+                    // scan is one structure operation and no source row is overwritten.
+                    let current = lastIndex - safeShift;
                     const shiftNext = () => {
                         if (current < insertAt) return;
                         const req = store.get(current);
                         req.onsuccess = () => {
-                            if (req.result) store.put(req.result, current + 1);
-                            else store.delete(current + 1);
+                            if (req.result) store.put(req.result, current + safeShift);
+                            else store.delete(current + safeShift);
                             current -= 1;
                             shiftNext();
                         };
@@ -22130,6 +22421,7 @@
         }
 
         function beginDocumentSession(options = {}) {
+            closeScannerEditor({ force: true });
             const preservedLocalStructureToken = options.preserveLocalStructureToken || null;
             if (localPageStructureMutationToken
                 && localPageStructureMutationToken !== preservedLocalStructureToken) {
@@ -31208,11 +31500,66 @@
                         { length: Math.max(1, Math.min(12, Number(pageCount) || 1)) },
                         () => createBlankPageData()
                     );
+                    state.activePageIndex = 0;
+                    state.history = [];
+                    state.historyIndex = -1;
                     pageDirty.clear();
                     pageDirtyMode.clear();
                     pageDirtyGeneration.clear();
                     state.pages.forEach((_page, index) => markPageDirty(index, 'full'));
                     return this.snapshot();
+                },
+                async showEditorForTest() {
+                    await ready();
+                    setReadOnlyMode(false, { force: true });
+                    showEditorView();
+                    renderAllPages();
+                    renderPagesList();
+                    return this.snapshot();
+                },
+                async addScannedPagesForTest(pageCount = 2) {
+                    await ready();
+                    ensurePageIds(state.pages);
+                    const count = Math.max(1, Math.min(4, Number(pageCount) || 1));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 24;
+                    canvas.height = 34;
+                    const context = canvas.getContext('2d');
+                    context.fillStyle = '#ffffff';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.fillStyle = '#1a73e8';
+                    context.fillRect(3, 4, 18, 2);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                    canvas.width = 0;
+                    canvas.height = 0;
+                    const expectedContext = captureLocalPageStructureDocumentContext();
+                    const insertAfter = Number.isFinite(state.activePageIndex)
+                        ? state.activePageIndex
+                        : state.pages.length - 1;
+                    const anchorPageId = String(state.pages[insertAfter]?.pageId || '');
+                    const inserted = await insertScannedPagesAt(
+                        Array.from({ length: count }, () => ({
+                            dataUrl,
+                            pageWidth: A4_WIDTH,
+                            pageHeight: A4_HEIGHT
+                        })),
+                        insertAfter,
+                        { expectedContext, anchorPageId }
+                    );
+                    return { inserted, snapshot: this.snapshot() };
+                },
+                async openScannerForTest() {
+                    await ready();
+                    openScannerEditor();
+                    return {
+                        visible: scannerEditorOverlay?.classList.contains('visible') || false,
+                        src: scannerEditorFrame?.src || ''
+                    };
+                },
+                async closeScannerForTest() {
+                    await ready();
+                    closeScannerEditor({ force: true });
+                    return !scannerEditorOverlay?.classList.contains('visible');
                 },
                 async addSyntheticStroke(pageIndex = 0, marker = 'stroke') {
                     await ready();
