@@ -76,7 +76,7 @@ html[data-embed="true"] #appContainer {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  transition: opacity .4s
+  transition: opacity .12s
 }
 .spinner {
   width: 40px;

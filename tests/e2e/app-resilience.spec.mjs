@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.0');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.1');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -79,6 +79,36 @@ test('embedded scanner exposes its complete document workflow', async ({ page })
   await expect(page.locator('#addToDocumentBtn')).toBeVisible();
   await expect(page.locator('#exportBtn')).toBeVisible();
   await expect(page.locator('#downloadEmbedStencilBtn')).toBeVisible();
+});
+
+test('scanner starts offline and processes a stencil without OpenCV', async ({ page }) => {
+  await page.route(/^https:\/\//, route => route.abort());
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await page.goto('/scanner/index.html?embed=1&session=e2e-light-scanner', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#appLoading')).toBeHidden();
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="840" height="1188" viewBox="0 0 210 297">
+    <rect width="210" height="297" fill="white"/>
+    <rect x="15" y="14.3" width="180" height="270" fill="none" stroke="#f0db4c" stroke-width="1.2"/>
+    <path d="M45 70 C75 40 105 105 150 62 M52 130 L160 170" fill="none" stroke="#165dde" stroke-width="2.4"/>
+    <g stroke="#f0db4c" stroke-width=".6">
+      <circle cx="101.25" cy="276.8" r="1.25" fill="#f00"/>
+      <circle cx="103.75" cy="276.8" r="1.25" fill="#000"/>
+      <circle cx="106.25" cy="276.8" r="1.25" fill="#00f"/>
+      <circle cx="108.75" cy="276.8" r="1.25" fill="#6eff12"/>
+    </g>
+  </svg>`;
+  await page.locator('#fileInput').setInputFiles({
+    name: 'stencil-page.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(svg)
+  });
+
+  await expect(page.locator('#exportBtn')).toBeEnabled({ timeout: 12_000 });
+  await expect(page.locator('.page-card')).toHaveCount(1);
+  expect(pageErrors).toEqual([]);
+  expect(await page.evaluate(() => typeof window.cv)).toBe('undefined');
 });
 
 test('blocked IndexedDB cannot trap startup', async ({ page }) => {
