@@ -48,6 +48,7 @@ const IHN_LIVE_SNAPSHOT_CACHE_LIMIT = 3;
 const IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS = 16_000_000;
 const IHN_LIVE_STROKE_FRAME_MS = 18;
 const IHN_LIVE_STROKE_MAX_POINTS = 700;
+const IHN_LIVE_STROKE_MAX_TOTAL_POINTS = 24_000;
 const IHN_LIVE_ERASE_FRAME_MS = 18;
 const IHN_LIVE_ERASE_MAX_IDS = 500;
 const IHN_LIVE_ERASE_MAX_STROKES = 200;
@@ -1349,13 +1350,27 @@ function ihnSendHealthPing(peer, payload = {}) {
     return at;
 }
 
-function ihnSanitizeLiveStrokePoints(points) {
+function ihnSanitizeLiveStrokePoints(points, maxPoints = Infinity) {
     if (!Array.isArray(points)) return [];
-    return points.map(point => ({
+    const source = Number.isFinite(maxPoints)
+        ? points.slice(0, Math.max(0, Math.floor(maxPoints)))
+        : points;
+    return source.map(point => ({
         x: Number(point?.x) || 0,
         y: Number(point?.y) || 0,
         p: Number.isFinite(Number(point?.p)) ? Number(point.p) : 0.5
     }));
+}
+
+function ihnSanitizeLiveStrokeStamp(value) {
+    if (!value || typeof value !== 'object') return { clock: 0, actor: '' };
+    return {
+        clock: Math.max(0, Math.min(
+            Number.MAX_SAFE_INTEGER,
+            Math.floor(Number(value.clock) || 0)
+        )),
+        actor: String(value.actor || '').slice(0, 240)
+    };
 }
 
 function ihnSendRealtimeStrokePacket(packet, excludePeerId = '') {
@@ -1414,7 +1429,9 @@ function ihnFlushLiveStrokePreview(strokeId, options = {}) {
         actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`,
         strokeId: record.strokeId, pageId: record.pageId,
         tool: String(latest.tool || 'pen'), color: String(latest.color || '#111111'),
-        width: Math.max(0.1, Number(latest.width) || 1), sentAt: Date.now()
+        width: Math.max(0.1, Number(latest.width) || 1),
+        syncStamp: ihnSanitizeLiveStrokeStamp(latest.syncStamp),
+        sentAt: Date.now()
     };
     if (!basePacket.fileId || !basePacket.pageId || !basePacket.strokeId) return false;
     if (options.cancel) {
@@ -1434,6 +1451,8 @@ function ihnFlushLiveStrokePreview(strokeId, options = {}) {
                 sequence: ++record.sequence,
                 offset: chunkOffset,
                 points: allPoints.slice(chunkOffset, chunkEnd),
+                finalBatch: !!options.final,
+                totalPoints: options.final ? allPoints.length : 0,
                 final: !!options.final && chunkEnd >= allPoints.length,
                 cancel: false
             });
@@ -1459,6 +1478,7 @@ function publishLiveStrokePreview(pageId, stroke, options = {}) {
         tool: stroke.tool,
         color: stroke.color,
         width: stroke.width,
+        syncStamp: stroke.syncStamp || null,
         points: Array.isArray(stroke.points) ? stroke.points : []
     };
     if (options.final || options.cancel) {
@@ -1625,28 +1645,124 @@ function ihnHandleRealtimeStrokePacket(packet, transport = '', sourcePeerId = ''
     if (packet.actorId === ownActorId) return true;
     const sequence = Number(packet.sequence) || 0;
     const key = `${packet.actorId}:${packet.strokeId}`;
-    if (sequence <= Number(ihnLiveStrokeSeen.get(key) || 0)) return true;
-    ihnLiveStrokeSeen.set(key, sequence);
-    if (packet.final || packet.cancel) {
-        setTimeout(() => {
-            if (Number(ihnLiveStrokeSeen.get(key) || 0) === sequence) ihnLiveStrokeSeen.delete(key);
-        }, 30_000);
+    let receive = ihnLiveStrokeSeen.get(key);
+    if (!receive || typeof receive !== 'object') {
+        receive = {
+            sequences: new Set(),
+            maxSequence: 0,
+            finalSlots: [],
+            finalTotal: 0,
+            finalSeen: false,
+            committed: false,
+            updatedAt: 0
+        };
+        ihnLiveStrokeSeen.set(key, receive);
+    }
+    if (receive.sequences.has(sequence)) return true;
+    receive.sequences.add(sequence);
+    receive.maxSequence = Math.max(receive.maxSequence, sequence);
+    receive.updatedAt = Date.now();
+    const safeOffset = Math.max(0, Math.min(
+        IHN_LIVE_STROKE_MAX_TOTAL_POINTS,
+        Math.floor(Number(packet.offset) || 0)
+    ));
+    const safePoints = ihnSanitizeLiveStrokePoints(packet.points, IHN_LIVE_STROKE_MAX_POINTS)
+        .slice(0, Math.max(0, IHN_LIVE_STROKE_MAX_TOTAL_POINTS - safeOffset));
+    const finalBatch = packet.finalBatch === true;
+    const safeTotalPoints = finalBatch
+        ? Math.max(0, Math.min(
+            IHN_LIVE_STROKE_MAX_TOTAL_POINTS,
+            Math.floor(Number(packet.totalPoints) || 0)
+        ))
+        : 0;
+    const sanitizedPacket = {
+        ...packet,
+        actorId: String(packet.actorId).slice(0, 240),
+        strokeId: String(packet.strokeId).slice(0, 240),
+        pageId: String(packet.pageId).slice(0, 240),
+        sequence,
+        offset: safeOffset,
+        points: safePoints,
+        tool: String(packet.tool || 'pen').slice(0, 32),
+        color: String(packet.color || '#111111').slice(0, 64),
+        width: Math.max(0.1, Math.min(1000, Number(packet.width) || 1)),
+        syncStamp: ihnSanitizeLiveStrokeStamp(packet.syncStamp),
+        finalBatch,
+        totalPoints: safeTotalPoints,
+        final: packet.final === true,
+        cancel: packet.cancel === true
+    };
+    if (receive.sequences.size > 512) {
+        const oldest = receive.sequences.values().next().value;
+        receive.sequences.delete(oldest);
+    }
+    if (sanitizedPacket.cancel) {
+        receive.finalSlots = [];
+        receive.finalTotal = 0;
+        receive.finalSeen = false;
+    } else if (finalBatch && safeTotalPoints > 0) {
+        receive.finalTotal = Math.max(receive.finalTotal, safeTotalPoints);
+        safePoints.forEach((point, index) => {
+            const targetIndex = safeOffset + index;
+            if (targetIndex < receive.finalTotal) receive.finalSlots[targetIndex] = point;
+        });
+        if (sanitizedPacket.final) receive.finalSeen = true;
     }
     if (typeof applyRemoteLiveStrokePreview === 'function') {
-        applyRemoteLiveStrokePreview(packet);
+        applyRemoteLiveStrokePreview(sanitizedPacket);
+    }
+    const finalComplete = receive.finalSeen
+        && receive.finalTotal > 0
+        && receive.finalSlots.length >= receive.finalTotal
+        && Array.from(
+            { length: receive.finalTotal },
+            (_, index) => !!receive.finalSlots[index]
+        ).every(Boolean);
+    const legacyFinalComplete = !finalBatch
+        && sanitizedPacket.final
+        && safeOffset === 0
+        && safePoints.length > 0;
+    if (!receive.committed
+        && (finalComplete || legacyFinalComplete)
+        && typeof commitRemoteLiveStroke === 'function') {
+        receive.committed = true;
+        const completePacket = {
+            ...sanitizedPacket,
+            offset: 0,
+            points: finalComplete
+                ? receive.finalSlots.slice(0, receive.finalTotal)
+                : safePoints,
+            totalPoints: finalComplete ? receive.finalTotal : safePoints.length,
+            finalBatch: true,
+            final: true
+        };
+        try {
+            Promise.resolve(commitRemoteLiveStroke(completePacket)).catch(error => {
+                receive.committed = false;
+                console.warn('Remote live stroke checkpoint failed:', error);
+            });
+        } catch (error) {
+            receive.committed = false;
+            console.warn('Remote live stroke checkpoint failed:', error);
+        }
     }
     // The peer graph can be temporarily non-meshed during recovery. Relay the
     // tiny preview packet so every connected collaborator still sees the pen.
     if (transport === 'webrtc') {
         ihnEnsureTabChannel();
-        try { ihnLiveBroadcastChannel?.postMessage(packet); } catch (error) {}
+        try { ihnLiveBroadcastChannel?.postMessage(sanitizedPacket); } catch (error) {}
     }
     ihnLivePeers.forEach((peer, peerId) => {
         if (transport === 'webrtc' && peerId === sourcePeerId) return;
-        const originPeerId = String(packet.actorId).split(':')[0];
+        const originPeerId = String(sanitizedPacket.actorId).split(':')[0];
         if (peerId === originPeerId) return;
-        ihnSendControl(peer, packet);
+        ihnSendControl(peer, sanitizedPacket);
     });
+    const expiryMarker = receive.updatedAt;
+    setTimeout(() => {
+        const current = ihnLiveStrokeSeen.get(key);
+        if (current && current.updatedAt === expiryMarker) ihnLiveStrokeSeen.delete(key);
+    }, 60_000);
     return true;
 }
 
@@ -2827,6 +2943,9 @@ function stopLiveCollaboration() {
     ihnLiveEraseSends.forEach(record => clearTimeout(record.timer));
     ihnLiveEraseSends.clear(); ihnLiveEraseSeen.clear();
     ihnLiveRealtimeBacklog.length = 0;
+    if (typeof clearPendingRemoteLiveStrokeCommits === 'function') {
+        clearPendingRemoteLiveStrokeCommits();
+    }
     if (typeof clearRemoteLiveStrokePreviews === 'function') clearRemoteLiveStrokePreviews();
     if (typeof clearRemoteLiveErasePreviews === 'function') clearRemoteLiveErasePreviews();
     ihnLiveFailedSignalRefreshAt = 0; ihnLiveFailedSignalRefreshKey = '';
@@ -2918,6 +3037,10 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
     let structureToken = null;
     try {
         ihnAssertLiveOperationContext(operation);
+        if (typeof flushRemoteLiveStrokeCommits === 'function') {
+            await flushRemoteLiveStrokeCommits();
+            ihnAssertLiveOperationContext(operation);
+        }
         structureToken = typeof acquireRemotePageMerge === 'function'
             ? await acquireRemotePageMerge()
             : {};
@@ -2929,6 +3052,21 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
         ihnAssertLiveOperationContext(operation);
         await ensureAllPagesLoadedForStructureChange();
         ihnAssertLiveOperationContext(operation);
+        const interactionsSettled = typeof waitForCollaborativeInteractionIdle === 'function'
+            ? await waitForCollaborativeInteractionIdle(15_000)
+            : !hasSmoothInteraction();
+        ihnAssertLiveOperationContext(operation);
+        if (!interactionsSettled) {
+            throw new Error('A live stroke remained active while building the snapshot');
+        }
+        // A final stroke packet can arrive while page hydration is awaiting
+        // IndexedDB. Its durable commit waits for this structure token, so this
+        // build must yield and retry instead of publishing a snapshot that
+        // temporarily omits the stroke.
+        if (typeof hasPendingRemoteLiveStrokeCommits === 'function'
+            && hasPendingRemoteLiveStrokeCommits()) {
+            throw new Error('A remote live stroke is waiting to join the snapshot');
+        }
         const snapshot = { v: 1, type: 'document-snapshot', fileId: operation.fileId,
             actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`, deviceId: getPresenceClientId(), sequence: ++ihnLiveSequence,
             sentAt: Date.now(), baseRevision: state.driveHeadRevisionId || null,
@@ -3515,6 +3653,13 @@ async function ihnApplyLiveEnvelope(
     }
     const sequence = Number(envelope.sequence) || 0, previous = ihnLiveSeen.get(envelope.actorId) || 0;
     if (sequence <= previous) {
+        if (typeof clearRemoteLiveStrokePreviews === 'function') {
+            clearRemoteLiveStrokePreviews(
+                envelope.actorId,
+                Number(envelope.sentAt) || Date.now(),
+                envelope.pages
+            );
+        }
         if (typeof clearRemoteLiveErasePreviews === 'function') {
             clearRemoteLiveErasePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
         }
@@ -3534,6 +3679,13 @@ async function ihnApplyLiveEnvelope(
         );
         if (currentHash === envelope.contentHash) {
             ihnLiveSeen.set(envelope.actorId, sequence);
+            if (typeof clearRemoteLiveStrokePreviews === 'function') {
+                clearRemoteLiveStrokePreviews(
+                    envelope.actorId,
+                    Number(envelope.sentAt) || Date.now(),
+                    envelope.pages
+                );
+            }
             if (typeof clearRemoteLiveErasePreviews === 'function') {
                 clearRemoteLiveErasePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
             }
@@ -3549,6 +3701,10 @@ async function ihnApplyLiveEnvelope(
         // selection transform or inertial gesture. The queued snapshot is
         // applied immediately after that atomic local interaction finishes.
         await new Promise(resolve => setTimeout(resolve, 32));
+        if (!ihnLiveOperationContextIsCurrent(operation)) return false;
+    }
+    if (typeof flushRemoteLiveStrokeCommits === 'function') {
+        await flushRemoteLiveStrokeCommits();
         if (!ihnLiveOperationContextIsCurrent(operation)) return false;
     }
     ihnLiveApplying = true;
@@ -3578,7 +3734,11 @@ async function ihnApplyLiveEnvelope(
         }
         if (result?.changed) showStatus(transport === 'tab' ? 'Live changes from another tab' : 'Live changes from collaborator', { savedAt: Number(envelope.sentAt) || Date.now() });
         if (typeof clearRemoteLiveStrokePreviews === 'function') {
-            clearRemoteLiveStrokePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
+            clearRemoteLiveStrokePreviews(
+                envelope.actorId,
+                Number(envelope.sentAt) || Date.now(),
+                envelope.pages
+            );
         }
         if (typeof clearRemoteLiveErasePreviews === 'function') {
             clearRemoteLiveErasePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());

@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.10.0');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.10.1');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -107,6 +107,71 @@ test('an edit followed immediately by leaving is durable on reload', async ({ pa
     window.__IHN_TEST_API__.snapshot().pages.flatMap(pageData => pageData.strokes.map(stroke => stroke.id))
   ));
   expect(restoredIds).toContain(strokeId);
+});
+
+test('concurrent local and out-of-order peer strokes survive a stale snapshot', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(async () => {
+    const api = window.__IHN_TEST_API__;
+    await api.ready();
+    await api.resetLocalDocument(1, 'Concurrent stroke convergence');
+    const prepared = await api.prepareLiveDocument('e2e-concurrent-live-file');
+    const pageId = prepared.pages[0].pageId;
+    const localStrokeId = await api.addSyntheticStroke(0, 'local-concurrent');
+    const stalePages = prepared.pages;
+    const basePacket = {
+      v: 1,
+      type: 'live-stroke',
+      fileId: 'e2e-concurrent-live-file',
+      actorId: 'e2e-remote-peer:e2e-remote-tab',
+      strokeId: 'e2e-remote-concurrent-stroke',
+      pageId,
+      tool: 'pen',
+      color: '#654321',
+      width: 3,
+      syncStamp: { clock: 900, actor: 'e2e-remote-peer:e2e-remote-tab' },
+      finalBatch: true,
+      totalPoints: 4,
+      cancel: false,
+      sentAt: Date.now()
+    };
+    const tail = {
+      ...basePacket,
+      sequence: 102,
+      offset: 2,
+      points: [{ x: 40, y: 40, p: 0.5 }, { x: 50, y: 50, p: 0.5 }],
+      final: true
+    };
+    const head = {
+      ...basePacket,
+      sequence: 101,
+      offset: 0,
+      points: [{ x: 20, y: 20, p: 0.5 }, { x: 30, y: 30, p: 0.5 }],
+      final: false
+    };
+    const afterPeer = await api.receiveRemoteLiveStrokePackets([tail, head]);
+    const afterDuplicate = await api.receiveRemoteLiveStrokePackets([head, tail]);
+    const afterStaleMerge = await api.mergeRemotePagesForTest(stalePages);
+    const ids = snapshot => snapshot.pages[0].strokes.map(stroke => stroke.id);
+    return {
+      localStrokeId,
+      remoteStrokeId: basePacket.strokeId,
+      afterPeerIds: ids(afterPeer),
+      afterDuplicateIds: ids(afterDuplicate),
+      afterStaleMergeIds: ids(afterStaleMerge.snapshot)
+    };
+  });
+
+  expect(result.afterPeerIds).toEqual(expect.arrayContaining([
+    result.localStrokeId,
+    result.remoteStrokeId
+  ]));
+  expect(result.afterDuplicateIds.filter(id => id === result.remoteStrokeId)).toHaveLength(1);
+  expect(result.afterStaleMergeIds).toEqual(expect.arrayContaining([
+    result.localStrokeId,
+    result.remoteStrokeId
+  ]));
 });
 
 test('untrusted shared HTML and hostile PDF sources fail closed', async ({ page }) => {
