@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.2');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.3');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -109,6 +109,74 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   await expect(page.locator('.page-card')).toHaveCount(1);
   expect(pageErrors).toEqual([]);
   expect(await page.evaluate(() => typeof window.cv)).toBe('undefined');
+});
+
+test('scanner isolates a photographed page from a warm background without washing it out', async ({ page }) => {
+  await page.goto('/scanner/index.html?embed=1&session=e2e-photo-detection', { waitUntil: 'domcontentloaded' });
+  const result = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 960;
+    canvas.height = 1280;
+    const context = canvas.getContext('2d');
+    // This warm wood colour matched the old yellow predicate and made the
+    // detector crop the desk instead of the sheet.
+    context.fillStyle = '#aa7547';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#d5d0c8';
+    context.beginPath();
+    context.moveTo(92, 76);
+    context.lineTo(864, 132);
+    context.lineTo(902, 1202);
+    context.lineTo(62, 1148);
+    context.closePath();
+    context.fill();
+    context.strokeStyle = '#f0db4c';
+    context.lineWidth = 6;
+    context.beginPath();
+    context.moveTo(144, 135);
+    context.lineTo(814, 181);
+    context.lineTo(846, 1133);
+    context.lineTo(118, 1085);
+    context.closePath();
+    context.stroke();
+    context.strokeStyle = '#2854a8';
+    context.lineWidth = 5;
+    context.beginPath();
+    context.moveTo(220, 390);
+    context.bezierCurveTo(410, 250, 520, 610, 735, 420);
+    context.stroke();
+
+    const started = performance.now();
+    const detection = ScannerPro.Lightweight.detectPage(canvas);
+    const output = await ScannerPro.Lightweight.warp(canvas, detection.pageQuad);
+    const correction = await ScannerPro.Lightweight.correctColors(output, {
+      useStencil: detection.method === 'stencil',
+      preciseStencil: detection.method === 'stencil'
+    });
+    const center = Array.from(output.getContext('2d').getImageData(
+      Math.floor(output.width / 2), Math.floor(output.height / 2), 1, 1
+    ).data.slice(0, 3));
+    return {
+      method: detection.method,
+      confidence: detection.confidence,
+      areaRatio: detection.pageQuad.reduce((area, point, index, points) => {
+        const next = points[(index + 1) % points.length];
+        return area + point.x * next.y - next.x * point.y;
+      }, 0) / (2 * canvas.width * canvas.height),
+      center,
+      correction: { calibrated: correction.calibrated, samples: correction.samples },
+      elapsed: performance.now() - started
+    };
+  });
+
+  expect(result.method).toBe('stencil');
+  expect(result.confidence).toBeGreaterThan(0.5);
+  expect(Math.abs(result.areaRatio)).toBeGreaterThan(0.55);
+  expect(Math.abs(result.areaRatio)).toBeLessThan(0.9);
+  expect(Math.min(...result.center)).toBeGreaterThan(195);
+  expect(Math.max(...result.center)).toBeLessThan(252);
+  expect(Math.max(...result.center) - Math.min(...result.center)).toBeLessThan(18);
+  expect(result.elapsed).toBeLessThan(3000);
 });
 
 test('blocked IndexedDB cannot trap startup', async ({ page }) => {
