@@ -1082,19 +1082,24 @@
   async function process(srcCanvas, opts = {}) {
     stageOnImmediate("Detecting page...");
     const detection = opts.overridePageQuad
-      ? { pageQuad: opts.overridePageQuad, confidence: opts.forceNoYellow ? 0 : 1 }
+      ? {
+        pageQuad: opts.overridePageQuad,
+        confidence: opts.forceNoYellow ? 0 : 1,
+        method: opts.forceNoYellow ? "manual" : "stencil"
+      }
       : SP.Lightweight.detectPage(srcCanvas);
     const usedYellow = !opts.forceNoYellow && detection.confidence > 0;
+    const preciseStencil = usedYellow && detection.method === "stencil";
     const pageQuad = detection.pageQuad;
-    stageOnImmediate(usedYellow ? "Straightening stencil..." : "Straightening page...");
+    stageOnImmediate(preciseStencil ? "Straightening stencil..." : "Straightening page...");
     const fin = await SP.Lightweight.warp(srcCanvas, pageQuad);
     stageOnImmediate("Balancing colors...");
-    await SP.Lightweight.correctColors(fin, usedYellow);
+    await SP.Lightweight.correctColors(fin, { useStencil: preciseStencil, preciseStencil });
     return {
       canvas: fin,
       pageQuad,
-      marker: usedYellow ? { x: MARKER_TARGET.x, y: MARKER_TARGET.y } : null,
-      usedYellow
+      marker: preciseStencil ? { x: MARKER_TARGET.x, y: MARKER_TARGET.y } : null,
+      usedYellow: preciseStencil
     };
   }
 

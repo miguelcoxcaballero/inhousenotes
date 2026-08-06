@@ -26,8 +26,22 @@
   }
 
   function isYellow(r, g, b) {
-    const low = Math.min(r, g);
-    return r > 92 && g > 78 && b < 178 && low - b > 25 && Math.abs(r - g) < 125;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max < 82 || max === min) return false;
+    const saturation = (max - min) / max;
+    const hue = max === r
+      ? 60 * (((g - b) / (max - min)) % 6)
+      : max === g
+        ? 60 * (((b - r) / (max - min)) + 2)
+        : 60 * (((r - g) / (max - min)) + 4);
+    const normalizedHue = hue < 0 ? hue + 360 : hue;
+    return normalizedHue >= 39
+      && normalizedHue <= 68
+      && saturation >= 0.16
+      && g / Math.max(1, r) >= 0.70
+      && b / Math.max(1, g) <= 0.84
+      && (r + g) * 0.5 - b >= 20;
   }
 
   function robustLine(points, independentKey, dependentKey) {
@@ -62,6 +76,45 @@
     return line;
   }
 
+  function ransacLine(points, independentKey, dependentKey, minimumSpan, tolerance) {
+    if (points.length < 14) return null;
+    let seed = (points.length * 2654435761) >>> 0;
+    const randomIndex = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % points.length;
+    };
+    let bestInliers = null;
+    let bestScore = 0;
+    const hypotheses = Math.min(220, Math.max(80, points.length));
+    for (let attempt = 0; attempt < hypotheses; attempt += 1) {
+      const first = points[randomIndex()];
+      const second = points[randomIndex()];
+      const independentDelta = second[independentKey] - first[independentKey];
+      if (Math.abs(independentDelta) < minimumSpan * 0.32) continue;
+      const a = (second[dependentKey] - first[dependentKey]) / independentDelta;
+      const b = first[dependentKey] - a * first[independentKey];
+      const inliers = [];
+      let minimum = Infinity;
+      let maximum = -Infinity;
+      for (const point of points) {
+        if (Math.abs(point[dependentKey] - (a * point[independentKey] + b)) > tolerance) continue;
+        inliers.push(point);
+        minimum = Math.min(minimum, point[independentKey]);
+        maximum = Math.max(maximum, point[independentKey]);
+      }
+      const span = maximum - minimum;
+      if (span < minimumSpan) continue;
+      const score = inliers.length * (1 + Math.min(1, span / (minimumSpan * 1.8)));
+      if (score > bestScore) {
+        bestScore = score;
+        bestInliers = inliers;
+      }
+    }
+    return bestInliers && bestInliers.length >= 12
+      ? robustLine(bestInliers, independentKey, dependentKey)
+      : null;
+  }
+
   function lineIntersection(vertical, horizontal) {
     if (!vertical || !horizontal) return null;
     // vertical: x = a*y+b; horizontal: y = a*x+b
@@ -91,6 +144,188 @@
       { x: right, y: bottom },
       { x: left, y: bottom }
     ];
+  }
+
+  function polygonArea(quad) {
+    let area = 0;
+    for (let index = 0; index < quad.length; index += 1) {
+      const current = quad[index];
+      const next = quad[(index + 1) % quad.length];
+      area += current.x * next.y - next.x * current.y;
+    }
+    return Math.abs(area) * 0.5;
+  }
+
+  function isPlausibleQuad(quad, width, height, options = {}) {
+    if (!Array.isArray(quad) || quad.length !== 4 || !quad.every(Boolean)) return false;
+    const margin = options.allowOutside ? Math.max(width, height) * 0.08 : 2;
+    if (quad.some(point => point.x < -margin || point.y < -margin
+      || point.x > width + margin || point.y > height + margin)) return false;
+    const areaRatio = polygonArea(quad) / Math.max(1, width * height);
+    if (areaRatio < (options.minAreaRatio || 0.18) || areaRatio > 1.18) return false;
+    const lengths = [
+      Math.hypot(quad[1].x - quad[0].x, quad[1].y - quad[0].y),
+      Math.hypot(quad[2].x - quad[1].x, quad[2].y - quad[1].y),
+      Math.hypot(quad[3].x - quad[2].x, quad[3].y - quad[2].y),
+      Math.hypot(quad[0].x - quad[3].x, quad[0].y - quad[3].y)
+    ];
+    if (Math.min(...lengths) < Math.min(width, height) * 0.18) return false;
+    const horizontalRatio = Math.max(lengths[0], lengths[2]) / Math.max(1, Math.min(lengths[0], lengths[2]));
+    const verticalRatio = Math.max(lengths[1], lengths[3]) / Math.max(1, Math.min(lengths[1], lengths[3]));
+    const maxOppositeRatio = options.maxOppositeRatio || 1.58;
+    return horizontalRatio <= maxOppositeRatio && verticalRatio <= maxOppositeRatio;
+  }
+
+  function convexHull(points) {
+    if (points.length <= 4) return points.slice();
+    const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+    const cross = (origin, a, b) => (a.x - origin.x) * (b.y - origin.y)
+      - (a.y - origin.y) * (b.x - origin.x);
+    const lower = [];
+    for (const point of sorted) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+        lower.pop();
+      }
+      lower.push(point);
+    }
+    const upper = [];
+    for (let index = sorted.length - 1; index >= 0; index -= 1) {
+      const point = sorted[index];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+        upper.pop();
+      }
+      upper.push(point);
+    }
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+  }
+
+  function cornerFromHull(hull, score) {
+    const ranked = hull
+      .map(point => ({ point, score: score(point) }))
+      .sort((a, b) => a.score - b.score);
+    const count = Math.max(1, Math.min(4, Math.ceil(ranked.length * 0.035)));
+    let x = 0, y = 0, weightTotal = 0;
+    for (let index = 0; index < count; index += 1) {
+      const weight = count - index;
+      x += ranked[index].point.x * weight;
+      y += ranked[index].point.y * weight;
+      weightTotal += weight;
+    }
+    return { x: x / weightTotal, y: y / weightTotal };
+  }
+
+  function detectPaperQuad(width, height, pixels) {
+    const size = width * height;
+    const candidate = new Uint8Array(size);
+    for (let offset = 0, pixel = 0; offset < pixels.length; offset += 4, pixel += 1) {
+      const r = pixels[offset], g = pixels[offset + 1], b = pixels[offset + 2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      const saturation = max ? (max - min) / max : 1;
+      if (luminance >= 72 && saturation <= 0.27
+        && g / Math.max(1, r) >= 0.76
+        && b / Math.max(1, r) >= 0.67) {
+        candidate[pixel] = 1;
+      }
+    }
+
+    // Ink, the dotted template and the calibration strip can form a complete
+    // dark barrier across the sheet. A tiny separable dilation reconnects the
+    // paper on both sides without moving its outer boundary materially.
+    const horizontal = new Uint8Array(size);
+    const navigable = new Uint8Array(size);
+    const bridgeRadius = 3;
+    for (let y = 0; y < height; y += 1) {
+      const row = y * width;
+      for (let x = 0; x < width; x += 1) {
+        let found = 0;
+        for (let dx = -bridgeRadius; dx <= bridgeRadius; dx += 1) {
+          const sx = x + dx;
+          if (sx >= 0 && sx < width && candidate[row + sx]) { found = 1; break; }
+        }
+        horizontal[row + x] = found;
+      }
+    }
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let found = 0;
+        for (let dy = -bridgeRadius; dy <= bridgeRadius; dy += 1) {
+          const sy = y + dy;
+          if (sy >= 0 && sy < height && horizontal[sy * width + x]) { found = 1; break; }
+        }
+        navigable[y * width + x] = found;
+      }
+    }
+
+    const visited = new Uint8Array(size);
+    const queue = new Int32Array(size);
+    let best = [];
+    const centerX = Math.floor(width * 0.5);
+    const centerY = Math.floor(height * 0.5);
+    const seeds = [];
+    for (let radius = 0; radius <= 24; radius += 4) {
+      for (let dy = -radius; dy <= radius; dy += Math.max(1, radius || 1)) {
+        for (let dx = -radius; dx <= radius; dx += Math.max(1, radius || 1)) {
+          const x = clamp(centerX + dx, 0, width - 1);
+          const y = clamp(centerY + dy, 0, height - 1);
+          const index = y * width + x;
+          if (navigable[index]) seeds.push(index);
+        }
+      }
+      if (seeds.length) break;
+    }
+    if (!seeds.length) return null;
+
+    for (const seed of seeds.slice(0, 6)) {
+      if (visited[seed]) continue;
+      let head = 0, tail = 0;
+      queue[tail++] = seed;
+      visited[seed] = 1;
+      const boundary = [];
+      let componentSize = 0;
+      while (head < tail) {
+        const index = queue[head++];
+        const x = index % width;
+        const y = (index / width) | 0;
+        componentSize += 1;
+        let isBoundary = false;
+        const neighbors = [index - 1, index + 1, index - width, index + width];
+        for (let direction = 0; direction < 4; direction += 1) {
+          if ((direction === 0 && x === 0) || (direction === 1 && x === width - 1)
+            || (direction === 2 && y === 0) || (direction === 3 && y === height - 1)) {
+            isBoundary = true;
+            continue;
+          }
+          const nextIndex = neighbors[direction];
+          if (!navigable[nextIndex]) {
+            isBoundary = true;
+            continue;
+          }
+          if (!visited[nextIndex]) {
+            visited[nextIndex] = 1;
+            queue[tail++] = nextIndex;
+          }
+        }
+        if (isBoundary && (componentSize % 2 === 0)) boundary.push({ x, y });
+      }
+      if (componentSize > size * 0.08 && boundary.length > best.length) best = boundary;
+    }
+    if (best.length < 40) return null;
+    const hull = convexHull(best);
+    if (hull.length < 4) return null;
+    const quad = [
+      cornerFromHull(hull, point => point.x + point.y),
+      cornerFromHull(hull, point => -point.x + point.y),
+      cornerFromHull(hull, point => -point.x - point.y),
+      cornerFromHull(hull, point => point.x - point.y)
+    ];
+    return isPlausibleQuad(quad, width, height, {
+      minAreaRatio: 0.22,
+      maxOppositeRatio: 2.25
+    }) ? quad : null;
   }
 
   function bilinear(quad, u, v) {
@@ -148,9 +383,9 @@
         last = x;
         count += 1;
       }
-      if (count >= 2 && last - first > width * 0.46) {
-        if (first < width * 0.42) leftPoints.push({ x: first, y });
-        if (last > width * 0.58) rightPoints.push({ x: last, y });
+      if (count >= 1) {
+        if (first < width * 0.52) leftPoints.push({ x: first, y });
+        if (last > width * 0.48) rightPoints.push({ x: last, y });
       }
     }
     for (let x = 0; x < width; x += 1) {
@@ -161,16 +396,17 @@
         last = y;
         count += 1;
       }
-      if (count >= 2 && last - first > height * 0.46) {
-        if (first < height * 0.42) topPoints.push({ x, y: first });
-        if (last > height * 0.58) bottomPoints.push({ x, y: last });
+      if (count >= 1) {
+        if (first < height * 0.52) topPoints.push({ x, y: first });
+        if (last > height * 0.48) bottomPoints.push({ x, y: last });
       }
     }
 
-    const leftLine = robustLine(leftPoints, "y", "x");
-    const rightLine = robustLine(rightPoints, "y", "x");
-    const topLine = robustLine(topPoints, "x", "y");
-    const bottomLine = robustLine(bottomPoints, "x", "y");
+    const lineTolerance = Math.max(2.1, Math.min(width, height) * 0.0055);
+    const leftLine = ransacLine(leftPoints, "y", "x", height * 0.3, lineTolerance);
+    const rightLine = ransacLine(rightPoints, "y", "x", height * 0.3, lineTolerance);
+    const topLine = ransacLine(topPoints, "x", "y", width * 0.3, lineTolerance);
+    const bottomLine = ransacLine(bottomPoints, "x", "y", width * 0.3, lineTolerance);
     let stencilQuad = [
       lineIntersection(leftLine, topLine),
       lineIntersection(rightLine, topLine),
@@ -184,24 +420,36 @@
       const bottomWidth = Math.hypot(stencilQuad[2].x - stencilQuad[3].x, stencilQuad[2].y - stencilQuad[3].y);
       const leftHeight = Math.hypot(stencilQuad[3].x - stencilQuad[0].x, stencilQuad[3].y - stencilQuad[0].y);
       const rightHeight = Math.hypot(stencilQuad[2].x - stencilQuad[1].x, stencilQuad[2].y - stencilQuad[1].y);
-      const plausible = Math.min(topWidth, bottomWidth) > width * 0.45
-        && Math.min(leftHeight, rightHeight) > height * 0.45;
+      const plausible = Math.min(topWidth, bottomWidth) > width * 0.35
+        && Math.min(leftHeight, rightHeight) > height * 0.42
+        && isPlausibleQuad(stencilQuad, width, height, { minAreaRatio: 0.16 });
       if (plausible) {
         confidence = Math.min(1, yellowPixels / Math.max(1, width * height * 0.004));
       }
     }
 
+    const paperQuad = confidence < 0.24 ? detectPaperQuad(width, height, pixels) : null;
     canvas.width = 0;
     canvas.height = 0;
-    if (confidence < 0.24) {
-      return { pageQuad: fallbackPageQuad(source), stencilQuad: null, confidence: 0 };
+    if (confidence >= 0.24) {
+      stencilQuad = stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
+      return {
+        pageQuad: extrapolateStencil(stencilQuad),
+        stencilQuad,
+        confidence,
+        method: "stencil"
+      };
     }
-    stencilQuad = stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
-    return {
-      pageQuad: extrapolateStencil(stencilQuad),
-      stencilQuad,
-      confidence
-    };
+    if (paperQuad) {
+      const hasStencilSignal = yellowPixels >= width * height * 0.00045;
+      return {
+        pageQuad: paperQuad.map(point => ({ x: point.x / scale, y: point.y / scale })),
+        stencilQuad: null,
+        confidence: hasStencilSignal ? 0.35 : 0,
+        method: "paper"
+      };
+    }
+    return { pageQuad: fallbackPageQuad(source), stencilQuad: null, confidence: 0, method: "fallback" };
   };
 
   function drawTriangle(context, source, src, dst) {
@@ -334,7 +582,77 @@
     });
   }
 
-  Light.correctColors = async function correctColors(canvas, useStencil) {
+  function percentileFromHistogram(histogram, total, percentile) {
+    if (!total) return 255;
+    const target = Math.max(1, Math.ceil(total * percentile));
+    let seen = 0;
+    for (let value = 0; value < histogram.length; value += 1) {
+      seen += histogram[value];
+      if (seen >= target) return value;
+    }
+    return 255;
+  }
+
+  function estimatePaperProfile(data, width, height) {
+    const histograms = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+    const luminanceHistogram = new Uint32Array(256);
+    const stride = Math.max(3, Math.ceil(Math.max(width, height) / 520));
+    const marginX = Math.floor(width * 0.035);
+    const marginY = Math.floor(height * 0.035);
+    let neutralCount = 0;
+    let luminanceCount = 0;
+    for (let y = marginY; y < height - marginY; y += stride) {
+      for (let x = marginX; x < width - marginX; x += stride) {
+        const offset = (y * width + x) * 4;
+        const r = data[offset], g = data[offset + 1], b = data[offset + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const luminance = Math.round(r * 0.2126 + g * 0.7152 + b * 0.0722);
+        luminanceHistogram[luminance] += 1;
+        luminanceCount += 1;
+        const saturation = max ? (max - min) / max : 1;
+        // Paper may be grey because of shadows, but it remains considerably
+        // more neutral than desks, folders and coloured handwriting.
+        if (luminance >= 72 && saturation <= 0.19) {
+          histograms[0][r] += 1;
+          histograms[1][g] += 1;
+          histograms[2][b] += 1;
+          neutralCount += 1;
+        }
+      }
+    }
+    const sourcePaper = neutralCount >= 80
+      ? histograms.map(histogram => percentileFromHistogram(histogram, neutralCount, 0.86))
+      : [225, 225, 225];
+    const paperLuminance = sourcePaper[0] * 0.2126 + sourcePaper[1] * 0.7152 + sourcePaper[2] * 0.0722;
+    const shadowPoint = percentileFromHistogram(luminanceHistogram, luminanceCount, 0.04);
+    const targetPaper = 242;
+    const gains = sourcePaper.map(channel => clamp(targetPaper / Math.max(96, channel), 0.9, 1.3));
+    // Limit channel-to-channel differences: this removes a colour cast while
+    // never turning blue/red handwriting into another colour.
+    const meanGain = (gains[0] + gains[1] + gains[2]) / 3;
+    for (let index = 0; index < gains.length; index += 1) {
+      gains[index] = clamp(gains[index], meanGain - 0.13, meanGain + 0.13);
+    }
+    return { gains, paperLuminance, shadowPoint, targetPaper };
+  }
+
+  function markerLooksValid(name, source) {
+    if (!source) return false;
+    const [r, g, b] = source;
+    if (name === "black") return Math.max(r, g, b) < 0.54 && r * 0.2126 + g * 0.7152 + b * 0.0722 < 0.38;
+    if (name === "red") return r > 0.28 && r > g * 1.2 && r > b * 1.16;
+    if (name === "blue") return b > 0.25 && b > r * 1.16 && b > g * 1.08;
+    if (name === "green") return g > 0.3 && g > r * 1.1 && g > b * 1.2;
+    return false;
+  }
+
+  Light.correctColors = async function correctColors(canvas, options = {}) {
+    const settings = typeof options === "boolean"
+      ? { useStencil: options, preciseStencil: options }
+      : options;
+    const useStencil = !!settings.useStencil;
+    const preciseStencil = !!settings.preciseStencil;
     const context = canvas.getContext("2d", { willReadFrequently: true });
     const image = context.getImageData(0, 0, canvas.width, canvas.height);
     const data = image.data;
@@ -348,14 +666,15 @@
       [10.625, "blue", [0, 0, 1]],
       [10.875, "green", [110 / 255, 1, 18 / 255]]
     ];
-    const samples = useStencil
+    const samples = preciseStencil
       ? markerDefinitions.map(([x, name, fallback]) => ({
+        name,
         source: medianSample(data, canvas.width, canvas.height, x * pxPerCm, 27.68 * pxPerCm, radius),
         target: (targets[name] || fallback.map(value => value * 255)).map(value => value / 255),
         weight: name === "black" ? 1.4 : 1
       }))
       : [];
-    if (useStencil) {
+    if (preciseStencil) {
       const yellowSource = medianSample(
         data, canvas.width, canvas.height,
         1.5 * pxPerCm, 14.8 * pxPerCm, pxPerCm * 0.16,
@@ -363,18 +682,28 @@
       );
       const targetYellow = config.TARGET_YELLOW || { R: 240, G: 219, B: 76 };
       samples.push({
+        name: "yellow",
         source: yellowSource,
         target: [targetYellow.R / 255, targetYellow.G / 255, targetYellow.B / 255],
         weight: 0.75
       });
     }
-    const whiteLocations = [[0.7, 0.7], [20.3, 0.7], [0.7, 29], [20.3, 29]];
-    const whites = whiteLocations
-      .map(([x, y]) => medianSample(data, canvas.width, canvas.height, x * pxPerCm, y * pxPerCm, pxPerCm * 0.2))
-      .filter(Boolean)
-      .sort((a, b) => (b[0] + b[1] + b[2]) - (a[0] + a[1] + a[2]));
-    samples.push({ source: whites[0] || [1, 1, 1], target: [1, 1, 1], weight: 1.6 });
-    const matrix = buildColorMatrix(samples);
+    const validMarkerSamples = samples.filter(sample => sample.name !== "yellow" && markerLooksValid(sample.name, sample.source));
+    const yellowSample = samples.find(sample => sample.name === "yellow");
+    const canCalibrate = preciseStencil
+      && validMarkerSamples.length === markerDefinitions.length
+      && !!yellowSample?.source;
+    const profile = estimatePaperProfile(data, canvas.width, canvas.height);
+    const paperSource = profile.paperLuminance / 255;
+    const matrixSamples = canCalibrate
+      ? [...validMarkerSamples, yellowSample, {
+        name: "white",
+        source: [paperSource, paperSource, paperSource],
+        target: [profile.targetPaper / 255, profile.targetPaper / 255, profile.targetPaper / 255],
+        weight: 1.8
+      }]
+      : [];
+    const matrix = canCalibrate ? buildColorMatrix(matrixSamples) : null;
     const outerBand = pxPerCm * 0.12;
     const yellowX1 = 1.5 * pxPerCm;
     const yellowX2 = 19.5 * pxPerCm;
@@ -396,21 +725,45 @@
           || Math.abs(y - yellowY2) < outerBand;
         const inColorMarkers = x >= colorMarkerX1 && x <= colorMarkerX2
           && y >= colorMarkerY1 && y <= colorMarkerY2;
-        if (useStencil && (inColorMarkers
-          || (inOuterBand && isYellow(r, g, b))
-          || (y >= calibrationY1 && y <= calibrationY2 && isYellow(r, g, b)))) {
-          data[offset] = 255; data[offset + 1] = 255; data[offset + 2] = 255;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const saturation = max ? (max - min) / max : 0;
+        const shouldNeutralize = useStencil && (
+          ((inOuterBand || (y >= calibrationY1 && y <= calibrationY2)) && isYellow(r, g, b))
+          || (inColorMarkers && saturation > 0.24)
+        );
+        if (shouldNeutralize) {
+          const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+          const shade = clamp(luminance / Math.max(1, profile.paperLuminance), 0.74, 1.04);
+          const neutral = clamp(Math.round(profile.targetPaper * shade), 178, 248);
+          data[offset] = neutral; data[offset + 1] = neutral; data[offset + 2] = neutral;
           continue;
         }
-        const nr = r / 255, ng = g / 255, nb = b / 255;
-        data[offset] = clamp(Math.round((matrix[0][0] * nr + matrix[0][1] * ng + matrix[0][2] * nb + matrix[0][3]) * 255), 0, 255);
-        data[offset + 1] = clamp(Math.round((matrix[1][0] * nr + matrix[1][1] * ng + matrix[1][2] * nb + matrix[1][3]) * 255), 0, 255);
-        data[offset + 2] = clamp(Math.round((matrix[2][0] * nr + matrix[2][1] * ng + matrix[2][2] * nb + matrix[2][3]) * 255), 0, 255);
+        const original = [r, g, b];
+        for (let channel = 0; channel < 3; channel += 1) {
+          const automatic = clamp(original[channel] * profile.gains[channel], 0, 255);
+          if (!matrix) {
+            data[offset + channel] = Math.round(automatic);
+            continue;
+          }
+          const nr = r / 255, ng = g / 255, nb = b / 255;
+          const calibrated = clamp((matrix[channel][0] * nr + matrix[channel][1] * ng
+            + matrix[channel][2] * nb + matrix[channel][3]) * 255, 0, 255);
+          // The printed targets refine hue, but automatic paper balance remains
+          // dominant so a damaged/dirty marker cannot wash out a whole scan.
+          const boundedCalibration = clamp(calibrated, automatic - 30, automatic + 30);
+          data[offset + channel] = Math.round(automatic * 0.76 + boundedCalibration * 0.24);
+        }
       }
       if (y % 96 === 95) await yieldToBrowser();
     }
     context.putImageData(image, 0, 0);
-    return { canvas, samples: samples.filter(sample => sample.source).length };
+    return {
+      canvas,
+      calibrated: canCalibrate,
+      samples: validMarkerSamples.length,
+      paper: Math.round(profile.paperLuminance)
+    };
   };
 
   Light.createDetectionPreview = function createDetectionPreview(source, pageQuad, confidence) {

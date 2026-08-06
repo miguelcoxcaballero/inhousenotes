@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.2",
-  "releaseNotes": "Inhouse Notes v5.11.2 / Android 1.0.10: removes the obsolete previous-save blocking screen. Home now absorbs lifecycle saves and appears only after the current document is safely saved."
+  "publishedAppVersion": "5.11.3",
+  "releaseNotes": "Inhouse Notes v5.11.3 / Android 1.0.10: introduces faster, robust scanner cropping on warm or cluttered backgrounds, a paper-edge fallback for incomplete stencils, and conservative colour correction that preserves handwriting."
 }
