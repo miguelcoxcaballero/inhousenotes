@@ -180,6 +180,7 @@
     name: $("scanNameInput"),
     paper: $("paper"),
     img: $("previewImg"),
+    processing: $("processAnimationLayer"),
     crop: $("cropLayer"),
     stencil: $("stencilLayer"),
     viewport: $("viewport"),
@@ -209,6 +210,7 @@
 
   const ctx = E.crop.getContext("2d", { willReadFrequently: true });
   const stx = E.stencil.getContext("2d", { willReadFrequently: true });
+  const pctx = E.processing.getContext("2d", { alpha: true });
   const mctx = E.mag.getContext("2d", { willReadFrequently: true });
 
   const next = U.next || (() => new Promise(requestAnimationFrame));
@@ -282,6 +284,298 @@
     });
   };
   const stageOff = () => { scheduleUi(() => stageOffImmediate()); };
+
+  const PROCESSING_PHASES = Object.freeze({
+    corners: "Finding 4 corners",
+    edges: "Tracing page edges",
+    mesh: "Building perspective mesh",
+    warp: "Straightening page",
+    color: "Balancing colours"
+  });
+  const reducedProcessingMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+  function setProcessingPhase(phase, detail = {}) {
+    E.processing.dataset.phase = phase || "";
+    if (phase && PROCESSING_PHASES[phase]) stageOnImmediate(PROCESSING_PHASES[phase]);
+    dispatchEvent(new CustomEvent("scanner-processing-phase", {
+      detail: { phase, ...detail }
+    }));
+  }
+
+  function clearProcessingAnimation() {
+    E.processing.classList.remove("active");
+    E.processing.dataset.phase = "";
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.clearRect(0, 0, E.processing.width, E.processing.height);
+  }
+
+  const easeOutCubic = value => 1 - Math.pow(1 - value, 3);
+  const easeInOutCubic = value => value < 0.5
+    ? 4 * value * value * value
+    : 1 - Math.pow(-2 * value + 2, 3) / 2;
+
+  function processingFrame(duration, guard, draw) {
+    if (!guard()) return Promise.resolve(false);
+    if (reducedProcessingMotion.matches) {
+      draw(1);
+      return Promise.resolve(true);
+    }
+    return new Promise(resolve => {
+      const started = performance.now();
+      const tick = now => {
+        if (!guard()) { resolve(false); return; }
+        const progress = Math.min(1, (now - started) / duration);
+        draw(progress);
+        if (progress < 1) requestAnimationFrame(tick);
+        else resolve(true);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
+  function bilinearPreview(quad, u, v) {
+    const top = {
+      x: quad[0].x + (quad[1].x - quad[0].x) * u,
+      y: quad[0].y + (quad[1].y - quad[0].y) * u
+    };
+    const bottom = {
+      x: quad[3].x + (quad[2].x - quad[3].x) * u,
+      y: quad[3].y + (quad[2].y - quad[3].y) * u
+    };
+    return {
+      x: top.x + (bottom.x - top.x) * v,
+      y: top.y + (bottom.y - top.y) * v
+    };
+  }
+
+  function drawPreviewTriangle(context, source, sourcePoints, destinationPoints) {
+    const [s0, s1, s2] = sourcePoints;
+    const [d0, d1, d2] = destinationPoints;
+    const denominator = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
+    if (Math.abs(denominator) < 1e-5) return;
+    const a = (d0.x * (s1.y - s2.y) + d1.x * (s2.y - s0.y) + d2.x * (s0.y - s1.y)) / denominator;
+    const b = (d0.y * (s1.y - s2.y) + d1.y * (s2.y - s0.y) + d2.y * (s0.y - s1.y)) / denominator;
+    const c = (d0.x * (s2.x - s1.x) + d1.x * (s0.x - s2.x) + d2.x * (s1.x - s0.x)) / denominator;
+    const d = (d0.y * (s2.x - s1.x) + d1.y * (s0.x - s2.x) + d2.y * (s1.x - s0.x)) / denominator;
+    const e = (d0.x * (s1.x * s2.y - s2.x * s1.y) + d1.x * (s2.x * s0.y - s0.x * s2.y) + d2.x * (s0.x * s1.y - s1.x * s0.y)) / denominator;
+    const f = (d0.y * (s1.x * s2.y - s2.x * s1.y) + d1.y * (s2.x * s0.y - s0.x * s2.y) + d2.y * (s0.x * s1.y - s1.x * s0.y)) / denominator;
+    context.save();
+    context.beginPath();
+    context.moveTo(d0.x, d0.y);
+    context.lineTo(d1.x, d1.y);
+    context.lineTo(d2.x, d2.y);
+    context.closePath();
+    context.clip();
+    context.setTransform(a, b, c, d, e, f);
+    context.drawImage(source, 0, 0);
+    context.restore();
+  }
+
+  function createProcessingAnimator(source, detection, opts) {
+    const guard = () => !!opts.previewGuard?.() && !opts.previewTarget?.cancelled;
+    if (!guard()) return null;
+    const maxEdge = MEM.low ? 760 : 1080;
+    const scale = Math.min(1, maxEdge / Math.max(source.width, source.height));
+    const width = Math.max(1, Math.round(source.width * scale));
+    const height = Math.max(1, Math.round(source.height * scale));
+    const quad = detection.pageQuad.map(point => ({ x: point.x * scale, y: point.y * scale }));
+    E.processing.width = width;
+    E.processing.height = height;
+    E.processing.classList.add("active");
+    E.processing.dataset.cornerCount = "4";
+    E.processing.dataset.detectionMethod = detection.method || "unknown";
+
+    const clear = () => {
+      pctx.setTransform(1, 0, 0, 1, 0, 0);
+      pctx.clearRect(0, 0, width, height);
+    };
+    const lineWidth = Math.max(2, Math.min(width, height) * 0.0042);
+    const accent = "#ff8a3d";
+    const cyan = "#38bdf8";
+    const drawQuadPath = (points, progress = 1, color = accent) => {
+      const segments = points.map((point, index) => {
+        const end = points[(index + 1) % points.length];
+        return { start: point, end, length: Math.hypot(end.x - point.x, end.y - point.y) };
+      });
+      const total = segments.reduce((sum, segment) => sum + segment.length, 0);
+      let remaining = total * progress;
+      pctx.save();
+      pctx.strokeStyle = color;
+      pctx.lineWidth = lineWidth;
+      pctx.lineCap = "round";
+      pctx.lineJoin = "round";
+      pctx.shadowColor = color;
+      pctx.shadowBlur = lineWidth * 3;
+      pctx.beginPath();
+      for (const segment of segments) {
+        if (remaining <= 0) break;
+        const part = Math.min(1, remaining / segment.length);
+        pctx.moveTo(segment.start.x, segment.start.y);
+        pctx.lineTo(
+          segment.start.x + (segment.end.x - segment.start.x) * part,
+          segment.start.y + (segment.end.y - segment.start.y) * part
+        );
+        remaining -= segment.length;
+      }
+      pctx.stroke();
+      pctx.restore();
+    };
+    const drawCorners = (progress, clearFirst = true) => {
+      if (clearFirst) clear();
+      quad.forEach((point, index) => {
+        const local = Math.max(0, Math.min(1, progress * 1.55 - index * 0.18));
+        if (!local) return;
+        const eased = easeOutCubic(local);
+        const radius = lineWidth * (2.3 + eased * 1.4);
+        pctx.save();
+        pctx.globalAlpha = eased;
+        pctx.fillStyle = "rgba(10,18,28,.78)";
+        pctx.strokeStyle = accent;
+        pctx.lineWidth = lineWidth;
+        pctx.shadowColor = accent;
+        pctx.shadowBlur = lineWidth * 4;
+        pctx.beginPath();
+        pctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        pctx.fill();
+        pctx.stroke();
+        pctx.fillStyle = "#fff";
+        pctx.font = `700 ${Math.round(radius * 1.25)}px sans-serif`;
+        pctx.textAlign = "center";
+        pctx.textBaseline = "middle";
+        pctx.fillText(String(index + 1), point.x, point.y + .5);
+        pctx.restore();
+      });
+    };
+    const drawGrid = (points, progress = 1, alpha = 1) => {
+      pctx.save();
+      pctx.strokeStyle = cyan;
+      pctx.lineWidth = Math.max(1, lineWidth * .48);
+      pctx.globalAlpha = .72 * alpha;
+      pctx.shadowColor = cyan;
+      pctx.shadowBlur = lineWidth * 1.5;
+      const lines = 12;
+      const visible = Math.ceil(lines * progress);
+      for (let index = 1; index < visible; index += 1) {
+        const amount = index / lines;
+        const verticalStart = bilinearPreview(points, amount, 0);
+        const verticalEnd = bilinearPreview(points, amount, 1);
+        const horizontalStart = bilinearPreview(points, 0, amount);
+        const horizontalEnd = bilinearPreview(points, 1, amount);
+        pctx.beginPath();
+        pctx.moveTo(verticalStart.x, verticalStart.y);
+        pctx.lineTo(verticalEnd.x, verticalEnd.y);
+        pctx.moveTo(horizontalStart.x, horizontalStart.y);
+        pctx.lineTo(horizontalEnd.x, horizontalEnd.y);
+        pctx.stroke();
+      }
+      pctx.restore();
+    };
+    const targetMargin = Math.min(width, height) * .035;
+    let targetWidth = width - targetMargin * 2;
+    let targetHeight = targetWidth / (21 / 29.7);
+    if (targetHeight > height - targetMargin * 2) {
+      targetHeight = height - targetMargin * 2;
+      targetWidth = targetHeight * (21 / 29.7);
+    }
+    const left = (width - targetWidth) / 2;
+    const top = (height - targetHeight) / 2;
+    const targetQuad = [
+      { x: left, y: top }, { x: left + targetWidth, y: top },
+      { x: left + targetWidth, y: top + targetHeight }, { x: left, y: top + targetHeight }
+    ];
+    const warpedQuad = progress => quad.map((point, index) => ({
+      x: point.x + (targetQuad[index].x - point.x) * progress,
+      y: point.y + (targetQuad[index].y - point.y) * progress
+    }));
+    const drawWarpedSource = points => {
+      const strips = 18;
+      for (let strip = 0; strip < strips; strip += 1) {
+        const u0 = strip / strips;
+        const u1 = (strip + 1) / strips;
+        const sourceQuad = detection.pageQuad;
+        const sTL = bilinearPreview(sourceQuad, u0, 0);
+        const sBL = bilinearPreview(sourceQuad, u0, 1);
+        const sTR = bilinearPreview(sourceQuad, u1, 0);
+        const sBR = bilinearPreview(sourceQuad, u1, 1);
+        const dTL = bilinearPreview(points, u0, 0);
+        const dBL = bilinearPreview(points, u0, 1);
+        const dTR = bilinearPreview(points, u1, 0);
+        const dBR = bilinearPreview(points, u1, 1);
+        drawPreviewTriangle(pctx, source, [sTL, sBL, sTR], [dTL, dBL, dTR]);
+        drawPreviewTriangle(pctx, source, [sTR, sBL, sBR], [dTR, dBL, dBR]);
+      }
+      pctx.setTransform(1, 0, 0, 1, 0, 0);
+    };
+
+    return {
+      guard,
+      async detection() {
+        setProcessingPhase("corners", { cornerCount: 4, method: detection.method });
+        await processingFrame(260, guard, value => drawCorners(easeOutCubic(value)));
+        setProcessingPhase("edges", { cornerCount: 4 });
+        await processingFrame(300, guard, value => {
+          clear();
+          drawQuadPath(quad, easeInOutCubic(value));
+          drawCorners(1, false);
+        });
+        setProcessingPhase("mesh", { rows: 12, columns: 12 });
+        await processingFrame(340, guard, value => {
+          clear();
+          drawQuadPath(quad, 1);
+          drawGrid(quad, easeOutCubic(value));
+        });
+      },
+      async warp() {
+        setProcessingPhase("warp", { cornerCount: 4, realGeometry: true });
+        await processingFrame(390, guard, value => {
+          const eased = easeInOutCubic(value);
+          const points = warpedQuad(eased);
+          clear();
+          pctx.globalAlpha = Math.max(0, 1 - eased * .82);
+          pctx.drawImage(source, 0, 0, width, height);
+          pctx.globalAlpha = Math.min(1, .28 + eased);
+          drawWarpedSource(points);
+          pctx.globalAlpha = 1;
+          drawQuadPath(points, 1, cyan);
+          drawGrid(points, 1, 1 - eased * .15);
+        });
+      },
+      beginColor() {
+        if (guard()) setProcessingPhase("color", { realBeforeAfter: true });
+      },
+      async color(beforeCanvas, correctedCanvas) {
+        if (!guard()) return;
+        const outScale = Math.min(1, maxEdge / Math.max(correctedCanvas.width, correctedCanvas.height));
+        const outWidth = Math.max(1, Math.round(correctedCanvas.width * outScale));
+        const outHeight = Math.max(1, Math.round(correctedCanvas.height * outScale));
+        E.processing.width = outWidth;
+        E.processing.height = outHeight;
+        fitToSize(correctedCanvas.width, correctedCanvas.height);
+        await processingFrame(330, guard, value => {
+          const eased = easeInOutCubic(value);
+          pctx.setTransform(1, 0, 0, 1, 0, 0);
+          pctx.clearRect(0, 0, outWidth, outHeight);
+          pctx.drawImage(correctedCanvas, 0, 0, outWidth, outHeight);
+          const remaining = Math.max(0, Math.round(outWidth * (1 - eased)));
+          if (remaining) pctx.drawImage(beforeCanvas, 0, 0, remaining, beforeCanvas.height, 0, 0, remaining, outHeight);
+          const scanX = outWidth * eased;
+          const gradient = pctx.createLinearGradient(scanX - 26, 0, scanX + 26, 0);
+          gradient.addColorStop(0, "rgba(56,189,248,0)");
+          gradient.addColorStop(.5, "rgba(255,255,255,.82)");
+          gradient.addColorStop(1, "rgba(255,138,61,0)");
+          pctx.fillStyle = gradient;
+          pctx.fillRect(scanX - 28, 0, 56, outHeight);
+        });
+      },
+      hold(canvas) {
+        if (!guard()) return;
+        pctx.setTransform(1, 0, 0, 1, 0, 0);
+        pctx.clearRect(0, 0, E.processing.width, E.processing.height);
+        pctx.drawImage(canvas, 0, 0, E.processing.width, E.processing.height);
+        setProcessingPhase("complete", { realOutput: true });
+      }
+    };
+  }
 
   /* Dropdown */
   E.ddBtn.addEventListener("click", e => {
@@ -859,6 +1153,7 @@
         }
       } catch (e) {
         console.error(e);
+        if (S.pages[S.i] === page) clearProcessingAnimation();
         page.status = "error";
         renderList();
         toast("Error processing image");
@@ -1092,10 +1387,34 @@
     const preciseStencil = usedYellow
       && (detection.method === "stencil" || detection.method === "marker-guided");
     const pageQuad = detection.pageQuad;
-    stageOnImmediate(preciseStencil ? "Straightening stencil..." : "Straightening page...");
-    const fin = await SP.Lightweight.warp(srcCanvas, pageQuad);
-    stageOnImmediate("Balancing colors...");
+    const animator = createProcessingAnimator(srcCanvas, detection, opts);
+    const warpPromise = SP.Lightweight.warp(srcCanvas, pageQuad);
+    if (animator) await animator.detection();
+    else stageOnImmediate(preciseStencil ? "Straightening stencil..." : "Straightening page...");
+    const fin = await warpPromise;
+    if (animator) await animator.warp();
+
+    let beforeColor = null;
+    if (animator?.guard()) {
+      const previewScale = Math.min(1, (MEM.low ? 760 : 1080) / Math.max(fin.width, fin.height));
+      beforeColor = document.createElement("canvas");
+      beforeColor.width = Math.max(1, Math.round(fin.width * previewScale));
+      beforeColor.height = Math.max(1, Math.round(fin.height * previewScale));
+      const beforeContext = beforeColor.getContext("2d", { alpha: false });
+      beforeContext.imageSmoothingEnabled = true;
+      beforeContext.imageSmoothingQuality = "high";
+      beforeContext.drawImage(fin, 0, 0, beforeColor.width, beforeColor.height);
+      animator.beginColor();
+    } else {
+      stageOnImmediate("Balancing colors...");
+    }
     await SP.Lightweight.correctColors(fin, { useStencil: preciseStencil, preciseStencil });
+    if (animator && beforeColor) {
+      await animator.color(beforeColor, fin);
+      beforeColor.width = 0;
+      beforeColor.height = 0;
+      animator.hold(fin);
+    }
     return {
       canvas: fin,
       pageQuad,
@@ -1773,6 +2092,7 @@
     const p = S.pages[S.i];
     if (!p) return;
     E.paper.style.display = "block";
+    clearProcessingAnimation();
     E.empty.style.display = "none";
     E.img.classList.remove("preview-pending");
     E.img.onload = null;
@@ -1801,6 +2121,7 @@
   function select(i) {
     if (i < 0 || i >= S.pages.length) return;
     if (S.crop) toggleCrop();
+    clearProcessingAnimation();
 
     const prev = S.pages[S.i];
     S.i = i;

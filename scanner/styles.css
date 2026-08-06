@@ -453,7 +453,7 @@ html[data-embed="true"] #appContainer {
   position: relative;
   display: none;
   transform-origin: center center;
-  transition: transform .05s linear
+  transition: transform .05s linear, width .18s cubic-bezier(.2,.8,.2,1), height .18s cubic-bezier(.2,.8,.2,1)
 }
 #previewImg {
   display: block;
@@ -475,6 +475,18 @@ html[data-embed="true"] #appContainer {
   height: 100%;
   pointer-events: none
 }
+.processing-animation-layer {
+  z-index: 18;
+  display: none;
+  opacity: 0;
+  transform: translateZ(0);
+  transition: opacity .16s ease-out;
+  will-change: opacity
+}
+.processing-animation-layer.active {
+  display: block;
+  opacity: 1
+}
 #cropLayer {
   cursor: crosshair;
   pointer-events: auto;
@@ -482,6 +494,10 @@ html[data-embed="true"] #appContainer {
   touch-action: none
 }
 #stencilLayer { display: block; z-index: 10 }
+@media (prefers-reduced-motion: reduce) {
+  #paper { transition: none }
+  .processing-animation-layer { transition: none }
+}
 #emptyState {
   position: absolute;
   display: flex;
