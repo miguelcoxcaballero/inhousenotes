@@ -287,8 +287,8 @@
 
   const PROCESSING_PHASES = Object.freeze({
     corners: "Finding 4 corners",
-    edges: "Tracing page edges",
-    mesh: "Building perspective mesh",
+    frame: "Detecting yellow frame",
+    mesh: "Mapping page curvature",
     warp: "Straightening page",
     color: "Balancing colours"
   });
@@ -378,7 +378,11 @@
     const scale = Math.min(1, maxEdge / Math.max(source.width, source.height));
     const width = Math.max(1, Math.round(source.width * scale));
     const height = Math.max(1, Math.round(source.height * scale));
-    const quad = detection.pageQuad.map(point => ({ x: point.x * scale, y: point.y * scale }));
+    const scaled = point => ({ x: point.x * scale, y: point.y * scale });
+    const frame = detection.frame;
+    const framePaths = frame ? Object.fromEntries(Object.entries(frame.paths)
+      .map(([name, points]) => [name, points.map(scaled)])) : null;
+    const cornerPoints = (frame?.corners || detection.stencilQuad || detection.pageQuad).map(scaled);
     E.processing.width = width;
     E.processing.height = height;
     E.processing.classList.add("active");
@@ -389,23 +393,23 @@
       pctx.setTransform(1, 0, 0, 1, 0, 0);
       pctx.clearRect(0, 0, width, height);
     };
-    const lineWidth = Math.max(2, Math.min(width, height) * 0.0042);
-    const accent = "#ff8a3d";
-    const cyan = "#38bdf8";
-    const drawQuadPath = (points, progress = 1, color = accent) => {
-      const segments = points.map((point, index) => {
-        const end = points[(index + 1) % points.length];
+    const lineWidth = Math.max(1.35, Math.min(width, height) * 0.0025);
+    const primary = "#1a73e8";
+    const drawPath = (points, progress = 1, close = false, alpha = 1) => {
+      if (!points?.length) return;
+      const pathPoints = close ? [...points, points[0]] : points;
+      const segments = pathPoints.slice(0, -1).map((point, index) => {
+        const end = pathPoints[index + 1];
         return { start: point, end, length: Math.hypot(end.x - point.x, end.y - point.y) };
       });
       const total = segments.reduce((sum, segment) => sum + segment.length, 0);
       let remaining = total * progress;
       pctx.save();
-      pctx.strokeStyle = color;
+      pctx.strokeStyle = primary;
       pctx.lineWidth = lineWidth;
       pctx.lineCap = "round";
       pctx.lineJoin = "round";
-      pctx.shadowColor = color;
-      pctx.shadowBlur = lineWidth * 3;
+      pctx.globalAlpha = alpha;
       pctx.beginPath();
       for (const segment of segments) {
         if (remaining <= 0) break;
@@ -422,53 +426,37 @@
     };
     const drawCorners = (progress, clearFirst = true) => {
       if (clearFirst) clear();
-      quad.forEach((point, index) => {
-        const local = Math.max(0, Math.min(1, progress * 1.55 - index * 0.18));
+      cornerPoints.forEach((point, index) => {
+        const local = Math.max(0, Math.min(1, progress * 1.7 - index * 0.16));
         if (!local) return;
         const eased = easeOutCubic(local);
-        const radius = lineWidth * (2.3 + eased * 1.4);
+        const radius = lineWidth * (2.5 + eased * .65);
         pctx.save();
         pctx.globalAlpha = eased;
-        pctx.fillStyle = "rgba(10,18,28,.78)";
-        pctx.strokeStyle = accent;
+        pctx.fillStyle = "rgba(255,255,255,.94)";
+        pctx.strokeStyle = primary;
         pctx.lineWidth = lineWidth;
-        pctx.shadowColor = accent;
-        pctx.shadowBlur = lineWidth * 4;
         pctx.beginPath();
         pctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
         pctx.fill();
         pctx.stroke();
-        pctx.fillStyle = "#fff";
-        pctx.font = `700 ${Math.round(radius * 1.25)}px sans-serif`;
-        pctx.textAlign = "center";
-        pctx.textBaseline = "middle";
-        pctx.fillText(String(index + 1), point.x, point.y + .5);
         pctx.restore();
       });
     };
-    const drawGrid = (points, progress = 1, alpha = 1) => {
-      pctx.save();
-      pctx.strokeStyle = cyan;
-      pctx.lineWidth = Math.max(1, lineWidth * .48);
-      pctx.globalAlpha = .72 * alpha;
-      pctx.shadowColor = cyan;
-      pctx.shadowBlur = lineWidth * 1.5;
-      const lines = 12;
-      const visible = Math.ceil(lines * progress);
-      for (let index = 1; index < visible; index += 1) {
-        const amount = index / lines;
-        const verticalStart = bilinearPreview(points, amount, 0);
-        const verticalEnd = bilinearPreview(points, amount, 1);
-        const horizontalStart = bilinearPreview(points, 0, amount);
-        const horizontalEnd = bilinearPreview(points, 1, amount);
-        pctx.beginPath();
-        pctx.moveTo(verticalStart.x, verticalStart.y);
-        pctx.lineTo(verticalEnd.x, verticalEnd.y);
-        pctx.moveTo(horizontalStart.x, horizontalStart.y);
-        pctx.lineTo(horizontalEnd.x, horizontalEnd.y);
-        pctx.stroke();
+    const sourcePointOriginal = (u, v) => frame
+      ? SP.Lightweight.mapDetectedFrame(frame, u, v)
+      : bilinearPreview(detection.pageQuad, u, v);
+    const sourcePoint = (u, v) => scaled(sourcePointOriginal(u, v));
+    const drawFrame = progress => {
+      if (framePaths) {
+        const ordered = [framePaths.top, framePaths.right, framePaths.bottom.slice().reverse(), framePaths.left.slice().reverse()];
+        ordered.forEach((path, index) => {
+          const local = Math.max(0, Math.min(1, progress * 1.32 - index * .08));
+          drawPath(path, easeOutCubic(local), false, .96);
+        });
+      } else {
+        drawPath(cornerPoints, progress, true, .9);
       }
-      pctx.restore();
     };
     const targetMargin = Math.min(width, height) * .035;
     let targetWidth = width - targetMargin * 2;
@@ -483,26 +471,64 @@
       { x: left, y: top }, { x: left + targetWidth, y: top },
       { x: left + targetWidth, y: top + targetHeight }, { x: left, y: top + targetHeight }
     ];
-    const warpedQuad = progress => quad.map((point, index) => ({
-      x: point.x + (targetQuad[index].x - point.x) * progress,
-      y: point.y + (targetQuad[index].y - point.y) * progress
-    }));
-    const drawWarpedSource = points => {
-      const strips = 18;
-      for (let strip = 0; strip < strips; strip += 1) {
-        const u0 = strip / strips;
-        const u1 = (strip + 1) / strips;
-        const sourceQuad = detection.pageQuad;
-        const sTL = bilinearPreview(sourceQuad, u0, 0);
-        const sBL = bilinearPreview(sourceQuad, u0, 1);
-        const sTR = bilinearPreview(sourceQuad, u1, 0);
-        const sBR = bilinearPreview(sourceQuad, u1, 1);
-        const dTL = bilinearPreview(points, u0, 0);
-        const dBL = bilinearPreview(points, u0, 1);
-        const dTR = bilinearPreview(points, u1, 0);
-        const dBR = bilinearPreview(points, u1, 1);
-        drawPreviewTriangle(pctx, source, [sTL, sBL, sTR], [dTL, dBL, dTR]);
-        drawPreviewTriangle(pctx, source, [sTR, sBL, sBR], [dTR, dBL, dBR]);
+    const targetPoint = (u, v) => bilinearPreview(targetQuad, u, v);
+    const animatedPoint = (u, v, warpProgress = 0) => {
+      const start = sourcePoint(u, v);
+      const end = targetPoint(u, v);
+      return {
+        x: start.x + (end.x - start.x) * warpProgress,
+        y: start.y + (end.y - start.y) * warpProgress
+      };
+    };
+    const drawGrid = (progress = 1, alpha = 1, warpProgress = 0) => {
+      pctx.save();
+      pctx.strokeStyle = primary;
+      pctx.lineWidth = Math.max(.8, lineWidth * .58);
+      pctx.globalAlpha = .34 * alpha;
+      const columns = 8;
+      const rows = 12;
+      const visibleColumns = Math.ceil((columns + 1) * progress);
+      const visibleRows = Math.ceil((rows + 1) * progress);
+      for (let column = 0; column < visibleColumns; column += 1) {
+        const u = column / columns;
+        pctx.beginPath();
+        for (let step = 0; step <= 18; step += 1) {
+          const point = animatedPoint(u, step / 18, warpProgress);
+          if (!step) pctx.moveTo(point.x, point.y); else pctx.lineTo(point.x, point.y);
+        }
+        pctx.stroke();
+      }
+      for (let row = 0; row < visibleRows; row += 1) {
+        const v = row / rows;
+        pctx.beginPath();
+        for (let step = 0; step <= 18; step += 1) {
+          const point = animatedPoint(step / 18, v, warpProgress);
+          if (!step) pctx.moveTo(point.x, point.y); else pctx.lineTo(point.x, point.y);
+        }
+        pctx.stroke();
+      }
+      pctx.restore();
+    };
+    const drawWarpedSource = progress => {
+      const columns = MEM.low ? 6 : 8;
+      const rows = MEM.low ? 8 : 12;
+      for (let row = 0; row < rows; row += 1) {
+        const v0 = row / rows;
+        const v1 = (row + 1) / rows;
+        for (let column = 0; column < columns; column += 1) {
+          const u0 = column / columns;
+          const u1 = (column + 1) / columns;
+          const sTL = sourcePointOriginal(u0, v0);
+          const sBL = sourcePointOriginal(u0, v1);
+          const sTR = sourcePointOriginal(u1, v0);
+          const sBR = sourcePointOriginal(u1, v1);
+          const dTL = animatedPoint(u0, v0, progress);
+          const dBL = animatedPoint(u0, v1, progress);
+          const dTR = animatedPoint(u1, v0, progress);
+          const dBR = animatedPoint(u1, v1, progress);
+          drawPreviewTriangle(pctx, source, [sTL, sBL, sTR], [dTL, dBL, dTR]);
+          drawPreviewTriangle(pctx, source, [sTR, sBL, sBR], [dTR, dBL, dBR]);
+        }
       }
       pctx.setTransform(1, 0, 0, 1, 0, 0);
     };
@@ -511,33 +537,35 @@
       guard,
       async detection() {
         setProcessingPhase("corners", { cornerCount: 4, method: detection.method });
-        await processingFrame(260, guard, value => drawCorners(easeOutCubic(value)));
-        setProcessingPhase("edges", { cornerCount: 4 });
-        await processingFrame(300, guard, value => {
+        await processingFrame(220, guard, value => drawCorners(easeOutCubic(value)));
+        setProcessingPhase("frame", {
+          detected: !!frame,
+          support: frame?.support || 0,
+          curvature: frame?.curvature || 0
+        });
+        await processingFrame(360, guard, value => {
           clear();
-          drawQuadPath(quad, easeInOutCubic(value));
+          drawFrame(easeInOutCubic(value));
           drawCorners(1, false);
         });
-        setProcessingPhase("mesh", { rows: 12, columns: 12 });
-        await processingFrame(340, guard, value => {
+        setProcessingPhase("mesh", { rows: 12, columns: 8, curved: !!frame });
+        await processingFrame(320, guard, value => {
           clear();
-          drawQuadPath(quad, 1);
-          drawGrid(quad, easeOutCubic(value));
+          drawFrame(1);
+          drawGrid(easeOutCubic(value));
         });
       },
       async warp() {
         setProcessingPhase("warp", { cornerCount: 4, realGeometry: true });
         await processingFrame(390, guard, value => {
           const eased = easeInOutCubic(value);
-          const points = warpedQuad(eased);
           clear();
-          pctx.globalAlpha = Math.max(0, 1 - eased * .82);
+          pctx.globalAlpha = Math.max(0, 1 - eased * .88);
           pctx.drawImage(source, 0, 0, width, height);
-          pctx.globalAlpha = Math.min(1, .28 + eased);
-          drawWarpedSource(points);
+          pctx.globalAlpha = Math.min(1, .2 + eased);
+          drawWarpedSource(eased);
           pctx.globalAlpha = 1;
-          drawQuadPath(points, 1, cyan);
-          drawGrid(points, 1, 1 - eased * .15);
+          drawGrid(1, 1 - eased * .36, eased);
         });
       },
       beginColor() {
@@ -558,13 +586,11 @@
           pctx.drawImage(correctedCanvas, 0, 0, outWidth, outHeight);
           const remaining = Math.max(0, Math.round(outWidth * (1 - eased)));
           if (remaining) pctx.drawImage(beforeCanvas, 0, 0, remaining, beforeCanvas.height, 0, 0, remaining, outHeight);
-          const scanX = outWidth * eased;
-          const gradient = pctx.createLinearGradient(scanX - 26, 0, scanX + 26, 0);
-          gradient.addColorStop(0, "rgba(56,189,248,0)");
-          gradient.addColorStop(.5, "rgba(255,255,255,.82)");
-          gradient.addColorStop(1, "rgba(255,138,61,0)");
-          pctx.fillStyle = gradient;
-          pctx.fillRect(scanX - 28, 0, 56, outHeight);
+          const scanX = Math.min(outWidth - 1, outWidth * eased);
+          pctx.fillStyle = primary;
+          pctx.globalAlpha = .72;
+          pctx.fillRect(scanX, 0, Math.max(1, lineWidth * .7), outHeight);
+          pctx.globalAlpha = 1;
         });
       },
       hold(canvas) {
@@ -1388,7 +1414,7 @@
       && (detection.method === "stencil" || detection.method === "marker-guided");
     const pageQuad = detection.pageQuad;
     const animator = createProcessingAnimator(srcCanvas, detection, opts);
-    const warpPromise = SP.Lightweight.warp(srcCanvas, pageQuad);
+    const warpPromise = SP.Lightweight.warp(srcCanvas, pageQuad, detection.frame);
     if (animator) await animator.detection();
     else stageOnImmediate(preciseStencil ? "Straightening stencil..." : "Straightening page...");
     const fin = await warpPromise;

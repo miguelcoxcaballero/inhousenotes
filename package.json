@@ -1,6 +1,6 @@
 {
   "name": "inhouse-notes-production",
-  "version": "5.11.5",
+  "version": "5.11.6",
   "private": true,
   "scripts": {
     "test:unit": "node --test tests/collaboration-core-v5.test.mjs tests/live-collaboration-v5.test.mjs tests/timeline-core-v5.test.mjs tests/runtime-core-v5.test.mjs && node tests/release-v5-smoke.mjs",

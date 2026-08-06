@@ -376,6 +376,173 @@
     return Number.isFinite(u) && Number.isFinite(v) ? { u, v } : null;
   }
 
+  function traceFrameSide(points, axis, perpendicular, expected, sampleCount = 19) {
+    const values = new Array(sampleCount).fill(null);
+    const supported = new Array(sampleCount).fill(false);
+    const window = 0.72 / (sampleCount - 1);
+    for (let sample = 0; sample < sampleCount; sample += 1) {
+      const position = sample / (sampleCount - 1);
+      const candidates = points
+        .filter(point => Math.abs(point[axis] - position) <= window
+          && Math.abs(point[perpendicular] - expected) <= 0.13)
+        .map(point => point[perpendicular])
+        .sort((a, b) => a - b);
+      if (!candidates.length) continue;
+      const clusters = [];
+      for (const candidate of candidates) {
+        const cluster = clusters[clusters.length - 1];
+        if (!cluster || candidate - cluster[cluster.length - 1] > 0.012) clusters.push([candidate]);
+        else cluster.push(candidate);
+      }
+      const best = clusters.sort((first, second) => {
+        const firstMedian = first[Math.floor(first.length / 2)];
+        const secondMedian = second[Math.floor(second.length / 2)];
+        const firstScore = first.length * 3.2 - Math.abs(firstMedian - expected) * 48;
+        const secondScore = second.length * 3.2 - Math.abs(secondMedian - expected) * 48;
+        return secondScore - firstScore;
+      })[0];
+      values[sample] = best[Math.floor(best.length / 2)];
+      supported[sample] = best.length >= 1;
+    }
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      if (values[index] != null) continue;
+      let before = index - 1;
+      let after = index + 1;
+      while (before >= 0 && values[before] == null) before -= 1;
+      while (after < sampleCount && values[after] == null) after += 1;
+      if (before >= 0 && after < sampleCount) {
+        const mix = (index - before) / (after - before);
+        values[index] = values[before] + (values[after] - values[before]) * mix;
+      } else if (before >= 0) values[index] = values[before];
+      else if (after < sampleCount) values[index] = values[after];
+      else values[index] = expected;
+    }
+
+    const smoothed = values.map((value, index) => {
+      if (!index || index === values.length - 1) return value;
+      return values[index - 1] * 0.2 + value * 0.6 + values[index + 1] * 0.2;
+    });
+    return {
+      values: smoothed,
+      support: supported.filter(Boolean).length / sampleCount
+    };
+  }
+
+  function traceYellowFrame(stencilQuad, width, height, yellowMask) {
+    if (!stencilQuad?.every(Boolean)) return null;
+    const normalizedYellow = [];
+    for (let index = 0; index < yellowMask.length; index += 1) {
+      if (!yellowMask[index]) continue;
+      const normalized = invertBilinear(stencilQuad, {
+        x: index % width,
+        y: (index / width) | 0
+      });
+      if (normalized && normalized.u > -0.14 && normalized.u < 1.14
+        && normalized.v > -0.14 && normalized.v < 1.14) normalizedYellow.push(normalized);
+    }
+    if (normalizedYellow.length < 48) return null;
+
+    const top = traceFrameSide(normalizedYellow, "u", "v", 0);
+    const bottom = traceFrameSide(normalizedYellow, "u", "v", 1);
+    const left = traceFrameSide(normalizedYellow, "v", "u", 0);
+    const right = traceFrameSide(normalizedYellow, "v", "u", 1);
+    const sideSupports = [top.support, right.support, bottom.support, left.support];
+    const supportedSides = sideSupports.filter(value => value >= 0.26).length;
+    const support = sideSupports.reduce((sum, value) => sum + value, 0) / sideSupports.length;
+    if (supportedSides < 2 || support < 0.2) return null;
+
+    const count = top.values.length;
+    const topNormalized = top.values.map((value, index) => ({ u: index / (count - 1), v: value }));
+    const bottomNormalized = bottom.values.map((value, index) => ({ u: index / (count - 1), v: value }));
+    const leftNormalized = left.values.map((value, index) => ({ u: value, v: index / (count - 1) }));
+    const rightNormalized = right.values.map((value, index) => ({ u: value, v: index / (count - 1) }));
+    const averageCorner = (...points) => ({
+      u: points.reduce((sum, point) => sum + point.u, 0) / points.length,
+      v: points.reduce((sum, point) => sum + point.v, 0) / points.length
+    });
+    const cornersNormalized = [
+      averageCorner(topNormalized[0], leftNormalized[0]),
+      averageCorner(topNormalized[count - 1], rightNormalized[0]),
+      averageCorner(bottomNormalized[count - 1], rightNormalized[count - 1]),
+      averageCorner(bottomNormalized[0], leftNormalized[count - 1])
+    ];
+    topNormalized[0] = leftNormalized[0] = cornersNormalized[0];
+    topNormalized[count - 1] = rightNormalized[0] = cornersNormalized[1];
+    bottomNormalized[count - 1] = rightNormalized[count - 1] = cornersNormalized[2];
+    bottomNormalized[0] = leftNormalized[count - 1] = cornersNormalized[3];
+
+    const toSource = point => bilinear(stencilQuad, point.u, point.v);
+    const paths = {
+      top: topNormalized.map(toSource),
+      right: rightNormalized.map(toSource),
+      bottom: bottomNormalized.map(toSource),
+      left: leftNormalized.map(toSource)
+    };
+    const corners = cornersNormalized.map(toSource);
+    const curvatureFor = (values, start, end) => Math.max(...values.map((value, index) => {
+      const expected = start + (end - start) * (index / (values.length - 1));
+      return Math.abs(value - expected);
+    }));
+    const curvature = Math.max(
+      curvatureFor(top.values, top.values[0], top.values[count - 1]),
+      curvatureFor(bottom.values, bottom.values[0], bottom.values[count - 1]),
+      curvatureFor(left.values, left.values[0], left.values[count - 1]),
+      curvatureFor(right.values, right.values[0], right.values[count - 1])
+    );
+    return {
+      paths,
+      corners,
+      samples: count,
+      sideSupports,
+      support,
+      confidence: clamp((support - 0.16) / 0.68, 0, 1),
+      curvature
+    };
+  }
+
+  function sampleCurve(curve, amount) {
+    if (!curve?.length) return null;
+    const scaled = amount * (curve.length - 1);
+    let index = Math.floor(scaled);
+    let mix = scaled - index;
+    if (index < 0) { mix = scaled; index = 0; }
+    if (index >= curve.length - 1) { index = curve.length - 2; mix = scaled - index; }
+    const first = curve[index];
+    const second = curve[index + 1];
+    return {
+      x: first.x + (second.x - first.x) * mix,
+      y: first.y + (second.y - first.y) * mix
+    };
+  }
+
+  function mapFramePoint(frame, pageU, pageV) {
+    const frameU0 = 1.5 / 21;
+    const frameU1 = 19.5 / 21;
+    const frameV0 = 1.43 / 29.7;
+    const frameV1 = 28.43 / 29.7;
+    const u = (pageU - frameU0) / (frameU1 - frameU0);
+    const v = (pageV - frameV0) / (frameV1 - frameV0);
+    const top = sampleCurve(frame.paths.top, u);
+    const bottom = sampleCurve(frame.paths.bottom, u);
+    const left = sampleCurve(frame.paths.left, v);
+    const right = sampleCurve(frame.paths.right, v);
+    if (!top || !bottom || !left || !right) return null;
+    const [topLeft, topRight, bottomRight, bottomLeft] = frame.corners;
+    const bilinearCorner = {
+      x: topLeft.x * (1 - u) * (1 - v) + topRight.x * u * (1 - v)
+        + bottomLeft.x * (1 - u) * v + bottomRight.x * u * v,
+      y: topLeft.y * (1 - u) * (1 - v) + topRight.y * u * (1 - v)
+        + bottomLeft.y * (1 - u) * v + bottomRight.y * u * v
+    };
+    return {
+      x: top.x * (1 - v) + bottom.x * v + left.x * (1 - u) + right.x * u - bilinearCorner.x,
+      y: top.y * (1 - v) + bottom.y * v + left.y * (1 - u) + right.y * u - bilinearCorner.y
+    };
+  }
+
+  Light.mapDetectedFrame = mapFramePoint;
+
   function rotateNormalized(point, rotation) {
     if (rotation === 1) return { u: 1 - point.v, v: point.u };
     if (rotation === 2) return { u: 1 - point.u, v: 1 - point.v };
@@ -927,36 +1094,54 @@
     // Always let the asymmetric calibration strip resolve orientation first.
     const paperQuad = detectPaperQuad(width, height, pixels);
     const markerGuided = detectMarkerGuidedStencil(paperQuad, width, height, pixels, mask);
-    canvas.width = 0;
-    canvas.height = 0;
+    const scaleFrame = frame => frame ? {
+      ...frame,
+      paths: Object.fromEntries(Object.entries(frame.paths).map(([name, points]) => [
+        name,
+        points.map(point => ({ x: point.x / scale, y: point.y / scale }))
+      ])),
+      corners: frame.corners.map(point => ({ x: point.x / scale, y: point.y / scale }))
+    } : null;
+    const finish = result => {
+      canvas.width = 0;
+      canvas.height = 0;
+      return result;
+    };
     if (markerGuided) {
-      stencilQuad = markerGuided.stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
-      return {
+      const tracedFrame = traceYellowFrame(markerGuided.stencilQuad, width, height, mask);
+      const tracedCorners = tracedFrame?.confidence >= 0.18 ? tracedFrame.corners : markerGuided.stencilQuad;
+      stencilQuad = tracedCorners.map(point => ({ x: point.x / scale, y: point.y / scale }));
+      return finish({
         pageQuad: extrapolateStencil(stencilQuad),
         stencilQuad,
+        frame: scaleFrame(tracedFrame),
         confidence: markerGuided.confidence,
         method: "marker-guided"
-      };
+      });
     }
     if (confidence >= 0.24) {
-      stencilQuad = stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
-      return {
+      const tracedFrame = traceYellowFrame(stencilQuad, width, height, mask);
+      const tracedCorners = tracedFrame?.confidence >= 0.18 ? tracedFrame.corners : stencilQuad;
+      stencilQuad = tracedCorners.map(point => ({ x: point.x / scale, y: point.y / scale }));
+      return finish({
         pageQuad: extrapolateStencil(stencilQuad),
         stencilQuad,
+        frame: scaleFrame(tracedFrame),
         confidence,
         method: "stencil"
-      };
+      });
     }
     if (paperQuad) {
       const hasStencilSignal = yellowPixels >= width * height * 0.00045;
-      return {
+      return finish({
         pageQuad: paperQuad.map(point => ({ x: point.x / scale, y: point.y / scale })),
         stencilQuad: null,
+        frame: null,
         confidence: hasStencilSignal ? 0.35 : 0,
         method: "paper"
-      };
+      });
     }
-    return { pageQuad: fallbackPageQuad(source), stencilQuad: null, confidence: 0, method: "fallback" };
+    return finish({ pageQuad: fallbackPageQuad(source), stencilQuad: null, frame: null, confidence: 0, method: "fallback" });
   };
 
   function drawTriangle(context, source, src, dst) {
@@ -982,7 +1167,7 @@
     context.restore();
   }
 
-  Light.warp = async function warp(source, pageQuad) {
+  Light.warp = async function warp(source, pageQuad, frame = null) {
     const output = document.createElement("canvas");
     output.height = OUTPUT_LONG_EDGE;
     output.width = Math.round(OUTPUT_LONG_EDGE * A4_RATIO);
@@ -991,6 +1176,41 @@
     context.fillRect(0, 0, output.width, output.height);
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
+    const useCurvedFrame = !!frame?.paths && frame.confidence >= 0.18;
+    if (useCurvedFrame) {
+      const columns = 12;
+      const rows = 18;
+      for (let row = 0; row < rows; row += 1) {
+        const v0 = row / rows;
+        const v1 = (row + 1) / rows;
+        const y0 = Math.floor(v0 * output.height) - 0.35;
+        const y1 = Math.ceil(v1 * output.height) + 0.35;
+        for (let column = 0; column < columns; column += 1) {
+          const u0 = column / columns;
+          const u1 = (column + 1) / columns;
+          const sourceTopLeft = mapFramePoint(frame, u0, v0);
+          const sourceBottomLeft = mapFramePoint(frame, u0, v1);
+          const sourceTopRight = mapFramePoint(frame, u1, v0);
+          const sourceBottomRight = mapFramePoint(frame, u1, v1);
+          const x0 = Math.floor(u0 * output.width) - 0.35;
+          const x1 = Math.ceil(u1 * output.width) + 0.35;
+          const destinationTopLeft = { x: x0, y: y0 };
+          const destinationBottomLeft = { x: x0, y: y1 };
+          const destinationTopRight = { x: x1, y: y0 };
+          const destinationBottomRight = { x: x1, y: y1 };
+          drawTriangle(context, source,
+            [sourceTopLeft, sourceBottomLeft, sourceTopRight],
+            [destinationTopLeft, destinationBottomLeft, destinationTopRight]);
+          drawTriangle(context, source,
+            [sourceTopRight, sourceBottomLeft, sourceBottomRight],
+            [destinationTopRight, destinationBottomLeft, destinationBottomRight]);
+        }
+        if (row % 3 === 2) await yieldToBrowser();
+      }
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      return output;
+    }
+
     const strips = 28;
     for (let strip = 0; strip < strips; strip += 1) {
       const u0 = strip / strips;
