@@ -22,7 +22,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 8
 
     steps:
       - name: Check out main
@@ -33,16 +33,48 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Prepare lean production site
+        shell: bash
+        run: |
+          set -euo pipefail
+          site_dir="$RUNNER_TEMP/pages-site"
+          mkdir -p "$site_dir"
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.gh-config/' \
+            --exclude 'android app/' \
+            --exclude 'docs/' \
+            --exclude 'node_modules/' \
+            --exclude 'rebuild-v2/' \
+            --exclude 'test-results/' \
+            --exclude 'tests/' \
+            --exclude 'tmp/' \
+            --exclude '*.apk' \
+            --exclude 'gh-*.tmp' \
+            --exclude 'AGENTS.md' \
+            --exclude 'package.json' \
+            --exclude 'package-lock.json' \
+            --exclude 'playwright.config.mjs' \
+            --exclude 'README.md' \
+            --exclude 'RELEASE_NOTES_*.md' \
+            ./ "$site_dir/"
+          test -f "$site_dir/index.html"
+          test -f "$site_dir/CNAME"
+          test -f "$site_dir/app-v5.js"
+          test -f "$site_dir/scanner/script.js"
+          echo "Production artifact: $(find "$site_dir" -type f | wc -l) files, $(du -sh "$site_dir" | cut -f1)"
+
       - name: Upload static site
         id: pages-artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: .
+          path: ${{ runner.temp }}/pages-site
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/github-script@v8
-        timeout-minutes: 38
+        timeout-minutes: 6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -110,10 +142,9 @@ jobs:
             core.setOutput('page_url', deployment.page_url || 'https://inhousenotes.com/');
             core.info(`Created fresh Pages deployment ${deploymentId}.`);
 
-            // actions/deploy-pages has a hard-coded 10-minute maximum and
-            // cancels a valid deployment when GitHub's queue is slow. Poll the
-            // same official API for longer and never cancel server-side work.
-            const deadline = Date.now() + 35 * 60 * 1000;
+            // A healthy Pages deployment normally completes quickly. Bound a
+            // broken backend attempt instead of hiding it behind a long wait.
+            const deadline = Date.now() + 5 * 60 * 1000;
             let consecutiveErrors = 0;
             while (Date.now() < deadline) {
               await sleep(10_000);
@@ -141,5 +172,5 @@ jobs:
             }
 
             throw new Error(
-              'GitHub Pages is still processing after 35 minutes; the deployment was left active and was not cancelled.'
+              'GitHub Pages is still processing after 5 minutes; the deployment was left active and was not cancelled.'
             );
