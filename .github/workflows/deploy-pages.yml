@@ -56,12 +56,6 @@ jobs:
               'deployment_cancelled',
               'deployment_lost'
             ]);
-            const activeStatuses = new Set([
-              'deployment_queued',
-              'deployment_in_progress',
-              'deployment_attempt_error',
-              'unknown_status'
-            ]);
             const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
             if (!Number.isSafeInteger(artifactId) || artifactId <= 0) {
@@ -77,10 +71,10 @@ jobs:
             };
 
             let deploymentId = buildVersion;
-            let deployment;
 
-            // A re-run may already have a healthy deployment for this commit.
-            // Resume monitoring it instead of creating competing deployments.
+            // Pages can leave a cancelled attempt looking active. A queued
+            // workflow re-run must retire that stale attempt before uploading
+            // a fresh artifact instead of attaching to the orphaned record.
             try {
               const existing = await readStatus(deploymentId);
               if (existing.status === 'succeed') {
@@ -88,33 +82,33 @@ jobs:
                 core.setOutput('page_url', existing.page_url || 'https://inhousenotes.com/');
                 return;
               }
-              if (activeStatuses.has(existing.status)) {
-                deployment = existing;
-                core.info(`Resuming Pages deployment ${deploymentId} (${existing.status}).`);
-              }
+              await github.request(
+                'POST /repos/{owner}/{repo}/pages/deployments/{deployment_id}/cancel',
+                { owner, repo, deployment_id: deploymentId }
+              );
+              core.info(`Retired stale Pages deployment ${deploymentId} (${existing.status}).`);
+              await sleep(2_000);
             } catch (error) {
-              if (error.status !== 404) {
-                core.warning(`Could not inspect an earlier deployment: ${error.message}`);
+              if (error.status !== 404 && error.status !== 409) {
+                core.warning(`Could not retire an earlier deployment: ${error.message}`);
               }
             }
 
-            if (!deployment) {
-              const oidcToken = await core.getIDToken();
-              const response = await github.request(
-                'POST /repos/{owner}/{repo}/pages/deployments',
-                {
-                  owner,
-                  repo,
-                  artifact_id: artifactId,
-                  pages_build_version: buildVersion,
-                  oidc_token: oidcToken
-                }
-              );
-              deployment = response.data;
-              deploymentId = deployment.id || deployment.status_url?.split('/').pop() || buildVersion;
-              core.setOutput('page_url', deployment.page_url || 'https://inhousenotes.com/');
-              core.info(`Created Pages deployment ${deploymentId}.`);
-            }
+            const oidcToken = await core.getIDToken();
+            const response = await github.request(
+              'POST /repos/{owner}/{repo}/pages/deployments',
+              {
+                owner,
+                repo,
+                artifact_id: artifactId,
+                pages_build_version: buildVersion,
+                oidc_token: oidcToken
+              }
+            );
+            let deployment = response.data;
+            deploymentId = deployment.id || deployment.status_url?.split('/').pop() || buildVersion;
+            core.setOutput('page_url', deployment.page_url || 'https://inhousenotes.com/');
+            core.info(`Created fresh Pages deployment ${deploymentId}.`);
 
             // actions/deploy-pages has a hard-coded 10-minute maximum and
             // cancels a valid deployment when GitHub's queue is slow. Poll the
