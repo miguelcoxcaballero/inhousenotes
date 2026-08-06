@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.4');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.5');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -87,6 +87,12 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   page.on('pageerror', error => pageErrors.push(error.message));
   await page.goto('/scanner/index.html?embed=1&session=e2e-light-scanner', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#appLoading')).toBeHidden();
+  await page.evaluate(() => {
+    window.__scannerProcessingPhases = [];
+    addEventListener('scanner-processing-phase', event => {
+      window.__scannerProcessingPhases.push(event.detail);
+    });
+  });
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="840" height="1188" viewBox="0 0 210 297">
     <rect width="210" height="297" fill="white"/>
@@ -107,6 +113,24 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
 
   await expect(page.locator('#exportBtn')).toBeEnabled({ timeout: 12_000 });
   await expect(page.locator('.page-card')).toHaveCount(1);
+  await expect(page.locator('#processAnimationLayer')).toBeHidden();
+  const processingPhases = await page.evaluate(() => window.__scannerProcessingPhases);
+  expect(processingPhases.map(entry => entry.phase)).toEqual([
+    'corners', 'edges', 'mesh', 'warp', 'color', 'complete'
+  ]);
+  expect(processingPhases.find(entry => entry.phase === 'corners')).toMatchObject({
+    cornerCount: 4
+  });
+  expect(processingPhases.find(entry => entry.phase === 'mesh')).toMatchObject({
+    rows: 12,
+    columns: 12
+  });
+  expect(processingPhases.find(entry => entry.phase === 'warp')).toMatchObject({
+    realGeometry: true
+  });
+  expect(processingPhases.find(entry => entry.phase === 'color')).toMatchObject({
+    realBeforeAfter: true
+  });
   expect(pageErrors).toEqual([]);
   expect(await page.evaluate(() => typeof window.cv)).toBe('undefined');
 });

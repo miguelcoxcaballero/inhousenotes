@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.4",
-  "releaseNotes": "Inhouse Notes v5.11.4 / Android 1.0.10: the scanner now uses the repeated bottom squares and four colour markers to determine page orientation, scale and corners, including rotated, obscured and cluttered photos."
+  "publishedAppVersion": "5.11.5",
+  "releaseNotes": "Inhouse Notes v5.11.5 / Android 1.0.10: scan processing now animates the real detected corners, page edges, perspective mesh, geometric warp and colour correction directly over each selected preview."
 }
