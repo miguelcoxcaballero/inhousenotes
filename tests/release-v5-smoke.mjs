@@ -16,19 +16,19 @@ const scannerStyles = fs.readFileSync(new URL('../scanner/styles.css', import.me
 const scanner = fs.readFileSync(new URL('../scanner/script.js', import.meta.url), 'utf8');
 const scannerConfig = fs.readFileSync(new URL('../scanner/configLoader.js', import.meta.url), 'utf8');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.11.1.md', import.meta.url), 'utf8');
+const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.11.2.md', import.meta.url), 'utf8');
 const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
 const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
 const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
 const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
 
-assert.match(indexHtml, /const APP_VERSION = '5\.11\.1';/);
+assert.match(indexHtml, /const APP_VERSION = '5\.11\.2';/);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.1/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.1/);
-assert.match(indexHtml, /app-v5\.js\?v=5\.11\.1/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.1/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.2/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.2/);
+assert.match(indexHtml, /app-v5\.js\?v=5\.11\.2/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.2/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -341,7 +341,12 @@ assert.match(goHomeSource, /const saveCompleted = await backgroundExitSavePromis
 assert.match(goHomeSource, /Could not finish saving\. The document is still open/);
 assert.doesNotMatch(goHomeSource, /showDriveHome\(\);[\s\S]{0,500}Saving the last document to Drive/);
 assert.match(html, /await backgroundExitSavePromise/);
-assert.match(html, /Finishing the previous Drive save/);
+assert.doesNotMatch(html, /Finishing (the )?previous (Drive )?save/i);
+const openDriveStart = html.indexOf('async function openDriveFile(file)');
+const openDriveEnd = html.indexOf('function updateViewerModeUI()', openDriveStart);
+const openDriveSource = html.slice(openDriveStart, openDriveEnd);
+assert.match(openDriveSource, /resumeDetachedExitUploadAfterOpen\(detachedExitSaves\)/);
+assert.doesNotMatch(openDriveSource, /await lifecycleExitSavePromise|await backgroundExitSavePromise/);
 assert.match(html, /This device\$\{overview\.isMain \? ' · Main device'/);
 assert.match(html, /Google Drive<\/div>/);
 assert.match(html, /connection\?\.transport/);
@@ -1029,13 +1034,13 @@ assert.ok(
 );
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
-assert.equal(update.publishedAppVersion, '5.11.1');
+assert.equal(update.publishedAppVersion, '5.11.2');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.11\.1/);
-assert.match(notes, /scanner/i);
-assert.match(notes, /OpenCV/i);
-assert.match(notes, /responsive/i);
+assert.match(update.releaseNotes, /v5\.11\.2/);
+assert.match(notes, /Home/i);
+assert.match(notes, /Drive/i);
+assert.match(notes, /previous-save/i);
 
-console.log('v5.11.1 smoke checks passed.');
+console.log('v5.11.2 smoke checks passed.');
