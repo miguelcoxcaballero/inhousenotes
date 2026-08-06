@@ -460,10 +460,15 @@
     }
     if (normalizedYellow.length < 48) return null;
 
-    const boxTopExpected = 1 - 0.75 / 27;
+    // The lower box spans y=27.43..27.93 cm while the outer frame ends at
+    // y=28.43 cm. Detect both box rails independently; the coloured marker
+    // centres at y=27.68 are calibration references, not a yellow border.
+    const boxTopExpected = 1 - 1 / 27;
+    const boxBottomExpected = 1 - 0.5 / 27;
     const top = traceFrameSide(normalizedYellow, "u", "v", 0);
     const bottom = traceFrameSide(normalizedYellow, "u", "v", 1, 19, 0.04);
-    const boxTop = traceFrameSide(normalizedYellow, "u", "v", boxTopExpected, 19, 0.035);
+    const boxTop = traceFrameSide(normalizedYellow, "u", "v", boxTopExpected, 19, 0.016);
+    const boxBottom = traceFrameSide(normalizedYellow, "u", "v", boxBottomExpected, 19, 0.016);
     const left = traceFrameSide(normalizedYellow, "v", "u", 0);
     const right = traceFrameSide(normalizedYellow, "v", "u", 1);
     const sideSupports = [top.support, right.support, bottom.support, left.support];
@@ -480,12 +485,14 @@
       const deltas = [];
       if (bottom.supported[index]) deltas.push(bottom.values[index] - 1);
       if (boxTop.supported[index]) deltas.push(boxTop.values[index] - boxTopExpected);
+      if (boxBottom.supported[index]) deltas.push(boxBottom.values[index] - boxBottomExpected);
       if (!deltas.length) continue;
       deltas.sort((a, b) => a - b);
-      const sharedDelta = deltas.length === 2 ? (deltas[0] + deltas[1]) * 0.5 : deltas[0];
+      const sharedDelta = deltas[Math.floor(deltas.length / 2)];
       const boundedDelta = clamp(sharedDelta, -0.022, 0.022);
       bottom.values[index] = 1 + boundedDelta;
       boxTop.values[index] = boxTopExpected + boundedDelta;
+      boxBottom.values[index] = boxBottomExpected + boundedDelta;
     }
 
     const topNormalized = top.values.map((value, index) => ({ u: index / (count - 1), v: value }));
@@ -511,6 +518,14 @@
       u: index / (count - 1),
       v: value
     }));
+    const boxBottomPath = boxBottom.values.map((value, index) => toSource({
+      u: index / (count - 1),
+      v: value
+    }));
+    const yellowBoxNormalized = normalizedYellow.filter(point => point.u >= -0.015 && point.u <= 1.015
+      && point.v >= boxTopExpected - 0.018 && point.v <= boxBottomExpected + 0.018);
+    const pointStride = Math.max(1, Math.ceil(yellowBoxNormalized.length / 1600));
+    const sampledBoxNormalized = yellowBoxNormalized.filter((point, index) => index % pointStride === 0);
     const corners = cornersNormalized.map(toSource);
     const curvatureFor = (values, start, end) => Math.max(...values.map((value, index) => {
       const expected = start + (end - start) * (index / (values.length - 1));
@@ -526,8 +541,11 @@
       paths,
       box: {
         top: boxTopPath,
-        bottom: paths.bottom,
-        support: boxTop.support
+        bottom: boxBottomPath,
+        outer: paths.bottom,
+        points: sampledBoxNormalized.map(toSource),
+        normalized: sampledBoxNormalized.map(point => ({ u: point.u, v: point.v })),
+        support: (boxTop.support + boxBottom.support) * 0.5
       },
       corners,
       samples: count,
@@ -1156,7 +1174,9 @@
       box: frame.box ? {
         ...frame.box,
         top: frame.box.top.map(point => ({ x: point.x / scale, y: point.y / scale })),
-        bottom: frame.box.bottom.map(point => ({ x: point.x / scale, y: point.y / scale }))
+        bottom: frame.box.bottom.map(point => ({ x: point.x / scale, y: point.y / scale })),
+        outer: frame.box.outer.map(point => ({ x: point.x / scale, y: point.y / scale })),
+        points: frame.box.points.map(point => ({ x: point.x / scale, y: point.y / scale }))
       } : null
     } : null;
     const finish = result => {
@@ -1379,15 +1399,16 @@
     return 255;
   }
 
-  function estimatePaperProfile(data, width, height) {
+  function estimatePaperProfile(data, width, height, stencilAware = false) {
     const histograms = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
     const luminanceHistogram = new Uint32Array(256);
     const stride = Math.max(3, Math.ceil(Math.max(width, height) / 520));
-    const marginX = Math.floor(width * 0.035);
-    const marginY = Math.floor(height * 0.035);
+    const marginX = Math.floor(width * (stencilAware ? 0.12 : 0.035));
+    const marginY = Math.floor(height * (stencilAware ? 0.08 : 0.035));
+    const maximumY = Math.floor(height * (stencilAware ? 0.9 : 0.965));
     let neutralCount = 0;
     let luminanceCount = 0;
-    for (let y = marginY; y < height - marginY; y += stride) {
+    for (let y = marginY; y < maximumY; y += stride) {
       for (let x = marginX; x < width - marginX; x += stride) {
         const offset = (y * width + x) * 4;
         const r = data[offset], g = data[offset + 1], b = data[offset + 2];
@@ -1408,11 +1429,11 @@
       }
     }
     const sourcePaper = neutralCount >= 80
-      ? histograms.map(histogram => percentileFromHistogram(histogram, neutralCount, 0.86))
+      ? histograms.map(histogram => percentileFromHistogram(histogram, neutralCount, 0.78))
       : [225, 225, 225];
     const paperLuminance = sourcePaper[0] * 0.2126 + sourcePaper[1] * 0.7152 + sourcePaper[2] * 0.0722;
     const shadowPoint = percentileFromHistogram(luminanceHistogram, luminanceCount, 0.04);
-    const targetPaper = 242;
+    const targetPaper = 255;
     const gains = sourcePaper.map(channel => clamp(targetPaper / Math.max(96, channel), 0.9, 1.3));
     // Limit channel-to-channel differences: this removes a colour cast while
     // never turning blue/red handwriting into another colour.
@@ -1420,7 +1441,50 @@
     for (let index = 0; index < gains.length; index += 1) {
       gains[index] = clamp(gains[index], meanGain - 0.13, meanGain + 0.13);
     }
-    return { gains, paperLuminance, shadowPoint, targetPaper };
+    return { gains, sourcePaper, paperLuminance, shadowPoint, targetPaper };
+  }
+
+  function medianColorSamples(samples) {
+    const valid = samples.filter(Boolean);
+    if (!valid.length) return null;
+    return [0, 1, 2].map(channel => {
+      const values = valid.map(sample => sample[channel]).sort((a, b) => a - b);
+      return values[Math.floor(values.length / 2)];
+    });
+  }
+
+  function referenceKindForPixel(r, g, b, luminance, saturation, paperLuminance) {
+    if (isYellow(r, g, b)) return "yellow";
+    if (r > 48 && r > g * 1.18 && r > b * 1.14) return "red";
+    if (b > 42 && b > r * 1.13 && b > g * 1.06) return "blue";
+    if (g > 48 && g > r * 1.1 && g > b * 1.16) return "green";
+    if (saturation <= 0.2 && luminance < paperLuminance * 0.82) return "black";
+    return null;
+  }
+
+  function calibrateFromReference(original, sample, sourcePaper, targetPaper) {
+    if (!sample?.source || !sample?.target) return null;
+    const source = sample.source.map(value => value * 255);
+    const target = sample.target.map(value => value * 255);
+    const inkVector = source.map((value, channel) => value - sourcePaper[channel]);
+    const pixelVector = original.map((value, channel) => value - sourcePaper[channel]);
+    const denominator = inkVector.reduce((sum, value) => sum + value * value, 0);
+    if (denominator < 64) return null;
+    const projection = pixelVector.reduce((sum, value, channel) => sum + value * inkVector[channel], 0) / denominator;
+    if (projection <= 0.025 || projection > 2.1) return null;
+    const residualSquared = pixelVector.reduce((sum, value, channel) => {
+      const residual = value - inkVector[channel] * projection;
+      return sum + residual * residual;
+    }, 0);
+    const pixelMagnitude = Math.sqrt(pixelVector.reduce((sum, value) => sum + value * value, 0));
+    const residualRatio = Math.sqrt(residualSquared) / Math.max(18, pixelMagnitude);
+    if (residualRatio > 0.5) return null;
+    const amount = clamp(projection, 0, 1.08);
+    const mapped = target.map(value => targetPaper + (value - targetPaper) * amount);
+    return {
+      mapped,
+      mix: clamp(1 - residualRatio / 0.5, 0.58, 1)
+    };
   }
 
   function markerLooksValid(name, source) {
@@ -1461,11 +1525,17 @@
       }))
       : [];
     if (preciseStencil) {
-      const yellowSource = medianSample(
+      // A single side can be shaded or partially hidden. Sample several parts
+      // of the printed frame and use their median as the page's yellow ink.
+      const yellowSource = medianColorSamples([
+        [1.5, 6], [1.5, 14.8], [1.5, 23],
+        [19.5, 6], [19.5, 14.8], [19.5, 23],
+        [6, 1.43], [10.5, 1.43], [15, 1.43]
+      ].map(([x, y]) => medianSample(
         data, canvas.width, canvas.height,
-        1.5 * pxPerCm, 14.8 * pxPerCm, pxPerCm * 0.16,
+        x * pxPerCm, y * pxPerCm, pxPerCm * 0.19,
         isYellow
-      );
+      )));
       const targetYellow = config.TARGET_YELLOW || { R: 240, G: 219, B: 76 };
       samples.push({
         name: "yellow",
@@ -1479,17 +1549,11 @@
     const canCalibrate = preciseStencil
       && validMarkerSamples.length === markerDefinitions.length
       && !!yellowSample?.source;
-    const profile = estimatePaperProfile(data, canvas.width, canvas.height);
-    const paperSource = profile.paperLuminance / 255;
-    const matrixSamples = canCalibrate
-      ? [...validMarkerSamples, yellowSample, {
-        name: "white",
-        source: [paperSource, paperSource, paperSource],
-        target: [profile.targetPaper / 255, profile.targetPaper / 255, profile.targetPaper / 255],
-        weight: 1.8
-      }]
-      : [];
-    const matrix = canCalibrate ? buildColorMatrix(matrixSamples) : null;
+    const profile = estimatePaperProfile(data, canvas.width, canvas.height, preciseStencil);
+    const referenceByName = Object.fromEntries(
+      [...validMarkerSamples, ...(yellowSample?.source ? [yellowSample] : [])]
+        .map(sample => [sample.name, sample])
+    );
     const outerBand = pxPerCm * 0.12;
     const yellowX1 = 1.5 * pxPerCm;
     const yellowX2 = 19.5 * pxPerCm;
@@ -1519,26 +1583,40 @@
           || (inColorMarkers && saturation > 0.24)
         );
         if (shouldNeutralize) {
-          const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
-          const shade = clamp(luminance / Math.max(1, profile.paperLuminance), 0.74, 1.04);
-          const neutral = clamp(Math.round(profile.targetPaper * shade), 178, 248);
-          data[offset] = neutral; data[offset + 1] = neutral; data[offset + 2] = neutral;
+          data[offset] = 255; data[offset + 1] = 255; data[offset + 2] = 255;
           continue;
         }
         const original = [r, g, b];
+        const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        const automatic = original.map((value, channel) => clamp(value * profile.gains[channel], 0, 255));
+        const kind = canCalibrate
+          ? referenceKindForPixel(r, g, b, luminance, saturation, profile.paperLuminance)
+          : null;
+        const calibrated = kind
+          ? calibrateFromReference(original, referenceByName[kind], profile.sourcePaper, profile.targetPaper)
+          : null;
+        let output = automatic;
+        if (calibrated) {
+          output = automatic.map((value, channel) => (
+            value * (1 - calibrated.mix) + calibrated.mapped[channel] * calibrated.mix
+          ));
+        } else if (saturation <= 0.18) {
+          // The paper is the fifth calibration reference. Push neutral bright
+          // pixels to true white while leaving pencil and black writing intact.
+          const whiteStart = Math.max(112, profile.shadowPoint + 24);
+          const whiteEnd = Math.max(whiteStart + 24, profile.paperLuminance * 0.92);
+          const position = clamp((luminance - whiteStart) / Math.max(1, whiteEnd - whiteStart), 0, 1);
+          const whiteMix = position * position * (3 - 2 * position);
+          output = automatic.map(value => value * (1 - whiteMix) + 255 * whiteMix);
+        } else {
+          // Preserve colours that are not one of the printed references, but
+          // restore a small amount of saturation lost through camera exposure.
+          const balancedLuminance = automatic[0] * 0.2126 + automatic[1] * 0.7152 + automatic[2] * 0.0722;
+          const vibrance = 1.08;
+          output = automatic.map(value => balancedLuminance + (value - balancedLuminance) * vibrance);
+        }
         for (let channel = 0; channel < 3; channel += 1) {
-          const automatic = clamp(original[channel] * profile.gains[channel], 0, 255);
-          if (!matrix) {
-            data[offset + channel] = Math.round(automatic);
-            continue;
-          }
-          const nr = r / 255, ng = g / 255, nb = b / 255;
-          const calibrated = clamp((matrix[channel][0] * nr + matrix[channel][1] * ng
-            + matrix[channel][2] * nb + matrix[channel][3]) * 255, 0, 255);
-          // The printed targets refine hue, but automatic paper balance remains
-          // dominant so a damaged/dirty marker cannot wash out a whole scan.
-          const boundedCalibration = clamp(calibrated, automatic - 30, automatic + 30);
-          data[offset + channel] = Math.round(automatic * 0.76 + boundedCalibration * 0.24);
+          data[offset + channel] = Math.round(clamp(output[channel], 0, 255));
         }
       }
       if (y % 96 === 95) await yieldToBrowser();

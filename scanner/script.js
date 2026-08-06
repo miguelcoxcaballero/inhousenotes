@@ -383,12 +383,16 @@
     const framePaths = frame ? Object.fromEntries(Object.entries(frame.paths)
       .map(([name, points]) => [name, points.map(scaled)])) : null;
     const boxTopPath = frame?.box?.top?.map(scaled) || null;
+    const boxBottomPath = frame?.box?.bottom?.map(scaled) || null;
+    const boxPoints = frame?.box?.points?.map(scaled) || [];
+    const boxNormalized = frame?.box?.normalized || [];
     const cornerPoints = (frame?.corners || detection.stencilQuad || detection.pageQuad).map(scaled);
     E.processing.width = width;
     E.processing.height = height;
     E.processing.classList.add("active");
     E.processing.dataset.cornerCount = "4";
     E.processing.dataset.detectionMethod = detection.method || "unknown";
+    E.processing.dataset.yellowBoxPoints = String(boxPoints.length);
 
     const clear = () => {
       pctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -396,7 +400,7 @@
     };
     const lineWidth = Math.max(1.35, Math.min(width, height) * 0.0025);
     const primary = "#1a73e8";
-    const drawPath = (points, progress = 1, close = false, alpha = 1) => {
+    const drawPath = (points, progress = 1, close = false, alpha = 1, colour = primary) => {
       if (!points?.length) return;
       const pathPoints = close ? [...points, points[0]] : points;
       const segments = pathPoints.slice(0, -1).map((point, index) => {
@@ -406,7 +410,7 @@
       const total = segments.reduce((sum, segment) => sum + segment.length, 0);
       let remaining = total * progress;
       pctx.save();
-      pctx.strokeStyle = primary;
+      pctx.strokeStyle = colour;
       pctx.lineWidth = lineWidth;
       pctx.lineCap = "round";
       pctx.lineJoin = "round";
@@ -455,7 +459,6 @@
           const local = Math.max(0, Math.min(1, progress * 1.32 - index * .08));
           drawPath(path, easeOutCubic(local), false, .96);
         });
-        if (boxTopPath) drawPath(boxTopPath, easeOutCubic(Math.max(0, progress * 1.18 - .12)), false, .42);
       } else {
         drawPath(cornerPoints, progress, true, .9);
       }
@@ -478,6 +481,7 @@
     const frameU1 = 19.5 / 21;
     const frameV0 = 1.43 / 29.7;
     const frameV1 = 28.43 / 29.7;
+    const yellowBox = "#ffea00";
     const animatedPoint = (u, v, warpProgress = 0) => {
       const start = sourcePoint(u, v);
       const end = targetPoint(u, v);
@@ -485,6 +489,46 @@
         x: start.x + (end.x - start.x) * warpProgress,
         y: start.y + (end.y - start.y) * warpProgress
       };
+    };
+    const pagePointForBox = point => ({
+      u: frameU0 + point.u * (frameU1 - frameU0),
+      v: frameV0 + point.v * (frameV1 - frameV0)
+    });
+    const paintYellowBoxPoints = (points, progress = 1) => {
+      const visible = Math.max(0, Math.min(points.length, Math.ceil(points.length * progress)));
+      if (!visible) return;
+      const size = Math.max(1.8, lineWidth * 1.38);
+      pctx.save();
+      pctx.fillStyle = yellowBox;
+      pctx.globalAlpha = .98;
+      pctx.shadowColor = "rgba(255,234,0,.48)";
+      pctx.shadowBlur = Math.max(1.5, lineWidth * 1.1);
+      for (let index = 0; index < visible; index += 1) {
+        const point = points[index];
+        pctx.fillRect(point.x - size * .5, point.y - size * .5, size, size);
+      }
+      pctx.restore();
+    };
+    const drawYellowBoxSource = (progress = 1, warpProgress = null) => {
+      if (warpProgress == null) {
+        paintYellowBoxPoints(boxPoints, progress);
+      } else {
+        paintYellowBoxPoints(boxNormalized.map(point => {
+          const pagePoint = pagePointForBox(point);
+          return animatedPoint(pagePoint.u, pagePoint.v, warpProgress);
+        }), progress);
+      }
+      if (!boxPoints.length) {
+        if (boxTopPath) drawPath(boxTopPath, progress, false, .98, yellowBox);
+        if (boxBottomPath) drawPath(boxBottomPath, progress, false, .98, yellowBox);
+      }
+    };
+    const drawYellowBoxCanonical = (canvasWidth, canvasHeight) => {
+      const canonical = boxNormalized.map(point => {
+        const pagePoint = pagePointForBox(point);
+        return { x: pagePoint.u * canvasWidth, y: pagePoint.v * canvasHeight };
+      });
+      paintYellowBoxPoints(canonical, 1);
     };
     const drawGrid = (progress = 1, alpha = 1, warpProgress = 0) => {
       pctx.save();
@@ -544,27 +588,38 @@
     return {
       guard,
       async detection() {
-        setProcessingPhase("corners", { cornerCount: 4, method: detection.method });
-        await processingFrame(220, guard, value => drawCorners(easeOutCubic(value)));
+        setProcessingPhase("corners", {
+          cornerCount: 4,
+          method: detection.method,
+          yellowBoxPoints: boxPoints.length
+        });
+        await processingFrame(260, guard, value => {
+          clear();
+          drawYellowBoxSource(easeOutCubic(value));
+          drawCorners(easeOutCubic(value), false);
+        });
         setProcessingPhase("frame", {
           detected: !!frame,
           support: frame?.support || 0,
-          curvature: frame?.curvature || 0
+          curvature: frame?.curvature || 0,
+          yellowBoxPoints: boxPoints.length
         });
         await processingFrame(360, guard, value => {
           clear();
           drawFrame(easeInOutCubic(value));
+          drawYellowBoxSource(1);
           drawCorners(1, false);
         });
-        setProcessingPhase("mesh", { rows: 12, columns: 8, curved: !!frame });
+        setProcessingPhase("mesh", { rows: 12, columns: 8, curved: !!frame, yellowBoxPoints: boxPoints.length });
         await processingFrame(320, guard, value => {
           clear();
           drawFrame(1);
           drawGrid(easeOutCubic(value));
+          drawYellowBoxSource(1);
         });
       },
       async warp() {
-        setProcessingPhase("warp", { cornerCount: 4, realGeometry: true });
+        setProcessingPhase("warp", { cornerCount: 4, realGeometry: true, yellowBoxPoints: boxPoints.length });
         await processingFrame(390, guard, value => {
           const eased = easeInOutCubic(value);
           clear();
@@ -574,6 +629,7 @@
           drawWarpedSource(eased);
           pctx.globalAlpha = 1;
           drawGrid(1, 1 - eased * .36, eased);
+          drawYellowBoxSource(1, eased);
         });
       },
       beginColor() {
@@ -599,6 +655,7 @@
           pctx.globalAlpha = .72;
           pctx.fillRect(scanX, 0, Math.max(1, lineWidth * .7), outHeight);
           pctx.globalAlpha = 1;
+          drawYellowBoxCanonical(outWidth, outHeight);
         });
       },
       hold(canvas) {
@@ -606,7 +663,8 @@
         pctx.setTransform(1, 0, 0, 1, 0, 0);
         pctx.clearRect(0, 0, E.processing.width, E.processing.height);
         pctx.drawImage(canvas, 0, 0, E.processing.width, E.processing.height);
-        setProcessingPhase("complete", { realOutput: true });
+        drawYellowBoxCanonical(E.processing.width, E.processing.height);
+        setProcessingPhase("complete", { realOutput: true, yellowBoxPoints: boxPoints.length });
       }
     };
   }
@@ -2125,8 +2183,11 @@
     if (S.i < 0 || S.crop) return;
     const p = S.pages[S.i];
     if (!p) return;
+    const keepAnimationUntilStencil = !!S.stencil
+      && (!p.status || p.status === "done")
+      && E.processing.classList.contains("active");
     E.paper.style.display = "block";
-    clearProcessingAnimation();
+    if (!keepAnimationUntilStencil) clearProcessingAnimation();
     E.empty.style.display = "none";
     E.img.classList.remove("preview-pending");
     E.img.onload = null;
@@ -2143,7 +2204,14 @@
       $("stencilBtn").classList.toggle("active", !!S.stencil);
       E.stencil.style.display = "none";
       if (S.stencil && ready) {
-        applyStencilPreview(p);
+        const stencilReady = applyStencilPreview(p);
+        if (keepAnimationUntilStencil) {
+          Promise.resolve(stencilReady).finally(() => {
+            if (S.pages[S.i] === p && !S.crop) clearProcessingAnimation();
+          });
+        }
+      } else if (keepAnimationUntilStencil) {
+        clearProcessingAnimation();
       }
       fit();
       stageOffImmediate();
