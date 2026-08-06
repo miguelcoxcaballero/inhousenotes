@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.9",
-  "releaseNotes": "Inhouse Notes v5.11.9 / Android 1.0.10: production publishing now uses one explicit GitHub Pages workflow with a durable deployment queue and a longer backend timeout, while retaining the v5.11.8 scanner animation and calibrated colours."
+  "publishedAppVersion": "5.11.10",
+  "releaseNotes": "Inhouse Notes v5.11.10 / Android 1.0.10: GitHub Pages publishing now survives slow backend queues by monitoring deployments for up to 35 minutes without cancelling valid server-side work, while retaining the v5.11.8 scanner animation and calibrated colours."
 }
