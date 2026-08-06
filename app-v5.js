@@ -9749,6 +9749,26 @@
         // Downloads the PDF from Drive, extracts embedded strokes from the
         // PDF metadata (STROKES_Z), reconstructs the page state, and renders
         // all pages. Also restores the calendar config (IH_CAL keyword).
+        function resumeDetachedExitUploadAfterOpen(promises) {
+            if (!promises.length) return;
+            Promise.allSettled(promises).then(() => {
+                let attempts = 0;
+                const resumeWhenOpenSettles = () => {
+                    if (driveOpenInProgress && attempts < 40) {
+                        attempts += 1;
+                        setTimeout(resumeWhenOpenSettles, 125);
+                        return;
+                    }
+                    // A forced browser/app close can still leave a durable
+                    // marker. Retry it silently only when the newly opened
+                    // document is the same file; another file must never be
+                    // held behind the previous document's network request.
+                    resumePendingExitUploadIfNeeded();
+                };
+                setTimeout(resumeWhenOpenSettles, 0);
+            });
+        }
+
         async function openDriveFile(file) {
             if (!file || !file.id) return;
             if (driveOpenInProgress) return;
@@ -9758,64 +9778,13 @@
             // we just saved, the exact uploaded Blob is still in memory and wins
             // below without waiting for IndexedDB or copying it again.
             const persistedOpenPromise = loadDriveOpenCache(file.id);
-            if (lifecycleExitSavePromise) {
-                if (driveStatusEl) {
-                    driveStatusEl.textContent = 'Finishing the previous Drive save...';
-                }
-                showLoading('Finishing previous save...');
-                const lifecycleSaveCompleted = await lifecycleExitSavePromise;
-                hideLoading();
-                if (!lifecycleSaveCompleted && readPendingExitUpload()) {
-                    driveOpenInProgress = false;
-                    if (driveStatusEl) {
-                        driveStatusEl.textContent = 'The previous document is safe locally, but Drive has not finished saving it yet. Tap it again to retry.';
-                    }
-                    resumePendingExitUploadIfNeeded();
-                    return;
-                }
-            }
-            if (!backgroundExitSavePromise && backgroundExitSaveFailed && backgroundExitSaveFileId) {
-                forceFlushingForExit = true;
-                backgroundExitSavePromise = (async () => {
-                    await ensureDriveToken(false);
-                    driveDirty = true;
-                    await queueDriveSave(true);
-                    return !driveSaveInProgress
-                        && !driveSaveQueued
-                        && !driveDirty
-                        && !deferredDriveSave
-                        && driveContentVersion === driveUploadedContentVersion;
-                })()
-                    .then(success => {
-                        backgroundExitSaveFailed = !success;
-                        if (success) clearPendingExitUpload(backgroundExitSaveFileId);
-                        return success;
-                    })
-                    .catch(() => {
-                        backgroundExitSaveFailed = true;
-                        return false;
-                    })
-                    .finally(() => {
-                        forceFlushingForExit = false;
-                        backgroundExitSavePromise = null;
-                        if (!backgroundExitSaveFailed) backgroundExitSaveFileId = null;
-                    });
-            }
-            if (backgroundExitSavePromise) {
-                if (driveStatusEl) {
-                    driveStatusEl.textContent = 'Finishing the previous Drive save...';
-                }
-                showLoading('Finishing previous save...');
-                const previousSaveCompleted = await backgroundExitSavePromise;
-                hideLoading();
-                if (!previousSaveCompleted || backgroundExitSaveFailed) {
-                    driveOpenInProgress = false;
-                    if (driveStatusEl) {
-                        driveStatusEl.textContent = 'The previous document is safe locally, but Drive has not finished saving it yet. Tap it again to retry.';
-                    }
-                    return;
-                }
-            }
+            const detachedExitSaves = [lifecycleExitSavePromise, backgroundExitSavePromise]
+                .filter(Boolean);
+            // Opening a document starts a new session and aborts stale Drive
+            // work safely. Never block this action behind the removed
+            // previous-document screen; the durable marker can retry
+            // silently if this is the same document.
+            resumeDetachedExitUploadAfterOpen(detachedExitSaves);
             const preparedOpen = getPreparedDriveOpenCache(file);
             const cachedOpenPromise = preparedOpen
                 ? Promise.resolve(preparedOpen)
@@ -14282,7 +14251,18 @@
                         if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
                         if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
 
-                        const needsSave = hasPendingLocalSave() || hasPendingDriveSave() || driveDirty;
+                        const inheritedExitSaves = [lifecycleExitSavePromise, backgroundExitSavePromise]
+                            .filter(Boolean);
+                        const pendingExitMarker = readPendingExitUpload();
+                        const hasCurrentExitMarker = !!(
+                            pendingExitMarker?.fileId
+                            && pendingExitMarker.fileId === state.driveFileId
+                        );
+                        const needsSave = hasPendingLocalSave()
+                            || hasPendingDriveSave()
+                            || driveDirty
+                            || inheritedExitSaves.length > 0
+                            || hasCurrentExitMarker;
                         if (!needsSave && isDriveFullySaved()) {
                             backgroundExitSaveFailed = false;
                             backgroundExitSaveFileId = null;
@@ -14296,6 +14276,32 @@
                         showHomeSaveLoading(state.driveAutosave
                             ? 'Saving changes to Drive...'
                             : 'Saving changes...');
+                        // visibilitychange/pagehide may already have started a
+                        // lifecycle save. Absorb it into this Home transition
+                        // before creating the final checkpoint, so no save task
+                        // can leak into Home and block the next document open.
+                        if (inheritedExitSaves.length > 0) {
+                            await Promise.allSettled(inheritedExitSaves);
+                            // A detached background task may clear this flag in
+                            // its own finally block. Home still owns the final
+                            // checkpoint from this point until it is complete.
+                            forceFlushingForExit = true;
+                            if (isDriveFullySaved()) {
+                                backgroundExitSaveFailed = false;
+                                backgroundExitSaveFileId = null;
+                                clearPendingExitUpload(state.driveFileId || '');
+                                void clearPresence();
+                                showDriveHome();
+                                if (driveStatusEl) {
+                                    driveStatusEl.textContent = state.driveAutosave
+                                        ? 'All changes saved to Drive.'
+                                        : 'Changes saved locally.';
+                                }
+                                void refreshDriveFiles();
+                                await new Promise(resolve => requestAnimationFrame(resolve));
+                                return;
+                            }
+                        }
                         clearTimeout(state.saveTimeout);
                         state.saveTimeout = null;
                         const exitingFileId = state.driveFileId || null;
@@ -19945,7 +19951,8 @@
         function resumePendingExitUploadIfNeeded() {
             const marker = readPendingExitUpload();
             if (!marker || !driveAccessToken || pendingExitResumeInProgress
-                || backgroundExitSavePromise || lifecycleExitSavePromise) return;
+                || backgroundExitSavePromise || lifecycleExitSavePromise
+                || forceFlushingForExit) return;
             if (!state.driveFileId || state.driveFileId !== marker.fileId || !state.driveAutosave) return;
             pendingExitResumeInProgress = true;
             forceFlushingForExit = true;
