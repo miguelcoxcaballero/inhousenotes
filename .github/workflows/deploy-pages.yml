@@ -34,15 +34,118 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Upload static site
+        id: pages-artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: .
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/github-script@v8
+        timeout-minutes: 38
         with:
-          # The managed legacy workflow aborted after 10 minutes while the
-          # deployment was still queued. Allow GitHub's backend time to drain.
-          timeout: 1800000
-          reporting_interval: 10000
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const buildVersion = context.sha;
+            const artifactId = Number('${{ steps.pages-artifact.outputs.artifact_id }}');
+            const finalFailures = new Set([
+              'deployment_failed',
+              'deployment_content_failed',
+              'deployment_cancelled',
+              'deployment_lost'
+            ]);
+            const activeStatuses = new Set([
+              'deployment_queued',
+              'deployment_in_progress',
+              'deployment_attempt_error',
+              'unknown_status'
+            ]);
+            const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+            if (!Number.isSafeInteger(artifactId) || artifactId <= 0) {
+              throw new Error(`Invalid Pages artifact id: ${artifactId}`);
+            }
+
+            const readStatus = async deploymentId => {
+              const response = await github.request(
+                'GET /repos/{owner}/{repo}/pages/deployments/{deployment_id}',
+                { owner, repo, deployment_id: deploymentId }
+              );
+              return response.data;
+            };
+
+            let deploymentId = buildVersion;
+            let deployment;
+
+            // A re-run may already have a healthy deployment for this commit.
+            // Resume monitoring it instead of creating competing deployments.
+            try {
+              const existing = await readStatus(deploymentId);
+              if (existing.status === 'succeed') {
+                core.info('This commit is already deployed.');
+                core.setOutput('page_url', existing.page_url || 'https://inhousenotes.com/');
+                return;
+              }
+              if (activeStatuses.has(existing.status)) {
+                deployment = existing;
+                core.info(`Resuming Pages deployment ${deploymentId} (${existing.status}).`);
+              }
+            } catch (error) {
+              if (error.status !== 404) {
+                core.warning(`Could not inspect an earlier deployment: ${error.message}`);
+              }
+            }
+
+            if (!deployment) {
+              const oidcToken = await core.getIDToken();
+              const response = await github.request(
+                'POST /repos/{owner}/{repo}/pages/deployments',
+                {
+                  owner,
+                  repo,
+                  artifact_id: artifactId,
+                  pages_build_version: buildVersion,
+                  oidc_token: oidcToken
+                }
+              );
+              deployment = response.data;
+              deploymentId = deployment.id || deployment.status_url?.split('/').pop() || buildVersion;
+              core.setOutput('page_url', deployment.page_url || 'https://inhousenotes.com/');
+              core.info(`Created Pages deployment ${deploymentId}.`);
+            }
+
+            // actions/deploy-pages has a hard-coded 10-minute maximum and
+            // cancels a valid deployment when GitHub's queue is slow. Poll the
+            // same official API for longer and never cancel server-side work.
+            const deadline = Date.now() + 35 * 60 * 1000;
+            let consecutiveErrors = 0;
+            while (Date.now() < deadline) {
+              await sleep(10_000);
+              try {
+                deployment = await readStatus(deploymentId);
+                consecutiveErrors = 0;
+                core.info(`Pages status: ${deployment.status}`);
+
+                if (deployment.status === 'succeed') {
+                  core.setOutput('page_url', deployment.page_url || 'https://inhousenotes.com/');
+                  core.info('GitHub Pages deployment succeeded.');
+                  return;
+                }
+                if (finalFailures.has(deployment.status)) {
+                  throw new Error(`GitHub Pages finished with ${deployment.status}.`);
+                }
+              } catch (error) {
+                if (finalFailures.has(deployment?.status)) throw error;
+                consecutiveErrors += 1;
+                core.warning(`Pages status check ${consecutiveErrors} failed: ${error.message}`);
+                if (consecutiveErrors >= 20) {
+                  throw new Error('GitHub Pages status API failed 20 consecutive times.');
+                }
+              }
+            }
+
+            throw new Error(
+              'GitHub Pages is still processing after 35 minutes; the deployment was left active and was not cancelled.'
+            );
