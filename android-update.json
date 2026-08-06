@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.13",
-  "releaseNotes": "Inhouse Notes v5.11.13 / Android 1.0.10: Scanner yellow-border detection now adapts to faded, blurred, shadowed and warm photos, uses the four colour markers and lower box strip to reject overlapping sheets, and avoids false borders on warm paper or wooden backgrounds."
+  "publishedAppVersion": "5.11.14",
+  "releaseNotes": "Inhouse Notes v5.11.14 / Android 1.0.10: The scanner now reconstructs the full yellow frame, both lower calibration boxes and physical paper edges using the four colour markers, a curved mesh and an adaptive precision pass validated against supplied and synthetic photos."
 }
