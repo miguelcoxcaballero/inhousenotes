@@ -382,6 +382,7 @@
     const frame = detection.frame;
     const framePaths = frame ? Object.fromEntries(Object.entries(frame.paths)
       .map(([name, points]) => [name, points.map(scaled)])) : null;
+    const boxTopPath = frame?.box?.top?.map(scaled) || null;
     const cornerPoints = (frame?.corners || detection.stencilQuad || detection.pageQuad).map(scaled);
     E.processing.width = width;
     E.processing.height = height;
@@ -454,6 +455,7 @@
           const local = Math.max(0, Math.min(1, progress * 1.32 - index * .08));
           drawPath(path, easeOutCubic(local), false, .96);
         });
+        if (boxTopPath) drawPath(boxTopPath, easeOutCubic(Math.max(0, progress * 1.18 - .12)), false, .42);
       } else {
         drawPath(cornerPoints, progress, true, .9);
       }
@@ -472,6 +474,10 @@
       { x: left + targetWidth, y: top + targetHeight }, { x: left, y: top + targetHeight }
     ];
     const targetPoint = (u, v) => bilinearPreview(targetQuad, u, v);
+    const frameU0 = 1.5 / 21;
+    const frameU1 = 19.5 / 21;
+    const frameV0 = 1.43 / 29.7;
+    const frameV1 = 28.43 / 29.7;
     const animatedPoint = (u, v, warpProgress = 0) => {
       const start = sourcePoint(u, v);
       const end = targetPoint(u, v);
@@ -490,19 +496,21 @@
       const visibleColumns = Math.ceil((columns + 1) * progress);
       const visibleRows = Math.ceil((rows + 1) * progress);
       for (let column = 0; column < visibleColumns; column += 1) {
-        const u = column / columns;
+        const u = frameU0 + (frameU1 - frameU0) * (column / columns);
         pctx.beginPath();
         for (let step = 0; step <= 18; step += 1) {
-          const point = animatedPoint(u, step / 18, warpProgress);
+          const v = frameV0 + (frameV1 - frameV0) * (step / 18);
+          const point = animatedPoint(u, v, warpProgress);
           if (!step) pctx.moveTo(point.x, point.y); else pctx.lineTo(point.x, point.y);
         }
         pctx.stroke();
       }
       for (let row = 0; row < visibleRows; row += 1) {
-        const v = row / rows;
+        const v = frameV0 + (frameV1 - frameV0) * (row / rows);
         pctx.beginPath();
         for (let step = 0; step <= 18; step += 1) {
-          const point = animatedPoint(step / 18, v, warpProgress);
+          const u = frameU0 + (frameU1 - frameU0) * (step / 18);
+          const point = animatedPoint(u, v, warpProgress);
           if (!step) pctx.moveTo(point.x, point.y); else pctx.lineTo(point.x, point.y);
         }
         pctx.stroke();
@@ -513,11 +521,11 @@
       const columns = MEM.low ? 6 : 8;
       const rows = MEM.low ? 8 : 12;
       for (let row = 0; row < rows; row += 1) {
-        const v0 = row / rows;
-        const v1 = (row + 1) / rows;
+        const v0 = frameV0 + (frameV1 - frameV0) * (row / rows);
+        const v1 = frameV0 + (frameV1 - frameV0) * ((row + 1) / rows);
         for (let column = 0; column < columns; column += 1) {
-          const u0 = column / columns;
-          const u1 = (column + 1) / columns;
+          const u0 = frameU0 + (frameU1 - frameU0) * (column / columns);
+          const u1 = frameU0 + (frameU1 - frameU0) * ((column + 1) / columns);
           const sTL = sourcePointOriginal(u0, v0);
           const sBL = sourcePointOriginal(u0, v1);
           const sTR = sourcePointOriginal(u1, v0);

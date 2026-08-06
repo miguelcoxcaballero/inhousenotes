@@ -376,7 +376,7 @@
     return Number.isFinite(u) && Number.isFinite(v) ? { u, v } : null;
   }
 
-  function traceFrameSide(points, axis, perpendicular, expected, sampleCount = 19) {
+  function traceFrameSide(points, axis, perpendicular, expected, sampleCount = 19, maxDeviation = 0.052) {
     const values = new Array(sampleCount).fill(null);
     const supported = new Array(sampleCount).fill(false);
     const window = 0.72 / (sampleCount - 1);
@@ -384,7 +384,7 @@
       const position = sample / (sampleCount - 1);
       const candidates = points
         .filter(point => Math.abs(point[axis] - position) <= window
-          && Math.abs(point[perpendicular] - expected) <= 0.13)
+          && Math.abs(point[perpendicular] - expected) <= maxDeviation)
         .map(point => point[perpendicular])
         .sort((a, b) => a - b);
       if (!candidates.length) continue;
@@ -397,14 +397,23 @@
       const best = clusters.sort((first, second) => {
         const firstMedian = first[Math.floor(first.length / 2)];
         const secondMedian = second[Math.floor(second.length / 2)];
-        const firstScore = first.length * 3.2 - Math.abs(firstMedian - expected) * 48;
-        const secondScore = second.length * 3.2 - Math.abs(secondMedian - expected) * 48;
+        const firstScore = Math.min(12, first.length) * 3.2 - Math.abs(firstMedian - expected) * 260;
+        const secondScore = Math.min(12, second.length) * 3.2 - Math.abs(secondMedian - expected) * 260;
         return secondScore - firstScore;
       })[0];
+      if (best.length < 2) continue;
       values[sample] = best[Math.floor(best.length / 2)];
-      supported[sample] = best.length >= 1;
+      supported[sample] = true;
     }
 
+    const support = supported.filter(Boolean).length / sampleCount;
+    if (support < 0.28) {
+      return {
+        values: values.map(() => expected),
+        supported,
+        support
+      };
+    }
     for (let index = 0; index < sampleCount; index += 1) {
       if (values[index] != null) continue;
       let before = index - 1;
@@ -414,18 +423,26 @@
       if (before >= 0 && after < sampleCount) {
         const mix = (index - before) / (after - before);
         values[index] = values[before] + (values[after] - values[before]) * mix;
-      } else if (before >= 0) values[index] = values[before];
-      else if (after < sampleCount) values[index] = values[after];
-      else values[index] = expected;
+      } else values[index] = expected;
     }
 
-    const smoothed = values.map((value, index) => {
-      if (!index || index === values.length - 1) return value;
-      return values[index - 1] * 0.2 + value * 0.6 + values[index + 1] * 0.2;
+    let smoothed = values.map((value, index) => {
+      const neighborhood = values.slice(Math.max(0, index - 2), Math.min(values.length, index + 3)).slice().sort((a, b) => a - b);
+      return neighborhood[Math.floor(neighborhood.length / 2)];
     });
+    for (let pass = 0; pass < 3; pass += 1) {
+      smoothed = smoothed.map((value, index) => {
+        if (!index || index === smoothed.length - 1) return expected;
+        return smoothed[index - 1] * 0.22 + value * 0.56 + smoothed[index + 1] * 0.22;
+      });
+    }
+    smoothed = smoothed.map((value, index) => index === 0 || index === sampleCount - 1
+      ? expected
+      : expected + clamp(value - expected, -0.032, 0.032));
     return {
       values: smoothed,
-      support: supported.filter(Boolean).length / sampleCount
+      supported,
+      support
     };
   }
 
@@ -443,8 +460,10 @@
     }
     if (normalizedYellow.length < 48) return null;
 
+    const boxTopExpected = 1 - 0.75 / 27;
     const top = traceFrameSide(normalizedYellow, "u", "v", 0);
-    const bottom = traceFrameSide(normalizedYellow, "u", "v", 1);
+    const bottom = traceFrameSide(normalizedYellow, "u", "v", 1, 19, 0.04);
+    const boxTop = traceFrameSide(normalizedYellow, "u", "v", boxTopExpected, 19, 0.035);
     const left = traceFrameSide(normalizedYellow, "v", "u", 0);
     const right = traceFrameSide(normalizedYellow, "v", "u", 1);
     const sideSupports = [top.support, right.support, bottom.support, left.support];
@@ -452,20 +471,29 @@
     const support = sideSupports.reduce((sum, value) => sum + value, 0) / sideSupports.length;
     if (supportedSides < 2 || support < 0.2) return null;
 
+    // The repeated square row is a second observation of the same paper bend.
+    // Pairing its top with the outer baseline prevents either line from being
+    // mistaken for the other, while the vertical square teeth never become a
+    // candidate for the page boundary.
     const count = top.values.length;
+    for (let index = 1; index < count - 1; index += 1) {
+      const deltas = [];
+      if (bottom.supported[index]) deltas.push(bottom.values[index] - 1);
+      if (boxTop.supported[index]) deltas.push(boxTop.values[index] - boxTopExpected);
+      if (!deltas.length) continue;
+      deltas.sort((a, b) => a - b);
+      const sharedDelta = deltas.length === 2 ? (deltas[0] + deltas[1]) * 0.5 : deltas[0];
+      const boundedDelta = clamp(sharedDelta, -0.022, 0.022);
+      bottom.values[index] = 1 + boundedDelta;
+      boxTop.values[index] = boxTopExpected + boundedDelta;
+    }
+
     const topNormalized = top.values.map((value, index) => ({ u: index / (count - 1), v: value }));
     const bottomNormalized = bottom.values.map((value, index) => ({ u: index / (count - 1), v: value }));
     const leftNormalized = left.values.map((value, index) => ({ u: value, v: index / (count - 1) }));
     const rightNormalized = right.values.map((value, index) => ({ u: value, v: index / (count - 1) }));
-    const averageCorner = (...points) => ({
-      u: points.reduce((sum, point) => sum + point.u, 0) / points.length,
-      v: points.reduce((sum, point) => sum + point.v, 0) / points.length
-    });
     const cornersNormalized = [
-      averageCorner(topNormalized[0], leftNormalized[0]),
-      averageCorner(topNormalized[count - 1], rightNormalized[0]),
-      averageCorner(bottomNormalized[count - 1], rightNormalized[count - 1]),
-      averageCorner(bottomNormalized[0], leftNormalized[count - 1])
+      { u: 0, v: 0 }, { u: 1, v: 0 }, { u: 1, v: 1 }, { u: 0, v: 1 }
     ];
     topNormalized[0] = leftNormalized[0] = cornersNormalized[0];
     topNormalized[count - 1] = rightNormalized[0] = cornersNormalized[1];
@@ -479,6 +507,10 @@
       bottom: bottomNormalized.map(toSource),
       left: leftNormalized.map(toSource)
     };
+    const boxTopPath = boxTop.values.map((value, index) => toSource({
+      u: index / (count - 1),
+      v: value
+    }));
     const corners = cornersNormalized.map(toSource);
     const curvatureFor = (values, start, end) => Math.max(...values.map((value, index) => {
       const expected = start + (end - start) * (index / (values.length - 1));
@@ -492,6 +524,11 @@
     );
     return {
       paths,
+      box: {
+        top: boxTopPath,
+        bottom: paths.bottom,
+        support: boxTop.support
+      },
       corners,
       samples: count,
       sideSupports,
@@ -654,7 +691,11 @@
       const delta = second[independentKey] - first[independentKey];
       if (Math.abs(delta) < options.minimumSpan * 0.34) continue;
       const a = (second[dependentKey] - first[dependentKey]) / delta;
-      if (Math.abs(a) > 0.72) continue;
+      // Coordinates are already normalized through the detected paper quad;
+      // stencil borders must therefore stay close to horizontal/vertical.
+      // A steeper candidate is almost always handwriting or a neighbouring
+      // sheet crossing the expected band (not a perspective effect).
+      if (Math.abs(a) > (options.maximumSlope || 0.12)) continue;
       const b = first[dependentKey] - a * first[independentKey];
       const inliers = [];
       let minimum = Infinity;
@@ -973,9 +1014,20 @@
       minimumSpan: Math.max(0.36, geometryScale * 0.5),
       expected: topExpected
     });
+    const sideMatchesAnchor = (line, anchor) => line
+      && Math.abs(line.a * bottomAtCenter + line.b - anchor) <= 0.085
+      && Math.abs(line.a * topExpected + line.b - anchor) <= 0.13;
+    if (!sideMatchesAnchor(leftLine, leftAnchor)) leftLine = null;
+    if (!sideMatchesAnchor(rightLine, rightAnchor)) rightLine = null;
     // The printed marker pattern fully determines scale and orientation. When a
     // border is hidden by another sheet, synthesize only that missing line from
     // the calibrated geometry instead of falling back to the surrounding desk.
+    if (!leftLine && rightLine) {
+      leftLine = { a: rightLine.a, b: leftAnchor - rightLine.a * bottomAtCenter, count: 0, support: 0, span: 0 };
+    }
+    if (!rightLine && leftLine) {
+      rightLine = { a: leftLine.a, b: rightAnchor - leftLine.a * bottomAtCenter, count: 0, support: 0, span: 0 };
+    }
     leftLine ||= { a: 0, b: leftAnchor, count: 0, support: 0, span: 0 };
     rightLine ||= { a: 0, b: rightAnchor, count: 0, support: 0, span: 0 };
     topLine ||= { a: stripLine.a, b: topExpected - stripLine.a * 0.5, count: 0, support: 0, span: 0 };
@@ -1100,7 +1152,12 @@
         name,
         points.map(point => ({ x: point.x / scale, y: point.y / scale }))
       ])),
-      corners: frame.corners.map(point => ({ x: point.x / scale, y: point.y / scale }))
+      corners: frame.corners.map(point => ({ x: point.x / scale, y: point.y / scale })),
+      box: frame.box ? {
+        ...frame.box,
+        top: frame.box.top.map(point => ({ x: point.x / scale, y: point.y / scale })),
+        bottom: frame.box.bottom.map(point => ({ x: point.x / scale, y: point.y / scale }))
+      } : null
     } : null;
     const finish = result => {
       canvas.width = 0;
@@ -1109,8 +1166,7 @@
     };
     if (markerGuided) {
       const tracedFrame = traceYellowFrame(markerGuided.stencilQuad, width, height, mask);
-      const tracedCorners = tracedFrame?.confidence >= 0.18 ? tracedFrame.corners : markerGuided.stencilQuad;
-      stencilQuad = tracedCorners.map(point => ({ x: point.x / scale, y: point.y / scale }));
+      stencilQuad = markerGuided.stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
       return finish({
         pageQuad: extrapolateStencil(stencilQuad),
         stencilQuad,
@@ -1121,8 +1177,7 @@
     }
     if (confidence >= 0.24) {
       const tracedFrame = traceYellowFrame(stencilQuad, width, height, mask);
-      const tracedCorners = tracedFrame?.confidence >= 0.18 ? tracedFrame.corners : stencilQuad;
-      stencilQuad = tracedCorners.map(point => ({ x: point.x / scale, y: point.y / scale }));
+      stencilQuad = stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
       return finish({
         pageQuad: extrapolateStencil(stencilQuad),
         stencilQuad,
@@ -1180,14 +1235,18 @@
     if (useCurvedFrame) {
       const columns = 12;
       const rows = 18;
+      const frameU0 = 1.5 / 21;
+      const frameU1 = 19.5 / 21;
+      const frameV0 = 1.43 / 29.7;
+      const frameV1 = 28.43 / 29.7;
       for (let row = 0; row < rows; row += 1) {
-        const v0 = row / rows;
-        const v1 = (row + 1) / rows;
+        const v0 = frameV0 + (frameV1 - frameV0) * (row / rows);
+        const v1 = frameV0 + (frameV1 - frameV0) * ((row + 1) / rows);
         const y0 = Math.floor(v0 * output.height) - 0.35;
         const y1 = Math.ceil(v1 * output.height) + 0.35;
         for (let column = 0; column < columns; column += 1) {
-          const u0 = column / columns;
-          const u1 = (column + 1) / columns;
+          const u0 = frameU0 + (frameU1 - frameU0) * (column / columns);
+          const u1 = frameU0 + (frameU1 - frameU0) * ((column + 1) / columns);
           const sourceTopLeft = mapFramePoint(frame, u0, v0);
           const sourceBottomLeft = mapFramePoint(frame, u0, v1);
           const sourceTopRight = mapFramePoint(frame, u1, v0);
