@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.6');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.7');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -237,6 +237,29 @@ test('scanner follows a curved yellow frame and straightens it with a real mesh'
     context.quadraticCurveTo(452, 1162, 106, 1092);
     context.quadraticCurveTo(70, 618, 125, 145);
     context.stroke();
+    // The square row is a separate, parallel observation of the bent lower
+    // border. Dense vertical teeth must never be mistaken for the page edge.
+    const curvedBottomPoint = t => ({
+      x: (1 - t) * (1 - t) * 797 + 2 * (1 - t) * t * 452 + t * t * 106,
+      y: (1 - t) * (1 - t) * 1110 + 2 * (1 - t) * t * 1162 + t * t * 1092
+    });
+    context.beginPath();
+    context.moveTo(797, 1086);
+    context.quadraticCurveTo(452, 1138, 106, 1068);
+    for (let step = 0; step <= 24; step += 1) {
+      const point = curvedBottomPoint(step / 24);
+      context.moveTo(point.x, point.y);
+      context.lineTo(point.x, point.y - 24);
+    }
+    context.stroke();
+    // Strong yellow geometry from neighbouring material is deliberately close
+    // to the photo edges and must be rejected as a frame candidate.
+    context.beginPath();
+    context.moveTo(22, 42);
+    context.lineTo(875, 58);
+    context.moveTo(20, 1218);
+    context.lineTo(882, 1228);
+    context.stroke();
     context.strokeStyle = '#315cab';
     context.lineWidth = 5;
     context.beginPath();
@@ -265,6 +288,7 @@ test('scanner follows a curved yellow frame and straightens it with a real mesh'
       method: detection.method,
       support: detection.frame?.support || 0,
       curvature: detection.frame?.curvature || 0,
+      boxSupport: detection.frame?.box?.support || 0,
       rows
     };
   });
@@ -272,6 +296,7 @@ test('scanner follows a curved yellow frame and straightens it with a real mesh'
   expect(result.method).toBe('stencil');
   expect(result.support).toBeGreaterThan(0.45);
   expect(result.curvature).toBeGreaterThan(0.012);
+  expect(result.boxSupport).toBeGreaterThan(0.65);
   expect(result.rows.every(Number.isFinite)).toBe(true);
   expect(Math.max(...result.rows) - Math.min(...result.rows)).toBeLessThanOrEqual(4);
 });
