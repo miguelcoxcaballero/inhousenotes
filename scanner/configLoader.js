@@ -84,9 +84,9 @@
     // Maps to yellow target color shift
     const hueShift = normCentered(cfg.hue);
     const TARGET_YELLOW = {
-      R: 240 + (hueShift * 15) | 0, // 225-255
-      G: 219 + (hueShift * 20) | 0, // 199-239
-      B: 76 - (hueShift * 30) | 0   // 46-106
+      R: Math.max(238, Math.min(255, Math.round(255 + hueShift * 12))),
+      G: Math.max(198, Math.min(242, Math.round(222 + hueShift * 20))),
+      B: Math.max(0, Math.min(28, Math.round(-hueShift * 24)))
     };
 
     // --- COLOR CHANNELS ---
@@ -244,10 +244,10 @@
       },
 
       CALIBRATION_TARGETS: {
-        red:   [255, 0, 0],
-        blue:  [0, 0, 255],
+        red:   [232, 16, 16],
+        blue:  [0, 47, 217],
         green: [110, 255, 18],
-        black: [0, 0, 0],
+        black: [77, 77, 77],
         white: [255, 255, 255]
       },
 

@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.7",
-  "releaseNotes": "Inhouse Notes v5.11.7 / Android 1.0.10: scanner frame detection now treats the lower square box as a separate geometric reference, rejects nearby yellow lines and produces clean A4 scans in cluttered, curved and rotated photos."
+  "publishedAppVersion": "5.11.8",
+  "releaseNotes": "Inhouse Notes v5.11.8 / Android 1.0.10: scanner processing now keeps every detected lower yellow box pixel highlighted through the full animation, then calibrates paper and ink from the four printed colour dots, yellow frame and white sheet for vivid brush-matched colours."
 }

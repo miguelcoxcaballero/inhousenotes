@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.7');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.8');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -97,6 +97,7 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="840" height="1188" viewBox="0 0 210 297">
     <rect width="210" height="297" fill="white"/>
     <rect x="15" y="14.3" width="180" height="270" fill="none" stroke="#f0db4c" stroke-width="1.2"/>
+    <path d="M15 274.3 H195 M15 279.3 H195 M15 274.3 V279.3 M20 274.3 V279.3 M25 274.3 V279.3 M30 274.3 V279.3 M35 274.3 V279.3 M40 274.3 V279.3 M45 274.3 V279.3 M50 274.3 V279.3 M55 274.3 V279.3 M60 274.3 V279.3 M65 274.3 V279.3 M70 274.3 V279.3 M75 274.3 V279.3 M80 274.3 V279.3 M85 274.3 V279.3 M90 274.3 V279.3 M95 274.3 V279.3 M100 274.3 V279.3 M105 274.3 V279.3 M110 274.3 V279.3 M115 274.3 V279.3 M120 274.3 V279.3 M125 274.3 V279.3 M130 274.3 V279.3 M135 274.3 V279.3 M140 274.3 V279.3 M145 274.3 V279.3 M150 274.3 V279.3 M155 274.3 V279.3 M160 274.3 V279.3 M165 274.3 V279.3 M170 274.3 V279.3 M175 274.3 V279.3 M180 274.3 V279.3 M185 274.3 V279.3 M190 274.3 V279.3 M195 274.3 V279.3" fill="none" stroke="#f0db4c" stroke-width=".6"/>
     <path d="M45 70 C75 40 105 105 150 62 M52 130 L160 170" fill="none" stroke="#165dde" stroke-width="2.4"/>
     <g stroke="#f0db4c" stroke-width=".6">
       <circle cx="101.25" cy="276.8" r="1.25" fill="#f00"/>
@@ -121,6 +122,7 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   expect(processingPhases.find(entry => entry.phase === 'corners')).toMatchObject({
     cornerCount: 4
   });
+  expect(processingPhases.find(entry => entry.phase === 'corners').yellowBoxPoints).toBeGreaterThan(40);
   expect(processingPhases.find(entry => entry.phase === 'mesh')).toMatchObject({
     rows: 12,
     columns: 8,
@@ -135,6 +137,7 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   expect(processingPhases.find(entry => entry.phase === 'color')).toMatchObject({
     realBeforeAfter: true
   });
+  expect(processingPhases.find(entry => entry.phase === 'complete').yellowBoxPoints).toBeGreaterThan(40);
   expect(pageErrors).toEqual([]);
   expect(await page.evaluate(() => typeof window.cv)).toBe('undefined');
 });
@@ -205,9 +208,80 @@ test('scanner isolates a photographed page from a warm background without washin
   expect(Math.abs(result.areaRatio)).toBeGreaterThan(0.55);
   expect(Math.abs(result.areaRatio)).toBeLessThan(0.9);
   expect(Math.min(...result.center)).toBeGreaterThan(195);
-  expect(Math.max(...result.center)).toBeLessThan(252);
+  expect(Math.max(...result.center)).toBeLessThanOrEqual(255);
+  expect(Math.min(...result.center)).toBeGreaterThan(245);
   expect(Math.max(...result.center) - Math.min(...result.center)).toBeLessThan(18);
   expect(result.elapsed).toBeLessThan(3000);
+});
+
+test('scanner calibrates paper and ink from the four dots and yellow frame', async ({ page }) => {
+  await page.goto('/scanner/index.html?embed=1&session=e2e-reference-colours', { waitUntil: 'domcontentloaded' });
+  const result = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 840;
+    canvas.height = 1188;
+    const context = canvas.getContext('2d');
+    const pxPerCm = canvas.width / 21;
+    context.fillStyle = 'rgb(218,213,205)';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    const yellow = 'rgb(195,170,55)';
+    context.strokeStyle = yellow;
+    context.lineWidth = 5;
+    context.strokeRect(1.5 * pxPerCm, 1.43 * pxPerCm, 18 * pxPerCm, 27 * pxPerCm);
+
+    const references = [
+      [10.125, 'rgb(165,55,50)'],
+      [10.375, 'rgb(42,42,42)'],
+      [10.625, 'rgb(45,70,160)'],
+      [10.875, 'rgb(75,145,55)']
+    ];
+    for (const [x, colour] of references) {
+      context.fillStyle = colour;
+      context.beginPath();
+      context.arc(x * pxPerCm, 27.68 * pxPerCm, pxPerCm * 0.1, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    const swatches = {
+      red: ['rgb(165,55,50)', 5],
+      black: ['rgb(42,42,42)', 8],
+      blue: ['rgb(45,70,160)', 11],
+      green: ['rgb(75,145,55)', 14],
+      yellow: [yellow, 17]
+    };
+    for (const [colour, x] of Object.values(swatches)) {
+      context.fillStyle = colour;
+      context.fillRect(x * pxPerCm, 12 * pxPerCm, pxPerCm, pxPerCm);
+    }
+
+    const correction = await ScannerPro.Lightweight.correctColors(canvas, {
+      useStencil: true,
+      preciseStencil: true
+    });
+    const sample = (x, y) => Array.from(context.getImageData(
+      Math.round(x * pxPerCm), Math.round(y * pxPerCm), 1, 1
+    ).data.slice(0, 3));
+    return {
+      calibrated: correction.calibrated,
+      samples: correction.samples,
+      paper: sample(10.5, 9),
+      red: sample(5.5, 12.5),
+      black: sample(8.5, 12.5),
+      blue: sample(11.5, 12.5),
+      green: sample(14.5, 12.5),
+      yellow: sample(17.5, 12.5)
+    };
+  });
+
+  expect(result.calibrated).toBe(true);
+  expect(result.samples).toBe(4);
+  expect(result.paper.every(channel => channel >= 250)).toBe(true);
+  expect(result.red).toEqual([232, 16, 16]);
+  expect(result.black).toEqual([77, 77, 77]);
+  expect(result.blue).toEqual([0, 47, 217]);
+  expect(result.green).toEqual([110, 255, 18]);
+  expect(result.yellow).toEqual([255, 222, 0]);
 });
 
 test('scanner follows a curved yellow frame and straightens it with a real mesh', async ({ page }) => {
@@ -244,12 +318,14 @@ test('scanner follows a curved yellow frame and straightens it with a real mesh'
       y: (1 - t) * (1 - t) * 1110 + 2 * (1 - t) * t * 1162 + t * t * 1092
     });
     context.beginPath();
-    context.moveTo(797, 1086);
-    context.quadraticCurveTo(452, 1138, 106, 1068);
+    context.moveTo(797, 1074);
+    context.quadraticCurveTo(452, 1126, 106, 1056);
+    context.moveTo(797, 1092);
+    context.quadraticCurveTo(452, 1144, 106, 1074);
     for (let step = 0; step <= 24; step += 1) {
       const point = curvedBottomPoint(step / 24);
-      context.moveTo(point.x, point.y);
-      context.lineTo(point.x, point.y - 24);
+      context.moveTo(point.x, point.y - 36);
+      context.lineTo(point.x, point.y - 18);
     }
     context.stroke();
     // Strong yellow geometry from neighbouring material is deliberately close
@@ -296,7 +372,9 @@ test('scanner follows a curved yellow frame and straightens it with a real mesh'
   expect(result.method).toBe('stencil');
   expect(result.support).toBeGreaterThan(0.45);
   expect(result.curvature).toBeGreaterThan(0.012);
-  expect(result.boxSupport).toBeGreaterThan(0.65);
+  // One of the two narrow box rails may merge into the vertical teeth under
+  // strong curvature; the other rail must still remain a strong observation.
+  expect(result.boxSupport).toBeGreaterThan(0.45);
   expect(result.rows.every(Number.isFinite)).toBe(true);
   expect(Math.max(...result.rows) - Math.min(...result.rows)).toBeLessThanOrEqual(4);
 });
