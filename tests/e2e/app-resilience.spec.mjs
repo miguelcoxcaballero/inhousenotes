@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.5');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.6');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -116,14 +116,18 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   await expect(page.locator('#processAnimationLayer')).toBeHidden();
   const processingPhases = await page.evaluate(() => window.__scannerProcessingPhases);
   expect(processingPhases.map(entry => entry.phase)).toEqual([
-    'corners', 'edges', 'mesh', 'warp', 'color', 'complete'
+    'corners', 'frame', 'mesh', 'warp', 'color', 'complete'
   ]);
   expect(processingPhases.find(entry => entry.phase === 'corners')).toMatchObject({
     cornerCount: 4
   });
   expect(processingPhases.find(entry => entry.phase === 'mesh')).toMatchObject({
     rows: 12,
-    columns: 12
+    columns: 8,
+    curved: true
+  });
+  expect(processingPhases.find(entry => entry.phase === 'frame')).toMatchObject({
+    detected: true
   });
   expect(processingPhases.find(entry => entry.phase === 'warp')).toMatchObject({
     realGeometry: true
@@ -172,7 +176,7 @@ test('scanner isolates a photographed page from a warm background without washin
 
     const started = performance.now();
     const detection = ScannerPro.Lightweight.detectPage(canvas);
-    const output = await ScannerPro.Lightweight.warp(canvas, detection.pageQuad);
+    const output = await ScannerPro.Lightweight.warp(canvas, detection.pageQuad, detection.frame);
     const preciseStencil = detection.method === 'stencil' || detection.method === 'marker-guided';
     const correction = await ScannerPro.Lightweight.correctColors(output, {
       useStencil: preciseStencil,
@@ -184,6 +188,7 @@ test('scanner isolates a photographed page from a warm background without washin
     return {
       method: detection.method,
       confidence: detection.confidence,
+      frameSupport: detection.frame?.support || 0,
       areaRatio: detection.pageQuad.reduce((area, point, index, points) => {
         const next = points[(index + 1) % points.length];
         return area + point.x * next.y - next.x * point.y;
@@ -196,12 +201,79 @@ test('scanner isolates a photographed page from a warm background without washin
 
   expect(result.method).toBe('stencil');
   expect(result.confidence).toBeGreaterThan(0.5);
+  expect(result.frameSupport).toBeGreaterThan(0.45);
   expect(Math.abs(result.areaRatio)).toBeGreaterThan(0.55);
   expect(Math.abs(result.areaRatio)).toBeLessThan(0.9);
   expect(Math.min(...result.center)).toBeGreaterThan(195);
   expect(Math.max(...result.center)).toBeLessThan(252);
   expect(Math.max(...result.center) - Math.min(...result.center)).toBeLessThan(18);
   expect(result.elapsed).toBeLessThan(3000);
+});
+
+test('scanner follows a curved yellow frame and straightens it with a real mesh', async ({ page }) => {
+  await page.goto('/scanner/index.html?embed=1&session=e2e-curved-frame', { waitUntil: 'domcontentloaded' });
+  const result = await page.evaluate(async () => {
+    const source = document.createElement('canvas');
+    source.width = 900;
+    source.height = 1250;
+    const context = source.getContext('2d');
+    context.fillStyle = '#8b684b';
+    context.fillRect(0, 0, source.width, source.height);
+    context.fillStyle = '#ece9e2';
+    context.beginPath();
+    context.moveTo(82, 64);
+    context.lineTo(822, 79);
+    context.lineTo(850, 1191);
+    context.lineTo(58, 1170);
+    context.closePath();
+    context.fill();
+    context.strokeStyle = '#efd84a';
+    context.lineWidth = 7;
+    context.lineCap = 'round';
+    context.beginPath();
+    context.moveTo(125, 145);
+    context.quadraticCurveTo(455, 92, 780, 151);
+    context.quadraticCurveTo(824, 620, 797, 1110);
+    context.quadraticCurveTo(452, 1162, 106, 1092);
+    context.quadraticCurveTo(70, 618, 125, 145);
+    context.stroke();
+    context.strokeStyle = '#315cab';
+    context.lineWidth = 5;
+    context.beginPath();
+    context.moveTo(220, 410);
+    context.bezierCurveTo(390, 350, 520, 510, 690, 425);
+    context.stroke();
+
+    const detection = ScannerPro.Lightweight.detectPage(source);
+    const output = await ScannerPro.Lightweight.warp(source, detection.pageQuad, detection.frame);
+    const data = output.getContext('2d').getImageData(0, 0, output.width, output.height).data;
+    const expectedY = Math.round(output.height * (1.43 / 29.7));
+    const rows = [];
+    for (const ratio of [0.18, 0.32, 0.5, 0.68, 0.82]) {
+      const x = Math.round(output.width * ratio);
+      let best = null;
+      for (let y = expectedY - 22; y <= expectedY + 22; y += 1) {
+        const offset = (y * output.width + x) * 4;
+        const r = data[offset], g = data[offset + 1], b = data[offset + 2];
+        if (r > 150 && g > 135 && b < 145 && r + g - b * 2 > 130) {
+          if (best == null || Math.abs(y - expectedY) < Math.abs(best - expectedY)) best = y;
+        }
+      }
+      rows.push(best);
+    }
+    return {
+      method: detection.method,
+      support: detection.frame?.support || 0,
+      curvature: detection.frame?.curvature || 0,
+      rows
+    };
+  });
+
+  expect(result.method).toBe('stencil');
+  expect(result.support).toBeGreaterThan(0.45);
+  expect(result.curvature).toBeGreaterThan(0.012);
+  expect(result.rows.every(Number.isFinite)).toBe(true);
+  expect(Math.max(...result.rows) - Math.min(...result.rows)).toBeLessThanOrEqual(4);
 });
 
 test('scanner calibration strip recovers a rotated stencil when ordinary corners are ambiguous', async ({ page }) => {

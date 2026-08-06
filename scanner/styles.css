@@ -971,10 +971,10 @@ html[data-embed="true"] #exportBtn:hover {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(0,0,0,.55);
-  border: 1px solid rgba(255,255,255,.18);
-  backdrop-filter: blur(10px);
-  color: #fff;
+  background: var(--surface-2);
+  border: 1px solid var(--outline-variant);
+  color: var(--text-main);
+  box-shadow: 0 2px 8px rgba(0,0,0,.14);
   border-radius: 999px;
   padding: 8px 12px;
   font-family: "Google Sans", sans-serif;
@@ -985,9 +985,8 @@ html[data-embed="true"] #exportBtn:hover {
   align-items: center
 }
 #stageBadge .dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--md-sys-color-primary);
-  box-shadow: 0 0 0 4px rgba(217,119,54,.18)
+  background: #1a73e8
 }
