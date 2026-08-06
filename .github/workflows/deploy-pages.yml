@@ -1,0 +1,48 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages accepts one production deployment at a time. Keep later releases in
+# this queue instead of cancelling a deployment that GitHub has already made.
+concurrency:
+  group: pages-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          # The managed legacy workflow aborted after 10 minutes while the
+          # deployment was still queued. Allow GitHub's backend time to drain.
+          timeout: 1800000
+          reporting_interval: 10000
