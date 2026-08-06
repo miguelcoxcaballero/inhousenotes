@@ -1089,7 +1089,8 @@
       }
       : SP.Lightweight.detectPage(srcCanvas);
     const usedYellow = !opts.forceNoYellow && detection.confidence > 0;
-    const preciseStencil = usedYellow && detection.method === "stencil";
+    const preciseStencil = usedYellow
+      && (detection.method === "stencil" || detection.method === "marker-guided");
     const pageQuad = detection.pageQuad;
     stageOnImmediate(preciseStencil ? "Straightening stencil..." : "Straightening page...");
     const fin = await SP.Lightweight.warp(srcCanvas, pageQuad);

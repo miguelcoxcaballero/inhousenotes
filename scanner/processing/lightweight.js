@@ -356,6 +356,500 @@
     ];
   }
 
+  function invertBilinear(quad, point) {
+    let u = 0.5;
+    let v = 0.5;
+    for (let iteration = 0; iteration < 7; iteration += 1) {
+      const estimate = bilinear(quad, u, v);
+      const errorX = point.x - estimate.x;
+      const errorY = point.y - estimate.y;
+      const duX = (quad[1].x - quad[0].x) * (1 - v) + (quad[2].x - quad[3].x) * v;
+      const duY = (quad[1].y - quad[0].y) * (1 - v) + (quad[2].y - quad[3].y) * v;
+      const dvX = (quad[3].x - quad[0].x) * (1 - u) + (quad[2].x - quad[1].x) * u;
+      const dvY = (quad[3].y - quad[0].y) * (1 - u) + (quad[2].y - quad[1].y) * u;
+      const determinant = duX * dvY - duY * dvX;
+      if (Math.abs(determinant) < 1e-7) return null;
+      u += (errorX * dvY - errorY * dvX) / determinant;
+      v += (duX * errorY - duY * errorX) / determinant;
+      if (Math.abs(errorX) + Math.abs(errorY) < 0.04) break;
+    }
+    return Number.isFinite(u) && Number.isFinite(v) ? { u, v } : null;
+  }
+
+  function rotateNormalized(point, rotation) {
+    if (rotation === 1) return { u: 1 - point.v, v: point.u };
+    if (rotation === 2) return { u: 1 - point.u, v: 1 - point.v };
+    if (rotation === 3) return { u: point.v, v: 1 - point.u };
+    return { u: point.u, v: point.v };
+  }
+
+  function unrotateNormalized(point, rotation) {
+    if (rotation === 1) return { u: point.v, v: 1 - point.u };
+    if (rotation === 2) return { u: 1 - point.u, v: 1 - point.v };
+    if (rotation === 3) return { u: 1 - point.v, v: point.u };
+    return { u: point.u, v: point.v };
+  }
+
+  function chromaticMarkerKind(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max < 38 || max - min < 8) return null;
+    if (r - g > 10 && r - b > 8 && r > g * 1.08) return "red";
+    if (b - r > 7 && b - g > 4 && b > r * 1.05) return "blue";
+    if (g - r > 6 && g - b > 10 && g > r * 1.04) return "green";
+    return null;
+  }
+
+  function findChromaticComponents(width, height, pixels, paperQuad, yellowMask) {
+    const size = width * height;
+    const categories = new Uint8Array(size);
+    const names = [null, "red", "blue", "green"];
+    for (let index = 0, offset = 0; index < size; index += 1, offset += 4) {
+      const kind = chromaticMarkerKind(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
+      categories[index] = kind === "red" ? 1 : kind === "blue" ? 2 : kind === "green" ? 3 : 0;
+    }
+    const queue = new Int32Array(size);
+    const components = [];
+    for (let seed = 0; seed < size; seed += 1) {
+      const category = categories[seed];
+      if (!category) continue;
+      let head = 0;
+      let tail = 0;
+      let sumX = 0;
+      let sumY = 0;
+      let minimumX = width;
+      let maximumX = 0;
+      let minimumY = height;
+      let maximumY = 0;
+      queue[tail++] = seed;
+      categories[seed] = 0;
+      while (head < tail) {
+        const index = queue[head++];
+        const x = index % width;
+        const y = (index / width) | 0;
+        sumX += x;
+        sumY += y;
+        minimumX = Math.min(minimumX, x);
+        maximumX = Math.max(maximumX, x);
+        minimumY = Math.min(minimumY, y);
+        maximumY = Math.max(maximumY, y);
+        for (let dy = -1; dy <= 1; dy += 1) {
+          const nextY = y + dy;
+          if (nextY < 0 || nextY >= height) continue;
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const nextX = x + dx;
+            if ((!dx && !dy) || nextX < 0 || nextX >= width) continue;
+            const next = nextY * width + nextX;
+            if (categories[next] !== category) continue;
+            categories[next] = 0;
+            queue[tail++] = next;
+          }
+        }
+      }
+      const boxWidth = maximumX - minimumX + 1;
+      const boxHeight = maximumY - minimumY + 1;
+      if (tail < 1 || tail > 180 || boxWidth > 28 || boxHeight > 28) continue;
+      const source = { x: sumX / tail, y: sumY / tail };
+      const normalized = invertBilinear(paperQuad, source);
+      if (!normalized || normalized.u <= -0.18 || normalized.u >= 1.18
+        || normalized.v <= -0.18 || normalized.v >= 1.18) continue;
+      const neighborhoodRadius = Math.max(4, Math.ceil(Math.max(boxWidth, boxHeight) * 0.75) + 3);
+      let yellowNearby = 0;
+      for (let y = Math.max(0, Math.floor(source.y - neighborhoodRadius)); y <= Math.min(height - 1, Math.ceil(source.y + neighborhoodRadius)); y += 1) {
+        for (let x = Math.max(0, Math.floor(source.x - neighborhoodRadius)); x <= Math.min(width - 1, Math.ceil(source.x + neighborhoodRadius)); x += 1) {
+          if (yellowMask[y * width + x]) yellowNearby += 1;
+        }
+      }
+      components.push({
+        ...normalized,
+        kind: names[category],
+        count: tail,
+        compactness: tail / (boxWidth * boxHeight),
+        yellowNearby
+      });
+    }
+    return components;
+  }
+
+  function guidedRansacLine(points, independentKey, dependentKey, options) {
+    if (points.length < 14) return null;
+    let seed = (points.length * 2246822519 + Math.round(options.expected * 10000)) >>> 0;
+    const randomIndex = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % points.length;
+    };
+    let best = null;
+    let bestScore = 0;
+    const hypotheses = Math.min(360, Math.max(140, points.length * 2));
+    for (let attempt = 0; attempt < hypotheses; attempt += 1) {
+      const first = points[randomIndex()];
+      const second = points[randomIndex()];
+      const delta = second[independentKey] - first[independentKey];
+      if (Math.abs(delta) < options.minimumSpan * 0.34) continue;
+      const a = (second[dependentKey] - first[dependentKey]) / delta;
+      if (Math.abs(a) > 0.72) continue;
+      const b = first[dependentKey] - a * first[independentKey];
+      const inliers = [];
+      let minimum = Infinity;
+      let maximum = -Infinity;
+      for (const point of points) {
+        if (Math.abs(point[dependentKey] - (a * point[independentKey] + b)) > options.tolerance) continue;
+        inliers.push(point);
+        minimum = Math.min(minimum, point[independentKey]);
+        maximum = Math.max(maximum, point[independentKey]);
+      }
+      const span = maximum - minimum;
+      if (span < options.minimumSpan || inliers.length < 12) continue;
+      const atCenter = a * 0.5 + b;
+      const expectedPenalty = 1 + Math.abs(atCenter - options.expected) / 0.1;
+      const slopePenalty = 1 + Math.abs(a) / 0.075;
+      const anchorPenalty = Number.isFinite(options.anchorIndependent)
+        ? 1 + Math.abs(a * options.anchorIndependent + b - options.anchorDependent) / 0.025
+        : 1;
+      const score = inliers.length * (1 + Math.min(1, span / 0.82))
+        / (expectedPenalty * slopePenalty * anchorPenalty);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { inliers, atCenter, span, minimum, maximum };
+      }
+    }
+    if (!best) return null;
+    const fitted = robustLine(best.inliers, independentKey, dependentKey);
+    return fitted ? {
+      ...fitted,
+      support: best.inliers.length,
+      span: best.span,
+      independentMinimum: best.minimum,
+      independentMaximum: best.maximum
+    } : null;
+  }
+
+  function medianNumber(values) {
+    if (!values.length) return null;
+    const sorted = values.slice().sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  function estimateCalibrationStrip(yellowPoints, stripLine) {
+    const minimumU = -0.12;
+    const maximumU = 1.12;
+    const binCount = 180;
+    const counts = new Uint16Array(binCount);
+    for (const point of yellowPoints) {
+      if (point.u < minimumU || point.u > maximumU
+        || Math.abs(point.v - (stripLine.a * point.u + stripLine.b)) > 0.05) continue;
+      const bin = clamp(Math.floor((point.u - minimumU) / (maximumU - minimumU) * binCount), 0, binCount - 1);
+      counts[bin] += 1;
+    }
+    const smoothed = new Float32Array(binCount);
+    let maximumDensity = 0;
+    for (let bin = 0; bin < binCount; bin += 1) {
+      let sum = 0;
+      for (let offset = -2; offset <= 2; offset += 1) {
+        const sample = bin + offset;
+        if (sample >= 0 && sample < binCount) sum += counts[sample];
+      }
+      smoothed[bin] = sum;
+      maximumDensity = Math.max(maximumDensity, sum);
+    }
+    const threshold = Math.max(3, maximumDensity * 0.16);
+    const segments = [];
+    let start = -1;
+    let lastActive = -1;
+    let density = 0;
+    for (let bin = 0; bin <= binCount; bin += 1) {
+      const active = bin < binCount && smoothed[bin] >= threshold;
+      if (active) {
+        if (start < 0) start = bin;
+        lastActive = bin;
+        density += smoothed[bin];
+      }
+      if (start >= 0 && (!active && (bin - lastActive > 3 || bin === binCount))) {
+        const length = lastActive - start + 1;
+        if (length >= binCount * 0.22) segments.push({ start, end: lastActive, length, density });
+        start = -1;
+        lastActive = -1;
+        density = 0;
+      }
+    }
+    const best = segments.sort((a, b) => (b.length * Math.sqrt(b.density)) - (a.length * Math.sqrt(a.density)))[0];
+    if (!best) return null;
+    const binWidth = (maximumU - minimumU) / binCount;
+    const minimum = minimumU + Math.max(0, best.start - 1) * binWidth;
+    const maximum = minimumU + Math.min(binCount, best.end + 2) * binWidth;
+    const span = maximum - minimum;
+    if (span < 0.38 || span > 1.14) return null;
+    return {
+      minimum,
+      maximum,
+      center: (minimum + maximum) * 0.5,
+      span,
+      density: best.density,
+      threshold,
+      maximumDensity
+    };
+  }
+
+  function fitMarkerAxis(chromaticPoints, stripLine, stripInterval) {
+    const canonical = {
+      red: 10.125 / 21,
+      blue: 10.625 / 21,
+      green: 10.875 / 21
+    };
+    const candidates = chromaticPoints.filter(point => point.u > 0.2 && point.u < 0.8
+      && Math.abs(point.v - (stripLine.a * point.u + stripLine.b)) < 0.075);
+    const stripCenter = stripInterval.center;
+    const gridScale = clamp(stripInterval.span / (18 / 21), 0.45, 1.45);
+    let best = null;
+    let bestScore = -Infinity;
+    for (let firstIndex = 0; firstIndex < candidates.length; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < candidates.length; secondIndex += 1) {
+        const first = candidates[firstIndex];
+        const second = candidates[secondIndex];
+        if (first.kind === second.kind) continue;
+        const canonicalDelta = canonical[second.kind] - canonical[first.kind];
+        const scale = (second.u - first.u) / canonicalDelta;
+        if (scale < 0.32 || scale > 2.1) continue;
+        if (Math.abs(scale - gridScale) > gridScale * 0.32) continue;
+        const offset = (first.u - scale * canonical[first.kind]
+          + second.u - scale * canonical[second.kind]) * 0.5;
+        const matched = {};
+        let residual = 0;
+        for (const kind of Object.keys(canonical)) {
+          const expected = offset + scale * canonical[kind];
+          const sameKind = candidates
+            .filter(point => point.kind === kind)
+            .map(point => ({ point, distance: Math.abs(point.u - expected) }))
+            .sort((a, b) => a.distance - b.distance)[0];
+          if (!sameKind || sameKind.distance > 0.024) continue;
+          matched[kind] = sameKind.point;
+          residual += sameKind.distance;
+        }
+        const kinds = Object.keys(matched);
+        if (kinds.length < 2) continue;
+        const ordered = kinds
+          .map(kind => ({ canonical: canonical[kind], observed: matched[kind].u }))
+          .sort((a, b) => a.canonical - b.canonical);
+        if (ordered.some((entry, index) => index > 0 && entry.observed <= ordered[index - 1].observed)) continue;
+        const compactness = kinds.reduce((sum, kind) => sum + matched[kind].compactness, 0);
+        const sizeScore = kinds.reduce((sum, kind) => sum + Math.min(24, matched[kind].count), 0);
+        const ringScore = kinds.reduce((sum, kind) => sum + Math.min(20, matched[kind].yellowNearby), 0);
+        const center = offset + scale * 0.5;
+        if (Math.abs(center - stripCenter) > 0.14) continue;
+        const score = kinds.length * 120 + compactness * 18 + sizeScore + ringScore * 5
+          - residual * 900 - Math.abs(center - stripCenter) * 620
+          - Math.abs(scale - gridScale) * 90;
+        if (score > bestScore) {
+          bestScore = score;
+          best = {
+            scale,
+            offset,
+            centers: matched,
+            kinds,
+            markerV: medianNumber(kinds.map(kind => matched[kind].v)),
+            source: "colours"
+          };
+        }
+      }
+    }
+    if (best) return best;
+
+    // Severe blur can collapse blue/green into black. The unique red circle
+    // still fixes the strip centre; repeated square edges provide its scale.
+    const expectedRed = stripCenter + gridScale * (canonical.red - 0.5);
+    const redCandidates = candidates.filter(point => point.kind === "red")
+      .filter(point => Math.abs(point.u - expectedRed) < 0.14)
+      .sort((a, b) => (Math.abs(a.u - expectedRed) * 900 - a.yellowNearby * 2
+          - a.compactness * Math.min(30, a.count))
+        - (Math.abs(b.u - expectedRed) * 900 - b.yellowNearby * 2
+          - b.compactness * Math.min(30, b.count)));
+    for (const red of redCandidates) {
+      const scale = gridScale;
+      const offset = red.u - scale * canonical.red;
+      const left = offset + scale * (1.5 / 21);
+      const right = offset + scale * (19.5 / 21);
+      const center = offset + scale * 0.5;
+      if (left < -0.1 || right > 1.1 || right - left < 0.42
+        || Math.abs(center - stripCenter) > 0.16) continue;
+      return {
+        scale,
+        offset,
+        centers: { red },
+        kinds: ["red"],
+        markerV: red.v,
+        source: "red+grid"
+      };
+    }
+    return null;
+  }
+
+  function blackMarkerIsPresent(markerAxis, rotation, paperQuad, pixels, width, height) {
+    if (!markerAxis) return false;
+    const canonicalPoint = {
+      u: markerAxis.offset + markerAxis.scale * (10.375 / 21),
+      v: markerAxis.markerV
+    };
+    const base = unrotateNormalized(canonicalPoint, rotation);
+    const source = bilinear(paperQuad, base.u, base.v);
+    const radius = Math.max(3, Math.round(Math.min(width, height) * 0.009));
+    let dark = 0;
+    let total = 0;
+    for (let y = Math.max(0, Math.floor(source.y - radius)); y <= Math.min(height - 1, Math.ceil(source.y + radius)); y += 1) {
+      for (let x = Math.max(0, Math.floor(source.x - radius)); x <= Math.min(width - 1, Math.ceil(source.x + radius)); x += 1) {
+        const offset = (y * width + x) * 4;
+        const r = pixels[offset], g = pixels[offset + 1], b = pixels[offset + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        if (luminance < 105 && (max - min) / Math.max(1, max) < 0.38) dark += 1;
+        total += 1;
+      }
+    }
+    return dark >= Math.max(2, total * 0.015);
+  }
+
+  function detectMarkerGuidedStencil(paperQuad, width, height, pixels, yellowMask) {
+    if (!paperQuad) return null;
+    const yellowPoints = [];
+    let chromaticPoints = [];
+    // Sampling every detected pixel preserves the tiny colour circles, while
+    // the low-resolution analysis canvas keeps this bounded and inexpensive.
+    for (let index = 0; index < yellowMask.length; index += 1) {
+      if (!yellowMask[index]) continue;
+      const point = { x: index % width, y: (index / width) | 0 };
+      const normalized = invertBilinear(paperQuad, point);
+      if (normalized && normalized.u > -0.18 && normalized.u < 1.18
+        && normalized.v > -0.18 && normalized.v < 1.18) yellowPoints.push(normalized);
+    }
+    chromaticPoints = findChromaticComponents(width, height, pixels, paperQuad, yellowMask);
+    if (yellowPoints.length < 80) return null;
+
+    let bestRotation = 0;
+    let bestOrientationScore = -1;
+    let secondOrientationScore = -1;
+    let bestMarkerHits = 0;
+    for (let rotation = 0; rotation < 4; rotation += 1) {
+      let stripScore = 0;
+      let markerHits = 0;
+      const markerKinds = new Set();
+      for (const raw of yellowPoints) {
+        const point = rotateNormalized(raw, rotation);
+        if (point.u < -0.06 || point.u > 1.06 || point.v < 0.72 || point.v > 1.12) continue;
+        stripScore += point.v >= 0.86 && point.v <= 1.02 ? 2.2 : 0.65;
+        if (point.u >= 0.08 && point.u <= 0.92) stripScore += 0.35;
+      }
+      for (const raw of chromaticPoints) {
+        const point = rotateNormalized(raw, rotation);
+        if (point.u < 0.38 || point.u > 0.62 || point.v < 0.82 || point.v > 1.06) continue;
+        markerHits += Math.min(6, raw.count || 1);
+        markerKinds.add(raw.kind);
+      }
+      const score = stripScore + markerHits * 7 + markerKinds.size * 45;
+      if (score > bestOrientationScore) {
+        secondOrientationScore = bestOrientationScore;
+        bestOrientationScore = score;
+        bestRotation = rotation;
+        bestMarkerHits = markerHits;
+      } else if (score > secondOrientationScore) {
+        secondOrientationScore = score;
+      }
+    }
+    if (bestOrientationScore < 90
+      || (bestMarkerHits < 2 && bestOrientationScore < secondOrientationScore * 1.08)) return null;
+
+    const oriented = yellowPoints.map(point => rotateNormalized(point, bestRotation));
+    const orientedChromatic = chromaticPoints.map(point => ({ ...point, ...rotateNormalized(point, bestRotation) }));
+    const bottomPoints = oriented.filter(point => point.v >= 0.72 && point.v <= 1.08 && point.u > 0.02 && point.u < 0.98);
+    const common = { minimumSpan: 0.42, tolerance: 0.009 };
+    const stripLine = guidedRansacLine(bottomPoints, "u", "v", {
+      ...common,
+      expected: 27.68 / 29.7
+    });
+    if (!stripLine) return null;
+    const stripInterval = estimateCalibrationStrip(oriented, stripLine);
+    if (!stripInterval) return null;
+    const markerAxis = fitMarkerAxis(orientedChromatic, stripLine, stripInterval);
+    if (!markerAxis) return null;
+    const blackMarker = blackMarkerIsPresent(markerAxis, bestRotation, paperQuad, pixels, width, height);
+    const leftAnchor = stripInterval.minimum;
+    const rightAnchor = stripInterval.maximum;
+    const geometryScale = stripInterval.span / (18 / 21);
+    const stripAtCenter = stripLine.a * 0.5 + stripLine.b;
+    const bottomAtCenter = stripAtCenter + geometryScale * (0.75 / 29.7);
+    const topExpected = stripAtCenter - geometryScale * ((27.68 - 1.43) / 29.7);
+    const bottomLine = {
+      ...stripLine,
+      b: stripLine.b + geometryScale * (0.75 / 29.7)
+    };
+    const leftPoints = oriented.filter(point => Math.abs(point.u - leftAnchor) < 0.29
+      && point.v > topExpected - 0.1 && point.v < bottomAtCenter + 0.06);
+    const rightPoints = oriented.filter(point => Math.abs(point.u - rightAnchor) < 0.29
+      && point.v > topExpected - 0.1 && point.v < bottomAtCenter + 0.06);
+    const topPoints = oriented.filter(point => Math.abs(point.v - topExpected) < 0.23
+      && point.u > leftAnchor - 0.08 && point.u < rightAnchor + 0.08);
+    let leftLine = guidedRansacLine(leftPoints, "v", "u", {
+      ...common,
+      minimumSpan: Math.max(0.36, geometryScale * 0.56),
+      expected: leftAnchor,
+      anchorIndependent: bottomAtCenter,
+      anchorDependent: leftAnchor
+    });
+    let rightLine = guidedRansacLine(rightPoints, "v", "u", {
+      ...common,
+      minimumSpan: Math.max(0.36, geometryScale * 0.56),
+      expected: rightAnchor,
+      anchorIndependent: bottomAtCenter,
+      anchorDependent: rightAnchor
+    });
+    let topLine = guidedRansacLine(topPoints, "u", "v", {
+      ...common,
+      minimumSpan: Math.max(0.36, geometryScale * 0.5),
+      expected: topExpected
+    });
+    // The printed marker pattern fully determines scale and orientation. When a
+    // border is hidden by another sheet, synthesize only that missing line from
+    // the calibrated geometry instead of falling back to the surrounding desk.
+    leftLine ||= { a: 0, b: leftAnchor, count: 0, support: 0, span: 0 };
+    rightLine ||= { a: 0, b: rightAnchor, count: 0, support: 0, span: 0 };
+    topLine ||= { a: stripLine.a, b: topExpected - stripLine.a * 0.5, count: 0, support: 0, span: 0 };
+    const normalizedQuad = [
+      lineIntersection(leftLine, topLine),
+      lineIntersection(rightLine, topLine),
+      lineIntersection(rightLine, bottomLine),
+      lineIntersection(leftLine, bottomLine)
+    ].map(point => point ? { u: point.x, v: point.y } : null);
+    if (!normalizedQuad.every(Boolean)) return null;
+    const canonicalQuad = normalizedQuad.map(point => ({ x: point.u, y: point.v }));
+    if (!isPlausibleQuad(canonicalQuad, 1, 1, {
+      allowOutside: true,
+      minAreaRatio: 0.48,
+      maxOppositeRatio: 1.4
+    })) return null;
+    const centerValues = {
+      left: leftLine.a * 0.5 + leftLine.b,
+      right: rightLine.a * 0.5 + rightLine.b,
+      top: topLine.a * 0.5 + topLine.b,
+      bottom: bottomLine.a * 0.5 + bottomLine.b
+    };
+    if (centerValues.left < -0.04 || centerValues.left > 0.25
+      || centerValues.right < 0.75 || centerValues.right > 1.04
+      || centerValues.top < -0.04 || centerValues.top > 0.22
+      || centerValues.bottom < 0.8 || centerValues.bottom > 1.06) return null;
+
+    const stencilQuad = normalizedQuad.map(point => {
+      const base = unrotateNormalized(point, bestRotation);
+      return bilinear(paperQuad, base.u, base.v);
+    });
+    const support = leftLine.support + rightLine.support + topLine.support + stripLine.support;
+    return {
+      stencilQuad,
+      confidence: clamp(0.58 + support / Math.max(900, yellowPoints.length * 2.2)
+        + Math.min(0.14, bestMarkerHits * 0.01) + (blackMarker ? 0.04 : 0), 0, 1),
+      rotation: bestRotation,
+      markerHits: bestMarkerHits
+    };
+  }
+
   Light.detectPage = function detectPage(source) {
     const analysis = createScaledCanvas(source, ANALYSIS_MAX);
     const { canvas, context, scale } = analysis;
@@ -428,9 +922,22 @@
       }
     }
 
-    const paperQuad = confidence < 0.24 ? detectPaperQuad(width, height, pixels) : null;
+    // The axis-aligned border fit can look numerically perfect on a page that
+    // is rotated 90 degrees while actually swapping its long and short sides.
+    // Always let the asymmetric calibration strip resolve orientation first.
+    const paperQuad = detectPaperQuad(width, height, pixels);
+    const markerGuided = detectMarkerGuidedStencil(paperQuad, width, height, pixels, mask);
     canvas.width = 0;
     canvas.height = 0;
+    if (markerGuided) {
+      stencilQuad = markerGuided.stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
+      return {
+        pageQuad: extrapolateStencil(stencilQuad),
+        stencilQuad,
+        confidence: markerGuided.confidence,
+        method: "marker-guided"
+      };
+    }
     if (confidence >= 0.24) {
       stencilQuad = stencilQuad.map(point => ({ x: point.x / scale, y: point.y / scale }));
       return {
