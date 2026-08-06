@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.12",
-  "releaseNotes": "Inhouse Notes v5.11.12 / Android 1.0.10: GitHub Pages now receives a lean production-only artifact without historical APKs, test suites or build sources, and stalled backend attempts are bounded to five minutes."
+  "publishedAppVersion": "5.11.13",
+  "releaseNotes": "Inhouse Notes v5.11.13 / Android 1.0.10: Scanner yellow-border detection now adapts to faded, blurred, shadowed and warm photos, uses the four colour markers and lower box strip to reject overlapping sheets, and avoids false borders on warm paper or wooden backgrounds."
 }

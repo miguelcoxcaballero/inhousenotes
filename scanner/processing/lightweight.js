@@ -44,6 +44,122 @@
       && (r + g) * 0.5 - b >= 20;
   }
 
+  function yellowChroma(r, g, b) {
+    return (r + g) * 0.5 - b - Math.abs(r - g) * 0.34;
+  }
+
+  function estimatePaperYellowBaseline(width, height, pixels, paperQuad) {
+    if (!paperQuad?.every(Boolean)) return { chroma: 3, saturation: 0.025 };
+    const chromaSamples = [];
+    const saturationSamples = [];
+    // The central area is deliberately sampled away from the printed frame
+    // and calibration strip. Bright pixels survive handwriting and give us the
+    // paper's actual warm/cool cast for this individual photo.
+    for (let row = 0; row < 13; row += 1) {
+      const v = 0.13 + row / 12 * 0.68;
+      for (let column = 0; column < 13; column += 1) {
+        const u = 0.17 + column / 12 * 0.66;
+        const source = bilinear(paperQuad, u, v);
+        const x = clamp(Math.round(source.x), 0, width - 1);
+        const y = clamp(Math.round(source.y), 0, height - 1);
+        const offset = (y * width + x) * 4;
+        const r = pixels[offset], g = pixels[offset + 1], b = pixels[offset + 2];
+        const maximum = Math.max(r, g, b);
+        const minimum = Math.min(r, g, b);
+        const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        const saturation = maximum ? (maximum - minimum) / maximum : 0;
+        if (luminance < 92 || saturation > 0.42) continue;
+        chromaSamples.push(yellowChroma(r, g, b));
+        saturationSamples.push(saturation);
+      }
+    }
+    if (chromaSamples.length < 18) return { chroma: 3, saturation: 0.025 };
+    chromaSamples.sort((a, b) => a - b);
+    saturationSamples.sort((a, b) => a - b);
+    return {
+      chroma: chromaSamples[Math.floor(chromaSamples.length * 0.55)],
+      saturation: saturationSamples[Math.floor(saturationSamples.length * 0.55)]
+    };
+  }
+
+  function isFaintYellow(r, g, b, baseline) {
+    const maximum = Math.max(r, g, b);
+    const minimum = Math.min(r, g, b);
+    if (maximum < 54 || maximum === minimum) return false;
+    const saturation = (maximum - minimum) / maximum;
+    const hue = maximum === r
+      ? 60 * (((g - b) / (maximum - minimum)) % 6)
+      : maximum === g
+        ? 60 * (((b - r) / (maximum - minimum)) + 2)
+        : 60 * (((r - g) / (maximum - minimum)) + 4);
+    const normalizedHue = hue < 0 ? hue + 360 : hue;
+    const opponent = (r + g) * 0.5 - b;
+    const balance = Math.abs(r - g);
+    return normalizedHue >= 27
+      && normalizedHue <= 88
+      && saturation >= Math.max(0.032, baseline.saturation - 0.012)
+      && yellowChroma(r, g, b) >= baseline.chroma + 3.2
+      && opponent >= 6
+      && balance <= opponent * 1.45 + 9
+      && g / Math.max(1, r) >= 0.58
+      && b / Math.max(1, g) <= 0.97;
+  }
+
+  function stencilReferenceBandAxes(point) {
+    if (!point || point.u < -0.08 || point.u > 1.08 || point.v < -0.08 || point.v > 1.08) return false;
+    const frameU0 = 1.5 / 21;
+    const frameU1 = 19.5 / 21;
+    const frameV0 = 1.43 / 29.7;
+    const frameV1 = 28.43 / 29.7;
+    const stripV = 27.68 / 29.7;
+    // Try all rotations because the calibration strip may be on any image
+    // edge. The relaxed colour predicate is never used away from these narrow
+    // geometric bands, so desks and neighbouring yellow sheets cannot flood
+    // the mask.
+    for (let rotation = 0; rotation < 4; rotation += 1) {
+      const oriented = rotateNormalized(point, rotation);
+      const onVerticalFrame = (Math.abs(oriented.u - frameU0) <= 0.052
+          || Math.abs(oriented.u - frameU1) <= 0.052)
+        && oriented.v >= frameV0 - 0.055 && oriented.v <= frameV1 + 0.055;
+      const onHorizontalFrame = (Math.abs(oriented.v - frameV0) <= 0.045
+          || Math.abs(oriented.v - frameV1) <= 0.045)
+        && oriented.u >= frameU0 - 0.06 && oriented.u <= frameU1 + 0.06;
+      const onCalibrationStrip = Math.abs(oriented.v - stripV) <= 0.048
+        && oriented.u >= frameU0 - 0.06 && oriented.u <= frameU1 + 0.06;
+      if (onVerticalFrame) return { rotation, axis: "u" };
+      if (onHorizontalFrame || onCalibrationStrip) return { rotation, axis: "v" };
+    }
+    return null;
+  }
+
+  function sampleYellowChroma(width, height, pixels, paperQuad, normalized) {
+    const source = bilinear(paperQuad, normalized.u, normalized.v);
+    const x = clamp(Math.round(source.x), 0, width - 1);
+    const y = clamp(Math.round(source.y), 0, height - 1);
+    const offset = (y * width + x) * 4;
+    return yellowChroma(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
+  }
+
+  function hasLocalStencilContrast(point, r, g, b, width, height, pixels, paperQuad) {
+    const band = stencilReferenceBandAxes(point);
+    if (!band) return false;
+    const oriented = rotateNormalized(point, band.rotation);
+    const delta = 0.014;
+    const before = { ...oriented, [band.axis]: oriented[band.axis] - delta };
+    const after = { ...oriented, [band.axis]: oriented[band.axis] + delta };
+    const first = sampleYellowChroma(width, height, pixels, paperQuad,
+      unrotateNormalized(before, band.rotation));
+    const second = sampleYellowChroma(width, height, pixels, paperQuad,
+      unrotateNormalized(after, band.rotation));
+    const center = yellowChroma(r, g, b);
+    // A printed line is a narrow chromatic ridge with paper on both sides.
+    // Requiring both neighbours to be less yellow rejects uniformly warm
+    // paper, wooden desks and the page silhouette without losing a blurred or
+    // low-saturation frame.
+    return center >= Math.max(first, second) + 0.65
+      && center >= (first + second) * 0.5 + 1.1;
+  }
+
   function robustLine(points, independentKey, dependentKey) {
     if (points.length < 12) return null;
     let active = points;
@@ -756,14 +872,14 @@
     return sorted[Math.floor(sorted.length / 2)];
   }
 
-  function estimateCalibrationStrip(yellowPoints, stripLine) {
+  function estimateCalibrationStrip(yellowPoints, stripLine, tolerance = 0.05) {
     const minimumU = -0.12;
     const maximumU = 1.12;
     const binCount = 180;
     const counts = new Uint16Array(binCount);
     for (const point of yellowPoints) {
       if (point.u < minimumU || point.u > maximumU
-        || Math.abs(point.v - (stripLine.a * point.u + stripLine.b)) > 0.05) continue;
+        || Math.abs(point.v - (stripLine.a * point.u + stripLine.b)) > tolerance) continue;
       const bin = clamp(Math.floor((point.u - minimumU) / (maximumU - minimumU) * binCount), 0, binCount - 1);
       counts[bin] += 1;
     }
@@ -853,6 +969,9 @@
         }
         const kinds = Object.keys(matched);
         if (kinds.length < 2) continue;
+        const markerRows = kinds.map(kind => matched[kind].v
+          - (stripLine.a * matched[kind].u + stripLine.b));
+        if (Math.max(...markerRows) - Math.min(...markerRows) > 0.012) continue;
         const ordered = kinds
           .map(kind => ({ canonical: canonical[kind], observed: matched[kind].u }))
           .sort((a, b) => a.canonical - b.canonical);
@@ -992,86 +1111,115 @@
       expected: 27.68 / 29.7
     });
     if (!stripLine) return null;
-    const stripInterval = estimateCalibrationStrip(oriented, stripLine);
+    const tightStripInterval = estimateCalibrationStrip(oriented, stripLine, 0.024);
+    const broadStripInterval = estimateCalibrationStrip(oriented, stripLine, 0.05);
+    const stripInterval = tightStripInterval || broadStripInterval;
     if (!stripInterval) return null;
-    const markerAxis = fitMarkerAxis(orientedChromatic, stripLine, stripInterval);
-    if (!markerAxis) return null;
-    const blackMarker = blackMarkerIsPresent(markerAxis, bestRotation, paperQuad, pixels, width, height);
-    const leftAnchor = stripInterval.minimum;
-    const rightAnchor = stripInterval.maximum;
-    const geometryScale = stripInterval.span / (18 / 21);
+    const markerAxes = [tightStripInterval, broadStripInterval]
+      .filter(Boolean)
+      .map(interval => fitMarkerAxis(orientedChromatic, stripLine, interval))
+      .filter(Boolean)
+      .filter((axis, index, axes) => index === axes.findIndex(other =>
+        Math.abs(other.scale - axis.scale) < 0.01 && Math.abs(other.offset - axis.offset) < 0.01));
+    if (!markerAxes.length) return null;
+    const blackMarker = markerAxes.some(axis =>
+      blackMarkerIsPresent(axis, bestRotation, paperQuad, pixels, width, height));
     const stripAtCenter = stripLine.a * 0.5 + stripLine.b;
-    const bottomAtCenter = stripAtCenter + geometryScale * (0.75 / 29.7);
-    const topExpected = stripAtCenter - geometryScale * ((27.68 - 1.43) / 29.7);
-    const bottomLine = {
-      ...stripLine,
-      b: stripLine.b + geometryScale * (0.75 / 29.7)
+    const tryGeometry = ({ leftAnchor, rightAnchor, geometryScale }) => {
+      const bottomAtCenter = stripAtCenter + geometryScale * (0.75 / 29.7);
+      const topExpected = stripAtCenter - geometryScale * ((27.68 - 1.43) / 29.7);
+      const bottomLine = {
+        ...stripLine,
+        b: stripLine.b + geometryScale * (0.75 / 29.7)
+      };
+      const leftPoints = oriented.filter(point => Math.abs(point.u - leftAnchor) < 0.29
+        && point.v > topExpected - 0.1 && point.v < bottomAtCenter + 0.06);
+      const rightPoints = oriented.filter(point => Math.abs(point.u - rightAnchor) < 0.29
+        && point.v > topExpected - 0.1 && point.v < bottomAtCenter + 0.06);
+      const topPoints = oriented.filter(point => Math.abs(point.v - topExpected) < 0.23
+        && point.u > leftAnchor - 0.08 && point.u < rightAnchor + 0.08);
+      let leftLine = guidedRansacLine(leftPoints, "v", "u", {
+        ...common,
+        minimumSpan: Math.max(0.36, geometryScale * 0.56),
+        expected: leftAnchor,
+        anchorIndependent: bottomAtCenter,
+        anchorDependent: leftAnchor
+      });
+      let rightLine = guidedRansacLine(rightPoints, "v", "u", {
+        ...common,
+        minimumSpan: Math.max(0.36, geometryScale * 0.56),
+        expected: rightAnchor,
+        anchorIndependent: bottomAtCenter,
+        anchorDependent: rightAnchor
+      });
+      let topLine = guidedRansacLine(topPoints, "u", "v", {
+        ...common,
+        minimumSpan: Math.max(0.36, geometryScale * 0.5),
+        expected: topExpected
+      });
+      const sideMatchesAnchor = (line, anchor) => line
+        && Math.abs(line.a * bottomAtCenter + line.b - anchor) <= 0.085
+        && Math.abs(line.a * topExpected + line.b - anchor) <= 0.13;
+      if (!sideMatchesAnchor(leftLine, leftAnchor)) leftLine = null;
+      if (!sideMatchesAnchor(rightLine, rightAnchor)) rightLine = null;
+      if (topLine && Math.abs(topLine.a * 0.5 + topLine.b - topExpected) > 0.09) topLine = null;
+      if (!leftLine && rightLine) {
+        leftLine = { a: rightLine.a, b: leftAnchor - rightLine.a * bottomAtCenter, count: 0, support: 0, span: 0 };
+      }
+      if (!rightLine && leftLine) {
+        rightLine = { a: leftLine.a, b: rightAnchor - leftLine.a * bottomAtCenter, count: 0, support: 0, span: 0 };
+      }
+      leftLine ||= { a: 0, b: leftAnchor, count: 0, support: 0, span: 0 };
+      rightLine ||= { a: 0, b: rightAnchor, count: 0, support: 0, span: 0 };
+      topLine ||= { a: stripLine.a, b: topExpected - stripLine.a * 0.5, count: 0, support: 0, span: 0 };
+      const normalizedQuad = [
+        lineIntersection(leftLine, topLine),
+        lineIntersection(rightLine, topLine),
+        lineIntersection(rightLine, bottomLine),
+        lineIntersection(leftLine, bottomLine)
+      ].map(point => point ? { u: point.x, v: point.y } : null);
+      if (!normalizedQuad.every(Boolean)) return null;
+      const canonicalQuad = normalizedQuad.map(point => ({ x: point.u, y: point.v }));
+      if (!isPlausibleQuad(canonicalQuad, 1, 1, {
+        allowOutside: true,
+        minAreaRatio: 0.48,
+        maxOppositeRatio: 1.4
+      })) return null;
+      const centerValues = {
+        left: leftLine.a * 0.5 + leftLine.b,
+        right: rightLine.a * 0.5 + rightLine.b,
+        top: topLine.a * 0.5 + topLine.b,
+        bottom: bottomLine.a * 0.5 + bottomLine.b
+      };
+      if (centerValues.left < -0.04 || centerValues.left > 0.25
+        || centerValues.right < 0.75 || centerValues.right > 1.04
+        || centerValues.top < -0.04 || centerValues.top > 0.22
+        || centerValues.bottom < 0.8 || centerValues.bottom > 1.06) return null;
+      return { normalizedQuad, leftLine, rightLine, topLine };
     };
-    const leftPoints = oriented.filter(point => Math.abs(point.u - leftAnchor) < 0.29
-      && point.v > topExpected - 0.1 && point.v < bottomAtCenter + 0.06);
-    const rightPoints = oriented.filter(point => Math.abs(point.u - rightAnchor) < 0.29
-      && point.v > topExpected - 0.1 && point.v < bottomAtCenter + 0.06);
-    const topPoints = oriented.filter(point => Math.abs(point.v - topExpected) < 0.23
-      && point.u > leftAnchor - 0.08 && point.u < rightAnchor + 0.08);
-    let leftLine = guidedRansacLine(leftPoints, "v", "u", {
-      ...common,
-      minimumSpan: Math.max(0.36, geometryScale * 0.56),
-      expected: leftAnchor,
-      anchorIndependent: bottomAtCenter,
-      anchorDependent: leftAnchor
-    });
-    let rightLine = guidedRansacLine(rightPoints, "v", "u", {
-      ...common,
-      minimumSpan: Math.max(0.36, geometryScale * 0.56),
-      expected: rightAnchor,
-      anchorIndependent: bottomAtCenter,
-      anchorDependent: rightAnchor
-    });
-    let topLine = guidedRansacLine(topPoints, "u", "v", {
-      ...common,
-      minimumSpan: Math.max(0.36, geometryScale * 0.5),
-      expected: topExpected
-    });
-    const sideMatchesAnchor = (line, anchor) => line
-      && Math.abs(line.a * bottomAtCenter + line.b - anchor) <= 0.085
-      && Math.abs(line.a * topExpected + line.b - anchor) <= 0.13;
-    if (!sideMatchesAnchor(leftLine, leftAnchor)) leftLine = null;
-    if (!sideMatchesAnchor(rightLine, rightAnchor)) rightLine = null;
-    // The printed marker pattern fully determines scale and orientation. When a
-    // border is hidden by another sheet, synthesize only that missing line from
-    // the calibrated geometry instead of falling back to the surrounding desk.
-    if (!leftLine && rightLine) {
-      leftLine = { a: rightLine.a, b: leftAnchor - rightLine.a * bottomAtCenter, count: 0, support: 0, span: 0 };
+
+    // Prefer the unique colour sequence. If compression erases some dots, the
+    // independently measured yellow strip remains a safe fallback.
+    const geometryCandidates = markerAxes.map(axis => ({
+      leftAnchor: axis.offset + axis.scale * (1.5 / 21),
+      rightAnchor: axis.offset + axis.scale * (19.5 / 21),
+      geometryScale: axis.scale
+    }));
+    for (const interval of [tightStripInterval, broadStripInterval]) {
+      if (!interval) continue;
+      geometryCandidates.push({
+        leftAnchor: interval.minimum,
+        rightAnchor: interval.maximum,
+        geometryScale: interval.span / (18 / 21)
+      });
     }
-    if (!rightLine && leftLine) {
-      rightLine = { a: leftLine.a, b: rightAnchor - leftLine.a * bottomAtCenter, count: 0, support: 0, span: 0 };
+    let geometry = null;
+    for (const candidate of geometryCandidates) {
+      geometry = tryGeometry(candidate);
+      if (geometry) break;
     }
-    leftLine ||= { a: 0, b: leftAnchor, count: 0, support: 0, span: 0 };
-    rightLine ||= { a: 0, b: rightAnchor, count: 0, support: 0, span: 0 };
-    topLine ||= { a: stripLine.a, b: topExpected - stripLine.a * 0.5, count: 0, support: 0, span: 0 };
-    const normalizedQuad = [
-      lineIntersection(leftLine, topLine),
-      lineIntersection(rightLine, topLine),
-      lineIntersection(rightLine, bottomLine),
-      lineIntersection(leftLine, bottomLine)
-    ].map(point => point ? { u: point.x, v: point.y } : null);
-    if (!normalizedQuad.every(Boolean)) return null;
-    const canonicalQuad = normalizedQuad.map(point => ({ x: point.u, y: point.v }));
-    if (!isPlausibleQuad(canonicalQuad, 1, 1, {
-      allowOutside: true,
-      minAreaRatio: 0.48,
-      maxOppositeRatio: 1.4
-    })) return null;
-    const centerValues = {
-      left: leftLine.a * 0.5 + leftLine.b,
-      right: rightLine.a * 0.5 + rightLine.b,
-      top: topLine.a * 0.5 + topLine.b,
-      bottom: bottomLine.a * 0.5 + bottomLine.b
-    };
-    if (centerValues.left < -0.04 || centerValues.left > 0.25
-      || centerValues.right < 0.75 || centerValues.right > 1.04
-      || centerValues.top < -0.04 || centerValues.top > 0.22
-      || centerValues.bottom < 0.8 || centerValues.bottom > 1.06) return null;
+    if (!geometry) return null;
+    const { normalizedQuad, leftLine, rightLine, topLine } = geometry;
 
     const stencilQuad = normalizedQuad.map(point => {
       const base = unrotateNormalized(point, bestRotation);
@@ -1092,10 +1240,23 @@
     const { canvas, context, scale } = analysis;
     const { width, height } = canvas;
     const pixels = context.getImageData(0, 0, width, height).data;
+    const paperQuad = detectPaperQuad(width, height, pixels);
+    const paperYellowBaseline = estimatePaperYellowBaseline(width, height, pixels, paperQuad);
     const mask = new Uint8Array(width * height);
     let yellowPixels = 0;
     for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
-      if (isYellow(pixels[i], pixels[i + 1], pixels[i + 2])) {
+      let yellow = isYellow(pixels[i], pixels[i + 1], pixels[i + 2]);
+      if (!yellow && paperQuad
+        && isFaintYellow(pixels[i], pixels[i + 1], pixels[i + 2], paperYellowBaseline)) {
+        const normalized = invertBilinear(paperQuad, {
+          x: p % width,
+          y: (p / width) | 0
+        });
+        yellow = hasLocalStencilContrast(normalized,
+          pixels[i], pixels[i + 1], pixels[i + 2],
+          width, height, pixels, paperQuad);
+      }
+      if (yellow) {
         mask[p] = 1;
         yellowPixels += 1;
       }
@@ -1162,7 +1323,6 @@
     // The axis-aligned border fit can look numerically perfect on a page that
     // is rotated 90 degrees while actually swapping its long and short sides.
     // Always let the asymmetric calibration strip resolve orientation first.
-    const paperQuad = detectPaperQuad(width, height, pixels);
     const markerGuided = detectMarkerGuidedStencil(paperQuad, width, height, pixels, mask);
     const scaleFrame = frame => frame ? {
       ...frame,

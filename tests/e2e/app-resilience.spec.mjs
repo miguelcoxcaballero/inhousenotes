@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.12');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.13');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -212,6 +212,108 @@ test('scanner isolates a photographed page from a warm background without washin
   expect(Math.min(...result.center)).toBeGreaterThan(245);
   expect(Math.max(...result.center) - Math.min(...result.center)).toBeLessThan(18);
   expect(result.elapsed).toBeLessThan(3000);
+});
+
+test('scanner recovers a faded yellow stencil under blur and low saturation', async ({ page }) => {
+  await page.goto('/scanner/index.html?embed=1&session=e2e-faded-yellow-frame', { waitUntil: 'domcontentloaded' });
+  const result = await page.evaluate(() => {
+    const clean = document.createElement('canvas');
+    clean.width = 960;
+    clean.height = 1280;
+    const context = clean.getContext('2d');
+    context.fillStyle = '#a8764d';
+    context.fillRect(0, 0, clean.width, clean.height);
+    context.fillStyle = '#ded9cf';
+    context.fillRect(60, 40, 840, 1200);
+
+    const pxPerCm = 40;
+    const left = 60 + 1.5 * pxPerCm;
+    const top = 40 + 1.43 * pxPerCm;
+    const right = 60 + 19.5 * pxPerCm;
+    const bottom = 40 + 28.43 * pxPerCm;
+    context.strokeStyle = '#f0db4c';
+    context.lineWidth = 5;
+    context.strokeRect(left, top, right - left, bottom - top);
+    const stripTop = 40 + 27.43 * pxPerCm;
+    const stripBottom = 40 + 27.93 * pxPerCm;
+    context.beginPath();
+    context.moveTo(left, stripTop);
+    context.lineTo(right, stripTop);
+    context.moveTo(left, stripBottom);
+    context.lineTo(right, stripBottom);
+    for (let x = left; x <= right; x += 20) {
+      context.moveTo(x, stripTop);
+      context.lineTo(x, stripBottom);
+    }
+    context.stroke();
+    ['#d72f2f', '#202020', '#285bd7', '#68c92b'].forEach((colour, index) => {
+      context.fillStyle = colour;
+      context.beginPath();
+      context.arc(60 + (10.125 + index * 0.25) * pxPerCm, 40 + 27.68 * pxPerCm, 4, 0, Math.PI * 2);
+      context.fill();
+    });
+
+    // Camera processing frequently lowers saturation and contrast, then JPEG
+    // softness removes most of the yellow line's original colour difference.
+    const faded = document.createElement('canvas');
+    faded.width = clean.width;
+    faded.height = clean.height;
+    const fadedContext = faded.getContext('2d');
+    fadedContext.filter = 'saturate(0.34) brightness(1.06) contrast(0.88) blur(0.7px)';
+    fadedContext.drawImage(clean, 0, 0);
+
+    const started = performance.now();
+    const detection = ScannerPro.Lightweight.detectPage(faded);
+    return {
+      method: detection.method,
+      support: detection.frame?.support || 0,
+      boxSupport: detection.frame?.box?.support || 0,
+      elapsed: performance.now() - started
+    };
+  });
+
+  expect(['stencil', 'marker-guided']).toContain(result.method);
+  expect(result.support).toBeGreaterThan(0.45);
+  expect(result.boxSupport).toBeGreaterThan(0.45);
+  expect(result.elapsed).toBeLessThan(1500);
+});
+
+test('scanner does not invent a yellow frame on warm unprinted paper', async ({ page }) => {
+  await page.goto('/scanner/index.html?embed=1&session=e2e-no-yellow-frame', { waitUntil: 'domcontentloaded' });
+  const result = await page.evaluate(() => {
+    const source = document.createElement('canvas');
+    source.width = 960;
+    source.height = 1280;
+    const context = source.getContext('2d');
+    context.fillStyle = '#ad784c';
+    context.fillRect(0, 0, source.width, source.height);
+    context.fillStyle = '#d8cfba';
+    context.beginPath();
+    context.moveTo(84, 66);
+    context.lineTo(874, 112);
+    context.lineTo(906, 1200);
+    context.lineTo(54, 1152);
+    context.closePath();
+    context.fill();
+    context.strokeStyle = '#3e4b5a';
+    context.lineWidth = 4;
+    for (let y = 250; y < 900; y += 90) {
+      context.beginPath();
+      context.moveTo(190, y);
+      context.quadraticCurveTo(480, y - 18, 770, y + 8);
+      context.stroke();
+    }
+    const detection = ScannerPro.Lightweight.detectPage(source);
+    return {
+      method: detection.method,
+      hasFrame: Boolean(detection.frame),
+      yellowBoxPoints: detection.yellowBox?.points?.length || 0
+    };
+  });
+
+  expect(result.method).toBe('paper');
+  expect(result.hasFrame).toBe(false);
+  expect(result.yellowBoxPoints).toBe(0);
 });
 
 test('scanner calibrates paper and ink from the four dots and yellow frame', async ({ page }) => {
