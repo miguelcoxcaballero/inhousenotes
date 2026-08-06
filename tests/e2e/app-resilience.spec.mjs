@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.3');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.4');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -149,9 +149,10 @@ test('scanner isolates a photographed page from a warm background without washin
     const started = performance.now();
     const detection = ScannerPro.Lightweight.detectPage(canvas);
     const output = await ScannerPro.Lightweight.warp(canvas, detection.pageQuad);
+    const preciseStencil = detection.method === 'stencil' || detection.method === 'marker-guided';
     const correction = await ScannerPro.Lightweight.correctColors(output, {
-      useStencil: detection.method === 'stencil',
-      preciseStencil: detection.method === 'stencil'
+      useStencil: preciseStencil,
+      preciseStencil
     });
     const center = Array.from(output.getContext('2d').getImageData(
       Math.floor(output.width / 2), Math.floor(output.height / 2), 1, 1
@@ -177,6 +178,74 @@ test('scanner isolates a photographed page from a warm background without washin
   expect(Math.max(...result.center)).toBeLessThan(252);
   expect(Math.max(...result.center) - Math.min(...result.center)).toBeLessThan(18);
   expect(result.elapsed).toBeLessThan(3000);
+});
+
+test('scanner calibration strip recovers a rotated stencil when ordinary corners are ambiguous', async ({ page }) => {
+  await page.goto('/scanner/index.html?embed=1&session=e2e-marker-strip', { waitUntil: 'domcontentloaded' });
+  const result = await page.evaluate(() => {
+    const source = document.createElement('canvas');
+    source.width = 1280;
+    source.height = 960;
+    const sourceContext = source.getContext('2d');
+    sourceContext.fillStyle = '#a96f43';
+    sourceContext.fillRect(0, 0, source.width, source.height);
+
+    const sheet = document.createElement('canvas');
+    sheet.width = 600;
+    sheet.height = 849;
+    const context = sheet.getContext('2d');
+    context.fillStyle = '#dedad2';
+    context.fillRect(0, 0, sheet.width, sheet.height);
+    context.strokeStyle = '#f0db4c';
+    context.lineWidth = 4;
+    context.strokeRect(43, 41, 514, 772);
+    // Repeated boxes are intentionally stronger than the partly hidden frame.
+    const stripTop = 783;
+    const boxWidth = 18;
+    for (let x = 43; x < 557; x += boxWidth) context.strokeRect(x, stripTop, boxWidth, 18);
+    const markerY = 792;
+    const markerX = 289;
+    const colours = ['#d72f2f', '#202020', '#285bd7', '#68c92b'];
+    colours.forEach((colour, index) => {
+      context.fillStyle = colour;
+      context.beginPath();
+      context.arc(markerX + index * 7, markerY, 4, 0, Math.PI * 2);
+      context.fill();
+    });
+    // Hide two long frame segments as overlapping sheets would in a real photo.
+    context.fillStyle = '#dedad2';
+    context.fillRect(39, 70, 9, 640);
+    context.fillRect(130, 37, 360, 9);
+
+    sourceContext.save();
+    sourceContext.translate(115, 790);
+    sourceContext.rotate(-Math.PI / 2);
+    sourceContext.drawImage(sheet, 0, 0);
+    sourceContext.restore();
+
+    const started = performance.now();
+    const detection = ScannerPro.Lightweight.detectPage(source);
+    const expected = [
+      { x: 115, y: 790 },
+      { x: 115, y: 190 },
+      { x: 964, y: 190 },
+      { x: 964, y: 790 }
+    ];
+    return {
+      method: detection.method,
+      confidence: detection.confidence,
+      elapsed: performance.now() - started,
+      cornerErrors: detection.pageQuad.map((corner, index) => Math.hypot(
+        corner.x - expected[index].x,
+        corner.y - expected[index].y
+      ))
+    };
+  });
+
+  expect(result.method).toBe('marker-guided');
+  expect(result.confidence).toBeGreaterThan(0.7);
+  expect(Math.max(...result.cornerErrors)).toBeLessThan(90);
+  expect(result.elapsed).toBeLessThan(1000);
 });
 
 test('blocked IndexedDB cannot trap startup', async ({ page }) => {
