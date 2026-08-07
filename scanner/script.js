@@ -1282,8 +1282,9 @@
   };
 
   const enqueuePage = page => {
+    if (!page || Q.list.includes(page) || Q.active === page) return;
     Q.list.push(page);
-    if (!Q.running) runQueue();
+    if (!Q.running) void runQueue();
   };
 
   const runQueue = async () => {
@@ -1386,7 +1387,23 @@
     S.busy = 0;
     if (!Q.list.length) stageOff();
     if (S.i >= 0 && !S.crop) scheduleUi(syncFinalView);
+    // A file can be added during the final queue turn. Always re-check after
+    // dropping the running flag so it cannot remain queued until another file
+    // is imported.
+    if (Q.list.length) queueMicrotask(() => { if (!Q.running) void runQueue(); });
   };
+
+  // Self-heal after lifecycle interruptions (backgrounding the Android app,
+  // page visibility changes, or a rejected UI callback). This does not start
+  // concurrent image work; it only wakes a queue that has no active runner.
+  const wakeProcessingQueue = () => {
+    if (Q.list.length && !Q.running) void runQueue();
+  };
+  addEventListener("pageshow", wakeProcessingQueue);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") wakeProcessingQueue();
+  });
+  setInterval(wakeProcessingQueue, 1500);
 
   /* Temp preview */
   let _tmpURL = null;
@@ -2359,6 +2376,12 @@
     renderList();
 
     const p = S.pages[i];
+    if (p.status === "queued" && Q.active !== p) {
+      removeFromQueue(p.id);
+      Q.list.unshift(p);
+      p.stageLabel = Q.active ? "Next page..." : "Starting...";
+      wakeProcessingQueue();
+    }
     E.paper.style.display = "block";
     E.empty.style.display = "none";
     E.img.onload = null;
@@ -2955,6 +2978,12 @@
     E.empty.style.display = "none";
     S.pages.push(...newPages);
     renderList();
+
+    // Put the first newly imported photo on screen before starting the serial
+    // processor. Its real detection/frame animation is therefore visible,
+    // rather than leaving an old page selected while every new one says queued.
+    const firstNewIndex = S.pages.indexOf(newPages[0]);
+    if (firstNewIndex !== -1) select(firstNewIndex);
 
     newPages.forEach(enqueuePage);
   }

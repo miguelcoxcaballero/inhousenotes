@@ -583,6 +583,16 @@
     ];
   }
 
+  function quadFitsObservedImage(quad, width, height, marginRatio = 0.085) {
+    if (!quad?.every(point => Number.isFinite(point?.x) && Number.isFinite(point?.y))) return false;
+    const marginX = width * marginRatio;
+    const marginY = height * marginRatio;
+    return quad.every(point => point.x >= -marginX
+      && point.x <= width + marginX
+      && point.y >= -marginY
+      && point.y <= height + marginY);
+  }
+
   function invertBilinear(quad, point) {
     let u = 0.5;
     let v = 0.5;
@@ -2731,7 +2741,10 @@
       const score = (frame?.support || 0) * 2
         + (frame?.box?.support || 0) * 1.25
         + guided.confidence * 0.45
-        + (attempt.source === "marker-affine" ? 0.12 : 0);
+        // Marker coordinates are valuable when the paper silhouette is weak,
+        // but only as a small tie-breaker. A larger fixed bonus used to beat a
+        // visibly stronger four-rail paper fit and follow a binder edge.
+        + (attempt.source === "marker-affine" ? 0.02 : 0);
       return { guided, frame, score, ...attempt };
     }).filter(Boolean).sort((first, second) => second.score - first.score);
     // A colour-anchored coordinate system is independent of the pale-paper
@@ -2742,6 +2755,14 @@
     const reliableAttempt = attempt => {
       const frame = attempt.frame;
       if (!frame) return false;
+      // Traced rails may be individually convincing while belonging to two
+      // different sheets. Extrapolating that mixture creates the conspicuous
+      // black triangle / imaginary corner seen in real camera photos. A page
+      // corner just outside the photo is normal; one far outside it is not an
+      // observation and must never be promoted to a confident stencil crop.
+      const resolvedStencil = frame.refinedStencilQuad || attempt.guided?.stencilQuad;
+      const resolvedPage = resolvedStencil ? extrapolateStencil(resolvedStencil) : null;
+      if (!quadFitsObservedImage(resolvedPage, width, height)) return false;
       const supportedSides = (frame.sideSupports || []).filter(value => value >= 0.42).length;
       const ordinaryFrame = supportedSides >= 3
         && frame.support >= 0.54
@@ -2766,8 +2787,11 @@
         && (frame.evidence?.points?.length || 0) >= 40;
       return chromaticOcclusion;
     };
-    const preferredMarkerAttempt = resolvedMarkerAttempts.find(attempt =>
-      attempt.source === "marker-affine" && reliableAttempt(attempt))
+    // Attempts are already sorted by independent frame + lower-box evidence.
+    // Do not force a weaker marker-affine fit ahead of a stronger paper fit:
+    // that old preference could reverse the page when the marker row was
+    // partially occluded.
+    const preferredMarkerAttempt = resolvedMarkerAttempts.find(attempt => reliableAttempt(attempt))
       || resolvedMarkerAttempts[0]
       || null;
     const markerResolved = preferredMarkerAttempt && reliableAttempt(preferredMarkerAttempt)
@@ -2803,8 +2827,17 @@
       const tracedFrame = markerResolved.frame;
       const resolvedStencil = tracedFrame?.refinedStencilQuad || markerGuided.stencilQuad;
       stencilQuad = resolvedStencil.map(point => ({ x: point.x / scale, y: point.y / scale }));
+      const supportedSides = (tracedFrame?.sideSupports || []).filter(value => value >= 0.42).length;
+      const observedPaper = markerResolved.paper?.map(point => ({ x: point.x / scale, y: point.y / scale })) || null;
+      // With one rail missing, keep the accurately detected three-sided mesh,
+      // but take the physical sheet corners from the marker/paper observation
+      // instead of extending a synthetic rail into the background.
+      const extrapolatedPage = extrapolateStencil(stencilQuad);
+      const resolvedPage = supportedSides === 4 || !observedPaper
+        ? extrapolatedPage
+        : observedPaper;
       return finish({
-        pageQuad: extrapolateStencil(stencilQuad),
+        pageQuad: resolvedPage,
         paperCandidate: paperQuad?.map(point => ({ x: point.x / scale, y: point.y / scale })) || null,
         markerCalibration: {
           coordinateSource: markerResolved.source,
@@ -3159,8 +3192,11 @@
       : [225, 225, 225];
     const paperLuminance = sourcePaper[0] * 0.2126 + sourcePaper[1] * 0.7152 + sourcePaper[2] * 0.0722;
     const shadowPoint = percentileFromHistogram(luminanceHistogram, luminanceCount, 0.04);
+    // Keep the paper target neutral while limiting the global gain. Fine grid
+    // and pencil detail are protected below by the local illumination test,
+    // instead of lowering every page or clipping every bright pixel globally.
     const targetPaper = 255;
-    const gains = sourcePaper.map(channel => clamp(targetPaper / Math.max(96, channel), 0.9, 1.3));
+    const gains = sourcePaper.map(channel => clamp(targetPaper / Math.max(104, channel), 0.92, 1.3));
     // Limit channel-to-channel differences: this removes a colour cast while
     // never turning blue/red handwriting into another colour.
     const meanGain = (gains[0] + gains[1] + gains[2]) / 3;
@@ -3352,11 +3388,28 @@
           || Math.abs(x - yellowX2) < outerBand
           || Math.abs(y - yellowY1) < outerBand
           || Math.abs(y - yellowY2) < outerBand;
+        const inPageMargin = x < yellowX1 - outerBand
+          || x > yellowX2 + outerBand
+          || y < yellowY1 - outerBand
+          || y > yellowY2 + outerBand;
         const inColorMarkers = x >= colorMarkerX1 && x <= colorMarkerX2
           && y >= colorMarkerY1 && y <= colorMarkerY2;
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);
         const saturation = max ? (max - min) / max : 0;
+        const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        // The template guarantees blank paper outside its yellow frame. When
+        // the photographed sheet is clipped, extrapolation can otherwise pull
+        // a dark folder or desk into this narrow margin. Clean only obvious
+        // non-paper pixels; pale shadows and the physical paper edge remain.
+        const outsidePaperArtifact = preciseStencil && inPageMargin
+          && (luminance < 105 || (luminance < 178 && saturation > 0.22));
+        if (outsidePaperArtifact) {
+          data[offset] = profile.targetPaper;
+          data[offset + 1] = profile.targetPaper;
+          data[offset + 2] = profile.targetPaper;
+          continue;
+        }
         const shouldNeutralize = useStencil && (
           ((inOuterBand || (y >= calibrationY1 && y <= calibrationY2)) && isYellow(r, g, b))
           || (inColorMarkers && saturation > 0.24)
@@ -3366,7 +3419,6 @@
           continue;
         }
         const original = [r, g, b];
-        const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
         const illuminationX = Math.round(x * illuminationXScale);
         const illuminationY = Math.round(y * illuminationYScale);
         const localBright = illumination[illuminationY * illuminationCanvas.width + illuminationX];
@@ -3387,20 +3439,21 @@
         } else if (saturation <= 0.18) {
           // The paper is the fifth calibration reference. Push neutral bright
           // pixels to true white while leaving pencil and black writing intact.
-          const whiteStart = Math.max(112, profile.shadowPoint + 24);
-          const whiteEnd = Math.max(whiteStart + 24, profile.paperLuminance * 0.92);
+          const whiteStart = Math.max(145, profile.shadowPoint + 34, profile.paperLuminance * 0.7);
+          const whiteEnd = Math.max(whiteStart + 22, profile.paperLuminance * 0.98);
           const position = clamp((luminance - whiteStart) / Math.max(1, whiteEnd - whiteStart), 0, 1);
           let whiteMix = position * position * (3 - 2 * position);
           // The blurred illumination value follows smooth shadows but not thin
           // writing. A soft relative threshold avoids both posterisation and
           // accidental removal of pencil/grid details.
           const localDifference = localBright - luminance;
-          const localPaperAmount = luminance >= 65
-            ? clamp((24 - localDifference) / 16, 0, 1)
+          const localPaperFloor = Math.max(70, profile.shadowPoint + 16, profile.paperLuminance * 0.5);
+          const localPaperAmount = luminance >= localPaperFloor
+            ? clamp((12 - localDifference) / 8, 0, 1)
             : 0;
           const smoothLocalPaper = localPaperAmount * localPaperAmount * (3 - 2 * localPaperAmount);
-          whiteMix = Math.max(whiteMix, smoothLocalPaper * 0.965);
-          output = automatic.map(value => value * (1 - whiteMix) + 255 * whiteMix);
+          whiteMix = Math.min(0.98, Math.max(whiteMix * 0.8, smoothLocalPaper * 0.98));
+          output = automatic.map(value => value * (1 - whiteMix) + profile.targetPaper * whiteMix);
         } else {
           // Preserve colours that are not one of the printed references, but
           // restore a small amount of saturation lost through camera exposure.
