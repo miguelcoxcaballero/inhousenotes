@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.17');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.18');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -362,6 +362,26 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
       context.fillRect(x * pxPerCm, 12 * pxPerCm, pxPerCm, pxPerCm);
     }
 
+    // Photographed template remnants must be removed before the clean vector
+    // stencil is composited. One isolated grid dot should disappear, while a
+    // black handwritten stroke crossing another grid position must survive.
+    context.fillStyle = 'rgb(132,132,132)';
+    context.beginPath();
+    context.arc(2 * pxPerCm, 1.93 * pxPerCm, 0.055 * pxPerCm, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = 'rgb(126,126,126)';
+    context.lineWidth = 0.08 * pxPerCm;
+    context.beginPath();
+    context.moveTo(1.5 * pxPerCm, 5 * pxPerCm);
+    context.lineTo(1.5 * pxPerCm, 8 * pxPerCm);
+    context.stroke();
+    context.strokeStyle = 'rgb(24,24,24)';
+    context.lineWidth = 0.07 * pxPerCm;
+    context.beginPath();
+    context.moveTo(2.25 * pxPerCm, 1.93 * pxPerCm);
+    context.lineTo(2.75 * pxPerCm, 1.93 * pxPerCm);
+    context.stroke();
+
     const correction = await ScannerPro.Lightweight.correctColors(canvas, {
       useStencil: true,
       preciseStencil: true
@@ -377,7 +397,10 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
       black: sample(8.5, 12.5),
       blue: sample(11.5, 12.5),
       green: sample(14.5, 12.5),
-      yellow: sample(17.5, 12.5)
+      yellow: sample(17.5, 12.5),
+      originalDot: sample(2, 1.93),
+      crossingInk: sample(2.5, 1.93),
+      greyRail: sample(1.5, 6.5)
     };
   });
 
@@ -389,6 +412,9 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
   expect(result.blue).toEqual([0, 47, 217]);
   expect(result.green).toEqual([110, 255, 18]);
   expect(result.yellow).toEqual([255, 222, 0]);
+  expect(Math.min(...result.originalDot)).toBeGreaterThanOrEqual(250);
+  expect(Math.max(...result.crossingInk)).toBeLessThan(110);
+  expect(Math.min(...result.greyRail)).toBeGreaterThanOrEqual(250);
 });
 
 test('scanner follows a curved yellow frame and straightens it with a real mesh', async ({ page }) => {

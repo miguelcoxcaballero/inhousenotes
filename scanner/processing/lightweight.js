@@ -3266,6 +3266,134 @@
     return false;
   }
 
+  function removePhotographedStencil(data, width, height, pxPerCm, targetPaper) {
+    const setPaper = (x, y) => {
+      if (x < 0 || x >= width || y < 0 || y >= height) return;
+      const offset = (y * width + x) * 4;
+      data[offset] = targetPaper;
+      data[offset + 1] = targetPaper;
+      data[offset + 2] = targetPaper;
+    };
+    const metricsAt = (x, y) => {
+      const offset = (y * width + x) * 4;
+      const r = data[offset], g = data[offset + 1], b = data[offset + 2];
+      const maximum = Math.max(r, g, b);
+      const minimum = Math.min(r, g, b);
+      return {
+        luminance: r * 0.2126 + g * 0.7152 + b * 0.0722,
+        saturation: maximum ? (maximum - minimum) / maximum : 0,
+        yellow: isYellow(r, g, b),
+        printedWarm: r >= g * 0.9 && g >= b * 1.08 && r >= b * 1.18
+      };
+    };
+    const removePrintedInk = (x, y, force = false) => {
+      const metrics = metricsAt(x, y);
+      // Outer rails and marker wells contain no user content and can be
+      // cleared unconditionally. In the footer boxes preserve very dark or
+      // chromatic handwriting while removing yellow and neutral print residue.
+      if (force || metrics.yellow || metrics.printedWarm
+        || (metrics.saturation <= 0.19 && metrics.luminance >= 72 && metrics.luminance < 246)) {
+        setPaper(x, y);
+      }
+    };
+    const paintVerticalBand = (xCm, y1Cm, y2Cm, radiusCm, force = false) => {
+      const center = Math.round(xCm * pxPerCm);
+      const radius = Math.max(1, Math.ceil(radiusCm * pxPerCm));
+      const y1 = Math.max(0, Math.floor(y1Cm * pxPerCm));
+      const y2 = Math.min(height - 1, Math.ceil(y2Cm * pxPerCm));
+      for (let y = y1; y <= y2; y += 1) {
+        for (let x = Math.max(0, center - radius); x <= Math.min(width - 1, center + radius); x += 1) {
+          removePrintedInk(x, y, force);
+        }
+      }
+    };
+    const paintHorizontalBand = (yCm, x1Cm, x2Cm, radiusCm, force = false) => {
+      const center = Math.round(yCm * pxPerCm);
+      const radius = Math.max(1, Math.ceil(radiusCm * pxPerCm));
+      const x1 = Math.max(0, Math.floor(x1Cm * pxPerCm));
+      const x2 = Math.min(width - 1, Math.ceil(x2Cm * pxPerCm));
+      for (let y = Math.max(0, center - radius); y <= Math.min(height - 1, center + radius); y += 1) {
+        for (let x = x1; x <= x2; x += 1) removePrintedInk(x, y, force);
+      }
+    };
+
+    // Remove the photographed frame before the vector frame is composited.
+    // The generous band also captures grey antialiasing and small residual
+    // mesh errors instead of leaving a dirty halo beside the digital line.
+    paintVerticalBand(1.5, 1.25, 28.6, 0.13, true);
+    paintVerticalBand(19.5, 1.25, 28.6, 0.13, true);
+    paintHorizontalBand(1.43, 1.35, 19.65, 0.13, true);
+    paintHorizontalBand(28.43, 1.35, 19.65, 0.13, true);
+
+    // Footer boxes and ticks are allowed to contain handwriting, so only
+    // their printed yellow/neutral pixels are removed.
+    for (const y of [27.43, 27.93]) {
+      paintHorizontalBand(y, 1.82, 10.18, 0.18);
+      paintHorizontalBand(y, 10.82, 19.18, 0.18);
+    }
+    for (let x = 2; x <= 10.0001; x += 0.5) paintVerticalBand(x, 27.24, 28.12, 0.13);
+    for (let x = 11; x <= 19.0001; x += 0.5) paintVerticalBand(x, 27.24, 28.12, 0.13);
+
+    // The four reference dots are always regenerated digitally.
+    for (const xCm of [10.125, 10.375, 10.625, 10.875]) {
+      const cx = xCm * pxPerCm;
+      const cy = 27.68 * pxPerCm;
+      const radius = Math.max(2, Math.ceil(0.19 * pxPerCm));
+      for (let y = Math.max(0, Math.floor(cy - radius)); y <= Math.min(height - 1, Math.ceil(cy + radius)); y += 1) {
+        for (let x = Math.max(0, Math.floor(cx - radius)); x <= Math.min(width - 1, Math.ceil(cx + radius)); x += 1) {
+          if (Math.hypot(x - cx, y - cy) <= radius) setPaper(x, y);
+        }
+      }
+    }
+
+    // The photographed dot grid is deliberately a pale neutral tone, while
+    // user ink is mapped to much darker black or saturated pen colours. Remove
+    // that light neutral layer across the grid field before the clean vector
+    // lattice is composited. This also handles residual non-rigid warp without
+    // guessing a single global offset and keeps the dark core of handwriting.
+    const gridX1 = Math.max(0, Math.floor(1.72 * pxPerCm));
+    const gridX2 = Math.min(width - 1, Math.ceil(19.28 * pxPerCm));
+    const gridY1 = Math.max(0, Math.floor(1.62 * pxPerCm));
+    const gridY2 = Math.min(height - 1, Math.ceil(27.18 * pxPerCm));
+    for (let y = gridY1; y <= gridY2; y += 1) {
+      for (let x = gridX1; x <= gridX2; x += 1) {
+        const metrics = metricsAt(x, y);
+        if (metrics.saturation <= 0.34 && metrics.luminance >= 188 && metrics.luminance < 250) {
+          setPaper(x, y);
+        }
+      }
+    }
+    // Also handle unusually dark but perfectly aligned printed dots. A dark
+    // or coloured pen stroke in the same neighbourhood vetoes the cleanup.
+    const alignedRadius = Math.max(2, Math.ceil(0.1 * pxPerCm));
+    const alignedGuard = Math.max(alignedRadius + 1, Math.ceil(0.14 * pxPerCm));
+    for (let column = 0; column < 35; column += 1) {
+      const cx = Math.round((2 + column * 0.5) * pxPerCm);
+      for (let row = 0; row < 51; row += 1) {
+        const cy = Math.round((1.93 + row * 0.5) * pxPerCm);
+        let protectedByInk = false;
+        for (let dy = -alignedGuard; dy <= alignedGuard && !protectedByInk; dy += 1) {
+          for (let dx = -alignedGuard; dx <= alignedGuard; dx += 1) {
+            if (Math.hypot(dx, dy) > alignedGuard) continue;
+            const metrics = metricsAt(cx + dx, cy + dy);
+            if (metrics.luminance < 150 || metrics.saturation > 0.48) {
+              protectedByInk = true;
+              break;
+            }
+          }
+        }
+        if (protectedByInk) continue;
+        for (let dy = -alignedRadius; dy <= alignedRadius; dy += 1) {
+          for (let dx = -alignedRadius; dx <= alignedRadius; dx += 1) {
+            if (Math.hypot(dx, dy) > alignedRadius) continue;
+            const metrics = metricsAt(cx + dx, cy + dy);
+            if (metrics.luminance >= 110 && metrics.saturation <= 0.58) setPaper(cx + dx, cy + dy);
+          }
+        }
+      }
+    }
+  }
+
   Light.correctColors = async function correctColors(canvas, options = {}) {
     const settings = typeof options === "boolean"
       ? { useStencil: options, preciseStencil: options }
@@ -3466,6 +3594,9 @@
         }
       }
       if (y % 96 === 95) await yieldToBrowser();
+    }
+    if (preciseStencil) {
+      removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper);
     }
     context.putImageData(image, 0, 0);
     illuminationCanvas.width = 0;

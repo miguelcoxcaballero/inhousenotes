@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.17",
-  "releaseNotes": "Inhouse Notes v5.11.17 / Android 1.0.10: Scanner jobs start visibly and recover after lifecycle interruptions, border detection rejects invented corners and competing paper edges, and local colour balancing preserves strokes across dark and overexposed photos."
+  "publishedAppVersion": "5.11.18",
+  "releaseNotes": "Inhouse Notes v5.11.18 / Android 1.0.10: scanned template rails and the photographed grey dot grid are removed onto clean white paper before the precise digital stencil is applied, while dark and coloured handwriting is preserved."
 }
