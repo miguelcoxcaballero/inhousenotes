@@ -39,8 +39,14 @@ await fs.mkdir(outputDirectory, { recursive: true });
 
 const manifest = [];
 const thumbnails = [];
+const requestedCase = process.env.SCANNER_CASE || null;
 try {
-  for (let index = 0; index < 15; index += 1) {
+  const fixtureIndexes = await page.evaluate(caseName => ScannerSyntheticFixtures.CASES
+    .map((definition, index) => ({ name: definition.name, index }))
+    .filter(entry => !caseName || entry.name === caseName)
+    .map(entry => entry.index), requestedCase);
+  if (!fixtureIndexes.length) throw new Error(`Unknown scanner case: ${requestedCase}`);
+  for (const index of fixtureIndexes) {
     const result = await page.evaluate(async fixtureIndex => {
       const definition = ScannerSyntheticFixtures.CASES[fixtureIndex];
       const rendered = ScannerSyntheticFixtures.renderCase(definition);
@@ -114,11 +120,14 @@ try {
         method: detection.method,
         confidence: detection.confidence,
         cornerMaximumRatio: geometry.cornerMaximumRatio,
+        cornerErrors: geometry.cornerErrors,
         mappedCornerMaximumRatio: geometry.mappedCornerMaximumRatio,
         curveMeanRatio: geometry.curveMeanRatio,
         curveMaximumRatio: geometry.curveMaximumRatio,
+        curves: geometry.curves,
         frameSupport: detection.frame?.support || 0,
         boxSupport: detection.frame?.box?.support || 0,
+        markerCalibration: detection.markerCalibration || null,
         colourCalibrated: colourResult.calibrated,
         colourSamples: colourResult.samples,
         colourReferences: colourResult.references,
