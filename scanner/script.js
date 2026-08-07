@@ -286,8 +286,9 @@
   const stageOff = () => { scheduleUi(() => stageOffImmediate()); };
 
   const PROCESSING_PHASES = Object.freeze({
-    corners: "Finding 4 corners",
-    frame: "Detecting yellow frame",
+    yellow: "Finding yellow marks",
+    frame: "Forming page frame",
+    corners: "Confirming 4 corners",
     mesh: "Mapping page curvature",
     warp: "Straightening page",
     color: "Balancing colours"
@@ -386,6 +387,8 @@
     const boxBottomPath = frame?.box?.bottom?.map(scaled) || null;
     const boxPoints = frame?.box?.points?.map(scaled) || [];
     const boxNormalized = frame?.box?.normalized || [];
+    const evidencePoints = frame?.evidence?.points?.map(scaled) || boxPoints;
+    const evidenceNormalized = frame?.evidence?.normalized || boxNormalized;
     const cornerPoints = (frame?.corners || detection.stencilQuad || detection.pageQuad).map(scaled);
     E.processing.width = width;
     E.processing.height = height;
@@ -393,6 +396,7 @@
     E.processing.dataset.cornerCount = "4";
     E.processing.dataset.detectionMethod = detection.method || "unknown";
     E.processing.dataset.yellowBoxPoints = String(boxPoints.length);
+    E.processing.dataset.yellowEvidencePoints = String(evidencePoints.length);
 
     const clear = () => {
       pctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -452,16 +456,20 @@
       ? SP.Lightweight.mapDetectedFrame(frame, u, v)
       : bilinearPreview(detection.pageQuad, u, v);
     const sourcePoint = (u, v) => scaled(sourcePointOriginal(u, v));
-    const drawFrame = progress => {
+    const drawFrame = (progress, colour = "#ffea00") => {
+      pctx.save();
+      pctx.shadowColor = "rgba(255,234,0,.34)";
+      pctx.shadowBlur = Math.max(1.5, lineWidth * 1.2);
       if (framePaths) {
         const ordered = [framePaths.top, framePaths.right, framePaths.bottom.slice().reverse(), framePaths.left.slice().reverse()];
         ordered.forEach((path, index) => {
           const local = Math.max(0, Math.min(1, progress * 1.32 - index * .08));
-          drawPath(path, easeOutCubic(local), false, .96);
+          drawPath(path, easeOutCubic(local), false, .96, colour);
         });
       } else {
-        drawPath(cornerPoints, progress, true, .9);
+        drawPath(cornerPoints, progress, true, .9, colour);
       }
+      pctx.restore();
     };
     const targetMargin = Math.min(width, height) * .035;
     let targetWidth = width - targetMargin * 2;
@@ -482,6 +490,10 @@
     const frameV0 = 1.43 / 29.7;
     const frameV1 = 28.43 / 29.7;
     const yellowBox = "#ffea00";
+    const drawBoxRails = (progress = 1, alpha = .96) => {
+      if (boxTopPath) drawPath(boxTopPath, progress, false, alpha, yellowBox);
+      if (boxBottomPath) drawPath(boxBottomPath, progress, false, alpha, yellowBox);
+    };
     const animatedPoint = (u, v, warpProgress = 0) => {
       const start = sourcePoint(u, v);
       const end = targetPoint(u, v);
@@ -494,6 +506,56 @@
       u: frameU0 + point.u * (frameU1 - frameU0),
       v: frameV0 + point.v * (frameV1 - frameV0)
     });
+    const boxTopNormalized = 1 - 1 / 27;
+    const boxBottomNormalized = 1 - 0.5 / 27;
+    const squareRanges = [[(2 - 1.5) / 18, (10 - 1.5) / 18], [(11 - 1.5) / 18, (19 - 1.5) / 18]];
+    const nearestSquareDivider = u => {
+      for (const [start, end] of squareRanges) {
+        if (u < start - .018 || u > end + .018) continue;
+        return Math.max(start, Math.min(end, start + Math.round((u - start) / (0.5 / 18)) * (0.5 / 18)));
+      }
+      return null;
+    };
+    const evidenceTarget = point => {
+      const candidates = [
+        { u: point.u, v: 0 },
+        { u: point.u, v: 1 },
+        { u: 0, v: point.v },
+        { u: 1, v: point.v }
+      ];
+      if (point.v >= .84) {
+        candidates.push({ u: point.u, v: boxTopNormalized });
+        candidates.push({ u: point.u, v: boxBottomNormalized });
+        const divider = nearestSquareDivider(point.u);
+        if (divider != null) {
+          candidates.push({
+            u: divider,
+            v: Math.max(boxTopNormalized, Math.min(boxBottomNormalized, point.v))
+          });
+        }
+      }
+      return candidates.map(candidate => ({
+        ...candidate,
+        distance: Math.hypot(candidate.u - point.u, (candidate.v - point.v) * 0.72)
+      })).sort((first, second) => first.distance - second.distance)[0];
+    };
+    const evidenceLimit = MEM.low ? 720 : 1400;
+    const evidenceStride = Math.max(1, Math.ceil(evidenceNormalized.length / evidenceLimit));
+    const evidenceEntries = evidenceNormalized
+      .map((point, index) => ({
+        point,
+        start: evidencePoints[index],
+        target: evidenceTarget(point),
+        index
+      }))
+      .filter(entry => entry.start && entry.target && entry.index % evidenceStride === 0)
+      // Begin at the unmistakable calibration row, then let the evidence grow
+      // around the rest of the sheet instead of revealing in JPEG scan order.
+      .sort((first, second) => (
+        Math.abs(first.point.u - .5) + Math.abs(first.point.v - boxTopNormalized) * .45
+      ) - (
+        Math.abs(second.point.u - .5) + Math.abs(second.point.v - boxTopNormalized) * .45
+      ));
     const paintYellowBoxPoints = (points, progress = 1) => {
       const visible = Math.max(0, Math.min(points.length, Math.ceil(points.length * progress)));
       if (!visible) return;
@@ -509,8 +571,38 @@
       }
       pctx.restore();
     };
+    const paintEvidenceCloud = (reveal = 1, merge = 0, warpProgress = 0, alpha = .98) => {
+      if (!evidenceEntries.length) return;
+      const visible = Math.max(0, Math.min(evidenceEntries.length, Math.ceil(evidenceEntries.length * reveal)));
+      const merged = easeInOutCubic(Math.max(0, Math.min(1, merge)));
+      const warped = easeInOutCubic(Math.max(0, Math.min(1, warpProgress)));
+      const size = Math.max(1.55, lineWidth * (1.42 - merged * .2));
+      pctx.save();
+      pctx.fillStyle = yellowBox;
+      pctx.globalAlpha = alpha;
+      pctx.shadowColor = "rgba(255,234,0,.5)";
+      pctx.shadowBlur = Math.max(1.5, lineWidth * 1.15);
+      for (let index = 0; index < visible; index += 1) {
+        const entry = evidenceEntries[index];
+        const targetPage = pagePointForBox(entry.target);
+        const smoothSource = sourcePoint(targetPage.u, targetPage.v);
+        const canonical = targetPoint(targetPage.u, targetPage.v);
+        const consolidated = {
+          x: entry.start.x + (smoothSource.x - entry.start.x) * merged,
+          y: entry.start.y + (smoothSource.y - entry.start.y) * merged
+        };
+        const point = {
+          x: consolidated.x + (canonical.x - consolidated.x) * warped,
+          y: consolidated.y + (canonical.y - consolidated.y) * warped
+        };
+        pctx.fillRect(point.x - size * .5, point.y - size * .5, size, size);
+      }
+      pctx.restore();
+    };
     const drawYellowBoxSource = (progress = 1, warpProgress = null) => {
-      if (warpProgress == null) {
+      if (evidenceEntries.length) {
+        paintEvidenceCloud(progress, 1, warpProgress == null ? 0 : warpProgress);
+      } else if (warpProgress == null) {
         paintYellowBoxPoints(boxPoints, progress);
       } else {
         paintYellowBoxPoints(boxNormalized.map(point => {
@@ -519,12 +611,14 @@
         }), progress);
       }
       if (!boxPoints.length) {
-        if (boxTopPath) drawPath(boxTopPath, progress, false, .98, yellowBox);
-        if (boxBottomPath) drawPath(boxBottomPath, progress, false, .98, yellowBox);
+        drawBoxRails(progress, .98);
       }
     };
     const drawYellowBoxCanonical = (canvasWidth, canvasHeight) => {
-      const canonical = boxNormalized.map(point => {
+      const canonicalEvidence = evidenceEntries.length
+        ? evidenceEntries.map(entry => entry.target)
+        : boxNormalized;
+      const canonical = canonicalEvidence.map(point => {
         const pagePoint = pagePointForBox(point);
         return { x: pagePoint.u * canvasWidth, y: pagePoint.v * canvasHeight };
       });
@@ -588,38 +682,68 @@
     return {
       guard,
       async detection() {
-        setProcessingPhase("corners", {
-          cornerCount: 4,
+        setProcessingPhase("yellow", {
           method: detection.method,
-          yellowBoxPoints: boxPoints.length
+          yellowBoxPoints: boxPoints.length,
+          yellowEvidencePoints: evidenceEntries.length
         });
-        await processingFrame(260, guard, value => {
+        await processingFrame(280, guard, value => {
           clear();
-          drawYellowBoxSource(easeOutCubic(value));
-          drawCorners(easeOutCubic(value), false);
+          if (evidenceEntries.length) paintEvidenceCloud(easeOutCubic(value), 0);
+          else drawYellowBoxSource(easeOutCubic(value));
         });
         setProcessingPhase("frame", {
           detected: !!frame,
           support: frame?.support || 0,
           curvature: frame?.curvature || 0,
-          yellowBoxPoints: boxPoints.length
+          yellowBoxPoints: boxPoints.length,
+          yellowEvidencePoints: evidenceEntries.length
         });
-        await processingFrame(360, guard, value => {
+        await processingFrame(420, guard, value => {
+          const eased = easeInOutCubic(value);
           clear();
-          drawFrame(easeInOutCubic(value));
-          drawYellowBoxSource(1);
-          drawCorners(1, false);
+          if (evidenceEntries.length) paintEvidenceCloud(1, eased);
+          else drawYellowBoxSource(1);
+          const outline = Math.max(0, Math.min(1, (eased - .28) / .72));
+          drawFrame(outline, yellowBox);
+          drawBoxRails(outline);
         });
-        setProcessingPhase("mesh", { rows: 12, columns: 8, curved: !!frame, yellowBoxPoints: boxPoints.length });
+        setProcessingPhase("corners", {
+          cornerCount: 4,
+          yellowBoxPoints: boxPoints.length,
+          yellowEvidencePoints: evidenceEntries.length
+        });
+        await processingFrame(180, guard, value => {
+          clear();
+          if (evidenceEntries.length) paintEvidenceCloud(1, 1);
+          else drawYellowBoxSource(1);
+          drawFrame(1, yellowBox);
+          drawBoxRails(1);
+          drawCorners(easeOutCubic(value), false);
+        });
+        setProcessingPhase("mesh", {
+          rows: 12,
+          columns: 8,
+          curved: !!frame,
+          yellowBoxPoints: boxPoints.length,
+          yellowEvidencePoints: evidenceEntries.length
+        });
         await processingFrame(320, guard, value => {
           clear();
-          drawFrame(1);
+          if (evidenceEntries.length) paintEvidenceCloud(1, 1, 0, .9);
+          else drawYellowBoxSource(1);
+          drawFrame(1, yellowBox);
+          drawBoxRails(1);
           drawGrid(easeOutCubic(value));
-          drawYellowBoxSource(1);
         });
       },
       async warp() {
-        setProcessingPhase("warp", { cornerCount: 4, realGeometry: true, yellowBoxPoints: boxPoints.length });
+        setProcessingPhase("warp", {
+          cornerCount: 4,
+          realGeometry: true,
+          yellowBoxPoints: boxPoints.length,
+          yellowEvidencePoints: evidenceEntries.length
+        });
         await processingFrame(390, guard, value => {
           const eased = easeInOutCubic(value);
           clear();
@@ -629,7 +753,8 @@
           drawWarpedSource(eased);
           pctx.globalAlpha = 1;
           drawGrid(1, 1 - eased * .36, eased);
-          drawYellowBoxSource(1, eased);
+          if (evidenceEntries.length) paintEvidenceCloud(1, 1, eased);
+          else drawYellowBoxSource(1, eased);
         });
       },
       beginColor() {
@@ -664,7 +789,11 @@
         pctx.clearRect(0, 0, E.processing.width, E.processing.height);
         pctx.drawImage(canvas, 0, 0, E.processing.width, E.processing.height);
         drawYellowBoxCanonical(E.processing.width, E.processing.height);
-        setProcessingPhase("complete", { realOutput: true, yellowBoxPoints: boxPoints.length });
+        setProcessingPhase("complete", {
+          realOutput: true,
+          yellowBoxPoints: boxPoints.length,
+          yellowEvidencePoints: evidenceEntries.length
+        });
       }
     };
   }

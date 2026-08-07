@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.14",
-  "releaseNotes": "Inhouse Notes v5.11.14 / Android 1.0.10: The scanner now reconstructs the full yellow frame, both lower calibration boxes and physical paper edges using the four colour markers, a curved mesh and an adaptive precision pass validated against supplied and synthetic photos."
+  "publishedAppVersion": "5.11.15",
+  "releaseNotes": "Inhouse Notes v5.11.15 / Android 1.0.10: The scanner now recovers yellow frames that appear neutral grey, anchors geometry to the lower squares and colour markers, rejects handwriting as corners, and animates real evidence merging into the corrected stencil."
 }

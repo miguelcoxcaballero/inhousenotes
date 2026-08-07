@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.14');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.15');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -117,8 +117,9 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   await expect(page.locator('#processAnimationLayer')).toBeHidden();
   const processingPhases = await page.evaluate(() => window.__scannerProcessingPhases);
   expect(processingPhases.map(entry => entry.phase)).toEqual([
-    'corners', 'frame', 'mesh', 'warp', 'color', 'complete'
+    'yellow', 'frame', 'corners', 'mesh', 'warp', 'color', 'complete'
   ]);
+  expect(processingPhases.find(entry => entry.phase === 'yellow').yellowEvidencePoints).toBeGreaterThan(40);
   expect(processingPhases.find(entry => entry.phase === 'corners')).toMatchObject({
     cornerCount: 4
   });

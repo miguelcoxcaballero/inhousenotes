@@ -27,7 +27,7 @@
     { name: 'upside-down-shadow', width: 900, height: 1180, quad: [[786, 1110], [94, 1070], [145, 66], [760, 96]], bowX: .026, bowY: .032, brightness: .86, contrast: 1.12, saturation: .88, shadow: .28 },
     { name: 'strong-left-curl', width: 900, height: 1180, quad: [[118, 62], [784, 105], [742, 1114], [74, 1074]], bowX: .055, bowY: -.018, brightness: 1.04, contrast: .96, saturation: .9 },
     { name: 'strong-bottom-curl', width: 900, height: 1180, quad: [[132, 76], [772, 42], [824, 1080], [82, 1112]], bowX: -.012, bowY: .052, brightness: .98, contrast: 1.03, saturation: .7, blur: .45 },
-    { name: 'faded-yellow', width: 900, height: 1180, quad: [[84, 102], [782, 62], [808, 1105], [116, 1130]], bowX: .02, bowY: -.034, brightness: 1.1, contrast: .82, saturation: .38, blur: .65 },
+    { name: 'faded-yellow', width: 900, height: 1180, quad: [[84, 102], [782, 62], [808, 1105], [116, 1130]], bowX: .02, bowY: -.034, brightness: 1.1, contrast: .82, saturation: .72, blur: .65, stencilColour: '#b9b7ae' },
     { name: 'dark-camera', width: 900, height: 1180, quad: [[172, 50], [742, 92], [806, 1102], [76, 1078]], bowX: -.032, bowY: .028, brightness: .68, contrast: 1.18, saturation: .76, shadow: .36 },
     { name: 'overexposed', width: 900, height: 1180, quad: [[94, 48], [790, 88], [756, 1132], [126, 1092]], bowX: .025, bowY: .018, brightness: 1.22, contrast: .74, saturation: .58 },
     { name: 'magenta-cast', width: 900, height: 1180, quad: [[152, 112], [750, 48], [812, 1080], [70, 1125]], bowX: -.02, bowY: -.038, brightness: .94, contrast: 1.08, saturation: .86, tint: '#b24e78', tintAlpha: .075 },
@@ -81,13 +81,13 @@
     };
   }
 
-  function drawTemplate() {
+  function drawTemplate(definition = {}) {
     const canvas = document.createElement('canvas');
     canvas.width = 630;
     canvas.height = Math.round(canvas.width / A4_RATIO);
     const context = canvas.getContext('2d');
     const px = canvas.width / 21;
-    const yellow = '#f0db4c';
+    const yellow = definition.stencilColour || '#f0db4c';
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -197,7 +197,7 @@
   }
 
   function renderCase(definition) {
-    const template = drawTemplate();
+    const template = drawTemplate(definition);
     const map = mappingFor(definition);
     const clean = document.createElement('canvas');
     clean.width = definition.width;
