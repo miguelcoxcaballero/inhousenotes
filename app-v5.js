@@ -1425,7 +1425,12 @@
                 const mem = performance?.memory;
                 if (!mem) return;
                 const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
-                if (usedRatio > 0.5) {
+                // 0.5 was a low bar that stayed crossed for the rest of the
+                // session on modest devices, so this 15s interval kept
+                // discarding PDF/image caches the user was about to scroll
+                // back to (forcing a re-render from pdf.js) rather than only
+                // reacting to genuine pressure.
+                if (usedRatio > 0.8) {
                     console.warn(`Memory pressure: ${(usedRatio * 100).toFixed(0)}% heap used — running cleanup`);
                     // Aggressive image cache prune
                     const aggressiveTarget = Math.floor(MAX_IMAGE_CACHE * 0.4);
@@ -12037,10 +12042,16 @@
                 y: (p0.y + p1.y) / 2
             };
 
+            // A single path for the whole stroke, not one beginPath()/stroke()
+            // per point: style (including lineJoin='round', set above) is
+            // constant across every segment, so splitting them only cost one
+            // Canvas2D draw call per point — 10k-20k draw calls on a heavily
+            // written page, which is the dominant cost of a full-page repaint
+            // (redrawPage draws every stroke) during erasing, zooming and
+            // page-switch.
             ctx.beginPath();
             ctx.moveTo(p0.x, p0.y);
             ctx.lineTo(prevMid.x, prevMid.y);
-            ctx.stroke();
 
             for (let i = 1; i < points.length - 1; i++) {
                 const current = points[i];
@@ -12049,16 +12060,11 @@
                     x: (current.x + next.x) / 2,
                     y: (current.y + next.y) / 2
                 };
-                ctx.beginPath();
-                ctx.moveTo(prevMid.x, prevMid.y);
                 ctx.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
-                ctx.stroke();
                 prevMid = mid;
             }
 
             const last = points[points.length - 1];
-            ctx.beginPath();
-            ctx.moveTo(prevMid.x, prevMid.y);
             ctx.lineTo(last.x, last.y);
             ctx.stroke();
         }
