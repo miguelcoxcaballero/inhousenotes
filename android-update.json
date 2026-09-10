@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.18",
-  "releaseNotes": "Inhouse Notes v5.11.18 / Android 1.0.10: scanned template rails and the photographed grey dot grid are removed onto clean white paper before the precise digital stencil is applied, while dark and coloured handwriting is preserved."
+  "publishedAppVersion": "5.11.19",
+  "releaseNotes": "Inhouse Notes v5.11.19 / Android 1.0.10: home-screen color, star, move and bin actions no longer reload the whole file list; the file manager can create folders; and first-connection peer-to-peer handshakes land slightly faster."
 }
