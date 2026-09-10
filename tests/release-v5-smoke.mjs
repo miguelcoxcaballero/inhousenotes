@@ -2,35 +2,43 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const indexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const app = fs.readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
-const boot = fs.readFileSync(new URL('../boot-v5.js', import.meta.url), 'utf8');
-const runtimeCore = fs.readFileSync(new URL('../runtime-core-v5.js', import.meta.url), 'utf8');
-const securityCore = fs.readFileSync(new URL('../security-core-v5.js', import.meta.url), 'utf8');
-const timelineCore = fs.readFileSync(new URL('../timeline-core-v5.js', import.meta.url), 'utf8');
-const html = [indexHtml, app, boot, runtimeCore, securityCore, timelineCore].join('\n');
-const live = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
-const collaborationCore = fs.readFileSync(new URL('../collaboration-core-v5.js', import.meta.url), 'utf8');
-const scannerHtml = fs.readFileSync(new URL('../scanner/index.html', import.meta.url), 'utf8');
-const scannerStyles = fs.readFileSync(new URL('../scanner/styles.css', import.meta.url), 'utf8');
-const scanner = fs.readFileSync(new URL('../scanner/script.js', import.meta.url), 'utf8');
-const scannerConfig = fs.readFileSync(new URL('../scanner/configLoader.js', import.meta.url), 'utf8');
-const scannerLightweight = fs.readFileSync(new URL('../scanner/processing/lightweight.js', import.meta.url), 'utf8');
-const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = fs.readFileSync(new URL('../RELEASE_NOTES_v5.11.18.md', import.meta.url), 'utf8');
-const androidLoader = fs.readFileSync(new URL('../.github/android/app-loader.html', import.meta.url), 'utf8');
-const androidBuilder = fs.readFileSync(new URL('../android app/html_to_apk_builder.py', import.meta.url), 'utf8');
-const androidBuildScript = fs.readFileSync(new URL('../.github/scripts/build_android_apk.py', import.meta.url), 'utf8');
-const androidWorkflow = fs.readFileSync(new URL('../.github/workflows/build-android.yml', import.meta.url), 'utf8');
-const pagesWorkflow = fs.readFileSync(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8');
+// Several checks below match multi-line source snippets containing literal
+// "\n". On a default Windows checkout (core.autocrlf=true) every file is
+// CRLF on disk, so those needles never match and this whole suite fails
+// with unrelated-looking assertion errors. Normalize to LF at the source so
+// the checks are OS-independent.
+const readText = (relativePath) =>
+    fs.readFileSync(new URL(relativePath, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
-assert.match(indexHtml, /const APP_VERSION = '5\.11\.18';/);
+const indexHtml = readText('../index.html');
+const app = readText('../app-v5.js');
+const boot = readText('../boot-v5.js');
+const runtimeCore = readText('../runtime-core-v5.js');
+const securityCore = readText('../security-core-v5.js');
+const timelineCore = readText('../timeline-core-v5.js');
+const html = [indexHtml, app, boot, runtimeCore, securityCore, timelineCore].join('\n');
+const live = readText('../live-collaboration-v5.js');
+const collaborationCore = readText('../collaboration-core-v5.js');
+const scannerHtml = readText('../scanner/index.html');
+const scannerStyles = readText('../scanner/styles.css');
+const scanner = readText('../scanner/script.js');
+const scannerConfig = readText('../scanner/configLoader.js');
+const scannerLightweight = readText('../scanner/processing/lightweight.js');
+const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
+const notes = readText('../RELEASE_NOTES_v5.11.19.md');
+const androidLoader = readText('../.github/android/app-loader.html');
+const androidBuilder = readText('../android app/html_to_apk_builder.py');
+const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
+const androidWorkflow = readText('../.github/workflows/build-android.yml');
+const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
+
+assert.match(indexHtml, /const APP_VERSION = '5\.11\.19';/);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.18/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.18/);
-assert.match(indexHtml, /app-v5\.js\?v=5\.11\.18/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.18/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.19/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.19/);
+assert.match(indexHtml, /app-v5\.js\?v=5\.11\.19/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.19/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -56,7 +64,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5\.11\.18/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5\.11\.19/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -1079,15 +1087,15 @@ assert.ok(
 );
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
-assert.equal(update.publishedAppVersion, '5.11.18');
+assert.equal(update.publishedAppVersion, '5.11.19');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.11\.18/);
-assert.match(notes, /grey dot grid/i);
-assert.match(notes, /white paper/i);
-assert.match(notes, /handwriting/i);
-assert.match(notes, /supplied.*photo/i);
-assert.match(notes, /15 deterministic/i);
+assert.match(update.releaseNotes, /v5\.11\.19/);
+assert.match(notes, /full reload/i);
+assert.match(notes, /New folder/i);
+assert.match(notes, /peer-to-peer/i);
+assert.match(notes, /TURN relay/i);
+assert.match(notes, /Saving/i);
 
-console.log('v5.11.18 smoke checks passed.');
+console.log('v5.11.19 smoke checks passed.');

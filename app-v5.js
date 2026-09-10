@@ -1971,6 +1971,7 @@
         const driveBreadcrumbsEl = document.getElementById('drive-breadcrumbs');
         const driveLoginBtn = document.getElementById('btn-drive-login');
         const driveNewBtn = document.getElementById('btn-drive-new');
+        const driveNewFolderBtn = document.getElementById('btn-drive-new-folder');
         const downloadAppBtn = document.getElementById('btn-download-app');
         const downloadAppModal = document.getElementById('modal-download-app');
         const downloadAppCloseBtn = document.getElementById('download-app-close');
@@ -6357,6 +6358,7 @@
             if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !connectedOrRecoverable);
             if (driveSearchInput) driveSearchInput.disabled = !signedIn;
             if (driveNewBtn) driveNewBtn.disabled = !signedIn;
+            if (driveNewFolderBtn) driveNewFolderBtn.disabled = !signedIn;
             if (driveBinBtn) driveBinBtn.disabled = !signedIn;
             if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
             if (driveStatusEl) {
@@ -8517,6 +8519,55 @@
             return created.id;
         }
 
+        // Unlike ensureNamedDriveFolder(), this always creates a new folder —
+        // used for the user-facing "New folder" action, where Drive's normal
+        // behavior of allowing duplicate folder names is expected (the user
+        // is explicitly asking for a new one, not reusing an existing one).
+        async function createDriveFolder(parentId, name) {
+            const metadata = {
+                name,
+                mimeType: 'application/vnd.google-apps.folder',
+                parents: parentId && parentId !== 'root' ? [parentId] : undefined
+            };
+            const res = await driveFetch('https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,starred,ownedByMe,folderColorRgb', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(metadata)
+            });
+            return res.json();
+        }
+
+        function openNewFolderModal() {
+            if (!driveAccessToken) return;
+            const modal = document.getElementById('modal-new-folder');
+            const input = document.getElementById('new-folder-name');
+            if (!modal || !input) return;
+            input.value = '';
+            modal.classList.add('visible');
+            requestAnimationFrame(() => input.focus());
+        }
+
+        function closeNewFolderModal() {
+            const modal = document.getElementById('modal-new-folder');
+            if (modal) modal.classList.remove('visible');
+        }
+
+        async function confirmNewFolderModal() {
+            const input = document.getElementById('new-folder-name');
+            const name = input ? input.value.trim() : '';
+            if (!name) return;
+            closeNewFolderModal();
+            try {
+                await ensureDriveToken(false);
+                await createDriveFolder(driveCurrentFolderId, name);
+                showStatus('Folder created', { preserveState: true });
+                refreshDriveFolderContents();
+            } catch (err) {
+                console.error('Failed to create folder:', err);
+                showStatus('Failed to create folder', { preserveState: true });
+            }
+        }
+
         async function findDrivePdfInFolder(folderId, fileBaseName, options = {}) {
             const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
             const nameQuery = [`${safeBase}.pdf`, safeBase]
@@ -9007,7 +9058,7 @@
                 });
                 item.starred = !!shouldStar;
                 showStatus(shouldStar ? 'Added to favorites' : 'Removed from favorites', { preserveState: true });
-                refreshDriveFiles();
+                refreshDriveHomeQuiet();
             } catch (err) {
                 console.error('Failed to update favorite status:', err);
                 showStatus('Failed to update favorites', { preserveState: true });
@@ -9025,7 +9076,7 @@
                 });
                 folder.folderColorRgb = color;
                 showStatus('Folder color updated', { preserveState: true });
-                refreshDriveFiles();
+                refreshDriveHomeQuiet();
             } catch (err) {
                 console.error('Failed to update folder color:', err);
                 showStatus('Failed to update folder color', { preserveState: true });
@@ -9470,6 +9521,34 @@
                 updateDriveStatusCounts();
             } catch (err) {
                 driveStatusEl.textContent = 'Unable to load Drive files.';
+            }
+        }
+
+        // Re-fetches the same lists as refreshDriveFiles() but skips
+        // showDriveSkeletons(), so diffRenderDriveList() still finds each
+        // card's data-drive-item-id and patches it in place instead of
+        // rebuilding the whole home screen. Use this after a small in-place
+        // mutation (star, color, move, trash/restore) where the rest of the
+        // grid is unaffected. Deliberately does NOT use the auto-refresh
+        // guards in refreshDriveHomeSnapshot()/isDriveHomeAutoRefreshBlocked()
+        // — those exist to keep the periodic background poller polite (e.g.
+        // skip while the Bin modal is open), but a restore/trash action is
+        // itself triggered from inside that modal, so gating on it there
+        // would silently drop the very refresh the user just asked for.
+        async function refreshDriveHomeQuiet() {
+            if (!driveAccessToken) return;
+            try {
+                await ensureDriveToken(false);
+                await Promise.all([
+                    refreshDriveRecents(),
+                    refreshDriveStarred(),
+                    refreshDriveShared(),
+                    refreshDriveFolderContents({ silent: true })
+                ]);
+                updateDriveStatusCounts();
+            } catch (err) {
+                // Leave existing cards on screen; a failed quiet refresh
+                // shouldn't blank out UI the user is already looking at.
             }
         }
 
@@ -10584,7 +10663,7 @@
                     method: 'PATCH'
                 });
                 showStatus('File moved', { preserveState: true });
-                refreshDriveFiles();
+                refreshDriveHomeQuiet();
             } catch (err) {
                 showStatus('Move failed', { preserveState: true });
             } finally {
@@ -10736,7 +10815,7 @@
                 });
                 showStatus('Restored', { preserveState: true });
                 refreshDriveBin();
-                refreshDriveFiles();
+                refreshDriveHomeQuiet();
             } catch (err) {
                 showStatus('Restore failed', { preserveState: true });
             } finally {
@@ -10756,7 +10835,7 @@
                     body: JSON.stringify({ trashed: true })
                 });
                 showStatus('Moved to bin', { preserveState: true });
-                refreshDriveFiles();
+                refreshDriveHomeQuiet();
             } catch (err) {
                 showStatus('Move to bin failed', { preserveState: true });
             } finally {
@@ -14521,6 +14600,31 @@
                     renderDriveBreadcrumbs();
                     if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
                     refreshDriveFolderContents();
+                });
+            }
+            if (driveNewFolderBtn) {
+                driveNewFolderBtn.addEventListener('click', openNewFolderModal);
+            }
+            const newFolderCancelBtn = document.getElementById('new-folder-cancel');
+            const newFolderConfirmBtn = document.getElementById('new-folder-confirm');
+            const newFolderModalOverlay = document.getElementById('modal-new-folder');
+            const newFolderInput = document.getElementById('new-folder-name');
+            if (newFolderCancelBtn) newFolderCancelBtn.addEventListener('click', closeNewFolderModal);
+            if (newFolderConfirmBtn) newFolderConfirmBtn.addEventListener('click', confirmNewFolderModal);
+            if (newFolderModalOverlay) {
+                newFolderModalOverlay.addEventListener('click', (e) => {
+                    if (e.target.id === 'modal-new-folder') closeNewFolderModal();
+                });
+            }
+            if (newFolderInput) {
+                newFolderInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        confirmNewFolderModal();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closeNewFolderModal();
+                    }
                 });
             }
             if (driveSearchInput) {

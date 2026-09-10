@@ -86,8 +86,8 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.11.18';</script>
-    <script src="boot-v5.js?v=5.11.18"></script>
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.11.19';</script>
+    <script src="boot-v5.js?v=5.11.19"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -519,6 +519,21 @@
                     0 0 0 2px rgba(66, 133, 244, 0.12),
                     0 0 11px rgba(66, 133, 244, 0.48);
             }
+        }
+
+        /* The pulsing ring above signals "searching"; once connected it
+           should read as found, not just stop — a steady ring (no animation)
+           makes the transition itself the success signal, instead of relying
+           only on the small peer-link badge to communicate it. */
+        .presence-avatar-wrapper.p2p-connected::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border: 1.7px solid rgba(66, 133, 244, 0.55);
+            border-radius: 50%;
+            box-shadow: 0 0 0 1px rgba(66, 133, 244, 0.08);
+            pointer-events: none;
+            z-index: 1;
         }
 
         .presence-save-ring {
@@ -5047,6 +5062,12 @@
             letter-spacing: 0.06em;
         }
 
+        .drive-section-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
         #btn-drive-back {
             display: none;
         }
@@ -7809,12 +7830,24 @@
             <section class="drive-section">
                 <div class="drive-section-header">
                     <div class="drive-section-title">My Drive</div>
-                    <button class="btn btn-secondary btn-icon-square" id="btn-drive-back" title="Up one folder"
-                        aria-label="Up one folder">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="15 18 9 12 15 6" />
-                        </svg>
-                    </button>
+                    <div class="drive-section-actions">
+                        <button class="btn btn-secondary btn-icon-square" id="btn-drive-new-folder"
+                            title="New folder" aria-label="New folder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path
+                                    d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                                <line x1="12" y1="10" x2="12" y2="16" />
+                                <line x1="9" y1="13" x2="15" y2="13" />
+                            </svg>
+                        </button>
+                        <button class="btn btn-secondary btn-icon-square" id="btn-drive-back" title="Up one folder"
+                            aria-label="Up one folder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="15 18 9 12 15 6" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="drive-breadcrumbs" id="drive-breadcrumbs"></div>
                 <div class="drive-folder-grid" id="drive-folders"></div>
@@ -8184,6 +8217,20 @@
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="folder-picker-cancel">Cancel</button>
                 <button class="btn btn-primary" id="folder-picker-confirm">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-new-folder">
+        <div class="modal">
+            <h2>New folder</h2>
+            <p>Name your new folder.</p>
+            <div class="modal-input">
+                <input type="text" id="new-folder-name" placeholder="Folder name" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="new-folder-cancel">Cancel</button>
+                <button class="btn btn-primary" id="new-folder-confirm">Create</button>
             </div>
         </div>
     </div>
@@ -8743,12 +8790,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script src="collaboration-core-v5.js?v=5.11.18"></script>
-    <script src="live-collaboration-v5.js?v=5.11.18"></script>
-    <script src="runtime-core-v5.js?v=5.11.18"></script>
-    <script src="security-core-v5.js?v=5.11.18"></script>
-    <script src="timeline-core-v5.js?v=5.11.18"></script>
-    <script src="app-v5.js?v=5.11.18"></script>
+    <script src="collaboration-core-v5.js?v=5.11.19"></script>
+    <script src="live-collaboration-v5.js?v=5.11.19"></script>
+    <script src="runtime-core-v5.js?v=5.11.19"></script>
+    <script src="security-core-v5.js?v=5.11.19"></script>
+    <script src="timeline-core-v5.js?v=5.11.19"></script>
+    <script src="app-v5.js?v=5.11.19"></script>
 
 </body>
 

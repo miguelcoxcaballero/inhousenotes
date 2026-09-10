@@ -56,7 +56,10 @@ const IHN_LIVE_ERASE_MAX_POINTS = 1200;
 const IHN_LIVE_REALTIME_BACKLOG_TTL = 12_000;
 const IHN_LIVE_REALTIME_BACKLOG_LIMIT = 192;
 const IHN_LIVE_FAST_MAILBOX_DELAYS = [0, 70, 150, 260, 420, 650, 950, 1400, 2100, 3200, 5000];
-const IHN_LIVE_DIRECT_REPLY_DELAYS = [0, 80, 170, 290, 460, 700, 1000, 1450, 2100, 3000, 4500, 6500];
+// Answers typically land 0.8-3s after the offer; hold a flat ~300ms cadence
+// across that window instead of doubling straight through it, so the
+// initiator doesn't sit on a ready answer for up to 1.5s before checking.
+const IHN_LIVE_DIRECT_REPLY_DELAYS = [0, 80, 170, 280, 280, 300, 300, 350, 450, 600, 900, 1400, 2100, 3000, 4500, 6500];
 const IHN_LIVE_STUN = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
