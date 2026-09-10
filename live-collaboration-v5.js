@@ -1469,10 +1469,16 @@ function ihnFlushLiveStrokePreview(strokeId, options = {}) {
 
 function publishLiveStrokePreview(pageId, stroke, options = {}) {
     if (!state?.driveFileId || !ihnCanEditLiveDocument() || !stroke?.id || !pageId) return false;
-    startLiveCollaboration();
     const strokeId = String(stroke.id);
     let record = ihnLiveStrokeSends.get(strokeId);
     if (!record) {
+        // Only re-assert the collaboration session (and its immediate
+        // ihnSuperviseConnections + ihnPollSignals Drive fetch) once per
+        // stroke, not on every pointermove — this used to fire a full
+        // signalling poll on every single move event while drawing, which
+        // both saturated the poll loop and cost main-thread time during
+        // the highest-frequency input path in the app.
+        startLiveCollaboration();
         record = { strokeId, pageId: String(pageId), sequence: 0, sentPoints: 0, latest: null, timer: null };
         ihnLiveStrokeSends.set(strokeId, record);
     }
@@ -1555,10 +1561,12 @@ function ihnFlushLiveErasePreview(gestureId, options = {}) {
 
 function publishLiveErasePreview(pageId, gestureId, changeSet = {}, options = {}) {
     if (!state?.driveFileId || !ihnCanEditLiveDocument() || !pageId || !gestureId) return false;
-    startLiveCollaboration();
     const id = String(gestureId);
     let record = ihnLiveEraseSends.get(id);
     if (!record) {
+        // See publishLiveStrokePreview: only re-assert the session once per
+        // gesture, not on every pointermove.
+        startLiveCollaboration();
         record = {
             gestureId: id,
             pageId: String(pageId),

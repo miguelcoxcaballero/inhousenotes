@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.19",
-  "releaseNotes": "Inhouse Notes v5.11.19 / Android 1.0.10: home-screen color, star, move and bin actions no longer reload the whole file list; the file manager can create folders; and first-connection peer-to-peer handshakes land slightly faster."
+  "publishedAppVersion": "5.11.20",
+  "releaseNotes": "Inhouse Notes v5.11.20 / Android 1.0.10: pen strokes render in one pass instead of one draw call per point, and drawing no longer re-triggers the peer-to-peer signalling poll on every pointer move — both were the main causes of general in-app lag."
 }
