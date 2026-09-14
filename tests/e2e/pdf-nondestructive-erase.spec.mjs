@@ -18,6 +18,7 @@ async function primeSyntheticPdfPage(page) {
     return Array.from(bytes);
   });
   await page.evaluate(bytes => window.__IHN_TEST_API__.primePdfPageForTest(bytes), pdfBytes);
+  return pdfBytes.length;
 }
 
 test('saving a PDF with the clean original available never falls back to legacy baking', async ({ page }) => {
@@ -49,26 +50,45 @@ test('a transient pdf-lib failure is retried instead of immediately burning stro
   expect(result.legacyCoverPageCount).toBe(0);
 });
 
-test('a persistent pdf-lib failure is marked honestly instead of silently downgrading', async ({ page }) => {
-  await primeSyntheticPdfPage(page);
-  await page.evaluate(() => {
+test('a persistent pdf-lib failure is marked honestly, still carries the clean original, and self-heals', async ({ page }) => {
+  const originalLength = await primeSyntheticPdfPage(page);
+  // Realistic simulation: pdf-lib can never parse THIS specific original PDF
+  // (a real-world malformed/unusual source file), every time it's tried — but
+  // still works fine for any other PDF, including the raster fallback's own
+  // simple jsPDF-produced output. A blanket "PDFDocument.load always throws"
+  // stub would be unrealistic (it would also break the attach step that's
+  // supposed to save this document from permanent damage) and duck-test
+  // nothing that happens in production.
+  await page.evaluate((originalLength) => {
     const original = window.PDFLib.PDFDocument.load;
-    window.PDFLib.PDFDocument.load = function () {
-      return Promise.reject(new Error('simulated persistent pdf-lib failure'));
+    window.PDFLib.PDFDocument.load = function (data, ...rest) {
+      const len = data?.byteLength ?? data?.length;
+      if (len === originalLength) {
+        return Promise.reject(new Error('simulated persistent pdf-lib failure on the original PDF'));
+      }
+      return original.call(window.PDFLib.PDFDocument, data, ...rest);
     };
     window.__ihnRestorePdfLibLoad = () => { window.PDFLib.PDFDocument.load = original; };
-  });
-  // The raster fallback this failure triggers may itself error in this
-  // synthetic setup (no live PDF.js background loaded) — the honesty marking
-  // happens before that fallback runs, so it must hold regardless of whether
-  // the fallback save itself ultimately succeeds.
+  }, originalLength);
   const marked = await page.evaluate(() => window.__IHN_TEST_API__.buildPdfBlobForTest());
   expect(marked.hasLegacyBakedOverlay).toBe(true);
   expect(marked.legacyCoverPageCount).toBe(1);
+  // Closing the recovery gap: even though this save was forced through the
+  // destructive raster pipeline (strokes flattened into page pixels), the
+  // clean original must still travel with the file it wrote. Otherwise a
+  // user who closes right after this save — before any later save gets a
+  // chance to self-heal — loses reversible editing permanently, which is
+  // exactly the gap that was found and is being closed here.
+  expect(marked.ok).toBe(true);
+  expect(marked.hasCleanOriginalAttachment).toBe(true);
 
   // Self-heal: once the safe path works again, the next successful save must
   // drop the legacy covers — a document should never be stuck believing it
-  // can't erase cleanly once it demonstrably can again.
+  // can't erase cleanly once it demonstrably can again. This save doesn't
+  // need to re-embed the attachment (needsCleanOriginalAttachmentForSave()
+  // correctly skips it when page structure is unchanged, since the safe path
+  // already preserves the true original pages by copying them directly —
+  // that's a different, equally valid non-destructive mechanism, not a gap).
   await page.evaluate(() => window.__ihnRestorePdfLibLoad());
   const healed = await page.evaluate(() => window.__IHN_TEST_API__.buildPdfBlobForTest());
   expect(healed.ok).toBe(true);
