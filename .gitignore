@@ -1,0 +1,19 @@
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+.claude/
+.codex/
+.agents/
+
+*.log
+*.tmp
+*.bak
+*.pyc
+__pycache__/
+*.keystore
+
+android app/apk-output/
+
+.DS_Store
+Thumbs.db
