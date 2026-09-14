@@ -25,20 +25,20 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.21.md');
+const notes = readText('../RELEASE_NOTES_v5.11.22.md');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
 const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5\.11\.21';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.22';/);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.21/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.21/);
-assert.match(indexHtml, /app-v5\.js\?v=5\.11\.21/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.21/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.22/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.22/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.22/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.22/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -64,7 +64,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5\.11\.21/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.11.22/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -1035,7 +1035,10 @@ assert.equal(
   2,
   'both local-open and remote-merge calendar metadata parsers must be bounded'
 );
-assert.match(html, /if \(Number\(content\.byteLength\) > maxOriginalBytes\) return null;/);
+// Must match securityCore.MAX_PDF_BYTES, not a smaller hardcoded value — a
+// stricter cap here would silently reject a clean-original attachment that
+// was legitimately captured and written under the real 64MB upload limit.
+assert.match(html, /if \(Number\(content\.byteLength\) > securityCore\.MAX_PDF_BYTES\) return null;/);
 assert.match(html, /const PDF_ASSEMBLY_WORKER_TIMEOUT_MS = 120000;/);
 assert.match(html, /function failPdfAssemblyWorker\(/);
 assert.match(html, /let pdfExportInProgress = false;/);
@@ -1095,9 +1098,9 @@ assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
 assert.match(update.releaseNotes, /v5\.11\.20/);
-assert.match(notes, /raster pipeline/i);
-assert.match(notes, /white patch/i);
-assert.match(notes, /64MB/);
-assert.match(notes, /self-heal/i);
+assert.match(notes, /clean original PDF/i);
+assert.match(notes, /60MB cap/i);
+assert.match(notes, /toLocaleTimeString/);
+assert.match(notes, /per clock-minute/i);
 
-console.log('v5.11.21 smoke checks passed.');
+console.log('v5.11.22 smoke checks passed.');

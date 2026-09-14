@@ -20163,21 +20163,36 @@
             return true;
         }
 
+        // toLocaleTimeString with { hour: '2-digit', minute: '2-digit' } only has
+        // minute granularity, so its output is identical for every timestamp
+        // inside the same clock-minute — cache by minute bucket, not by the exact
+        // millisecond. updateSaveTimestamp() runs from every stroke/save-completion
+        // path (profiled: ~12 call sites) with a genuinely new Date.now() each
+        // real save, so caching by exact timestamp would almost never hit; while
+        // actively writing, diffMin < 1 is true on nearly every call, which used
+        // to mean a fresh, measurably expensive Intl call on every single stroke
+        // instead of once per clock-minute.
+        let _formatTimeCache = { minuteBucket: null, value: '' };
         function formatTime(timestamp) {
             if (!timestamp) return '--:--';
             const now = Date.now();
             const diffMs = Math.max(0, now - timestamp);
             const diffMin = Math.floor(diffMs / 60000);
-            const absoluteTime = () => new Date(timestamp).toLocaleTimeString(undefined, {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-            });
-            if (diffMin < 1) return absoluteTime();
-            if (diffMin < 60) {
+            if (diffMin >= 1 && diffMin < 60) {
                 return `${diffMin} min`;
             }
-            return absoluteTime();
+            const minuteBucket = Math.floor(timestamp / 60000);
+            if (_formatTimeCache.minuteBucket !== minuteBucket) {
+                _formatTimeCache = {
+                    minuteBucket,
+                    value: new Date(timestamp).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    })
+                };
+            }
+            return _formatTimeCache.value;
         }
 
         function updateSaveTimestamp() {
@@ -30151,8 +30166,11 @@
                 if (!entry) return null;
                 const content = entry.content;
                 if (!content) return null;
-                const maxOriginalBytes = 60 * 1024 * 1024;
-                if (Number(content.byteLength) > maxOriginalBytes) return null;
+                // Must match the capture cap in importPDFData (securityCore.MAX_PDF_BYTES):
+                // rejecting an attachment here that was legitimately captured and
+                // attached there would silently reintroduce the same "clean original
+                // available but can't be used" gap for files near the size limit.
+                if (Number(content.byteLength) > securityCore.MAX_PDF_BYTES) return null;
                 // content is typically a Uint8Array.
                 if (content instanceof Uint8Array && content.byteLength > 0) {
                     return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
@@ -31415,9 +31433,38 @@
 
             // Phase 2: Assemble PDF in Web Worker (jsPDF addImage + output run off main thread)
             // This is the heaviest synchronous work and would block pen/scroll on the main thread.
-            const pdfResult = await assemblePdfInWorker(workerPages, encodedMetadata, metaPrefix);
+            let pdfResult = await assemblePdfInWorker(workerPages, encodedMetadata, metaPrefix);
             throwIfAborted();
             throwIfSessionInvalid();
+            // This path just flattened every stroke into the page image, so a file
+            // saved this way carries no independent record of the true original PDF
+            // unless one travels with the file. Attach it now whenever it's available
+            // in memory, so reopening THIS exact file — even right after closing,
+            // even if no later save ever gets a chance to self-heal — can still
+            // recover non-destructive editing instead of being permanently stuck on
+            // white legacy covers. Never let this step cost the save itself: on any
+            // failure, keep the unattached blob rather than losing the document.
+            if (window.PDFLib && state.cleanOriginalPdfBytes && state.cleanOriginalPdfBytes.byteLength) {
+                try {
+                    const rasterBytes = new Uint8Array(await pdfResult.arrayBuffer());
+                    const rasterDoc = await window.PDFLib.PDFDocument.load(rasterBytes, {
+                        ignoreEncryption: true,
+                        updateMetadata: false
+                    });
+                    if (typeof rasterDoc.attach === 'function') {
+                        await rasterDoc.attach(state.cleanOriginalPdfBytes, 'IH_CLEAN_ORIGINAL.pdf', {
+                            mimeType: 'application/pdf',
+                            description: 'Clean original PDF used by Inhouse Notes for full revert'
+                        });
+                        const attachedBytes = await rasterDoc.save({ useObjectStreams: true, addDefaultPage: false });
+                        pdfResult = new Blob([attachedBytes], { type: 'application/pdf' });
+                        throwIfAborted();
+                        throwIfSessionInvalid();
+                    }
+                } catch (attachErr) {
+                    console.warn('Failed to attach clean original to raster-fallback PDF:', attachErr);
+                }
+            }
             pdfResult.inhouseContentHash = rasterPagesParsedForSync.length
                 ? createDriveSyncEnvelope(rasterPagesParsedForSync).contentHash
                 : '';
@@ -31810,6 +31857,29 @@
                         dirtyPages: [...pageDirty]
                     };
                 },
+                formatTimeForTest(timestamp) {
+                    return formatTime(timestamp);
+                },
+                // Imports a PDF through the real production path (importPDFData),
+                // exactly as a user's file picker or drag-and-drop would, for
+                // performance profiling that needs genuine PDF.js-rendered pages
+                // rather than the primePdfPageForTest shortcut below.
+                async importPdfBlobForTest(pdfBytesArray) {
+                    await ready();
+                    const bytes = new Uint8Array(pdfBytesArray);
+                    const blob = new Blob([bytes], { type: 'application/pdf' });
+                    const objectUrl = URL.createObjectURL(blob);
+                    try {
+                        await importPDFData(objectUrl, true, { fileSize: blob.size, sourceBlob: blob });
+                    } finally {
+                        URL.revokeObjectURL(objectUrl);
+                    }
+                    setReadOnlyMode(false, { force: true });
+                    showEditorView();
+                    renderAllPages();
+                    renderPagesList();
+                    return this.snapshot();
+                },
                 // Regression coverage for the PDF-erase-leaves-a-trace bug: sets up a
                 // single PDF-background page backed by a real (test-provided) clean
                 // original plus one synthetic stroke, mirroring what a fresh PDF
@@ -31823,6 +31893,11 @@
                     state.cleanOriginalPdfBytes = bytes;
                     state.cleanOriginalPageSizes = [{ width: pageSize.width, height: pageSize.height }];
                     activePdfPageCount = 1;
+                    // Also load a live pdf.js document so the raster-fallback pipeline
+                    // (which renders PDF-background pages via activePdfDocument) can
+                    // actually complete in tests instead of only being able to exercise
+                    // the safe pdf-lib path.
+                    activePdfDocument = await window.pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
                     state.pages = [createBlankPageData({
                         backgroundSource: 'pdf',
                         pdfPageIndex: 1,
@@ -31844,11 +31919,27 @@
                     await ready();
                     try {
                         const blob = await buildPdfBlob({ status: false });
+                        // Inspect with pdf.js (not pdf-lib) to match exactly how
+                        // extractCleanOriginalAttachment reads it back in production —
+                        // pdf-lib's PDFDocument in this version has .attach() but no
+                        // symmetric .getAttachments() reader.
+                        let hasCleanOriginalAttachment = false;
+                        if (blob && window.pdfjsLib) {
+                            try {
+                                const bytes = new Uint8Array(await blob.arrayBuffer());
+                                const inspectDoc = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+                                const attached = await extractCleanOriginalAttachment(inspectDoc);
+                                hasCleanOriginalAttachment = !!(attached && attached.byteLength > 0);
+                            } catch (inspectErr) {
+                                hasCleanOriginalAttachment = false;
+                            }
+                        }
                         return {
                             ok: true,
                             size: blob ? blob.size : 0,
                             hasLegacyBakedOverlay: !!state.hasLegacyBakedOverlay,
-                            legacyCoverPageCount: state.pages.filter(p => p && p.legacyCoverStrokes).length
+                            legacyCoverPageCount: state.pages.filter(p => p && p.legacyCoverStrokes).length,
+                            hasCleanOriginalAttachment
                         };
                     } catch (err) {
                         return {
