@@ -25,20 +25,20 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.20.md');
+const notes = readText('../RELEASE_NOTES_v5.11.21.md');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
 const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5\.11\.20';/);
+assert.match(indexHtml, /const APP_VERSION = '5\.11\.21';/);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.20/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.20/);
-assert.match(indexHtml, /app-v5\.js\?v=5\.11\.20/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.20/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5\.11\.21/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5\.11\.21/);
+assert.match(indexHtml, /app-v5\.js\?v=5\.11\.21/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5\.11\.21/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -64,7 +64,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5\.11\.20/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5\.11\.21/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -91,23 +91,24 @@ assert.match(scanner, /paintEvidenceCloud/);
 assert.match(scanner, /drawYellowBoxCanonical/);
 assert.match(scannerLightweight, /function localStencilEvidence/);
 assert.match(scannerLightweight, /function calibrateFromReference/);
+// Publishes straight to the gh-pages branch (Settings -> Pages -> Source),
+// replacing the Actions "workflow" deployment API (configure-pages /
+// upload-pages-artifact / pages deployments) after it started repeatedly
+// timing out ("still processing after 5 minutes") and took the live site
+// down with it. A plain branch push has no server-side processing step to
+// hang on — see .github/workflows/deploy-pages.yml.
 assert.match(pagesWorkflow, /name: Deploy GitHub Pages/);
-assert.match(pagesWorkflow, /pages: write/);
-assert.match(pagesWorkflow, /id-token: write/);
+assert.match(pagesWorkflow, /contents: write/);
+assert.doesNotMatch(pagesWorkflow, /pages: write/);
+assert.doesNotMatch(pagesWorkflow, /id-token: write/);
 assert.match(pagesWorkflow, /group: pages-production/);
 assert.match(pagesWorkflow, /cancel-in-progress: false/);
-assert.match(pagesWorkflow, /uses: actions\/configure-pages@v5/);
-assert.match(pagesWorkflow, /uses: actions\/upload-pages-artifact@v4/);
-assert.match(pagesWorkflow, /uses: actions\/github-script@v8/);
-assert.match(pagesWorkflow, /timeout-minutes: 6/);
-assert.match(pagesWorkflow, /Date\.now\(\) \+ 5 \* 60 \* 1000/);
-assert.match(pagesWorkflow, /the deployment was left active and was not cancelled/);
-assert.match(pagesWorkflow, /Retired stale Pages deployment/);
-assert.match(pagesWorkflow, /Created fresh Pages deployment/);
-assert.doesNotMatch(pagesWorkflow, /Resuming Pages deployment/);
+assert.match(pagesWorkflow, /uses: peaceiris\/actions-gh-pages@v4/);
+assert.match(pagesWorkflow, /publish_branch: gh-pages/);
+assert.match(pagesWorkflow, /force_orphan: true/);
 assert.match(pagesWorkflow, /Prepare lean production site/);
 assert.match(pagesWorkflow, /--exclude '\*\.apk'/);
-assert.match(pagesWorkflow, /path: \$\{\{ runner\.temp \}\}\/pages-site/);
+assert.match(pagesWorkflow, /publish_dir: \$\{\{ runner\.temp \}\}\/pages-site/);
 assert.equal((indexHtml.match(/integrity="sha384-/g) || []).length, 3);
 assert.match(html, /\.presence-avatar-wrapper\.p2p-connecting::before/);
 assert.match(html, /@keyframes presence-peer-connecting/);
@@ -1087,14 +1088,16 @@ assert.ok(
 );
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
+// android-update.json describes the currently-published APK, which is not
+// changing in this (web-only) release, so its embedded web-version stays put.
 assert.equal(update.publishedAppVersion, '5.11.20');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
 assert.match(update.releaseNotes, /v5\.11\.20/);
-assert.match(notes, /one Canvas2D/i);
-assert.match(notes, /single path/i);
-assert.match(notes, /pointer-move/i);
-assert.match(notes, /memory-pressure/i);
+assert.match(notes, /raster pipeline/i);
+assert.match(notes, /white patch/i);
+assert.match(notes, /64MB/);
+assert.match(notes, /self-heal/i);
 
-console.log('v5.11.20 smoke checks passed.');
+console.log('v5.11.21 smoke checks passed.');

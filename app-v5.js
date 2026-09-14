@@ -28668,7 +28668,11 @@
                 // PDF.js can consume the object URL directly. Keep byte capture lazy:
                 // eagerly fetching the same blob URL copied the complete PDF before
                 // PDF.js could even display page 1.
-                const ORIGINAL_BYTES_MAX = 60 * 1024 * 1024;
+                // Must match securityCore.MAX_PDF_BYTES: any PDF the app accepts at
+                // all must also get its clean original captured, or pages saved from
+                // it silently lose the ability to erase strokes without a trace (see
+                // buildPdfBlob's pdf-lib-vs-raster fallback below).
+                const ORIGINAL_BYTES_MAX = securityCore.MAX_PDF_BYTES;
                 const sourceBlob = options.sourceBlob instanceof Blob ? options.sourceBlob : null;
                 const cachedAnalysis = options.cachedAnalysis
                     && typeof options.cachedAnalysis.keywords === 'string'
@@ -28680,25 +28684,35 @@
                     if (capturedOriginalBytes) return capturedOriginalBytes;
                     if (originalBytesPromise) return originalBytesPromise;
                     originalBytesPromise = (async () => {
-                        try {
-                            if (sourceBlob) {
-                                if (sourceBlob.size > ORIGINAL_BYTES_MAX) return null;
-                                return await sourceBlob.arrayBuffer();
+                        // A failure here permanently downgrades this document to the
+                        // destructive raster save path (strokes get burnt into page
+                        // pixels, erasing degrades to painting white over them — see
+                        // buildPdfBlob). A transient blob/network hiccup shouldn't cost
+                        // the user reversible editing forever, so retry once.
+                        for (let attempt = 0; attempt < 2; attempt++) {
+                            try {
+                                if (sourceBlob) {
+                                    if (sourceBlob.size > ORIGINAL_BYTES_MAX) return null;
+                                    return await sourceBlob.arrayBuffer();
+                                }
+                                if (isUrl) {
+                                    const buf = await fetchWithDeadline(
+                                        pdfData,
+                                        {},
+                                        45000,
+                                        async fetchRes => fetchRes.ok ? fetchRes.arrayBuffer() : null
+                                    );
+                                    return buf?.byteLength <= ORIGINAL_BYTES_MAX ? buf : null;
+                                }
+                                return null;
+                            } catch (fetchErr) {
+                                if (attempt > 0) {
+                                    console.warn('Could not capture original PDF bytes:', fetchErr);
+                                    return null;
+                                }
                             }
-                            if (isUrl) {
-                                const buf = await fetchWithDeadline(
-                                    pdfData,
-                                    {},
-                                    45000,
-                                    async fetchRes => fetchRes.ok ? fetchRes.arrayBuffer() : null
-                                );
-                                return buf?.byteLength <= ORIGINAL_BYTES_MAX ? buf : null;
-                            }
-                            return null;
-                        } catch (fetchErr) {
-                            console.warn('Could not capture original PDF bytes:', fetchErr);
-                            return null;
                         }
+                        return null;
                     })();
                     capturedOriginalBytes = await originalBytesPromise;
                     return capturedOriginalBytes;
@@ -30899,21 +30913,75 @@
                 embeddedStrokes: pagesParsedForSync
             };
             state.lastExportSize = blob.size;
+            // A successful text-preserving save is always non-destructive (the clean
+            // original, if any, was just re-attached above). Self-heal: if an earlier
+            // save in this session had to fall back to the raster pipeline and left
+            // white legacy covers in place, drop them now that real vector erasing
+            // is available again.
+            if (state.hasLegacyBakedOverlay) {
+                state.hasLegacyBakedOverlay = false;
+                for (const pg of state.pages) {
+                    if (pg && pg.legacyCoverStrokes) {
+                        pg.legacyCoverStrokes = null;
+                        pg.needsRedraw = true;
+                    }
+                }
+            }
             return blob;
+        }
+
+        // Marks every PDF-background page as needing a white "legacy cover" instead
+        // of a true erase, and tells the user honestly — used the moment a save is
+        // forced onto the destructive raster path (see buildPdfBlob) so this session
+        // behaves the same way a reopened legacy file already does, instead of lying
+        // about reversibility until the user discovers it on next open.
+        function markDocumentLegacyBakedAfterRasterFallback() {
+            state.hasLegacyBakedOverlay = true;
+            for (const pg of state.pages) {
+                if (!pg || pg.backgroundSource !== 'pdf') continue;
+                if (!Array.isArray(pg.strokes) || pg.strokes.length === 0) continue;
+                pg.legacyCoverStrokes = pg.strokes.map(s => ({
+                    ...s,
+                    points: Array.isArray(s.points) ? s.points.map(p => ({ ...p })) : []
+                }));
+                pg.needsRedraw = true;
+            }
+            showStatus('Saved, but this PDF may not erase cleanly — reopen to retry reversible mode', { error: true });
         }
 
         async function buildPdfBlob(options = {}) {
             // Prefer the compact text/vector-preserving path whenever every
             // background can be reproduced losslessly. On any failure, fall
             // through to the existing raster pipeline so a save cannot be lost.
+            //
+            // Falling through is destructive: the raster pipeline flattens every
+            // current stroke directly into the page's pixels, and once a document
+            // has been saved that way the eraser can only ever paint over the burnt
+            // pixels (drawLegacyCoverStrokes) instead of truly removing them. A
+            // single transient failure (a GC pause, a momentary abort race, pdf-lib
+            // choking on one malformed page) shouldn't be enough to pay that price
+            // permanently, so retry the safe path once before giving up on it.
             if (canBuildCurrentPdfWithPdfLib()) {
-                try {
-                    const result = await buildPdfBlobWithPdfLib(options);
-                    if (result) return result;
-                } catch (err) {
-                    if (err?.name === 'AbortError') throw err;
-                    console.warn('pdf-lib export failed, falling back to raster:', err);
+                let lastErr = null;
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        const result = await buildPdfBlobWithPdfLib(options);
+                        if (result) return result;
+                        break;
+                    } catch (err) {
+                        if (err?.name === 'AbortError') throw err;
+                        lastErr = err;
+                    }
                 }
+                console.warn('pdf-lib export unavailable, falling back to raster:', lastErr);
+            }
+            // Reaching here means this save is about to go through the destructive
+            // raster pipeline below — whether because a clean original was never
+            // available (canBuildCurrentPdfWithPdfLib() was false) or because the
+            // safe path just failed twice above. Either way, mark it honestly now
+            // instead of waiting for the user to discover it next time they erase.
+            if (state.pages.some(p => p?.backgroundSource === 'pdf')) {
+                markDocumentLegacyBakedAfterRasterFallback();
             }
 
             const abortSignal = options.signal || null;
@@ -31741,6 +31809,54 @@
                         timelineLength: Array.isArray(state.versionHistory) ? state.versionHistory.length : 0,
                         dirtyPages: [...pageDirty]
                     };
+                },
+                // Regression coverage for the PDF-erase-leaves-a-trace bug: sets up a
+                // single PDF-background page backed by a real (test-provided) clean
+                // original plus one synthetic stroke, mirroring what a fresh PDF
+                // import leaves in state right before the first save.
+                async primePdfPageForTest(pdfBytesArray, pageSize = { width: 200, height: 300 }) {
+                    await ready();
+                    resetPdfState();
+                    state.hasLegacyBakedOverlay = false;
+                    state.driveFileId = null;
+                    const bytes = new Uint8Array(pdfBytesArray).buffer;
+                    state.cleanOriginalPdfBytes = bytes;
+                    state.cleanOriginalPageSizes = [{ width: pageSize.width, height: pageSize.height }];
+                    activePdfPageCount = 1;
+                    state.pages = [createBlankPageData({
+                        backgroundSource: 'pdf',
+                        pdfPageIndex: 1,
+                        pageWidth: pageSize.width,
+                        pageHeight: pageSize.height
+                    })];
+                    state.pages[0].strokes.push({
+                        id: `e2e-pdf-stroke-${Date.now()}`,
+                        tool: 'pen',
+                        color: '#123456',
+                        width: 2,
+                        points: [{ x: 10, y: 10, p: 0.5 }, { x: 30, y: 30, p: 0.5 }]
+                    });
+                    state.pages[0].strokeCount = getVisibleStrokeCount(state.pages[0]);
+                    markPageDirty(0, 'full');
+                    return this.snapshot();
+                },
+                async buildPdfBlobForTest() {
+                    await ready();
+                    try {
+                        const blob = await buildPdfBlob({ status: false });
+                        return {
+                            ok: true,
+                            size: blob ? blob.size : 0,
+                            hasLegacyBakedOverlay: !!state.hasLegacyBakedOverlay,
+                            legacyCoverPageCount: state.pages.filter(p => p && p.legacyCoverStrokes).length
+                        };
+                    } catch (err) {
+                        return {
+                            ok: false,
+                            error: (err && err.message) || String(err),
+                            hasLegacyBakedOverlay: !!state.hasLegacyBakedOverlay
+                        };
+                    }
                 }
             });
         }
