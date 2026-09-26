@@ -37,8 +37,23 @@ function handleOAuthCallback(): boolean {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   const error = params.get('error');
-  if (code && window.opener) {
-    window.opener.postMessage({ code }, window.location.origin);
+  const state = params.get('state');
+  // Read uses the same OAuth client, but has its own origin and PKCE exchange.
+  // Only allow the known Read Pages origin and require the state created by
+  // its initiating tab; never broadcast an OAuth code to an arbitrary origin.
+  let targetOrigin = window.location.origin;
+  let expectedState: string | null = null;
+  try {
+    const statePayload = (state ?? '').split('.')[0] ?? '';
+    const normalized = statePayload.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))) as { origin?: string; nonce?: string };
+    if (payload.origin === 'https://miguelcoxcaballero.github.io' && payload.nonce && state?.includes('.')) {
+      targetOrigin = payload.origin;
+      expectedState = state;
+    }
+  } catch { /* Notes own-origin callback */ }
+  if ((code || error) && window.opener) {
+    window.opener.postMessage({ code, error, state: expectedState ?? state }, targetOrigin);
     window.close();
     return true;
   }

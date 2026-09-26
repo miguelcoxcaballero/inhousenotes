@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Google sign-in</title>
+</head>
+<body>
+  <p id="status">Completing Google sign-in…</p>
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search)
+      const state = params.get('state')
+      let targetOrigin = location.origin
+      if (state) {
+        try {
+          const encoded = state.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')
+          const payload = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=')))
+          if (payload.origin === 'https://miguelcoxcaballero.github.io' && payload.nonce) targetOrigin = payload.origin
+        } catch { /* Keep the same-origin Notes callback. */ }
+      }
+      const message = { code: params.get('code'), error: params.get('error'), state }
+      if (window.opener && (message.code || message.error)) {
+        window.opener.postMessage(message, targetOrigin)
+        window.close()
+      } else {
+        document.getElementById('status').textContent = message.error
+          ? `Google sign-in failed: ${message.error}`
+          : 'Google sign-in could not be completed. Return to the app and try again.'
+      }
+    })()
+  </script>
+</body>
+</html>
