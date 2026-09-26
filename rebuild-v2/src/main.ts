@@ -38,22 +38,46 @@ function handleOAuthCallback(): boolean {
   const code = params.get('code');
   const error = params.get('error');
   const state = params.get('state');
-  // Read uses the same OAuth client, but has its own origin and PKCE exchange.
-  // Only allow the known Read Pages origin and require the state created by
-  // its initiating tab; never broadcast an OAuth code to an arbitrary origin.
-  let targetOrigin = window.location.origin;
-  let expectedState: string | null = null;
+  let readFlow = false;
   try {
     const statePayload = (state ?? '').split('.')[0] ?? '';
     const normalized = statePayload.replace(/-/g, '+').replace(/_/g, '/');
     const payload = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))) as { origin?: string; nonce?: string };
-    if (payload.origin === 'https://miguelcoxcaballero.github.io' && payload.nonce && state?.includes('.')) {
-      targetOrigin = payload.origin;
-      expectedState = state;
-    }
+    readFlow = payload.origin === 'https://miguelcoxcaballero.github.io' && Boolean(payload.nonce) && Boolean(state?.includes('.'));
   } catch { /* Notes own-origin callback */ }
+
+  if (readFlow && window.opener && code && state) {
+    const readOrigin = 'https://miguelcoxcaballero.github.io';
+    window.opener.postMessage({ type: 'ihr-oauth-code', code, state }, readOrigin);
+    window.addEventListener('message', async (event: MessageEvent) => {
+      const data = event.data as { type?: string; code?: string; verifier?: string; redirectUri?: string; state?: string };
+      if (event.origin !== readOrigin || event.source !== window.opener || data?.type !== 'ihr-oauth-exchange' || data.state !== state) return;
+      try {
+        const clientId = localStorage.getItem('ihn_drive_client_id') ?? '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com';
+        const response = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: clientId, code: data.code ?? '', code_verifier: data.verifier ?? '',
+            grant_type: 'authorization_code', redirect_uri: data.redirectUri ?? ''
+          })
+        });
+        const tokens = await response.json() as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string };
+        if (!response.ok || !tokens.access_token || !tokens.refresh_token) throw new Error(tokens.error ?? `Google OAuth ${response.status}`);
+        window.opener.postMessage({ type: 'ihr-oauth-token', tokens: {
+          accessToken: tokens.access_token, refreshToken: tokens.refresh_token,
+          expiresAt: Date.now() + (tokens.expires_in ?? 3600) * 1000
+        }, state }, readOrigin);
+        window.close();
+      } catch (exchangeError) {
+        window.opener.postMessage({ error: exchangeError instanceof Error ? exchangeError.message : 'Token exchange failed', state }, readOrigin);
+      }
+    });
+    return true;
+  }
+
   if ((code || error) && window.opener) {
-    window.opener.postMessage({ code, error, state: expectedState ?? state }, targetOrigin);
+    window.opener.postMessage({ code, error, state }, window.location.origin);
     window.close();
     return true;
   }
