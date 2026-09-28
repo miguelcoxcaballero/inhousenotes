@@ -25,7 +25,7 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.31.md');
+const notes = readText('../RELEASE_NOTES_v5.11.32.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -33,13 +33,17 @@ const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.31';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.32';/);
+assert.match(app, /initialPages: 1/);
+assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
+assert.match(app, /cleanOriginalRecoveryPromise/);
+assert.match(app, /page data could not be recovered/);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.31/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.31/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.31/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.31/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.32/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.32/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.32/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.32/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -1030,7 +1034,7 @@ assert.match(html, /const EMBEDDED_METADATA_MAX_ENCODED_CHARS = 48 \* 1024 \* 10
 assert.match(html, /const EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES = 96 \* 1024 \* 1024;/);
 assert.match(html, /if \(!workerUnavailable\) throw workerErr;/);
 assert.match(html, /const stride = Math\.max\(1, Math\.floor\(text\.length \/ 4096\)\);/);
-assert.match(html, /documentSessionId \+= 1;\s*embeddedMetadataCache\.clear\(\);/);
+assert.match(html, /documentSessionId \+= 1;[\s\S]{0,240}embeddedMetadataCache\.clear\(\);/);
 assert.match(html, /if \(isDocumentSessionTokenValid\(cacheSessionToken\)\) \{\s*embeddedMetadataCache\.set/);
 assert.match(html, /if \(raw\.length > 16384\) return null;/);
 assert.match(html, /const COLLAB_KEYWORD_SECTION_MAX_CHARS = 8 \* 1024 \* 1024;/);
@@ -1097,14 +1101,13 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // The Android shell is unchanged, but its hosted app version advances.
-assert.equal(update.publishedAppVersion, '5.11.31');
+assert.equal(update.publishedAppVersion, '5.11.32');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.11\.31/);
-assert.match(notes, /Removed the full-document PDF prewarm/i);
-assert.match(notes, /stable document\/page\/index identity/i);
-assert.match(notes, /mutation generation/i);
+assert.match(update.releaseNotes, /v5\.11\.32/);
+assert.match(notes, /defers first-page work/i);
+assert.match(notes, /background migration batches/i);
 assert.match(app, /preparedDrivePdfBuild\.controller\.abort\(\)/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
 assert.match(oauthCallback, /miguelcoxcaballero\.github\.io/);
@@ -1113,7 +1116,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.31 smoke checks passed.');
+console.log('v5.11.32 smoke checks passed.');
 
 
 

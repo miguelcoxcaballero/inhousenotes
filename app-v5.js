@@ -2114,6 +2114,10 @@
         let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
         let driveSaveBlockedReason = '';
+        // Some legacy app PDFs carry their clean source as an embedded attachment.
+        // Recover it off the opening critical path; Drive saves wait for the
+        // recovery promise so an early edit can never flatten over the source.
+        let cleanOriginalRecoveryPromise = null;
         let driveHydratedFileId = null;
         let driveHydrationPromise = null;
         let driveHydrationInProgress = false;
@@ -12366,7 +12370,7 @@
         }
 
         // Render all pages
-        function renderAllPages() {
+        function renderAllPages(options = {}) {
             invalidatePageBoundsCache();
             viewportGestureGeometry = null;
             clearSelection();
@@ -12435,7 +12439,7 @@
             updateAddPageIndicator();
             const maxIndex = Math.max(0, state.pages.length - 1);
             state.activePageIndex = Math.min(Math.max(0, state.activePageIndex || 0), maxIndex);
-            scheduleVisiblePageUpdate(true);
+            if (!options.deferVisibleUpdate) scheduleVisiblePageUpdate(true);
         }
 
         function bakeLegacyEraserAreaStrokes() {
@@ -20691,7 +20695,7 @@
             return next;
         }
 
-        function buildPageMeta(page, pageIndex = null) {
+        function buildPageMeta(page, pageIndex = null, options = {}) {
             if (page && !page.pageId) {
                 page.pageId = state.driveFileId && Number.isFinite(pageIndex)
                     ? generateLegacyDocumentPageId(state.driveFileId, pageIndex + 1)
@@ -20699,7 +20703,9 @@
             }
             const strokeCount = typeof page.strokeCount === 'number'
                 ? page.strokeCount
-                : getVisibleStrokeCount(page);
+                : (options.fastStrokeCount && Array.isArray(page?.strokes)
+                    ? page.strokes.length
+                    : getVisibleStrokeCount(page));
             const { width: pageWidth, height: pageHeight } = getPageDimensions(page);
             const portableBackgroundImage = typeof page?.backgroundImage === 'string'
                 && !page.backgroundImage.startsWith('blob:')
@@ -22059,7 +22065,9 @@
             state.lastSavedAt = typeof payload?.savedAt === 'number' ? payload.savedAt : null;
             legacyPagesCache = pages;
             state.pages = pages.map((page, pageIndex) => {
-                const meta = buildPageMeta(page, pageIndex);
+                const meta = buildPageMeta(page, pageIndex, {
+                    fastStrokeCount: !!options.deferPageWrites
+                });
                 return {
                     pageId: meta.pageId,
                     strokes: null,
@@ -22086,7 +22094,10 @@
             applyStoredCollabDocumentFields();
             if (!isDocumentSessionTokenValid(sessionToken)) return false;
 
-            const keepCount = Math.min(MAX_ACTIVE_PAGES, pages.length);
+            const requestedInitialPages = Number.isFinite(options.initialPages)
+                ? Math.max(1, Math.floor(options.initialPages))
+                : MAX_ACTIVE_PAGES;
+            const keepCount = Math.min(requestedInitialPages, pages.length);
             for (let i = 0; i < keepCount; i++) {
                 if (!isDocumentSessionTokenValid(sessionToken)) return false;
                 const fullPage = normalizeLegacyPage(pages[i], i);
@@ -22117,7 +22128,9 @@
             // visible working set paint immediately, then persist it alongside
             // the remaining pages in idle batches.
             let index = deferPageWrites ? 0 : keepCount;
-            const batchSize = 10;
+            // Keep background conversion small: a large IndexedDB batch competes
+            // with the first pen/touch input on mobile even when scheduled idle.
+            const batchSize = 3;
             const migratePageRange = async (limit) => {
                 let count = 0;
                 while (index < pages.length && count < limit) {
@@ -22155,6 +22168,10 @@
                     const saved = await savePageToIndexedDb(index, fullPage);
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     if (!saved) return false;
+                    const pageMeta = state.pages[index];
+                    if (pageMeta && !isPageLoaded(pageMeta)) {
+                        pageMeta.strokeCount = getVisibleStrokeCount(fullPage);
+                    }
                     legacyPagesCache[index] = null;
                     count += 1;
                     index += 1;
@@ -22182,7 +22199,7 @@
                 if (delay > 0) {
                     setTimeout(run, delay);
                 } else if ('requestIdleCallback' in window) {
-                    requestIdleCallback(run, { timeout: 500 });
+                    requestIdleCallback(run, { timeout: 900 });
                 } else {
                     setTimeout(run, 60);
                 }
@@ -22782,6 +22799,9 @@
                 localPageStructureMutationToken = null;
             }
             documentSessionId += 1;
+            // Any recovery from the previous document is now irrelevant; its
+            // captured session token prevents it from mutating this document.
+            cleanOriginalRecoveryPromise = null;
             embeddedMetadataCache.clear();
             if (pdfRestoreOperation) {
                 pdfRestoreOperation.cancelled = true;
@@ -24230,6 +24250,12 @@
                     : undefined);
                 return;
             }
+            if (cleanOriginalRecoveryPromise) {
+                const recovery = cleanOriginalRecoveryPromise;
+                showStatus('Changes are safe locally · preparing source PDF', { phase: 'paused' });
+                await recovery;
+                if (!isDocumentSessionTokenValid(sessionToken)) return;
+            }
             if (state.driveFileId && !isDriveHydratedForCurrentFile()) {
                 const hydrated = await ensureDriveHydratedBeforeUpload();
                 if (!hydrated) {
@@ -24494,7 +24520,23 @@
                     setPresenceSavePhase('');
                     if (typeof err?.message === 'string' && /missing page data for export/i.test(err.message)) {
                         driveDirty = true;
-                        setDriveSaveBlocked('Drive save blocked: missing page data');
+                        deferredDriveSave = true;
+                        driveSaveFailedThisRun = true;
+                        // A legacy conversion can still be moving page records
+                        // from the embedded PDF into IndexedDB. Checkpoint that
+                        // cache before retrying instead of permanently blocking
+                        // autosave on a transient migration race.
+                        if (hasPendingLegacyPageMigration()) {
+                            const repaired = await flushLegacyPagesCacheForCheckpoint();
+                            if (repaired) {
+                                showStatus('Restoring page data before retrying Drive', { phase: 'paused' });
+                                scheduleDeferredDriveSaveRetry(450);
+                            } else {
+                                setDriveSaveBlocked('Drive save blocked: page data could not be recovered');
+                            }
+                        } else {
+                            setDriveSaveBlocked('Drive save blocked: page data could not be recovered');
+                        }
                     } else {
                         showStatus('Drive save failed', { error: true });
                         driveDirty = true;
@@ -28512,7 +28554,12 @@
                 || flags.driveSaveQueued
                 || flags.contentVersion !== flags.uploadedVersion
             );
-            if (flags.blocked || preferredPhase === 'error') return 'error';
+            if (flags.blocked) return 'error';
+            // A previous failed attempt must not keep the dot red while a fresh
+            // retry is making progress. Red is for an idle failure or a block.
+            if (flags.driveSaveInProgress) return 'uploading';
+            if (flags.localSaveInProgress || flags.localSaveQueued) return 'saving';
+            if (preferredPhase === 'error') return 'error';
             if (collabPullInProgress || preferredPhase === 'syncing') return 'syncing';
             if (flags.driveSaveInProgress || preferredPhase === 'uploading') return 'uploading';
             if (flags.localSaveInProgress
@@ -29192,6 +29239,7 @@
                 state.cleanOriginalPageSizes = null;
                 state.hasLegacyBakedOverlay = false;
                 let needsCleanOriginalSwap = false;
+                let deferCleanOriginalRecovery = false;
                 const needsCleanOriginalRecovery = Array.isArray(embeddedStrokes)
                     && embeddedStrokes.some(pageEntryNeedsPdfBackground);
                 // Drive file ID is set by openDriveFile *after* importPDFData returns,
@@ -29221,34 +29269,11 @@
                             console.warn('Failed to load cached original PDF bytes:', idbErr);
                         }
                     }
-                    if (!state.cleanOriginalPdfBytes) {
-                        const attachedClean = await extractCleanOriginalAttachment(pdf);
-                        if (attachedClean && attachedClean.byteLength > 0) {
-                            state.cleanOriginalPdfBytes = attachedClean;
-                            needsCleanOriginalSwap = true;
-                            if (idbCacheKey) {
-                                saveOriginalPdfBytes(idbCacheKey, attachedClean).catch(() => { });
-                            }
-                        }
-                    }
-                    if (!state.cleanOriginalPdfBytes) {
-                        const overlayRefs = parseOverlayRefsFromKeywords(pdfKeywordsString);
-                        if (overlayRefs) {
-                            const bytesForCleaning = capturedOriginalBytes || await getCapturedOriginalBytes();
-                            const cleaned = bytesForCleaning
-                                ? await stripOverlaysFromPdfBytes(bytesForCleaning, overlayRefs)
-                                : null;
-                            if (cleaned && cleaned.byteLength > 0) {
-                                state.cleanOriginalPdfBytes = cleaned.buffer.slice(
-                                    cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
-                                );
-                                needsCleanOriginalSwap = true;
-                                if (idbCacheKey) {
-                                    saveOriginalPdfBytes(idbCacheKey, state.cleanOriginalPdfBytes).catch(() => { });
-                                }
-                            }
-                        }
-                    }
+                    // PDF.js may need to walk/decompress a large attachment tree.
+                    // Keep the saved PDF visible with its reversible vector cover
+                    // while the editor opens; the save path below waits for this
+                    // recovery before producing any new Drive revision.
+                    deferCleanOriginalRecovery = !state.cleanOriginalPdfBytes;
                 }
                 const displaySavedPdfWithBakedOverlay = shouldDisplaySavedPdfWithBakedOverlay(embeddedStrokes);
                 // If some PDF-background pages do not have drawable vector
@@ -29257,14 +29282,16 @@
                 // pages that do have vectors get white legacy covers below.
                 if (displaySavedPdfWithBakedOverlay) {
                     state.hasLegacyBakedOverlay = true;
-                } else if (needsCleanOriginalSwap) {
-                    await swapDisplayDocToCleanOriginal();
                 } else if (needsCleanOriginalRecovery && !state.cleanOriginalPdfBytes) {
                     // Legacy doc that was previously saved by this app but we no longer
                     // have the clean original. The strokes are baked into the saved
                     // PDF as an overlay PNG AND restored as vectors here. Mark legacy
                     // so the renderer paints white covers over the baked image — that
                     // way erasing a stroke visually wipes the baked pixels too.
+                    state.hasLegacyBakedOverlay = true;
+                } else if (needsCleanOriginalSwap) {
+                    // Render a safe first frame from the saved PDF, then switch the
+                    // active PDF.js document after the editor is interactive.
                     state.hasLegacyBakedOverlay = true;
                 }
 
@@ -29450,18 +29477,16 @@
                     awaitAllPages: false,
                     deferPageWrites: true,
                     ensureLegacyIds: true,
+                    initialPages: 1,
                     documentId: idbCacheKey || ''
                 });
                 await yieldToMainThread();
                 throwIfSessionInvalid();
-                renderAllPages();
+                renderAllPages({ deferVisibleUpdate: true });
                 state.activePageIndex = 0;
                 scheduleSave(true);
                 await yieldToMainThread();
                 throwIfSessionInvalid();
-                updateVisiblePages(true);
-
-                const isNonAppPdf = !embeddedStrokes;
 
                 if (embeddedStrokes) {
                     const totalStrokes = embeddedStrokes.reduce((sum, p) => sum + (p.strokes?.length || 0), 0);
@@ -29470,37 +29495,67 @@
                     showStatus(`PDF imported: ${numPages} pages (as background)`, { preserveState: true });
                 }
 
-                if (isNonAppPdf) {
-                    // Clear any queued renders to avoid racing with eager rendering
-                    // (updateVisiblePages may have queued renders that compete with our direct calls)
-                    pdfRenderQueue = [];
-
-                    // Render first visible pages explicitly
-                    const isLargeFile = (options.fileSize || 0) > 50 * 1024 * 1024;
-                    const eagerCount = isLargeFile ? 1 : Math.min(numPages, MAX_ACTIVE_PAGES);
-                    const savedToken = pdfRenderToken;
-                    for (let pi = 0; pi < eagerCount; pi++) {
-                        throwIfSessionInvalid();
-                        ensurePageCanvas(pi);
-                        await renderPdfPageToBackground(pi, savedToken, { ignoreRecentActivity: true });
-                        // Generate preview after background is rendered
-                        const pg = state.pages[pi];
-                        if (pg && pg.backgroundImage && !pg.preview) {
-                            pg.preview = renderPagePreview(pi);
-                            applyPagePreview(pi);
-                        }
-                    }
-                    // Keep the rest lazy to avoid UI stalls on large/non-template PDFs.
-                    scheduleVisiblePageUpdate(true);
-                }
-
                 hideLoading();
+                setTimeout(() => {
+                    if (isDocumentSessionTokenValid(sessionToken)) {
+                        scheduleVisiblePageUpdate(false);
+                    }
+                }, 80);
                 // Everything below is maintenance work. The editor is already
                 // interactive, so run it without holding the opening overlay.
                 setTimeout(() => restoreVersionHistory().catch(() => {}), 0);
 
+                let resolveCleanOriginalRecovery = null;
+                const hasCleanOriginalRecoveryWork = needsCleanOriginalRecovery
+                    && (deferCleanOriginalRecovery || needsCleanOriginalSwap);
+                const cleanRecoveryGate = hasCleanOriginalRecoveryWork
+                    ? new Promise(resolve => { resolveCleanOriginalRecovery = resolve; })
+                    : null;
+                if (cleanRecoveryGate) cleanOriginalRecoveryPromise = cleanRecoveryGate;
+
                 const runDeferredPdfMaintenance = async () => {
                     if (!isDocumentSessionTokenValid(sessionToken)) return;
+                    try {
+                    if (hasCleanOriginalRecoveryWork) {
+                        if (!state.cleanOriginalPdfBytes) {
+                            const attachedClean = await extractCleanOriginalAttachment(pdf);
+                            if (attachedClean?.byteLength > 0) {
+                                state.cleanOriginalPdfBytes = attachedClean;
+                            }
+                        }
+                        if (!state.cleanOriginalPdfBytes) {
+                            const overlayRefs = parseOverlayRefsFromKeywords(pdfKeywordsString);
+                            if (overlayRefs) {
+                                const bytesForCleaning = capturedOriginalBytes || await getCapturedOriginalBytes();
+                                const cleaned = bytesForCleaning
+                                    ? await stripOverlaysFromPdfBytes(bytesForCleaning, overlayRefs)
+                                    : null;
+                                if (cleaned?.byteLength > 0) {
+                                    state.cleanOriginalPdfBytes = cleaned.buffer.slice(
+                                        cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
+                                    );
+                                }
+                            }
+                        }
+                        if (state.cleanOriginalPdfBytes) {
+                            if (idbCacheKey) {
+                                saveOriginalPdfBytes(idbCacheKey, state.cleanOriginalPdfBytes).catch(() => {});
+                            }
+                            if (!displaySavedPdfWithBakedOverlay) {
+                                state.hasLegacyBakedOverlay = false;
+                                const swapped = await swapDisplayDocToCleanOriginal();
+                                if (!swapped) state.hasLegacyBakedOverlay = true;
+                            }
+                        }
+                    }
+                    } finally {
+                        if (cleanRecoveryGate) {
+                            if (cleanOriginalRecoveryPromise === cleanRecoveryGate) {
+                                cleanOriginalRecoveryPromise = null;
+                            }
+                            resolveCleanOriginalRecovery?.();
+                        }
+                    }
                     if (!embeddedStrokes && !capturedOriginalBytes) {
                         const originalBytes = await getCapturedOriginalBytes();
                         if (originalBytes && isDocumentSessionTokenValid(sessionToken)) {
@@ -31236,6 +31291,20 @@
         }
 
         async function buildPdfBlob(options = {}) {
+            // Never export from the temporary baked-overlay source while its
+            // clean original is being recovered in the background. The editor
+            // remains usable; only PDF generation waits for this safety step.
+            const cleanRecovery = cleanOriginalRecoveryPromise;
+            if (cleanRecovery) {
+                await cleanRecovery;
+                if (options.signal?.aborted) throw createAbortError('PDF build aborted');
+                const sessionToken = Number.isFinite(options.sessionToken)
+                    ? options.sessionToken
+                    : getDocumentSessionToken();
+                if (!isDocumentSessionTokenValid(sessionToken)) {
+                    throw createAbortError('Document session replaced');
+                }
+            }
             // Prefer the compact text/vector-preserving path whenever every
             // background can be reproduced losslessly. On any failure, fall
             // through to the existing raster pipeline so a save cannot be lost.
