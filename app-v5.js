@@ -4291,6 +4291,14 @@
             const removedIds = new Set(removedStrokeIds);
             const addedStrokes = (Array.isArray(packet.addedStrokes) ? packet.addedStrokes : [])
                 .filter(stroke => stroke?.id && !removedIds.has(String(stroke.id)));
+            const erasePageIndex = state.pages.findIndex(page => page?.pageId === String(packet.pageId));
+            if (erasePageIndex >= 0) {
+                const replacedIds = new Set([...removedIds, ...addedStrokes.map(stroke => String(stroke.id))]);
+                for (const stroke of getRemoteLiveErasePreviewStrokes(state.pages[erasePageIndex])) {
+                    if (replacedIds.has(String(stroke.id))) recordEraserDamage(erasePageIndex, stroke);
+                }
+                addedStrokes.forEach(stroke => recordEraserDamage(erasePageIndex, stroke));
+            }
             record.operations.push({ removedStrokeIds, addedStrokes });
             record.updatedAt = Date.now();
             remoteLiveErasePreviews.set(key, record);
@@ -4304,7 +4312,7 @@
             }, REMOTE_LIVE_STROKE_TTL_MS);
             affectedPageIds.forEach(pageId => {
                 const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
-                if (pageIndex >= 0) redrawPage(pageIndex);
+                if (pageIndex >= 0 && eraserDamage.has(pageIndex)) scheduleEraserRedraw(pageIndex);
             });
             return true;
         }
@@ -10088,6 +10096,9 @@
                 alignViewportTopToWidth(A4_WIDTH);
             }
             showLoading('Opening PDF...');
+            if (typeof prewarmLiveCollaboration === 'function') {
+                prewarmLiveCollaboration(file.id, sessionToken);
+            }
             try {
                 const cachedOpen = await cachedOpenPromise;
                 if (driveOpenCacheMatchesCard(cachedOpen, file)) {
@@ -11758,14 +11769,83 @@
         }
 
         const _eraserRedrawPending = new Set();
+        const eraserDamage = new Map();
         let _eraserRedrawRaf = null;
+        function recordEraserDamage(pageIndex, stroke) {
+            const bounds = getStrokeBounds(stroke);
+            const page = state.pages[pageIndex];
+            if (!bounds || !page) return;
+            const padding = Math.max(3, Number(stroke.width || 1) * 1.5);
+            const next = { minX: bounds.minX - padding, minY: bounds.minY - padding,
+                maxX: bounds.maxX + padding, maxY: bounds.maxY + padding };
+            const previous = eraserDamage.get(pageIndex);
+            if (previous?.page === page) {
+                next.minX = Math.min(next.minX, previous.minX);
+                next.minY = Math.min(next.minY, previous.minY);
+                next.maxX = Math.max(next.maxX, previous.maxX);
+                next.maxY = Math.max(next.maxY, previous.maxY);
+            }
+            eraserDamage.set(pageIndex, { ...next, page });
+        }
+
+        function repaintEraserDamage(pageIndex, damage) {
+            const page = state.pages[pageIndex];
+            const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+            if (!canvas || damage?.page !== page || !isPageLoaded(page)
+                || canvas.dataset.hasPageDraw !== '1') {
+                redrawPage(pageIndex, { duringErase: true });
+                return;
+            }
+            // Restore the real background and all surviving ink inside the
+            // damaged rectangle. White painting/destination-out would destroy
+            // the template, images or other overlapping strokes.
+            const pending = pendingPageRepaints.get(canvas);
+            if (pending) pending.cancelled = true;
+            const ctx = canvas.getContext('2d');
+            const { width } = getPageDimensions(pageIndex);
+            const scale = getPageCanvasRenderScale(canvas, width);
+            const intersects = stroke => {
+                const b = getStrokeBounds(stroke);
+                const pad = Math.max(3, Number(stroke?.width || 1) * 1.5);
+                return b && b.maxX + pad >= damage.minX && b.minX - pad <= damage.maxX
+                    && b.maxY + pad >= damage.minY && b.minY - pad <= damage.maxY;
+            };
+            ctx.save();
+            ctx.setTransform(scale, 0, 0, scale, 0, 0);
+            ctx.beginPath();
+            ctx.rect(damage.minX, damage.minY, damage.maxX - damage.minX, damage.maxY - damage.minY);
+            ctx.clip();
+            ctx.clearRect(damage.minX, damage.minY, damage.maxX - damage.minX, damage.maxY - damage.minY);
+            ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+            drawPageBackgroundLayer(ctx, page, pageIndex, scale);
+            if (page.bakedBackground) {
+                const image = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex));
+                if (image?.complete) {
+                    const size = getPageDimensions(pageIndex);
+                    ctx.drawImage(image, 0, 0, size.width, size.height);
+                }
+            }
+            if (!pendingCleanOriginalSwap) {
+                drawLegacyCoverStrokes(ctx, { legacyCoverStrokes: (page.legacyCoverStrokes || []).filter(intersects) });
+            }
+            drawImagesOnContext(ctx, page, pageIndex, redrawPage);
+            for (const stroke of getRemoteLiveErasePreviewStrokes(page)) {
+                if (stroke.tool !== 'eraser-stroke' && intersects(stroke)) drawSmoothStroke(ctx, stroke);
+            }
+            ctx.restore();
+            // Final gesture rendering still refreshes the complete cache.
+            page.needsRedraw = true;
+        }
+
         function scheduleEraserRedraw(pageIndex) {
             _eraserRedrawPending.add(pageIndex);
             if (!_eraserRedrawRaf) {
                 _eraserRedrawRaf = requestAnimationFrame(() => {
                     _eraserRedrawRaf = null;
                     for (const pi of _eraserRedrawPending) {
-                        redrawPage(pi);
+                        const damage = eraserDamage.get(pi);
+                        eraserDamage.delete(pi);
+                        repaintEraserDamage(pi, damage);
                     }
                     _eraserRedrawPending.clear();
                 });
@@ -11938,6 +12018,7 @@
                     newStrokes.push(stroke);
                 } else {
                     changed = true;
+                    recordEraserDamage(pageIndex, stroke);
                     if (options.changeSet && stroke.id) {
                         options.changeSet.removedStrokeIds.push(stroke.id);
                     }
@@ -11969,6 +12050,7 @@
                 if (stroke.tool && stroke.tool.startsWith('eraser')) continue;
                 if (!strokeHitsPoint(stroke, x, y, hitRadius)) continue;
                 const removed = page.strokes.splice(i, 1)[0];
+                recordEraserDamage(pageIndex, removed);
                 erasedList.push({ index: i, stroke: cloneStroke(removed) });
                 if (options.changeSet && removed?.id) {
                     options.changeSet.removedStrokeIds.push(removed.id);
@@ -12356,7 +12438,7 @@
         // High-level page rendering: clears the canvas and repaints background
         // (template / PDF page) then all strokes and images in order.
         const pendingPageRepaints = new WeakMap();
-        function redrawPage(pageIndex) {
+        function redrawPage(pageIndex, options = {}) {
             const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
             const page = state.pages[pageIndex];
             if (!page) return;
@@ -12429,7 +12511,7 @@
                         if (phase === 0) drawImagesOnContext(ctx, page, pageIndex, redrawPage);
                         phase++; index = 0;
                     }
-                    if (isPenWriting || state.activePointers.size > 0) {
+                    if (!options.duringErase && (isPenWriting || state.activePointers.size > 0)) {
                         setTimeout(paint, 40); return;
                     }
                     if ((pageDirtyGeneration.get(pageIndex) || 0) !== generation || page.strokes.length !== strokeCount) {
@@ -22970,6 +23052,10 @@
         }
 
         function beginDocumentSession(options = {}) {
+            if (_eraserRedrawRaf) cancelAnimationFrame(_eraserRedrawRaf);
+            _eraserRedrawRaf = null;
+            _eraserRedrawPending.clear();
+            eraserDamage.clear();
             closeScannerEditor({ force: true });
             pendingVersionHistoryRestore = null;
             versionHistoryRestorePromise = null;
@@ -32558,6 +32644,27 @@
                     const start = performance.now();
                     redrawPage(0);
                     return performance.now() - start;
+                },
+                async prepareEraserFixtureForTest(tool) {
+                    await this.seedDensePageForTest(260, 15);
+                    state.currentTool = tool;
+                    state.eraserWidth = 16;
+                    state.pages[0].strokes.push({ id: 'erase-target', tool: 'pen', color: '#000000', width: 6,
+                        points: Array.from({ length: 101 }, (_, index) => ({ x: 100 + index, y: 203, p: 0.5 })) });
+                    redrawPage(0);
+                },
+                eraserPixelsForTest() {
+                    const canvas = document.querySelector('canvas.page-canvas[data-page="0"]');
+                    const scale = getPageCanvasRenderScale(canvas, getPageDimensions(0).width);
+                    const sample = x => Array.from(canvas.getContext('2d').getImageData(Math.round(x * scale), Math.round(203 * scale), 1, 1).data);
+                    return { center: sample(153), edge: sample(110), penActive: isPenWriting };
+                },
+                async receiveErasePreviewForTest() {
+                    await this.prepareLiveDocument();
+                    return ihnHandleRealtimeErasePacket({ v: 1, type: 'live-erase', fileId: state.driveFileId,
+                        actorId: 'remote:tab', gestureId: 'remote-erase', pageId: state.pages[0].pageId,
+                        sequence: 1, removedStrokeIds: ['erase-target'], addedStrokes: [], final: false,
+                        sentAt: Date.now() }, 'webrtc');
                 },
                 densePaintStatusForTest() {
                     const canvas = document.querySelector('canvas.page-canvas[data-page="0"]');
