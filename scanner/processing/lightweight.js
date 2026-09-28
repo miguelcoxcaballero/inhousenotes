@@ -3346,48 +3346,188 @@
       }
     }
 
-    // The photographed dot grid is deliberately a pale neutral tone, while
-    // user ink is mapped to much darker black or saturated pen colours. Remove
-    // that light neutral layer across the grid field before the clean vector
-    // lattice is composited. This also handles residual non-rigid warp without
-    // guessing a single global offset and keeps the dark core of handwriting.
-    const gridX1 = Math.max(0, Math.floor(1.72 * pxPerCm));
-    const gridX2 = Math.min(width - 1, Math.ceil(19.28 * pxPerCm));
-    const gridY1 = Math.max(0, Math.floor(1.62 * pxPerCm));
-    const gridY2 = Math.min(height - 1, Math.ceil(27.18 * pxPerCm));
-    for (let y = gridY1; y <= gridY2; y += 1) {
-      for (let x = gridX1; x <= gridX2; x += 1) {
-        const metrics = metricsAt(x, y);
-        if (metrics.saturation <= 0.34 && metrics.luminance >= 188 && metrics.luminance < 250) {
-          setPaper(x, y);
+    // Recover one shared lattice phase from hundreds of repeated dots, then
+    // clean only a tiny neighbourhood at those coordinates. Searching each
+    // whole cell independently can lock onto a faint handwritten fragment;
+    // the global periodic vote makes that impossible while still tolerating
+    // camera/warp displacement of the printed grid.
+    const ringRadius = Math.max(3, Math.ceil(0.095 * pxPerCm));
+    const strokeContinuityRadius = Math.max(1, Math.round(ringRadius * 0.55));
+    const ringDirections = [
+      [1, 0], [-1, 0], [0, 1], [0, -1],
+      [Math.SQRT1_2, Math.SQRT1_2], [-Math.SQRT1_2, Math.SQRT1_2],
+      [Math.SQRT1_2, -Math.SQRT1_2], [-Math.SQRT1_2, -Math.SQRT1_2]
+    ];
+    const dotResponseAt = (x, y, minimumSupports = ringDirections.length) => {
+      const center = metricsAt(x, y);
+      if (center.saturation > 0.38 || center.luminance < 105 || center.luminance > 238) return null;
+      let ringSum = 0;
+      let supports = 0;
+      for (const [ux, uy] of ringDirections) {
+        const ring = metricsAt(
+          Math.round(x + ux * ringRadius),
+          Math.round(y + uy * ringRadius)
+        );
+        // A continuous stroke necessarily remains dark in at least one radial
+        // direction. A printed circular dot is surrounded by lighter paper in
+        // all eight directions.
+        if (ring.luminance >= center.luminance + 2 && ring.saturation <= 0.48) supports += 1;
+        ringSum += ring.luminance;
+      }
+      if (supports < minimumSupports) return null;
+      const contrast = ringSum / ringDirections.length - center.luminance;
+      return contrast >= 5 ? { contrast, luminance: center.luminance } : null;
+    };
+    const scorePhase = (offsetXCm, offsetYCm) => {
+      let matches = 0;
+      let contrast = 0;
+      for (let column = 0; column < 35; column += 2) {
+        const x = Math.round((2 + column * 0.5 + offsetXCm) * pxPerCm);
+        for (let row = 0; row < 51; row += 2) {
+          const y = Math.round((1.93 + row * 0.5 + offsetYCm) * pxPerCm);
+          const response = dotResponseAt(x, y, 6);
+          if (!response) continue;
+          matches += 1;
+          contrast += Math.min(30, response.contrast);
+        }
+      }
+      return { matches, contrast };
+    };
+    const nominalPhase = scorePhase(0, 0);
+    let bestPhase = { x: 0, y: 0, ...nominalPhase };
+    for (let yStep = -10; yStep <= 10; yStep += 1) {
+      for (let xStep = -10; xStep <= 10; xStep += 1) {
+        const x = xStep * 0.02, y = yStep * 0.02;
+        const score = scorePhase(x, y);
+        if (score.matches > bestPhase.matches
+          || (score.matches === bestPhase.matches && score.contrast > bestPhase.contrast)) {
+          bestPhase = { x, y, ...score };
         }
       }
     }
-    // Also handle unusually dark but perfectly aligned printed dots. A dark
-    // or coloured pen stroke in the same neighbourhood vetoes the cleanup.
-    const alignedRadius = Math.max(2, Math.ceil(0.1 * pxPerCm));
-    const alignedGuard = Math.max(alignedRadius + 1, Math.ceil(0.14 * pxPerCm));
+    // Sparse synthetic/mostly-written pages do not contain enough template
+    // evidence to justify moving the lattice away from its canonical phase.
+    const gridPhase = bestPhase.matches >= nominalPhase.matches + 5
+      ? bestPhase
+      : { x: 0, y: 0 };
+    // Learn the photographed dot glyph from the median of all 1,785 cells.
+    // Handwriting is an outlier at any one relative pixel, while the printed
+    // grid is repeated everywhere. Subtracting this learned darkness preserves
+    // ink that crosses a dot instead of deleting the combined pixel.
+    const glyphRadius = Math.max(4, Math.ceil(0.22 * pxPerCm));
+    const glyphSide = glyphRadius * 2 + 1;
+    const glyphPixels = glyphSide * glyphSide;
+    const glyphHistograms = new Uint16Array(glyphPixels * 256);
+    const glyphCounts = new Uint16Array(glyphPixels);
     for (let column = 0; column < 35; column += 1) {
-      const cx = Math.round((2 + column * 0.5) * pxPerCm);
+      const cx = Math.round((2 + column * 0.5 + gridPhase.x) * pxPerCm);
       for (let row = 0; row < 51; row += 1) {
-        const cy = Math.round((1.93 + row * 0.5) * pxPerCm);
-        let protectedByInk = false;
-        for (let dy = -alignedGuard; dy <= alignedGuard && !protectedByInk; dy += 1) {
-          for (let dx = -alignedGuard; dx <= alignedGuard; dx += 1) {
-            if (Math.hypot(dx, dy) > alignedGuard) continue;
+        const cy = Math.round((1.93 + row * 0.5 + gridPhase.y) * pxPerCm);
+        for (let dy = -glyphRadius; dy <= glyphRadius; dy += 1) {
+          for (let dx = -glyphRadius; dx <= glyphRadius; dx += 1) {
+            if (Math.hypot(dx, dy) > glyphRadius) continue;
             const metrics = metricsAt(cx + dx, cy + dy);
-            if (metrics.luminance < 150 || metrics.saturation > 0.48) {
-              protectedByInk = true;
-              break;
+            if (metrics.saturation > 0.48) continue;
+            const glyphIndex = (dy + glyphRadius) * glyphSide + dx + glyphRadius;
+            const luminance = clamp(Math.round(metrics.luminance), 0, 255);
+            glyphHistograms[glyphIndex * 256 + luminance] += 1;
+            glyphCounts[glyphIndex] += 1;
+          }
+        }
+      }
+    }
+    const glyphDarkness = new Uint8Array(glyphPixels);
+    for (let glyphIndex = 0; glyphIndex < glyphPixels; glyphIndex += 1) {
+      const count = glyphCounts[glyphIndex];
+      if (!count) continue;
+      // Residual mesh curvature moves a photographed dot by a few pixels
+      // between cells. A lower robust quantile captures that broadened glyph;
+      // handwriting still occupies far fewer than 30% of the same relative
+      // position across the full page.
+      const target = Math.ceil(count * 0.12);
+      let seen = 0;
+      let median = targetPaper;
+      const histogramOffset = glyphIndex * 256;
+      for (let luminance = 0; luminance < 256; luminance += 1) {
+        seen += glyphHistograms[histogramOffset + luminance];
+        if (seen >= target) {
+          median = luminance;
+          break;
+        }
+      }
+      // Be conservative: this is a printed dot under handwriting, not a
+      // segmentation mask. A lower robust quantile avoids learning ink that
+      // happens to recur at similar positions, and the capped correction
+      // preserves the darker antialiased edge of a real pen stroke.
+      glyphDarkness[glyphIndex] = Math.max(0, Math.min(112, targetPaper - median));
+    }
+    for (let column = 0; column < 35; column += 1) {
+      const cx = Math.round((2 + column * 0.5 + gridPhase.x) * pxPerCm);
+      for (let row = 0; row < 51; row += 1) {
+        const cy = Math.round((1.93 + row * 0.5 + gridPhase.y) * pxPerCm);
+        for (let dy = -glyphRadius; dy <= glyphRadius; dy += 1) {
+          for (let dx = -glyphRadius; dx <= glyphRadius; dx += 1) {
+            if (Math.hypot(dx, dy) > glyphRadius) continue;
+            const glyphIndex = (dy + glyphRadius) * glyphSide + dx + glyphRadius;
+            const lift = glyphDarkness[glyphIndex];
+            if (lift < 4) continue;
+            const x = cx + dx, y = cy + dy;
+            const metrics = metricsAt(x, y);
+            // Only consider neutral pixels; dark strokes are protected by the
+            // continuity test below, even when their antialiased pixels are
+            // as light as the printed dot itself.
+            if (metrics.saturation > 0.42 || metrics.luminance < 70) continue;
+            // A dot is radially isolated; a pen stroke continues through it.
+            // Keep any pixel with dark neighbours on both sides of an axis,
+            // including pale/anti-aliased strokes that a simple threshold
+            // cannot tell apart from the printed grid.
+            const continuesAsStroke = [
+              [1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2], [Math.SQRT1_2, -Math.SQRT1_2]
+            ].some(([ux, uy]) => {
+              const before = metricsAt(Math.round(x - ux * strokeContinuityRadius), Math.round(y - uy * strokeContinuityRadius));
+              const after = metricsAt(Math.round(x + ux * strokeContinuityRadius), Math.round(y + uy * strokeContinuityRadius));
+              return before.luminance < 245
+                && after.luminance < 245
+                && before.luminance <= metrics.luminance + 28
+                && after.luminance <= metrics.luminance + 28;
+            });
+            if (continuesAsStroke) continue;
+            const offset = (y * width + x) * 4;
+            for (let channel = 0; channel < 3; channel += 1) {
+              data[offset + channel] = Math.min(targetPaper, data[offset + channel] + lift);
             }
           }
         }
-        if (protectedByInk) continue;
-        for (let dy = -alignedRadius; dy <= alignedRadius; dy += 1) {
-          for (let dx = -alignedRadius; dx <= alignedRadius; dx += 1) {
-            if (Math.hypot(dx, dy) > alignedRadius) continue;
-            const metrics = metricsAt(cx + dx, cy + dy);
-            if (metrics.luminance >= 110 && metrics.saturation <= 0.58) setPaper(cx + dx, cy + dy);
+      }
+    }
+    // The learned glyph above deliberately ignores rare observations so a
+    // lone handwritten mark cannot become part of the learned template. Also
+    // remove an individually verified printed dot: radial isolation confirms
+    // it is a circular template mark, while the same stroke-continuity guard
+    // preserves a line that crosses that location.
+    const verifiedDotRadius = Math.max(1, Math.round(0.06 * pxPerCm));
+    for (let column = 0; column < 35; column += 1) {
+      const cx = Math.round((2 + column * 0.5 + gridPhase.x) * pxPerCm);
+      for (let row = 0; row < 51; row += 1) {
+        const cy = Math.round((1.93 + row * 0.5 + gridPhase.y) * pxPerCm);
+        if (!dotResponseAt(cx, cy, 6)) continue;
+        for (let dy = -verifiedDotRadius; dy <= verifiedDotRadius; dy += 1) {
+          for (let dx = -verifiedDotRadius; dx <= verifiedDotRadius; dx += 1) {
+            if (Math.hypot(dx, dy) > verifiedDotRadius) continue;
+            const x = cx + dx, y = cy + dy;
+            const metrics = metricsAt(x, y);
+            if (metrics.saturation > 0.42 || metrics.luminance < 70) continue;
+            const continuesAsStroke = [
+              [1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2], [Math.SQRT1_2, -Math.SQRT1_2]
+            ].some(([ux, uy]) => {
+              const before = metricsAt(Math.round(x - ux * strokeContinuityRadius), Math.round(y - uy * strokeContinuityRadius));
+              const after = metricsAt(Math.round(x + ux * strokeContinuityRadius), Math.round(y + uy * strokeContinuityRadius));
+              return before.luminance < 245
+                && after.luminance < 245
+                && before.luminance <= metrics.luminance + 28
+                && after.luminance <= metrics.luminance + 28;
+            });
+            if (!continuesAsStroke) setPaper(x, y);
           }
         }
       }
@@ -3580,7 +3720,16 @@
             ? clamp((12 - localDifference) / 8, 0, 1)
             : 0;
           const smoothLocalPaper = localPaperAmount * localPaperAmount * (3 - 2 * localPaperAmount);
-          whiteMix = Math.min(0.98, Math.max(whiteMix * 0.8, smoothLocalPaper * 0.98));
+          // The 192px illumination map intentionally smooths away paper
+          // texture, but also cannot resolve a fine pencil line. A pixel that
+          // is locally darker than that field is likely real detail; reduce
+          // global whitening there and let explicit stencil cleanup handle
+          // only the verified template marks later.
+          const localInkProtection = clamp((localDifference - 2) / 12, 0, 0.92);
+          whiteMix = Math.min(0.98, Math.max(
+            whiteMix * (1 - localInkProtection),
+            smoothLocalPaper * 0.98
+          ));
           output = automatic.map(value => value * (1 - whiteMix) + profile.targetPaper * whiteMix);
         } else {
           // Preserve colours that are not one of the printed references, but
@@ -3595,7 +3744,7 @@
       }
       if (y % 96 === 95) await yieldToBrowser();
     }
-    if (preciseStencil) {
+    if (preciseStencil && !settings.skipStencilCleanup) {
       removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper);
     }
     context.putImageData(image, 0, 0);

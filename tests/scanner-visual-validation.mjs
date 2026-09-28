@@ -7,6 +7,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const outputDirectory = path.join(root, 'test-results', 'scanner-visual');
 const inputs = process.argv.slice(2).filter(value => !value.startsWith('--'));
 const debugPaths = process.argv.includes('--debug-paths');
+const skipCleanup = process.argv.includes('--skip-cleanup');
 
 if (!inputs.length) {
   process.stderr.write('Usage: node tests/scanner-visual-validation.mjs <photo.jpg> [...photo.jpg]\n');
@@ -50,7 +51,7 @@ try {
     const encoded = await fs.readFile(input, 'base64');
     const extension = path.extname(input).toLowerCase();
     const mime = extension === '.png' ? 'image/png' : 'image/jpeg';
-    const result = await page.evaluate(async ({ dataUrl, label, debugPaths }) => {
+    const result = await page.evaluate(async ({ dataUrl, label, debugPaths, skipCleanup }) => {
       const image = new Image();
       image.src = dataUrl;
       await image.decode();
@@ -62,7 +63,8 @@ try {
       const warped = await ScannerPro.Lightweight.warp(source, detection.pageQuad, detection.frame);
       const colourResult = await ScannerPro.Lightweight.correctColors(warped, {
         useStencil: detection.method === 'marker-guided' || detection.method === 'stencil',
-        preciseStencil: detection.method === 'marker-guided' || detection.method === 'stencil'
+        preciseStencil: detection.method === 'marker-guided' || detection.method === 'stencil',
+        skipStencilCleanup: skipCleanup
       });
 
       const previewScale = Math.min(1, 1100 / Math.max(source.width, source.height));
@@ -151,7 +153,7 @@ try {
         warped: warpedPreview.toDataURL('image/png'),
         debugWarped
       };
-    }, { dataUrl: `data:${mime};base64,${encoded}`, label: path.basename(input), debugPaths });
+    }, { dataUrl: `data:${mime};base64,${encoded}`, label: path.basename(input), debugPaths, skipCleanup });
 
     const stem = `${String(index + 1).padStart(2, '0')}-${path.basename(input, extension)}`;
     await fs.writeFile(path.join(outputDirectory, `${stem}-overlay.png`), toPng(result.overlay));

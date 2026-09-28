@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.25');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.26');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -381,7 +381,22 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
     context.moveTo(2.25 * pxPerCm, 1.93 * pxPerCm);
     context.lineTo(2.75 * pxPerCm, 1.93 * pxPerCm);
     context.stroke();
+    context.strokeStyle = 'rgb(158,158,158)';
+    context.lineWidth = 0.045 * pxPerCm;
+    context.beginPath();
+    context.moveTo(3.25 * pxPerCm, 2.43 * pxPerCm);
+    context.lineTo(3.75 * pxPerCm, 2.43 * pxPerCm);
+    context.stroke();
 
+    const cleanupControl = document.createElement('canvas');
+    cleanupControl.width = canvas.width;
+    cleanupControl.height = canvas.height;
+    cleanupControl.getContext('2d').drawImage(canvas, 0, 0);
+    await ScannerPro.Lightweight.correctColors(cleanupControl, {
+      useStencil: true,
+      preciseStencil: true,
+      skipStencilCleanup: true
+    });
     const correction = await ScannerPro.Lightweight.correctColors(canvas, {
       useStencil: true,
       preciseStencil: true
@@ -400,6 +415,10 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
       yellow: sample(17.5, 12.5),
       originalDot: sample(2, 1.93),
       crossingInk: sample(2.5, 1.93),
+      crossingFaintInk: sample(3.5, 2.43),
+      crossingFaintInkWithoutCleanup: Array.from(cleanupControl.getContext('2d').getImageData(
+        Math.round(3.5 * pxPerCm), Math.round(2.43 * pxPerCm), 1, 1
+      ).data.slice(0, 3)),
       greyRail: sample(1.5, 6.5)
     };
   });
@@ -414,6 +433,8 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
   expect(result.yellow).toEqual([255, 222, 0]);
   expect(Math.min(...result.originalDot)).toBeGreaterThanOrEqual(250);
   expect(Math.max(...result.crossingInk)).toBeLessThan(110);
+  expect(Math.max(...result.crossingFaintInkWithoutCleanup)).toBeLessThan(235);
+  expect(Math.max(...result.crossingFaintInk)).toBeLessThan(235);
   expect(Math.min(...result.greyRail)).toBeGreaterThanOrEqual(250);
 });
 
