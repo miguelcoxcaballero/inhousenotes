@@ -2082,6 +2082,12 @@
         let wheelReleaseTimeout = null;
         let viewSaveTimeout = null;
         let viewportTransformRaf = null;
+        // Geometry is stable during a pan/pinch. Keep the expensive page scan
+        // and layout read out of the per-frame gesture path.
+        let viewportGestureGeometry = null;
+        let cachedPageBounds = null;
+        let cachedPageBoundsOwner = null;
+        let cachedPageBoundsCount = -1;
         let pendingViewState = null;
         let saveTimestampInterval = null;
         let lastPenBackgroundTap = null;
@@ -2160,6 +2166,7 @@
             return false;
         }
         let gestureInteractionIdleTimer = null;
+        let gestureInteractionIdleDeadline = 0;
         let deferredDriveSave = false;
         let deferredDriveSaveRetryTimer = null;
         let driveTokenRetryInFlight = false;
@@ -2851,6 +2858,7 @@
             if (page.pageWidth === nextW && page.pageHeight === nextH) return false;
             page.pageWidth = nextW;
             page.pageHeight = nextH;
+            invalidatePageBoundsCache();
             applyPageDimensionsToWrapper(pageIndex, { skipRedraw: !!options.skipRedraw });
             if (!options.skipLayoutRefresh) {
                 updateAddPageIndicator();
@@ -12370,6 +12378,8 @@
 
         // Render all pages
         function renderAllPages() {
+            invalidatePageBoundsCache();
+            viewportGestureGeometry = null;
             clearSelection();
             invalidatePageStructureAsyncState();
             canvasContainer.innerHTML = '';
@@ -15158,6 +15168,10 @@
         }
 
         function getPageBounds() {
+            if (cachedPageBounds && cachedPageBoundsOwner === state.pages
+                && cachedPageBoundsCount === state.pages.length) {
+                return cachedPageBounds;
+            }
             const pageCount = state.pages.length || 1;
             const gap = PAGE_GAP;
             const padding = PAGE_PADDING;
@@ -15171,22 +15185,31 @@
             }
             const maxWidth = getMaxPageWidth();
             const height = pageHeight + Math.max(0, pageCount - 1) * gap;
-            return {
+            cachedPageBoundsOwner = state.pages;
+            cachedPageBoundsCount = state.pages.length;
+            cachedPageBounds = {
                 left: padding,
                 top: padding,
                 right: padding + maxWidth,
                 bottom: padding + height
             };
+            return cachedPageBounds;
+        }
+
+        function invalidatePageBoundsCache() {
+            cachedPageBounds = null;
+            cachedPageBoundsOwner = null;
+            cachedPageBoundsCount = -1;
         }
 
         // ── § 4.9  Viewport transform ─────────────────────────────────────────
         // All pan (scroll) and zoom logic. clampPanToVisible keeps the pages
         // in bounds; animatePanTo animates smooth jumps; handleWheel and the
         // pointer handlers drive the interactive gesture recognition.
-        function clampPanToVisible() {
-            const rect = canvasViewport.getBoundingClientRect();
+        function clampPanToVisible(geometry = null) {
+            const rect = geometry?.rect || canvasViewport.getBoundingClientRect();
             if (!rect.width || !rect.height) return;
-            const bounds = getPageBounds();
+            const bounds = geometry?.bounds || getPageBounds();
             const minPanX = MIN_PAGE_VISIBLE - bounds.right * state.zoom;
             const maxPanX = rect.width - MIN_PAGE_VISIBLE - bounds.left * state.zoom;
             const minPanY = MIN_PAGE_VISIBLE - bounds.bottom * state.zoom;
@@ -15456,6 +15479,7 @@
             state.panVelocityX = 0;
             state.panVelocityY = 0;
             state.lastPanTime = 0;
+            if (!state.activePointers.size) viewportGestureGeometry = null;
             flushDeferredSavesAfterInteraction();
             if (triggerUpdate) {
                 updateTransform();
@@ -15816,6 +15840,10 @@
             if (e.pointerType === 'touch' && isPenWriting) return;
             noteInteractionActivity();
             stopInertia();
+            if (!viewportGestureGeometry) {
+                const rect = canvasViewport.getBoundingClientRect();
+                viewportGestureGeometry = { rect, bounds: getPageBounds() };
+            }
             if (state.currentTool === 'lasso' && state.selection.pageIndex !== null) {
                 const selectionBox = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
                 if (selectionBox && !selectionBox.classList.contains('hidden')) {
@@ -15900,7 +15928,11 @@
             // Pen is handled by canvas
             if (e.pointerType === 'pen') return;
             if (!state.activePointers.has(e.pointerId)) return;
-            noteInteractionActivity();
+            // Pointermove can fire at 120–240 Hz. Activity was registered on
+            // pointerdown; refresh only the idle clock here, without repeating
+            // save-interruption work for every hardware sample.
+            refreshInteractionIdleTimer();
+            noteRecentUserActivity();
 
             state.activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
 
@@ -15928,7 +15960,7 @@
                     const currentCenterY = (points[0].clientY + points[1].clientY) / 2;
 
                     // Calculate the point in content space at the original pinch center
-                    const rect = canvasViewport.getBoundingClientRect();
+                    const rect = viewportGestureGeometry?.rect || canvasViewport.getBoundingClientRect();
                     const contentX = (state.pinchCenterX - rect.left - state.initialPanX) / state.initialScale;
                     const contentY = (state.pinchCenterY - rect.top - state.initialPanY) / state.initialScale;
 
@@ -16070,6 +16102,9 @@
                 state.panY = Math.max(state.panY, reset.minPanY);
                 updateTransform();
             }
+            if (state.activePointers.size === 0 && !state.inertiaFrame) {
+                viewportGestureGeometry = null;
+            }
         }
 
         function getPointerDistance() {
@@ -16081,6 +16116,7 @@
         }
 
         function preserveViewOnResize() {
+            viewportGestureGeometry = null;
             const rect = canvasViewport.getBoundingClientRect();
             if (!rect.width || !rect.height) return;
             const anchorX = (rect.width / 2 - state.panX) / state.zoom;
@@ -16105,10 +16141,14 @@
             if (viewportTransformRaf) return;
             viewportTransformRaf = requestAnimationFrame(() => {
                 viewportTransformRaf = null;
-                clampPanToVisible();
+                clampPanToVisible(viewportGestureGeometry);
                 applyViewportTransformStyle();
-                scheduleCanvasResolutionSync();
-                scheduleVisiblePageUpdate();
+                // Canvas allocation, page discovery and PDF work are not
+                // gesture-frame work. Reconcile once the gesture settles.
+                if (!state.activePointers.size && !state.inertiaFrame) {
+                    scheduleCanvasResolutionSync();
+                    scheduleVisiblePageUpdate();
+                }
             });
         }
 
@@ -16117,9 +16157,13 @@
                 cancelAnimationFrame(viewportTransformRaf);
                 viewportTransformRaf = null;
             }
-            clampPanToVisible();
+            clampPanToVisible(viewportGestureGeometry);
             applyViewportTransformStyle();
-            scheduleCanvasResolutionSync({ immediate: true });
+            if (viewportGestureGeometry && !state.activePointers.size) {
+                scheduleCanvasResolutionSync();
+            } else {
+                scheduleCanvasResolutionSync({ immediate: true });
+            }
             scheduleViewSave();
             scheduleVisiblePageUpdate();
         }
@@ -16949,6 +16993,7 @@
         }
 
         function renderPageSidePanel(pageIndex, panelData) {
+            invalidatePageBoundsCache();
             const row = canvasContainer.querySelector('.page-row[data-page-row="' + pageIndex + '"]');
             if (!row) return;
             const existing = row.querySelector('.page-side-panel');
@@ -22933,13 +22978,30 @@
 
         function noteInteractionActivity() {
             noteRecentUserActivity();
+            if (!isGestureInteracting) {
+                isGestureInteracting = true;
+                pauseSavesDuringInteraction();
+            }
+            refreshInteractionIdleTimer();
+        }
+
+        function refreshInteractionIdleTimer() {
+            const wasInteracting = isGestureInteracting;
             isGestureInteracting = true;
-            pauseSavesDuringInteraction();
+            if (!wasInteracting) pauseSavesDuringInteraction();
+            const now = performance.now();
+            // Avoid clearing and recreating a timer for every stylus/touch
+            // sample. Refresh near its deadline; this keeps saves paused
+            // during a gesture while eliminating high-frequency timer churn.
+            if (gestureInteractionIdleTimer && gestureInteractionIdleDeadline - now > 35) return;
             if (gestureInteractionIdleTimer) {
                 clearTimeout(gestureInteractionIdleTimer);
             }
+            gestureInteractionIdleDeadline = now + INTERACTION_IDLE_MS;
             gestureInteractionIdleTimer = setTimeout(() => {
                 isGestureInteracting = false;
+                gestureInteractionIdleDeadline = 0;
+                gestureInteractionIdleTimer = null;
                 flushDeferredSavesAfterInteraction();
                 scheduleVisiblePageUpdate(true);
             }, INTERACTION_IDLE_MS);
