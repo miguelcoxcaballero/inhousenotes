@@ -42,7 +42,8 @@ test('a transient pdf-lib failure is retried instead of immediately burning stro
     };
     window.__ihnRestorePdfLibLoad = () => { window.PDFLib.PDFDocument.load = original; };
   });
-  const result = await page.evaluate(() => window.__IHN_TEST_API__.buildPdfBlobForTest());
+  // The injected fault is in the compatibility (main-thread) renderer.
+  const result = await page.evaluate(() => window.__IHN_TEST_API__.buildPdfBlobForTest({ forceMainThread: true }));
   await page.evaluate(() => window.__ihnRestorePdfLibLoad());
 
   expect(result.ok).toBe(true);
@@ -70,7 +71,7 @@ test('a persistent pdf-lib failure is marked honestly, still carries the clean o
     };
     window.__ihnRestorePdfLibLoad = () => { window.PDFLib.PDFDocument.load = original; };
   }, originalLength);
-  const marked = await page.evaluate(() => window.__IHN_TEST_API__.buildPdfBlobForTest());
+  const marked = await page.evaluate(() => window.__IHN_TEST_API__.buildPdfBlobForTest({ forceMainThread: true }));
   expect(marked.hasLegacyBakedOverlay).toBe(true);
   expect(marked.legacyCoverPageCount).toBe(1);
   // Closing the recovery gap: even though this save was forced through the
