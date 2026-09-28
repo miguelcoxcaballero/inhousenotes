@@ -1420,13 +1420,23 @@ function ihnFlushLiveStrokePreview(strokeId, options = {}) {
     clearTimeout(record.timer);
     record.timer = null;
     const latest = record.latest;
-    const allPoints = ihnSanitizeLiveStrokePoints(latest.points);
+    const sourcePoints = Array.isArray(latest.points) ? latest.points : [];
+    const sourceLength = Math.min(sourcePoints.length, IHN_LIVE_STROKE_MAX_TOTAL_POINTS);
+    if (!options.final && !options.cancel && sourceLength <= record.sentPoints) return true;
     // Repeat the previous endpoint so quadratic rendering joins batches without
     // a visible seam. A final packet always carries the complete stroke and is
     // therefore independently recoverable after a dropped preview frame.
-    const offset = options.final
+    const sourceOffset = options.final
         ? 0
-        : Math.max(0, Math.min(allPoints.length, record.sentPoints) - 1);
+        : Math.max(0, Math.min(sourceLength, record.sentPoints) - 1);
+    // Preview frames only sanitize the unsent tail. Sanitizing the entire
+    // growing stroke on every frame made a long stroke quadratic work.
+    const allPoints = ihnSanitizeLiveStrokePoints(
+        options.final
+            ? sourcePoints.slice(0, sourceLength)
+            : sourcePoints.slice(sourceOffset, sourceLength)
+    );
+    const packetOffset = options.final ? 0 : sourceOffset;
     const basePacket = {
         v: 1, type: 'live-stroke', fileId: state?.driveFileId || '',
         actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`,
@@ -1446,13 +1456,13 @@ function ihnFlushLiveStrokePreview(strokeId, options = {}) {
         // Keep every RTCDataChannel message comfortably below mobile browser
         // limits. Long strokes are split into ordered point ranges; the final
         // range carries the completion flag.
-        let chunkOffset = offset;
+        let chunkOffset = 0;
         do {
             const chunkEnd = Math.min(allPoints.length, chunkOffset + IHN_LIVE_STROKE_MAX_POINTS);
             ihnSendRealtimeStrokePacket({
                 ...basePacket,
                 sequence: ++record.sequence,
-                offset: chunkOffset,
+                offset: packetOffset + chunkOffset,
                 points: allPoints.slice(chunkOffset, chunkEnd),
                 finalBatch: !!options.final,
                 totalPoints: options.final ? allPoints.length : 0,
@@ -1462,7 +1472,7 @@ function ihnFlushLiveStrokePreview(strokeId, options = {}) {
             chunkOffset = chunkEnd;
         } while (chunkOffset < allPoints.length);
     }
-    record.sentPoints = allPoints.length;
+    record.sentPoints = Math.max(record.sentPoints, sourceLength);
     if (options.final || options.cancel) ihnLiveStrokeSends.delete(record.strokeId);
     return true;
 }
