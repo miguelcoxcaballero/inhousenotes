@@ -181,6 +181,7 @@ function createHarness(overrides = {}) {
     getCollabStructureSnapshot: () => JSON.parse(JSON.stringify(state.collabStructure)),
     getCollabFieldSnapshot: () => JSON.parse(JSON.stringify(state.collabFields)),
     sanitizePageForStorage: page => JSON.parse(JSON.stringify(page)),
+    cloneSanitizedPageForStorage: async page => JSON.parse(JSON.stringify(page)),
     cloneTimelineValue: value => JSON.parse(JSON.stringify(value)),
     hasSmoothInteraction: () => false,
     waitForCollaborativeInteractionIdle: async () => true,
@@ -284,6 +285,7 @@ globalThis.__liveTest = {
   queued() { return ihnLiveBroadcastQueued; },
   forced() { return ihnLiveBroadcastForce; },
   lastApplied() { return ihnLiveLastAppliedHash; },
+  currentHash() { return ihnLiveCurrentHash; },
   ensureSignalKey: ihnEnsureSignalKey,
   encodeSignal: ihnEncodeSignal,
   decodeSignal: ihnDecodeSignal,
@@ -881,6 +883,88 @@ test('a stroke arriving during hydration aborts the stale snapshot and retries a
   assert.equal(released, 1);
   assert.equal(harness.api.queued(), true);
   assert.equal(harness.api.forced(), true);
+});
+
+test('async page copies send real strokes, not Promise objects, to peers and local tabs', async () => {
+  const { api, state, context } = createHarness();
+  context.driveAccessToken = null;
+  state.pages.push({ ...JSON.parse(JSON.stringify(state.pages[0])), pageId: 'p2' });
+  const channel = createChannel();
+  api.addPeer('peer-remote', peerWithChannel(channel));
+  api.queue();
+  await api.broadcast();
+  const packets = channel.sent.map(raw => JSON.parse(raw));
+  const snapshot = JSON.parse(packets.filter(p => p.t === 'chunk').map(p => p.data).join(''));
+  assert.equal(snapshot.pages.length, 2);
+  assert.equal(snapshot.pages[0].strokes[0].id, 'local-stroke');
+  assert.equal(snapshot.pages[1].pageId, 'p2');
+  assert.equal(snapshot.contentHash, api.canonicalHash());
+  assert.equal(api.tabChannel().messages[0].pages[1].strokes[0].id, 'local-stroke');
+});
+
+test('an edit during cooperative page cloning invalidates the snapshot before transmission', async () => {
+  const harness = createHarness();
+  harness.context.cloneSanitizedPageForStorage = async page => {
+    const copy = JSON.parse(JSON.stringify(page));
+    await Promise.resolve();
+    harness.context.driveContentVersion++;
+    return copy;
+  };
+  const channel = createChannel();
+  harness.api.addPeer('peer-remote', peerWithChannel(channel));
+  harness.api.queue({ force: true });
+  await assert.rejects(harness.api.broadcast(), /Document changed while copying/);
+  assert.equal(channel.sent.map(raw => JSON.parse(raw)).filter(p => p.t === 'start' || p.t === 'chunk').length, 0);
+  assert.equal(harness.api.queued(), true);
+});
+
+test('an immediate interactive ACK is not lost when the bulk-send promise completes', async () => {
+  const { api } = createHarness();
+  const channel = createChannel();
+  const peer = peerWithChannel(channel);
+  api.addPeer('peer-remote', peer);
+  channel.send = raw => {
+    const packet = JSON.parse(raw);
+    if (packet.t === 'chunk') {
+      const snapshot = JSON.parse(packet.data);
+      void api.wire(JSON.stringify({ t: 'snapshot-ack', hash: snapshot.contentHash }), 'peer-remote');
+    }
+  };
+  api.queue();
+  await api.broadcast();
+  assert.equal(peer.lastAckedHash, api.canonicalHash());
+  assert.equal(peer.pendingAckHash, '');
+});
+
+test('a receipt for a different merged state requests it and cannot become a delta base', async () => {
+  const { api } = createHarness();
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, { pendingAckHash: 'sent-version' });
+  api.addPeer('peer-remote', peer);
+  await api.wire(JSON.stringify({ t: 'snapshot-ack', hash: 'sent-version', currentHash: 'merged-version' }), 'peer-remote');
+  assert.equal(peer.lastAckedHash, '');
+  assert.equal(peer.remoteCurrentHash, 'merged-version');
+  assert.equal(peer.pendingAckHash, '');
+  assert.equal(JSON.parse(channel.sent.at(-1)).t, 'state-request');
+});
+
+test('incomplete page packets are rejected without advancing the seen sequence', async () => {
+  let applies = 0;
+  const { api, state } = createHarness({ applyRemotePages: async () => { applies++; } });
+  const envelope = liveEnvelope(state, { pages: [{}], contentHash: 'invalid-copy' });
+  assert.equal(await api.envelope(envelope, 'webrtc', 'peer-remote'), false);
+  assert.equal(applies, 0);
+  assert.equal(api.seen(envelope.actorId), undefined);
+});
+
+test('the merged content hash never assumes the advertised hash is the current document', async () => {
+  const harness = createHarness({ applyRemotePages: async () => ({
+    changed: true, hasLocalMerges: false, contentHash: 'actual-full-document'
+  }) });
+  harness.context.driveAccessToken = null;
+  await harness.api.envelope(liveEnvelope(harness.state, { contentHash: 'incoming-document' }), 'webrtc', 'peer-remote');
+  assert.equal(harness.api.lastApplied(), 'actual-full-document');
+  assert.equal(harness.api.queued(), true);
 });
 
 test('delivery bookkeeping is per peer, so a new peer gets current state without a new edit', async () => {
