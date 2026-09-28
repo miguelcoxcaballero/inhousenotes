@@ -22665,6 +22665,7 @@
                 || pdfRenderActive
                 || !!activePdfBackgroundRenderTask
                 || _prewarmRunning
+                || !!preparedDrivePdfBuild
             );
         }
 
@@ -22677,6 +22678,7 @@
                 || pdfRenderQueue.length > 0
                 || !!pdfRenderResumeHandle
                 || _prewarmRunning
+                || !!preparedDrivePdfBuild
             );
         }
 
@@ -22708,6 +22710,10 @@
             let pausedProcessing = false;
             if (_prewarmRunning) {
                 abortPrewarm();
+                pausedProcessing = true;
+            }
+            if (preparedDrivePdfBuild?.background && !preparedDrivePdfBuild.controller.signal.aborted) {
+                preparedDrivePdfBuild.controller.abort();
                 pausedProcessing = true;
             }
             pausePdfRenderingDuringInteraction();
@@ -22953,7 +22959,7 @@
             }
         }
 
-        function schedulePreparedDrivePdf(delay = 220) {
+        function schedulePreparedDrivePdf(delay = 1600) {
             if (!state.driveAutosave || state.isReadOnly || !driveAccessToken) return;
             if (!state.pages.length || driveContentVersion === driveUploadedContentVersion) return;
             if (preparedDrivePdf?.version === driveContentVersion
@@ -22964,7 +22970,7 @@
             preparedDrivePdfTimer = setTimeout(() => {
                 preparedDrivePdfTimer = null;
                 if (hasSmoothInteraction() || hasRecentUserActivity()) {
-                    schedulePreparedDrivePdf(Math.max(80, getRecentUserActivityRemaining() + 40));
+                    schedulePreparedDrivePdf(Math.max(1200, getRecentUserActivityRemaining() + 500));
                     return;
                 }
                 prepareDrivePdfBlob().catch(err => {
@@ -23008,9 +23014,12 @@
             }
 
             const versionAtBuildStart = driveContentVersion;
+            const backgroundController = options.signal ? null : new AbortController();
             const buildRecord = {
                 version: versionAtBuildStart,
                 sessionToken,
+                background: !!backgroundController,
+                controller: backgroundController,
                 promise: null
             };
             buildRecord.promise = (async () => {
@@ -23020,7 +23029,7 @@
                 }
                 try {
                     const blob = await buildPdfBlob({
-                        signal: options.signal,
+                        signal: options.signal || backgroundController?.signal,
                         sessionToken,
                         status: options.status === true,
                         ...DRIVE_UPLOAD_PDF_OPTIONS
