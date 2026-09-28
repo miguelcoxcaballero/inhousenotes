@@ -11,10 +11,57 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.26');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.27');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
+});
+
+test('pen-down paints its first point without rebuilding a stale page canvas', async ({ page, context }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  await page.evaluate(async () => {
+    const api = window.__IHN_TEST_API__;
+    await api.ready();
+    await api.resetLocalDocument(1, 'Immediate pen test');
+    await api.showEditorForTest();
+  });
+  const canvas = page.locator('.page-wrapper[data-page="0"] canvas.page-canvas');
+  await expect(canvas).toBeVisible();
+  await canvas.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(350);
+  const target = await page.evaluate(() => {
+    const sheet = document.querySelector('.page-wrapper[data-page="0"] canvas.page-canvas');
+    const overlay = document.querySelector('.page-wrapper[data-page="0"] canvas.cursor-overlay');
+    const rect = sheet.getBoundingClientRect();
+    sheet.width -= 1; // Simulate a pending zoom/backing-resolution update.
+    return {
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.top + Math.min(rect.height / 2, 220)),
+      staleWidth: sheet.width,
+      overlayWidth: overlay.width
+    };
+  });
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: target.x, y: target.y,
+    button: 'left', buttons: 1, clickCount: 1, pointerType: 'pen'
+  });
+  const firstFrame = await page.evaluate(({ x, y }) => {
+    const sheet = document.querySelector('.page-wrapper[data-page="0"] canvas.page-canvas');
+    const overlay = document.querySelector('.page-wrapper[data-page="0"] canvas.cursor-overlay');
+    const rect = overlay.getBoundingClientRect();
+    const px = Math.round((x - rect.left) * overlay.width / rect.width);
+    const py = Math.round((y - rect.top) * overlay.height / rect.height);
+    const data = overlay.getContext('2d').getImageData(px - 6, py - 6, 13, 13).data;
+    return { width: sheet.width, painted: data.some((value, index) => index % 4 === 3 && value > 0) };
+  }, target);
+  expect(firstFrame.width).toBe(target.staleWidth);
+  expect(firstFrame.painted).toBe(true);
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: target.x, y: target.y,
+    button: 'left', buttons: 0, clickCount: 1, pointerType: 'pen'
+  });
 });
 
 test('manage pages opens the embedded Inhouse Scanner below Photo', async ({ page }) => {

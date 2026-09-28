@@ -2713,17 +2713,6 @@
             return (Number.isFinite(computed) && computed > 0) ? computed : CANVAS_SCALE;
         }
 
-        function ensurePageCanvasResolution(pageIndex) {
-            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
-            if (!wrapper) return false;
-            const pageCanvas = wrapper.querySelector('canvas.page-canvas');
-            if (!pageCanvas) return false;
-            const { width, height } = getPageDimensions(pageIndex);
-            const { targetWidth, targetHeight } = getTargetPageCanvasBackingSize(width, height, state.zoom);
-            if (pageCanvas.width === targetWidth && pageCanvas.height === targetHeight) return false;
-            return applyPageDimensionsToWrapper(pageIndex);
-        }
-
         function syncActivePageCanvasResolution(options = {}) {
             const force = !!options.force;
             if (activePageIndices.size === 0) return;
@@ -2742,8 +2731,16 @@
         function scheduleCanvasResolutionRetry(options = {}) {
             const force = !!options.force;
             requestAnimationFrame(() => {
+                if (isViewportInteracting()) {
+                    scheduleCanvasResolutionSync({ force });
+                    return;
+                }
                 scheduleVisiblePageUpdate(true);
                 requestAnimationFrame(() => {
+                    if (isViewportInteracting()) {
+                        scheduleCanvasResolutionSync({ force });
+                        return;
+                    }
                     syncActivePageCanvasResolution({ force });
                 });
             });
@@ -3630,7 +3627,8 @@
         }
 
         function isViewportInteracting() {
-            return !!state.isPanning || state.activePointers.size > 0 || !!state.inertiaFrame || hasRecentUserActivity(240);
+            return !!state.isPanning || state.activePointers.size > 0 || !!state.inertiaFrame
+                || isPenWriting || isGestureInteracting || hasRecentUserActivity(240);
         }
 
         function getVisiblePageRange(bufferOverride = null) {
@@ -4408,7 +4406,6 @@
                 if (state.currentTool === 'lasso') {
                     if (!shouldAcceptDrawInput(e)) return;
                     if (!lassoCanvas) return;
-                    ensurePageCanvasResolution(pageIndex);
                     refreshDrawGeometry();
                     noteInteractionActivity();
                     isLassoing = true;
@@ -4425,7 +4422,6 @@
 
                 // Accept pen, mouse, and touch (with palm rejection)
                 if (!shouldAcceptDrawInput(e)) return;
-                ensurePageCanvasResolution(pageIndex);
                 refreshDrawGeometry();
                 clearSelection();
 
@@ -4979,12 +4975,8 @@
                     const menu = box.querySelector('.selection-color-menu');
                     if (menu) menu.classList.remove('open');
                 }
+                clearLassoCanvas(state.selection.pageIndex);
             }
-            document.querySelectorAll('.lasso-overlay').forEach(canvas => {
-                const ctx = canvas.getContext('2d');
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            });
             state.selection.pageIndex = null;
             state.selection.strokeIndices = [];
             state.selection.imageIndices = [];
@@ -21518,10 +21510,16 @@
             localBackupTimer = setTimeout(() => {
                 localBackupTimer = null;
                 const run = () => {
+                    // The synchronous localStorage write is only a secondary
+                    // backup. Never spend a pen frame serializing it.
+                    if (hasSmoothInteraction() || hasRecentUserActivity(700) || hasPendingUserInput()) {
+                        scheduleLocalStorageBackup(localBackupPayload, { context: localBackupContext });
+                        return;
+                    }
                     flushLocalStorageBackup();
                 };
                 if ('requestIdleCallback' in window) {
-                    requestIdleCallback(run, { timeout: 800 });
+                    requestIdleCallback(run, { timeout: 5000 });
                 } else {
                     setTimeout(run, 0);
                 }
@@ -21681,7 +21679,6 @@
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             const dbOk = await saveToIndexedDb(payload, savedAt, { context: persistenceContext });
-            persistTimelineHistory().catch(err => console.warn('Timeline recovery save failed:', err));
             if (controller?.aborted || !isDocumentPersistenceContextCurrent(persistenceContext)) {
                 return { ok: false, savedAt: null, cancelled: true };
             }
