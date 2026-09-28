@@ -16,10 +16,13 @@ const IHN_LIVE_MAX_CHARS = 50_000_000;
 const IHN_LIVE_LEADER_TTL = 7000;
 const IHN_LIVE_LEADER_STALE_MS = 2500;
 const IHN_LIVE_SUPERVISOR_MS = 250;
-// Directed mailboxes and exact-comment reads are the fast path. The heavier
-// paginated history walk is deliberately a slower compatibility fallback so
-// it cannot starve metadata/answer requests on a weak connection.
+// Directed mailboxes and exact-comment reads accelerate known negotiations.
+// Discovery uses response-paced recent-comment scans, with bounded backoff so
+// weak/rate-limited connections do not accumulate overlapping requests.
 const IHN_LIVE_SIGNAL_POLL_MS = 2500;
+const IHN_LIVE_JOIN_POLL_MS = 300;
+const IHN_LIVE_IDLE_DISCOVERY_MS = 700;
+const IHN_LIVE_JOIN_WINDOW_MS = 10_000;
 const IHN_LIVE_CONNECT_TIMEOUT = 18_000;
 const IHN_LIVE_FAST_CONNECT_TIMEOUT = 12_000;
 const IHN_LIVE_DISCONNECTED_GRACE = 5000;
@@ -75,6 +78,9 @@ let ihnLiveCapabilityTimer = null;
 let ihnLiveSupervisorTimer = null;
 let ihnLiveSignalBusy = false;
 let ihnLiveSignalQueued = false;
+let ihnLiveDiscoveryStartedAt = 0;
+let ihnLiveSignalFailures = 0;
+let ihnLiveNextSignalAttemptAt = 0;
 let ihnLiveSignalRunId = 0;
 let ihnLiveMailboxBusy = false;
 let ihnLiveMailboxQueued = false;
@@ -144,7 +150,11 @@ const ihnLiveRealtimeBacklog = [];
 function ihnCreatePeerConnection() {
     return new RTCPeerConnection({
         iceServers: IHN_LIVE_STUN,
-        iceCandidatePoolSize: 4,
+        // Connections are created just before negotiation, so pre-gathering
+        // four pools provides no warm-up advantage and allocates speculative
+        // sockets for offers that glare handling may discard. Gather only for
+        // the actual session on setLocalDescription.
+        iceCandidatePoolSize: 0,
         bundlePolicy: 'max-bundle',
         rtcpMuxPolicy: 'require'
     });
@@ -951,6 +961,8 @@ function ihnApplyRendezvousSignal(signal) {
             allowReverse: true
         });
         ihnScheduleMailboxPollBurst();
+        // Do not wait for the 250ms supervisor tick after a fresh discovery.
+        ihnSuperviseConnections();
     }
     return true;
 }
@@ -2005,8 +2017,12 @@ async function ihnAcceptOffer(comment, offer) {
         // offers cross (including fast network recovery), the lower peer's
         // offer wins. The other endpoint drops its local offer and answers the
         // deterministic winner instead of both endpoints discarding each other.
-        const localOfferWins = !!existingPeer.initiator && ownId < offer.from;
-        if (!existingPeer.initiator || localOfferWins) {
+        const localOfferWins = !!existingPeer.initiator
+            && existingPeer.channel?.readyState !== 'open' && ownId < offer.from;
+        const duplicateOrOlderAnswerSession = !existingPeer.initiator
+            && (existingPeer.sessionId === offer.sessionId
+                || Number(offer.expiresAt || 0) <= Number(existingPeer.offerExpiresAt || 0));
+        if (duplicateOrOlderAnswerSession || localOfferWins) {
             ihnLiveProcessedOffers.set(offerKey, Number(offer.expiresAt) || (Date.now() + IHN_LIVE_SIGNAL_TTL));
             return true;
         }
@@ -2017,7 +2033,7 @@ async function ihnAcceptOffer(comment, offer) {
     const generation = ihnLiveGeneration;
     const pc = ihnCreatePeerConnection();
     const peer = { pc, channel: null, status: 'connecting', initiator: false,
-        sessionId: offer.sessionId, commentId: comment.id, createdAt: Date.now(),
+        sessionId: offer.sessionId, offerExpiresAt: Number(offer.expiresAt || 0), commentId: comment.id, createdAt: Date.now(),
         fileId, generation, closing: false,
         lastReceivedAt: 0, lastPongAt: 0, lastSentHash: '', lastAckedHash: '',
         remoteCurrentHash: '', pendingAckHash: '', pendingAckAt: 0,
@@ -2075,8 +2091,13 @@ async function ihnApplyAnswer(answer) {
     const ownId = ihnGetLivePeerId();
     if (!answer || answer.type !== 'answer' || answer.to !== ownId || answer.fileId !== state.driveFileId || Number(answer.expiresAt) < Date.now()) return;
     const peer = ihnLivePeers.get(answer.from);
-    if (!peer?.initiator || peer.sessionId !== answer.sessionId || peer.pc.remoteDescription) return;
+    if (!peer?.initiator || peer.sessionId !== answer.sessionId || peer.pc.remoteDescription || peer.applyingRemoteAnswer) return;
     const operation = ihnCaptureLiveOperationContext(peer.fileId);
+    // The direct-comment poll, mailbox and discovery scan can deliver the same
+    // answer concurrently. Reserve synchronously before setRemoteDescription's
+    // await; a duplicate SDP application in stable state can destroy a healthy
+    // negotiation or strand its ICE transport in 'new'.
+    peer.applyingRemoteAnswer = true;
     try {
         await peer.pc.setRemoteDescription(answer.description);
         await ihnDrainRemoteIceCandidates(answer.from, peer);
@@ -2087,6 +2108,8 @@ async function ihnApplyAnswer(answer) {
             && ihnLivePeers.get(answer.from) === peer) {
             ihnClosePeer(answer.from, 'invalid answer', { retry: true });
         }
+    } finally {
+        peer.applyingRemoteAnswer = false;
     }
 }
 
@@ -2255,12 +2278,35 @@ async function ihnPollSignalMailbox() {
     }
 }
 
-async function ihnPollSignals() {
+function ihnNextSignalPollDelay() {
+    if (ihnLiveSignalFailures) return Math.min(15_000, 1000 * (2 ** Math.min(4, ihnLiveSignalFailures - 1)));
+    if (!ihnDocumentIsVisible() || navigator.onLine === false) return IHN_LIVE_SIGNAL_POLL_MS;
+    if (Date.now() - ihnLiveDiscoveryStartedAt < IHN_LIVE_JOIN_WINDOW_MS
+        || [...ihnLivePeers.values()].some(peer => peer.channel?.readyState !== 'open')) return IHN_LIVE_JOIN_POLL_MS;
+    // Even an established pair must discover a third device without waiting
+    // for the old 2.5s interval. Only the elected visible tab polls.
+    return IHN_LIVE_IDLE_DISCOVERY_MS;
+}
+
+function ihnScheduleSignalPoll() {
+    if (ihnLiveSignalTimer || !ihnLiveSupervisorTimer) return;
+    const generation = ihnLiveGeneration;
+    ihnLiveSignalTimer = setTimeout(async () => {
+        ihnLiveSignalTimer = null;
+        try { await ihnPollSignals({ scheduled: true }); }
+        finally {
+            if (generation === ihnLiveGeneration && ihnLiveSupervisorTimer) ihnScheduleSignalPoll();
+        }
+    }, ihnNextSignalPollDelay());
+}
+
+async function ihnPollSignals(options = {}) {
+    if (Date.now() < ihnLiveNextSignalAttemptAt) return;
     if (ihnLiveSignalBusy) {
         // A recovery burst often lands while Drive is still returning the
         // previous comments page. Keep one trailing poll so a fresh answer is
         // consumed immediately instead of waiting for the periodic interval.
-        ihnLiveSignalQueued = true;
+        if (!options.scheduled) ihnLiveSignalQueued = true;
         return;
     }
     if (!ihnIsLiveLeader()
@@ -2313,7 +2359,16 @@ async function ihnPollSignals() {
             pageToken = String(data.nextPageToken || '');
             if (!pageToken) break;
         }
+        if (runId === ihnLiveSignalRunId) {
+            ihnLiveSignalFailures = 0;
+            ihnLiveNextSignalAttemptAt = 0;
+        }
     } catch (error) {
+        if (runId === ihnLiveSignalRunId) {
+            ihnLiveSignalFailures += 1;
+            ihnLiveNextSignalAttemptAt = Date.now() + ihnNextSignalPollDelay();
+            ihnLiveSignalQueued = false;
+        }
         console.warn('Live signalling unavailable; continuing with Drive sync:', error);
     } finally {
         if (runId === ihnLiveSignalRunId) {
@@ -2523,6 +2578,11 @@ function ihnWakeLiveCollaboration(reason = 'network available') {
     const now = Date.now();
     const browserOffline = reason === 'browser offline';
     const networkRouteChanged = /network|browser online/i.test(String(reason));
+    if (networkRouteChanged && !browserOffline) {
+        ihnLiveSignalFailures = 0;
+        ihnLiveNextSignalAttemptAt = 0;
+        ihnLiveDiscoveryStartedAt = now;
+    }
     const appResumed = /visible|resumed|focused/i.test(String(reason));
     const replaceRouteImmediately = reason === 'network transport changed'
         || reason === 'browser online';
@@ -2887,17 +2947,15 @@ function startLiveCollaboration() {
         ihnLiveLeaderTimer = setInterval(() => ihnClaimLiveLeader(), 1000);
     }
     ihnRestoreCachedPeers();
-    if (!ihnLiveSignalTimer) {
-        ihnLiveSignalTimer = setInterval(ihnPollSignals, IHN_LIVE_SIGNAL_POLL_MS);
-    }
     if (!ihnLiveCapabilityTimer) ihnLiveCapabilityTimer = setInterval(ihnVerifyLiveCapability, 30_000);
     if (!ihnLiveSupervisorTimer) {
         ihnLiveSupervisorTimer = setInterval(ihnSuperviseConnections, IHN_LIVE_SUPERVISOR_MS);
     }
+    if (!wasRunning) ihnLiveDiscoveryStartedAt = Date.now();
+    ihnScheduleSignalPoll();
     ihnSuperviseConnections({ immediate: true });
     if (!wasRunning) ihnPublishRendezvous({ force: true }).catch(() => {});
     if (!wasRunning) ihnScheduleMailboxPollBurst();
-    ihnPollSignals();
 }
 
 async function flushLiveCollaborationBeforeExit(timeoutMs = 900) {
@@ -2937,7 +2995,10 @@ function stopLiveCollaboration() {
     ihnLiveRendezvousRunId += 1;
     clearTimeout(ihnLiveBroadcastTimer); ihnLiveBroadcastTimer = null;
     if (ihnLiveLeaderTimer) clearInterval(ihnLiveLeaderTimer);
-    if (ihnLiveSignalTimer) clearInterval(ihnLiveSignalTimer);
+    if (ihnLiveSignalTimer) clearTimeout(ihnLiveSignalTimer);
+    ihnLiveSignalFailures = 0;
+    ihnLiveNextSignalAttemptAt = 0;
+    ihnLiveDiscoveryStartedAt = 0;
     if (ihnLiveCapabilityTimer) clearInterval(ihnLiveCapabilityTimer);
     if (ihnLiveSupervisorTimer) clearInterval(ihnLiveSupervisorTimer);
     ihnLiveLeaderTimer = ihnLiveSignalTimer = ihnLiveCapabilityTimer = ihnLiveSupervisorTimer = null;

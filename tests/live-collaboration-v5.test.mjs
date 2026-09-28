@@ -242,6 +242,9 @@ globalThis.__liveTest = {
   wake: ihnWakeLiveCollaboration,
   claimLeader: ihnClaimLiveLeader,
   pollSignals: ihnPollSignals,
+  nextSignalPollDelay: ihnNextSignalPollDelay,
+  scheduleSignalPoll: ihnScheduleSignalPoll,
+  setDiscoveryState(startedAt, failures = 0) { ihnLiveDiscoveryStartedAt = startedAt; ihnLiveSignalFailures = failures; },
   publishRendezvous: ihnPublishRendezvous,
   applyRendezvous: ihnApplyRendezvousSignal,
   mailboxKey: ihnMailboxKeyFor,
@@ -253,6 +256,7 @@ globalThis.__liveTest = {
   restoreCachedPeers: ihnRestoreCachedPeers,
   rememberCachedPeer: ihnRememberCachedPeer,
   acceptOffer: ihnAcceptOffer,
+  applyAnswer: ihnApplyAnswer,
   createOffer: ihnCreateOffer,
   applyCandidates: ihnApplyCandidateSignal,
   queueLocalCandidate: ihnQueueLocalIceCandidate,
@@ -1105,7 +1109,7 @@ test('an encrypted rendezvous discovers a peer before Drive presence arrives', a
   const keyEncoded = bytesToBase64Url(keyBytes);
   const remoteId = 'peer-rendezvous-first';
   let rendezvousContent = '';
-  const { api } = createHarness({
+  const { api, context } = createHarness({
     driveFetch: async url => {
       const requestUrl = String(url);
       if (requestUrl.includes('fields=properties')) {
@@ -1121,6 +1125,8 @@ test('an encrypted rendezvous discovers a peer before Drive presence arrives', a
       throw new Error(`Unexpected Drive request: ${requestUrl}`);
     }
   });
+  const attempts = [];
+  context.ihnCreateOffer = async id => { attempts.push(id); };
   const now = Date.now();
   rendezvousContent = await encryptTestSignal(keyBytes, {
     v: 1,
@@ -1138,7 +1144,93 @@ test('an encrypted rendezvous discovers a peer before Drive presence arrives', a
 
   assert.ok(api.known(remoteId), 'signalling itself is now a peer-discovery source');
   assert.equal(api.retry(remoteId).allowReverse, true);
-  assert.ok(api.retry(remoteId).nextAttemptAt <= Date.now());
+  assert.deepEqual(attempts, [remoteId], 'discovery starts negotiation in the same turn without a supervisor tick');
+});
+
+test('discovery polls rapidly on join, remains attentive for a third device, and backs off on errors', () => {
+  const { api, context } = createHarness();
+  api.setDiscoveryState(Date.now());
+  assert.equal(api.nextSignalPollDelay(), 300);
+  api.setDiscoveryState(Date.now() - 20_000);
+  api.addPeer('connected-peer', { channel: createChannel() });
+  assert.equal(api.nextSignalPollDelay(), 700, 'an open pair must still discover newcomers');
+  api.setDiscoveryState(Date.now(), 1);
+  assert.equal(api.nextSignalPollDelay(), 1000);
+  api.setDiscoveryState(Date.now(), 8);
+  assert.equal(api.nextSignalPollDelay(), 15000, 'rate limits must not cause a request storm');
+  api.setDiscoveryState(Date.now());
+  context.document.visibilityState = 'hidden';
+  assert.equal(api.nextSignalPollDelay(), 2500);
+});
+
+test('scheduled discovery does not queue a duplicate behind a slow poll', async () => {
+  const encoded = bytesToBase64Url(new Uint8Array(32).fill(0x79));
+  let release;
+  let started;
+  const gate = new Promise(resolve => { release = resolve; });
+  const ready = new Promise(resolve => { started = resolve; });
+  let reads = 0;
+  const { api, pendingTimers } = createHarness({ driveFetch: async url => {
+    if (String(url).includes('fields=properties')) return { json: async () => ({ properties: { ihn_live_key_v1: encoded } }) };
+    reads++;
+    started();
+    await gate;
+    return { json: async () => ({ comments: [] }) };
+  } });
+  api.claimLeader();
+  const first = api.pollSignals();
+  await ready;
+  await api.pollSignals({ scheduled: true });
+  release();
+  await first;
+  assert.equal(reads, 1);
+  assert.equal([...pendingTimers.values()].filter(timer => timer.ms === 0).length, 0);
+});
+
+test('discovery errors also rate-limit externally requested polls', async () => {
+  let reads = 0;
+  const { api } = createHarness({ driveFetch: async () => { reads++; throw new Error('temporary rate limit'); } });
+  api.claimLeader();
+  await api.pollSignals();
+  const failedReads = reads;
+  await api.pollSignals();
+  await api.pollSignals();
+  assert.equal(reads, failedReads);
+});
+
+test('concurrent duplicate answers apply remote SDP only once', async () => {
+  const { api } = createHarness();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let applied = 0;
+  const peer = { initiator: true, sessionId: 'same-answer', fileId: 'file-1', generation: api.generation(),
+    pendingRemoteIceCandidates: new Map(), pc: {
+      remoteDescription: null,
+      async setRemoteDescription(value) { applied++; await gate; this.remoteDescription = value; },
+      async addIceCandidate() {}, close() { throw new Error('Duplicate answer must not close this connection'); }
+    } };
+  api.addPeer('remote-peer', peer);
+  const answer = { type: 'answer', to: api.ownId(), from: 'remote-peer', fileId: 'file-1',
+    sessionId: 'same-answer', expiresAt: Date.now() + 60000, description: { type: 'answer', sdp: 'valid-answer' } };
+  const first = api.applyAnswer(answer);
+  await api.applyAnswer(answer);
+  assert.equal(applied, 1);
+  release(); await first;
+  assert.equal(api.getPeer('remote-peer'), peer);
+  assert.equal(peer.pc.remoteDescription.sdp, 'valid-answer');
+});
+
+test('crossed-offer winner remains the initiator after receiving its answer until the channel opens', async () => {
+  const { api } = createHarness();
+  const remote = `${api.ownId()}z`;
+  const peer = { initiator: true, createdAt: Date.now(), sessionId: 'winner',
+    channel: { readyState: 'connecting' }, pc: { remoteDescription: { type: 'answer' } } };
+  api.addPeer(remote, peer);
+  const accepted = await api.acceptOffer({ id: 'crossed-offer' }, {
+    from: remote, to: api.ownId(), fileId: 'file-1', sessionId: 'loser', expiresAt: Date.now() + 60000
+  });
+  assert.equal(accepted, true);
+  assert.equal(api.getPeer(remote), peer, 'a delayed crossed offer must not turn both endpoints into answerers');
 });
 
 test('the directed mailbox reuses file metadata and answers without listing comment history', async () => {

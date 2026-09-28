@@ -66,6 +66,45 @@ async function compress(value) {
     return btoa(binary);
 }
 
+async function deflateBytes(bytes) {
+    return new Uint8Array(await new Response(
+        new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))
+    ).arrayBuffer());
+}
+
+async function preparePdfRaster(canvas) {
+    const { width, height } = canvas;
+    const rgba = canvas.getContext('2d').getImageData(0, 0, width, height).data;
+    const rgb = new Uint8Array(width * height * 3);
+    const alpha = new Uint8Array(width * height);
+    let transparent = false;
+    for (let p = 0, c = 0; p < alpha.length; p++, c += 4) {
+        rgb[p * 3] = rgba[c]; rgb[p * 3 + 1] = rgba[c + 1]; rgb[p * 3 + 2] = rgba[c + 2];
+        alpha[p] = rgba[c + 3];
+        transparent ||= alpha[p] !== 255;
+    }
+    const [colorBytes, alphaBytes] = await Promise.all([
+        deflateBytes(rgb), transparent ? deflateBytes(alpha) : null
+    ]);
+    return { pdfRaster: true, width, height, colorBytes, alphaBytes };
+}
+
+function embedPreparedRaster(doc, raster) {
+    // Match pdf-lib's PNG image/soft-mask dictionaries, but feed them already
+    // compressed lossless samples. Avoid PNG encode -> PNG decode -> JS deflate.
+    const { width, height, colorBytes, alphaBytes } = raster;
+    const common = { Type: 'XObject', Subtype: 'Image', Width: width, Height: height,
+        BitsPerComponent: 8, Filter: 'FlateDecode' };
+    const mask = alphaBytes ? doc.context.register(PDFLib.PDFRawStream.of(
+        doc.context.obj({ ...common, ColorSpace: 'DeviceGray', Decode: [0, 1] }), alphaBytes
+    )) : undefined;
+    const ref = doc.context.register(PDFLib.PDFRawStream.of(
+        doc.context.obj({ ...common, ColorSpace: 'DeviceRGB', SMask: mask }), colorBytes
+    ));
+    const embedder = new PDFLib.PngEmbedder({ width, height, bitsPerComponent: 8 });
+    return PDFLib.PDFImage.of(ref, doc, embedder);
+}
+
 async function processTask(type, data) {
     if (type === 'compress') return compress(data.json);
     if (type === 'timelineHash') {
@@ -105,6 +144,10 @@ async function processTask(type, data) {
             ctx.restore(); bitmap.close();
         }
         for (const stroke of page.strokes || []) drawStroke(ctx, stroke);
+        if (data.pdfRaster) {
+            try { return await preparePdfRaster(canvas); }
+            finally { canvas.width = canvas.height = 0; }
+        }
         const blob = await canvas.convertToBlob({ type: 'image/png' });
         canvas.width = canvas.height = 0;
         return new Uint8Array(await blob.arrayBuffer());
@@ -133,7 +176,18 @@ async function processTask(type, data) {
         if (type === 'pdfCopyPages') return (await doc.copyPages(documents.get(data.source).doc, data.indices)).map(pageInfo);
         if (type === 'pdfAddPage') return pageInfo(doc.addPage(data.page ? objects.get(data.page).value : data.size));
         if (type === 'pdfEmbed') {
-            const image = await doc[data.kind](data.bytes);
+            let raster = data.bytes?.pdfRaster ? data.bytes : null;
+            if (!raster && data.kind === 'embedPng') {
+                // Imported PNG backgrounds use exactly pdf-lib's decoder, but
+                // native compression instead of recompressing them in JS during
+                // final serialization. Preserve all decoded RGB/alpha samples.
+                const { image: png } = await PDFLib.PngEmbedder.for(data.bytes);
+                const [colorBytes, alphaBytes] = await Promise.all([
+                    deflateBytes(png.rgbChannel), png.alphaChannel ? deflateBytes(png.alphaChannel) : null
+                ]);
+                raster = { width: png.width, height: png.height, colorBytes, alphaBytes };
+            }
+            const image = raster ? embedPreparedRaster(doc, raster) : await doc[data.kind](data.bytes);
             return { id: remember(image, data.id), ref: { objectNumber: image.ref.objectNumber } };
         }
         if (type === 'pdfDrawImage') {
@@ -147,7 +201,18 @@ async function processTask(type, data) {
             return null;
         }
         if (type === 'pdfRectangle') { objects.get(data.page).value.drawRectangle(data.options); return true; }
-        if (type === 'pdfMetadata') { doc[data.method](data.value); return true; }
+        if (type === 'pdfMetadata') {
+            const keywords = data.method === 'setKeywords' && Array.isArray(data.value) ? data.value.join(' ') : null;
+            if (keywords !== null && /^[A-Za-z0-9+/=;:_,.\- ]*$/.test(keywords)) {
+                // Our compressed/base64 metadata is ASCII. pdf-lib's public
+                // setter expands it to UTF-16 hex (4x), then compresses it all
+                // again at save. A standard literal PDF string round-trips the
+                // same Keywords without that costly expansion. Other text uses
+                // the original Unicode-safe setter.
+                doc.getInfoDict().set(PDFLib.PDFName.of('Keywords'), PDFLib.PDFString.of(keywords));
+            } else doc[data.method](data.value);
+            return true;
+        }
         if (type === 'pdfAttach') { await doc.attach(data.bytes, data.name, data.options); return true; }
         if (type === 'pdfSave') return await doc.save(data.options);
     }
@@ -179,7 +244,9 @@ async function processTask(type, data) {
 self.onmessage = async ({ data: { id, type, data } }) => {
     try {
         const value = await processTask(type, data);
-        self.postMessage({ id, value }, value instanceof Uint8Array ? [value.buffer] : []);
+        const transfers = value instanceof Uint8Array ? [value.buffer]
+            : value?.pdfRaster ? [value.colorBytes.buffer, ...(value.alphaBytes ? [value.alphaBytes.buffer] : [])] : [];
+        self.postMessage({ id, value }, transfers);
     } catch (error) {
         self.postMessage({ id, error: error?.message || String(error) });
     }

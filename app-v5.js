@@ -30483,7 +30483,7 @@
             })).then(result => {
                 // Prune memory only if no newer snapshot/document replaced this
                 // input while the worker was creating its bounded archive.
-                if (preparedTimelineArchive === record && state.versionHistory.length === record.entries.length
+                if (preparedTimelineArchive === record && Array.isArray(state.versionHistory) && state.versionHistory.length === record.entries.length
                     && state.versionHistory.every((entry, i) => entry === record.entries[i])) {
                     const retained = new Set(result.retained);
                     state.versionHistory = record.entries.filter(entry => retained.has(`${entry.id}:${entry.ts}:${entry.contentHash}`));
@@ -31214,7 +31214,7 @@
             const overlayScale = options.highQuality
                 ? Math.min(3.5, CANVAS_SCALE * 1.75)
                 : (optimizeForUpload ? 2 : 2.5);
-            const exportProfile = `pdflib:${overlayScale}:${optimizeForUpload ? 'opt' : (options.highQuality ? 'hq' : 'std')}`;
+            const exportProfile = `pdflib:${overlayScale}:${optimizeForUpload ? 'opt' : (options.highQuality ? 'hq' : 'std')}:${PDFLib === window.PDFLib ? 'png' : 'raw'}`;
 
             // PDF user units are points (1pt = 1/72 inch). PDF.js viewports use CSS px @ 96 DPI.
             // 1 px = 0.75 pt.
@@ -31480,7 +31480,7 @@
                         await yieldToUI(true);
                         pngBytes = await window.InhouseDocumentProcessing.run('renderOverlay', {
                             json: JSON.stringify({ strokes: exportStrokes, images: pageData.images || [] }),
-                            bounds: overlayBounds, scale: overlayScale
+                            bounds: overlayBounds, scale: overlayScale, pdfRaster: !!outDoc.workerDocumentId
                         });
                     } catch (error) {
                         console.warn('Worker overlay unavailable; using compatible renderer:', error);
@@ -32734,6 +32734,27 @@
                     renderPagesList();
                     return this.snapshot();
                 },
+                async startLiveConnectionForTest(email) {
+                    await this.prepareLiveDocument('e2e-live-handshake');
+                    driveAccessToken = 'e2e-live-token';
+                    driveTokenExpiry = Date.now() + 600000;
+                    driveSignedOut = false;
+                    driveUserProfile = { email, name: email };
+                    setReadOnlyMode(false, { force: true });
+                    startLiveCollaboration();
+                },
+                liveConnectionOverviewForTest() { return {
+                    ...getLiveCollaborationOverview(),
+                    peers: [...ihnLivePeers].map(([id, peer]) => ({ id, initiator: peer.initiator,
+                        state: peer.pc.connectionState, ice: peer.pc.iceConnectionState,
+                        signalling: peer.pc.signalingState, remote: !!peer.pc.remoteDescription,
+                        local: !!peer.pc.localDescription, commentId: peer.commentId,
+                        localMedia: peer.pc.localDescription?.sdp.split('\r\n').filter(line => line.startsWith('m=') || line.startsWith('a=mid:')),
+                        remoteMedia: peer.pc.remoteDescription?.sdp.split('\r\n').filter(line => line.startsWith('m=') || line.startsWith('a=mid:')),
+                        localCandidates: peer.localIceCandidateKeys?.size,
+                        remoteCandidates: peer.remoteIceCandidateKeys?.size,
+                        queuedCandidates: peer.pendingRemoteIceCandidates?.size }))
+                }; },
                 async openTimelineForTest() {
                     await ready();
                     openTimelinePanel();
