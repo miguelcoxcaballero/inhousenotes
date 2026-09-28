@@ -997,12 +997,14 @@
             return `pg_legacy_${simpleHash(`${stableDocumentId}:${Number(pageIndex) || 0}`)}`;
         }
 
-        function generateLegacyDocumentItemId(documentId, pageId, type, itemIndex, item) {
+        function generateLegacyDocumentItemId(documentId, pageId, type, itemIndex, item, options = {}) {
             const stableDocumentId = String(documentId || '').trim();
             const stablePageId = String(pageId || '').trim();
             if (!stableDocumentId || !stablePageId) return generateStrokeId();
             const normalizedType = type === 'image' ? 'image' : 'stroke';
-            const fingerprint = normalizedType === 'image'
+            const fingerprint = options.fastStableIndex
+                ? ''
+                : normalizedType === 'image'
                 ? imageSyncFingerprint({ ...(item || {}), id: '' })
                 : strokeSyncFingerprint({ ...(item || {}), id: '' });
             const identity = [
@@ -1043,7 +1045,8 @@
                             pageId,
                             'stroke',
                             index,
-                            stroke
+                            stroke,
+                            { fastStableIndex: !!options.fastLegacyIds }
                         );
                     }
                 });
@@ -1056,7 +1059,8 @@
                             pageId,
                             'image',
                             index,
-                            image
+                            image,
+                            { fastStableIndex: !!options.fastLegacyIds }
                         );
                     }
                 });
@@ -2352,23 +2356,9 @@
                 // The canvases are already visible; avoid a forced page/layout
                 // rescan on a mode toggle. The normal visibility pass is enough.
                 scheduleVisiblePageUpdate();
-                // PDF prewarming touches every template page. Wait for genuine
-                // idle time so changing to Edit never starts a CPU-heavy job.
-                if (state.driveAutosave && detectDeviceType() === 'pc' && !prewarmPdfCache._running) {
-                    prewarmPdfCache._running = true;
-                    const runPrewarm = () => {
-                        if (state.isReadOnly || isViewportInteracting() || isPenWriting || hasPendingUserInput()) {
-                            prewarmPdfCache._running = false;
-                            return;
-                        }
-                        prewarmPdfCache().catch(() => {}).finally(() => { prewarmPdfCache._running = false; });
-                    };
-                    if ('requestIdleCallback' in window) {
-                        setTimeout(() => requestIdleCallback(runPrewarm, { timeout: 4000 }), 1500);
-                    } else {
-                        setTimeout(runPrewarm, 1800);
-                    }
-                }
+                // Avoid rendering every template page when Edit is entered.
+                // That background prewarm competes with the first pen/tool input;
+                // actual saves populate their page caches on demand.
             }
             updateCalendarFeatureAvailability();
         }
@@ -22100,6 +22090,13 @@
             for (let i = 0; i < keepCount; i++) {
                 if (!isDocumentSessionTokenValid(sessionToken)) return false;
                 const fullPage = normalizeLegacyPage(pages[i], i);
+                if (options.ensureLegacyIds) {
+                    ensureStrokeIds(fullPage, {
+                        documentId: options.documentId || state.driveFileId || '',
+                        pageId: fullPage.pageId,
+                        fastLegacyIds: true
+                    });
+                }
                 state.pages[i] = {
                     ...fullPage,
                     preview: state.pages[i].preview || null,
@@ -22139,6 +22136,13 @@
                         ? livePage
                         : (persistedPage || cachedLegacyPage);
                     const fullPage = normalizeLegacyPage(sourcePage, index);
+                    if (options.ensureLegacyIds) {
+                        ensureStrokeIds(fullPage, {
+                            documentId: options.documentId || state.driveFileId || '',
+                            pageId: fullPage.pageId,
+                            fastLegacyIds: true
+                        });
+                    }
                     if (awaitAllPages) {
                         state.pages[index] = {
                             ...fullPage,
@@ -29358,7 +29362,12 @@
                         // original cached), seed legacyCoverStrokes with a clone of
                         // the restored strokes so the renderer paints white covers
                         // over the burnt-in image — that lets the eraser work.
-                        const legacyCovers = (state.hasLegacyBakedOverlay && needsPdfBackground)
+                        // Only the initial working set is materialized on open.
+                        // ensurePageDataLoaded creates the same independent cover
+                        // strokes lazily if a later page is brought into view.
+                        const legacyCovers = (state.hasLegacyBakedOverlay
+                            && needsPdfBackground
+                            && i <= MAX_ACTIVE_PAGES)
                             ? restoredStrokes.map(s => ({
                                 ...s,
                                 points: Array.isArray(s.points) ? s.points.map(p => ({ ...p })) : []
@@ -29433,28 +29442,16 @@
                 // first save in this app version.
 
                 throwIfSessionInvalid();
-                // Persist the visible working set now; migrate the remaining
-                // pages in idle batches. Awaiting every page made large
-                // notebooks look frozen even though their data was already parsed.
-                for (let index = 0; index < importedPages.length; index += 1) {
-                    const page = importedPages[index];
-                    if (!page.pageId) {
-                        page.pageId = generateLegacyDocumentPageId(idbCacheKey, index + 1);
-                    }
-                    ensureStrokeIds(page, {
-                        documentId: idbCacheKey || '',
-                        pageId: page.pageId
-                    });
-                    if ((index + 1) % 3 === 0) {
-                        await yieldToMainThread();
-                        throwIfSessionInvalid();
-                    }
-                }
                 await migrateLegacyPayload({
                     pages: importedPages,
                     collabStructure: state.collabStructure,
                     collabFields: state.collabFields
-                }, { awaitAllPages: false, deferPageWrites: true });
+                }, {
+                    awaitAllPages: false,
+                    deferPageWrites: true,
+                    ensureLegacyIds: true,
+                    documentId: idbCacheKey || ''
+                });
                 await yieldToMainThread();
                 throwIfSessionInvalid();
                 renderAllPages();
@@ -30967,8 +30964,18 @@
                 if (!overlayBounds) continue;
 
                 // Try cache: same content hash => reuse the prior PNG bytes.
-                const pageHash = `${computePageHash(pageData)}|${exportProfile}|logical:${logicalPageWidthPx}x${logicalPageHeightPx}|pdf:${pageWidthPx}x${pageHeightPx}`;
                 const cached = pdfLibOverlayCache.get(i);
+                const mutationGeneration = pageDirtyGeneration.get(i) || 0;
+                // A clean cache entry is invalidated at every page mutation.
+                // Reuse its content hash for the exact same page object instead
+                // of walking every point in every unchanged stroke on each save.
+                const cachedHashIsCurrent = !!cached
+                    && cached.pageRef === pageData
+                    && cached.mutationGeneration === mutationGeneration
+                    && cached.exportProfile === exportProfile;
+                const pageHash = cachedHashIsCurrent
+                    ? cached.hash
+                    : `${computePageHash(pageData)}|${exportProfile}|logical:${logicalPageWidthPx}x${logicalPageHeightPx}|pdf:${pageWidthPx}x${pageHeightPx}`;
                 let pngBytes = null;
                 if (cached && cached.hash === pageHash && cached.pngBytes && cached.bounds) {
                     pngBytes = cached.pngBytes;
@@ -31023,7 +31030,14 @@
                         throw new Error('Failed to encode overlay PNG');
                     }
                     pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
-                    pdfLibOverlayCache.set(i, { hash: pageHash, pngBytes, bounds: overlayBounds });
+                    pdfLibOverlayCache.set(i, {
+                        hash: pageHash,
+                        pngBytes,
+                        bounds: overlayBounds,
+                        pageRef: pageData,
+                        mutationGeneration,
+                        exportProfile
+                    });
                 }
 
                 throwIfAborted();
