@@ -84,6 +84,7 @@ let ihnLiveDiscoveryStartedAt = 0;
 let ihnLiveSignalFailures = 0;
 let ihnLiveNextSignalAttemptAt = 0;
 let ihnLiveSignalRunId = 0;
+let ihnLiveWarmStart = null;
 let ihnLiveMailboxBusy = false;
 let ihnLiveMailboxQueued = false;
 let ihnLiveMailboxRunId = 0;
@@ -324,11 +325,53 @@ function ihnInvalidateSignalKey(fileId = '') {
 }
 
 async function ihnReadSignalKeyProperty(fileId) {
+    const warm = ihnLiveWarmStart;
+    if (warm && warm.fileId === fileId && !warm.consumed
+        && Date.now() - warm.at < 15_000
+        && (typeof isDocumentSessionTokenValid !== 'function' || isDocumentSessionTokenValid(warm.sessionToken))) {
+        warm.consumed = true;
+        const encoded = await warm.promise;
+        // An absent key must be checked live before creating one: another
+        // device may have published it while this PDF was being downloaded.
+        if (encoded && ihnLiveWarmStart === warm) return encoded;
+    }
     const propertyName = 'ihn_live_key_v1';
     const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=properties`, {
         method: 'GET', timeout: DRIVE_META_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
     });
     return String((await response.json())?.properties?.[propertyName] || '');
+}
+
+function prewarmLiveCollaboration(fileId, sessionToken) {
+    if (!fileId || !driveAccessToken) return;
+    const warm = { fileId, sessionToken, at: Date.now(), consumed: false, promise: null };
+    ihnLiveWarmStart = warm;
+    // Read-only preparation. Do not announce, create keys, exchange snapshots
+    // or apply remote edits while the selected document is still loading.
+    warm.promise = driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=properties`, {
+        method: 'GET', timeout: DRIVE_META_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
+    }).then(response => response.json())
+        .then(data => String(data?.properties?.ihn_live_key_v1 || ''))
+        .catch(() => '');
+    warm.comments = ihnReadSignalComments(fileId, '', warm.at, false).catch(() => null);
+}
+
+async function ihnReadSignalComments(fileId, pageToken = '', now = Date.now(), useWarm = true) {
+    const warm = ihnLiveWarmStart;
+    if (useWarm && !pageToken && warm?.fileId === fileId && !warm.commentsConsumed
+        && Date.now() - warm.at < 15_000
+        && (typeof isDocumentSessionTokenValid !== 'function' || isDocumentSessionTokenValid(warm.sessionToken))) {
+        warm.commentsConsumed = true;
+        const data = await warm.comments;
+        if (data && ihnLiveWarmStart === warm) return data;
+    }
+    const fields = encodeURIComponent('nextPageToken,comments(id,content,createdTime,modifiedTime,resolved,replies(id,content,createdTime))');
+    const startModifiedTime = encodeURIComponent(new Date(now - (IHN_LIVE_SIGNAL_TTL * 2)).toISOString());
+    const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
+    const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments?pageSize=100&includeDeleted=false&startModifiedTime=${startModifiedTime}&fields=${fields}${tokenParam}`, {
+        method: 'GET', timeout: DRIVE_POLL_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
+    });
+    return response.json();
 }
 
 async function ihnImportSignalKey(encoded) {
@@ -2361,21 +2404,14 @@ async function ihnPollSignals(options = {}) {
     const generation = ihnLiveGeneration;
     const operation = ihnCaptureLiveOperationContext(fileId);
     try {
-        await ihnEnsureSignalKey();
-        ihnAssertLiveSessionContext(fileId, generation);
-        ihnAssertLiveOperationContext(operation);
         const now = Date.now();
         ihnLiveProcessedOffers.forEach((expiresAt, key) => {
             if (Number(expiresAt) < now) ihnLiveProcessedOffers.delete(key);
         });
         const ownId = ihnGetLivePeerId();
-        const fields = encodeURIComponent('nextPageToken,comments(id,content,createdTime,modifiedTime,resolved,replies(id,content,createdTime))');
         // Drive can contain years of ordinary comments. Ask only for the
         // recent signalling window, then follow every returned page so fresh
         // offers cannot be hidden by unrelated or stale discussion threads.
-        const startModifiedTime = encodeURIComponent(
-            new Date(now - (IHN_LIVE_SIGNAL_TTL * 2)).toISOString()
-        );
         let pageToken = '';
         const requestedPageTokens = new Set();
         while (true) {
@@ -2383,11 +2419,10 @@ async function ihnPollSignals(options = {}) {
                 throw new Error('Drive comments returned a repeated page token');
             }
             requestedPageTokens.add(pageToken);
-            const tokenParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '';
-            const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments?pageSize=100&includeDeleted=false&startModifiedTime=${startModifiedTime}&fields=${fields}${tokenParam}`, {
-                method: 'GET', timeout: DRIVE_POLL_TIMEOUT, headers: { 'Cache-Control': 'no-cache' }
-            });
-            const data = await response.json();
+            const [, data] = await Promise.all([
+                ihnEnsureSignalKey(),
+                ihnReadSignalComments(fileId, pageToken, now)
+            ]);
             ihnAssertLiveSessionContext(fileId, generation);
             ihnAssertLiveOperationContext(operation);
             for (const comment of data.comments || []) {
@@ -3024,6 +3059,7 @@ async function flushLiveCollaborationBeforeExit(timeoutMs = 900) {
 }
 
 function stopLiveCollaboration() {
+    ihnLiveWarmStart = null;
     ihnDeleteRendezvousComment();
     try {
         const leaderKey = ihnLiveLeaderKey();

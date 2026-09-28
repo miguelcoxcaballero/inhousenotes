@@ -1,5 +1,48 @@
 import { expect, test } from '@playwright/test';
 
+for (const tool of ['eraser-stroke', 'eraser-area']) {
+  test(`${tool} repaints a dense page before the pointer is lifted`, async ({ page, context }) => {
+    await page.goto('/?e2e=1');
+    await page.waitForFunction(() => window.__IHN_TEST_API__);
+    await page.evaluate(tool => window.__IHN_TEST_API__.prepareEraserFixtureForTest(tool), tool);
+    await page.waitForFunction(() => !window.__IHN_TEST_API__.densePaintStatusForTest().pending);
+    expect((await page.evaluate(() => window.__IHN_TEST_API__.eraserPixelsForTest())).center[0]).toBeLessThan(30);
+    const target = await page.evaluate(() => {
+      const canvas = document.querySelector('canvas.page-canvas[data-page="0"]');
+      canvas.addEventListener('pointerdown', event => { window.__eraserPointerId = event.pointerId; }, { once: true });
+      canvas.scrollIntoView();
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + 153 * rect.width / 794, y: rect.top + 203 * rect.height / 1123 };
+    });
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...target, button: 'left', buttons: 1, clickCount: 1, pointerType: 'pen' });
+    // Keep the pen-active guard hot. Merely holding still would let its idle
+    // timer expire and hide the regression where full repaints wait for idle.
+    for (let i = 0; i < 10; i++) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...target, buttons: 1, pointerType: 'pen' });
+      await page.waitForTimeout(16);
+    }
+    const pixels = await page.evaluate(() => window.__IHN_TEST_API__.eraserPixelsForTest());
+    expect(pixels.center).toEqual([255, 255, 255, 255]);
+    expect(pixels.penActive).toBe(true);
+    expect(await page.evaluate(() => document.querySelector('canvas.page-canvas[data-page="0"]').hasPointerCapture(window.__eraserPointerId))).toBe(true);
+    const edge = pixels.edge[0];
+    if (tool === 'eraser-area') expect(edge).toBeLessThan(30);
+    else expect(edge).toBeGreaterThan(200);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...target, button: 'left', buttons: 0, clickCount: 1, pointerType: 'pen' });
+  });
+}
+
+test('remote eraser preview removes dense-page ink before a final gesture or snapshot', async ({ page }) => {
+  await page.goto('/?e2e=1');
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  await page.evaluate(() => window.__IHN_TEST_API__.prepareEraserFixtureForTest('pen'));
+  await page.waitForFunction(() => !window.__IHN_TEST_API__.densePaintStatusForTest().pending);
+  expect((await page.evaluate(() => window.__IHN_TEST_API__.eraserPixelsForTest())).center[0]).toBeLessThan(30);
+  await page.evaluate(() => window.__IHN_TEST_API__.receiveErasePreviewForTest());
+  await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.eraserPixelsForTest()), { timeout: 1000, intervals: [16] }).toMatchObject({ center: [255, 255, 255, 255] });
+});
+
 test('lossless direct PDF rasters render identically to the PNG path and keep metadata readable', async ({ page }) => {
   await page.goto('/?e2e=1');
   await page.waitForFunction(() => window.__IHN_TEST_API__);

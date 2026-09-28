@@ -224,6 +224,9 @@ globalThis.__liveTest = {
   sendControl: ihnSendControl,
   waitBackpressure: ihnWaitForBackpressure,
   start: startLiveCollaboration,
+  prewarm: prewarmLiveCollaboration,
+  readSignalKey: ihnReadSignalKeyProperty,
+  readComments: ihnReadSignalComments,
   observePeerHash: ihnObservePeerDocumentHash,
   updatePeers: liveCollabUpdatePeers,
   sendHealthPing: ihnSendHealthPing,
@@ -373,6 +376,56 @@ function peerWithChannel(channel, overrides = {}) {
     ...overrides
   };
 }
+
+test('opening prefetches signalling read-only and reuses each result once', async () => {
+  const requests = [];
+  const { api } = createHarness({ driveFetch: async (url, options) => {
+    requests.push({ url, method: options.method });
+    return { json: async () => url.includes('/comments') ? { comments: [{ id: 'warm' }] }
+      : { properties: { ihn_live_key_v1: 'warm-key' } } };
+  } });
+  api.prewarm('file-1', 1);
+  assert.equal(requests.length, 2, 'both reads start without awaiting PDF decoding');
+  assert.equal(await api.readSignalKey('file-1'), 'warm-key');
+  assert.equal((await api.readComments('file-1')).comments[0].id, 'warm');
+  assert.equal(requests.length, 2);
+  await api.readSignalKey('file-1'); await api.readComments('file-1');
+  assert.equal(requests.length, 4, 'subsequent polls read fresh Drive state');
+  assert.ok(requests.every(request => request.method === 'GET'));
+});
+
+test('opening prefetch cannot reuse data across document sessions or create a key from an old empty result', async () => {
+  let reads = 0;
+  const harness = createHarness({ driveFetch: async url => {
+    if (url.includes('/comments')) return { json: async () => ({ comments: [] }) };
+    reads++;
+    return { json: async () => ({ properties: { ihn_live_key_v1: reads === 1 ? '' : `key-${reads}` } }) };
+  } });
+  harness.api.prewarm('file-1', 1);
+  assert.equal(await harness.api.readSignalKey('file-1'), 'key-2');
+  harness.api.prewarm('file-1', 1);
+  harness.advanceDocumentSession();
+  assert.equal(await harness.api.readSignalKey('file-1'), 'key-4');
+});
+
+test('cold peer discovery reads comments while the signal key request is still pending', async () => {
+  let resolveKey;
+  let commentsRequested = false;
+  const keyPromise = new Promise(resolve => { resolveKey = resolve; });
+  const { api } = createHarness({ driveFetch: async url => {
+    if (url.includes('/comments')) {
+      commentsRequested = true;
+      return { json: async () => ({ comments: [] }) };
+    }
+    return keyPromise;
+  } });
+  api.claimLeader();
+  const poll = api.pollSignals();
+  await Promise.resolve();
+  assert.equal(commentsRequested, true);
+  resolveKey({ json: async () => ({ properties: { ihn_live_key_v1: bytesToBase64Url(new Uint8Array(32).fill(7)) } }) });
+  await poll;
+});
 
 test('interactive packets bypass a congested bulk channel with a compatible fallback', () => {
   const { api } = createHarness();
