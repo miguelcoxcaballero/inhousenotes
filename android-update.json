@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.31",
-  "releaseNotes": "Inhouse Notes v5.11.31 / Android 1.0.10: faster document opening and Drive saves; removed full-document prewarming on Edit; unchanged page overlays reuse their verified cache; legacy stroke IDs are prepared during idle page migration."
+  "publishedAppVersion": "5.11.32",
+  "releaseNotes": "Inhouse Notes v5.11.32 / Android 1.0.10: faster document opening by moving clean-PDF recovery and page rasterization off the interaction critical path; smaller idle page migration batches; transient page-migration save races recover and retry automatically."
 }
