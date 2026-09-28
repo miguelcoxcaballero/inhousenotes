@@ -25,7 +25,7 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.30.md');
+const notes = readText('../RELEASE_NOTES_v5.11.31.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -33,13 +33,13 @@ const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.30';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.31';/);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.30/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.30/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.30/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.30/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.31/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.31/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.31/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.31/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -355,7 +355,11 @@ assert.match(html, /const PDF_NORMALIZED_METADATA_KEYWORD = 'IH_NORM:1';/);
 assert.match(html, /metadataAlreadyNormalized = keywords\.includes/);
 assert.match(html, /embeddedStrokes && !metadataAlreadyNormalized/);
 assert.match(html, /function getPdfOverlayContentBounds\(/);
-assert.match(html, /pdfLibOverlayCache\.set\(i, \{ hash: pageHash, pngBytes, bounds: overlayBounds \}\)/);
+assert.match(html, /pdfLibOverlayCache\.set\(i, \{\s*hash: pageHash,\s*pngBytes,\s*bounds: overlayBounds,/);
+assert.match(app, /cachedHashIsCurrent/);
+assert.match(app, /ensureLegacyIds: true/);
+const editModeSource = app.slice(app.indexOf('function setReadOnlyMode('), app.indexOf('// Initialize', app.indexOf('function setReadOnlyMode(')));
+assert.doesNotMatch(editModeSource, /prewarmPdfCache\(\)/, 'entering Edit must not pre-render every page');
 assert.match(html, /const templateBackgroundImageCache = new Map\(\);/);
 assert.match(html, /function canBuildCurrentPdfWithPdfLib\(/);
 assert.ok((html.match(/useObjectStreams: true/g) || []).length >= 2);
@@ -578,7 +582,7 @@ assert.match(html, /strokeIds: movedStrokes\.map/);
 assert.match(html, /pageIdToDelete = String\(state\.pages\[pageIndex\]\?\.pageId/);
 assert.match(html, /pageStructureDragInProgress = true/);
 assert.match(html, /invalidatePageStructureAsyncState\(\);\s*\/\/ Clear per-page IDB/);
-assert.match(html, /for \(let index = 0; index < importedPages\.length; index \+= 1\) \{\s*const page = importedPages\[index\];/);
+assert.match(app, /if \(options\.ensureLegacyIds\) \{\s*ensureStrokeIds\(fullPage,\s*\{/);
 assert.match(html, /strokeCollabFingerprint\(/);
 assert.match(html, /noteCollabPageMoved\(movedPage\?\.pageId, toIndex\)/);
 assert.match(html, /noteCollabPageDeleted\(removedPage\?\.pageId\)/);
@@ -1093,14 +1097,14 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // The Android shell is unchanged, but its hosted app version advances.
-assert.equal(update.publishedAppVersion, '5.11.30');
+assert.equal(update.publishedAppVersion, '5.11.31');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.11\.30/);
-assert.match(notes, /builds its page previews lazily/i);
-assert.match(notes, /cached page geometry and binary search/i);
-assert.match(notes, /Switching to Edit avoids forcing a page\/layout rescan/i);
+assert.match(update.releaseNotes, /v5\.11\.31/);
+assert.match(notes, /Removed the full-document PDF prewarm/i);
+assert.match(notes, /stable document\/page\/index identity/i);
+assert.match(notes, /mutation generation/i);
 assert.match(app, /preparedDrivePdfBuild\.controller\.abort\(\)/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
 assert.match(oauthCallback, /miguelcoxcaballero\.github\.io/);
@@ -1109,7 +1113,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.30 smoke checks passed.');
+console.log('v5.11.31 smoke checks passed.');
 
 
 
