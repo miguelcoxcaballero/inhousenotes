@@ -7619,12 +7619,19 @@
                 delete fetchOptions.timeout;
                 delete fetchOptions.signal;
                 delete fetchOptions.acceptStatuses;
-                const res = await fetch(url, {
+                delete fetchOptions.bufferResponse;
+                let res = await fetch(url, {
                     ...fetchOptions,
                     headers,
                     keepalive: !!options.keepalive,
                     signal: controller.signal
                 });
+                // Upload completion is not confirmed until its response body arrives.
+                // Keep both timeout and caller cancellation alive during that read.
+                if (options.bufferResponse && res.status !== 204) {
+                    const body = await res.arrayBuffer();
+                    res = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+                }
                 clearTimeout(timeoutId);
                 if (externalAbortHandler && options.signal) {
                     options.signal.removeEventListener('abort', externalAbortHandler);
@@ -24324,7 +24331,7 @@
             });
         }
 
-        const DRIVE_RESUMABLE_CHUNK_BYTES = 4 * 1024 * 1024;
+        const DRIVE_RESUMABLE_CHUNK_BYTES = 1024 * 1024;
         const DRIVE_RESUMABLE_CHUNK_TIMEOUT_MS = 60000;
 
         function getDriveResumableAcknowledgedOffset(response) {
@@ -24355,6 +24362,7 @@
                     body: metadata ? JSON.stringify(metadata) : undefined,
                     keepalive: useKeepalive,
                     signal,
+                    bufferResponse: true,
                     timeout: 30000
                 });
                 const location = initiation.headers.get('Location');
@@ -24387,6 +24395,7 @@
                         keepalive: useKeepalive,
                         signal,
                         timeout: 30000,
+                        bufferResponse: true,
                         acceptStatuses: [308]
                     });
                     if (status.status !== 308) {
@@ -24422,6 +24431,7 @@
                         keepalive: useKeepalive,
                         signal,
                         timeout: DRIVE_RESUMABLE_CHUNK_TIMEOUT_MS,
+                        bufferResponse: true,
                         acceptStatuses: [308]
                     });
                     if (response.status === 308) {
@@ -24429,7 +24439,10 @@
                         if (acknowledged <= offset) {
                             noProgressCount += 1;
                             if (noProgressCount > 3) {
-                                throw new Error('Drive did not acknowledge uploaded bytes');
+                                const stalled = new Error('Drive did not acknowledge uploaded bytes; please retry');
+                                stalled.uploadStalled = true;
+                                driveResumableSessions.delete(resumeKey);
+                                throw stalled;
                             }
                         } else {
                             offset = acknowledged;
@@ -24449,7 +24462,9 @@
                     return result;
                 } catch (error) {
                     if (signal?.aborted || error?.name === 'AbortError') throw error;
+                    if (error?.uploadStalled) throw error;
                     if (/Drive API error 404/.test(String(error?.message || error))) {
+                        driveResumableSessions.delete(resumeKey);
                         throw new Error('Drive upload session expired; retrying with a new session');
                     }
                     retryCount += 1;
@@ -24465,6 +24480,7 @@
                         keepalive: useKeepalive,
                         signal,
                         timeout: 30000,
+                        bufferResponse: true,
                         acceptStatuses: [308]
                     });
                     if (status.status !== 308) {

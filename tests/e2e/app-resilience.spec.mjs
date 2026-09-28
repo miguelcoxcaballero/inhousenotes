@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.36');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.37');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -73,6 +73,54 @@ test('Drive resumable PDF upload resumes at the server-confirmed byte after a dr
     'bytes */614400',
     'bytes 262144-614399/614400'
   ]);
+});
+
+test('Drive upload recovers when headers arrive but the completion body stalls', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(async () => {
+    await window.__IHN_TEST_API__.ready();
+    const originalFetch = window.fetch;
+    const originalTimeout = window.setTimeout;
+    let probes = 0;
+    window.setTimeout = (fn, ms, ...args) => originalTimeout(fn, ms === 60000 ? 50 : ms, ...args);
+    window.fetch = async (url, options) => {
+      if (!String(url).startsWith('https://www.googleapis.com/')) return originalFetch(url, options);
+      if (options.method === 'POST') return new Response('', { headers: { Location: 'https://www.googleapis.com/test-session' } });
+      if (options.headers.get('Content-Range').startsWith('bytes */')) {
+        probes++;
+        return new Response(JSON.stringify({ id: 'confirmed-after-timeout' }));
+      }
+      return new Response(new ReadableStream({ start(controller) {
+        options.signal.addEventListener('abort', () => controller.error(new DOMException('Timed out', 'AbortError')), { once: true });
+      } }));
+    };
+    try { return { file: await window.__IHN_TEST_API__.uploadBlobResumableForTest(), probes }; }
+    finally { window.fetch = originalFetch; window.setTimeout = originalTimeout; }
+  });
+  expect(result.file.id).toBe('confirmed-after-timeout');
+  expect(result.probes).toBe(1);
+});
+
+test('Drive upload stops repeated zero-progress acknowledgements instead of looping', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(async () => {
+    await window.__IHN_TEST_API__.ready();
+    const originalFetch = window.fetch;
+    let chunks = 0;
+    window.fetch = async (url, options) => {
+      if (!String(url).startsWith('https://www.googleapis.com/')) return originalFetch(url, options);
+      if (options.method === 'POST') return new Response('', { headers: { Location: 'https://www.googleapis.com/test-session' } });
+      chunks++;
+      return new Response('', { status: 308 });
+    };
+    try { await window.__IHN_TEST_API__.uploadBlobResumableForTest(); return { chunks }; }
+    catch (error) { return { chunks, error: error.message }; }
+    finally { window.fetch = originalFetch; }
+  });
+  expect(result.chunks).toBe(4);
+  expect(result.error).toContain('did not acknowledge');
 });
 
 test('pen-down paints its first point without rebuilding a stale page canvas', async ({ page, context }) => {
