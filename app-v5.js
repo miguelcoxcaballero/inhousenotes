@@ -7626,9 +7626,12 @@
                     keepalive: !!options.keepalive,
                     signal: controller.signal
                 });
-                // Upload completion is not confirmed until its response body arrives.
-                // Keep both timeout and caller cancellation alive during that read.
-                if (options.bufferResponse && res.status !== 204) {
+                // Upload completion and signalling/revision JSON are not usable
+                // until their bodies arrive. Retain the deadline/cancellation
+                // during that read, while leaving successful PDF media streaming.
+                const isJsonResponse = /application\/json|\+json/i.test(res.headers.get('Content-Type') || '');
+                if ((options.bufferResponse || isJsonResponse || !res.ok)
+                    && res.status !== 204 && res.status !== 304) {
                     const body = await res.arrayBuffer();
                     res = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
                 }
@@ -18758,6 +18761,13 @@
             timeoutMs = 12_000,
             expectedContext = captureLocalPageStructureDocumentContext()
         ) {
+            // A structural edit really does invalidate the export's page map.
+            // Cancel only in this case, not for unrelated pointer/scroll input,
+            // so a long export cannot hold page insertion/reordering hostage.
+            if (preparedDrivePdfBuild && isLocalPageStructureDocumentContextCurrent(expectedContext)) {
+                if (preparedDrivePdfBuild.background) preparedDrivePdfBuild.controller?.abort();
+                else activeDriveSaveController?.abort();
+            }
             const deadline = Date.now() + timeoutMs;
             while (localPageStructureMutationToken
                 || remotePageMergeToken
@@ -23130,33 +23140,20 @@
                 abortPrewarm();
                 pausedProcessing = true;
             }
-            if (preparedDrivePdfBuild?.background && !preparedDrivePdfBuild.controller.signal.aborted) {
-                preparedDrivePdfBuild.controller.abort();
-                pausedProcessing = true;
-            }
+            // Export already yields between small batches and pauses while a
+            // gesture is active. Cancelling it here threw away completed worker
+            // work on every tap/pan, even when the document had not changed.
+            // Keep the version/session validation in prepareDrivePdfBlob: an
+            // actual edit still requires a fresh PDF before it is called saved.
             pausePdfRenderingDuringInteraction();
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
                 pausedProcessing = true;
             }
-            // Priority is input fluidity: stop Drive processing as soon as interaction starts.
-            if (
-                driveSaveInProgress
-                && driveSavePhase !== 'uploading'
-                && activeDriveSaveController
-                && !activeDriveSaveController.signal.aborted
-            ) {
-                activeDriveSaveController.abort();
-                driveDirty = true;
-                deferredDriveSave = true;
-                // Defer the retry well beyond the gesture's idle window so the
-                // save doesn't restart on the very next finger lift and yank
-                // the main thread away again. The watchdog (armed below) will
-                // pick it up once the user is genuinely idle.
-                scheduleDeferredDriveSaveRetry(900);
-                pausedProcessing = true;
-            }
+            // Do not cancel remote revision reads/uploads or throw away an
+            // export merely to yield CPU. The export loop handles cooperative
+            // pausing; cancellation is reserved for leaving/changing sessions.
             if (pausedProcessing) {
                 showStatus('Save paused...', { phase: 'paused' });
                 armPausedSaveWatchdog();
@@ -32763,6 +32760,8 @@
                     ...getLiveCollaborationOverview(),
                     peers: [...ihnLivePeers].map(([id, peer]) => ({ id, initiator: peer.initiator,
                         state: peer.pc.connectionState, ice: peer.pc.iceConnectionState,
+                        interactive: peer.realtimeChannel?.readyState || '',
+                        lastPongEchoAt: peer.lastPongEchoAt || 0,
                         signalling: peer.pc.signalingState, remote: !!peer.pc.remoteDescription,
                         local: !!peer.pc.localDescription, commentId: peer.commentId,
                         localMedia: peer.pc.localDescription?.sdp.split('\r\n').filter(line => line.startsWith('m=') || line.startsWith('a=mid:')),
@@ -32771,6 +32770,45 @@
                         remoteCandidates: peer.remoteIceCandidateKeys?.size,
                         queuedCandidates: peer.pendingRemoteIceCandidates?.size }))
                 }; },
+                congestBulkAndPingForTest() {
+                    const peer = [...ihnLivePeers.values()].find(p => p.channel?.readyState === 'open');
+                    if (!peer) throw new Error('No peer');
+                    // Hold the primary stream's send queue; the interactive
+                    // packet must still traverse the real RTC connection.
+                    const channel = peer.channel;
+                    const send = channel.send.bind(channel);
+                    channel.send = data => setTimeout(() => {
+                        if (channel.readyState === 'open') send(data);
+                    }, 2000);
+                    setTimeout(() => { channel.send = send; }, 2200);
+                    return ihnSendHealthPing(peer);
+                },
+                publishPreviewForTest(strokeId, pageId, count = 2) {
+                    return publishLiveStrokePreview(pageId, { id: strokeId, color: '#142dd2',
+                        tool: 'pen', width: 3,
+                        points: Array.from({ length: count }, (_, index) => ({ x: 20 + index, y: 30 + index, p: 0.5 })) });
+                },
+                previewPointCountForTest(strokeId) {
+                    return [...remoteLiveStrokePreviews.values()].find(p => p.strokeId === strokeId)?.points.length || 0;
+                },
+                interactionDuringPreparationForTest() {
+                    const previous = { build: preparedDrivePdfBuild, active: activeDriveSaveController,
+                        saving: driveSaveInProgress, phase: driveSavePhase };
+                    const controller = new AbortController();
+                    preparedDrivePdfBuild = { background: true, controller };
+                    driveSaveInProgress = true;
+                    driveSavePhase = 'building';
+                    activeDriveSaveController = controller;
+                    try {
+                        pauseSavesDuringInteraction();
+                        return { aborted: controller.signal.aborted };
+                    } finally {
+                        preparedDrivePdfBuild = previous.build;
+                        activeDriveSaveController = previous.active;
+                        driveSaveInProgress = previous.saving;
+                        driveSavePhase = previous.phase;
+                    }
+                },
                 async openTimelineForTest() {
                     await ready();
                     openTimelinePanel();

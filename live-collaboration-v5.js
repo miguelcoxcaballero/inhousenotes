@@ -11,6 +11,8 @@ const IHN_LIVE_RENDEZVOUS_SEARCH_MS = 1500;
 const IHN_LIVE_PEER_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const IHN_LIVE_PEER_CACHE_LIMIT = 12;
 const IHN_LIVE_CHUNK = 16_000;
+const IHN_LIVE_BULK_HIGH_WATER = 64_000;
+const IHN_LIVE_REALTIME_CHANNEL = 'inhousenotes-interactive-v1';
 const IHN_LIVE_MAX_CHUNKS = 5000;
 const IHN_LIVE_MAX_CHARS = 50_000_000;
 const IHN_LIVE_LEADER_TTL = 7000;
@@ -1326,6 +1328,7 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
     peer.pendingHealthPings?.clear?.();
     ihnDeleteSignalComment(peer);
     try { peer.channel?.close(); } catch (error) {}
+    try { peer.realtimeChannel?.close(); } catch (error) {}
     try { peer.pc?.close(); } catch (error) {}
     if (options.retry !== false) {
         // After first contact either endpoint may recover a broken route. The
@@ -1340,7 +1343,9 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
 function ihnSendControl(peer, payload) {
     if (peer?.channel?.readyState !== 'open') return false;
     try {
-        peer.channel.send(JSON.stringify(payload));
+        const channel = peer.realtimeChannel?.readyState === 'open'
+            ? peer.realtimeChannel : peer.channel;
+        channel.send(JSON.stringify(payload));
         peer.lastSentAt = Date.now();
         return true;
     } catch (error) {
@@ -1844,12 +1849,46 @@ function ihnConfigurePeer(peerId, pc, peer) {
     pc.onconnectionstatechange = updateConnectionState;
     pc.oniceconnectionstatechange = updateConnectionState;
     pc.onicecandidate = event => ihnQueueLocalIceCandidate(peerId, peer, event?.candidate || null);
-    pc.ondatachannel = event => ihnConfigureChannel(peerId, event.channel, peer);
+    pc.ondatachannel = event => {
+        if (event.channel.label === IHN_LIVE_REALTIME_CHANNEL) {
+            ihnConfigureRealtimeChannel(peerId, event.channel, peer);
+        } else if (event.channel.label === 'inhousenotes-live-v5') {
+            ihnConfigureChannel(peerId, event.channel, peer);
+        } else {
+            try { event.channel.close(); } catch (error) {}
+        }
+    };
+}
+
+function ihnConfigureRealtimeChannel(peerId, channel, peer) {
+    // Reliable, ordered deltas, but on their own SCTP stream: bulk document
+    // chunks must not precede every pen frame and heartbeat in the same queue.
+    peer.realtimeChannel = channel;
+    channel.onmessage = event => {
+        if (ihnLivePeers.get(peerId) !== peer || peer.realtimeChannel !== channel
+            || peer.closing || peer.fileId !== state?.driveFileId
+            || peer.generation !== ihnLiveGeneration) return;
+        ihnHandleWireMessage(event.data, peerId, peer, channel,
+            ihnCaptureLiveOperationContext(peer.fileId)).catch(error => console.warn('Live message rejected:', error));
+    };
+    channel.onopen = () => {
+        if (ihnLivePeers.get(peerId) !== peer || peer.closing) {
+            try { channel.close(); } catch (error) {}
+            return;
+        }
+        ihnSendHealthPing(peer);
+    };
+    channel.onclose = () => {
+        if (peer.realtimeChannel === channel) peer.realtimeChannel = null;
+        // The original reliable channel remains a compatible fallback. Losing
+        // an optional stream does not justify destroying the whole connection.
+    };
+    channel.onerror = () => {};
 }
 
 function ihnConfigureChannel(peerId, channel, peer) {
     peer.channel = channel;
-    channel.bufferedAmountLowThreshold = 512_000;
+    channel.bufferedAmountLowThreshold = IHN_LIVE_BULK_HIGH_WATER / 2;
     channel.onopen = () => {
         if (ihnLivePeers.get(peerId) !== peer || peer.closing) {
             try { channel.close(); } catch (error) {}
@@ -1880,7 +1919,7 @@ function ihnConfigureChannel(peerId, channel, peer) {
         ihnRefreshPeerPath(peer).catch(() => {});
         ihnClearPeerMailboxAfterPublish(peer);
         ihnDeleteSignalComment(peer);
-        ihnSendControl(peer, { t: 'hello', at: now });
+        ihnSendControl(peer, { t: 'hello', at: now, interactiveChannel: 1 });
         ihnSendControl(peer, { t: 'state-request', at: now });
         // Reconnecting peers receive any in-progress pen/eraser frames first;
         // the full snapshot below remains the authoritative safety net.
@@ -2709,11 +2748,14 @@ function ihnProbePeerForFastRecovery(peerId, peer, reason = 'network path change
     }
     setTimeout(() => {
         if (ihnLivePeers.get(peerId) !== peer || peer.closing) return;
-        if (Number(peer.lastPongEchoAt || 0) >= probeAt) {
+        if (Number(peer.lastPongEchoAt || 0) >= probeAt
+            || Number(peer.lastReceivedAt || 0) > probeAt) {
             peer.networkRecoveryProbeAt = 0;
             peer.networkRecoveryMisses = 0;
             peer.resumeGraceUntil = 0;
-            scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
+            if (reason !== 'live route watchdog') {
+                scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
+            }
             return;
         }
         peer.networkRecoveryMisses = Number(peer.networkRecoveryMisses || 0) + 1;
@@ -2953,7 +2995,7 @@ function startLiveCollaboration() {
     }
     if (!wasRunning) ihnLiveDiscoveryStartedAt = Date.now();
     ihnScheduleSignalPoll();
-    ihnSuperviseConnections({ immediate: true });
+    if (!wasRunning) ihnSuperviseConnections({ immediate: true });
     if (!wasRunning) ihnPublishRendezvous({ force: true }).catch(() => {});
     if (!wasRunning) ihnScheduleMailboxPollBurst();
 }
@@ -3282,11 +3324,23 @@ async function ihnBroadcastDocument() {
 }
 
 function ihnWaitForBackpressure(channel) {
-    if (channel.bufferedAmount < 1_000_000) return Promise.resolve();
-    return new Promise(resolve => {
+    if (channel.bufferedAmount < IHN_LIVE_BULK_HIGH_WATER) return Promise.resolve();
+    return new Promise((resolve, reject) => {
         let done = false;
-        const finish = () => { if (done) return; done = true; channel.removeEventListener('bufferedamountlow', finish); resolve(); };
-        channel.addEventListener('bufferedamountlow', finish, { once: true }); setTimeout(finish, 3000);
+        const finish = error => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            channel.removeEventListener('bufferedamountlow', drained);
+            channel.removeEventListener('close', closed);
+            if (error) reject(error); else resolve();
+        };
+        const drained = () => { if (channel.bufferedAmount < IHN_LIVE_BULK_HIGH_WATER) finish(); };
+        const closed = () => finish(new Error('Live bulk channel closed'));
+        const timer = setTimeout(() => finish(new Error('Live bulk channel remained congested')), 15_000);
+        channel.addEventListener('bufferedamountlow', drained);
+        channel.addEventListener('close', closed, { once: true });
+        if (channel.readyState !== 'open') closed(); else drained();
     });
 }
 
@@ -3343,7 +3397,7 @@ async function ihnHandleWireMessage(
     const messageOperation = operation || ihnCaptureLiveOperationContext(peer?.fileId);
     const peerContextIsCurrent = () => !!peer
         && ihnLivePeers.get(peerId) === peer
-        && (!expectedChannel || peer.channel === expectedChannel)
+        && (!expectedChannel || peer.channel === expectedChannel || peer.realtimeChannel === expectedChannel)
         && !peer.closing
         && ihnLiveOperationContextIsCurrent(messageOperation);
     if (!peerContextIsCurrent()) return;
@@ -3392,6 +3446,15 @@ async function ihnHandleWireMessage(
     }
     if (message?.t === 'hello' || message?.t === 'state-request') {
         if (peer) peer.protocolV2 = true;
+        // Only negotiate the extra stream after explicit capability exchange:
+        // older releases treat any second channel as their primary channel.
+        if (message?.t === 'hello' && message.interactiveChannel === 1
+            && peer.initiator && !peer.realtimeChannel) {
+            try {
+                ihnConfigureRealtimeChannel(peerId,
+                    peer.pc.createDataChannel(IHN_LIVE_REALTIME_CHANNEL, { ordered: true }), peer);
+            } catch (error) { /* The primary channel remains usable. */ }
+        }
         scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
         return;
     }

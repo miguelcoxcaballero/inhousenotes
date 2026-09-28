@@ -25,7 +25,7 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.37.md');
+const notes = readText('../RELEASE_NOTES_v5.11.38.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -33,7 +33,7 @@ const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.37';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.38';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -57,10 +57,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.37/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.37/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.37/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.37/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.38/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.38/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.38/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.38/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -1118,16 +1118,17 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // The Android shell is unchanged, but its hosted app version advances.
-assert.equal(update.publishedAppVersion, '5.11.37');
+assert.equal(update.publishedAppVersion, '5.11.38');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.11\.37/);
-assert.match(notes, /response-body/i);
-assert.match(notes, /Expired sessions/i);
-assert.match(notes, /zero-progress/i);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.37/);
-assert.match(app, /preparedDrivePdfBuild\.controller\.abort\(\)/);
+assert.match(update.releaseNotes, /v5\.11\.38/);
+assert.match(notes, /interactive data channel/i);
+assert.match(notes, /cooperatively/i);
+assert.match(notes, /response body/i);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.38/);
+const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
+assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
 assert.match(oauthCallback, /miguelcoxcaballero\.github\.io/);
 assert.match(oauthCallback, /window\.opener\.postMessage/);
@@ -1135,7 +1136,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.37 smoke checks passed.');
+console.log('v5.11.38 smoke checks passed.');
 
 
 
