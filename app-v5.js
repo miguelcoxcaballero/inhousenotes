@@ -1686,12 +1686,13 @@
 
             if (localNeedsCanonicalIds) {
                 if (Array.isArray(state.versionHistory)) {
-                    state.versionHistory.forEach(entry => {
-                        (Array.isArray(entry?.pages) ? entry.pages : []).forEach(page => {
-                            const mapped = localPageIdMap.get(String(page?.pageId || ''));
-                            if (mapped) page.pageId = mapped;
-                        });
-                    });
+                    state.versionHistory = state.versionHistory.map(entry => normalizeTimelineEntry({
+                        ...entry, contentHash: '',
+                        pages: (entry.pages || []).map(page => ({
+                            ...page, pageId: localPageIdMap.get(String(page?.pageId || '')) || page.pageId
+                        }))
+                    })).filter(Boolean);
+                    preparedTimelineArchive = null;
                 }
                 lastSyncedPageIds.clear();
                 collabPageOrderMutationInProgress = true;
@@ -2124,6 +2125,7 @@
         // Recover it off the opening critical path; Drive saves wait for the
         // recovery promise so an early edit can never flatten over the source.
         let cleanOriginalRecoveryPromise = null;
+        let startCleanOriginalRecovery = null;
         let pendingCleanOriginalSwap = false;
         let driveHydratedFileId = null;
         let driveHydrationPromise = null;
@@ -12343,6 +12345,7 @@
         // ── § 4.7  Canvas & page rendering ───────────────────────────────────
         // High-level page rendering: clears the canvas and repaints background
         // (template / PDF page) then all strokes and images in order.
+        const pendingPageRepaints = new WeakMap();
         function redrawPage(pageIndex) {
             const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
             const page = state.pages[pageIndex];
@@ -12358,7 +12361,11 @@
                 return;
             }
 
-            const ctx = canvas.getContext('2d');
+            const previousPaint = pendingPageRepaints.get(canvas);
+            if (previousPaint) previousPaint.cancelled = true;
+            const staged = (page.strokes?.length || 0) > 128;
+            const target = staged ? createProcessingCanvas(canvas.width, canvas.height) : canvas;
+            const ctx = target.getContext('2d');
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
             const renderScale = getPageCanvasRenderScale(canvas, pageWidth);
             ctx.save();
@@ -12379,6 +12386,57 @@
 
             // Hide strokes burnt into the page raster (legacy app-saved files
             // without a clean-original cache) before drawing user content.
+            if (staged) {
+                // Export/thumbnail callers must not reuse the old visible
+                // canvas until this generation has been committed atomically.
+                page.needsRedraw = true;
+                const generation = pageDirtyGeneration.get(pageIndex) || 0;
+                const strokeCount = page.strokes.length;
+                const job = { cancelled: false };
+                pendingPageRepaints.set(canvas, job);
+                const strokes = getRemoteLiveErasePreviewStrokes(page);
+                const covers = !pendingCleanOriginalSwap ? (page.legacyCoverStrokes || []) : [];
+                let index = 0;
+                let phase = 0;
+                const discard = () => {
+                    target.width = target.height = 0;
+                    if (pendingPageRepaints.get(canvas) === job) pendingPageRepaints.delete(canvas);
+                };
+                const paint = () => {
+                    if (job.cancelled || !canvas.isConnected || state.pages[pageIndex] !== page
+                        || canvas.width !== target.width || canvas.height !== target.height) {
+                        discard(); return;
+                    }
+                    const started = performance.now();
+                    while (phase < 2) {
+                        const items = phase === 0 ? covers : strokes;
+                        while (index < items.length) {
+                            const stroke = items[index++];
+                            if (phase === 0) drawLegacyCoverStrokes(ctx, { legacyCoverStrokes: [stroke] });
+                            else if (stroke.tool !== 'eraser-stroke') drawSmoothStroke(ctx, stroke);
+                            if (performance.now() - started >= 4) { setTimeout(paint, 0); return; }
+                        }
+                        if (phase === 0) drawImagesOnContext(ctx, page, pageIndex, redrawPage);
+                        phase++; index = 0;
+                    }
+                    if (isPenWriting || state.activePointers.size > 0) {
+                        setTimeout(paint, 40); return;
+                    }
+                    if ((pageDirtyGeneration.get(pageIndex) || 0) !== generation || page.strokes.length !== strokeCount) {
+                        discard(); redrawPage(pageIndex); return;
+                    }
+                    const destination = canvas.getContext('2d');
+                    destination.save(); destination.setTransform(1, 0, 0, 1, 0, 0);
+                    destination.clearRect(0, 0, canvas.width, canvas.height);
+                    destination.drawImage(target, 0, 0); destination.restore();
+                    page.needsRedraw = false;
+                    canvas.dataset.hasPageDraw = '1';
+                    clearPagePreview(pageIndex);
+                    discard();
+                };
+                setTimeout(paint, 0);
+                return;
+            }
             if (!pendingCleanOriginalSwap) drawLegacyCoverStrokes(ctx, page);
 
             drawImagesOnContext(ctx, page, pageIndex, redrawPage);
@@ -13675,6 +13733,21 @@
             });
         }
 
+        async function ensureVersionHistoryRestored() {
+            if (!pendingVersionHistoryRestore) return;
+            const restore = pendingVersionHistoryRestore;
+            if (!versionHistoryRestorePromise) {
+                const task = Promise.resolve().then(restore).then(() => {
+                    if (pendingVersionHistoryRestore === restore) pendingVersionHistoryRestore = null;
+                });
+                versionHistoryRestorePromise = task;
+                task.finally(() => {
+                    if (versionHistoryRestorePromise === task) versionHistoryRestorePromise = null;
+                }).catch(() => {});
+            }
+            await versionHistoryRestorePromise;
+        }
+
         function openTimelinePanel() {
             const panel = document.getElementById('timeline-panel');
             if (!panel) return;
@@ -13683,13 +13756,11 @@
             if (pendingVersionHistoryRestore) {
                 const list = document.getElementById('timeline-list');
                 if (list) list.textContent = 'Loading timeline…';
-                const restore = pendingVersionHistoryRestore;
-                versionHistoryRestorePromise ||= Promise.resolve().then(restore).catch(error => {
-                    console.warn('Timeline history restore failed:', error);
-                });
-                versionHistoryRestorePromise.then(() => {
-                    if (pendingVersionHistoryRestore === restore) pendingVersionHistoryRestore = null;
+                ensureVersionHistoryRestored().then(() => {
                     if (panel.classList.contains('visible')) renderTimelinePanelContents();
+                }).catch(error => {
+                    console.warn('Timeline history restore failed:', error);
+                    if (list) list.textContent = 'Could not load history. Open Timeline again to retry.';
                 });
                 return;
             }
@@ -14751,6 +14822,8 @@
             let _lastMoveInterruptAt = 0;
             const onMoveInterrupt = (e) => {
                 if (isSaveDebugInteraction(e)) return;
+                if (e.type === 'pointermove' && !e.buttons && !(e.pressure > 0)
+                    && e.pointerType !== 'touch') return;
                 const now = performance.now();
                 if (now - _lastMoveInterruptAt < 60) {
                     noteRecentUserActivity();
@@ -20617,7 +20690,7 @@
             if (!key || !Array.isArray(history)) return false;
             let historyArchive;
             try {
-                historyArchive = timelineArchiveCore.createArchive(history);
+                historyArchive = await prepareTimelineArchive(history);
             } catch (error) {
                 console.warn('Could not create the local timeline archive:', error);
                 return false;
@@ -20632,7 +20705,7 @@
                     tx.onabort = () => resolve(false);
                     tx.objectStore(TIMELINE_STORE).put({
                         key,
-                        historyArchive,
+                        historyArchiveJson: historyArchive.archiveJson,
                         savedAt: Date.now(),
                         schemaVersion: timelineArchiveCore.ARCHIVE_SCHEMA_VERSION
                     });
@@ -20685,9 +20758,15 @@
             );
             const localRecord = await loadTimelineFromIndexedDb(documentKey);
             if (!isCurrentDocument()) return state.versionHistory;
-            const localHistory = materializeStoredTimeline(
-                localRecord?.historyArchive || localRecord?.history || null
-            );
+            const storedTimeline = localRecord?.historyArchiveJson
+                || (localRecord?.historyArchive || localRecord?.history
+                    ? JSON.stringify(localRecord.historyArchive || localRecord.history) : null);
+            const localHistory = storedTimeline
+                ? normalizeWorkerTimeline(JSON.parse(await window.InhouseDocumentProcessing.run(
+                    'materializeTimeline', { json: storedTimeline }
+                )) || [])
+                : [];
+            if (!isCurrentDocument()) return state.versionHistory;
             const mergedHistory = mergeVersionHistories(
                 mergeVersionHistories(state.versionHistory || [], localHistory),
                 Array.isArray(incomingHistory) ? incomingHistory : []
@@ -20728,16 +20807,27 @@
             };
         }
 
-        function cloneSanitizedPageForStorage(page) {
+        async function cloneSanitizedPageForStorage(page) {
             const sanitized = sanitizePageForStorage(page);
-            if (typeof structuredClone === 'function') {
-                try {
-                    return structuredClone(sanitized);
-                } catch (error) {
-                    console.warn('Falling back to JSON page checkpoint clone:', error);
+            const clone = value => typeof structuredClone === 'function'
+                ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+            const { strokes, legacyCoverStrokes, ...metadata } = sanitized;
+            const result = clone(metadata);
+            let sliceStart = performance.now();
+            for (const [key, source] of [['strokes', strokes], ['legacyCoverStrokes', legacyCoverStrokes]]) {
+                if (!Array.isArray(source)) { result[key] = source; continue; }
+                result[key] = [];
+                // Generation validation after the snapshot rejects concurrent
+                // edits. Small clones avoid a document-sized blocking task.
+                for (const stroke of source.slice()) {
+                    result[key].push(clone(stroke));
+                    if (performance.now() - sliceStart >= 4) {
+                        await yieldProcessingForUi();
+                        sliceStart = performance.now();
+                    }
                 }
             }
-            return JSON.parse(JSON.stringify(sanitized));
+            return result;
         }
 
         function stripStoredPageSession(storedPage) {
@@ -20809,11 +20899,10 @@
                 console.error('Refusing to save potentially incomplete page data', { pageIndex });
                 return false;
             }
-            // Freeze the exact page body before the first await. Callers can
-            // then retire only the stroke-op keys captured at this same
-            // boundary; edits made while IndexedDB commits remain pending.
+            // Snapshot in short slices. The captured generation below rejects
+            // any edit that arrives during cloning or the IndexedDB commit.
             const storedPageRecord = {
-                ...cloneSanitizedPageForStorage(page),
+                ...await cloneSanitizedPageForStorage(page),
                 __sessionId: sessionToken
             };
             const db = await openNotebookDb();
@@ -22867,6 +22956,7 @@
             closeScannerEditor({ force: true });
             pendingVersionHistoryRestore = null;
             versionHistoryRestorePromise = null;
+            preparedTimelineArchive = null;
             const preservedLocalStructureToken = options.preserveLocalStructureToken || null;
             if (localPageStructureMutationToken
                 && localPageStructureMutationToken !== preservedLocalStructureToken) {
@@ -22877,6 +22967,7 @@
             // Any recovery from the previous document is now irrelevant; its
             // captured session token prevents it from mutating this document.
             cleanOriginalRecoveryPromise = null;
+            startCleanOriginalRecovery = null;
             pendingCleanOriginalSwap = false;
             embeddedMetadataCache.clear();
             if (pdfRestoreOperation) {
@@ -23045,6 +23136,7 @@
             // Priority is input fluidity: stop Drive processing as soon as interaction starts.
             if (
                 driveSaveInProgress
+                && driveSavePhase !== 'uploading'
                 && activeDriveSaveController
                 && !activeDriveSaveController.signal.aborted
             ) {
@@ -24489,6 +24581,7 @@
             }
             if (cleanOriginalRecoveryPromise) {
                 const recovery = cleanOriginalRecoveryPromise;
+                startCleanOriginalRecovery?.();
                 showStatus('Changes are safe locally · preparing source PDF', { phase: 'paused' });
                 await recovery;
                 if (!isDocumentSessionTokenValid(sessionToken)) return;
@@ -29485,17 +29578,10 @@
                 // Timeline history is not needed to draw or edit page 1. Restore
                 // it after the usable document has been painted instead of
                 // making every open wait for another large inflate + JSON parse.
-                let versionHistoryRestoreStarted = false;
                 const restoreVersionHistory = async () => {
-                    if (versionHistoryRestoreStarted) return;
-                    versionHistoryRestoreStarted = true;
-                    try {
-                        const decodedHistory = await decodeVersionHistoryFromKeywords(pdfKeywordsString);
-                        throwIfSessionInvalid();
-                        await adoptVersionHistory(Array.isArray(decodedHistory) ? decodedHistory : []);
-                    } catch (vhErr) {
-                        if (vhErr?.name !== 'AbortError') await adoptVersionHistory([]);
-                    }
+                    const decodedHistory = await decodeVersionHistoryFromKeywords(pdfKeywordsString);
+                    throwIfSessionInvalid();
+                    await adoptVersionHistory(Array.isArray(decodedHistory) ? decodedHistory : []);
                 };
                 pendingVersionHistoryRestore = restoreVersionHistory;
                 versionHistoryRestorePromise = null;
@@ -29786,11 +29872,12 @@
                 if (cleanRecoveryGate) cleanOriginalRecoveryPromise = cleanRecoveryGate;
 
                 const runDeferredPdfMaintenance = async () => {
-                    if (!isDocumentSessionTokenValid(sessionToken)) return;
                     try {
+                    if (!isDocumentSessionTokenValid(sessionToken)) return;
                     if (hasCleanOriginalRecoveryWork) {
                         if (!state.cleanOriginalPdfBytes) {
                             const attachedClean = await extractCleanOriginalAttachment(pdf);
+                            throwIfSessionInvalid();
                             if (attachedClean?.byteLength > 0) {
                                 state.cleanOriginalPdfBytes = attachedClean;
                             }
@@ -29802,6 +29889,7 @@
                                 const cleaned = bytesForCleaning
                                     ? await stripOverlaysFromPdfBytes(bytesForCleaning, overlayRefs)
                                     : null;
+                                throwIfSessionInvalid();
                                 if (cleaned?.byteLength > 0) {
                                     state.cleanOriginalPdfBytes = cleaned.buffer.slice(
                                         cleaned.byteOffset, cleaned.byteOffset + cleaned.byteLength
@@ -29816,6 +29904,7 @@
                             if (!displaySavedPdfWithBakedOverlay) {
                                 pendingCleanOriginalSwap = true;
                                 const swapped = await swapDisplayDocToCleanOriginal();
+                                throwIfSessionInvalid();
                                 pendingCleanOriginalSwap = false;
                                 if (swapped) {
                                     state.hasLegacyBakedOverlay = false;
@@ -29837,7 +29926,8 @@
                         }
                     }
                     } finally {
-                        if (hasCleanOriginalRecoveryWork && !state.cleanOriginalPdfBytes
+                        if (isDocumentSessionTokenValid(sessionToken)
+                            && hasCleanOriginalRecoveryWork && !state.cleanOriginalPdfBytes
                             && !displaySavedPdfWithBakedOverlay) {
                             // Recovery has definitively failed. Enable the legacy
                             // eraser masks only now, and only for pages already in
@@ -29849,6 +29939,7 @@
                         if (cleanRecoveryGate) {
                             if (cleanOriginalRecoveryPromise === cleanRecoveryGate) {
                                 cleanOriginalRecoveryPromise = null;
+                                startCleanOriginalRecovery = null;
                             }
                             resolveCleanOriginalRecovery?.();
                         }
@@ -29899,6 +29990,16 @@
                         scheduleVisiblePageUpdate(true);
                     }
                 };
+                let maintenancePromise = null;
+                const startPdfMaintenance = () => {
+                    if (!maintenancePromise) {
+                        maintenancePromise = runDeferredPdfMaintenance().catch(error => {
+                            console.warn('Deferred PDF maintenance failed:', error);
+                        });
+                    }
+                    return maintenancePromise;
+                };
+                if (cleanRecoveryGate) startCleanOriginalRecovery = startPdfMaintenance;
                 const scheduleDeferredPdfMaintenance = (delay = 1800) => {
                     setTimeout(() => {
                         if (!isDocumentSessionTokenValid(sessionToken)) return;
@@ -29908,15 +30009,11 @@
                         // for CPU; wait for a genuine idle window instead.
                         if (hasSmoothInteraction()
                             || hasRecentUserActivity(1800)
-                            || saveInProgress
-                            || driveSaveInProgress
-                            || driveSaveQueued) {
+                            || (!cleanRecoveryGate && (saveInProgress || driveSaveInProgress))) {
                             scheduleDeferredPdfMaintenance(700);
                             return;
                         }
-                        runDeferredPdfMaintenance().catch(error => {
-                            console.warn('Deferred PDF maintenance failed:', error);
-                        });
+                        startPdfMaintenance();
                     }, Math.max(300, delay));
                 };
                 scheduleDeferredPdfMaintenance();
@@ -30372,6 +30469,34 @@
             };
         }
 
+        const normalizedTimelineEntries = new WeakSet();
+        const ownedTimelineSnapshots = new WeakSet();
+        let preparedTimelineArchive = null;
+
+        function prepareTimelineArchive(history) {
+            const cached = preparedTimelineArchive;
+            if (cached && history.length === cached.entries.length
+                && history.every((entry, i) => entry === cached.entries[i])) return cached.promise;
+            const record = { entries: history.slice(), promise: null };
+            record.promise = yieldProcessingForUi().then(() => window.InhouseDocumentProcessing.run('timeline', {
+                json: JSON.stringify(history), budget: VERSION_HISTORY_EMBED_BUDGET
+            })).then(result => {
+                // Prune memory only if no newer snapshot/document replaced this
+                // input while the worker was creating its bounded archive.
+                if (preparedTimelineArchive === record && state.versionHistory.length === record.entries.length
+                    && state.versionHistory.every((entry, i) => entry === record.entries[i])) {
+                    const retained = new Set(result.retained);
+                    state.versionHistory = record.entries.filter(entry => retained.has(`${entry.id}:${entry.ts}:${entry.contentHash}`));
+                }
+                return result;
+            });
+            preparedTimelineArchive = record;
+            record.promise.catch(() => {
+                if (preparedTimelineArchive === record) preparedTimelineArchive = null;
+            });
+            return record.promise;
+        }
+
         function cloneTimelineValue(value, fallback = null) {
             try {
                 return value === undefined ? fallback : JSON.parse(JSON.stringify(value));
@@ -30440,9 +30565,10 @@
             }
         }
 
-        function buildTimelineSnapshotFromPages(pages) {
+        function buildTimelineSnapshotFromPages(pages, owned = false) {
             if (!Array.isArray(pages)) return [];
-            return pages.map((page, index) => {
+            if (ownedTimelineSnapshots.has(pages)) return pages;
+            const snapshot = pages.map((page, index) => {
                 const backgroundSource = page?.backgroundSource || (page?.pdfPageIndex ? 'pdf' : 'template');
                 const portableBackgroundImage = backgroundSource === 'custom'
                     && typeof page?.backgroundImage === 'string'
@@ -30451,8 +30577,8 @@
                     : null;
                 return {
                     pageId: page?.pageId || `legacy-page-${index + 1}`,
-                    strokes: cloneTimelineValue(Array.isArray(page?.strokes) ? page.strokes : [], []),
-                    images: cloneTimelineValue(Array.isArray(page?.images) ? page.images : [], []),
+                    strokes: owned ? (page.strokes || []) : cloneTimelineValue(Array.isArray(page?.strokes) ? page.strokes : [], []),
+                    images: owned ? (page.images || []) : cloneTimelineValue(Array.isArray(page?.images) ? page.images : [], []),
                     deletedStrokeIds: Array.isArray(page?.deletedStrokeIds) ? page.deletedStrokeIds.slice() : [],
                     deletedStrokeStamps: cloneTimelineValue(page?.deletedStrokeStamps || {}, {}),
                     // A blob URL belongs to one tab and becomes invalid on
@@ -30468,10 +30594,13 @@
                     legacyCoverStrokes: cloneTimelineValue(page?.legacyCoverStrokes || null, null)
                 };
             });
+            ownedTimelineSnapshots.add(snapshot);
+            return snapshot;
         }
 
         function normalizeTimelineEntry(rawEntry, index = 0) {
             if (!rawEntry || typeof rawEntry !== 'object') return null;
+            if (normalizedTimelineEntries.has(rawEntry)) return rawEntry;
             const pages = buildTimelineSnapshotFromPages(rawEntry.pages);
             if (pages.length === 0) return null;
             const ts = Number.isFinite(Number(rawEntry.ts)) ? Math.max(0, Number(rawEntry.ts)) : Date.now();
@@ -30492,7 +30621,7 @@
                 rawEntry.originId
                 || (legacyBranchMatch ? legacyBranchMatch[1] : id)
             ).slice(0, 160);
-            return {
+            const entry = {
                 id,
                 originId,
                 ts,
@@ -30512,6 +30641,8 @@
                 exportName,
                 pages
             };
+            normalizedTimelineEntries.add(entry);
+            return entry;
         }
 
         function pruneTimelineHistory(history) {
@@ -30522,15 +30653,13 @@
                 const originId = entry.originId || entry.id;
                 const variants = groupedById.get(originId) || new Map();
                 const previous = variants.get(deviceKey);
-                const previousTieKey = previous ? ihnStableStringify(previous) : '';
-                const entryTieKey = ihnStableStringify(entry);
                 if (!previous
                     || entry.ts > previous.ts
                     || (entry.ts === previous.ts && entry.isMilestone && !previous.isMilestone)
                     || (
                         entry.ts === previous.ts
                         && entry.isMilestone === previous.isMilestone
-                        && entryTieKey > previousTieKey
+                        && ihnStableStringify(entry) > ihnStableStringify(previous)
                     )) {
                     variants.set(deviceKey, entry);
                 }
@@ -30556,13 +30685,11 @@
                     candidate.entry.author.email || candidate.entry.author.name
                 }:${candidate.entry.contentHash}`;
                 const previous = contentWinners.get(contentKey);
-                const candidateTieKey = ihnStableStringify(candidate);
-                const previousTieKey = previous ? ihnStableStringify(previous) : '';
                 if (!previous
                     || candidate.entry.ts > previous.entry.ts
                     || (
                         candidate.entry.ts === previous.entry.ts
-                        && candidateTieKey > previousTieKey
+                        && ihnStableStringify(candidate) > ihnStableStringify(previous)
                     )) {
                     contentWinners.set(contentKey, candidate);
                 }
@@ -30607,13 +30734,10 @@
                 const dropIndex = entries.findIndex(entry => !entry.isMilestone);
                 entries.splice(dropIndex >= 0 ? dropIndex : 0, 1);
             }
-            let estimate = timelineArchiveCore.estimateArchiveBytes(entries);
-            while (estimate > VERSION_HISTORY_EMBED_BUDGET && entries.length > 1) {
-                const dropIndex = entries.findIndex((entry, index) => index < entries.length - 1 && !entry.isMilestone);
-                if (dropIndex < 0) break;
-                entries.splice(dropIndex, 1);
-                estimate = timelineArchiveCore.estimateArchiveBytes(entries);
-            }
+            // The compressed byte budget is enforced by the archive worker.
+            // Creating entire delta archives here used to repeat on every
+            // normalize/persist/encode call, blocking input for seconds.
+            entries.forEach(entry => normalizedTimelineEntries.add(entry));
             return entries;
         }
 
@@ -30624,6 +30748,12 @@
 
         function normalizeTimelineHistory(history) {
             return pruneTimelineHistory(history);
+        }
+
+        function normalizeWorkerTimeline(history) {
+            return normalizeTimelineHistory((Array.isArray(history) ? history : []).map(entry => ({
+                ...entry, pages: buildTimelineSnapshotFromPages(entry.pages, true)
+            })));
         }
 
         function mergeVersionHistories(leftHistory, rightHistory) {
@@ -30663,7 +30793,7 @@
             const pages = buildTimelineSnapshotFromPages(pagesJsonArray);
             if (pages.length === 0) return state.versionHistory;
             const calendarPageConfig = cloneTimelineValue(state.calendarPageConfig || null, null);
-            const contentHash = timelineSnapshotHash(pages, calendarPageConfig, state.exportName);
+            const contentHash = options.contentHash || timelineSnapshotHash(pages, calendarPageConfig, state.exportName);
             const last = state.versionHistory[state.versionHistory.length - 1];
             if (!isMilestone && last?.contentHash === contentHash) {
                 return state.versionHistory;
@@ -30731,24 +30861,7 @@
         async function encodeVersionHistoryForKeywords(history) {
             if (!Array.isArray(history) || history.length === 0) return '';
             try {
-                let safeHistory = normalizeTimelineHistory(history);
-                let archive = timelineArchiveCore.createArchive(safeHistory);
-                let compressed = await compressToBase64(JSON.stringify(archive));
-                while (compressed.length > VERSION_HISTORY_EMBED_BUDGET && safeHistory.length > 1) {
-                    let dropIndex = safeHistory.findIndex((entry, index) => index < safeHistory.length - 1 && !entry.isMilestone);
-                    if (dropIndex < 0) {
-                        dropIndex = safeHistory.findIndex((entry, index) => index < safeHistory.length - 1 && entry.kind !== 'baseline');
-                    }
-                    if (dropIndex < 0) dropIndex = 0;
-                    safeHistory.splice(dropIndex, 1);
-                    archive = timelineArchiveCore.createArchive(safeHistory);
-                    compressed = await compressToBase64(JSON.stringify(archive));
-                }
-                if (compressed.length > VERSION_HISTORY_EMBED_BUDGET) {
-                    console.warn('Timeline snapshot is too large to embed safely; local recovery history is retained.');
-                    return '';
-                }
-                return compressed;
+                return (await prepareTimelineArchive(normalizeTimelineHistory(history))).encoded;
             } catch (err) {
                 console.warn('Could not encode version history:', err);
                 return '';
@@ -30763,9 +30876,8 @@
             const semi = payload.indexOf(';');
             if (semi >= 0) payload = payload.substring(0, semi);
             try {
-                const parsed = await parseEmbeddedMetadataPayload(payload, true);
-                const materialized = timelineArchiveCore.materializeArchive(parsed);
-                return Array.isArray(materialized) ? normalizeTimelineHistory(materialized) : null;
+                const json = await window.InhouseDocumentProcessing.run('decodeTimeline', { payload });
+                return normalizeWorkerTimeline(JSON.parse(json));
             } catch (err) {
                 console.warn('Could not decode version history:', err);
                 return null;
@@ -30917,6 +31029,7 @@
         // Mirrors `pdfExportCache` so consecutive Drive saves don't re-render
         // unchanged pages. Cleared on document switch / state reset.
         const pdfLibOverlayCache = new Map(); // pageIndex -> { hash, pngBytes, bounds }
+        let pdfOverlayBuildVersion = 0;
 
         // Cache of the parsed pdf-lib document for the clean original bytes —
         // avoids re-parsing the source PDF on every autosave (saves hundreds of
@@ -31043,9 +31156,13 @@
         // Falls back to the raster pipeline (caller's responsibility) on any error
         // or when prerequisites are missing.
         async function buildPdfBlobWithPdfLib(options = {}) {
-            const PDFLib = window.PDFLib;
+            let PDFLib = window.PDFLib;
             if (!PDFLib) throw new Error('pdf-lib not loaded');
             if (!canBuildCurrentPdfWithPdfLib()) throw new Error('PDF backgrounds are not available');
+            if (!options.forceMainThread && window.InhouseDocumentProcessing && typeof Worker === 'function') {
+                try { PDFLib = await window.InhouseDocumentProcessing.pdfLib(PDFLib); }
+                catch (error) { console.warn('PDF worker unavailable; using compatible export:', error); }
+            }
 
             const abortSignal = options.signal || null;
             const sessionToken = Number.isFinite(options.sessionToken)
@@ -31054,6 +31171,7 @@
             const updateSaveStatus = options.status !== false;
             const isMobileLike = detectDeviceType() !== 'pc';
             const interactionPollMs = isMobileLike ? 16 : 24;
+            let lastExportYield = performance.now();
 
             const throwIfAborted = () => {
                 if (!abortSignal?.aborted) return;
@@ -31074,8 +31192,9 @@
                     throwIfAborted();
                     throwIfSessionInvalid();
                     if (updateSaveStatus) showStatus('Building PDF...', { phase: 'building' });
-                } else if (force || hasPendingUserInput()) {
-                    await yieldToMainThread();
+                } else if (force || hasPendingUserInput() || performance.now() - lastExportYield >= 4) {
+                    await yieldProcessingForUi();
+                    lastExportYield = performance.now();
                     throwIfAborted();
                     throwIfSessionInvalid();
                 }
@@ -31111,6 +31230,7 @@
                 : null;
             let originalDoc = cleanOriginalBytes
                 && _pdfLibOriginalCache.bytesRef === cleanOriginalBytes
+                && _pdfLibOriginalCache.backend === PDFLib
                 ? _pdfLibOriginalCache.doc
                 : null;
             if (!originalDoc && cleanOriginalBytes) {
@@ -31120,10 +31240,12 @@
                     updateMetadata: false
                 });
                 _pdfLibOriginalCache.bytesRef = state.cleanOriginalPdfBytes;
+                _pdfLibOriginalCache.backend = PDFLib;
                 _pdfLibOriginalCache.doc = originalDoc;
             }
             await yieldToUI();
             const outDoc = await PDFLib.PDFDocument.create();
+            try {
 
             // Plan which original pages to copy (batch copy is much faster than per-page).
             const sourceIndices = [];
@@ -31153,6 +31275,7 @@
             const overlayCanvas = createProcessingCanvas(1, 1);
             const overlayCtx = overlayCanvas.getContext('2d');
             const metadataParts = [];
+            const metadataPages = [];
             const templateBackgroundImageCache = new Map();
             const customBackgroundImageCache = new Map();
             // Track each overlay XObject's ref number so future reopens can
@@ -31174,7 +31297,7 @@
                 let pageWidthPx, pageHeightPx;
 
                 if (sourceIdx !== null && copiedPages[sourceIdx]) {
-                    outPage = outDoc.addPage(copiedPages[sourceIdx]);
+                    outPage = await outDoc.addPage(copiedPages[sourceIdx]);
                     const sz = outPage.getSize();
                     pageWidthPt = sz.width;
                     pageHeightPt = sz.height;
@@ -31185,8 +31308,8 @@
                     pageHeightPx = logicalPageHeightPx;
                     pageWidthPt = pageWidthPx * PX_TO_PT;
                     pageHeightPt = pageHeightPx * PX_TO_PT;
-                    outPage = outDoc.addPage([pageWidthPt, pageHeightPt]);
-                    outPage.drawRectangle({
+                    outPage = await outDoc.addPage([pageWidthPt, pageHeightPt]);
+                    await outPage.drawRectangle({
                         x: 0, y: 0,
                         width: pageWidthPt, height: pageHeightPt,
                         color: PDFLib.rgb(1, 1, 1)
@@ -31208,7 +31331,7 @@
                             }
                         }
                         if (embedded) {
-                            outPage.drawImage(embedded, {
+                            await outPage.drawImage(embedded, {
                                 x: 0, y: 0,
                                 width: pageWidthPt, height: pageHeightPt
                             });
@@ -31245,7 +31368,7 @@
                             tplCanvas.height = 0;
                         }
                         if (embedded) {
-                            outPage.drawImage(embedded, {
+                            await outPage.drawImage(embedded, {
                                 x: 0, y: 0,
                                 width: pageWidthPt, height: pageHeightPt
                             });
@@ -31302,8 +31425,8 @@
                 const pageStrokeEntry = {
                     pageId: pageData.pageId,
                     strokes: compactStrokes,
-                    images: Array.isArray(pageData.images) ? pageData.images : [],
-                    deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
+                    images: cloneTimelineValue(Array.isArray(pageData.images) ? pageData.images : []),
+                    deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? [...pageData.deletedStrokeIds] : [],
                     deletedStrokeStamps: ihnNormalizeDeletionStamps(
                         pageData.deletedStrokeStamps,
                         pageData.deletedStrokeIds
@@ -31314,9 +31437,11 @@
                     pdfPageIndex: (pageData.backgroundSource === 'pdf' || !!pageData.backgroundImage) ? (i + 1) : null,
                     pageWidth: logicalPageWidthPx,
                     pageHeight: logicalPageHeightPx,
-                    sidePanel: shouldRenderPageCalendarPanels() ? (pageData.sidePanel || null) : null
+                    sidePanel: shouldRenderPageCalendarPanels() ? cloneTimelineValue(pageData.sidePanel || null) : null
                 };
                 metadataParts.push(JSON.stringify(pageStrokeEntry));
+                metadataPages.push(pageStrokeEntry);
+                await yieldToUI(true);
 
                 // Keep the original 2x/2.5x resolution, but encode only the
                 // occupied rectangle instead of a transparent full-page PNG.
@@ -31343,11 +31468,23 @@
                     && cached.exportProfile === exportProfile;
                 const pageHash = cachedHashIsCurrent
                     ? cached.hash
-                    : `${computePageHash(pageData)}|${exportProfile}|logical:${logicalPageWidthPx}x${logicalPageHeightPx}|pdf:${pageWidthPx}x${pageHeightPx}`;
+                    : `${sessionToken}:${i}:${mutationGeneration}:${++pdfOverlayBuildVersion}:${exportProfile}`;
                 let pngBytes = null;
                 if (cached && cached.hash === pageHash && cached.pngBytes && cached.bounds) {
                     pngBytes = cached.pngBytes;
                     overlayBounds = cached.bounds;
+                }
+
+                if (!pngBytes && window.InhouseDocumentProcessing && typeof OffscreenCanvas === 'function') {
+                    try {
+                        await yieldToUI(true);
+                        pngBytes = await window.InhouseDocumentProcessing.run('renderOverlay', {
+                            json: JSON.stringify({ strokes: exportStrokes, images: pageData.images || [] }),
+                            bounds: overlayBounds, scale: overlayScale
+                        });
+                    } catch (error) {
+                        console.warn('Worker overlay unavailable; using compatible renderer:', error);
+                    }
                 }
 
                 if (!pngBytes) {
@@ -31398,22 +31535,18 @@
                         throw new Error('Failed to encode overlay PNG');
                     }
                     pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
-                    pdfLibOverlayCache.set(i, {
-                        hash: pageHash,
-                        pngBytes,
-                        bounds: overlayBounds,
-                        pageRef: pageData,
-                        mutationGeneration,
-                        exportProfile
-                    });
                 }
+                pdfLibOverlayCache.set(i, {
+                    hash: pageHash, pngBytes, bounds: overlayBounds,
+                    pageRef: pageData, mutationGeneration, exportProfile
+                });
 
                 throwIfAborted();
                 throwIfSessionInvalid();
                 const overlayImg = await outDoc.embedPng(pngBytes);
                 const scaleX = pageWidthPt / logicalPageWidthPx;
                 const scaleY = pageHeightPt / logicalPageHeightPx;
-                outPage.drawImage(overlayImg, {
+                await outPage.drawImage(overlayImg, {
                     x: overlayBounds.x * scaleX,
                     y: pageHeightPt - ((overlayBounds.y + overlayBounds.height) * scaleY),
                     width: overlayBounds.width * scaleX,
@@ -31422,7 +31555,7 @@
                 // Capture the XObject NAME pdf-lib assigned for our overlay so the
                 // reopen path can surgically strip it via Resources/XObject delete.
                 // Names round-trip through save/load cleanly (object numbers don't).
-                let capturedName = null;
+                let capturedName = overlayImg.workerDrawName || null;
                 let capturedRefNum = null;
                 try {
                     const PDFName = PDFLib.PDFName;
@@ -31473,7 +31606,7 @@
             await yieldToUI(true);
             let encodedMetadata, metaPrefix;
             try {
-                encodedMetadata = await compressToBase64(metadataString);
+                encodedMetadata = await window.InhouseDocumentProcessing.run('compress', { json: metadataString });
                 metaPrefix = 'STROKES_Z:';
             } catch (compressErr) {
                 console.warn('Metadata compression failed, using uncompressed:', compressErr);
@@ -31501,9 +31634,18 @@
             const encodedFields = encodeCollabFieldsForKeywords();
             if (encodedFields) keywordsPayload += `;IH_FIELDS:${encodedFields}`;
             let pagesParsedForSync = [];
+            let savedContentHash = '';
             try {
-                pagesParsedForSync = metadataParts.map(s => JSON.parse(s));
-                const encodedSync = encodeDriveSyncEnvelope(pagesParsedForSync);
+                pagesParsedForSync = metadataPages;
+                savedContentHash = await window.InhouseDocumentProcessing.run('contentHash', {
+                    json: metadataString, structure: getCollabStructureSnapshot(),
+                    fields: getCollabFieldSnapshot(), calendar: state.calendarPageConfig || null,
+                    name: state.exportName || ''
+                });
+                const encodedSync = btoa(unescape(encodeURIComponent(JSON.stringify({
+                    v: 1, writer: getPresenceClientId(), contentHash: savedContentHash,
+                    contentVersion: driveContentVersion
+                }))));
                 if (encodedSync) keywordsPayload += `;${DRIVE_SYNC_KEYWORD}${encodedSync}`;
             } catch (syncErr) {
                 console.warn('Failed to add Drive sync identity:', syncErr);
@@ -31515,7 +31657,14 @@
                 const pagesParsed = pagesParsedForSync.length
                     ? pagesParsedForSync
                     : metadataParts.map(s => JSON.parse(s));
-                const updatedHistory = captureVersionSnapshot(pagesParsed);
+                await yieldToUI(true);
+                const timelinePages = buildTimelineSnapshotFromPages(pagesParsed, true);
+                const timelineHash = await window.InhouseDocumentProcessing.run('timelineHash', {
+                    json: JSON.stringify({ pages: timelinePages, calendarPageConfig: state.calendarPageConfig || null,
+                        exportName: String(state.exportName || '') })
+                });
+                throwIfSessionInvalid();
+                const updatedHistory = captureVersionSnapshot(timelinePages, { contentHash: timelineHash });
                 const encodedHistory = await encodeVersionHistoryForKeywords(updatedHistory);
                 if (encodedHistory) {
                     keywordsPayload += `;${VERSION_HISTORY_KEYWORD}${encodedHistory}`;
@@ -31524,10 +31673,10 @@
                 console.warn('Failed to capture version snapshot:', versionErr);
             }
             try {
-                outDoc.setKeywords([keywordsPayload]);
-                outDoc.setTitle('Cuaderno Digital');
-                outDoc.setSubject('Notas con S-Pen');
-                outDoc.setCreator('Cuaderno Digital App');
+                await outDoc.setKeywords([keywordsPayload]);
+                await outDoc.setTitle('Cuaderno Digital');
+                await outDoc.setSubject('Notas con S-Pen');
+                await outDoc.setCreator('Cuaderno Digital App');
             } catch (metaErr) {
                 console.warn('Failed to set output metadata:', metaErr);
             }
@@ -31559,9 +31708,7 @@
             throwIfSessionInvalid();
 
             const blob = new Blob([finalBytes], { type: 'application/pdf' });
-            blob.inhouseContentHash = pagesParsedForSync.length
-                ? createDriveSyncEnvelope(pagesParsedForSync).contentHash
-                : '';
+            blob.inhouseContentHash = savedContentHash;
             blob.inhouseOpenCacheAnalysis = {
                 keywords: keywordsPayload,
                 embeddedStrokes: null
@@ -31582,6 +31729,9 @@
                 }
             }
             return blob;
+            } finally {
+                if (outDoc.dispose) await outDoc.dispose();
+            }
         }
 
         // Marks every PDF-background page as needing a white "legacy cover" instead
@@ -31604,11 +31754,16 @@
         }
 
         async function buildPdfBlob(options = {}) {
+            const buildSession = getDocumentSessionToken();
+            // Preserve the embedded history even when Timeline was never opened.
+            await ensureVersionHistoryRestored();
+            if (!isDocumentSessionTokenValid(buildSession)) throw createAbortError('Document session replaced');
             // Never export from the temporary baked-overlay source while its
             // clean original is being recovered in the background. The editor
             // remains usable; only PDF generation waits for this safety step.
             const cleanRecovery = cleanOriginalRecoveryPromise;
             if (cleanRecovery) {
+                startCleanOriginalRecovery?.();
                 await cleanRecovery;
                 if (options.signal?.aborted) throw createAbortError('PDF build aborted');
                 const sessionToken = Number.isFinite(options.sessionToken)
@@ -31633,7 +31788,8 @@
                 let lastErr = null;
                 for (let attempt = 0; attempt < 2; attempt++) {
                     try {
-                        const result = await buildPdfBlobWithPdfLib(options);
+                        const result = await buildPdfBlobWithPdfLib({ ...options,
+                            forceMainThread: options.forceMainThread || attempt > 0 });
                         if (result) return result;
                         break;
                     } catch (err) {
@@ -32369,6 +32525,54 @@
             const ready = () => Promise.resolve(initializationPromise);
             window.__IHN_TEST_API__ = Object.freeze({
                 ready,
+                async seedDensePageForTest(count = 2400, points = 100) {
+                    await this.resetLocalDocument(1, 'Dense handwriting');
+                    const page = state.pages[0];
+                    page.strokes = Array.from({ length: count }, (_, index) => ({
+                        id: `dense-${index}`, tool: 'pen', color: '#123456', width: 1.5,
+                        points: Array.from({ length: points }, (_, p) => ({
+                            x: 30 + (index % 30) * 22 + p * 0.12,
+                            y: 30 + Math.floor(index / 30) * 10 + Math.sin(p * 0.3) * 3,
+                            p: 0.5
+                        }))
+                    }));
+                    page.strokeCount = count;
+                    setReadOnlyMode(false, { force: true });
+                    showEditorView();
+                    renderAllPages();
+                },
+                redrawDensePageForTest() {
+                    const start = performance.now();
+                    redrawPage(0);
+                    return performance.now() - start;
+                },
+                densePaintStatusForTest() {
+                    const canvas = document.querySelector('canvas.page-canvas[data-page="0"]');
+                    const scale = getPageCanvasRenderScale(canvas, getPageDimensions(0).width);
+                    return {
+                        pending: !!pendingPageRepaints.get(canvas),
+                        count: state.pages[0]?.strokes?.length,
+                        pixel: Array.from(canvas.getContext('2d').getImageData(Math.round(20 * scale), Math.round(20 * scale), 1, 1).data)
+                    };
+                },
+                async compareWorkerInkForTest(strokes) {
+                    const expected = document.createElement('canvas');
+                    expected.width = expected.height = 128;
+                    for (const stroke of strokes) if (stroke.tool !== 'eraser-stroke') drawSmoothStroke(expected.getContext('2d'), stroke);
+                    const bytes = await window.InhouseDocumentProcessing.run('renderOverlay', {
+                        json: JSON.stringify({ strokes, images: [] }),
+                        bounds: { x: 0, y: 0, width: 128, height: 128 }, scale: 1
+                    });
+                    const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+                    const actual = document.createElement('canvas');
+                    actual.width = actual.height = 128;
+                    actual.getContext('2d').drawImage(bitmap, 0, 0); bitmap.close();
+                    const a = expected.getContext('2d').getImageData(0, 0, 128, 128).data;
+                    const b = actual.getContext('2d').getImageData(0, 0, 128, 128).data;
+                    let difference = 0;
+                    for (let i = 0; i < a.length; i++) difference = Math.max(difference, Math.abs(a[i] - b[i]));
+                    return difference;
+                },
                 async resetLocalDocument(pageCount = 2, name = 'E2E document') {
                     await ready();
                     resetPdfState();
@@ -32608,10 +32812,12 @@
                     markPageDirty(0, 'full');
                     return this.snapshot();
                 },
-                async buildPdfBlobForTest() {
+                async buildPdfBlobForTest(options = {}) {
                     await ready();
+                    if (options.milestone) state.pendingVersionHint = { milestone: true, kind: 'manual', summary: options.milestone };
+                    if (options.queued) driveSaveQueued = true;
                     try {
-                        const blob = await buildPdfBlob({ status: false });
+                        const blob = await buildPdfBlob({ status: false, ...options });
                         // Inspect with pdf.js (not pdf-lib) to match exactly how
                         // extractCleanOriginalAttachment reads it back in production —
                         // pdf-lib's PDFDocument in this version has .attach() but no
@@ -32632,7 +32838,9 @@
                             size: blob ? blob.size : 0,
                             hasLegacyBakedOverlay: !!state.hasLegacyBakedOverlay,
                             legacyCoverPageCount: state.pages.filter(p => p && p.legacyCoverStrokes).length,
-                            hasCleanOriginalAttachment
+                            hasCleanOriginalAttachment,
+                            bytes: options.includeBytes ? Array.from(new Uint8Array(await blob.arrayBuffer())) : undefined,
+                            history: state.versionHistory.map(entry => ({ id: entry.id, summary: entry.summary }))
                         };
                     } catch (err) {
                         return {
@@ -32640,9 +32848,11 @@
                             error: (err && err.message) || String(err),
                             hasLegacyBakedOverlay: !!state.hasLegacyBakedOverlay
                         };
+                    } finally {
+                        if (options.queued) driveSaveQueued = false;
                     }
                 },
-                async uploadBlobResumableForTest(byteLength = 600 * 1024) {
+                async uploadBlobResumableForTest(byteLength = 600 * 1024, simulateActiveSave = false) {
                     await ready();
                     driveSignedOut = false;
                     driveAccessToken = 'e2e-resumable-upload-token';
@@ -32650,14 +32860,26 @@
                     const bytes = new Uint8Array(Math.max(1, Number(byteLength) || 1));
                     bytes.fill(0x25);
                     const blob = new Blob([bytes], { type: 'application/pdf' });
-                    return uploadDriveBlobResumable({
+                    const controller = new AbortController();
+                    if (simulateActiveSave) {
+                        driveSaveInProgress = true;
+                        driveSavePhase = 'uploading';
+                        activeDriveSaveController = controller;
+                    }
+                    try { return await uploadDriveBlobResumable({
                         url: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id',
                         method: 'POST',
                         metadata: { name: 'Resumable upload test.pdf', mimeType: 'application/pdf' },
                         blob,
                         resumeKey: 'e2e-resumable-upload',
-                        options: {}
-                    });
+                        options: { signal: controller.signal }
+                    }); } finally {
+                        if (simulateActiveSave) {
+                            driveSaveInProgress = false;
+                            driveSavePhase = 'idle';
+                            activeDriveSaveController = null;
+                        }
+                    }
                 }
             });
         }
