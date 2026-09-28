@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.29",
-  "releaseNotes": "Inhouse Notes v5.11.29 / Android 1.0.10: pan and pinch no longer scan every page or read viewport layout on each frame; canvas/page reconciliation waits until interaction ends, and gesture activity no longer repeatedly interrupts saves per pointer sample."
+  "publishedAppVersion": "5.11.30",
+  "releaseNotes": "Inhouse Notes v5.11.30 / Android 1.0.10: opening documents no longer renders every page preview up front; page visibility is calculated from cached geometry instead of measuring every DOM page; Edit mode defers page rescans and PDF prewarming until idle."
 }

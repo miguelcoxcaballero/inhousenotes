@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.29');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.30');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -62,6 +62,32 @@ test('pen-down paints its first point without rebuilding a stale page canvas', a
     type: 'mouseReleased', x: target.x, y: target.y,
     button: 'left', buttons: 0, clickCount: 1, pointerType: 'pen'
   });
+});
+
+test('mode changes do not measure every page wrapper in the document', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  await page.evaluate(async () => {
+    const api = window.__IHN_TEST_API__;
+    await api.ready();
+    await api.resetLocalDocument(12, 'Mode change performance');
+    await api.showEditorForTest();
+  });
+  const measuredWrappers = await page.evaluate(async () => {
+    const original = Element.prototype.getBoundingClientRect;
+    let count = 0;
+    Element.prototype.getBoundingClientRect = function (...args) {
+      if (this.matches?.('.page-wrapper[data-page]')) count += 1;
+      return original.apply(this, args);
+    };
+    const toggle = document.getElementById('mode-toggle-btn');
+    toggle.click();
+    toggle.click();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    Element.prototype.getBoundingClientRect = original;
+    return count;
+  });
+  expect(measuredWrappers).toBe(0);
 });
 
 test('manage pages opens the embedded Inhouse Scanner below Photo', async ({ page }) => {

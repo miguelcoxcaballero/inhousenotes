@@ -2088,6 +2088,8 @@
         let cachedPageBounds = null;
         let cachedPageBoundsOwner = null;
         let cachedPageBoundsCount = -1;
+        let cachedPageLayoutMetrics = null;
+        let cachedPageLayoutCalendarEnabled = null;
         let pendingViewState = null;
         let saveTimestampInterval = null;
         let lastPenBackgroundTap = null;
@@ -2347,11 +2349,25 @@
             } else {
                 updateHistoryButtons();
                 updateSaveTimestamp();
-                scheduleVisiblePageUpdate(true);
-                // Pre-warm PDF cache when entering edit mode so first save is fast
+                // The canvases are already visible; avoid a forced page/layout
+                // rescan on a mode toggle. The normal visibility pass is enough.
+                scheduleVisiblePageUpdate();
+                // PDF prewarming touches every template page. Wait for genuine
+                // idle time so changing to Edit never starts a CPU-heavy job.
                 if (state.driveAutosave && detectDeviceType() === 'pc' && !prewarmPdfCache._running) {
                     prewarmPdfCache._running = true;
-                    setTimeout(() => prewarmPdfCache().catch(() => {}).finally(() => { prewarmPdfCache._running = false; }), 200);
+                    const runPrewarm = () => {
+                        if (state.isReadOnly || isViewportInteracting() || isPenWriting || hasPendingUserInput()) {
+                            prewarmPdfCache._running = false;
+                            return;
+                        }
+                        prewarmPdfCache().catch(() => {}).finally(() => { prewarmPdfCache._running = false; });
+                    };
+                    if ('requestIdleCallback' in window) {
+                        setTimeout(() => requestIdleCallback(runPrewarm, { timeout: 4000 }), 1500);
+                    } else {
+                        setTimeout(runPrewarm, 1800);
+                    }
                 }
             }
             updateCalendarFeatureAvailability();
@@ -2551,22 +2567,14 @@
 
         function getPageTopOffset(pageIndex) {
             const idx = Math.max(0, Math.min(state.pages.length, pageIndex));
-            const row = canvasContainer?.querySelector?.('.page-row[data-page-row="' + idx + '"]');
-            const wrapper = row?.querySelector?.('.page-wrapper');
-            if (row && wrapper) {
-                return row.offsetTop + wrapper.offsetTop;
-            }
-            let y = PAGE_PADDING;
-            for (let i = 0; i < idx; i++) {
-                const { height } = getPageDimensions(i);
-                y += height + getPageCalendarPanelSpace(i) + PAGE_GAP;
-            }
-            return y;
+            const metrics = getPageLayoutMetrics();
+            if (idx < metrics.tops.length) return metrics.tops[idx];
+            return metrics.contentBottom + (metrics.pageCount > 0 ? PAGE_GAP : 0);
         }
 
         function getPageCalendarPanelSpace(pageIndex) {
             const page = state.pages[pageIndex];
-            return page && page.sidePanel && shouldRenderPageCalendarPanels()
+            return page && page.sidePanel && cachedPageLayoutCalendarEnabled
                 ? PAGE_CALENDAR_PANEL_HEIGHT + PAGE_CALENDAR_PANEL_GAP
                 : 0;
         }
@@ -3644,32 +3652,13 @@
             if (!rect.height) return { start: 0, end: -1 };
             const viewTop = (-state.panY) / state.zoom;
             const viewBottom = (rect.height - state.panY) / state.zoom;
-            let firstVisible = -1;
-            let lastVisible = -1;
-            let y = PAGE_PADDING;
-            for (let i = 0; i < state.pages.length; i++) {
-                const pageHeight = getPageHeight(i);
-                const row = canvasContainer?.querySelector?.('.page-row[data-page-row="' + i + '"]');
-                const wrapper = row?.querySelector?.('.page-wrapper');
-                const top = row && wrapper ? row.offsetTop + wrapper.offsetTop : y;
-                const bottom = top + pageHeight;
-                if (bottom >= viewTop && top <= viewBottom) {
-                    if (firstVisible === -1) firstVisible = i;
-                    lastVisible = i;
-                } else if (firstVisible !== -1 && top > viewBottom) {
-                    break;
-                }
-                y = bottom + getPageCalendarPanelSpace(i) + PAGE_GAP;
-            }
-            if (firstVisible === -1) {
-                if (state.pages.length === 0) return { start: 0, end: -1 };
-                if (viewTop < PAGE_PADDING) {
-                    firstVisible = 0;
-                    lastVisible = 0;
-                } else {
-                    firstVisible = state.pages.length - 1;
-                    lastVisible = state.pages.length - 1;
-                }
+            const metrics = getPageLayoutMetrics();
+            const firstVisible = findFirstPageWhoseBottomReaches(metrics, viewTop);
+            const lastVisible = findLastPageWhoseTopPrecedes(metrics, viewBottom);
+            if (firstVisible < 0 || lastVisible < firstVisible) {
+                if (!state.pages.length) return { start: 0, end: -1 };
+                const nearest = viewTop < PAGE_PADDING ? 0 : state.pages.length - 1;
+                return { start: nearest, end: nearest };
             }
             const buffer = Number.isFinite(bufferOverride) ? bufferOverride : VISIBLE_PAGE_BUFFER;
             let start = Math.max(0, firstVisible - buffer);
@@ -3682,23 +3671,19 @@
             if (!rect.width || !rect.height) return [];
             const extraY = Math.max(0, rect.height * extraViewportBuffer);
             const extraX = Math.max(0, rect.width * 0.25);
-            const top = rect.top - extraY;
-            const bottom = rect.bottom + extraY;
-            const left = rect.left - extraX;
-            const right = rect.right + extraX;
+            const viewTop = (-state.panY - extraY) / state.zoom;
+            const viewBottom = (rect.height - state.panY + extraY) / state.zoom;
+            const viewLeft = (-state.panX - extraX) / state.zoom;
+            const viewRight = (rect.width - state.panX + extraX) / state.zoom;
+            const metrics = getPageLayoutMetrics();
+            const first = findFirstPageWhoseBottomReaches(metrics, viewTop);
+            const last = findLastPageWhoseTopPrecedes(metrics, viewBottom);
             const indices = [];
-            canvasContainer.querySelectorAll('.page-wrapper[data-page]').forEach(wrapper => {
-                const index = parseInt(wrapper.dataset.page || '-1', 10);
-                if (!Number.isFinite(index) || index < 0 || index >= state.pages.length) return;
-                const pageRect = wrapper.getBoundingClientRect();
-                if (!pageRect.width || !pageRect.height) return;
-                const intersects = pageRect.bottom >= top
-                    && pageRect.top <= bottom
-                    && pageRect.right >= left
-                    && pageRect.left <= right;
-                if (intersects) indices.push(index);
-            });
-            indices.sort((a, b) => a - b);
+            for (let index = Math.max(0, first); index <= Math.min(metrics.pageCount - 1, last); index += 1) {
+                if (metrics.rights[index] >= viewLeft && metrics.lefts[index] <= viewRight) {
+                    indices.push(index);
+                }
+            }
             return indices;
         }
 
@@ -3744,8 +3729,14 @@
             let directlyVisibleIndices = [];
             const domDirectIndices = getViewportVisiblePageIndices(0);
             if (domDirectIndices.length > 0) {
-                directlyVisibleIndices = domDirectIndices;
-                visibleIndices = expandPageIndices(domDirectIndices, buffer);
+                const rect = canvasViewport.getBoundingClientRect();
+                const viewCenterY = (-state.panY + rect.height / 2) / state.zoom;
+                directlyVisibleIndices = domDirectIndices
+                    .slice()
+                    .sort((a, b) => Math.abs(getPageCenterOffset(a) - viewCenterY)
+                        - Math.abs(getPageCenterOffset(b) - viewCenterY))
+                    .slice(0, MAX_ACTIVE_PAGES);
+                visibleIndices = expandPageIndices(directlyVisibleIndices, buffer);
                 range = {
                     start: visibleIndices[0],
                     end: visibleIndices[visibleIndices.length - 1]
@@ -3792,7 +3783,11 @@
                 && state.activePageIndex <= range.end) {
                 addOrderedActive(state.activePageIndex);
             }
-            directlyVisibleIndices.forEach(index => addOrderedActive(index));
+            for (const index of directlyVisibleIndices) {
+                if (activeSet.has(index)) continue;
+                if (activeSet.size >= MAX_ACTIVE_PAGES) break;
+                addOrderedActive(index);
+            }
             for (const item of candidates) {
                 if (activeSet.size >= MAX_ACTIVE_PAGES) break;
                 addOrderedActive(item.index);
@@ -5891,6 +5886,10 @@
 
         function updateCalendarFeatureAvailability() {
             const canUseCalendar = canUseAgendaCalendarForCurrentDocument();
+            if (cachedPageLayoutCalendarEnabled !== canUseCalendar) {
+                cachedPageLayoutCalendarEnabled = canUseCalendar;
+                invalidatePageBoundsCache();
+            }
             if (openCalendarBtn) {
                 openCalendarBtn.classList.toggle('hidden', !canUseCalendar);
                 openCalendarBtn.disabled = !canUseCalendar;
@@ -12399,14 +12398,6 @@
                 const { width: pageWidth, height: pageHeight } = getPageDimensions(index);
                 wrapper.style.width = `${pageWidth}px`;
                 wrapper.style.height = `${pageHeight}px`;
-                if (page && !page.preview && !page.unloaded) {
-                    const hasContent = (Array.isArray(page.strokes) && page.strokes.length > 0)
-                        || page.backgroundImage || page.bakedBackground
-                        || (Array.isArray(page.images) && page.images.length > 0);
-                    if (hasContent) {
-                        page.preview = renderPagePreview(index);
-                    }
-                }
                 const pageNumber = document.createElement('div');
                 pageNumber.className = 'page-number';
                 pageNumber.textContent = `${index + 1}`;
@@ -15148,58 +15139,99 @@
         }
 
         function getContentHeight() {
-            const pageCount = state.pages.length;
-            const gap = PAGE_GAP;
-            const padding = PAGE_PADDING;
-            if (pageCount === 0) return 0;
-            let totalPageHeight = 0;
-            for (let i = 0; i < pageCount; i++) {
-                totalPageHeight += getPageHeight(i) + getPageCalendarPanelSpace(i);
-            }
-            const computedHeight = padding * 2 + totalPageHeight + Math.max(0, pageCount - 1) * gap;
-            let domPagesHeight = 0;
-            const rows = canvasContainer?.querySelectorAll?.('.page-row[data-page-row]');
-            if (rows && rows.length > 0) {
-                rows.forEach(row => {
-                    domPagesHeight = Math.max(domPagesHeight, row.offsetTop + row.offsetHeight + padding);
-                });
-            }
-            return Math.max(computedHeight, domPagesHeight);
+            if (!state.pages.length) return 0;
+            return getPageLayoutMetrics().contentBottom + PAGE_PADDING;
         }
 
-        function getPageBounds() {
-            if (cachedPageBounds && cachedPageBoundsOwner === state.pages
-                && cachedPageBoundsCount === state.pages.length) {
-                return cachedPageBounds;
+        function getPageLayoutMetrics() {
+            if (cachedPageLayoutCalendarEnabled === null) {
+                cachedPageLayoutCalendarEnabled = shouldRenderPageCalendarPanels();
             }
-            const pageCount = state.pages.length || 1;
-            const gap = PAGE_GAP;
+            const calendarEnabled = cachedPageLayoutCalendarEnabled === true;
+            if (cachedPageLayoutMetrics
+                && cachedPageBoundsOwner === state.pages
+                && cachedPageBoundsCount === state.pages.length
+                && cachedPageLayoutMetrics.calendarEnabled === calendarEnabled) {
+                return cachedPageLayoutMetrics;
+            }
+            const pageCount = state.pages.length;
             const padding = PAGE_PADDING;
-            let pageHeight = 0;
-            if (state.pages.length === 0) {
-                pageHeight = A4_HEIGHT;
+            const maxWidth = getMaxPageWidth();
+            const tops = [];
+            const bottoms = [];
+            const lefts = [];
+            const rights = [];
+            let y = padding;
+            if (pageCount === 0) {
+                tops.push(padding);
+                bottoms.push(padding + A4_HEIGHT);
+                lefts.push(padding);
+                rights.push(padding + A4_WIDTH);
+                y = padding + A4_HEIGHT;
             } else {
-                for (let i = 0; i < state.pages.length; i++) {
-                    pageHeight += getPageHeight(i) + getPageCalendarPanelSpace(i);
+                for (let index = 0; index < pageCount; index += 1) {
+                    const { width, height } = getPageDimensions(index);
+                    const left = padding + (maxWidth - width) / 2;
+                    tops.push(y);
+                    bottoms.push(y + height);
+                    lefts.push(left);
+                    rights.push(left + width);
+                    y += height + getPageCalendarPanelSpace(index);
+                    if (index < pageCount - 1) y += PAGE_GAP;
                 }
             }
-            const maxWidth = getMaxPageWidth();
-            const height = pageHeight + Math.max(0, pageCount - 1) * gap;
             cachedPageBoundsOwner = state.pages;
             cachedPageBoundsCount = state.pages.length;
             cachedPageBounds = {
                 left: padding,
                 top: padding,
                 right: padding + maxWidth,
-                bottom: padding + height
+                bottom: y
             };
-            return cachedPageBounds;
+            cachedPageLayoutMetrics = {
+                pageCount: pageCount || 1,
+                tops,
+                bottoms,
+                lefts,
+                rights,
+                contentBottom: y,
+                bounds: cachedPageBounds,
+                calendarEnabled
+            };
+            return cachedPageLayoutMetrics;
+        }
+
+        function findFirstPageWhoseBottomReaches(metrics, y) {
+            let low = 0;
+            let high = metrics.bottoms.length;
+            while (low < high) {
+                const mid = (low + high) >>> 1;
+                if (metrics.bottoms[mid] < y) low = mid + 1;
+                else high = mid;
+            }
+            return low < metrics.bottoms.length ? low : -1;
+        }
+
+        function findLastPageWhoseTopPrecedes(metrics, y) {
+            let low = 0;
+            let high = metrics.tops.length;
+            while (low < high) {
+                const mid = (low + high) >>> 1;
+                if (metrics.tops[mid] <= y) low = mid + 1;
+                else high = mid;
+            }
+            return low > 0 ? low - 1 : -1;
+        }
+
+        function getPageBounds() {
+            return getPageLayoutMetrics().bounds;
         }
 
         function invalidatePageBoundsCache() {
             cachedPageBounds = null;
             cachedPageBoundsOwner = null;
             cachedPageBoundsCount = -1;
+            cachedPageLayoutMetrics = null;
         }
 
         // ── § 4.9  Viewport transform ─────────────────────────────────────────
@@ -21570,6 +21602,16 @@
             const page = state.pages[pageIndex];
             const wrapper = document.querySelector(`.page-wrapper[data-page="${pageIndex}"]`);
             if (!wrapper) return;
+            const hasPreviewableContent = page && (
+                (Array.isArray(page.strokes) && page.strokes.length > 0)
+                || (Array.isArray(page.images) && page.images.length > 0)
+                || page.backgroundImage
+                || page.bakedBackground
+            );
+            if (!page?.preview && hasPreviewableContent && !page.unloaded && !activePageIndices.has(pageIndex)
+                && (page.backgroundSource !== 'pdf' || page.backgroundImage || page.bakedBackground)) {
+                page.preview = renderPagePreview(pageIndex);
+            }
             if (page && page.preview) {
                 wrapper.style.backgroundImage = `url("${page.preview}")`;
                 wrapper.style.backgroundSize = 'cover';
@@ -29224,6 +29266,7 @@
 
                 // Fix legacy same-ID strokes and deduplicate truly identical ones
                 if (embeddedStrokes && !metadataAlreadyNormalized) {
+                    let legacyPageIndex = 0;
                     for (const pageData of embeddedStrokes) {
                         if (pageData && Array.isArray(pageData.strokes) && pageData.strokes.length > 1) {
                             // First: assign new IDs to same-ID strokes (legacy bug)
@@ -29253,6 +29296,11 @@
                                 state.needsMigrationResave = true;
                             }
                         }
+                        legacyPageIndex += 1;
+                        if (legacyPageIndex % 3 === 0) {
+                            await yieldToMainThread();
+                            throwIfSessionInvalid();
+                        }
                     }
                 }
 
@@ -29271,7 +29319,7 @@
                 const pageSizeRefinement = [];
                 for (let i = 1; i <= numPages; i++) {
                     throwIfSessionInvalid();
-                    if (i % (cachedAnalysis ? 24 : 4) === 0) {
+                    if (i % (cachedAnalysis ? 3 : 2) === 0) {
                         await yieldToMainThread();
                         throwIfSessionInvalid();
                     }
@@ -29388,7 +29436,8 @@
                 // Persist the visible working set now; migrate the remaining
                 // pages in idle batches. Awaiting every page made large
                 // notebooks look frozen even though their data was already parsed.
-                importedPages.forEach((page, index) => {
+                for (let index = 0; index < importedPages.length; index += 1) {
+                    const page = importedPages[index];
                     if (!page.pageId) {
                         page.pageId = generateLegacyDocumentPageId(idbCacheKey, index + 1);
                     }
@@ -29396,7 +29445,11 @@
                         documentId: idbCacheKey || '',
                         pageId: page.pageId
                     });
-                });
+                    if ((index + 1) % 3 === 0) {
+                        await yieldToMainThread();
+                        throwIfSessionInvalid();
+                    }
+                }
                 await migrateLegacyPayload({
                     pages: importedPages,
                     collabStructure: state.collabStructure,
