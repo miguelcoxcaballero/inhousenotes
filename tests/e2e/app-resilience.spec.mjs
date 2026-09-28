@@ -11,7 +11,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.33');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.34');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
@@ -146,6 +146,45 @@ test('mode changes do not measure every page wrapper in the document', async ({ 
     return count;
   });
   expect(measuredWrappers).toBe(0);
+});
+
+test('opening a PDF leaves compressed timeline history untouched until Timeline is requested', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(async () => {
+    const api = window.__IHN_TEST_API__;
+    await api.ready();
+    const pdf = await window.PDFLib.PDFDocument.create();
+    pdf.addPage([595, 842]);
+    const bytes = await pdf.save();
+    await api.importPdfBlobForTest(Array.from(bytes));
+    const stayedLazy = api.hasPendingTimelineRestoreForTest();
+    const timeline = await api.openTimelineForTest();
+    return { stayedLazy, timeline };
+  });
+  expect(result.stayedLazy).toBe(true);
+  expect(result.timeline.pending).toBe(false);
+  expect(result.timeline.visible).toBe(true);
+});
+
+test('legacy page migration yields to the editor while the user is active', async ({ page }) => {
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  await page.evaluate(async () => {
+    const api = window.__IHN_TEST_API__;
+    await api.ready();
+    api.noteUserActivityForTest();
+    await api.startDeferredPageMigrationForTest(4);
+  });
+  await page.waitForTimeout(1000);
+  const state = await page.evaluate(() => window.__IHN_TEST_API__.deferredMigrationStateForTest());
+  expect(state.active).toBe(false);
+  expect(state.pendingPages).toBe(4);
+  await page.waitForFunction(
+    () => window.__IHN_TEST_API__.deferredMigrationStateForTest().pendingPages === 0,
+    null,
+    { timeout: 7000 }
+  );
 });
 
 test('manage pages opens the embedded Inhouse Scanner below Photo', async ({ page }) => {

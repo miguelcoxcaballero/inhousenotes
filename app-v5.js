@@ -918,9 +918,12 @@
                 analysis: analysis && typeof analysis.keywords === 'string'
                     ? {
                         keywords: analysis.keywords,
-                        embeddedStrokes: Array.isArray(analysis.embeddedStrokes)
-                            ? analysis.embeddedStrokes
-                            : null
+                        // The compressed keyword payload is already inside the
+                        // PDF. Persisting a second structured-clone copy of all
+                        // stroke points here caused a large post-open IndexedDB
+                        // task and kept a duplicate document-sized object alive.
+                        // Re-decode lazily from keywords on a later open instead.
+                        embeddedStrokes: null
                     }
                     : null,
                 details: {
@@ -2121,6 +2124,7 @@
         // Recover it off the opening critical path; Drive saves wait for the
         // recovery promise so an early edit can never flatten over the source.
         let cleanOriginalRecoveryPromise = null;
+        let pendingCleanOriginalSwap = false;
         let driveHydratedFileId = null;
         let driveHydrationPromise = null;
         let driveHydrationInProgress = false;
@@ -7212,7 +7216,7 @@
                             p && p.backgroundSource === 'pdf'
                             && Array.isArray(p.strokes) && p.strokes.length > 0
                         );
-                        if (hasBakedStrokes) {
+                        if (hasBakedStrokes && !pendingCleanOriginalSwap) {
                             state.hasLegacyBakedOverlay = true;
                             for (const pg of state.pages) {
                                 if (!pg || pg.backgroundSource !== 'pdf') continue;
@@ -12296,6 +12300,25 @@
         // The covers persist independently of the editable strokes array, so
         // erasing a stroke leaves the white cover behind — making the baked
         // pixels effectively erased.
+        function cloneLegacyCoverStrokes(strokes) {
+            if (!Array.isArray(strokes) || strokes.length === 0) return null;
+            return strokes.map(stroke => ({
+                ...stroke,
+                points: Array.isArray(stroke.points) ? stroke.points.map(point => ({ ...point })) : []
+            }));
+        }
+
+        function seedLegacyCoverStrokesForLoadedPages() {
+            for (const page of state.pages) {
+                if (!page || page.backgroundSource !== 'pdf' || !isPageLoaded(page)) continue;
+                if (!Array.isArray(page.strokes) || page.strokes.length === 0) continue;
+                if (Array.isArray(page.legacyCoverStrokes) && page.legacyCoverStrokes.length > 0) continue;
+                page.legacyCoverStrokes = cloneLegacyCoverStrokes(page.strokes);
+                page.needsRedraw = true;
+            }
+            scheduleVisiblePageUpdate(true);
+        }
+
         function drawLegacyCoverStrokes(ctx, page) {
             if (!Array.isArray(page?.legacyCoverStrokes) || page.legacyCoverStrokes.length === 0) return;
             ctx.save();
@@ -12356,7 +12379,7 @@
 
             // Hide strokes burnt into the page raster (legacy app-saved files
             // without a clean-original cache) before drawing user content.
-            drawLegacyCoverStrokes(ctx, page);
+            if (!pendingCleanOriginalSwap) drawLegacyCoverStrokes(ctx, page);
 
             drawImagesOnContext(ctx, page, pageIndex, redrawPage);
 
@@ -12836,6 +12859,11 @@
 
         let _selectedTimelineVersionId = null;
         let _timelinePreviewToken = 0;
+        // Version snapshots may contain a full copy of every stroke. Keep that
+        // decompression/JSON parse out of the editor-open path; restore it only
+        // when the user actually opens Timeline.
+        let pendingVersionHistoryRestore = null;
+        let versionHistoryRestorePromise = null;
         let _timelineZoom = 1;
         const TIMELINE_ZOOM_MIN = 0.2;
         const TIMELINE_ZOOM_MAX = 3;
@@ -13650,6 +13678,27 @@
         function openTimelinePanel() {
             const panel = document.getElementById('timeline-panel');
             if (!panel) return;
+            panel.setAttribute('aria-hidden', 'false');
+            panel.classList.add('visible');
+            if (pendingVersionHistoryRestore) {
+                const list = document.getElementById('timeline-list');
+                if (list) list.textContent = 'Loading timeline…';
+                const restore = pendingVersionHistoryRestore;
+                versionHistoryRestorePromise ||= Promise.resolve().then(restore).catch(error => {
+                    console.warn('Timeline history restore failed:', error);
+                });
+                versionHistoryRestorePromise.then(() => {
+                    if (pendingVersionHistoryRestore === restore) pendingVersionHistoryRestore = null;
+                    if (panel.classList.contains('visible')) renderTimelinePanelContents();
+                });
+                return;
+            }
+            renderTimelinePanelContents();
+        }
+
+        function renderTimelinePanelContents() {
+            const panel = document.getElementById('timeline-panel');
+            if (!panel || !panel.classList.contains('visible')) return;
             renderTimelineList();
             // Default selection: the most recent (current) version, so the user
             // sees a preview straight away. The Revert button will be disabled
@@ -13662,8 +13711,6 @@
                 renderTimelinePreview(null);
                 updateTimelineRevertButtonState();
             }
-            panel.setAttribute('aria-hidden', 'false');
-            panel.classList.add('visible');
         }
 
         function closeTimelinePanel() {
@@ -22135,7 +22182,10 @@
             let index = deferPageWrites ? 0 : keepCount;
             // Keep background conversion small: a large IndexedDB batch competes
             // with the first pen/touch input on mobile even when scheduled idle.
-            const batchSize = 3;
+            // A single page can contain tens of thousands of pen points. Keep
+            // deferred migration to one page per idle turn, never a multi-page
+            // burst that competes with drawing or touch gestures.
+            const batchSize = deferPageWrites ? 1 : 3;
             const migratePageRange = async (limit) => {
                 let count = 0;
                 while (index < pages.length && count < limit) {
@@ -22201,7 +22251,27 @@
                     console.warn('Deferred page migration failed:', error);
                     if (isDocumentSessionTokenValid(sessionToken)) scheduleMigrationBatch(500);
                 });
-                if (delay > 0) {
+                if (deferPageWrites) {
+                    setTimeout(() => {
+                        if (!isDocumentSessionTokenValid(sessionToken)) return;
+                        // requestIdleCallback's timeout is only a maximum wait,
+                        // not a guarantee of spare CPU. Explicitly back off
+                        // while the user is drawing, panning, zooming or typing.
+                        if (hasSmoothInteraction()
+                            || hasRecentUserActivity(1400)
+                            || saveInProgress
+                            || driveSaveInProgress
+                            || driveSaveQueued) {
+                            scheduleMigrationBatch(Math.max(
+                                500,
+                                getRecentUserActivityRemaining(1400) + 220,
+                                saveInProgress || driveSaveInProgress || driveSaveQueued ? 700 : 0
+                            ));
+                            return;
+                        }
+                        run();
+                    }, Math.max(180, delay || 360));
+                } else if (delay > 0) {
                     setTimeout(run, delay);
                 } else if ('requestIdleCallback' in window) {
                     requestIdleCallback(run, { timeout: 900 });
@@ -22245,7 +22315,7 @@
                 return task;
             };
 
-            if (index < pages.length) scheduleMigrationBatch();
+            if (index < pages.length) scheduleMigrationBatch(deferPageWrites ? 900 : 0);
             return true;
         }
 
@@ -22355,14 +22425,12 @@
                 };
                 ensureStrokeIds(next);
                 if (state.hasLegacyBakedOverlay
+                    && !pendingCleanOriginalSwap
                     && next.backgroundSource === 'pdf'
                     && Array.isArray(next.strokes)
                     && next.strokes.length > 0
                     && (!Array.isArray(next.legacyCoverStrokes) || next.legacyCoverStrokes.length === 0)) {
-                    next.legacyCoverStrokes = next.strokes.map(stroke => ({
-                        ...stroke,
-                        points: Array.isArray(stroke.points) ? stroke.points.map(p => ({ ...p })) : []
-                    }));
+                    next.legacyCoverStrokes = cloneLegacyCoverStrokes(next.strokes);
                 }
                 if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 state.pages[pageIndex] = next;
@@ -22797,6 +22865,8 @@
 
         function beginDocumentSession(options = {}) {
             closeScannerEditor({ force: true });
+            pendingVersionHistoryRestore = null;
+            versionHistoryRestorePromise = null;
             const preservedLocalStructureToken = options.preserveLocalStructureToken || null;
             if (localPageStructureMutationToken
                 && localPageStructureMutationToken !== preservedLocalStructureToken) {
@@ -22807,6 +22877,7 @@
             // Any recovery from the previous document is now irrelevant; its
             // captured session token prevents it from mutating this document.
             cleanOriginalRecoveryPromise = null;
+            pendingCleanOriginalSwap = false;
             embeddedMetadataCache.clear();
             if (pdfRestoreOperation) {
                 pdfRestoreOperation.cancelled = true;
@@ -29426,6 +29497,8 @@
                         if (vhErr?.name !== 'AbortError') await adoptVersionHistory([]);
                     }
                 };
+                pendingVersionHistoryRestore = restoreVersionHistory;
+                versionHistoryRestorePromise = null;
 
                 // Clean-original tracking for text-preserving export (pdf-lib path).
                 // If the PDF has no app stroke metadata, treat its bytes as the canonical
@@ -29435,6 +29508,7 @@
                 state.cleanOriginalPdfBytes = null;
                 state.cleanOriginalPageSizes = null;
                 state.hasLegacyBakedOverlay = false;
+                pendingCleanOriginalSwap = false;
                 let needsCleanOriginalSwap = false;
                 let deferCleanOriginalRecovery = false;
                 const needsCleanOriginalRecovery = Array.isArray(embeddedStrokes)
@@ -29467,28 +29541,18 @@
                         }
                     }
                     // PDF.js may need to walk/decompress a large attachment tree.
-                    // Keep the saved PDF visible with its reversible vector cover
-                    // while the editor opens; the save path below waits for this
-                    // recovery before producing any new Drive revision.
+                    // Keep the saved PDF visible while the editor opens; the save
+                    // path below waits for recovery before producing a new Drive
+                    // revision, without preparing legacy eraser masks up front.
                     deferCleanOriginalRecovery = !state.cleanOriginalPdfBytes;
                 }
                 const displaySavedPdfWithBakedOverlay = shouldDisplaySavedPdfWithBakedOverlay(embeddedStrokes);
+                pendingCleanOriginalSwap = (needsCleanOriginalSwap || deferCleanOriginalRecovery)
+                    && !displaySavedPdfWithBakedOverlay;
                 // If some PDF-background pages do not have drawable vector
                 // metadata, the saved PDF's overlay is the only faithful source
-                // for their strokes. Keep the saved PDF as display in that case;
-                // pages that do have vectors get white legacy covers below.
+                // for their strokes. Keep that saved PDF as the display source.
                 if (displaySavedPdfWithBakedOverlay) {
-                    state.hasLegacyBakedOverlay = true;
-                } else if (needsCleanOriginalRecovery && !state.cleanOriginalPdfBytes) {
-                    // Legacy doc that was previously saved by this app but we no longer
-                    // have the clean original. The strokes are baked into the saved
-                    // PDF as an overlay PNG AND restored as vectors here. Mark legacy
-                    // so the renderer paints white covers over the baked image — that
-                    // way erasing a stroke visually wipes the baked pixels too.
-                    state.hasLegacyBakedOverlay = true;
-                } else if (needsCleanOriginalSwap) {
-                    // Render a safe first frame from the saved PDF, then switch the
-                    // active PDF.js document after the editor is interactive.
                     state.hasLegacyBakedOverlay = true;
                 }
 
@@ -29603,11 +29667,9 @@
                         // strokes lazily if a later page is brought into view.
                         const legacyCovers = (state.hasLegacyBakedOverlay
                             && needsPdfBackground
+                            && !pendingCleanOriginalSwap
                             && i === 1)
-                            ? restoredStrokes.map(s => ({
-                                ...s,
-                                points: Array.isArray(s.points) ? s.points.map(p => ({ ...p })) : []
-                            }))
+                            ? cloneLegacyCoverStrokes(restoredStrokes)
                             : null;
                         const restoredPageId = pageData.pageId
                             || generateLegacyDocumentPageId(idbCacheKey, i);
@@ -29712,10 +29774,9 @@
                         scheduleVisiblePageUpdate(false);
                     }
                 }, 80);
-                // Everything below is maintenance work. The editor is already
-                // interactive, so run it without holding the opening overlay.
-                setTimeout(() => restoreVersionHistory().catch(() => {}), 0);
-
+                // Timeline data is intentionally left compressed until the
+                // user opens Timeline; a setTimeout(0) still blocks the main
+                // thread during the first pen/touch interaction.
                 let resolveCleanOriginalRecovery = null;
                 const hasCleanOriginalRecoveryWork = needsCleanOriginalRecovery
                     && (deferCleanOriginalRecovery || needsCleanOriginalSwap);
@@ -29753,13 +29814,38 @@
                                 saveOriginalPdfBytes(idbCacheKey, state.cleanOriginalPdfBytes).catch(() => {});
                             }
                             if (!displaySavedPdfWithBakedOverlay) {
-                                state.hasLegacyBakedOverlay = false;
+                                pendingCleanOriginalSwap = true;
                                 const swapped = await swapDisplayDocToCleanOriginal();
-                                if (!swapped) state.hasLegacyBakedOverlay = true;
+                                pendingCleanOriginalSwap = false;
+                                if (swapped) {
+                                    state.hasLegacyBakedOverlay = false;
+                                    // These white masks only compensate for
+                                    // strokes baked into the saved PDF. Once the
+                                    // clean source is active, discard them instead
+                                    // of repainting every stored vector on every
+                                    // canvas redraw.
+                                    for (const page of state.pages) {
+                                        if (!page) continue;
+                                        page.legacyCoverStrokes = null;
+                                        page.needsRedraw = true;
+                                    }
+                                } else {
+                                    state.hasLegacyBakedOverlay = true;
+                                    seedLegacyCoverStrokesForLoadedPages();
+                                }
                             }
                         }
                     }
                     } finally {
+                        if (hasCleanOriginalRecoveryWork && !state.cleanOriginalPdfBytes
+                            && !displaySavedPdfWithBakedOverlay) {
+                            // Recovery has definitively failed. Enable the legacy
+                            // eraser masks only now, and only for pages already in
+                            // memory; subsequent visible pages seed lazily.
+                            pendingCleanOriginalSwap = false;
+                            state.hasLegacyBakedOverlay = true;
+                            seedLegacyCoverStrokesForLoadedPages();
+                        }
                         if (cleanRecoveryGate) {
                             if (cleanOriginalRecoveryPromise === cleanRecoveryGate) {
                                 cleanOriginalRecoveryPromise = null;
@@ -29813,11 +29899,27 @@
                         scheduleVisiblePageUpdate(true);
                     }
                 };
-                if ('requestIdleCallback' in window) {
-                    requestIdleCallback(() => runDeferredPdfMaintenance().catch(() => {}), { timeout: 1200 });
-                } else {
-                    setTimeout(() => runDeferredPdfMaintenance().catch(() => {}), 120);
-                }
+                const scheduleDeferredPdfMaintenance = (delay = 1800) => {
+                    setTimeout(() => {
+                        if (!isDocumentSessionTokenValid(sessionToken)) return;
+                        // PDF repair can reopen the PDF.js document and invalidate
+                        // visible page rasters. Do not run that maintenance in the
+                        // middle of a fresh editor session or while saves compete
+                        // for CPU; wait for a genuine idle window instead.
+                        if (hasSmoothInteraction()
+                            || hasRecentUserActivity(1800)
+                            || saveInProgress
+                            || driveSaveInProgress
+                            || driveSaveQueued) {
+                            scheduleDeferredPdfMaintenance(700);
+                            return;
+                        }
+                        runDeferredPdfMaintenance().catch(error => {
+                            console.warn('Deferred PDF maintenance failed:', error);
+                        });
+                    }, Math.max(300, delay));
+                };
+                scheduleDeferredPdfMaintenance();
                 whenViewportReady(() => {
                     if (!scrollToTodayCalendarPage()) centerViewOnTop();
                 });
@@ -31462,7 +31564,7 @@
                 : '';
             blob.inhouseOpenCacheAnalysis = {
                 keywords: keywordsPayload,
-                embeddedStrokes: pagesParsedForSync
+                embeddedStrokes: null
             };
             state.lastExportSize = blob.size;
             // A successful text-preserving save is always non-destructive (the clean
@@ -32018,7 +32120,7 @@
                 : '';
             pdfResult.inhouseOpenCacheAnalysis = {
                 keywords: metaPrefix + encodedMetadata,
-                embeddedStrokes: rasterPagesParsedForSync
+                embeddedStrokes: null
             };
             state.lastExportSize = pdfResult.size;
             return pdfResult;
@@ -32427,6 +32529,49 @@
                     renderAllPages();
                     renderPagesList();
                     return this.snapshot();
+                },
+                async openTimelineForTest() {
+                    await ready();
+                    openTimelinePanel();
+                    if (versionHistoryRestorePromise) await versionHistoryRestorePromise;
+                    await Promise.resolve();
+                    return {
+                        pending: !!pendingVersionHistoryRestore,
+                        visible: !!document.getElementById('timeline-panel')?.classList.contains('visible')
+                    };
+                },
+                hasPendingTimelineRestoreForTest() {
+                    return !!pendingVersionHistoryRestore;
+                },
+                async startDeferredPageMigrationForTest(pageCount = 4) {
+                    await ready();
+                    const count = Math.max(2, Math.min(8, Number(pageCount) || 4));
+                    const pages = Array.from({ length: count }, (_unused, index) => ({
+                        pageId: `e2e-legacy-page-${index + 1}`,
+                        strokes: [],
+                        images: [],
+                        pageWidth: A4_WIDTH,
+                        pageHeight: A4_HEIGHT,
+                        backgroundSource: 'template'
+                    }));
+                    await migrateLegacyPayload({ pages }, {
+                        deferPageWrites: true,
+                        initialPages: 1,
+                        ensureLegacyIds: true,
+                        documentId: 'e2e-legacy-migration'
+                    });
+                    return true;
+                },
+                deferredMigrationStateForTest() {
+                    return {
+                        active: !!legacyPageMigrationPromise,
+                        pendingPages: Array.isArray(legacyPagesCache)
+                            ? legacyPagesCache.reduce((count, item) => count + (item ? 1 : 0), 0)
+                            : 0
+                    };
+                },
+                noteUserActivityForTest() {
+                    noteRecentUserActivity();
                 },
                 // Regression coverage for the PDF-erase-leaves-a-trace bug: sets up a
                 // single PDF-background page backed by a real (test-provided) clean
