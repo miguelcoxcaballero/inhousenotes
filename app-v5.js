@@ -3888,7 +3888,39 @@
                 } else {
                     drawSmoothStroke(ctx, stroke);
                 }
+                record.renderedPointCount = record.points.length;
             });
+        }
+
+        function drawRemoteLiveStrokeAppend(pageIndex, record) {
+            const overlay = document.querySelector(`canvas.remote-live-overlay[data-page="${pageIndex}"]`);
+            if (!overlay || !record?.points?.length) return false;
+            const points = record.points;
+            const start = Math.max(0, Math.min(points.length, Number(record.renderedPointCount) || 0));
+            if (start >= points.length) return true;
+            const ctx = overlay.getContext('2d');
+            const { width: pageWidth } = getPageDimensions(pageIndex);
+            const overlayScale = getOverlayCanvasRenderScale(overlay, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
+            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
+            if (start === 0 && points.length === 1) {
+                drawSinglePointStroke(ctx, record);
+                record.renderedPointCount = 1;
+                return true;
+            }
+            if (points.length > start) {
+                setupContext(ctx, record.tool, record.color, record.width);
+                setStrokeCaps(ctx, record.tool);
+                ctx.lineWidth = getStrokeWidth(record);
+                ctx.beginPath();
+                const from = start > 0 ? start - 1 : 0;
+                ctx.moveTo(points[from].x, points[from].y);
+                for (let index = Math.max(1, start); index < points.length; index += 1) {
+                    ctx.lineTo(points[index].x, points[index].y);
+                }
+                ctx.stroke();
+            }
+            record.renderedPointCount = points.length;
+            return true;
         }
 
         function applyRemoteLiveStrokePreview(packet) {
@@ -3900,9 +3932,8 @@
             if (packet.cancel) {
                 remoteLiveStrokePreviews.delete(key);
             } else {
-                const pointSlots = previous?.pointSlots
-                    ? previous.pointSlots.slice()
-                    : (previous?.points ? previous.points.slice() : []);
+                const pointSlots = previous?.pointSlots || [];
+                const points = previous?.points || [];
                 const maxPoints = 24_000;
                 const offset = Math.max(0, Math.min(maxPoints, Number(packet.offset) || 0));
                 const incoming = (Array.isArray(packet.points) ? packet.points : []).map(point => ({
@@ -3911,7 +3942,9 @@
                     p: Number.isFinite(Number(point?.p)) ? Number(point.p) : 0.5
                 })).slice(0, Math.max(0, maxPoints - offset));
                 incoming.forEach((point, index) => {
-                    pointSlots[offset + index] = point;
+                    const targetIndex = offset + index;
+                    pointSlots[targetIndex] = point;
+                    if (targetIndex < points.length) points[targetIndex] = point;
                 });
                 const declaredTotal = packet.finalBatch
                     ? Math.max(0, Math.min(maxPoints, Number(packet.totalPoints) || 0))
@@ -3919,10 +3952,9 @@
                 if (declaredTotal > 0 && pointSlots.length > declaredTotal) {
                     pointSlots.length = declaredTotal;
                 }
-                const points = [];
-                for (let index = 0; index < pointSlots.length; index += 1) {
-                    if (!pointSlots[index]) break;
-                    points.push(pointSlots[index]);
+                if (declaredTotal > 0 && points.length > declaredTotal) points.length = declaredTotal;
+                while (points.length < pointSlots.length && pointSlots[points.length]) {
+                    points.push(pointSlots[points.length]);
                 }
                 const record = {
                     actorId: String(packet.actorId),
@@ -3937,6 +3969,7 @@
                     width: Math.max(0.1, Number(packet.width) || 1),
                     points,
                     pointSlots,
+                    renderedPointCount: previous?.renderedPointCount || 0,
                     totalPoints: declaredTotal || Number(previous?.totalPoints) || 0,
                     sentAt: Number(packet.sentAt) || 0,
                     updatedAt: Date.now()
@@ -3949,11 +3982,18 @@
                     const pageIndex = state.pages.findIndex(page => page?.pageId === current.pageId);
                     if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
                 }, REMOTE_LIVE_STROKE_TTL_MS);
+                const pageIndex = state.pages.findIndex(page => page?.pageId === record.pageId);
+                if (pageIndex >= 0) drawRemoteLiveStrokeAppend(pageIndex, record);
             }
-            affectedPageIds.forEach(pageId => {
-                const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
-                if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
-            });
+            if (packet.cancel) {
+                affectedPageIds.forEach(pageId => {
+                    const pageIndex = state.pages.findIndex(page => page?.pageId === pageId);
+                    if (pageIndex >= 0) redrawRemoteLiveStrokePreviews(pageIndex);
+                });
+            } else if (previous?.pageId && previous.pageId !== String(packet.pageId)) {
+                const previousPageIndex = state.pages.findIndex(page => page?.pageId === previous.pageId);
+                if (previousPageIndex >= 0) redrawRemoteLiveStrokePreviews(previousPageIndex);
+            }
             return true;
         }
 
@@ -4533,12 +4573,7 @@
                         const lastPoint = currentStroke.points[currentStroke.points.length - 1];
                         const minDist = Math.max(0.6, currentStroke.width * 0.12);
                         const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
-                        if (dist < minDist) {
-                            lastPoint.x = pos.x;
-                            lastPoint.y = pos.y;
-                            lastPoint.p = pressure;
-                            return;
-                        }
+                        if (dist < minDist) return;
                     }
                     currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
                 });
@@ -4837,6 +4872,8 @@
             ctx.fill();
         }
 
+        const liveCursorPreviewBounds = new WeakMap();
+
         function drawStrokePreviewTail(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
             const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
@@ -4845,20 +4882,100 @@
                 ? metrics.cursorScale
                 : getOverlayCanvasRenderScale(previewCanvas, getPageDimensions(pageIndex).width, CURSOR_OVERLAY_BASE_SCALE);
             ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
-            const logicalW = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorLogicalW))
-                ? metrics.cursorLogicalW
-                : previewCanvas.width / overlayScale;
-            const logicalH = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorLogicalH))
-                ? metrics.cursorLogicalH
-                : previewCanvas.height / overlayScale;
-            ctx.clearRect(0, 0, logicalW, logicalH);
+            const previousBounds = liveCursorPreviewBounds.get(previewCanvas);
+            if (previousBounds) {
+                ctx.clearRect(previousBounds.x, previousBounds.y, previousBounds.width, previousBounds.height);
+            }
 
-            if (!stroke || !stroke.points || stroke.points.length === 0) return;
+            if (!stroke || !stroke.points || stroke.points.length === 0) {
+                liveCursorPreviewBounds.delete(previewCanvas);
+                return;
+            }
+            const startIndex = stroke.finalizedIndex >= 0 ? Math.max(0, stroke.finalizedIndex) : 0;
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            for (let index = startIndex; index < stroke.points.length; index += 1) {
+                const point = stroke.points[index];
+                if (!point) continue;
+                minX = Math.min(minX, point.x);
+                minY = Math.min(minY, point.y);
+                maxX = Math.max(maxX, point.x);
+                maxY = Math.max(maxY, point.y);
+            }
+            const padding = Math.max(4, Number(stroke.width) || 1);
+            if (Number.isFinite(minX)) {
+                liveCursorPreviewBounds.set(previewCanvas, {
+                    x: minX - padding,
+                    y: minY - padding,
+                    width: Math.max(1, maxX - minX + padding * 2),
+                    height: Math.max(1, maxY - minY + padding * 2)
+                });
+            }
             if (stroke.points.length === 1) {
                 drawSinglePointStroke(ctx, stroke);
                 return;
             }
             drawStrokeTailSegment(ctx, stroke);
+        }
+
+        function drawLiveHighlighterAppend(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
+            const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
+            const points = stroke?.points;
+            if (!previewCanvas || !Array.isArray(points) || points.length === 0) return;
+            const start = Math.max(0, Math.min(points.length, Number(stroke.livePreviewPointCount) || 0));
+            if (start >= points.length) return;
+            const ctx = previewCanvas.getContext('2d');
+            const overlayScale = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorScale))
+                ? metrics.cursorScale
+                : getOverlayCanvasRenderScale(previewCanvas, getPageDimensions(pageIndex).width, CURSOR_OVERLAY_BASE_SCALE);
+            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
+            let minX = liveCursorPreviewBounds.get(previewCanvas)?.minX ?? Infinity;
+            let minY = liveCursorPreviewBounds.get(previewCanvas)?.minY ?? Infinity;
+            let maxX = liveCursorPreviewBounds.get(previewCanvas)?.maxX ?? -Infinity;
+            let maxY = liveCursorPreviewBounds.get(previewCanvas)?.maxY ?? -Infinity;
+            const boundsStart = Math.max(0, start > 0 ? start - 1 : 0);
+            for (let index = boundsStart; index < points.length; index += 1) {
+                const point = points[index];
+                if (!point) continue;
+                minX = Math.min(minX, point.x);
+                minY = Math.min(minY, point.y);
+                maxX = Math.max(maxX, point.x);
+                maxY = Math.max(maxY, point.y);
+            }
+            if (start === 0 && points.length === 1) {
+                drawSinglePointStroke(ctx, stroke);
+                stroke.livePreviewPointCount = 1;
+            } else {
+                const width = Math.max(4, Number(stroke.width) || 12);
+                const from = start > 0 ? start - 1 : 0;
+                ctx.save();
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.strokeStyle = stroke.color || '#ffde00';
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                ctx.moveTo(points[from].x, points[from].y);
+                for (let index = Math.max(1, start); index < points.length; index += 1) {
+                    ctx.lineTo(points[index].x, points[index].y);
+                }
+                ctx.globalAlpha = 0.22;
+                ctx.lineWidth = width;
+                ctx.stroke();
+                ctx.globalAlpha = 0.1;
+                ctx.lineWidth = Math.max(2, width * 0.62);
+                ctx.stroke();
+                ctx.restore();
+            }
+            const padding = Math.max(4, Number(stroke.width) || 12);
+            liveCursorPreviewBounds.set(previewCanvas, {
+                minX, minY, maxX, maxY,
+                x: minX - padding, y: minY - padding,
+                width: Math.max(1, maxX - minX + padding * 2),
+                height: Math.max(1, maxY - minY + padding * 2)
+            });
+            stroke.livePreviewPointCount = points.length;
         }
 
         function commitLiveStrokeToCanvas(pageIndex, canvas, stroke) {
@@ -4919,7 +5036,7 @@
 
         function updateLiveStroke(pageIndex, canvas, stroke, previewCanvas = null, metrics = null) {
             if (stroke.tool === 'highlighter') {
-                drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
+                drawLiveHighlighterAppend(pageIndex, stroke, previewCanvas, metrics);
                 return;
             }
             if (!stroke || stroke.points.length < 2) {
@@ -4940,10 +5057,17 @@
             const { width: pageWidth } = getPageDimensions(pageIndex);
             const overlayScale = getOverlayCanvasRenderScale(previewCanvas, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
             ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
-            const logicalW = previewCanvas.width / overlayScale;
-            const logicalH = previewCanvas.height / overlayScale;
-            ctx.clearRect(0, 0, logicalW, logicalH);
+            const previousBounds = liveCursorPreviewBounds.get(previewCanvas);
+            if (previousBounds) {
+                ctx.clearRect(previousBounds.x, previousBounds.y, previousBounds.width, previousBounds.height);
+            }
             const radius = state.eraserWidth / 2;
+            liveCursorPreviewBounds.set(previewCanvas, {
+                x: pos.x - radius - 3,
+                y: pos.y - radius - 3,
+                width: radius * 2 + 6,
+                height: radius * 2 + 6
+            });
             ctx.strokeStyle = 'rgba(0,0,0,0.45)';
             ctx.lineWidth = 1.2;
             ctx.beginPath();
@@ -4957,8 +5081,17 @@
             const previewCanvas = document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             if (!previewCanvas) return;
             const ctx = previewCanvas.getContext('2d');
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            const bounds = liveCursorPreviewBounds.get(previewCanvas);
+            if (bounds) {
+                const { width: pageWidth } = getPageDimensions(pageIndex);
+                const scale = getOverlayCanvasRenderScale(previewCanvas, pageWidth, CURSOR_OVERLAY_BASE_SCALE);
+                ctx.setTransform(scale, 0, 0, scale, 0, 0);
+                ctx.clearRect(bounds.x, bounds.y, bounds.width, bounds.height);
+            } else {
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            }
+            liveCursorPreviewBounds.delete(previewCanvas);
         }
 
         // ── § 4.12  Selection & lasso tool ───────────────────────────────────

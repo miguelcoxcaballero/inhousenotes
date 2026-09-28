@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.27",
-  "releaseNotes": "Inhouse Notes v5.11.27 / Android 1.0.10: pen input starts without a synchronous page-canvas rebuild or clearing every lasso layer; routine saves no longer recompress unchanged timeline history, and optional local backup waits for drawing to be idle."
+  "publishedAppVersion": "5.11.28",
+  "releaseNotes": "Inhouse Notes v5.11.28 / Android 1.0.10: live pen sync now serializes and paints only newly received stroke points during writing, avoiding repeated full-stroke copies and redraws."
 }

@@ -486,6 +486,35 @@ test('an in-progress stroke is streamed in frames and finalized with a complete 
   assert.equal(longPackets.at(-1).offset, 1400);
 });
 
+test('live stroke preview frames serialize only the unsent point tail', async () => {
+  const harness = createHarness();
+  const channel = createChannel();
+  harness.api.addPeer('peer-remote', peerWithChannel(channel));
+  const stroke = {
+    id: 'stroke-incremental-tail', tool: 'pen', color: '#123456', width: 2,
+    points: [{ x: 1, y: 1 }, { x: 2, y: 2 }]
+  };
+  const packets = () => channel.sent.map(value => JSON.parse(value))
+    .filter(message => message.type === 'live-stroke');
+
+  harness.api.publishStroke('p1', stroke);
+  await harness.runTimerMatching(timer => timer.ms === 18);
+  assert.deepEqual(packets().at(-1).points.map(point => [point.x, point.y]), [[1, 1], [2, 2]]);
+
+  stroke.points.push({ x: 3, y: 3 }, { x: 4, y: 4 });
+  harness.api.publishStroke('p1', stroke);
+  await harness.runTimerMatching(timer => timer.ms === 18);
+  const tail = packets().at(-1);
+  assert.equal(tail.offset, 1, 'the final sent point is repeated as a join anchor');
+  assert.deepEqual(tail.points.map(point => [point.x, point.y]), [[2, 2], [3, 3], [4, 4]]);
+
+  harness.api.publishStroke('p1', stroke, { final: true });
+  const recovery = packets().at(-1);
+  assert.equal(recovery.offset, 0);
+  assert.equal(recovery.totalPoints, 4);
+  assert.equal(recovery.points.length, 4, 'only the final recovery packet carries the complete stroke');
+});
+
 test('live stroke packets render once and relay without echoing to their source peer', () => {
   const harness = createHarness();
   const sourceChannel = createChannel();
