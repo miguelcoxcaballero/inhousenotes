@@ -1,5 +1,44 @@
 import { expect, test } from '@playwright/test';
 
+test('lossless direct PDF rasters render identically to the PNG path and keep metadata readable', async ({ page }) => {
+  await page.goto('/?e2e=1');
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(async () => {
+    const processing = window.InhouseDocumentProcessing;
+    const input = { json: JSON.stringify({ images: [], strokes: [
+      { tool: 'pen', color: '#142dd2', width: 3, points: [{ x: 10, y: 10 }, { x: 40, y: 90 }, { x: 110, y: 20 }] },
+      { tool: 'highlighter', color: '#ffdd00', width: 14, points: [{ x: 10, y: 40 }, { x: 110, y: 40 }] },
+      { tool: 'eraser-area', width: 7, points: [{ x: 60, y: 0 }, { x: 60, y: 120 }] }
+    ] }), bounds: { x: 0, y: 0, width: 128, height: 128 }, scale: 1 };
+    const png = await processing.run('renderOverlay', input);
+    const raw = await processing.run('renderOverlay', { ...input, pdfRaster: true });
+    const workerLib = await processing.pdfLib(window.PDFLib);
+    async function render(library, pixels) {
+      const doc = await library.PDFDocument.create();
+      try {
+        const sheet = await doc.addPage([128, 128]);
+        const image = await doc.embedPng(pixels);
+        await sheet.drawImage(image, { x: 0, y: 0, width: 128, height: 128 });
+        await doc.setKeywords(['STROKES_Z:YWJjZA==;IH_TEST:123']);
+        const pdf = await window.pdfjsLib.getDocument({ data: await doc.save() }).promise;
+        const metadata = (await pdf.getMetadata()).info.Keywords;
+        const pdfPage = await pdf.getPage(1);
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 128;
+        await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: pdfPage.getViewport({ scale: 1 }) }).promise;
+        const samples = canvas.getContext('2d').getImageData(0, 0, 128, 128).data;
+        await pdf.destroy();
+        return { samples, metadata };
+      } finally { await doc.dispose?.(); }
+    }
+    const expected = await render(window.PDFLib, png);
+    const actual = await render(workerLib, raw);
+    const imported = await render(workerLib, png);
+    return { rawMatches: expected.samples.every((v, i) => v === actual.samples[i]),
+      pngMatches: expected.samples.every((v, i) => v === imported.samples[i]), metadata: actual.metadata };
+  });
+  expect(result).toEqual({ rawMatches: true, pngMatches: true, metadata: 'STROKES_Z:YWJjZA==;IH_TEST:123' });
+});
+
 test('background ink renderer preserves pen, highlighter and eraser pixels', async ({ page }) => {
   await page.goto('/?e2e=1');
   await page.waitForFunction(() => window.__IHN_TEST_API__);
@@ -45,6 +84,25 @@ test('dense handwriting repaint leaves time for pen input', async ({ page }) => 
 });
 
 test('dense PDF save keeps the event loop responsive', async ({ page, context }) => {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__processingTimes = [];
+    window.Worker = class extends NativeWorker {
+      constructor(...args) {
+        super(...args);
+        this.pending = new Map();
+        this.addEventListener('message', ({ data }) => {
+          const task = this.pending.get(data?.id);
+          if (task) window.__processingTimes.push({ type: task.type, ms: performance.now() - task.start, error: data.error });
+          this.pending.delete(data?.id);
+        });
+      }
+      postMessage(data, ...args) {
+        if (data?.type && data?.id) this.pending.set(data.id, { type: data.type, start: performance.now() });
+        return super.postMessage(data, ...args);
+      }
+    };
+  });
   await page.goto('/?e2e=1');
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.seedDensePageForTest());
@@ -61,7 +119,7 @@ test('dense PDF save keeps the event loop responsive', async ({ page, context })
     const saved = await window.__IHN_TEST_API__.buildPdfBlobForTest();
     await new Promise(resolve => setTimeout(resolve, 50));
     observer.disconnect();
-    return { saved, elapsed: performance.now() - start, tasks };
+    return { saved, elapsed: performance.now() - start, tasks, processing: window.__processingTimes };
   });
   console.log('Dense PDF save:', result);
   const { profile } = await cdp.send('Profiler.stop');

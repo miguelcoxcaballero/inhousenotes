@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.35",
-  "releaseNotes": "Inhouse Notes v5.11.35: processes PDF saves and Timeline archives in a background worker, repaints dense handwriting in short slices, and fixes stalled source recovery and uploads interrupted by pen input."
+  "publishedAppVersion": "5.11.36",
+  "releaseNotes": "Inhouse Notes v5.11.36: faster lossless PDF preparation without intermediate PNG encoding or expanded metadata; faster peer discovery, immediate negotiation and bounded retries when signalling fails."
 }
