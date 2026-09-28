@@ -33,6 +33,7 @@ const IHN_LIVE_ROUTE_STALE_MS = 2500;
 const IHN_LIVE_ROUTE_PROBE_MAX_MISSES = 2;
 const IHN_LIVE_HEALTH_TIMEOUT = 30_000;
 const IHN_LIVE_ACK_TIMEOUT = 20_000;
+const IHN_LIVE_RECEIPT_TIMEOUT = 4000;
 const IHN_LIVE_APPLY_ACK_TIMEOUT = 120_000;
 const IHN_LIVE_LEGACY_PROBE_TIMEOUT = 90_000;
 const IHN_LIVE_PEER_EXPIRY = 90_000;
@@ -105,6 +106,7 @@ let ihnLiveBroadcastBusy = false;
 let ihnLiveBroadcastRunId = 0;
 let ihnLiveBroadcastQueued = false;
 let ihnLiveBroadcastForce = false;
+let ihnLiveBroadcastAllPeers = false;
 let ihnLiveBroadcastRetryAttempt = 0;
 const ihnLiveBroadcastTargets = new Set();
 const ihnLiveBroadcastExclusions = new Set();
@@ -235,6 +237,13 @@ function ihnEnsureTabChannel() {
     ihnLiveBroadcastFileId = state.driveFileId;
     ihnLiveBroadcastChannel = new BroadcastChannel(`inhousenotes-live-v5:${simpleHash(state.driveFileId)}`);
     ihnLiveBroadcastChannel.onmessage = event => {
+        if (event.data?.type === 'tab-state-request') {
+            if (event.data.fileId === state.driveFileId
+                && event.data.tabId !== ihnGetLiveTabId()) {
+                scheduleLiveDocumentBroadcast({ immediate: true, force: true });
+            }
+            return;
+        }
         if (event.data?.type === 'live-stroke') {
             ihnHandleRealtimeStrokePacket(event.data, 'tab');
             return;
@@ -245,6 +254,10 @@ function ihnEnsureTabChannel() {
         }
         ihnHandleLiveEnvelope(event.data, 'tab').catch(error => console.warn('Same-device live update failed:', error));
     };
+    // BroadcastChannel has no retained messages. A late tab must explicitly
+    // request the idle leader's current document, even when nobody draws again.
+    ihnLiveBroadcastChannel.postMessage({ type: 'tab-state-request', fileId: state.driveFileId,
+        tabId: ihnGetLiveTabId() });
 }
 
 function ihnLivePeerCacheKey(fileId = state?.driveFileId || '') {
@@ -1407,7 +1420,7 @@ function ihnSendHealthPing(peer, payload = {}) {
             peer.pendingHealthPings.delete(sentAt);
         }
     }
-    if (!ihnSendControl(peer, { t: 'ping', ...payload, at })) return 0;
+    if (!ihnSendControl(peer, { t: 'ping', ...payload, at, documentHash: ihnLiveCurrentHash })) return 0;
     peer.pendingHealthPings.add(at);
     peer.lastPingAt = at;
     return at;
@@ -1901,6 +1914,22 @@ function ihnConfigurePeer(peerId, pc, peer) {
             try { event.channel.close(); } catch (error) {}
         }
     };
+}
+
+function ihnReconcilePeerDocumentHash(peerId, hash) {
+    const peer = ihnLivePeers.get(peerId);
+    if (!peer || typeof hash !== 'string' || !hash || hash.length > 128) return;
+    peer.remoteCurrentHash = hash;
+    if (peer.lastAckedHash && peer.lastAckedHash !== hash) peer.lastAckedHash = '';
+    if (!ihnLiveCurrentHash || hash === ihnLiveCurrentHash
+        || ihnLiveApplying || ihnLiveBroadcastBusy || hasSmoothInteraction()
+        || peer.snapshotSendInProgress || peer.pendingAckHash
+        || Date.now() - Number(peer.lastStateRepairAt || 0) < 3000) return;
+    peer.lastStateRepairAt = Date.now();
+    // A healthy transport is not evidence of identical documents. Exchange
+    // complete state on a mismatch, without waiting for another user gesture.
+    ihnSendControl(peer, { t: 'state-request', at: Date.now() });
+    scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true, internal: true });
 }
 
 function ihnConfigureRealtimeChannel(peerId, channel, peer) {
@@ -2560,6 +2589,17 @@ function ihnSuperviseConnections(options = {}) {
         );
         const hasRecentVerifiedPong = Number(peer.lastPongAt || 0) > Number(peer.openedAt || 0)
             && now - Number(peer.lastPongAt || 0) <= IHN_LIVE_HEALTH_TIMEOUT;
+        if (peer.protocolV2 && peer.pendingAckHash && !peer.snapshotSendInProgress
+            && !peer.channel.bufferedAmount && !resumeGraceActive
+            && !applyReceiptMatches && pendingAckAge > IHN_LIVE_RECEIPT_TIMEOUT && hasRecentVerifiedPong) {
+            // The route works but the complete transfer was never received.
+            // Repair delivery on this route; do not destroy a healthy P2P link
+            // or wait for the much longer disk/merge acknowledgement deadline.
+            peer.pendingAckHash = '';
+            peer.pendingAckAt = 0;
+            scheduleLiveDocumentBroadcast({ immediate: true, targetPeerId: peerId, force: true });
+            return;
+        }
         const remoteApplyInProgress = pendingAckAge > IHN_LIVE_ACK_TIMEOUT
             && pendingAckAge <= IHN_LIVE_APPLY_ACK_TIMEOUT
             && applyReceiptMatches;
@@ -3093,7 +3133,8 @@ function stopLiveCollaboration() {
     ihnLiveBroadcastQueued = false;
     if (!ihnLiveActiveApply) ihnLiveApplying = false;
     ihnCancelPendingLiveApplies();
-    ihnLiveBroadcastForce = false; ihnLiveBroadcastTargets.clear(); ihnLiveBroadcastExclusions.clear();
+    ihnLiveBroadcastForce = false; ihnLiveBroadcastAllPeers = false;
+    ihnLiveBroadcastTargets.clear(); ihnLiveBroadcastExclusions.clear();
     ihnLiveBroadcastRetryAttempt = 0;
     [...ihnLivePeers.keys()].forEach(peerId => ihnClosePeer(peerId, 'document closed', { retry: false }));
     ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveAppliedHashes.clear(); ihnLiveProcessedOffers.clear();
@@ -3280,6 +3321,10 @@ function scheduleLiveDocumentBroadcast(options = {}) {
     }
     ihnLiveBroadcastQueued = true;
     if (options.force) ihnLiveBroadcastForce = true;
+    if (!options.targetPeerId && !options.excludePeerId && !options.internal && !options.retry) {
+        ihnLiveBroadcastAllPeers = true;
+        ihnLiveBroadcastExclusions.clear();
+    }
     if (options.targetPeerId) ihnLiveBroadcastTargets.add(options.targetPeerId);
     if (options.excludePeerId) ihnLiveBroadcastExclusions.add(options.excludePeerId);
     clearTimeout(ihnLiveBroadcastTimer);
@@ -3292,7 +3337,11 @@ function scheduleLiveDocumentBroadcast(options = {}) {
 }
 
 function ihnLiveBroadcastRetryDelay(attempt) {
-    return Math.min(2000, 120 * (2 ** Math.max(0, Number(attempt || 1) - 1)));
+    const count = Math.max(1, Number(attempt || 1));
+    if (count > IHN_LIVE_BROADCAST_RETRY_LIMIT) {
+        return Math.min(30_000, 3000 * (2 ** Math.min(4, count - IHN_LIVE_BROADCAST_RETRY_LIMIT - 1)));
+    }
+    return Math.min(2000, 120 * (2 ** (count - 1)));
 }
 
 async function ihnBroadcastDocument() {
@@ -3307,13 +3356,14 @@ async function ihnBroadcastDocument() {
     const operation = ihnCaptureLiveOperationContext();
     ihnLiveBroadcastBusy = true; ihnLiveBroadcastQueued = false;
     const force = ihnLiveBroadcastForce;
-    const targetPeerIds = new Set(ihnLiveBroadcastTargets);
-    const excludedPeerIds = new Set(ihnLiveBroadcastExclusions);
+    const allPeers = ihnLiveBroadcastAllPeers;
+    const targetPeerIds = allPeers ? new Set() : new Set(ihnLiveBroadcastTargets);
+    const excludedPeerIds = allPeers ? new Set() : new Set(ihnLiveBroadcastExclusions);
     ihnLiveBroadcastForce = false;
+    ihnLiveBroadcastAllPeers = false;
     ihnLiveBroadcastTargets.clear();
     ihnLiveBroadcastExclusions.clear();
     let retryScheduled = false;
-    let suppressAutomaticSchedule = false;
     try {
         const snapshot = await ihnBuildLiveSnapshot(operation);
         ihnAssertLiveOperationContext(operation);
@@ -3345,26 +3395,25 @@ async function ihnBroadcastDocument() {
     } catch (error) {
         if (ihnLiveOperationContextIsCurrent(operation) && ihnCanEditLiveDocument()) {
             ihnLiveBroadcastQueued = true;
+            if (allPeers) ihnLiveBroadcastAllPeers = true;
             if (force) ihnLiveBroadcastForce = true;
             targetPeerIds.forEach(peerId => ihnLiveBroadcastTargets.add(peerId));
             excludedPeerIds.forEach(peerId => ihnLiveBroadcastExclusions.add(peerId));
-            if (ihnLiveBroadcastRetryAttempt < IHN_LIVE_BROADCAST_RETRY_LIMIT) {
-                ihnLiveBroadcastRetryAttempt += 1;
-                retryScheduled = true;
-                scheduleLiveDocumentBroadcast({
-                    retry: true,
-                    delay: ihnLiveBroadcastRetryDelay(ihnLiveBroadcastRetryAttempt)
-                });
-            } else {
-                suppressAutomaticSchedule = true;
-                console.warn('Live broadcast paused after repeated transient failures; the next edit will retry.', error);
-            }
+            // Keep one low-rate recovery timer after the fast retry burst.
+            // A busy PDF/page store must not leave replicas diverged until
+            // another edit. stopLiveCollaboration cancels this timer on exit.
+            ihnLiveBroadcastRetryAttempt = Math.min(ihnLiveBroadcastRetryAttempt + 1, 16);
+            retryScheduled = true;
+            scheduleLiveDocumentBroadcast({
+                retry: true,
+                delay: ihnLiveBroadcastRetryDelay(ihnLiveBroadcastRetryAttempt)
+            });
         }
         throw error;
     } finally {
         if (runId === ihnLiveBroadcastRunId) {
             ihnLiveBroadcastBusy = false;
-            if (ihnLiveBroadcastQueued && !retryScheduled && !suppressAutomaticSchedule) {
+            if (ihnLiveBroadcastQueued && !retryScheduled) {
                 scheduleLiveDocumentBroadcast({ immediate: true, internal: true });
             }
         }
@@ -3479,7 +3528,9 @@ async function ihnHandleWireMessage(
     ihnTouchKnownPeerFromChannel(peerId);
     if (message?.t === 'ping') {
         if (peer) peer.protocolV2 = true;
-        ihnSendControl(peer, { t: 'pong', at: Number(message.at) || Date.now(), receivedAt: Date.now() });
+        ihnSendControl(peer, { t: 'pong', at: Number(message.at) || Date.now(), receivedAt: Date.now(),
+            documentHash: ihnLiveCurrentHash });
+        ihnReconcilePeerDocumentHash(peerId, message.documentHash);
         return;
     }
     if (message?.t === 'pong') {
@@ -3508,6 +3559,7 @@ async function ihnHandleWireMessage(
                     ? Math.round(peer.rttMs * 0.7 + rtt * 0.3)
                     : rtt;
                 ihnMarkPeerHealthy(peerId, peer, 'pong');
+                ihnReconcilePeerDocumentHash(peerId, message.documentHash);
             }
         }
         return;
@@ -3572,7 +3624,7 @@ async function ihnHandleWireMessage(
         const currentHash = String(message.currentHash || '');
         if (currentHash) ihnObservePeerDocumentHash(peerId, currentHash);
         scheduleLiveDocumentBroadcast({
-            immediate: true,
+            delay: Math.max(100, Math.min(2000, Number(message.retryAfterMs) || 100)),
             targetPeerId: peerId,
             force: true
         });
@@ -3614,7 +3666,18 @@ async function ihnHandleWireMessage(
                 at: Date.now()
             });
         }
-        const handled = await ihnHandleLiveEnvelope(envelope, 'webrtc', peerId);
+        let handled;
+        try {
+            handled = await ihnHandleLiveEnvelope(envelope, 'webrtc', peerId);
+        } catch (error) {
+            if (peerContextIsCurrent() && envelope?.contentHash) {
+                // Receipt used to extend the sender's wait to two minutes even
+                // after applying had failed. Request a bounded retry instead.
+                ihnSendControl(peer, { t: 'snapshot-nack', hash: envelope.contentHash,
+                    currentHash: ihnLiveCurrentHash, retryAfterMs: 500, at: Date.now() });
+            }
+            throw error;
+        }
         if (!peerContextIsCurrent()) return;
         if (handled !== false && envelope?.contentHash) {
             ihnObservePeerDocumentHash(peerId, envelope.contentHash);

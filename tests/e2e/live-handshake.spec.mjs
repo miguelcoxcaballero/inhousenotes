@@ -6,9 +6,9 @@ async function withLiveReplicas(browser, run) {
   const properties = { ihn_live_key_v1: Buffer.alloc(32, 73).toString('base64url') };
   const appProperties = {};
   let nextId = 0;
-  async function replica(email, seed = '') {
-    const context = await browser.newContext();
-    contexts.push(context);
+  async function replica(email, seed = '', sameBrowser = false) {
+    const context = sameBrowser && contexts.length ? contexts[0] : await browser.newContext();
+    if (!contexts.includes(context)) contexts.push(context);
     await context.route('https://www.googleapis.com/**', async route => {
       // Exercise non-zero signalling latency instead of instant mocked Drive.
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -83,6 +83,60 @@ test('real WebRTC connects new devices without edits, including a third account'
   });
 });
 
+test('a second tab joins an idle document and reconciles without a new edit', async ({ browser }) => {
+  await withLiveReplicas(browser, async replica => {
+    const first = await replica('same@example.com', 'first', true);
+    const second = await replica('same@example.com', 'second', true);
+    await expect.poll(async () => Promise.all([first, second].map(page => page.evaluate(() => {
+      const state = window.__IHN_TEST_API__.snapshot();
+      return state.pages.length === 3 && state.pages.every((page, index) =>
+        page.strokes.some(s => s.id === `first-${index}`) && page.strokes.some(s => s.id === `second-${index}`));
+    }))), { timeout: 6000, intervals: [100] }).toEqual([true, true]);
+  });
+});
+
+test('a received final stroke invalidates the prepared document generation even without a safety snapshot', async ({ page }) => {
+  await page.goto('/?e2e=1');
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(async () => {
+    const api = window.__IHN_TEST_API__;
+    await api.resetLocalDocument(1, 'Final stroke');
+    await api.prepareLiveDocument('final-only');
+    const before = await api.checkpointLiveReplicaForTest();
+    await api.receiveRemoteLiveStrokePackets([{ v: 1, type: 'live-stroke', fileId: 'final-only',
+      actorId: 'remote:tab', strokeId: 'final-without-snapshot', pageId: before.pages[0].pageId,
+      sequence: 1, offset: 0, final: true, finalBatch: true, totalPoints: 2,
+      points: [{ x: 10, y: 10, p: 0.5 }, { x: 35, y: 45, p: 0.5 }],
+      sentAt: Date.now(), syncStamp: { clock: Date.now(), actor: 'remote:tab' } }]);
+    return { before, after: await api.checkpointLiveReplicaForTest() };
+  });
+  expect(result.after.pages[0].strokes.some(stroke => stroke.id === 'final-without-snapshot')).toBe(true);
+  expect(result.after.contentVersion).toBeGreaterThan(result.before.contentVersion);
+  expect(result.after.hash).not.toBe(result.before.hash);
+});
+
+test('a missing snapshot is repaired on the existing WebRTC link without another edit', async ({ browser }) => {
+  await withLiveReplicas(browser, async replica => {
+    const first = await replica('first@example.com', 'first');
+    const second = await replica('second@example.com', 'second');
+    await expect.poll(async () => {
+      const states = await Promise.all([first, second].map(page => page.evaluate(() => window.__IHN_TEST_API__.checkpointLiveReplicaForTest())));
+      return states[0].hash === states[1].hash;
+    }, { timeout: 8000 }).toBe(true);
+    await expect.poll(() => first.evaluate(() => {
+      const peer = window.__IHN_TEST_API__.liveConnectionOverviewForTest().peers[0];
+      return !!peer?.lastAckedHash && !peer.pendingAckHash;
+    })).toBe(true);
+    await first.evaluate(() => window.__IHN_TEST_API__.dropNextLiveSnapshotForTest());
+    const id = await first.evaluate(() => window.__IHN_TEST_API__.addSyntheticStroke(0, 'lost-transfer'));
+    await expect.poll(() => second.evaluate(id => window.__IHN_TEST_API__.snapshot().pages.some(page =>
+      page.strokes?.some(stroke => stroke.id === id)), id), { timeout: 7000, intervals: [100] }).toBe(true);
+    for (const page of [first, second]) {
+      expect(await page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount)).toBe(1);
+    }
+  });
+});
+
 test('real WebRTC reconciles different starting versions and deletions without a subsequent edit', async ({ browser }) => {
   await withLiveReplicas(browser, async replica => {
     const first = await replica('first@example.com', 'first');
@@ -95,6 +149,7 @@ test('real WebRTC reconciles different starting versions and deletions without a
     }, { timeout: 8000, intervals: [100] }).toBe(true);
     for (const state of await snapshots()) {
       expect(state.pages).toHaveLength(3);
+      expect(state.pages.map(page => page.pageId)).toEqual(['shared-page-0', 'shared-page-1', 'shared-page-2']);
       for (const [index, page] of state.pages.entries()) {
         const ids = page.strokes.map(s => s.id);
         expect(ids).toContain(`first-${index}`);

@@ -240,6 +240,7 @@ globalThis.__liveTest = {
     if (options.force) ihnLiveBroadcastForce = true;
     if (options.targetPeerId) ihnLiveBroadcastTargets.add(options.targetPeerId);
   },
+  schedule: scheduleLiveDocumentBroadcast,
   buildSnapshot: ihnBuildLiveSnapshot,
   rememberSnapshot: ihnRememberLiveSnapshot,
   buildPeerSnapshot: ihnBuildPeerSnapshot,
@@ -899,7 +900,7 @@ test('async page copies send real strokes, not Promise objects, to peers and loc
   assert.equal(snapshot.pages[0].strokes[0].id, 'local-stroke');
   assert.equal(snapshot.pages[1].pageId, 'p2');
   assert.equal(snapshot.contentHash, api.canonicalHash());
-  assert.equal(api.tabChannel().messages[0].pages[1].strokes[0].id, 'local-stroke');
+  assert.equal(api.tabChannel().messages.find(message => message.type === 'document-snapshot').pages[1].strokes[0].id, 'local-stroke');
 });
 
 test('an edit during cooperative page cloning invalidates the snapshot before transmission', async () => {
@@ -965,6 +966,54 @@ test('the merged content hash never assumes the advertised hash is the current d
   await harness.api.envelope(liveEnvelope(harness.state, { contentHash: 'incoming-document' }), 'webrtc', 'peer-remote');
   assert.equal(harness.api.lastApplied(), 'actual-full-document');
   assert.equal(harness.api.queued(), true);
+});
+
+for (const joinFirst of [true, false]) {
+  test(`a join request cannot narrow a queued edit to only the joining peer (${joinFirst})`, async () => {
+    const { api, context } = createHarness();
+    context.driveAccessToken = null;
+    const channels = [createChannel(), createChannel()];
+    api.addPeer('existing', peerWithChannel(channels[0]));
+    api.addPeer('joining', peerWithChannel(channels[1]));
+    if (joinFirst) api.schedule({ targetPeerId: 'joining', force: true });
+    api.schedule();
+    if (!joinFirst) api.schedule({ targetPeerId: 'joining', force: true });
+    await api.broadcast();
+    assert.ok(channels.every(channel => channel.sent.some(raw => JSON.parse(raw).t === 'chunk')));
+    assert.ok(api.tabChannel().messages.some(message => message.type === 'document-snapshot'));
+  });
+}
+
+test('a healthy heartbeat repairs divergent documents without a new edit or reconnect', async () => {
+  const { api, context } = createHarness();
+  context.driveAccessToken = null;
+  await api.buildSnapshot();
+  const channel = createChannel();
+  const peer = peerWithChannel(channel);
+  api.addPeer('peer-remote', peer);
+  await api.wire(JSON.stringify({ t: 'ping', at: Date.now(), documentHash: 'other-state' }), 'peer-remote');
+  assert.equal(api.queued(), true);
+  assert.equal(api.forced(), true);
+  assert.ok(channel.sent.some(raw => JSON.parse(raw).t === 'state-request'));
+  const requests = channel.sent.filter(raw => JSON.parse(raw).t === 'state-request').length;
+  await api.wire(JSON.stringify({ t: 'ping', at: Date.now(), documentHash: 'other-state' }), 'peer-remote');
+  assert.equal(channel.sent.filter(raw => JSON.parse(raw).t === 'state-request').length, requests, 'reconciliation is rate limited');
+  assert.equal(api.getPeer('peer-remote'), peer);
+});
+
+test('a failed durable merge sends a prompt retry instead of leaving a two-minute receipt', async () => {
+  const harness = createHarness({ applyRemotePages: async () => { throw new Error('page store busy'); } });
+  const channel = createChannel();
+  harness.api.addPeer('peer-remote', peerWithChannel(channel));
+  const envelope = liveEnvelope(harness.state, { contentHash: 'remote-version' });
+  const data = JSON.stringify(envelope);
+  await harness.api.wire(JSON.stringify({ t: 'start', id: 'test-transfer', total: 1, chars: data.length }), 'peer-remote');
+  await assert.rejects(harness.api.wire(JSON.stringify({ t: 'chunk', id: 'test-transfer', index: 0, data }), 'peer-remote'), /page store busy/);
+  const packets = channel.sent.map(raw => JSON.parse(raw));
+  assert.ok(packets.some(packet => packet.t === 'snapshot-received'));
+  assert.ok(packets.some(packet => packet.t === 'snapshot-nack' && packet.retryAfterMs === 500));
+  assert.ok(!packets.some(packet => packet.t === 'snapshot-ack'));
+  assert.equal(harness.api.seen(envelope.actorId), undefined);
 });
 
 test('delivery bookkeeping is per peer, so a new peer gets current state without a new edit', async () => {
@@ -2020,7 +2069,7 @@ test('exact snapshots fan out between local tabs and WebRTC peers without echoin
   assert.equal(await tabHarness.api.envelope(tabEnvelope, 'tab'), true);
   await tabHarness.api.flushFanOut();
   assert.ok(tabPeerChannel.sent.length > 0, 'a non-leader tab reaches the network peer immediately');
-  assert.equal(tabBroadcast.messages.length, 0, 'the incoming tab message is not echoed into BroadcastChannel');
+  assert.equal(tabBroadcast.messages.filter(m => m.type === 'document-snapshot').length, 0, 'the incoming tab message is not echoed into BroadcastChannel');
   const tabSentCount = tabPeerChannel.sent.length;
   assert.equal(await tabHarness.api.envelope(tabEnvelope, 'tab'), true);
   await tabHarness.api.flushFanOut();
@@ -2044,9 +2093,10 @@ test('exact snapshots fan out between local tabs and WebRTC peers without echoin
   await peerHarness.api.flushFanOut();
   assert.equal(sourceChannel.sent.length, 0, 'the snapshot is never sent back to its source peer');
   assert.ok(otherChannel.sent.length > 0, 'another connected peer receives the exact envelope');
-  assert.equal(peerBroadcast.messages.length, 1, 'same-device tabs receive the peer snapshot');
-  assert.equal(peerBroadcast.messages[0].actorId, peerEnvelope.actorId);
-  assert.equal(peerBroadcast.messages[0].sequence, peerEnvelope.sequence);
+  const relayedSnapshots = peerBroadcast.messages.filter(m => m.type === 'document-snapshot');
+  assert.equal(relayedSnapshots.length, 1, 'same-device tabs receive the peer snapshot');
+  assert.equal(relayedSnapshots[0].actorId, peerEnvelope.actorId);
+  assert.equal(relayedSnapshots[0].sequence, peerEnvelope.sequence);
 });
 
 test('an already-applied hash can still bridge a new actor snapshot to a newly connected peer', async () => {
@@ -2318,6 +2368,31 @@ test('a transient snapshot-lock failure preserves force and targets for bounded 
   assert.equal(harness.pendingTimers.size, 0);
 });
 
+test('snapshot recovery continues at a low rate after the fast retries are exhausted', async () => {
+  let available = false;
+  const harness = createHarness({
+    acquireRemotePageMerge: async () => available ? { id: 'recovered-lock' } : null,
+    releaseRemotePageMerge() {}
+  });
+  harness.context.driveAccessToken = null;
+  const channel = createChannel();
+  harness.api.addPeer('peer-retry', peerWithChannel(channel));
+  harness.api.queue({ force: true, targetPeerId: 'peer-retry' });
+  for (let attempt = 0; attempt < 7; attempt += 1) {
+    await assert.rejects(harness.api.broadcast(), /structure remained busy/);
+    assert.equal(harness.pendingTimers.size, 1, 'recovery must not wait for another user edit');
+  }
+  const delay = [...harness.pendingTimers.values()][0].ms;
+  assert.ok(delay >= 3000 && delay <= 30000, 'persistent failures back off instead of spinning');
+  available = true;
+  await harness.runTimerMatching(timer => timer.ms === delay);
+  for (let turn = 0; turn < 30 && harness.api.broadcastBusy(); turn += 1) await Promise.resolve();
+  assert.ok(channel.sent.length > 0);
+  assert.equal(harness.api.queued(), false);
+  assert.equal(harness.api.retryAttempt(), 0);
+  assert.equal(harness.pendingTimers.size, 0);
+});
+
 test('supervisor evicts a stuck connecting peer and schedules autonomous retry', () => {
   const { api } = createHarness();
   const ownId = api.ownId();
@@ -2364,6 +2439,29 @@ test('supervisor replaces an apparently open but silent zombie channel', () => {
   assert.equal(api.getPeer(remoteId), undefined);
   assert.equal(closed, true);
   assert.ok(api.retry(remoteId).nextAttemptAt > Date.now());
+});
+
+test('missing receipts retry on the healthy route, but not while bytes are still draining', () => {
+  const { api } = createHarness();
+  const remoteId = 'peer-missing-receipt';
+  api.addKnown(remoteId);
+  const channel = createChannel();
+  channel.bufferedAmount = 5000;
+  const now = Date.now();
+  const peer = peerWithChannel(channel, {
+    generation: api.generation(), protocolV2: true, openedAt: now - 20_000,
+    lastReceivedAt: now, lastPongAt: now, lastPingAt: now,
+    pendingAckHash: 'missing-hash', pendingAckAt: now - 5000
+  });
+  api.addPeer(remoteId, peer);
+  api.supervise();
+  assert.equal(peer.pendingAckHash, 'missing-hash', 'a slow bulk transfer is not restarted');
+  channel.bufferedAmount = 0;
+  api.supervise();
+  assert.equal(api.getPeer(remoteId), peer);
+  assert.equal(peer.pendingAckHash, '');
+  assert.equal(api.forced(), true);
+  assert.equal(api.targets().join(','), remoteId);
 });
 
 test('healthy pongs extend a slow snapshot apply and hard expiry resends without reconnecting', async () => {

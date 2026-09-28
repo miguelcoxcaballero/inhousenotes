@@ -1630,6 +1630,11 @@
             }
             const localIds = state.pages.map(page => String(page?.pageId || ''));
             const remoteIds = remotePages.map(page => String(page?.pageId || ''));
+            const knownRemoteIds = new Set(remoteIds.filter(Boolean));
+            // Already shared identities are not legacy. Renaming them during
+            // the initial exchange strands in-flight pen/eraser packets that
+            // still reference the existing page IDs.
+            if (localIds.every(id => id && knownRemoteIds.has(id))) return false;
             const canonicalIds = remotePages.map((_, index) => (
                 generateLegacyDocumentPageId(state.driveFileId, index + 1)
             ));
@@ -4196,9 +4201,12 @@
                         pdfExportCache.delete(pageIndex);
                         pdfLibOverlayCache.delete(pageIndex);
                         if (state.driveCanEdit !== false) {
-                            enqueueStrokeOp(pageIndex, durableStroke, {
-                                skipDriveVersion: true
-                            });
+                            // A received final stroke is durable document content,
+                            // not just a preview. Invalidate prepared PDF/hash
+                            // caches and schedule recovery even if its sender
+                            // closes before the safety snapshot arrives.
+                            enqueueStrokeOp(pageIndex, durableStroke);
+                            markPageDirty(pageIndex, 'stroke');
                         } else {
                             await savePageToIndexedDb(pageIndex, page);
                         }
@@ -4209,6 +4217,7 @@
                             applyPagePreview(pageIndex);
                         }
                     } else if (staleDeletionRemoved) {
+                        if (state.driveCanEdit !== false) markPageDirty(pageIndex, 'full');
                         await savePageToIndexedDb(pageIndex, page);
                     }
                     clearRemoteLiveStrokePreview(record.actorId, record.stroke.id);
@@ -28235,6 +28244,11 @@
                 }
             }
             mergeCompleted = true;
+            if (changed && !options.captureContentHash) {
+                // Drive can replace content without a local gesture. Retire
+                // the old P2P digest and relay that revision to existing peers.
+                scheduleLiveDocumentBroadcast();
+            }
             const contentHash = options.captureContentHash ? ihnCanonicalDocumentHash(
                 state.pages.map(page => sanitizePageForStorage(page)),
                 getCollabStructureSnapshot(), state.calendarPageConfig, state.exportName,
@@ -32886,7 +32900,8 @@
                 },
                 async checkpointLiveReplicaForTest() {
                     await ensureAllPagesLoadedForStructureChange();
-                    return { ...this.snapshot(), hash: ihnCanonicalDocumentHash(
+                    return { ...this.snapshot(), contentVersion: driveContentVersion,
+                        cachedLiveHash: ihnLiveCurrentHash, hash: ihnCanonicalDocumentHash(
                         state.pages.map(page => sanitizePageForStorage(page)), getCollabStructureSnapshot(),
                         state.calendarPageConfig, state.exportName, getCollabFieldSnapshot()) };
                 },
@@ -32937,6 +32952,21 @@
                     }, 2000);
                     setTimeout(() => { channel.send = send; }, 2200);
                     return ihnSendHealthPing(peer);
+                },
+                dropNextLiveSnapshotForTest() {
+                    const channel = [...ihnLivePeers.values()].find(peer => peer.channel?.readyState === 'open')?.channel;
+                    if (!channel) throw new Error('No peer');
+                    const send = channel.send.bind(channel);
+                    let transfer = null;
+                    channel.send = data => {
+                        const packet = JSON.parse(data);
+                        if (!transfer && packet.t === 'start') { transfer = { id: packet.id, remaining: packet.total }; return; }
+                        if (transfer && packet.id === transfer.id && packet.t === 'chunk') {
+                            if (--transfer.remaining === 0) channel.send = send;
+                            return;
+                        }
+                        send(data);
+                    };
                 },
                 publishPreviewForTest(strokeId, pageId, count = 2) {
                     return publishLiveStrokePreview(pageId, { id: strokeId, color: '#142dd2',
