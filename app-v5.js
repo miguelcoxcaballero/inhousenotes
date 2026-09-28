@@ -2109,6 +2109,9 @@
         let driveSaveTimeout = null;
         let driveSyncMaxTimeout = null;
         let driveSaveInProgress = false;
+        let driveSavePhase = 'idle';
+        let driveUploadProgress = null;
+        const driveResumableSessions = new Map();
         let driveSaveQueued = false;
         let driveSaveQueuedForce = false;
         let driveSaveQueuedKeepalive = false;
@@ -7604,8 +7607,12 @@
 
             try {
                 const fetchOptions = { ...options };
+                const acceptedStatuses = Array.isArray(fetchOptions.acceptStatuses)
+                    ? fetchOptions.acceptStatuses
+                    : [];
                 delete fetchOptions.timeout;
                 delete fetchOptions.signal;
+                delete fetchOptions.acceptStatuses;
                 const res = await fetch(url, {
                     ...fetchOptions,
                     headers,
@@ -7631,7 +7638,7 @@
                         throw refreshErr;
                     }
                 }
-                if (!res.ok) {
+                if (!res.ok && !acceptedStatuses.includes(res.status)) {
                     const message = await res.text().catch(() => '');
                     throw new Error(`Drive API error ${res.status}: ${message}`);
                 }
@@ -10246,29 +10253,27 @@
                         fileName: state.driveFileName
                     }
                 );
-                // Migration: if PDF used old uncompressed format, re-save with compression
-                if (state.needsMigrationResave && canEdit) {
-                    state.needsMigrationResave = false;
-                    showStatus('Optimizando tamaño del PDF...', { preserveState: true });
-                    setTimeout(() => queueDriveSave(true, { forceUpload: true }), 4000);
-                }
+                // Opening an old-format PDF is not a content edit. Its metadata
+                // is rewritten automatically the next time the user saves real
+                // changes; do not silently rebuild and upload the entire file
+                // just because it was opened.
                 state.driveFileId = file.id;
                 markDriveHydrated(file.id);
                 state.driveAutosave = canEdit;
-                if (canEdit && driveContentVersion !== driveUploadedContentVersion) {
-                    schedulePreparedDrivePdf();
-                }
                 saveDriveSession();
                 updateDocTitle();
+
+                // Establish the baseline before polling or enabling autosave, so
+                // import-time compatibility bookkeeping cannot look like a user
+                // edit and launch an expensive background PDF build.
+                updateSyncBaseline();
+                resetDriveContentSyncVersion();
 
                 updateViewerModeUI();
 
                 // Start polling for all users (including read-only viewers)
                 startCollabPolling();
 
-                // Set the sync baseline so merge can track changes
-                updateSyncBaseline();
-                resetDriveContentSyncVersion();
                 showStatus(canEdit ? 'PDF loaded' : 'PDF loaded (View Only)', { preserveState: true });
             } catch (err) {
                 if (err?.name !== 'AbortError') {
@@ -22857,6 +22862,9 @@
             driveSaveQueuedForce = false;
             driveSaveQueuedKeepalive = false;
             driveSaveBlockedReason = '';
+            driveSavePhase = 'idle';
+            driveUploadProgress = null;
+            driveResumableSessions.clear();
             remoteChangePendingDuringSave = false;
             remoteChangePendingMeta = null;
             lastOwnDriveWriteMeta = null;
@@ -23342,6 +23350,8 @@
 
         function setDriveSaveBlocked(reason) {
             driveSaveBlockedReason = reason || 'Drive save blocked';
+            driveSavePhase = 'error';
+            driveUploadProgress = null;
             clearDriveSyncTimers();
             if (deferredDriveSaveRetryTimer) {
                 clearTimeout(deferredDriveSaveRetryTimer);
@@ -23359,6 +23369,7 @@
         function clearDriveSaveBlocked() {
             if (!driveSaveBlockedReason) return;
             driveSaveBlockedReason = '';
+            if (!driveSaveInProgress) driveSavePhase = 'idle';
             recordSaveDebug('Drive save block cleared');
         }
 
@@ -24104,16 +24115,14 @@
                 mimeType: 'application/pdf',
                 parents: folderId && folderId !== 'root' ? [folderId] : undefined
             };
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            form.append('file', pdfBlob);
-            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,headRevisionId,modifiedTime,version', {
+            const data = await uploadDriveBlobResumable({
+                url: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,headRevisionId,modifiedTime,version',
                 method: 'POST',
-                body: form,
-                keepalive: !!options.keepalive,
-                signal: options.signal
+                metadata,
+                blob: pdfBlob,
+                resumeKey: `create:${fileName}:${folderId || 'root'}:${pdfBlob.inhouseContentHash || pdfBlob.size}`,
+                options
             });
-            const data = await res.json();
             state.driveFileId = data.id;
             markDriveHydrated(data.id);
             state.driveFileName = data.name || fileName;
@@ -24132,28 +24141,185 @@
                 mimeType: 'application/pdf',
                 parents: folderId && folderId !== 'root' ? [folderId] : undefined
             };
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            form.append('file', pdfBlob);
-            const res = await driveFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,headRevisionId,modifiedTime,version', {
+            return uploadDriveBlobResumable({
+                url: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,headRevisionId,modifiedTime,version',
                 method: 'POST',
-                body: form,
-                keepalive: !!options.keepalive,
-                signal: options.signal
+                metadata,
+                blob: pdfBlob,
+                resumeKey: `create:${fileName}:${folderId || 'root'}:${pdfBlob.inhouseContentHash || pdfBlob.size}`,
+                options
             });
-            const data = await res.json();
-            return data;
         }
 
         async function updateDriveFile(fileId, pdfBlob, options = {}) {
-            const res = await driveFetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,headRevisionId,modifiedTime,version`, {
+            return uploadDriveBlobResumable({
+                url: `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=resumable&fields=id,headRevisionId,modifiedTime,version`,
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/pdf' },
-                body: pdfBlob,
-                keepalive: !!options.keepalive,
-                signal: options.signal
+                blob: pdfBlob,
+                resumeKey: `update:${fileId}:${pdfBlob.inhouseContentHash || pdfBlob.size}`,
+                options
             });
-            return res.json();
+        }
+
+        const DRIVE_RESUMABLE_CHUNK_BYTES = 4 * 1024 * 1024;
+        const DRIVE_RESUMABLE_CHUNK_TIMEOUT_MS = 60000;
+
+        function getDriveResumableAcknowledgedOffset(response) {
+            const range = response?.headers?.get?.('Range') || '';
+            const match = range.match(/bytes\s*=\s*0-(\d+)/i);
+            return match ? Math.max(0, Number(match[1]) + 1) : 0;
+        }
+
+        async function uploadDriveBlobResumable({ url, method, metadata = null, blob, options = {} }) {
+            if (!(blob instanceof Blob)) throw new TypeError('Drive upload requires a Blob');
+            if (!blob.size) throw new Error('Cannot upload an empty PDF to Drive');
+            const signal = options.signal;
+            if (signal?.aborted) throw createAbortError('Drive save aborted');
+            const useKeepalive = !!options.keepalive && blob.size <= 48 * 1024;
+            const contentIdentity = String(blob.inhouseContentHash || `blob-${blob.size}-${blob.type}`);
+            const resumeKey = String(options.resumeKey || `${method}:${url}:${blob.size}:${contentIdentity}:${metadata?.name || ''}:${(metadata?.parents || []).join(',')}`);
+            const initiationHeaders = {
+                'X-Upload-Content-Type': 'application/pdf',
+                'X-Upload-Content-Length': String(blob.size)
+            };
+            if (metadata) initiationHeaders['Content-Type'] = 'application/json; charset=UTF-8';
+            let sessionUrl = driveResumableSessions.get(resumeKey) || '';
+            const hadExistingSession = !!sessionUrl;
+            const startSession = async () => {
+                const initiation = await driveFetch(url, {
+                    method,
+                    headers: initiationHeaders,
+                    body: metadata ? JSON.stringify(metadata) : undefined,
+                    keepalive: useKeepalive,
+                    signal,
+                    timeout: 30000
+                });
+                const location = initiation.headers.get('Location');
+                if (!location) throw new Error('Drive did not return a resumable upload session');
+                driveResumableSessions.set(resumeKey, location);
+                return location;
+            };
+            if (!sessionUrl) sessionUrl = await startSession();
+
+            let offset = 0;
+            let retryCount = 0;
+            let noProgressCount = 0;
+            const chunkSize = Math.max(256 * 1024,
+                Math.floor(DRIVE_RESUMABLE_CHUNK_BYTES / (256 * 1024)) * 256 * 1024);
+            driveUploadProgress = { sent: 0, total: blob.size };
+            driveSavePhase = 'uploading';
+            if (driveSaveInProgress) {
+                showStatus('Uploading to Drive... 0%', { phase: 'uploading' });
+            }
+            // A previous attempt may have been interrupted after Drive accepted
+            // bytes. Query the session before sending anything again.
+            if (hadExistingSession && driveResumableSessions.get(resumeKey) === sessionUrl && retryCount === 0
+                && driveUploadProgress?.sessionUrl !== sessionUrl) {
+                driveUploadProgress = { sent: 0, total: blob.size, sessionUrl };
+                try {
+                    const status = await driveFetch(sessionUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Range': `bytes */${blob.size}` },
+                        body: new Blob([]),
+                        keepalive: useKeepalive,
+                        signal,
+                        timeout: 30000,
+                        acceptStatuses: [308]
+                    });
+                    if (status.status !== 308) {
+                        const result = await status.json();
+                        driveResumableSessions.delete(resumeKey);
+                        driveUploadProgress = { sent: blob.size, total: blob.size };
+                        return result;
+                    }
+                    offset = getDriveResumableAcknowledgedOffset(status);
+                    driveUploadProgress.sent = offset;
+                } catch (statusError) {
+                    if (/Drive API error 404/.test(String(statusError?.message || statusError))) {
+                        driveResumableSessions.delete(resumeKey);
+                        sessionUrl = await startSession();
+                        driveUploadProgress = { sent: 0, total: blob.size, sessionUrl };
+                    } else {
+                        throw statusError;
+                    }
+                }
+            }
+            while (offset < blob.size) {
+                if (signal?.aborted) throw createAbortError('Drive save aborted');
+                const endExclusive = Math.min(blob.size, offset + chunkSize);
+                const chunk = blob.slice(offset, endExclusive, 'application/pdf');
+                try {
+                    const response = await driveFetch(sessionUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/pdf',
+                            'Content-Range': `bytes ${offset}-${endExclusive - 1}/${blob.size}`
+                        },
+                        body: chunk,
+                        keepalive: useKeepalive,
+                        signal,
+                        timeout: DRIVE_RESUMABLE_CHUNK_TIMEOUT_MS,
+                        acceptStatuses: [308]
+                    });
+                    if (response.status === 308) {
+                        const acknowledged = getDriveResumableAcknowledgedOffset(response);
+                        if (acknowledged <= offset) {
+                            noProgressCount += 1;
+                            if (noProgressCount > 3) {
+                                throw new Error('Drive did not acknowledge uploaded bytes');
+                            }
+                        } else {
+                            offset = acknowledged;
+                            noProgressCount = 0;
+                            retryCount = 0;
+                        }
+                        driveUploadProgress = { sent: offset, total: blob.size };
+                        if (driveSaveInProgress) {
+                            const pct = Math.min(99, Math.floor((offset / blob.size) * 100));
+                            showStatus(`Uploading to Drive... ${pct}%`, { phase: 'uploading' });
+                        }
+                        continue;
+                    }
+                    const result = await response.json();
+                    driveResumableSessions.delete(resumeKey);
+                    driveUploadProgress = { sent: blob.size, total: blob.size };
+                    return result;
+                } catch (error) {
+                    if (signal?.aborted || error?.name === 'AbortError') throw error;
+                    if (/Drive API error 404/.test(String(error?.message || error))) {
+                        throw new Error('Drive upload session expired; retrying with a new session');
+                    }
+                    retryCount += 1;
+                    if (retryCount > 3) throw error;
+                    // Ask Drive what it actually received; never assume a timed-out
+                    // chunk failed or restart from byte zero on a flaky mobile link.
+                    const status = await driveFetch(sessionUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Range': `bytes */${blob.size}`
+                        },
+                        body: new Blob([]),
+                        keepalive: useKeepalive,
+                        signal,
+                        timeout: 30000,
+                        acceptStatuses: [308]
+                    });
+                    if (status.status !== 308) {
+                        const result = await status.json();
+                        driveResumableSessions.delete(resumeKey);
+                        driveUploadProgress = { sent: blob.size, total: blob.size };
+                        return result;
+                    }
+                    const acknowledged = getDriveResumableAcknowledgedOffset(status);
+                    if (acknowledged > offset) {
+                        offset = acknowledged;
+                        noProgressCount = 0;
+                        driveUploadProgress = { sent: offset, total: blob.size };
+                    }
+                    await new Promise(resolve => setTimeout(resolve, Math.min(1500, 250 * retryCount)));
+                }
+            }
+            throw new Error('Drive upload ended without a completed file response');
         }
 
         function hasRemoteActiveSaveSignal(now = Date.now()) {
@@ -24257,6 +24423,7 @@
                 if (!isDocumentSessionTokenValid(sessionToken)) return;
             }
             if (state.driveFileId && !isDriveHydratedForCurrentFile()) {
+                driveSavePhase = 'verifying';
                 const hydrated = await ensureDriveHydratedBeforeUpload();
                 if (!hydrated) {
                     driveDirty = true;
@@ -24280,6 +24447,8 @@
             const controller = new AbortController();
             activeDriveSaveController = controller;
             driveSaveInProgress = true;
+            driveSavePhase = 'preparing';
+            driveUploadProgress = null;
             driveDirty = false;
             recordSaveDebug('Drive save started');
             clearDriveSyncTimers();
@@ -24321,6 +24490,7 @@
                 const hasUnsyncedContent = driveContentVersion !== driveUploadedContentVersion;
                 const needsPdf = state.pages.some(page => page?.pdfPageIndex);
                 if (needsPdf && !activePdfDocument) {
+                    driveSavePhase = 'restoring';
                     recordSaveDebug('Restoring PDF backgrounds');
                     await restorePdfBackgroundsIfNeeded();
                 }
@@ -24339,6 +24509,7 @@
                     setPresenceSavePhase('saved');
                     driveSaveSucceeded = true;
                 } else {
+                driveSavePhase = 'building';
                 showStatus('Processing document...', { phase: 'building' });
                 setPresenceSavePhase('processing');
                 recordSaveDebug('Preparing Drive save');
@@ -24480,6 +24651,7 @@
                 if (driveContentVersion === uploadedContentVersion) {
                     driveDirty = false;
                     deferredDriveSave = false;
+                    state.needsMigrationResave = false;
                     updateSyncBaseline();
                 }
                 startCollabPolling();
@@ -24497,6 +24669,7 @@
                     driveSaveQueued = false;
                     driveSaveSucceeded = false;
                 } else {
+                driveSavePhase = 'retrying';
                 const aborted = controller.signal.aborted
                     || err?.name === 'AbortError'
                     || (typeof err?.message === 'string' && err.message.toLowerCase().includes('aborted'));
@@ -24552,6 +24725,13 @@
             }
             activeDriveSaveController = null;
             driveSaveInProgress = false;
+            if (driveSaveSucceeded) {
+                driveSavePhase = 'idle';
+                driveUploadProgress = null;
+            } else if (!driveSaveBlockedReason && driveSaveFailedThisRun) {
+                driveSavePhase = 'retrying';
+                driveUploadProgress = null;
+            }
             if (driveSaveBlockedReason) {
                 return;
             }
@@ -28327,6 +28507,11 @@
                 localSaveInProgress: !!saveInProgress,
                 localSaveQueued: !!saveQueued,
                 driveSaveInProgress: !!driveSaveInProgress,
+                driveSavePhase: driveSavePhase || 'idle',
+                driveUploadProgress: driveUploadProgress && {
+                    sent: Number(driveUploadProgress.sent) || 0,
+                    total: Number(driveUploadProgress.total) || 0
+                },
                 driveSaveQueued: !!driveSaveQueued,
                 driveDirty: !!driveDirty,
                 deferredDriveSave: !!deferredDriveSave,
@@ -28520,11 +28705,23 @@
                 : (!flags.autosave
                     ? 'Not connected for automatic saving'
                     : (flags.driveSaveInProgress
-                        ? 'Uploading the latest document'
+                        ? (flags.driveSavePhase === 'uploading'
+                            ? `Uploading to Drive${flags.driveUploadProgress?.total
+                                ? ` · ${Math.min(100, Math.floor(flags.driveUploadProgress.sent / flags.driveUploadProgress.total * 100))}%`
+                                : ''}`
+                            : (flags.driveSavePhase === 'building'
+                                ? 'Preparing the latest PDF'
+                                : (flags.driveSavePhase === 'restoring'
+                                    ? 'Restoring PDF pages'
+                                    : (flags.driveSavePhase === 'verifying'
+                                        ? 'Checking the latest Drive revision'
+                                        : 'Preparing the Drive update'))))
                         : (driveClass
-                            ? ((typeof navigator !== 'undefined' && navigator.onLine === false)
-                                ? 'Will update when the connection returns'
-                                : 'Waiting for the latest device changes')
+                            ? (flags.driveSavePhase === 'retrying'
+                                ? 'Retrying the Drive update'
+                                : ((typeof navigator !== 'undefined' && navigator.onLine === false)
+                                    ? 'Will update when the connection returns'
+                                    : 'Waiting for the latest device changes'))
                             : 'Latest document is stored in Drive')));
             rows.push(`
                 <div class="save-device-status">
@@ -29295,30 +29492,42 @@
                     state.hasLegacyBakedOverlay = true;
                 }
 
-                // Fix legacy same-ID strokes and deduplicate truly identical ones
+                // Fix legacy same-ID strokes and deduplicate truly identical ones.
+                // Slice this compatibility scan so old, stroke-heavy documents do
+                // not monopolize the main thread before the editor becomes usable.
                 if (embeddedStrokes && !metadataAlreadyNormalized) {
                     let legacyPageIndex = 0;
                     for (const pageData of embeddedStrokes) {
                         if (pageData && Array.isArray(pageData.strokes) && pageData.strokes.length > 1) {
                             // First: assign new IDs to same-ID strokes (legacy bug)
                             const idSeen = new Set();
-                            for (const s of pageData.strokes) {
+                            for (let strokeIndex = 0; strokeIndex < pageData.strokes.length; strokeIndex += 1) {
+                                const s = pageData.strokes[strokeIndex];
                                 if (s.id && idSeen.has(s.id)) {
                                     s.id = generateStrokeId();
                                     state.needsMigrationResave = true;
                                 } else if (s.id) {
                                     idSeen.add(s.id);
                                 }
+                                if ((strokeIndex + 1) % 256 === 0) {
+                                    await yieldToMainThread();
+                                    throwIfSessionInvalid();
+                                }
                             }
                             // Then: remove truly identical strokes (same content)
                             const seen = new Set();
                             const unique = [];
-                            for (const s of pageData.strokes) {
+                            for (let strokeIndex = 0; strokeIndex < pageData.strokes.length; strokeIndex += 1) {
+                                const s = pageData.strokes[strokeIndex];
                                 const pts = Array.isArray(s.points) ? s.points : [];
                                 const fp = `${s.tool}|${s.color}|${s.width}|${pts.length}|${pts[0]?.x},${pts[0]?.y}|${pts[pts.length-1]?.x},${pts[pts.length-1]?.y}`;
                                 if (!seen.has(fp)) {
                                     seen.add(fp);
                                     unique.push(s);
+                                }
+                                if ((strokeIndex + 1) % 256 === 0) {
+                                    await yieldToMainThread();
+                                    throwIfSessionInvalid();
                                 }
                             }
                             if (unique.length < pageData.strokes.length) {
@@ -29394,7 +29603,7 @@
                         // strokes lazily if a later page is brought into view.
                         const legacyCovers = (state.hasLegacyBakedOverlay
                             && needsPdfBackground
-                            && i <= MAX_ACTIVE_PAGES)
+                            && i === 1)
                             ? restoredStrokes.map(s => ({
                                 ...s,
                                 points: Array.isArray(s.points) ? s.points.map(p => ({ ...p })) : []
@@ -29484,7 +29693,9 @@
                 throwIfSessionInvalid();
                 renderAllPages({ deferVisibleUpdate: true });
                 state.activePageIndex = 0;
-                scheduleSave(true);
+                // A Drive-open is a read operation; only a user-initiated PDF
+                // import/replacement should create a local/Drive save here.
+                if (!options.driveFileId) scheduleSave(true);
                 await yieldToMainThread();
                 throwIfSessionInvalid();
 
@@ -32285,6 +32496,23 @@
                             hasLegacyBakedOverlay: !!state.hasLegacyBakedOverlay
                         };
                     }
+                },
+                async uploadBlobResumableForTest(byteLength = 600 * 1024) {
+                    await ready();
+                    driveSignedOut = false;
+                    driveAccessToken = 'e2e-resumable-upload-token';
+                    driveTokenExpiry = Date.now() + 10 * 60 * 1000;
+                    const bytes = new Uint8Array(Math.max(1, Number(byteLength) || 1));
+                    bytes.fill(0x25);
+                    const blob = new Blob([bytes], { type: 'application/pdf' });
+                    return uploadDriveBlobResumable({
+                        url: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id',
+                        method: 'POST',
+                        metadata: { name: 'Resumable upload test.pdf', mimeType: 'application/pdf' },
+                        blob,
+                        resumeKey: 'e2e-resumable-upload',
+                        options: {}
+                    });
                 }
             });
         }
