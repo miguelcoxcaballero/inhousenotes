@@ -4,6 +4,6 @@
   "required": true,
   "apkSizeBytes": 3159597,
   "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.37",
-  "releaseNotes": "Inhouse Notes v5.11.37: recover stalled Drive upload responses, discard expired sessions, bound zero-progress retries and use smaller chunks for more frequent confirmed progress."
+  "publishedAppVersion": "5.11.38",
+  "releaseNotes": "Inhouse Notes v5.11.38: separate interactive P2P channel, bounded bulk queues, fewer false reconnects and redundant signalling requests, PDF preparation resumes after gestures instead of restarting."
 }

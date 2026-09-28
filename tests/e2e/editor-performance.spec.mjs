@@ -51,6 +51,13 @@ test('background ink renderer preserves pen, highlighter and eraser pixels', asy
   expect(difference).toBeLessThanOrEqual(1);
 });
 
+test('interactions do not discard PDF preparation work', async ({ page }) => {
+  await page.goto('/?e2e=1');
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  await page.evaluate(() => window.__IHN_TEST_API__.ready());
+  expect(await page.evaluate(() => window.__IHN_TEST_API__.interactionDuringPreparationForTest())).toEqual({ aborted: false });
+});
+
 test('pen interaction does not cancel an upload already in flight', async ({ page }) => {
   let putStarted;
   const started = new Promise(resolve => { putStarted = resolve; });

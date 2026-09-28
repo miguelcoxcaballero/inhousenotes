@@ -220,6 +220,10 @@ globalThis.__liveTest = {
   getPeer(id) { return ihnLivePeers.get(id); },
   addKnown(id, at = Date.now()) { ihnLiveKnownPeers.set(id, { lastSeenAt: at, record: {} }); },
   configureChannel: ihnConfigureChannel,
+  configureRealtime: ihnConfigureRealtimeChannel,
+  sendControl: ihnSendControl,
+  waitBackpressure: ihnWaitForBackpressure,
+  start: startLiveCollaboration,
   observePeerHash: ihnObservePeerDocumentHash,
   updatePeers: liveCollabUpdatePeers,
   sendHealthPing: ihnSendHealthPing,
@@ -369,6 +373,73 @@ function peerWithChannel(channel, overrides = {}) {
     ...overrides
   };
 }
+
+test('interactive packets bypass a congested bulk channel with a compatible fallback', () => {
+  const { api } = createHarness();
+  const bulk = createChannel(); bulk.bufferedAmount = 900_000;
+  const realtime = createChannel();
+  const peer = peerWithChannel(bulk, { realtimeChannel: realtime });
+  api.addPeer('peer-remote', peer);
+  assert.equal(api.sendControl(peer, { type: 'live-stroke', points: [1] }), true);
+  assert.equal(realtime.sent.length, 1);
+  assert.equal(bulk.sent.length, 0);
+  realtime.readyState = 'closed';
+  assert.equal(api.sendControl(peer, { t: 'ping' }), true);
+  assert.equal(bulk.sent.length, 1);
+});
+
+test('second stream is capability gated and cannot replace the document channel', async () => {
+  const { api } = createHarness();
+  const bulk = createChannel(); const realtime = createChannel();
+  let created = 0;
+  const peer = peerWithChannel(bulk);
+  peer.pc.createDataChannel = () => { created++; return realtime; };
+  api.addPeer('peer-remote', peer);
+  await api.wire(JSON.stringify({ t: 'hello' }), 'peer-remote');
+  assert.equal(created, 0);
+  await api.wire(JSON.stringify({ t: 'hello', interactiveChannel: 1 }), 'peer-remote');
+  assert.equal(created, 1);
+  assert.equal(peer.channel, bulk);
+  assert.equal(peer.realtimeChannel, realtime);
+  await api.wire(JSON.stringify({ t: 'hello', interactiveChannel: 1 }), 'peer-remote');
+  assert.equal(created, 1);
+  realtime.onclose();
+  assert.equal(api.getPeer('peer-remote'), peer);
+  assert.equal(peer.realtimeChannel, null);
+});
+
+test('bulk backpressure times out without treating congestion as permission to send more', async () => {
+  const harness = createHarness();
+  const channel = createChannel(); channel.bufferedAmount = 80_000;
+  const result = harness.api.waitBackpressure(channel);
+  const rejection = assert.rejects(result, /remained congested/);
+  await harness.runTimerMatching(timer => timer.ms === 15_000);
+  await rejection;
+  assert.equal(channel.sent.length, 0);
+});
+
+test('reasserting an active collaboration session does not start another Drive poll per stroke', () => {
+  let requests = 0;
+  const harness = createHarness({ driveFetch: () => { requests++; return new Promise(() => {}); } });
+  harness.api.start();
+  const initial = requests;
+  for (let i = 0; i < 20; i++) harness.api.start();
+  assert.equal(requests, initial);
+});
+
+test('incoming data during a route probe preserves the peer even without its exact pong', async () => {
+  const harness = createHarness();
+  const channel = createChannel();
+  const peer = peerWithChannel(channel, { lastReceivedAt: Date.now() - 10000, lastPongAt: Date.now() - 10000 });
+  harness.api.addPeer('peer-remote', peer);
+  harness.api.wake('network path changed');
+  const ping = channel.sent.map(JSON.parse).find(p => p.networkProbe);
+  assert.ok(ping);
+  peer.lastReceivedAt = ping.at + 1;
+  await harness.runTimerMatching(timer => timer.ms === 320);
+  assert.equal(harness.api.getPeer('peer-remote'), peer);
+  assert.equal(peer.networkRecoveryMisses, 0);
+});
 
 function liveEnvelope(state, overrides = {}) {
   return {

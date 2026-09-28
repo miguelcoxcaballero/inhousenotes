@@ -10,6 +10,8 @@ test('real WebRTC connects new devices without edits, including a third account'
     const context = await browser.newContext();
     contexts.push(context);
     await context.route('https://www.googleapis.com/**', async route => {
+      // Exercise non-zero signalling latency instead of instant mocked Drive.
+      await new Promise(resolve => setTimeout(resolve, 100));
       const request = route.request();
       const url = new URL(request.url());
       const method = request.method();
@@ -50,6 +52,18 @@ test('real WebRTC connects new devices without edits, including a third account'
     const second = await replica('second@example.com');
     await expect.poll(() => first.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 8000, intervals: [50] }).toBe(1);
     await expect.poll(() => second.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 8000, intervals: [50] }).toBe(1);
+    for (const page of [first, second]) {
+      await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().peers[0]?.interactive), { timeout: 4000, intervals: [25] }).toBe('open');
+    }
+    const ping = await first.evaluate(() => window.__IHN_TEST_API__.congestBulkAndPingForTest());
+    await expect.poll(() => first.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().peers[0]?.lastPongEchoAt), { timeout: 1000, intervals: [25] }).toBeGreaterThanOrEqual(ping);
+    const pageId = await second.evaluate(() => window.__IHN_TEST_API__.snapshot().pages[0].pageId);
+    const strokeStart = Date.now();
+    await first.evaluate(pageId => window.__IHN_TEST_API__.publishPreviewForTest('under-load', pageId, 2), pageId);
+    await expect.poll(() => second.evaluate(() => window.__IHN_TEST_API__.previewPointCountForTest('under-load')), { timeout: 700, intervals: [15] }).toBe(2);
+    await first.evaluate(pageId => window.__IHN_TEST_API__.publishPreviewForTest('under-load', pageId, 4), pageId);
+    await expect.poll(() => second.evaluate(() => window.__IHN_TEST_API__.previewPointCountForTest('under-load')), { timeout: 700, intervals: [15] }).toBe(4);
+    console.log('Two live preview batches with delayed bulk queue (ms):', Date.now() - strokeStart);
     const third = await replica('third@example.com');
     for (const page of [first, second, third]) {
       await expect.poll(() => page.evaluate(() => window.__IHN_TEST_API__.liveConnectionOverviewForTest().openPeerCount), { timeout: 8000, intervals: [50] }).toBe(2);
