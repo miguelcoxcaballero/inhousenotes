@@ -2572,6 +2572,7 @@ function ihnSuperviseConnections(options = {}) {
         }
         if (peer.protocolV2
             && peer.pendingAckHash
+            && !peer.snapshotSendInProgress
             && pendingAckAge > IHN_LIVE_ACK_TIMEOUT) {
             if (pendingAckAge > IHN_LIVE_APPLY_ACK_TIMEOUT && hasRecentVerifiedPong) {
                 // The path itself is healthy, so replacing it would create a
@@ -3227,18 +3228,29 @@ async function ihnBuildLiveSnapshot(operation = ihnCaptureLiveOperationContext()
             && hasPendingRemoteLiveStrokeCommits()) {
             throw new Error('A remote live stroke is waiting to join the snapshot');
         }
+        const contentVersion = typeof driveContentVersion === 'number' ? driveContentVersion : 0;
+        const mutationGeneration = typeof pageMutationGeneration === 'number' ? pageMutationGeneration : 0;
         const snapshot = { v: 1, type: 'document-snapshot', fileId: operation.fileId,
             actorId: `${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`, deviceId: getPresenceClientId(), sequence: ++ihnLiveSequence,
             sentAt: Date.now(), baseRevision: state.driveHeadRevisionId || null,
             exportName: state.exportName || '', calendarPageConfig: cloneTimelineValue(state.calendarPageConfig || null, null),
             structure: getCollabStructureSnapshot(),
             fields: getCollabFieldSnapshot(),
-            pages: state.pages.map(page => {
-                if (typeof cloneSanitizedPageForStorage === 'function') {
-                    return cloneSanitizedPageForStorage(page);
-                }
-                return JSON.parse(JSON.stringify(sanitizePageForStorage(page)));
-            }) };
+            pages: [] };
+        // Page cloning yields to input/rendering. Await every page before hashing
+        // or sending: JSON serializes an unresolved Promise as an empty object.
+        for (const page of state.pages) {
+            snapshot.pages.push(typeof cloneSanitizedPageForStorage === 'function'
+                ? await cloneSanitizedPageForStorage(page)
+                : JSON.parse(JSON.stringify(sanitizePageForStorage(page))));
+            ihnAssertLiveOperationContext(operation);
+        }
+        if ((typeof driveContentVersion === 'number' && driveContentVersion !== contentVersion)
+            || (typeof pageMutationGeneration === 'number' && pageMutationGeneration !== mutationGeneration)
+            || hasSmoothInteraction()
+            || (typeof hasPendingRemoteLiveStrokeCommits === 'function' && hasPendingRemoteLiveStrokeCommits())) {
+            throw new Error('Document changed while copying the live snapshot; retry with current content');
+        }
         snapshot.snapshotId = `${snapshot.actorId}:${snapshot.sequence}`;
         snapshot.contentHash = ihnCanonicalDocumentHash(
             snapshot.pages,
@@ -3405,15 +3417,35 @@ function ihnQueuePeerPayload(peerId, peer, payload, operation, options = {}) {
     const delivery = previous.catch(() => false).then(async () => {
         ihnAssertLiveOperationContext(operation);
         if (ihnLivePeers.get(peerId) !== peer || peer.channel?.readyState !== 'open') return false;
-        const sent = await ihnSendPayload(peer.channel, payload, operation);
-        ihnAssertLiveOperationContext(operation);
-        if (!sent || ihnLivePeers.get(peerId) !== peer) return false;
-        if (options.trackAcknowledgement && payload?.contentHash) {
-            peer.lastSentHash = payload.contentHash;
-            peer.pendingAckHash = payload.contentHash;
+        // Register before the first chunk: an ACK on the interactive stream
+        // can arrive before the bulk-send promise resumes (especially locally).
+        const trackedHash = options.trackAcknowledgement ? String(payload?.contentHash || '') : '';
+        if (trackedHash) {
+            peer.lastSentHash = trackedHash;
+            peer.pendingAckHash = trackedHash;
             peer.pendingAckAt = Date.now();
             peer.pendingAckReceivedHash = '';
             peer.pendingAckReceivedAt = 0;
+        }
+        let sent;
+        peer.snapshotSendInProgress = true;
+        try {
+            sent = await ihnSendPayload(peer.channel, payload, operation);
+        } catch (error) {
+            if (trackedHash && peer.pendingAckHash === trackedHash) peer.pendingAckHash = '';
+            throw error;
+        } finally {
+            peer.snapshotSendInProgress = false;
+        }
+        ihnAssertLiveOperationContext(operation);
+        if (!sent || ihnLivePeers.get(peerId) !== peer) {
+            if (trackedHash && peer.pendingAckHash === trackedHash) peer.pendingAckHash = '';
+            return false;
+        }
+        if (trackedHash && peer.pendingAckHash === trackedHash && peer.pendingAckReceivedHash !== trackedHash) {
+            // The apply deadline starts after transmission, without resetting
+            // a receipt/ACK that already arrived on the independent stream.
+            peer.pendingAckAt = Date.now();
         }
         return true;
     });
@@ -3508,14 +3540,23 @@ async function ihnHandleWireMessage(
         peer.protocolV2 = true;
         const acknowledgedHash = String(message.hash || '');
         if (!acknowledgedHash || !peer.pendingAckHash || peer.pendingAckHash !== acknowledgedHash) return;
-        peer.lastAckedHash = acknowledgedHash;
-        peer.remoteCurrentHash = acknowledgedHash;
+        // Receipt and convergence differ when the receiver merged its own edits.
+        // Old clients omit currentHash; retain compatibility with their ACKs.
+        const currentHash = Object.prototype.hasOwnProperty.call(message, 'currentHash')
+            ? String(message.currentHash || '') : acknowledgedHash;
+        peer.lastAckedHash = currentHash === acknowledgedHash ? acknowledgedHash : '';
+        peer.remoteCurrentHash = currentHash;
         peer.pendingAckHash = '';
         peer.pendingAckAt = 0;
         peer.pendingAckReceivedHash = '';
         peer.pendingAckReceivedAt = 0;
         peer.healthyAckCount = Number(peer.healthyAckCount || 0) + 1;
         ihnMarkPeerHealthy(peerId, peer, 'ack');
+        if (currentHash !== acknowledgedHash) {
+            // Ask for the merged state rather than incorrectly using our sent
+            // state as a delta base. This needs no additional user edit.
+            ihnSendControl(peer, { t: 'state-request', at: Date.now() });
+        }
         return;
     }
     if (message?.t === 'snapshot-nack') {
@@ -3580,6 +3621,7 @@ async function ihnHandleWireMessage(
             ihnSendControl(peer, {
                 t: 'snapshot-ack',
                 hash: envelope.contentHash,
+                currentHash: ihnLiveCurrentHash,
                 snapshotId: envelope.snapshotId || '',
                 at: Date.now()
             });
@@ -3649,6 +3691,12 @@ function ihnHandleLiveEnvelope(envelope, transport = '', peerId = '') {
         || !envelope.actorId
         || !Array.isArray(envelope.pages)
         || (!envelope.pages.length && !envelope.partial)) {
+        return Promise.resolve(false);
+    }
+    if (envelope.pages.some(page => !page || typeof page.pageId !== 'string' || !page.pageId
+        || !Array.isArray(page.strokes) || !Array.isArray(page.images))) {
+        // Never turn incomplete pages (including legacy Promise -> {} packets)
+        // into blank pages, nor ACK them as a successfully synchronized document.
         return Promise.resolve(false);
     }
     const operation = ihnCaptureLiveOperationContext(envelope.fileId);
@@ -3894,6 +3942,7 @@ async function ihnApplyLiveEnvelope(
         const canEditDocument = ihnCanEditLiveDocument();
         const preserveLocal = canEditDocument && hasUnsyncedLocalDriveChanges();
         const result = await applyRemotePages(envelope.pages, {
+            captureContentHash: true,
             preserveLocalUnsynced: preserveLocal,
             // Live snapshots are anti-entropy state, not authoritative
             // replacements. Absence never deletes content; explicit
@@ -3924,7 +3973,7 @@ async function ihnApplyLiveEnvelope(
         if (typeof clearRemoteLiveErasePreviews === 'function') {
             clearRemoteLiveErasePreviews(envelope.actorId, Number(envelope.sentAt) || Date.now());
         }
-        const mergedHash = ihnCanonicalDocumentHash(
+        const mergedHash = result?.contentHash || ihnCanonicalDocumentHash(
             state.pages.map(page => sanitizePageForStorage(page)),
             getCollabStructureSnapshot(),
             state.calendarPageConfig,
@@ -3935,9 +3984,7 @@ async function ihnApplyLiveEnvelope(
         // IDB/hydration pass can therefore be retried with the same sequence.
         ihnLiveSeen.set(envelope.actorId, sequence);
         if (envelope.contentHash) ihnLiveAppliedHashes.set(envelope.contentHash, Date.now());
-        const resolvedCurrentHash = result?.hasLocalMerges
-            ? mergedHash
-            : String(envelope.contentHash || mergedHash);
+        const resolvedCurrentHash = mergedHash;
         ihnLiveLastAppliedHash = resolvedCurrentHash;
         ihnLiveCurrentHash = resolvedCurrentHash;
         ihnTrackMergeCurrentState(resolvedCurrentHash);
@@ -3960,6 +4007,10 @@ async function ihnApplyLiveEnvelope(
         } else {
             ihnScheduleLiveFanOut(envelope, transport, peerId, operation);
         }
+        // Scheduling the convergence save invalidates the cache as a precaution;
+        // no content mutation occurs here, so retain the actually merged hash
+        // for the receipt sent by the wire handler in this same turn.
+        ihnLiveCurrentHash = mergedHash;
         return true;
     } finally {
         if (!applyRecord || ihnLiveActiveApply === applyRecord) {

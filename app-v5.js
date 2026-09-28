@@ -27084,6 +27084,12 @@
             const preserveLocalUnsynced = !!options.preserveLocalUnsynced;
             const additiveById = !!options.additiveById;
             const preserveLocalContent = preserveLocalUnsynced || additiveById;
+            if (options.captureContentHash) {
+                // A live ACK must describe the whole document, not the visible
+                // page plus empty placeholders for pages held only in IndexedDB.
+                await ensureAllPagesLoadedForStructureChange({ assertContext: assertRemoteMergeContext });
+                assertRemoteMergeContext();
+            }
             if (preserveLocalContent) {
                 await hydrateLocalPendingPagesForRemoteMerge({
                     structureToken: mergeToken,
@@ -28115,7 +28121,7 @@
                 lastSyncedStrokeIds.set(i, newSyncedIds);
 
                 // Unload if it wasn't loaded before
-                if (!wasLoaded && !activePageIndices.has(i)) {
+                if (!options.captureContentHash && !wasLoaded && !activePageIndices.has(i)) {
                     pagesToUnloadAfterMerge.add(i);
                 }
             }
@@ -28229,7 +28235,12 @@
                 }
             }
             mergeCompleted = true;
-            return { changed, hasLocalMerges, pagesNeedingPdfBackground };
+            const contentHash = options.captureContentHash ? ihnCanonicalDocumentHash(
+                state.pages.map(page => sanitizePageForStorage(page)),
+                getCollabStructureSnapshot(), state.calendarPageConfig, state.exportName,
+                getCollabFieldSnapshot()
+            ) : '';
+            return { changed, hasLocalMerges, pagesNeedingPdfBackground, contentHash };
             } finally {
                 // If rendering or persistence fails after the in-memory order
                 // changed, still retire the old numeric page mapping before
@@ -32854,6 +32865,41 @@
                     renderPagesList();
                     return this.snapshot();
                 },
+                async seedLiveReplicaForTest(marker) {
+                    await this.resetLocalDocument(3, 'Convergence test');
+                    state.pages.forEach((page, index) => {
+                        page.pageId = `shared-page-${index}`;
+                        const stroke = id => ({ id, tool: 'pen', color: '#123456', width: 2,
+                            points: Array.from({ length: 12 }, (_, n) => ({ x: n + 10, y: index * 20 + n + 10, p: 0.5 })) });
+                        page.strokes = Array.from({ length: 32 }, (_, n) => stroke(`base-${index}-${n}`));
+                        page.strokes.push(stroke(`${marker}-${index}`));
+                        if (marker === 'first' && index === 1) {
+                            trackDeletedStrokeIds(page, [page.strokes[0]]);
+                            page.strokes.shift();
+                        }
+                        page.strokeCount = page.strokes.length;
+                        markPageDirty(index, 'full');
+                    });
+                    state.collabStructure = ihnNormalizeStructureMeta(null, state.pages.map(page => page.pageId));
+                    state.collabFields = null;
+                    getCollabFieldSnapshot();
+                },
+                async checkpointLiveReplicaForTest() {
+                    await ensureAllPagesLoadedForStructureChange();
+                    return { ...this.snapshot(), hash: ihnCanonicalDocumentHash(
+                        state.pages.map(page => sanitizePageForStorage(page)), getCollabStructureSnapshot(),
+                        state.calendarPageConfig, state.exportName, getCollabFieldSnapshot()) };
+                },
+                pauseLiveConnectionForTest() {
+                    stopLiveCollaboration();
+                    driveAccessToken = null;
+                },
+                deleteLiveStrokeForTest(index, id) {
+                    const page = state.pages[index];
+                    trackDeletedStrokeIds(page, page.strokes.filter(stroke => stroke.id === id));
+                    page.strokes = page.strokes.filter(stroke => stroke.id !== id);
+                    markPageDirty(index, 'full');
+                },
                 async startLiveConnectionForTest(email) {
                     await this.prepareLiveDocument('e2e-live-handshake');
                     driveAccessToken = 'e2e-live-token';
@@ -32868,6 +32914,8 @@
                     peers: [...ihnLivePeers].map(([id, peer]) => ({ id, initiator: peer.initiator,
                         state: peer.pc.connectionState, ice: peer.pc.iceConnectionState,
                         interactive: peer.realtimeChannel?.readyState || '',
+                        lastAckedHash: peer.lastAckedHash, pendingAckHash: peer.pendingAckHash,
+                        remoteCurrentHash: peer.remoteCurrentHash,
                         lastPongEchoAt: peer.lastPongEchoAt || 0,
                         signalling: peer.pc.signalingState, remote: !!peer.pc.remoteDescription,
                         local: !!peer.pc.localDescription, commentId: peer.commentId,
