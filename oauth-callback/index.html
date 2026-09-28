@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Google sign-in</title>
+</head>
+<body>
+  <p id="status">Completing Google sign-in…</p>
+  <script>
+    (() => {
+      const NOTES_ORIGIN = 'https://inhousenotes.com'
+      const READ_ORIGIN = 'https://miguelcoxcaballero.github.io'
+      const CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com'
+      const params = new URLSearchParams(location.search)
+      const state = params.get('state')
+      let isReadFlow = false
+      if (state) {
+        try {
+          const encoded = state.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')
+          const payload = JSON.parse(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=')))
+          isReadFlow = payload.origin === READ_ORIGIN && Boolean(payload.nonce) && state.includes('.')
+        } catch { /* Notes own-origin callback */ }
+      }
+      const status = document.getElementById('status')
+      const sendError = (error) => {
+        if (window.opener) window.opener.postMessage({ error, state }, isReadFlow ? READ_ORIGIN : NOTES_ORIGIN)
+        status.textContent = `Google sign-in failed: ${error}`
+      }
+      const code = params.get('code')
+      if (!window.opener || (!code && params.has('error'))) {
+        if (params.has('error')) sendError(params.get('error'))
+        else status.textContent = 'Google sign-in could not be completed. Return to the app and try again.'
+        return
+      }
+      if (!code) return
+
+      if (!isReadFlow) {
+        window.opener.postMessage({ code, state }, NOTES_ORIGIN)
+        window.close()
+        return
+      }
+
+      window.opener.postMessage({ type: 'ihr-oauth-code', code, state }, READ_ORIGIN)
+      window.addEventListener('message', async event => {
+        const data = event.data
+        if (event.origin !== READ_ORIGIN || event.source !== window.opener || data?.type !== 'ihr-oauth-exchange' || data.state !== state) return
+        try {
+          const response = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              client_id: CLIENT_ID,
+              code: data.code,
+              code_verifier: data.verifier,
+              grant_type: 'authorization_code',
+              redirect_uri: data.redirectUri
+            })
+          })
+          const result = await response.json().catch(() => ({}))
+          if (!response.ok) throw new Error(result.error_description || result.error || `Google OAuth ${response.status}`)
+          if (!result.refresh_token) throw new Error('Google did not return a refresh token')
+          window.opener.postMessage({ type: 'ihr-oauth-token', tokens: {
+            accessToken: result.access_token,
+            refreshToken: result.refresh_token,
+            expiresAt: Date.now() + result.expires_in * 1000
+          }, state }, READ_ORIGIN)
+          window.close()
+        } catch (error) {
+          sendError(error instanceof Error ? error.message : 'Token exchange failed')
+        }
+      })
+    })()
+  </script>
+</body>
+</html>
