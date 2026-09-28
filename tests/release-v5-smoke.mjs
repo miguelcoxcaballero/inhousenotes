@@ -25,7 +25,7 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.32.md');
+const notes = readText('../RELEASE_NOTES_v5.11.33.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -33,17 +33,26 @@ const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.32';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.33';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
 assert.match(app, /page data could not be recovered/);
+assert.match(app, /uploadType=resumable/);
+assert.match(app, /Drive did not acknowledge uploaded bytes/);
+assert.match(app, /if \(!options\.driveFileId\) scheduleSave\(true\);/);
+assert.match(app, /&& i === 1\)/);
+assert.doesNotMatch(
+  app,
+  /if \(canEdit && driveContentVersion !== driveUploadedContentVersion\) \{\s*schedulePreparedDrivePdf\(\);/,
+  'opening a Drive file must not launch an import-time PDF rebuild'
+);
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.32/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.32/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.32/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.32/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.33/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.33/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.33/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.33/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -1101,13 +1110,13 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // The Android shell is unchanged, but its hosted app version advances.
-assert.equal(update.publishedAppVersion, '5.11.32');
+assert.equal(update.publishedAppVersion, '5.11.33');
 assert.equal(update.version, '1.0.10');
 assert.equal(update.versionCode, 11);
 assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.11\.32/);
-assert.match(notes, /defers first-page work/i);
-assert.match(notes, /background migration batches/i);
+assert.match(update.releaseNotes, /v5\.11\.33/);
+assert.match(notes, /only the first hydrated page/i);
+assert.match(notes, /resumable uploads/i);
 assert.match(app, /preparedDrivePdfBuild\.controller\.abort\(\)/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
 assert.match(oauthCallback, /miguelcoxcaballero\.github\.io/);
@@ -1116,7 +1125,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.32 smoke checks passed.');
+console.log('v5.11.33 smoke checks passed.');
 
 
 

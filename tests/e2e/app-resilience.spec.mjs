@@ -11,10 +11,68 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.32');
+  await expect(page.locator('[data-app-version]').first()).toHaveText('v5.11.33');
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
+});
+
+test('Drive resumable PDF upload resumes at the server-confirmed byte after a dropped chunk', async ({ page }) => {
+  const uploadRanges = [];
+  let interruptedFirstChunk = false;
+  await page.route('https://www.googleapis.com/**', async route => {
+    const request = route.request();
+    const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': '*',
+      'Access-Control-Allow-Methods': 'GET,POST,PATCH,PUT,OPTIONS',
+      'Access-Control-Expose-Headers': 'Location,Range'
+    };
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers });
+      return;
+    }
+    if (request.method() === 'POST' && request.url().includes('uploadType=resumable')) {
+      await route.fulfill({
+        status: 200,
+        headers: { ...headers, Location: 'https://www.googleapis.com/upload/drive/v3/files/session-e2e' },
+        body: ''
+      });
+      return;
+    }
+    if (request.url().endsWith('/session-e2e') && request.method() === 'PUT') {
+      const range = request.headers()['content-range'] || '';
+      uploadRanges.push(range);
+      if (range.startsWith('bytes 0-') && !interruptedFirstChunk) {
+        interruptedFirstChunk = true;
+        await route.abort('timedout');
+        return;
+      }
+      if (range.startsWith('bytes */')) {
+        await route.fulfill({ status: 308, headers: { ...headers, Range: 'bytes=0-262143' }, body: '' });
+        return;
+      }
+      if (range.startsWith('bytes 262144-')) {
+        await route.fulfill({
+          status: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: 'resumed-file', version: '7', headRevisionId: 'rev-resumed' })
+        });
+        return;
+      }
+    }
+    await route.fulfill({ status: 500, headers, body: 'Unexpected mocked Drive request' });
+  });
+
+  await page.goto('/?e2e=1', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__IHN_TEST_API__);
+  const result = await page.evaluate(() => window.__IHN_TEST_API__.uploadBlobResumableForTest());
+  expect(result.id).toBe('resumed-file');
+  expect(uploadRanges).toEqual([
+    'bytes 0-614399/614400',
+    'bytes */614400',
+    'bytes 262144-614399/614400'
+  ]);
 });
 
 test('pen-down paints its first point without rebuilding a stale page canvas', async ({ page, context }) => {
