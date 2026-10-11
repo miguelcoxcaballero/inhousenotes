@@ -132,229 +132,26 @@
         }
 
         applyInhouseAppMode();
-        const ANDROID_UPDATE_MANIFEST_URL = '/android-update.json';
-        const LEGACY_ANDROID_APP_VERSION = '1.0.2';
-        let androidUpdateCheckPromise = null;
-
-        function compareSemanticVersions(left, right) {
-            const parse = value => String(value || '').split('.').map(part => Number.parseInt(part, 10) || 0);
-            const a = parse(left);
-            const b = parse(right);
-            const length = Math.max(a.length, b.length);
-            for (let i = 0; i < length; i++) {
-                const difference = (a[i] || 0) - (b[i] || 0);
-                if (difference !== 0) return difference;
-            }
-            return 0;
-        }
-
-        function getInstalledAndroidAppVersion() {
-            if (window.InhouseNative && typeof window.InhouseNative.getAppVersion === 'function') {
-                try {
-                    const nativeVersion = String(window.InhouseNative.getAppVersion() || '').trim();
-                    if (/^\d+\.\d+\.\d+$/.test(nativeVersion)) return nativeVersion;
-                } catch (err) {}
-            }
-            const match = String(navigator.userAgent || '').match(/\bInhouseNotesApp\/(\d+(?:\.\d+){1,2})\b/i);
-            if (match && match[1] !== '1.0') return match[1];
-            return LEGACY_ANDROID_APP_VERSION;
-        }
-
-        function setAndroidUpdateGateOverflow(blocked) {
-            document.documentElement.style.overflow = blocked ? 'hidden' : '';
-            document.body.style.overflow = blocked ? 'hidden' : '';
-        }
-
-        function ensureAndroidUpdateGate() {
-            let gate = document.getElementById('android-update-gate');
-            if (gate) return gate;
-            gate = document.createElement('div');
-            gate.id = 'android-update-gate';
-            gate.setAttribute('role', 'dialog');
-            gate.setAttribute('aria-modal', 'true');
-            gate.setAttribute('aria-label', 'Required application update');
-            Object.assign(gate.style, {
-                position: 'fixed', inset: '0', zIndex: '2147483647', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', padding: '24px',
-                background: 'rgba(10, 10, 12, 0.94)', color: '#f7f7f8', fontFamily: 'DM Sans, sans-serif'
+        // Inhouse services updater: edit the canonical repo and sync ALL five apps.
+        // Every new release goes to A with a tiny changelog; B only on explicit user request.
+        // Shared optional popup/14-day reminder replaces the previous blocking gate.
+        if (isInhouseApp && window.InhouseServicesUpdater) {
+            const updates = window.InhouseServicesUpdater.create({
+                appId: 'notes', appName: 'Inhouse Notes', repository: 'miguelcoxcaballero/inhousenotes',
+                installedVersion: '1.0.2',
+                install: release => {
+                    if (window.InhouseNative?.installInhouseUpdate) window.InhouseNative.installInhouseUpdate(release.apkUrl, release.apkSha256);
+                    else if (window.InhouseNative?.installAppUpdate) window.InhouseNative.installAppUpdate(release.apkUrl);
+                    else throw new Error('Abre la app Android para instalar.');
+                }
             });
-            gate.innerHTML = `
-                <div style="width:min(420px,100%);padding:30px;border-radius:26px;background:#1c1c1f;border:1px solid #35353a;box-shadow:0 24px 80px rgba(0,0,0,.48)">
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
-                        <span style="display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:rgba(224,122,60,.14);color:#E07A3C">
-                            <svg viewBox="0 0 40 24" width="30" height="19" fill="none" aria-hidden="true"><path d="M4 22 L20 6 L36 22" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                        </span>
-                        <div style="min-width:0">
-                            <div style="font:600 12px/1.2 DM Sans,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#96969e">Inhouse Notes</div>
-                            <h2 data-update-title style="margin:4px 0 0;font:700 23px/1.2 Comfortaa,sans-serif">Actualización obligatoria</h2>
-                        </div>
-                    </div>
-                    <p data-update-message style="margin:0;color:#c8c8cd;line-height:1.55"></p>
-                    <div data-update-progress hidden style="margin-top:24px" aria-live="polite">
-                        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:10px">
-                            <strong data-update-percent style="font:700 24px/1 Comfortaa,sans-serif;color:#f7f7f8">0%</strong>
-                            <span data-update-bytes style="font:500 13px/1.2 DM Sans,sans-serif;color:#aaaab2;white-space:nowrap">0 MB</span>
-                        </div>
-                        <div data-update-progressbar role="progressbar" aria-label="Progreso de descarga" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="height:10px;overflow:hidden;border-radius:999px;background:#323238;box-shadow:inset 0 1px 2px rgba(0,0,0,.25)">
-                            <div data-update-progressfill style="width:0%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#E07A3C,#f39a5d);transition:width .18s ease"></div>
-                        </div>
-                    </div>
-                    <button data-update-install type="button" style="display:block;width:100%;margin-top:24px;padding:14px 18px;border:0;border-radius:14px;background:#f2f2f4;color:#151517;font:700 16px DM Sans,sans-serif;cursor:pointer;transition:opacity .18s ease">Instalar actualización</button>
-                    <p data-update-status aria-live="polite" style="min-height:20px;margin:14px 0 0;color:#aaaab2;font-size:13px;line-height:1.4;text-align:center"></p>
-                </div>`;
-            document.body.appendChild(gate);
-            setAndroidUpdateGateOverflow(true);
-            return gate;
+            document.querySelectorAll('[data-inhouse-update-settings]').forEach(button => {
+                button.hidden = false;
+                button.addEventListener('click', () => updates.settings());
+            });
+            window.InhouseUpdater = updates;
+            updates.start();
         }
-
-        function closeAndroidUpdateGate() {
-            document.getElementById('android-update-gate')?.remove();
-            setAndroidUpdateGateOverflow(false);
-        }
-
-        function formatAndroidUpdateMegabytes(bytes) {
-            const value = Math.max(0, Number(bytes) || 0) / (1024 * 1024);
-            if (value === 0) return '0 MB';
-            return `${value < 10 ? value.toFixed(2) : value.toFixed(1)} MB`;
-        }
-
-        function renderAndroidUpdateProgress(gate, payload = {}) {
-            if (!gate) return;
-            const progress = gate.querySelector('[data-update-progress]');
-            const percentEl = gate.querySelector('[data-update-percent]');
-            const bytesEl = gate.querySelector('[data-update-bytes]');
-            const progressBar = gate.querySelector('[data-update-progressbar]');
-            const fill = gate.querySelector('[data-update-progressfill]');
-            const downloadedBytes = Math.max(0, Number(payload.downloadedBytes) || 0);
-            const totalBytes = Math.max(0, Number(payload.totalBytes) || Number(gate.dataset.updateTotalBytes) || 0);
-            const calculatedPercent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : 0;
-            const percent = Math.max(0, Math.min(100, Math.round(
-                Number.isFinite(Number(payload.percent)) ? Number(payload.percent) : calculatedPercent
-            )));
-            gate.dataset.updateDownloadedBytes = String(downloadedBytes);
-            if (totalBytes > 0) gate.dataset.updateTotalBytes = String(totalBytes);
-            progress.hidden = false;
-            percentEl.textContent = `${percent}%`;
-            bytesEl.textContent = totalBytes > 0
-                ? `${formatAndroidUpdateMegabytes(downloadedBytes)} / ${formatAndroidUpdateMegabytes(totalBytes)}`
-                : `${formatAndroidUpdateMegabytes(downloadedBytes)} descargados`;
-            fill.style.width = `${percent}%`;
-            progressBar.setAttribute('aria-valuenow', String(percent));
-            progressBar.setAttribute('aria-valuetext', bytesEl.textContent);
-        }
-
-        window.handleInhouseUpdateResult = payload => {
-            let result = payload;
-            if (typeof result === 'string') {
-                try { result = JSON.parse(result); } catch (err) { result = null; }
-            }
-            const gate = document.getElementById('android-update-gate');
-            if (!gate || !result) return;
-            const install = gate.querySelector('[data-update-install]');
-            const status = gate.querySelector('[data-update-status]');
-            if (result.status === 'permission_required') {
-                status.textContent = 'Activa “Permitir desde esta fuente”, vuelve a Inhouse Notes y pulsa Continuar.';
-                install.textContent = 'Continuar instalación';
-                install.disabled = false;
-                install.style.opacity = '1';
-            } else if (result.status === 'downloading') {
-                renderAndroidUpdateProgress(gate, result);
-                status.textContent = 'Descargando de forma segura dentro de Inhouse Notes…';
-                install.disabled = true;
-                install.style.opacity = '.55';
-            } else if (result.status === 'ready') {
-                renderAndroidUpdateProgress(gate, {
-                    ...result,
-                    downloadedBytes: result.downloadedBytes || gate.dataset.updateTotalBytes,
-                    totalBytes: result.totalBytes || gate.dataset.updateTotalBytes,
-                    percent: 100
-                });
-                status.textContent = 'Descarga terminada. Confirma la instalación en Android.';
-                install.disabled = true;
-                install.style.opacity = '.55';
-            } else if (result.status === 'error') {
-                status.textContent = result.message || 'No se pudo descargar la actualización. Inténtalo de nuevo.';
-                install.textContent = 'Reintentar';
-                install.disabled = false;
-                install.style.opacity = '1';
-            }
-        };
-
-        function showRequiredAndroidUpdate(manifest, installedVersion) {
-            const gate = ensureAndroidUpdateGate();
-            const message = gate.querySelector('[data-update-message]');
-            const install = gate.querySelector('[data-update-install]');
-            const status = gate.querySelector('[data-update-status]');
-            gate.dataset.updateTotalBytes = String(Math.max(0, Number(manifest.apkSizeBytes) || 0));
-            message.textContent = `Tienes Inhouse Notes ${installedVersion}. Instala la versión ${manifest.version} para continuar.`;
-            install.onclick = () => {
-                status.textContent = 'Preparando la actualización…';
-                install.disabled = true;
-                install.style.opacity = '.55';
-                renderAndroidUpdateProgress(gate, {
-                    downloadedBytes: 0,
-                    totalBytes: Number(manifest.apkSizeBytes) || 0,
-                    percent: 0
-                });
-                try {
-                    if (window.InhouseNative && typeof window.InhouseNative.installAppUpdate === 'function') {
-                        window.InhouseNative.installAppUpdate(manifest.apkUrl);
-                    } else if (window.InhouseNative && typeof window.InhouseNative.openAuthUrl === 'function') {
-                        window.InhouseNative.openAuthUrl(manifest.apkUrl);
-                        status.textContent = 'Cuando finalice la descarga, abre el APK y confirma la instalación.';
-                        setTimeout(() => {
-                            install.disabled = false;
-                            install.style.opacity = '1';
-                        }, 1500);
-                    } else {
-                        window.location.assign(manifest.apkUrl);
-                    }
-                } catch (err) {
-                    status.textContent = 'No se pudo iniciar la descarga. Inténtalo de nuevo.';
-                    install.disabled = false;
-                    install.style.opacity = '1';
-                }
-            };
-            install.focus();
-        }
-
-        async function checkForRequiredAndroidUpdate() {
-            if (!isInhouseApp || !window.InhouseNative) return;
-            if (androidUpdateCheckPromise) return androidUpdateCheckPromise;
-            androidUpdateCheckPromise = (async () => {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 12000);
-                try {
-                    const response = await fetch(`${ANDROID_UPDATE_MANIFEST_URL}?check=${Date.now()}`, {
-                        cache: 'no-store',
-                        headers: { 'Cache-Control': 'no-cache' },
-                        signal: controller.signal
-                    });
-                    if (!response.ok) throw new Error(`Update check failed (${response.status})`);
-                    const manifest = await response.json();
-                    if (!/^\d+\.\d+\.\d+$/.test(String(manifest.version || ''))) throw new Error('Invalid update version');
-                    const apkUrl = new URL(String(manifest.apkUrl || ''), window.location.origin);
-                    const allowedHosts = ['inhousenotes.com', 'github.com', 'raw.githubusercontent.com'];
-                    if (apkUrl.protocol !== 'https:' || !allowedHosts.includes(apkUrl.hostname)) throw new Error('Invalid update download URL');
-                    manifest.apkUrl = apkUrl.toString();
-                    const installedVersion = getInstalledAndroidAppVersion();
-                    if (manifest.required !== false && compareSemanticVersions(manifest.version, installedVersion) > 0) {
-                        showRequiredAndroidUpdate(manifest, installedVersion);
-                    } else {
-                        closeAndroidUpdateGate();
-                    }
-                } catch (err) {
-                    console.warn('Android update check failed:', err);
-                } finally {
-                    clearTimeout(timeoutId);
-                }
-            })().finally(() => { androidUpdateCheckPromise = null; });
-            return androidUpdateCheckPromise;
-        }
-
-        checkForRequiredAndroidUpdate();
-        window.addEventListener('focus', checkForRequiredAndroidUpdate);
-        setInterval(checkForRequiredAndroidUpdate, 15 * 60 * 1000);
         // Native Canvas Template Render (replaces previous heavy SVG_BACKGROUND)
         // Template background cache: render once, reuse as single drawImage
         const _tplCache = new Map(); // key "kind|WxH" -> canvas
