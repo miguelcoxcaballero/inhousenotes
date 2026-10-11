@@ -25,7 +25,7 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.48.md');
+const notes = readText('../RELEASE_NOTES_v5.11.49.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -33,7 +33,7 @@ const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.48';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.49';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -57,10 +57,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.48/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.48/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.48/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.48/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.49/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.49/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.49/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.49/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -428,15 +428,15 @@ const openDriveEnd = html.indexOf('function updateViewerModeUI()', openDriveStar
 const openDriveSource = html.slice(openDriveStart, openDriveEnd);
 assert.match(openDriveSource, /resumeDetachedExitUploadAfterOpen\(detachedExitSaves\)/);
 assert.doesNotMatch(openDriveSource, /await lifecycleExitSavePromise|await backgroundExitSavePromise/);
-assert.match(html, /This device\$\{overview\.isMain \? ' · Main device'/);
-assert.match(html, /Google Drive<\/div>/);
+assert.match(html, /row\('This device', view\.localLabel/);
+assert.match(html, /row\('Google Drive', view\.driveLabel/);
 assert.match(html, /connection\?\.transport/);
 assert.doesNotMatch(html, />Admin mode</);
 assert.doesNotMatch(html, /save-state-glyph/);
 assert.match(html, /\.mode-toggle-status \.save-indicator::after \{\s*content: "";\s*width: 9px;\s*height: 9px;/);
 assert.match(html, /function getSaveIndicatorSemanticState\(/);
 assert.match(html, /function refreshSaveIndicatorState\(/);
-assert.match(html, /Live connection<\/div>/);
+assert.match(html, /row\('Live connection'/);
 assert.match(html, /driveContentVersion !== driveUploadedContentVersion/);
 assert.match(html, /const PENDING_EXIT_UPLOAD_KEY = 'drive-pending-exit-upload-v1';/);
 assert.match(html, /async function persistExitLocalCheckpoint\(/);
@@ -903,6 +903,7 @@ const storageSaveContext = vm.createContext({
   flushDirtyPages: async () => { storageEvents.push('pages'); return true; },
   buildMetaPayload: () => { storageEvents.push('metadata'); return { pages: [] }; },
   saveToIndexedDb: async () => { storageEvents.push('indexeddb'); return true; },
+  confirmLocalSave: () => {},
   persistTimelineHistory: () => Promise.resolve(),
   scheduleLocalStorageBackup: () => { storageEvents.push('backup'); return true; },
   updateSaveTimestamp: () => storageEvents.push('timestamp')
@@ -922,6 +923,14 @@ const queueStatuses = [];
 const queueSaveContext = vm.createContext({
   console: { error: () => {} },
   state: { isReadOnly: false },
+  localSaveError: '',
+  localSaveRetryTimer: null,
+  clearTimeout: () => {},
+  captureDocumentPersistenceContext: () => ({ session: 1 }),
+  isDocumentPersistenceContextCurrent: () => true,
+  noteLocalSaveFailure: () => {},
+  confirmLocalSave: () => {},
+  scheduleLocalSaveRetry: () => {},
   recordSaveDebug: () => {},
   saveToStorage: async () => { throw new Error('simulated storage failure'); },
   showPendingSaveStatus: () => {},
@@ -1052,7 +1061,7 @@ assert.match(html, /const EMBEDDED_METADATA_MAX_ENCODED_CHARS = 48 \* 1024 \* 10
 assert.match(html, /const EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES = 96 \* 1024 \* 1024;/);
 assert.match(html, /if \(!workerUnavailable\) throw workerErr;/);
 assert.match(html, /const stride = Math\.max\(1, Math\.floor\(text\.length \/ 4096\)\);/);
-assert.match(html, /documentSessionId \+= 1;[\s\S]{0,420}embeddedMetadataCache\.clear\(\);/);
+assert.match(html, /documentSessionId \+= 1;[\s\S]{0,800}embeddedMetadataCache\.clear\(\);/);
 assert.match(html, /if \(isDocumentSessionTokenValid\(cacheSessionToken\)\) \{\s*embeddedMetadataCache\.set/);
 assert.match(html, /if \(raw\.length > 16384\) return null;/);
 assert.match(html, /const COLLAB_KEYWORD_SECTION_MAX_CHARS = 8 \* 1024 \* 1024;/);
@@ -1122,10 +1131,10 @@ assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\
 assert.ok(['1.0.10','1.0.11','1.0.12'].includes(update.version));
 assert.ok(update.versionCode >= 11);
 assert.ok(update.apkSizeBytes > 0);
-assert.match(notes, /BroadcastChannel/i);
-assert.match(notes, /cached document hashes/i);
-assert.match(notes, /real WebRTC/i);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.48/);
+assert.match(notes, /local save/i);
+assert.match(notes, /Drive/i);
+assert.match(notes, /hidden/i);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.49/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
@@ -1135,7 +1144,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.48 smoke checks passed.');
+console.log('v5.11.49 smoke checks passed.');
 
 
 
