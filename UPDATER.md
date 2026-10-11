@@ -15,3 +15,7 @@ Every AI/developer working in this app must read this section even without openi
 - See the central `AGENTS.md`, `docs/PROTOCOL.md` and `tools/catalog.py` before changing publication logic.
 
 This section supersedes older instructions that mandate blocking update gates, independently copied updaters, or unconditional latest/stable publication. Existing signature and integrity requirements remain in force.
+
+## Android y contenido web
+
+El selector A/B elige actualizaciones de la APK. Esta app también carga contenido web alojado: antes de la primera promoción B hay que fijar una versión del contenido web para B y comprobarla, para que cambios posteriores de A no modifiquen esa versión. B permanece vacío mientras no se solicite expresamente.

@@ -78,7 +78,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view android-v1.0.11 >/dev/null 2>&1; then
-            gh release upload android-v1.0.11 inhouse-notes-release-v1.0.11.apk --clobber
+            echo "La versión ya está publicada; incrementa versionName/versionCode antes de generar otra APK."
+            exit 1
           else
             gh release create android-v1.0.11 inhouse-notes-release-v1.0.11.apk \
               --title "Inhouse Notes Android 1.0.11" \
