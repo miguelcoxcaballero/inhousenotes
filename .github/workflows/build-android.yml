@@ -82,6 +82,7 @@ jobs:
             exit 1
           else
             gh release create android-v1.0.13 inhouse-notes-release-v1.0.13.apk \
+              --target "$GITHUB_SHA" \
               --title "Inhouse Notes Android 1.0.13" \
               --notes "Updated Inhouse services updater." \
               --prerelease --latest=false

@@ -7,13 +7,20 @@ import sys
 from pathlib import Path
 
 sdk = Path(os.environ.get("ANDROID_HOME") or os.environ["ANDROID_SDK_ROOT"])
-build_tools = sorted((sdk / "build-tools").iterdir(), key=lambda p: [int(n) for n in re.findall(r"\d+", p.name)])[-1]
+stable_tools = [p for p in (sdk / "build-tools").iterdir() if re.fullmatch(r"\d+\.\d+\.\d+", p.name)]
+# Preview SDK tools may change their certificate-reporting format. Prefer the
+# release toolchain used to verify all five app packages.
+build_tools = sdk / "build-tools" / "36.0.0"
+if not build_tools.is_dir():
+    build_tools = sorted(stable_tools, key=lambda p: [int(n) for n in p.name.split(".")])[-1]
 apk, previous = map(Path, sys.argv[1:])
 
 
 def certificate(path):
-    output = subprocess.check_output([str(build_tools / "apksigner"), "verify", "--print-certs", str(path)], text=True)
-    return re.search(r"Signer #1 certificate SHA-256 digest: ([a-f0-9]+)", output)[1]
+    output = subprocess.check_output([str(build_tools / "apksigner"), "verify", "--verbose", "--print-certs", str(path)], text=True)
+    digests = re.findall(r"certificate SHA-256 digest:\s*([a-f0-9]{64})", output, flags=re.IGNORECASE)
+    assert digests, "Android signing tool did not report a certificate digest"
+    return sorted(set(d.lower() for d in digests))
 
 
 assert certificate(apk) == certificate(previous), "Signing key changed"
