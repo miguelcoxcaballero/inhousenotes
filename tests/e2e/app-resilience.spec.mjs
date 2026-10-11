@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+const releaseVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url))).version;
 
 test('production app boots under CSP with external runtime modules', async ({ page }) => {
   const violations = [];
@@ -11,7 +13,7 @@ test('production app boots under CSP with external runtime modules', async ({ pa
   await page.waitForFunction(() => window.__IHN_TEST_API__);
   await page.evaluate(() => window.__IHN_TEST_API__.ready());
   await expect(page.locator('#welcome-view')).toBeVisible();
-  await expect(page.locator('[data-app-version]')).toHaveText(['v5.11.41', 'v5.11.41']);
+  await expect(page.locator('[data-app-version]')).toHaveText(['v' + releaseVersion, 'v' + releaseVersion]);
   expect(await page.evaluate(() => !!(window.pdfjsLib && window.PDFLib && window.jspdf))).toBe(true);
   expect(violations).toEqual([]);
   expect(pageErrors).toEqual([]);
