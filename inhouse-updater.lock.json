@@ -1,7 +1,7 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "53c7b0a6d01bbbc7cee1663c5a5bbac145f896d8",
-  "version": "1.2.0",
+  "revision": "faf925d1d576b98baa8a53b1f8d39e842d18d0a9",
+  "version": "1.2.1",
   "appId": "notes",
   "files": {
     "vendor/inhouse-services-updater/web/host.css": {
@@ -18,7 +18,7 @@
     },
     "vendor/inhouse-services-updater/web/updater.css": {
       "source": "web/updater.css",
-      "sha256": "1d1e73efe59468f2f60cbe249736a1b5aebdbe4eb750f9d864064fedead5253b"
+      "sha256": "23ef68343785ca71861fabcd4578d8d3249cf62a4e457aead9c7b0e691a55e90"
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
@@ -66,7 +66,7 @@
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "bff9005995f209e260d6034271be027597c914d1dc64642c2f1567e2a3b66b61"
+      "sha256": "8c4b3408113e364b022c82be1b97eea5ba866950511cfc71999ef577fed3ad8f"
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
@@ -82,7 +82,7 @@
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
-      "sha256": "1d1e73efe59468f2f60cbe249736a1b5aebdbe4eb750f9d864064fedead5253b"
+      "sha256": "23ef68343785ca71861fabcd4578d8d3249cf62a4e457aead9c7b0e691a55e90"
     }
   }
 }
