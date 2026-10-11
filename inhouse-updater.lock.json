@@ -1,7 +1,7 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "f81a3d5e55dfc7941276e8a507948005d41a55af",
-  "version": "1.2.2",
+  "revision": "6621ca1dbb519d171d723f118052e42ef5d5c001",
+  "version": "1.2.3",
   "appId": "notes",
   "files": {
     "vendor/inhouse-services-updater/web/host.css": {
@@ -22,7 +22,7 @@
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "e6ca3160f7b0ed40ee8ad70ad40248281603c502e7b2ac814b4d87938cce6d70"
+      "sha256": "e0dad1ac3e720e7f59e24c9f4ad5a9dc2e78ef5fbbec0cfd392029e896a3b5d8"
     },
     "vendor/inhouse-services-updater/android/InstallActivity.java": {
       "source": "android/InstallActivity.java",
@@ -82,7 +82,7 @@
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "d7b0b9fd864e2c10e9e3a364d8f6188f6a06d1060efde0a2f5b74bffa95f0135"
+      "sha256": "2f38236468fee22679241cd9ef1b66c3d0939061f84877161769e80dbb8b9a14"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
@@ -90,7 +90,7 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "e6ca3160f7b0ed40ee8ad70ad40248281603c502e7b2ac814b4d87938cce6d70"
+      "sha256": "e0dad1ac3e720e7f59e24c9f4ad5a9dc2e78ef5fbbec0cfd392029e896a3b5d8"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",

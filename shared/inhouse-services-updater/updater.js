@@ -6,7 +6,7 @@
  */
 (function (root) {
   'use strict';
-  const VERSION = '1.2.2', TWO_WEEKS = 14 * 86400000;
+  const VERSION = '1.2.3', TWO_WEEKS = 14 * 86400000;
   const compareVersions = (a, b) => {
     const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
     for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return Math.sign(d); }
@@ -16,6 +16,14 @@
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.hostname !== 'github.com' || !url.pathname.startsWith('/' + config.repository + '/releases/download/') || !url.pathname.endsWith('.apk') || url.username || url.password) throw Error('Invalid download.');
     return url.href;
+  }
+  function releasePageUrl(value, config) {
+    const url = new URL(validatedApkUrl(value, config));
+    const path = url.pathname.slice(('/' + config.repository + '/releases/download/').length).split('/');
+    if (path.length !== 2 || !path[0] || !path[1]) throw Error('Invalid release download.');
+    // Keep the tag's URL encoding intact (including encoded slashes). Never use
+    // /latest, the binary URL, or an unvalidated link from a native result.
+    return 'https://github.com/' + config.repository + '/releases/tag/' + path[0];
   }
   function validateCatalog(value, channel, config) {
     if (!value || value.schemaVersion !== 1 || value.channel !== channel || !Array.isArray(value.releases)) throw Error('Invalid update catalog.');
@@ -342,12 +350,12 @@
       let url;
       // Persisted attempts are untrusted too; use the same repository-bound URL
       // validation as the catalog. Never take a download URL from native errors.
-      try { url = validatedApkUrl(release?.apkUrl, config); } catch (_) { return; }
+      try { url = releasePageUrl(release?.apkUrl, config); } catch (_) { return; }
       const recovery = el('div', null, 'isu-recovery'); recovery.dataset.isuRecovery = ''; recovery.hidden = hidden;
       const link = el('a', 'Download APK', 'isu-download'); link.href = url;
       // A regular link lets old Notes/Read hosts open GitHub in the browser.
       // Their installer bridge, auth-only browser API and new windows may fail.
-      recovery.append(link, el('p', 'Open the downloaded APK from Downloads.', 'isu-recovery-help'));
+      recovery.append(link, el('p', 'Choose the APK under Assets on GitHub.', 'isu-recovery-help'));
       parent.append(recovery);
     }
     function showRecovery(visible) {
