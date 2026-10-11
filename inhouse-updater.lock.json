@@ -1,12 +1,12 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "7f6f1faa86f56b69996432d570ba8b798349e9dd",
-  "version": "1.1.0",
+  "revision": "53c7b0a6d01bbbc7cee1663c5a5bbac145f896d8",
+  "version": "1.2.0",
   "appId": "notes",
   "files": {
     "vendor/inhouse-services-updater/web/host.css": {
       "source": "web/host.css",
-      "sha256": "aee5a94fde4378720c3991dae85f09b01bf90978ea2f1574e61f393ad556a779"
+      "sha256": "954f3217a97bf5a311786b94f996eecbd1b9bd06f05999924dea2925991d9cd3"
     },
     "vendor/inhouse-services-updater/web/host.js": {
       "source": "web/host.js",
@@ -18,11 +18,11 @@
     },
     "vendor/inhouse-services-updater/web/updater.css": {
       "source": "web/updater.css",
-      "sha256": "3eac48fd3b806242e999708d924d43cac61443dd8a62221229ea8606531c75b8"
+      "sha256": "1d1e73efe59468f2f60cbe249736a1b5aebdbe4eb750f9d864064fedead5253b"
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "afdb63ee0b6cbb0716b636fe234a754843a38e860753f2cbc9b692b2fc5cae81"
+      "sha256": "ed990592bf0eab1d75949f5b9affa3e4d4428facdeca6f091f0749c97dfbc6a2"
     },
     "vendor/inhouse-services-updater/android/NativeUpdates.java": {
       "source": "android/NativeUpdates.java",
@@ -58,7 +58,7 @@
     },
     "vendor/inhouse-services-updater/tests/browser.py": {
       "source": "tests/browser.py",
-      "sha256": "5fcc1101b59fc6ec686d65d093da82c2c6b6440d0181c00940896b6b49a29e58"
+      "sha256": "7ca854dadf57b2ce778e0c7488f3d5ed394f198be417ed9df90c61d7ecf3dae5"
     },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
@@ -66,7 +66,7 @@
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "88c97993d92be5aa08c035a1a5dd934800fbb436d5df51a856079cab3efc7fac"
+      "sha256": "bff9005995f209e260d6034271be027597c914d1dc64642c2f1567e2a3b66b61"
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
@@ -78,11 +78,11 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "afdb63ee0b6cbb0716b636fe234a754843a38e860753f2cbc9b692b2fc5cae81"
+      "sha256": "ed990592bf0eab1d75949f5b9affa3e4d4428facdeca6f091f0749c97dfbc6a2"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
-      "sha256": "3eac48fd3b806242e999708d924d43cac61443dd8a62221229ea8606531c75b8"
+      "sha256": "1d1e73efe59468f2f60cbe249736a1b5aebdbe4eb750f9d864064fedead5253b"
     }
   }
 }
