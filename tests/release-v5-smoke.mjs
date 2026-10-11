@@ -199,8 +199,8 @@ assert.doesNotMatch(
   /"url": "https:\/\/inhousenotes\.com/,
   'Android must paint its bundled launch shell before navigating to the web app'
 );
-assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.12"/);
-assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 13/);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.13"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 14/);
 assert.match(androidLoader, /html, body \{ margin: 0; width: 100%; height: 100%;/);
 assert.match(androidLoader, /position: fixed;\s*inset: 0;\s*display: grid;\s*place-items: center;/);
 assert.match(html, /#toolbar \{[\s\S]{0,500}--toolbar-ink: #1a1a1a;/);
@@ -1137,7 +1137,7 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // Publication metadata must remain tied to an actual APK; shell advances when CI publishes it.
-assert.ok(['1.0.10','1.0.11','1.0.12'].includes(update.version));
+assert.ok(['1.0.10','1.0.11','1.0.12','1.0.13'].includes(update.version));
 assert.ok(update.versionCode >= 11);
 assert.ok(update.apkSizeBytes > 0);
 assert.match(notes, /BroadcastChannel/i);
