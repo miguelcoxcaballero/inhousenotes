@@ -2,7 +2,13 @@
 
 `updates/A.json` y `updates/B.json` contienen `schemaVersion: 1`, `channel`, `latest` (release o null), y `releases` (historial descendente). Cada release contiene `version`, `versionCode`, `apkUrl`, `apkSha256`, `apkSizeBytes`, `changelog` (1–120 caracteres) y `releasedAt`. La versión semántica no incluye la letra; el popup la presenta al lado y Android compara versionCode globalmente.
 
+A incluye todas las versiones publicadas en A y en B. B incluye únicamente las versiones autorizadas explícitamente para B. En ambos catálogos `latest` es la entrada con mayor `versionCode`, y el historial se ordena por ese mismo código global. Por ejemplo, con A=12 y una nueva B=13, A ofrece 13; al publicar A=14, A ofrece 14 y B sigue ofreciendo 13. Si se promociona B=13 cuando A=14 ya existe, A conserva 14 como última versión.
+
+El publicador incorpora cada publicación B también a `updates/A.json`, con el mismo APK y los mismos metadatos, sin duplicar una versión que ya figure allí. B puede promocionar un APK publicado en A o publicar directamente un APK nuevo: no se exige una publicación A previa, pero sí una petición expresa del usuario para B. Antes de publicar cualquier catálogo, el APK exacto debe ser público y estar verificado por versión, código, tamaño, SHA-256, paquete y firma. No se sustituye el binario ni se cambian los metadatos de una versión ya publicada.
+
 Los archivos de canal se consultan con caché desactivada; la recuperación usa la API de contenidos de GitHub del mismo canal, nunca `/releases/latest`. B vacío se muestra explícitamente. Al cambiar de A a una B anterior se conserva la aplicación instalada hasta que B la alcance; no hay reinstalación ni pérdida de datos.
+
+El cliente A obtiene las versiones B desde su propio catálogo A, actualizado por el publicador; esta regla funciona en clientes ya instalados sin actualizar la APK. B no consulta ni recurre a A. Los cambios nuevos y las publicaciones automáticas siguen yendo a A salvo petición expresa del usuario para B.
 
 La política se persiste por aplicación. El recordatorio es un plazo de 14 días, no una alarma en segundo plano: se vuelve a ofrecer al abrir/enfocar la app o durante su comprobación periódica después del plazo. Una comprobación manual ignora el aplazamiento. Una versión nueva del mismo canal tampoco interrumpe los 14 días.
 

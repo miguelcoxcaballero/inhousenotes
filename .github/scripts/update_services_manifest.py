@@ -1,4 +1,6 @@
-# Inhouse services updater: Publication defaults to A; users default to B. A requires explicit development consent; B promotion only on user request.
+# Inhouse services updater: Automatic publication defaults to A; users default to B.
+# A requires development consent; B publication or promotion requires an explicit user request.
+# The canonical publisher includes A+B in A and keeps the highest global versionCode; B includes only B.
 import hashlib,json,re,runpy
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]

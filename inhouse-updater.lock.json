@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "ac5cef8994ea476af46161bd4189d85adfc5016a",
+  "revision": "483f516e5324d87d9aa49cc0628609d1984f208c",
   "version": "1.0.0",
   "appId": "notes",
   "files": {
@@ -18,11 +18,11 @@
     },
     "vendor/inhouse-services-updater/web/updater.css": {
       "source": "web/updater.css",
-      "sha256": "6059f3b95664ed8346dfa805bd99655b5464509eaf46dbef61fc95fb3b41cede"
+      "sha256": "1ae8747ea204696d4267c09ec5c7ff8c5bb8e0e3f94600b9e940348f0ab754ba"
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "58fd7c394e988b94bfa3c7156ef2723355b1e39a7afea0f06430b66200faa06f"
+      "sha256": "ffed93e1feed138092c17179bd04424dbf44db8d79cffce62feaf2e669cc590a"
     },
     "vendor/inhouse-services-updater/android/NativeUpdates.java": {
       "source": "android/NativeUpdates.java",
@@ -50,7 +50,7 @@
     },
     "vendor/inhouse-services-updater/catalog.py": {
       "source": "tools/catalog.py",
-      "sha256": "23ac9c14fc77382b12379ce3bb4496b3808574872755ee5b88be1b747d859743"
+      "sha256": "048c4d00c125474783a88739f4ccc05ab4140669720d1a70fc95a4dda088ab7f"
     },
     "vendor/inhouse-services-updater/register_android.py": {
       "source": "tools/register_android.py",
@@ -62,15 +62,15 @@
     },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
-      "sha256": "c529459cd63795bb7cc1082be39e73543edb1ba5af880ad85f6f2713aacd9f39"
+      "sha256": "08be875d6ce4cf8a51d43c98d5dc0213ead57d701316e6808d8671bcb1d03eb0"
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "2dc0657baca33372fccdaf0f9fed1182031035227d5fd3e8009ba93e756e8526"
+      "sha256": "3071cb50c2c0bdb7fb5e53296dbd7596d7bc146161e8bc60c909c150ba13b30a"
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "c38062883e940050bf9d572700a94d2132ce46e1cb1a07ebaac3a1b5c33a9863"
+      "sha256": "ae0922a11665a9dec6ac1f5d9f5621c70920e4429fc174affdf23a281f6f5ec2"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
@@ -78,11 +78,11 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "58fd7c394e988b94bfa3c7156ef2723355b1e39a7afea0f06430b66200faa06f"
+      "sha256": "ffed93e1feed138092c17179bd04424dbf44db8d79cffce62feaf2e669cc590a"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
-      "sha256": "6059f3b95664ed8346dfa805bd99655b5464509eaf46dbef61fc95fb3b41cede"
+      "sha256": "1ae8747ea204696d4267c09ec5c7ff8c5bb8e0e3f94600b9e940348f0ab754ba"
     }
   }
 }

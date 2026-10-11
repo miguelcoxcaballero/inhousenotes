@@ -133,7 +133,8 @@
 
         applyInhouseAppMode();
         // Inhouse services updater: edit the canonical repo and sync ALL five apps.
-        // Every new release goes to A with a tiny changelog; B only on explicit user request.
+        // Automatic releases go to A with a tiny changelog; B publication/promotion requires an explicit user request.
+        // A includes A+B and offers the highest global versionCode; B includes only B.
         // Shared optional popup/14-day reminder replaces the previous blocking gate.
         if (isInhouseApp && window.InhouseServicesUpdater) {
             const updates = window.InhouseServicesUpdater.create({
