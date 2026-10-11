@@ -1049,10 +1049,10 @@
     if (payload.theme === "dark" || payload.theme === "light") {
       setTheme(payload.theme);
     }
-    if (payload.openSource !== false && S.cv && !S.pages.length) {
+    if (payload.openSource !== false && S.cv && !S.pages.length && !SP.LiveCamera) {
       // Let the opening veil finish its short fade so the source sheet is
       // immediately tappable when it appears.
-      setTimeout(showSourceModal, 150);
+      setTimeout(() => { if (!SP.LiveCamera) showSourceModal(); }, 150);
     }
   }
 
