@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "14cfdcec5211d8fde7d6a1502f625579d3fa3ac4",
+  "revision": "356d1e3fbd4f8c429d2d46d2f6de9ca4e910e573",
   "version": "1.0.0",
   "appId": "notes",
   "files": {
@@ -22,7 +22,7 @@
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "75b57735d617b87f254d59e2867d2a429f09e3da7c30814d0dbd387307e4a3c0"
+      "sha256": "ffed93e1feed138092c17179bd04424dbf44db8d79cffce62feaf2e669cc590a"
     },
     "vendor/inhouse-services-updater/android/NativeUpdates.java": {
       "source": "android/NativeUpdates.java",
@@ -78,7 +78,7 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "75b57735d617b87f254d59e2867d2a429f09e3da7c30814d0dbd387307e4a3c0"
+      "sha256": "ffed93e1feed138092c17179bd04424dbf44db8d79cffce62feaf2e669cc590a"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",

@@ -216,7 +216,16 @@
     }
     async function check({ manual = false } = {}) {
       if (installing || (!manual && snoozed())) return false;
-      if (checking) { if (manual) { const found = await checking; if (available && found) show(available); } return checking; }
+      if (checking) {
+        const token = generation, pending = checking;
+        if (manual) status('Checking…');
+        const found = await pending;
+        if (manual && token === generation) {
+          if (available && found) show(available);
+          else status(available ? catalogStatus(available) : 'Could not check for updates. Try again.');
+        }
+        return found;
+      }
       readState(); const channel = state.channel, token = generation;
       if (manual && !dialog) settings(); if (manual) status('Checking…');
       const pending = (async () => {
@@ -232,12 +241,15 @@
             }
             return true;
           }
-          if (manual) status(!value.latest ? 'No releases on version ' + channel + '.' : compareVersions(installed(), value.latest.version) > 0 ? 'Keep your installed build until version ' + channel + ' catches up.' : 'You’re up to date on version ' + channel + '.');
+          if (manual) status(catalogStatus(value));
           return false;
         } catch (_) { if (manual) status('Could not check for updates. Try again.'); return false; }
       })();
       checking = pending;
       try { return await pending; } finally { if (checking === pending) checking = null; }
+    }
+    function catalogStatus(value) {
+      return !value.latest ? 'No releases on version ' + value.channel + '.' : compareVersions(installed(), value.latest.version) > 0 ? 'Keep your installed build until version ' + value.channel + ' catches up.' : 'You’re up to date on version ' + value.channel + '.';
     }
     function start() {
       if (started) return; started = true; readState();
