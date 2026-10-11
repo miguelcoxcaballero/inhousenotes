@@ -6,12 +6,25 @@ const fixtureSource = fs.readFileSync(new URL('./fixtures/scanner-synthetic.js',
 // Supply real video frames and MediaStream tracks. Only the physical camera
 // boundary is replaced: detection, drawing, capture, warp and handoff stay real.
 function installCameraFixture(options) {
+  if (options.legacyVideoFrames) {
+    Object.defineProperty(HTMLVideoElement.prototype, 'requestVideoFrameCallback', { configurable: true, value: undefined });
+    Object.defineProperty(HTMLVideoElement.prototype, 'getVideoPlaybackQuality', {
+      configurable: true, value: () => ({ totalVideoFrames: 0 })
+    });
+  }
+  if (options.slowEncoding) {
+    const original = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+      original.call(this, blob => setTimeout(() => callback(blob), 450), ...args);
+    };
+  }
   const fake = window.__scannerCameraFixture = {
     mode: options.mode || 'document',
     requests: [],
     streams: [],
     detections: [],
     pending: [],
+    stopFrames: [],
     frames: 0
   };
   addEventListener('scanner-live-detection', event => {
@@ -50,6 +63,7 @@ function installCameraFixture(options) {
     const track = stream.getVideoTracks()[0];
     const stop = track.stop.bind(track);
     const interval = setInterval(paint, 50);
+    fake.stopFrames.push(() => clearInterval(interval));
     track.stop = () => { clearInterval(interval); stop(); };
     track.applyConstraints = async () => {};
     fake.streams.push(stream);
@@ -58,6 +72,10 @@ function installCameraFixture(options) {
   fake.resolvePending = () => fake.pending.splice(0).forEach(resolve => resolve(createStream()));
   fake.setMode = mode => { fake.mode = mode; };
   fake.trackStates = () => fake.streams.flatMap(stream => stream.getTracks().map(track => track.readyState));
+  fake.setHidden = hidden => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: hidden });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
   Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
     configurable: true,
     value: async constraints => {
@@ -206,4 +224,104 @@ test('closing while permission is pending stops a camera stream granted later', 
   await expect.poll(() => page.evaluate(() => window.__scannerCameraFixture.trackStates())).toEqual(['ended']);
   await expect(page.locator('#liveScanner')).toBeHidden();
   expect(await page.locator('#liveVideo').evaluate(video => video.srcObject)).toBeNull();
+});
+
+for (const grantWhileHidden of [false, true]) {
+  test(`Android permission visibility changes preserve camera startup (grant while hidden: ${grantWhileHidden})`, async ({ page }) => {
+    await openScanner(page, { mode: 'pending' });
+    await page.waitForFunction(() => window.__scannerCameraFixture.pending.length === 1);
+    await expect(page.locator('#liveVideo')).toBeHidden();
+    await expect(page.locator('#liveCaptureBtn')).toBeDisabled();
+    await page.evaluate(() => window.__scannerCameraFixture.setHidden(true));
+    await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'requesting');
+    if (!grantWhileHidden) await page.evaluate(() => window.__scannerCameraFixture.setHidden(false));
+    await page.evaluate(() => {
+      window.__scannerCameraFixture.setMode('unmarked');
+      window.__scannerCameraFixture.resolvePending();
+    });
+    if (grantWhileHidden) {
+      await expect.poll(() => page.evaluate(() => window.__scannerCameraFixture.trackStates())).toEqual(['ended']);
+      await page.evaluate(() => window.__scannerCameraFixture.setHidden(false));
+    }
+    await expect(page.locator('#liveVideo')).toBeVisible();
+    await expect(page.locator('#liveCaptureBtn')).toBeEnabled();
+    await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'searching');
+    const streamStates = await page.evaluate(() => window.__scannerCameraFixture.trackStates());
+    expect(streamStates).toEqual(grantWhileHidden ? ['ended', 'live'] : ['live']);
+  });
+}
+
+test('backgrounding an active camera stops tracks and keeps a visible retry on return', async ({ page }) => {
+  await openScanner(page, { mode: 'unmarked' });
+  await expect(page.locator('#liveCaptureBtn')).toBeEnabled();
+  await page.evaluate(() => window.__scannerCameraFixture.setHidden(true));
+  expect(await page.evaluate(() => window.__scannerCameraFixture.trackStates())).toEqual(['ended']);
+  await page.evaluate(() => window.__scannerCameraFixture.setHidden(false));
+  await expect(page.locator('#liveScanner')).toBeVisible();
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'error');
+  await expect(page.locator('#liveStatus')).toHaveText('Camera paused');
+  await page.locator('#liveRetryBtn').click();
+  await expect(page.locator('#liveVideo')).toBeVisible();
+  await expect(page.locator('#liveCaptureBtn')).toBeEnabled();
+  expect(await page.evaluate(() => window.__scannerCameraFixture.trackStates())).toEqual(['ended', 'live']);
+});
+
+for (const interruption of ['ended', 'muted', 'stalled']) {
+  test(`a ${interruption} camera feed stays in the scanner with retry instead of a frozen preview`, async ({ page }) => {
+    await openScanner(page, { mode: 'unmarked' });
+    await expect(page.locator('#liveCaptureBtn')).toBeEnabled();
+    await page.evaluate(interruption => {
+      const fake = window.__scannerCameraFixture;
+      const track = fake.streams.at(-1).getVideoTracks()[0];
+      if (interruption === 'ended') {
+        track.stop();
+        // Native revocation fires ended; explicit MediaStreamTrack.stop() does not.
+        track.dispatchEvent(new Event('ended'));
+      } else if (interruption === 'muted') {
+        Object.defineProperty(track, 'muted', { configurable: true, value: true });
+        track.dispatchEvent(new Event('mute'));
+      } else {
+        fake.stopFrames.forEach(stop => stop());
+      }
+    }, interruption);
+    await expect(page.locator('#liveCaptureBtn')).toBeDisabled();
+    await expect(page.locator('#liveVideo')).toBeHidden();
+    await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'error');
+    await expect(page.locator('#liveStatus')).toHaveText('Camera interrupted');
+    await expect(page.locator('#liveScanner')).toBeVisible();
+    expect(await page.evaluate(() => window.__scannerCameraFixture.trackStates())).toEqual(['ended']);
+    await page.locator('#liveRetryBtn').click();
+    await expect(page.locator('#liveCaptureBtn')).toBeEnabled();
+    await expect(page.locator('#liveVideo')).toBeVisible();
+  });
+}
+
+test('a short camera mute resumes live frames without capturing a stale frame', async ({ page }) => {
+  await openScanner(page, { mode: 'unmarked' });
+  await expect(page.locator('#liveCaptureBtn')).toBeEnabled();
+  await page.evaluate(() => {
+    const track = window.__scannerCameraFixture.streams.at(-1).getVideoTracks()[0];
+    Object.defineProperty(track, 'muted', { configurable: true, value: true });
+  });
+  await expect(page.locator('#liveCaptureBtn')).toBeDisabled();
+  await expect(page.locator('#liveVideo')).toBeHidden();
+  await page.evaluate(() => {
+    const track = window.__scannerCameraFixture.streams.at(-1).getVideoTracks()[0];
+    Object.defineProperty(track, 'muted', { configurable: true, value: false });
+  });
+  await expect(page.locator('#liveVideo')).toBeVisible();
+  await expect(page.locator('#liveCaptureBtn')).toBeEnabled();
+  expect(await page.evaluate(() => window.__scannerCameraFixture.requests.length)).toBe(1);
+  await expect(page.locator('#liveReview')).toBeHidden();
+});
+
+test('older WebViews can capture three live frames even when image encoding is slow', async ({ page }) => {
+  test.setTimeout(45_000);
+  await openScanner(page, { mode: 'unmarked', legacyVideoFrames: true, slowEncoding: true });
+  await expect(page.locator('#liveVideo')).toBeVisible();
+  await page.locator('#liveCaptureBtn').click();
+  await expect(page.locator('#liveAddBtn')).toBeEnabled({ timeout: 30_000 });
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
+  await expect(page.locator('#liveAlternatives button')).toHaveCount(3);
+  expect(await page.evaluate(() => window.__scannerCameraFixture.trackStates())).toEqual(['ended']);
 });

@@ -28840,25 +28840,21 @@
             const backdrop = document.createElement('div');
             backdrop.className = 'save-debug-backdrop';
             backdrop.innerHTML = `
-                <div class="save-debug-panel" id="save-details-panel" role="dialog" aria-modal="false" aria-labelledby="save-debug-title" aria-describedby="save-debug-description">
+                <div class="save-debug-panel" id="save-details-panel" role="dialog" aria-modal="false" aria-labelledby="save-debug-title">
                     <div class="save-debug-header">
-                        <span class="save-debug-eyebrow">Save status</span>
+                        <h2 class="save-debug-title" id="save-debug-title">Save status</h2>
                         <button type="button" class="save-debug-close" aria-label="Close save details">&times;</button>
                     </div>
-                    <div class="save-debug-hero" role="status" aria-live="polite"></div>
-                    <div class="save-debug-summary" aria-label="Saved copies"></div>
-                    <div class="save-debug-footer">
-                        <span class="save-debug-hint"></span>
-                        <button type="button" class="btn btn-secondary save-debug-action">Save now</button>
-                    </div>
+                    <div class="save-debug-summary" role="status" aria-live="polite" aria-label="Saved copies"></div>
+                    <p class="save-debug-notice" role="status" hidden></p>
+                    <button type="button" class="btn btn-secondary save-debug-action" hidden>Save now</button>
                 </div>`;
             document.body.appendChild(backdrop);
             const panel = backdrop.querySelector('.save-debug-panel');
             const closeBtn = backdrop.querySelector('.save-debug-close');
-            const hero = backdrop.querySelector('.save-debug-hero');
             const summary = backdrop.querySelector('.save-debug-summary');
             const action = backdrop.querySelector('.save-debug-action');
-            const hint = backdrop.querySelector('.save-debug-hint');
+            const notice = backdrop.querySelector('.save-debug-notice');
             closeBtn.addEventListener('click', () => closeSaveDebugPopup(true));
             document.addEventListener('pointerdown', event => {
                 if (!backdrop.classList.contains('visible')) return;
@@ -28891,7 +28887,7 @@
                     refreshSaveIndicatorState();
                 }
             });
-            saveDebugElements = { backdrop, panel, closeBtn, hero, summary, action, hint, actionBusy: false };
+            saveDebugElements = { backdrop, panel, closeBtn, summary, action, notice, actionBusy: false };
             return saveDebugElements;
         }
 
@@ -28911,63 +28907,37 @@
             // A closed status panel must not create work on the handwriting path.
             if (!els?.backdrop.classList.contains('visible')) return;
             const view = getSavePresentation(saveDebugState.phase);
-            const heroMarkup = `
-                <span class="save-debug-orb ${view.phase}" aria-hidden="true">${view.phase === 'saved' ? '✓' : view.phase === 'error' ? '!' : '·'}</span>
-                <div><h2 id="save-debug-title" class="save-debug-hero-title">${escapeSaveDebugText(view.title)}</h2>
-                <p id="save-debug-description" class="save-debug-description">${escapeSaveDebugText(view.detail)}</p></div>`;
-            if (els.heroMarkup !== heroMarkup) {
-                els.hero.innerHTML = heroMarkup;
-                els.heroMarkup = heroMarkup;
-            }
-            const row = (name, label, detail, style, time = null) => `
+            const row = (name, label, style) => `
                 <div class="save-device-status">
-                    <span class="save-device-status-dot ${style}" aria-hidden="true"></span>
-                    <div><div class="save-device-status-heading"><span class="save-device-status-title">${escapeSaveDebugText(name)}</span>
-                    <span class="save-device-status-label ${style}">${escapeSaveDebugText(label)}</span></div>
-                    <div class="save-device-status-detail">${escapeSaveDebugText(detail)}</div>
-                    ${time ? `<div class="save-device-status-time">Last saved · ${escapeSaveDebugText(formatTime(time))}</div>` : ''}</div>
+                    <span class="save-device-status-title">${escapeSaveDebugText(name)}</span>
+                    <span class="save-device-status-label ${style}">${escapeSaveDebugText(label)}</span>
                 </div>`;
-            const rows = [
-                row('This device', view.localLabel, view.localDetail, view.local.error ? 'error' : (view.local.pending ? 'syncing' : ''), view.local.savedAt),
-                row('Google Drive', view.driveLabel, view.driveDetail, view.driveClass, view.connected ? state.driveLastKnownModified : null)
-            ];
+            let uploadPercent = '';
             if (view.connected && driveSavePhase === 'uploading' && driveSaveInProgress && driveUploadProgress?.total) {
                 const percent = Math.min(100, Math.max(0, Math.floor(driveUploadProgress.sent / driveUploadProgress.total * 100)));
-                rows.push(`<div class="save-upload-progress"><progress max="100" value="${percent}" aria-label="Upload to Google Drive"></progress><span>${percent}%</span></div>`);
+                uploadPercent = ` ${percent}%`;
             }
-            const overview = getLiveCollaborationOverview();
-            const peers = getPresencePopupUsers(latestPresenceUsers).filter(record => !record.isOwn);
-            if (peers.length || overview.openPeerCount > 0 || overview.connectionState === 'reconnecting') {
-                rows.push('<div class="save-debug-section-label">Other devices</div>');
-                if (!peers.length) {
-                    rows.push(row('Live connection', overview.openPeerCount ? 'Connected' : 'Reconnecting',
-                        overview.openPeerCount ? `Live with ${overview.openPeerCount} other device${overview.openPeerCount === 1 ? '' : 's'}.` : 'Trying to reconnect to your other devices.',
-                        overview.openPeerCount ? 'live' : 'recovering'));
-                }
-                for (const record of peers) {
-                    const connection = getPresenceConnectionInfo(record);
-                    const remotePhase = getPresenceVisibleSavePhase(record);
-                    const label = { processing: 'Saving', uploading: 'Uploading', syncing: 'Receiving changes', saved: 'Saved', paused: 'Waiting' }[remotePhase]
-                        || (connection.connected ? 'Connected' : 'Reconnecting');
-                    const name = record.v || (record.d === 'mobile' ? 'Phone' : record.d === 'tablet' ? 'Tablet' : 'Computer');
-                    rows.push(row(name, label, connection.transport, connection.connected ? 'live' : 'recovering'));
-                }
-            }
+            const rows = [
+                row('This device', view.localLabel, view.local.error ? 'error' : (view.local.pending ? 'syncing' : '')),
+                row('Google Drive', view.driveLabel + uploadPercent, view.driveClass)
+            ];
             const summaryMarkup = rows.join('');
             if (els.summaryMarkup !== summaryMarkup) {
                 els.summary.innerHTML = summaryMarkup;
                 els.summaryMarkup = summaryMarkup;
             }
-            const actionable = !!(view.local.error || view.local.pending || view.pendingDrive || view.reconnect || driveSaveBlockedReason);
+            const actionable = els.actionBusy || ((!saveInProgress && !driveSaveInProgress)
+                && !!(view.local.error || view.local.pending || (!view.offline && (view.pendingDrive || view.reconnect || driveSaveBlockedReason))));
             if (els.action.hidden !== !actionable) els.action.hidden = !actionable;
             const actionDisabled = els.actionBusy || saveInProgress || driveSaveInProgress
                 || (!view.local.error && !view.local.pending && view.offline);
             if (els.action.disabled !== actionDisabled) els.action.disabled = actionDisabled;
             const actionLabel = view.local.error ? 'Retry save' : (view.local.pending ? 'Save now' : (view.reconnect ? 'Reconnect Drive' : (view.phase === 'error' ? 'Retry save' : 'Save now')));
             if (els.action.textContent !== actionLabel) els.action.textContent = actionLabel;
-            const hint = view.phase === 'error' ? 'Keep this document open until saving succeeds.'
-                : view.offline && view.pendingDrive ? 'Drive will resume when you are online.' : 'Changes save automatically.';
-            if (els.hint.textContent !== hint) els.hint.textContent = hint;
+            const notice = view.local.error ? 'Keep this document open and retry.'
+                : driveSaveBlockedReason ? 'Some pages could not be recovered. Keep this document open.' : '';
+            if (els.notice.textContent !== notice) els.notice.textContent = notice;
+            if (els.notice.hidden !== !notice) els.notice.hidden = !notice;
         }
 
         function openSaveDebugPopup() {
