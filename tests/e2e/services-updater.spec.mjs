@@ -1,5 +1,30 @@
 import { expect, test } from '@playwright/test';
 
+test('B release opens the shared download manager and forwards native progress', async ({ page }) => {
+  const release = { version: '1.0.13', versionCode: 14, apkUrl: 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.13/inhouse-notes-release-v1.0.13.apk', apkSha256: 'b'.repeat(64), apkSizeBytes: 400, changelog: 'Updated Inhouse services updater.' };
+  await page.addInitScript(() => {
+    window.InhouseNative = {
+      getAppVersion: () => '1.0.12', getAppVersionCode: () => 13,
+      getUpdateState: () => '{}', saveUpdateState: () => {},
+      installInhouseUpdate: (url, sha256) => {
+        window.requestedUpdate = { url, sha256 };
+        window.handleInhouseUpdateResult({ status: 'downloading', percent: 50, downloadedBytes: 200, totalBytes: 400 });
+      },
+    };
+  });
+  await page.route('https://raw.githubusercontent.com/**', async route => {
+    expect(route.request().url()).toContain('/updates/B.json');
+    await route.fulfill({ json: { schemaVersion: 1, channel: 'B', latest: release, releases: [release] } });
+  });
+  await page.goto('/?e2e=1&inhouse_app=1');
+  await expect(page.getByRole('heading', { name: 'Update available', exact: true })).toBeVisible();
+  await expect(page.locator('.isu-versions')).toHaveText('1.0.12 → 1.0.13');
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.requestedUpdate)).toEqual({ url: release.apkUrl, sha256: release.apkSha256 });
+  await expect(page.getByRole('progressbar', { name: 'Download' })).toHaveAttribute('value', '50');
+  await expect(page.locator('.isu-progress-label')).toHaveText('Downloading… 50%');
+});
+
 test('Android settings use the common optional popup and preserve channel/reminder', async ({ page }) => {
   const releases = [{ version: '1.0.12', versionCode: 13, apkUrl: 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/test/app.apk', apkSha256: 'a'.repeat(64), apkSizeBytes: 400, changelog: 'Aviso mejorado.' }];
   await page.addInitScript(() => {
@@ -23,11 +48,11 @@ test('Android settings use the common optional popup and preserve channel/remind
   await expect(page.locator('#inhouse-services-update')).toHaveCount(0);
   await page.locator('[data-inhouse-update-settings]').first().dispatchEvent('click');
   await page.getByRole('button', { name: 'Version A', exact: true }).click();
-  await page.getByRole('button', { name: 'I understand — continue', exact: true }).click();
+  await page.getByRole('button', { name: 'I understand', exact: true }).click();
   await page.locator('input[type=range]').focus();await page.keyboard.press('End');await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Remind me later', exact: true })).toBeVisible();
-  await expect(page.locator('.isu-versions')).toHaveText('1.0.11 → 1.0.12 A');
-  await page.getByRole('button', { name: 'Remind me later', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Later', exact: true })).toBeVisible();
+  await expect(page.locator('.isu-versions')).toHaveText('1.0.11 → 1.0.12');
+  await page.getByRole('button', { name: 'Later', exact: true }).click();
   const deadline = await page.evaluate(() => JSON.parse(localStorage.getItem('native-update-state')).snooze.A);
   expect(deadline - Date.now()).toBeGreaterThan(13 * 86400000);
   await page.reload();
@@ -42,7 +67,7 @@ test('Android settings use the common optional popup and preserve channel/remind
   await page.locator('[data-inhouse-update-settings]').last().dispatchEvent('click');
   await expect(page.getByRole('button', { name: 'Version B', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Version A', exact: true }).click();
-  await page.getByRole('button', { name: 'I understand — continue', exact: true }).click();
+  await page.getByRole('button', { name: 'I understand', exact: true }).click();
   await page.locator('input[type=range]').focus();await page.keyboard.press('End');await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('native-update-state')).snooze.A)).toBe(deadline);
