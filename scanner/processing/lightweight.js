@@ -10,6 +10,7 @@
   const ANALYSIS_FAST_MAX = 608;
   const ANALYSIS_MAX = 800;
   const OUTPUT_LONG_EDGE = 2546;
+  const moduleUrl = typeof document !== "undefined" ? document.currentScript?.src : null;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const yieldToBrowser = () => {
@@ -2641,6 +2642,21 @@
       }
     }
 
+    // The unmarked-frame fallback must use rails on the observed sheet.
+    // Strong yellow material outside the paper otherwise supplies the first
+    // and last pixels on every column, replacing the real top/bottom border
+    // and making the fitted side curves turn back on themselves. Keep the
+    // full mask for independent marker candidates (overlapping sheets), but
+    // exclude exterior distractors from this silhouette-based line seed.
+    const boundaryMask = paperQuad ? mask.slice() : mask;
+    if (paperQuad) {
+      for (let index = 0; index < boundaryMask.length; index += 1) {
+        if (!boundaryMask[index]) continue;
+        const location = invertBilinear(paperQuad, { x: index % width, y: Math.floor(index / width) });
+        if (!location || location.u < 0.008 || location.u > 0.992
+          || location.v < 0.008 || location.v > 0.992) boundaryMask[index] = 0;
+      }
+    }
     const leftPoints = [];
     const rightPoints = [];
     const topPoints = [];
@@ -2649,7 +2665,7 @@
       let first = -1, last = -1, count = 0;
       const offset = y * width;
       for (let x = 0; x < width; x += 1) {
-        if (!mask[offset + x]) continue;
+        if (!boundaryMask[offset + x]) continue;
         if (first < 0) first = x;
         last = x;
         count += 1;
@@ -2662,7 +2678,7 @@
     for (let x = 0; x < width; x += 1) {
       let first = -1, last = -1, count = 0;
       for (let y = 0; y < height; y += 1) {
-        if (!mask[y * width + x]) continue;
+        if (!boundaryMask[y * width + x]) continue;
         if (first < 0) first = y;
         last = y;
         count += 1;
@@ -2875,6 +2891,67 @@
     return finish({ pageQuad: fallbackPageQuad(source), stencilQuad: null, frame: null, confidence: 0, method: "fallback" });
   }
 
+  function refineObservedFrame(source, detection) {
+    const frame = detection.frame;
+    if (!frame?.paths || frame.confidence < 0.6) return detection;
+    const analysis = createScaledCanvas(source, 1200);
+    const { width, height } = analysis.canvas;
+    const pixels = analysis.context.getImageData(0, 0, width, height).data;
+    const scoreAt = (x, y) => {
+      const ix = Math.round(x), iy = Math.round(y);
+      if (ix < 1 || iy < 1 || ix >= width - 1 || iy >= height - 1) return 0;
+      const offset = (iy * width + ix) * 4;
+      const r = pixels[offset], g = pixels[offset + 1], b = pixels[offset + 2];
+      const saturation = (Math.max(r, g, b) - Math.min(r, g, b)) / Math.max(1, r, g, b);
+      return isYellow(r, g, b) ? Math.max(0, yellowChroma(r, g, b))
+        : saturation < 0.16 ? Math.max(0, 255 - (r + g + b) / 3) * 0.22 : 0;
+    };
+    const refine = (path, radius) => path.map((point, index) => {
+      if (index < 2 || index >= path.length - 2) return point;
+      const before = path[index - 1], after = path[index + 1];
+      const length = Math.max(1, Math.hypot(after.x - before.x, after.y - before.y));
+      const tx = (after.x - before.x) / length, ty = (after.y - before.y) / length;
+      const nx = -ty, ny = tx;
+      const x = point.x * analysis.scale, y = point.y * analysis.scale;
+      let best = null;
+      const candidates = [];
+      for (let shift = -radius; shift <= radius; shift += 0.5) {
+        let score = 0;
+        for (let along = -5; along <= 5; along += 1) {
+          const cx = x + nx * shift + tx * along;
+          const cy = y + ny * shift + ty * along;
+          score += Math.max(0, scoreAt(cx, cy)
+            - (scoreAt(cx + nx * 4, cy + ny * 4) + scoreAt(cx - nx * 4, cy - ny * 4)) * 0.5);
+        }
+        const candidate = { shift, score };
+        candidates.push(candidate);
+        if (!best || score > best.score) best = candidate;
+      }
+      if (!best || best.score < 20) return point;
+      // Centre the observed ridge rather than its brightest camera pixel.
+      // This prevents integer downsampling from shifting a thin frame by
+      // several pixels after enlarging the final page.
+      let weight = 0, weightedShift = 0;
+      for (const candidate of candidates) {
+        if (Math.abs(candidate.shift - best.shift) > 2.5) continue;
+        const amount = Math.max(0, candidate.score - best.score * 0.35);
+        weight += amount;
+        weightedShift += candidate.shift * amount;
+      }
+      const shift = weight ? weightedShift / weight : best.shift;
+      return { x: point.x + nx * shift / analysis.scale, y: point.y + ny * shift / analysis.scale };
+    });
+    for (const name of ["top", "right", "bottom", "left"]) frame.paths[name] = refine(frame.paths[name], 6);
+    if (frame.box?.support >= 0.5) {
+      frame.box.top = refine(frame.box.top, 4);
+      frame.box.bottom = refine(frame.box.bottom, 4);
+      frame.box.outer = frame.paths.bottom;
+    }
+    frame.refinement = "source-ridge";
+    analysis.canvas.width = analysis.canvas.height = 0;
+    return detection;
+  }
+
   Light.detectPage = function detectPage(source) {
     const quick = detectPageAtScale(source, ANALYSIS_FAST_MAX);
     const frame = quick.frame;
@@ -2884,14 +2961,14 @@
       || quick.method === "fallback"
       || (quick.method === "paper" && quick.confidence > 0)
       || (quick.method === "marker-guided"
-        && (quick.confidence < 0.58
+        && (quick.confidence < 0.96
           || (frame?.support || 0) < 0.42
           || (frame?.box?.support || 0) < 0.42
           // Strong paper curl is precisely the case where the extra 160 px
           // of analysis materially improves the physical corner fit. Keep
           // ordinary scans on the fast path, but never accept a coarse trace
           // whose measured bend is already this large.
-          || (frame?.curvature || 0) > 0.045
+          || (frame?.curvature || 0) > 0.03
           // Sparse black-marker support is an independent warning that the
           // affine coordinate basis was inferred near the resolution limit.
           // This catches curled or shadowed sheets whose coarse curvature can
@@ -2906,127 +2983,179 @@
           // absent.
           || ((frame?.box?.support || 0) < 0.72
             && (frame?.support || 0) < 0.9)));
-    return needsDetailedPass
+    const detection = refineObservedFrame(source, needsDetailedPass
       ? detectPageAtScale(source, ANALYSIS_MAX)
-      : quick;
+      : quick);
+    return SP.SurfaceParameterization?.refine(source, detection) || detection;
   };
 
-  function drawTriangle(context, source, src, dst) {
-    const [s0, s1, s2] = src;
-    const [d0, d1, d2] = dst;
-    const denominator = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
-    if (Math.abs(denominator) < 1e-5) return;
-    const a = (d0.x * (s1.y - s2.y) + d1.x * (s2.y - s0.y) + d2.x * (s0.y - s1.y)) / denominator;
-    const b = (d0.y * (s1.y - s2.y) + d1.y * (s2.y - s0.y) + d2.y * (s0.y - s1.y)) / denominator;
-    const c = (d0.x * (s2.x - s1.x) + d1.x * (s0.x - s2.x) + d2.x * (s1.x - s0.x)) / denominator;
-    const d = (d0.y * (s2.x - s1.x) + d1.y * (s0.x - s2.x) + d2.y * (s1.x - s0.x)) / denominator;
-    const e = (d0.x * (s1.x * s2.y - s2.x * s1.y) + d1.x * (s2.x * s0.y - s0.x * s2.y) + d2.x * (s0.x * s1.y - s1.x * s0.y)) / denominator;
-    const f = (d0.y * (s1.x * s2.y - s2.x * s1.y) + d1.y * (s2.x * s0.y - s0.x * s2.y) + d2.y * (s0.x * s1.y - s1.x * s0.y)) / denominator;
-    // Canvas anti-aliases each clipped triangle independently. Clipping on the
-    // exact shared diagonal can therefore leave a translucent one-pixel seam
-    // between two otherwise adjacent mesh cells. Grow only the clip polygon
-    // by a sub-pixel amount while preserving the affine transform itself.
-    const centre = {
-      x: (d0.x + d1.x + d2.x) / 3,
-      y: (d0.y + d1.y + d2.y) / 3
+  Light.detectPageAsync = async function detectPageAsync(source, options = {}) {
+    checkProcessingCancelled(options);
+    const fallback = async () => {
+      await yieldToBrowser();
+      checkProcessingCancelled(options);
+      return Light.detectPage(source);
     };
-    const expand = point => {
-      const dx = point.x - centre.x;
-      const dy = point.y - centre.y;
-      const length = Math.max(1e-5, Math.hypot(dx, dy));
-      return {
-        x: point.x + dx / length * 0.85,
-        y: point.y + dy / length * 0.85
+    if (!moduleUrl || typeof Worker !== "function" || typeof createImageBitmap !== "function"
+      || typeof OffscreenCanvas !== "function") return fallback();
+    const workerUrl = new URL("detection-worker.js", moduleUrl);
+    workerUrl.search = new URL(moduleUrl).search;
+    let bitmap;
+    try { bitmap = await createImageBitmap(source); }
+    catch (_) { return fallback(); }
+    if (options.signal?.aborted) {
+      bitmap.close();
+      checkProcessingCancelled(options);
+    }
+    return new Promise((resolve, reject) => {
+      let worker;
+      let settled = false;
+      let timer;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", abort);
+        worker?.terminate();
+        callback(value);
       };
-    };
-    const [clip0, clip1, clip2] = dst.map(expand);
-    context.save();
-    context.beginPath();
-    context.moveTo(clip0.x, clip0.y);
-    context.lineTo(clip1.x, clip1.y);
-    context.lineTo(clip2.x, clip2.y);
-    context.closePath();
-    context.clip();
-    context.setTransform(a, b, c, d, e, f);
-    context.drawImage(source, 0, 0);
-    context.restore();
+      const abort = () => finish(reject, new DOMException("Scan processing cancelled", "AbortError"));
+      const unavailable = () => finish(resolve, fallback());
+      try {
+        worker = new Worker(workerUrl);
+        worker.onmessage = event => event.data.error
+          ? finish(reject, new Error(event.data.error))
+          : finish(resolve, event.data.detection);
+        worker.onerror = unavailable;
+        options.signal?.addEventListener("abort", abort, { once: true });
+        timer = setTimeout(() => finish(reject, new Error("Page analysis took too long. Try another frame.")),
+          Math.max(1000, Math.min(60000, options.timeoutMs || 20000)));
+        worker.postMessage({ bitmap, config: SP.Config || {} }, [bitmap]);
+      } catch (_) {
+        bitmap.close();
+        unavailable();
+      }
+    });
+  };
+
+  function checkProcessingCancelled(settings) {
+    if (settings?.signal?.aborted) {
+      throw new DOMException("Scan processing cancelled", "AbortError");
+    }
   }
 
-  Light.warp = async function warp(source, pageQuad, frame = null) {
-    const output = document.createElement("canvas");
-    output.height = OUTPUT_LONG_EDGE;
-    output.width = Math.round(OUTPUT_LONG_EDGE * A4_RATIO);
-    const context = output.getContext("2d", { willReadFrequently: true });
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, output.width, output.height);
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-    const useCurvedFrame = !!frame?.paths && frame.confidence >= 0.18;
-    if (useCurvedFrame) {
-      const columns = clamp((frame.samples || 25) - 1, 12, 24);
-      const rows = clamp((frame.samples || 25) - 1, 18, 24);
-      const frameU0 = 1.5 / 21;
-      const frameU1 = 19.5 / 21;
-      const frameV0 = 1.43 / 29.7;
-      const frameV1 = 28.43 / 29.7;
-      const rowFractions = Array.from({ length: rows + 1 }, (_, index) => index / rows);
-      if (frame.box?.support >= 0.25) rowFractions.push(1 - 1 / 27, 1 - 0.5 / 27);
-      rowFractions.sort((first, second) => first - second);
-      const uniqueRows = rowFractions.filter((value, index, values) => !index || Math.abs(value - values[index - 1]) > 1e-5);
-      for (let row = 0; row < uniqueRows.length - 1; row += 1) {
-        const v0 = frameV0 + (frameV1 - frameV0) * uniqueRows[row];
-        const v1 = frameV0 + (frameV1 - frameV0) * uniqueRows[row + 1];
-        const y0 = Math.floor(v0 * output.height) - 0.35;
-        const y1 = Math.ceil(v1 * output.height) + 0.35;
-        for (let column = 0; column < columns; column += 1) {
-          const u0 = frameU0 + (frameU1 - frameU0) * (column / columns);
-          const u1 = frameU0 + (frameU1 - frameU0) * ((column + 1) / columns);
-          const sourceTopLeft = mapFramePoint(frame, u0, v0);
-          const sourceBottomLeft = mapFramePoint(frame, u0, v1);
-          const sourceTopRight = mapFramePoint(frame, u1, v0);
-          const sourceBottomRight = mapFramePoint(frame, u1, v1);
-          const x0 = Math.floor(u0 * output.width) - 0.35;
-          const x1 = Math.ceil(u1 * output.width) + 0.35;
-          const destinationTopLeft = { x: x0, y: y0 };
-          const destinationBottomLeft = { x: x0, y: y1 };
-          const destinationTopRight = { x: x1, y: y0 };
-          const destinationBottomRight = { x: x1, y: y1 };
-          drawTriangle(context, source,
-            [sourceTopLeft, sourceBottomLeft, sourceTopRight],
-            [destinationTopLeft, destinationBottomLeft, destinationTopRight]);
-          drawTriangle(context, source,
-            [sourceTopRight, sourceBottomLeft, sourceBottomRight],
-            [destinationTopRight, destinationBottomLeft, destinationBottomRight]);
-        }
-        if (row % 3 === 2) await yieldToBrowser();
-      }
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      return output;
-    }
+  function projectivePageMap(quad) {
+    const [p0, p1, p2, p3] = quad;
+    const dx1 = p1.x - p2.x, dx2 = p3.x - p2.x;
+    const dy1 = p1.y - p2.y, dy2 = p3.y - p2.y;
+    const dx3 = p0.x - p1.x + p2.x - p3.x;
+    const dy3 = p0.y - p1.y + p2.y - p3.y;
+    const determinant = dx1 * dy2 - dx2 * dy1;
+    if (Math.abs(determinant) < 1e-8) throw new Error("The page corners are too close together.");
+    const g = (dx3 * dy2 - dx2 * dy3) / determinant;
+    const h = (dx1 * dy3 - dx3 * dy1) / determinant;
+    const a = p1.x - p0.x + g * p1.x, b = p3.x - p0.x + h * p3.x;
+    const d = p1.y - p0.y + g * p1.y, e = p3.y - p0.y + h * p3.y;
+    return (u, v) => {
+      const divisor = g * u + h * v + 1;
+      return { x: (a * u + b * v + p0.x) / divisor, y: (d * u + e * v + p0.y) / divisor };
+    };
+  }
 
-    const strips = 28;
-    for (let strip = 0; strip < strips; strip += 1) {
-      const u0 = strip / strips;
-      const u1 = (strip + 1) / strips;
-      const sourceTopLeft = bilinear(pageQuad, u0, 0);
-      const sourceBottomLeft = bilinear(pageQuad, u0, 1);
-      const sourceTopRight = bilinear(pageQuad, u1, 0);
-      const sourceBottomRight = bilinear(pageQuad, u1, 1);
-      const x0 = Math.floor(u0 * output.width) - 0.35;
-      const x1 = Math.ceil(u1 * output.width) + 0.35;
-      const destinationTopLeft = { x: x0, y: -0.35 };
-      const destinationBottomLeft = { x: x0, y: output.height + 0.35 };
-      const destinationTopRight = { x: x1, y: -0.35 };
-      const destinationBottomRight = { x: x1, y: output.height + 0.35 };
-      drawTriangle(context, source,
-        [sourceTopLeft, sourceBottomLeft, sourceTopRight],
-        [destinationTopLeft, destinationBottomLeft, destinationTopRight]);
-      drawTriangle(context, source,
-        [sourceTopRight, sourceBottomLeft, sourceBottomRight],
-        [destinationTopRight, destinationBottomLeft, destinationBottomRight]);
-      if (strip % 7 === 6) await yieldToBrowser();
+  Light.warp = async function warp(source, pageQuad, frame = null, options = {}) {
+    checkProcessingCancelled(options);
+    const output = document.createElement("canvas");
+    output.height = Math.round(clamp(options.maxDimension || OUTPUT_LONG_EDGE, 256, OUTPUT_LONG_EDGE));
+    output.width = Math.round(output.height * A4_RATIO);
+    const context = output.getContext("2d", { willReadFrequently: true });
+    const input = source.getContext
+      ? source.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, source.width, source.height)
+      : createScaledCanvas(source, Math.max(source.width, source.height)).context
+        .getImageData(0, 0, source.width, source.height);
+    const image = context.createImageData(output.width, output.height);
+    const pixels = image.data;
+    pixels.fill(255);
+    const inputPixels = input.data;
+    const sourceWidth = input.width;
+    const sourceHeight = input.height;
+    const curved = !!frame?.paths && frame.confidence >= 0.18;
+    const map = curved ? (u, v) => mapFramePoint(frame, u, v) : projectivePageMap(pageQuad);
+    // Inverse-map one dense surface instead of repeatedly drawing the entire
+    // camera image into 1,200 clipped triangles. The latter made Android GPU
+    // drivers process the same large photo for every cell, and overlapping
+    // clips softened writing and left seams. Each output pixel is sampled once.
+    const columns = 64;
+    const rows = 80;
+    const fractions = (count, extra) => [...Array.from({ length: count + 1 }, (_, index) => index / count), ...extra]
+      .sort((a, b) => a - b)
+      .filter((value, index, values) => !index || value - values[index - 1] > 1e-7);
+    const us = fractions(columns, curved ? [1.5 / 21, 19.5 / 21] : []);
+    const vs = fractions(rows, curved ? [1.43 / 29.7, 27.43 / 29.7, 27.93 / 29.7, 28.43 / 29.7] : []);
+    const grid = vs.map(v => us.map(u => map(u, v)));
+    const orientation = Math.sign(polygonArea(pageQuad));
+    const cross = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    for (let row = 0; row < vs.length - 1; row += 1) {
+      checkProcessingCancelled(options);
+      const topY = vs[row] * output.height;
+      const bottomY = vs[row + 1] * output.height;
+      const startY = Math.max(0, Math.ceil(topY - 0.5));
+      const endY = Math.min(output.height, Math.ceil(bottomY - 0.5));
+      for (let column = 0; column < us.length - 1; column += 1) {
+        // The printed template has blank margins outside the measured frame.
+        // Extrapolating curled guides into those unobserved margins can fold
+        // a mesh over itself or import a neighbouring desk. Keep clean paper
+        // there, as the earlier scanner did, and validate all observed cells.
+        if (curved && (us[column] < 1.5 / 21 - 1e-7 || us[column + 1] > 19.5 / 21 + 1e-7
+          || vs[row] < 1.43 / 29.7 - 1e-7 || vs[row + 1] > 28.43 / 29.7 + 1e-7)) continue;
+        const leftX = us[column] * output.width;
+        const rightX = us[column + 1] * output.width;
+        const startX = Math.max(0, Math.ceil(leftX - 0.5));
+        const endX = Math.min(output.width, Math.ceil(rightX - 0.5));
+        const tl = grid[row][column], tr = grid[row][column + 1];
+        const bl = grid[row + 1][column], br = grid[row + 1][column + 1];
+        if (![tl, tr, bl, br].every(point => Number.isFinite(point?.x) && Number.isFinite(point?.y))) {
+          throw new Error("The page surface could not be reconstructed. Try another frame.");
+        }
+        if (cross(tl, tr, bl) * orientation <= 1e-7 || cross(br, bl, tr) * orientation <= 1e-7) {
+          throw new Error("The page surface overlaps itself. Keep the whole sheet visible and try another frame.");
+        }
+        const cellWidth = rightX - leftX;
+        const firstU = (startX + 0.5 - leftX) / cellWidth;
+        for (let y = startY; y < endY; y += 1) {
+          const v = (y + 0.5 - topY) / (bottomY - topY);
+          const lx = tl.x + (bl.x - tl.x) * v;
+          const ly = tl.y + (bl.y - tl.y) * v;
+          const rx = tr.x + (br.x - tr.x) * v;
+          const ry = tr.y + (br.y - tr.y) * v;
+          const dx = (rx - lx) / cellWidth;
+          const dy = (ry - ly) / cellWidth;
+          let sx = lx + (rx - lx) * firstU - 0.5;
+          let sy = ly + (ry - ly) * firstU - 0.5;
+          let destination = (y * output.width + startX) * 4;
+          for (let x = startX; x < endX; x += 1, destination += 4, sx += dx, sy += dy) {
+            if (sx < 0 || sy < 0 || sx >= sourceWidth - 1 || sy >= sourceHeight - 1) {
+              pixels[destination] = pixels[destination + 1] = pixels[destination + 2] = 255;
+            } else {
+              const ix = Math.floor(sx), iy = Math.floor(sy);
+              const fx = sx - ix, fy = sy - iy;
+              const first = (iy * sourceWidth + ix) * 4;
+              const second = first + sourceWidth * 4;
+              for (let channel = 0; channel < 3; channel += 1) {
+                const upper = inputPixels[first + channel] * (1 - fx) + inputPixels[first + 4 + channel] * fx;
+                const lower = inputPixels[second + channel] * (1 - fx) + inputPixels[second + 4 + channel] * fx;
+                pixels[destination + channel] = upper * (1 - fy) + lower * fy;
+              }
+            }
+            pixels[destination + 3] = 255;
+          }
+        }
+      }
+      options.onProgress?.((row + 1) / (vs.length - 1));
+      if (row % 3 === 2) await yieldToBrowser();
     }
-    context.setTransform(1, 0, 0, 1, 0, 0);
+    checkProcessingCancelled(options);
+    context.putImageData(image, 0, 0);
+    output.scanSurface = { model: curved ? "curved-guided-surface" : "projective", columns, rows };
     return output;
   };
 
@@ -3266,7 +3395,7 @@
     return false;
   }
 
-  function removePhotographedStencil(data, width, height, pxPerCm, targetPaper) {
+  async function removePhotographedStencil(data, width, height, pxPerCm, targetPaper, settings) {
     const setPaper = (x, y) => {
       if (x < 0 || x >= width || y < 0 || y >= height) return;
       const offset = (y * width + x) * 4;
@@ -3396,6 +3525,8 @@
     const nominalPhase = scorePhase(0, 0);
     let bestPhase = { x: 0, y: 0, ...nominalPhase };
     for (let yStep = -10; yStep <= 10; yStep += 1) {
+      checkProcessingCancelled(settings);
+      await yieldToBrowser();
       for (let xStep = -10; xStep <= 10; xStep += 1) {
         const x = xStep * 0.02, y = yStep * 0.02;
         const score = scorePhase(x, y);
@@ -3410,6 +3541,60 @@
     const gridPhase = bestPhase.matches >= nominalPhase.matches + 5
       ? bestPhase
       : { x: 0, y: 0 };
+    // Residual perspective and real paper curl move the printed lattice by a
+    // few pixels across the page. One global phase smears the learned glyph
+    // over many locations and leaves most photographed dots untouched. Track
+    // a phase only where a whole block supplies repeated isolated marks.
+    const centres = new Array(35 * 51);
+    for (let blockColumn = 0; blockColumn < 35; blockColumn += 7) {
+      for (let blockRow = 0; blockRow < 51; blockRow += 9) {
+        checkProcessingCancelled(settings);
+        await yieldToBrowser();
+        const endColumn = Math.min(35, blockColumn + 7);
+        const endRow = Math.min(51, blockRow + 9);
+        let best = { x: gridPhase.x, y: gridPhase.y, matches: 0, contrast: 0 };
+        for (let yStep = -5; yStep <= 5; yStep += 1) {
+          for (let xStep = -5; xStep <= 5; xStep += 1) {
+            const xPhase = gridPhase.x + xStep * 0.04;
+            const yPhase = gridPhase.y + yStep * 0.04;
+            let matches = 0, contrast = 0;
+            for (let column = blockColumn; column < endColumn; column += 1) {
+              for (let row = blockRow; row < endRow; row += 1) {
+                const response = dotResponseAt(
+                  Math.round((2 + column * 0.5 + xPhase) * pxPerCm),
+                  Math.round((1.93 + row * 0.5 + yPhase) * pxPerCm), 6);
+                if (response) { matches += 1; contrast += Math.min(30, response.contrast); }
+              }
+            }
+            if (matches > best.matches || matches === best.matches && contrast > best.contrast) {
+              best = { x: xPhase, y: yPhase, matches, contrast };
+            }
+          }
+        }
+        const reliable = best.matches >= Math.max(8, (endColumn - blockColumn) * (endRow - blockRow) * 0.22);
+        const phase = reliable ? best : gridPhase;
+        for (let column = blockColumn; column < endColumn; column += 1) {
+          for (let row = blockRow; row < endRow; row += 1) {
+            let cx = Math.round((2 + column * 0.5 + phase.x) * pxPerCm);
+            let cy = Math.round((1.93 + row * 0.5 + phase.y) * pxPerCm);
+            if (reliable) {
+              let localBest = null;
+              const search = Math.max(2, Math.round(pxPerCm * 0.04));
+              for (let dy = -search; dy <= search; dy += 1) {
+                for (let dx = -search; dx <= search; dx += 1) {
+                  const response = dotResponseAt(cx + dx, cy + dy, 6);
+                  if (response && (!localBest || response.contrast > localBest.contrast)) {
+                    localBest = { x: cx + dx, y: cy + dy, contrast: response.contrast };
+                  }
+                }
+              }
+              if (localBest) { cx = localBest.x; cy = localBest.y; }
+            }
+            centres[column * 51 + row] = { x: cx, y: cy };
+          }
+        }
+      }
+    }
     // Learn the photographed dot glyph from the median of all 1,785 cells.
     // Handwriting is an outlier at any one relative pixel, while the printed
     // grid is repeated everywhere. Subtracting this learned darkness preserves
@@ -3420,9 +3605,10 @@
     const glyphHistograms = new Uint16Array(glyphPixels * 256);
     const glyphCounts = new Uint16Array(glyphPixels);
     for (let column = 0; column < 35; column += 1) {
-      const cx = Math.round((2 + column * 0.5 + gridPhase.x) * pxPerCm);
+      checkProcessingCancelled(settings);
+      await yieldToBrowser();
       for (let row = 0; row < 51; row += 1) {
-        const cy = Math.round((1.93 + row * 0.5 + gridPhase.y) * pxPerCm);
+        const { x: cx, y: cy } = centres[column * 51 + row];
         for (let dy = -glyphRadius; dy <= glyphRadius; dy += 1) {
           for (let dx = -glyphRadius; dx <= glyphRadius; dx += 1) {
             if (Math.hypot(dx, dy) > glyphRadius) continue;
@@ -3462,9 +3648,10 @@
       glyphDarkness[glyphIndex] = Math.max(0, Math.min(112, targetPaper - median));
     }
     for (let column = 0; column < 35; column += 1) {
-      const cx = Math.round((2 + column * 0.5 + gridPhase.x) * pxPerCm);
+      checkProcessingCancelled(settings);
+      await yieldToBrowser();
       for (let row = 0; row < 51; row += 1) {
-        const cy = Math.round((1.93 + row * 0.5 + gridPhase.y) * pxPerCm);
+        const { x: cx, y: cy } = centres[column * 51 + row];
         for (let dy = -glyphRadius; dy <= glyphRadius; dy += 1) {
           for (let dx = -glyphRadius; dx <= glyphRadius; dx += 1) {
             if (Math.hypot(dx, dy) > glyphRadius) continue;
@@ -3500,44 +3687,68 @@
         }
       }
     }
-    // The learned glyph above deliberately ignores rare observations so a
-    // lone handwritten mark cannot become part of the learned template. Also
-    // remove an individually verified printed dot: radial isolation confirms
-    // it is a circular template mark, while the same stroke-continuity guard
-    // preserves a line that crosses that location.
-    const verifiedDotRadius = Math.max(1, Math.round(0.06 * pxPerCm));
-    for (let column = 0; column < 35; column += 1) {
-      const cx = Math.round((2 + column * 0.5 + gridPhase.x) * pxPerCm);
-      for (let row = 0; row < 51; row += 1) {
-        const cy = Math.round((1.93 + row * 0.5 + gridPhase.y) * pxPerCm);
-        if (!dotResponseAt(cx, cy, 6)) continue;
-        for (let dy = -verifiedDotRadius; dy <= verifiedDotRadius; dy += 1) {
-          for (let dx = -verifiedDotRadius; dx <= verifiedDotRadius; dx += 1) {
-            if (Math.hypot(dx, dy) > verifiedDotRadius) continue;
-            const x = cx + dx, y = cy + dy;
-            const metrics = metricsAt(x, y);
-            if (metrics.saturation > 0.42 || metrics.luminance < 70) continue;
-            const continuesAsStroke = [
-              [1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2], [Math.SQRT1_2, -Math.SQRT1_2]
-            ].some(([ux, uy]) => {
-              const before = metricsAt(Math.round(x - ux * strokeContinuityRadius), Math.round(y - uy * strokeContinuityRadius));
-              const after = metricsAt(Math.round(x + ux * strokeContinuityRadius), Math.round(y + uy * strokeContinuityRadius));
-              return before.luminance < 245
-                && after.luminance < 245
-                && before.luminance <= metrics.luminance + 28
-                && after.luminance <= metrics.luminance + 28;
-            });
-            if (!continuesAsStroke) setPaper(x, y);
-          }
+    // Keep uncommon isolated marks. The learned repeated glyph is enough to
+    // remove the template; a second isolated-dot eraser cannot distinguish
+    // a printed dot from a full stop or the dot of a handwritten i.
+
+  }
+
+  function smoothPaperIllumination(values, width, height) {
+    // A local closing estimates the paper behind thin ink strokes. A simple
+    // blur follows dark writing and then mistakes it for a shadow, whitening
+    // pencil away. Work on the small illumination map, never on the scan.
+    let field = values;
+    const radius = Math.max(2, Math.round(width / 16));
+    const extremum = (horizontal, maximum) => {
+      const next = new Float32Array(field.length);
+      const length = horizontal ? width : height;
+      const lines = horizontal ? height : width;
+      const queue = new Int32Array(length + radius * 2);
+      const indexAt = (line, position) => horizontal
+        ? line * width + clamp(position, 0, width - 1)
+        : clamp(position, 0, height - 1) * width + line;
+      for (let line = 0; line < lines; line += 1) {
+        let head = 0, tail = 0;
+        for (let position = -radius; position < length + radius; position += 1) {
+          while (head < tail && queue[head] < position - radius * 2) head += 1;
+          const value = field[indexAt(line, position)];
+          while (head < tail && (maximum
+            ? field[indexAt(line, queue[tail - 1])] <= value
+            : field[indexAt(line, queue[tail - 1])] >= value)) tail -= 1;
+          queue[tail++] = position;
+          if (position >= radius) next[indexAt(line, position - radius)] = field[indexAt(line, queue[head])];
         }
       }
+      field = next;
+    };
+    // Closing fills ink-sized dark holes but preserves a smooth monotonic
+    // shadow. A dilation alone brightens its estimate and leaves grey bands;
+    // the erosion restores the actual local paper exposure afterwards.
+    extremum(true, true);
+    extremum(false, true);
+    extremum(true, false);
+    extremum(false, false);
+    for (const horizontal of [true, false]) {
+      const next = new Float32Array(field.length);
+      for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+        let sum = 0;
+        for (let delta = -3; delta <= 3; delta += 1) {
+          const sx = horizontal ? clamp(x + delta, 0, width - 1) : x;
+          const sy = horizontal ? y : clamp(y + delta, 0, height - 1);
+          sum += field[sy * width + sx];
+        }
+        next[y * width + x] = sum / 7;
+      }
+      field = next;
     }
+    return field;
   }
 
   Light.correctColors = async function correctColors(canvas, options = {}) {
     const settings = typeof options === "boolean"
       ? { useStencil: options, preciseStencil: options }
       : options;
+    checkProcessingCancelled(settings);
     const useStencil = !!settings.useStencil;
     const preciseStencil = !!settings.preciseStencil;
     const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -3554,18 +3765,31 @@
     const illuminationContext = illuminationCanvas.getContext("2d", { willReadFrequently: true });
     illuminationContext.imageSmoothingEnabled = true;
     illuminationContext.imageSmoothingQuality = "high";
-    illuminationContext.filter = "blur(2.4px)";
+    illuminationContext.filter = "none";
     illuminationContext.drawImage(canvas, 0, 0, illuminationCanvas.width, illuminationCanvas.height);
     illuminationContext.filter = "none";
     const illuminationPixels = illuminationContext.getImageData(
       0, 0, illuminationCanvas.width, illuminationCanvas.height
     ).data;
-    const illumination = new Float32Array(illuminationCanvas.width * illuminationCanvas.height);
-    for (let index = 0, offset = 0; index < illumination.length; index += 1, offset += 4) {
+    let illumination = new Float32Array(illuminationCanvas.width * illuminationCanvas.height);
+    const fieldLeft = Math.ceil(1.78 / 21 * illuminationCanvas.width);
+    const fieldRight = Math.floor(19.22 / 21 * illuminationCanvas.width);
+    const fieldTop = Math.ceil(1.71 / 29.7 * illuminationCanvas.height);
+    const fieldBottom = Math.floor(28.15 / 29.7 * illuminationCanvas.height);
+    for (let index = 0; index < illumination.length; index += 1) {
+      // Warp margins are synthetic white, not an exposure measurement. Let
+      // real interior paper continue across this field's edge so its white
+      // surround cannot turn a smooth sheet shadow into a protected grey halo.
+      const x = index % illuminationCanvas.width;
+      const y = Math.floor(index / illuminationCanvas.width);
+      const sx = preciseStencil ? clamp(x, fieldLeft, fieldRight) : x;
+      const sy = preciseStencil ? clamp(y, fieldTop, fieldBottom) : y;
+      const offset = (sy * illuminationCanvas.width + sx) * 4;
       illumination[index] = illuminationPixels[offset] * 0.2126
         + illuminationPixels[offset + 1] * 0.7152
         + illuminationPixels[offset + 2] * 0.0722;
     }
+    illumination = smoothPaperIllumination(illumination, illuminationCanvas.width, illuminationCanvas.height);
     const illuminationXScale = (illuminationCanvas.width - 1) / Math.max(1, canvas.width - 1);
     const illuminationYScale = (illuminationCanvas.height - 1) / Math.max(1, canvas.height - 1);
     const pxPerCm = canvas.width / 21;
@@ -3678,32 +3902,45 @@
           data[offset + 2] = profile.targetPaper;
           continue;
         }
+        const inCalibrationBand = y >= calibrationY1 && y <= calibrationY2;
+        const warmPrintedYellow = r >= g * 0.85 && g >= r * 0.78
+          && g >= b * 1.06 && r >= b * 1.12 && yellowChroma(r, g, b) >= 6;
+        const onPrintedRail = inOuterBand || (inCalibrationBand && (
+          Math.abs(y - 27.43 * pxPerCm) <= outerBand
+          || Math.abs(y - 27.93 * pxPerCm) <= outerBand
+          || Math.abs((x / pxPerCm * 2) - Math.round(x / pxPerCm * 2)) < 0.24
+        ));
         const shouldNeutralize = useStencil && (
-          ((inOuterBand || (y >= calibrationY1 && y <= calibrationY2)) && isYellow(r, g, b))
+          ((inOuterBand || inCalibrationBand) && isYellow(r, g, b))
+          // Warm camera casts can move the printed yellow outside the strict
+          // hue interval. Remove it on verified template rails before colour
+          // calibration can amplify those harmless remnants into red specks.
+          || (onPrintedRail && warmPrintedYellow)
           || (inColorMarkers && saturation > 0.24)
         );
         if (shouldNeutralize) {
           data[offset] = 255; data[offset + 1] = 255; data[offset + 2] = 255;
           continue;
         }
-        const original = [r, g, b];
         const illuminationX = Math.round(x * illuminationXScale);
         const illuminationY = Math.round(y * illuminationYScale);
         const localBright = illumination[illuminationY * illuminationCanvas.width + illuminationX];
-        const automatic = original.map((value, channel) => clamp(value * profile.gains[channel], 0, 255));
+        const automaticR = clamp(r * profile.gains[0], 0, 255);
+        const automaticG = clamp(g * profile.gains[1], 0, 255);
+        const automaticB = clamp(b * profile.gains[2], 0, 255);
         const kind = canCalibrate
           ? referenceKindForPixel(
             r, g, b, luminance, saturation, profile.paperLuminance, localBright
           )
           : null;
         const calibrated = kind
-          ? calibrateFromReference(original, referenceByName[kind], profile.sourcePaper, profile.targetPaper)
+          ? calibrateFromReference([r, g, b], referenceByName[kind], profile.sourcePaper, profile.targetPaper)
           : null;
-        let output = automatic;
+        let outputR = automaticR, outputG = automaticG, outputB = automaticB;
         if (calibrated) {
-          output = automatic.map((value, channel) => (
-            value * (1 - calibrated.mix) + calibrated.mapped[channel] * calibrated.mix
-          ));
+          outputR = automaticR * (1 - calibrated.mix) + calibrated.mapped[0] * calibrated.mix;
+          outputG = automaticG * (1 - calibrated.mix) + calibrated.mapped[1] * calibrated.mix;
+          outputB = automaticB * (1 - calibrated.mix) + calibrated.mapped[2] * calibrated.mix;
         } else if (saturation <= 0.18) {
           // The paper is the fifth calibration reference. Push neutral bright
           // pixels to true white while leaving pencil and black writing intact.
@@ -3715,7 +3952,9 @@
           // writing. A soft relative threshold avoids both posterisation and
           // accidental removal of pencil/grid details.
           const localDifference = localBright - luminance;
-          const localPaperFloor = Math.max(70, profile.shadowPoint + 16, profile.paperLuminance * 0.5);
+          // Relative contrast remains meaningful in a deep smooth shadow.
+          // A global brightness floor previously left half a curled page grey.
+          const localPaperFloor = Math.max(68, profile.paperLuminance * 0.27);
           const localPaperAmount = luminance >= localPaperFloor
             ? clamp((12 - localDifference) / 8, 0, 1)
             : 0;
@@ -3730,22 +3969,31 @@
             whiteMix * (1 - localInkProtection),
             smoothLocalPaper * 0.98
           ));
-          output = automatic.map(value => value * (1 - whiteMix) + profile.targetPaper * whiteMix);
+          const paper = profile.targetPaper * whiteMix;
+          outputR = automaticR * (1 - whiteMix) + paper;
+          outputG = automaticG * (1 - whiteMix) + paper;
+          outputB = automaticB * (1 - whiteMix) + paper;
         } else {
           // Preserve colours that are not one of the printed references, but
           // restore a small amount of saturation lost through camera exposure.
-          const balancedLuminance = automatic[0] * 0.2126 + automatic[1] * 0.7152 + automatic[2] * 0.0722;
+          const balancedLuminance = automaticR * 0.2126 + automaticG * 0.7152 + automaticB * 0.0722;
           const vibrance = 1.08;
-          output = automatic.map(value => balancedLuminance + (value - balancedLuminance) * vibrance);
+          outputR = balancedLuminance + (automaticR - balancedLuminance) * vibrance;
+          outputG = balancedLuminance + (automaticG - balancedLuminance) * vibrance;
+          outputB = balancedLuminance + (automaticB - balancedLuminance) * vibrance;
         }
-        for (let channel = 0; channel < 3; channel += 1) {
-          data[offset + channel] = Math.round(clamp(output[channel], 0, 255));
-        }
+        data[offset] = Math.round(clamp(outputR, 0, 255));
+        data[offset + 1] = Math.round(clamp(outputG, 0, 255));
+        data[offset + 2] = Math.round(clamp(outputB, 0, 255));
       }
-      if (y % 96 === 95) await yieldToBrowser();
+      if (y % 48 === 47) {
+        checkProcessingCancelled(settings);
+        settings.onProgress?.((y + 1) / canvas.height);
+        await yieldToBrowser();
+      }
     }
     if (preciseStencil && !settings.skipStencilCleanup) {
-      removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper);
+      await removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper, settings);
     }
     context.putImageData(image, 0, 0);
     illuminationCanvas.width = 0;

@@ -27,7 +27,35 @@ test('live detector follows printed rails through perspective, rotation, curl an
       .map(point => ({ x: point.x / source.width, y: point.y / source.height }));
     const cornerError = detection && Math.max(...detection.quad.map(point =>
       Math.min(...expected.map(reference => Math.hypot(point.x - reference.x, point.y - reference.y)))));
-    return { name: definition.name, duration, cornerError, detection };
+    // Compare every observed curve to the independent surface used to render
+    // the page, not just to the four corner chords. The calibration strips
+    // remain two distinct measured rails even under the lower-page curl.
+    const referenceRails = [];
+    for (let index = 0; index <= 150; index += 1) {
+      const u = frame.u0 + (frame.u1 - frame.u0) * index / 150;
+      const v = frame.v0 + (frame.v1 - frame.v0) * index / 150;
+      for (const [x, y] of [[u, frame.v0], [u, frame.v1], [frame.u0, v], [frame.u1, v]]) {
+        const point = mapping(x, y);
+        referenceRails.push({ x: point.x / source.width, y: point.y / source.height });
+      }
+    }
+    const curveErrors = (detection?.contour || []).map(point => Math.min(...referenceRails.map(reference =>
+      Math.hypot(point.x - reference.x, point.y - reference.y))));
+    const markerErrors = [];
+    (detection?.markerEdges || []).forEach((edges, box) => {
+      for (const side of [0, 2]) {
+        edges[side].forEach((point, index, points) => {
+          const t = side === 0 ? index / (points.length - 1) : 1 - index / (points.length - 1);
+          const reference = mapping((2 + box * 9 + 8 * t) / 21, (side === 0 ? 27.43 : 27.93) / 29.7);
+          markerErrors.push(Math.hypot(point.x - reference.x / source.width, point.y - reference.y / source.height));
+        });
+      }
+    });
+    return {
+      name: definition.name, duration, cornerError, detection,
+      curveMaximumError: curveErrors.length ? Math.max(...curveErrors) : Infinity,
+      markerMaximumError: markerErrors.length ? Math.max(...markerErrors) : Infinity
+    };
   }));
   for (const report of reports) {
     // This fixture deliberately removes measurable yellow hue. Keeping the
@@ -41,7 +69,9 @@ test('live detector follows printed rails through perspective, rotation, curl an
     expect(report.detection.confidence, report.name).toBeGreaterThan(.85);
     expect(report.cornerError, report.name).toBeLessThan(.055);
     expect(report.detection.sharpness, report.name).toBeGreaterThan(45);
-    expect(report.detection.markers.length, report.name).toBe(report.name === 'strong-bottom-curl' ? 0 : 2);
+    expect(report.detection.markers.length, report.name).toBe(2);
+    expect(report.curveMaximumError, report.name).toBeLessThan(.015);
+    expect(report.markerMaximumError, report.name).toBeLessThan(.012);
   }
 });
 

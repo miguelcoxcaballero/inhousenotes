@@ -1610,8 +1610,8 @@
     }
   });
 
-  /* Lightweight processing pipeline. Detection runs on a <=640px analysis
-     image; only the final A4 canvas is generated at document resolution. */
+  /* Detection runs in a worker on a reduced image; only the final A4 canvas
+     is generated at document resolution. Imports share the live processor. */
   async function process(srcCanvas, opts = {}) {
     stageOnImmediate("Detecting page...");
     const detection = opts.overridePageQuad
@@ -1620,7 +1620,7 @@
         confidence: opts.forceNoYellow ? 0 : 1,
         method: opts.forceNoYellow ? "manual" : "stencil"
       }
-      : SP.Lightweight.detectPage(srcCanvas);
+      : await SP.Lightweight.detectPageAsync(srcCanvas);
     const usedYellow = !opts.forceNoYellow && detection.confidence > 0;
     const preciseStencil = usedYellow
       && (detection.method === "stencil" || detection.method === "marker-guided");

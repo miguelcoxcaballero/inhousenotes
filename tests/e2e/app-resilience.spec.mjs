@@ -557,6 +557,19 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
     context.fillStyle = 'rgb(218,213,205)';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
+    // The photographed template has a repeated half-centimetre dot grid.
+    // Draw it before the ink so cleanup can identify the printed pattern
+    // while preserving handwriting that crosses its coordinates.
+    context.fillStyle = 'rgb(132,132,132)';
+    for (let column = 0; column < 35; column++) {
+      for (let row = 0; row < 51; row++) {
+        context.beginPath();
+        context.arc((2 + column * 0.5) * pxPerCm, (1.93 + row * 0.5) * pxPerCm,
+          0.055 * pxPerCm, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+
     const yellow = 'rgb(195,170,55)';
     context.strokeStyle = yellow;
     context.lineWidth = 5;
@@ -588,12 +601,8 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
     }
 
     // Photographed template remnants must be removed before the clean vector
-    // stencil is composited. One isolated grid dot should disappear, while a
+    // stencil is composited. An uncovered grid dot should disappear, while a
     // black handwritten stroke crossing another grid position must survive.
-    context.fillStyle = 'rgb(132,132,132)';
-    context.beginPath();
-    context.arc(2 * pxPerCm, 1.93 * pxPerCm, 0.055 * pxPerCm, 0, Math.PI * 2);
-    context.fill();
     context.strokeStyle = 'rgb(126,126,126)';
     context.lineWidth = 0.08 * pxPerCm;
     context.beginPath();

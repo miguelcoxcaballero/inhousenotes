@@ -13,15 +13,20 @@ test('scanner reconstructs 15 deterministic 3D, orientation and colour variants'
       let bestY = null;
       let bestScore = -Infinity;
       for (let y = Math.max(0, expected - 14); y <= Math.min(height - 1, expected + 14); y += 1) {
-        let score = 0;
-        for (let dx = -2; dx <= 2; dx += 1) {
+        const samples = [];
+        // Measure a horizontal rail, including where a vertical box divider
+        // crosses the probe. A five-pixel colour maximum also selected the
+        // divider anywhere along its height, reporting false curvature.
+        for (let dx = -10; dx <= 10; dx += 1) {
           const offset = (y * width + Math.max(0, Math.min(width - 1, x + dx))) * 4;
           const r = data[offset], g = data[offset + 1], b = data[offset + 2];
-          score += (r + g) * .5 - b - Math.abs(r - g) * .34;
+          samples.push((r + g) * .5 - b - Math.abs(r - g) * .34);
         }
+        samples.sort((a, b) => a - b);
+        const score = samples[Math.floor(samples.length * .25)];
         if (score > bestScore) { bestScore = score; bestY = y; }
       }
-      return { value: bestY, error: Math.abs(bestY - expected), score: bestScore / 5 };
+      return { value: bestY, error: Math.abs(bestY - expected), score: bestScore };
     };
     const findVerticalYellow = (data, width, height, xRatio, yRatio) => {
       const y = Math.round(height * yRatio);
@@ -113,6 +118,8 @@ test('scanner reconstructs 15 deterministic 3D, orientation and colour variants'
         sideSupports: detection.frame?.sideSupports,
         detectedCurvature: detection.frame?.curvature,
         interiorTrace: detection.frame?.interiorTrace,
+        horizontal,
+        vertical,
         colourCalibrated: colourResult.calibrated,
         colourSamples: colourResult.samples,
         inkSamples,
@@ -163,6 +170,8 @@ test('scanner reconstructs 15 deterministic 3D, orientation and colour variants'
       }])),
       sideSupports: result.sideSupports,
       interiorTrace: result.interiorTrace,
+      horizontal: result.horizontal,
+      vertical: result.vertical,
       colourCalibrated: result.colourCalibrated,
       colourSamples: result.colourSamples,
       inkSamples: result.inkSamples,
