@@ -38,7 +38,7 @@
     const win = config.window || root, doc = win.document, native = () => win.InhouseNative;
     const key = 'inhouse-services-updater:' + config.appId;
     let state = { channel: 'B', developmentConsent: 0, snooze: {} }, dialog = null, available = null, checking = null, generation = 0;
-    let lastPrompt = '', timer = null, started = false, installing = false, previousFocus = null;
+    let lastPrompt = '', timer = null, started = false, installing = false, previousFocus = null, settingsContainer = null;
     const now = () => config.now ? config.now() : Date.now();
     const installed = () => String(config.getVersion?.() || native()?.getAppVersion?.() || config.installedVersion || '0.0.0');
     const installedCode = () => Number(config.getVersionCode?.() || native()?.getAppVersionCode?.() || config.installedVersionCode || 0);
@@ -80,26 +80,30 @@
       return first;
     }
     function close(defer = false) {
+      generation++; checking = null;
       if (defer) { readState(); state.snooze[state.channel] = now() + TWO_WEEKS; saveState(); lastPrompt = ""; }
       if (dialog) { dialog.remove(); dialog = null; previousFocus?.focus?.(); }
+      settingsContainer = null;
       if (config.close) config.close();
     }
     function shell(title) {
       if (!dialog) {
         previousFocus = doc.activeElement;
-        dialog = doc.createElement('div'); dialog.id = 'inhouse-services-update'; dialog.className = 'isu-overlay';
-        dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'isu-title');
+        dialog = doc.createElement('div'); dialog.id = 'inhouse-services-update'; dialog.className = settingsContainer ? 'isu-inline' : 'isu-overlay';
+        dialog.setAttribute('role', settingsContainer ? 'region' : 'dialog');
+        if (!settingsContainer) dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-labelledby', 'isu-title');
         dialog.innerHTML = '<section class="isu-card"><header><div><small></small><h2 id="isu-title"></h2></div></header><div data-isu-body></div><p class="isu-status" data-isu-status role="status"></p></section>';
         dialog.addEventListener('keydown', event => {
-          if (event.key === 'Escape' && !installing) { event.preventDefault(); close(!!available); }
-          if (event.key === 'Tab') {
+          if (event.key === 'Escape' && !installing) { event.preventDefault(); event.stopPropagation(); close(!!available); }
+          if (event.key === 'Tab' && !settingsContainer) {
             const buttons = [...dialog.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),[tabindex="0"]')];
             const first = buttons[0], last = buttons[buttons.length - 1];
             if (event.shiftKey && doc.activeElement === first) { event.preventDefault(); last?.focus(); }
             else if (!event.shiftKey && doc.activeElement === last) { event.preventDefault(); first?.focus(); }
           }
         });
-        doc.body.append(dialog);
+        (settingsContainer || doc.body).append(dialog);
       }
       dialog.querySelector('h2').textContent = title;
       dialog.querySelector('header small').textContent = config.appName;
@@ -144,7 +148,11 @@
       track.append(label, slider); body.append(track);
       button(body, 'Keep version B', () => settings(), 'isu-secondary'); footer(body); yes.focus();
     }
-    function settings(message = '') {
+    function settings(message = '', presentation = {}) {
+      if (presentation.container && presentation.container !== settingsContainer) {
+        if (dialog) close();
+        settingsContainer = presentation.container;
+      }
       readState(); const body = shell('Updates');
       body.append(el('p', 'Installed version ' + installed(), 'isu-app'));
       const heading = el('h3', 'Update channel', 'isu-section-title'); body.append(heading);

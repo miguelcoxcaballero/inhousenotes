@@ -1,88 +1,88 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "ac5cef8994ea476af46161bd4189d85adfc5016a",
+  "revision": "14cfdcec5211d8fde7d6a1502f625579d3fa3ac4",
   "version": "1.0.0",
   "appId": "notes",
   "files": {
     "vendor/inhouse-services-updater/web/host.css": {
       "source": "web/host.css",
-      "sha256": "809c965a8c103e7a3d7e164564e9d44a58c5ca0e594cdb55e93156fbb488d611"
+      "sha256": "3758d3fc0ae37a0efd5027749d11323c051c34b333e47ed79f4cc04dedd54602"
     },
     "vendor/inhouse-services-updater/web/host.js": {
       "source": "web/host.js",
-      "sha256": "2191f341acf244e5dc2a25ce93ca775a76e76c82456fbe573395131625f04d5d"
+      "sha256": "6e53fa7ba8521a526b4e62035c1e0861feb3e242f20b46865c81bc8e4def50cc"
     },
     "vendor/inhouse-services-updater/web/index.html": {
       "source": "web/index.html",
-      "sha256": "c27f38b2369d59ec9eaf1ff9277d5d4eae677e18ad3adb10682747a75a43ebd9"
+      "sha256": "cea562f0d2631713b4e39b0250a02f625ce5bf3c53c67f2f36910a75e65ff4ad"
     },
     "vendor/inhouse-services-updater/web/updater.css": {
       "source": "web/updater.css",
-      "sha256": "6059f3b95664ed8346dfa805bd99655b5464509eaf46dbef61fc95fb3b41cede"
+      "sha256": "8737e59d5907f2de189e912bc08ea104d1e679d08637b6297bf7f872c3642b14"
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "58fd7c394e988b94bfa3c7156ef2723355b1e39a7afea0f06430b66200faa06f"
+      "sha256": "4860ed793ee884f239c0dd98686b9fce3431336e9bf27d923c649dc7a02c24f5"
     },
     "vendor/inhouse-services-updater/android/NativeUpdates.java": {
       "source": "android/NativeUpdates.java",
-      "sha256": "388209896c96bcca6200132ce4f78f4841a3ca8c55c5e9080428a3c5a7cd1cd8"
+      "sha256": "1e84c6ed97a899c6f7bbd4d1ffed35e23432ca73be170c98c963242176b50dfd"
     },
     "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt": {
       "source": "android/PhotosUpdateInstaller.kt",
-      "sha256": "26900582b0e3bd2e048b2ec11ba835cdb55c2dd2463401f047ba7f552a3a0c8a"
+      "sha256": "0465b2c7fabf5a408e08e6186ee01cc95a1368dd134f6f5e2bde7fcb71277b16"
     },
     "vendor/inhouse-services-updater/android/UpdateActivity.java": {
       "source": "android/UpdateActivity.java",
-      "sha256": "e179aaba891a8516a0916f6fa43dfc2b3f2f3ea4f0c2787ec63e5c9dfc15854a"
+      "sha256": "fdc99701d3dbb15fdc33f1fa062bfdc3ee472f7795d27d1679738dcf9a8a34a2"
     },
     "vendor/inhouse-services-updater/android/UpdateAssetClient.java": {
       "source": "android/UpdateAssetClient.java",
-      "sha256": "a0cc200625ae7c9c5cb1f849bb6d656e943204a1c15067ffd6f819b8b78ba4e0"
+      "sha256": "46a6ca44af49dd5134da4af60e4a296a4d870f4bd389b996cab6fc9b3f30dba6"
     },
     "vendor/inhouse-services-updater/android/UpdateState.java": {
       "source": "android/UpdateState.java",
-      "sha256": "27d50ff3ba969991b175da60ce2a7003b343958a9c2b469946466a906704f0fb"
+      "sha256": "acef2a32a5aa9f2fe278f750ff15e69c61270a4e8798d9b9be44ee1c3a7c8716"
     },
     "vendor/inhouse-services-updater/verify.py": {
       "source": "tools/verify.py",
-      "sha256": "0f18c8bb365d9427ae7ade9111ddace96d2ffe09a394a2384f05d93d2d723724"
+      "sha256": "e54d5e4f88ae40ed41539e91efb8600c42d02f23174562090bfe6b3f02055541"
     },
     "vendor/inhouse-services-updater/catalog.py": {
       "source": "tools/catalog.py",
-      "sha256": "23ac9c14fc77382b12379ce3bb4496b3808574872755ee5b88be1b747d859743"
+      "sha256": "acae7d613b19c1d874f63f81ef2136475395c3a81e8c7bf6671db5e43cb98f2f"
     },
     "vendor/inhouse-services-updater/register_android.py": {
       "source": "tools/register_android.py",
-      "sha256": "ef4e36db7fb1880055e1315edc4811ffedf29f2397c7934085390eac2a374d19"
+      "sha256": "c495f34237f06222465d8a7948a1c88bfeecad6fb33fa9c550b73641440ed027"
     },
     "vendor/inhouse-services-updater/tests/browser.py": {
       "source": "tests/browser.py",
-      "sha256": "5296272a17ef4457a942b2be8cc12b8a01e7645f2723ebfd6d2459e0754c676e"
+      "sha256": "ad0c8fb742fad012ac1fc9737678fd7530f4cf29e2d4f00a831cdc32d9ffd6fe"
     },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
-      "sha256": "c529459cd63795bb7cc1082be39e73543edb1ba5af880ad85f6f2713aacd9f39"
+      "sha256": "7b0dc69072d235f56c72a372c114a89b31696068ec1316e4e687aac4f9bb5394"
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "2dc0657baca33372fccdaf0f9fed1182031035227d5fd3e8009ba93e756e8526"
+      "sha256": "8fd15ca6f8afe83dba2b399176e2581872f04e9514f9dfc20710f49ae968dac7"
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "c38062883e940050bf9d572700a94d2132ce46e1cb1a07ebaac3a1b5c33a9863"
+      "sha256": "86dd9343020290cabf51551f1973ae292ccc7e4eacdff300ced3519fa77a5ffb"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
-      "sha256": "304bef012d2dc4c914811908bc6c6b7607548f09fe81df2698f235cc7d5dc2da"
+      "sha256": "dd3a180273f8f87abac91d7fe2cf6d1c5794041757267cf6e77290962097086e"
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "58fd7c394e988b94bfa3c7156ef2723355b1e39a7afea0f06430b66200faa06f"
+      "sha256": "4860ed793ee884f239c0dd98686b9fce3431336e9bf27d923c649dc7a02c24f5"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
-      "sha256": "6059f3b95664ed8346dfa805bd99655b5464509eaf46dbef61fc95fb3b41cede"
+      "sha256": "8737e59d5907f2de189e912bc08ea104d1e679d08637b6297bf7f872c3642b14"
     }
   }
 }
