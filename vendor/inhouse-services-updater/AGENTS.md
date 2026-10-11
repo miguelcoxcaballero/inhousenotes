@@ -14,3 +14,5 @@ Mandatory guidance for every AI and developer. This repository is the canonical 
 - Current pre-channel releases are not automatically promoted to B. B starts empty until the user requests promotion.
 
 Read `README.md`, `docs/PROTOCOL.md` and `docs/PROVENANCE.md` before changing the updater.
+
+- **B is the default update channel.** A requires an English development warning, explicit acknowledgement and slide confirmation. Legacy implicit A preferences migrate to B; choosing B clears A consent. This does not authorize publishing or promoting a B release.

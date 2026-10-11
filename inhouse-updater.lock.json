@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "ff20596f137119b98844a03a75836099ac7e146b",
+  "revision": "ac5cef8994ea476af46161bd4189d85adfc5016a",
   "version": "1.0.0",
   "appId": "notes",
   "files": {
@@ -14,15 +14,15 @@
     },
     "vendor/inhouse-services-updater/web/index.html": {
       "source": "web/index.html",
-      "sha256": "f920dcd669a2fc1d3a879546d5c74fa89c91a5e133e061f0a7ec1cb4cd2b3049"
+      "sha256": "c27f38b2369d59ec9eaf1ff9277d5d4eae677e18ad3adb10682747a75a43ebd9"
     },
     "vendor/inhouse-services-updater/web/updater.css": {
       "source": "web/updater.css",
-      "sha256": "40ca54e48b967bbac5bc7a03e0354b255dd3d07c21d1ffcd331b57de61b3049a"
+      "sha256": "6059f3b95664ed8346dfa805bd99655b5464509eaf46dbef61fc95fb3b41cede"
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "fb2a59b0938d87574ec25f453f9c9c9519d03717e7bbf7ae55ad716f7e368bb1"
+      "sha256": "58fd7c394e988b94bfa3c7156ef2723355b1e39a7afea0f06430b66200faa06f"
     },
     "vendor/inhouse-services-updater/android/NativeUpdates.java": {
       "source": "android/NativeUpdates.java",
@@ -38,11 +38,11 @@
     },
     "vendor/inhouse-services-updater/android/UpdateAssetClient.java": {
       "source": "android/UpdateAssetClient.java",
-      "sha256": "26af64a0c34c5c89f1e4af0044cea604146a230a951ed46845e71b9232508b57"
+      "sha256": "a0cc200625ae7c9c5cb1f849bb6d656e943204a1c15067ffd6f819b8b78ba4e0"
     },
     "vendor/inhouse-services-updater/android/UpdateState.java": {
       "source": "android/UpdateState.java",
-      "sha256": "603c408429a1b1408fcdf7850c219d9af74b89d644bc84a04d09f8e81b3d21d6"
+      "sha256": "27d50ff3ba969991b175da60ce2a7003b343958a9c2b469946466a906704f0fb"
     },
     "vendor/inhouse-services-updater/verify.py": {
       "source": "tools/verify.py",
@@ -58,19 +58,19 @@
     },
     "vendor/inhouse-services-updater/tests/browser.py": {
       "source": "tests/browser.py",
-      "sha256": "51be7b1085a964302e51846ee8e7414173aeb931ed0e735dd01d22db187ecb47"
+      "sha256": "5296272a17ef4457a942b2be8cc12b8a01e7645f2723ebfd6d2459e0754c676e"
     },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
-      "sha256": "4328e8e6d10c5505247bca6fa1d5fa31dda5b3b60b7de936548578edfb00bfe3"
+      "sha256": "c529459cd63795bb7cc1082be39e73543edb1ba5af880ad85f6f2713aacd9f39"
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "247db3155ad5fd63ed240de7d73a665bfa68df43f5052fb19ddfd3f06d47700b"
+      "sha256": "2dc0657baca33372fccdaf0f9fed1182031035227d5fd3e8009ba93e756e8526"
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "b4f02caac484993ac65cde609503ba43a6caac374c732c92da9d0b755a07e66c"
+      "sha256": "c38062883e940050bf9d572700a94d2132ce46e1cb1a07ebaac3a1b5c33a9863"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
@@ -78,11 +78,11 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "fb2a59b0938d87574ec25f453f9c9c9519d03717e7bbf7ae55ad716f7e368bb1"
+      "sha256": "58fd7c394e988b94bfa3c7156ef2723355b1e39a7afea0f06430b66200faa06f"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
-      "sha256": "40ca54e48b967bbac5bc7a03e0354b255dd3d07c21d1ffcd331b57de61b3049a"
+      "sha256": "6059f3b95664ed8346dfa805bd99655b5464509eaf46dbef61fc95fb3b41cede"
     }
   }
 }

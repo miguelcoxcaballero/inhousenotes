@@ -62,14 +62,14 @@ jobs:
 
       - name: Verify APK exists
         run: |
-          test -s inhouse-notes-release-v1.0.11.apk
-          ls -lh inhouse-notes-release-v1.0.11.apk
+          test -s inhouse-notes-release-v1.0.12.apk
+          ls -lh inhouse-notes-release-v1.0.12.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: inhouse-notes-android-v1.0.11
-          path: inhouse-notes-release-v1.0.11.apk
+          name: inhouse-notes-android-v1.0.12
+          path: inhouse-notes-release-v1.0.12.apk
           if-no-files-found: error
 
 
@@ -77,13 +77,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.11 >/dev/null 2>&1; then
+          if gh release view android-v1.0.12 >/dev/null 2>&1; then
             echo "La versión ya está publicada; incrementa versionName/versionCode antes de generar otra APK."
             exit 1
           else
-            gh release create android-v1.0.11 inhouse-notes-release-v1.0.11.apk \
-              --title "Inhouse Notes Android 1.0.11" \
-              --notes "Canales A/B y recordatorio opcional." \
+            gh release create android-v1.0.12 inhouse-notes-release-v1.0.12.apk \
+              --title "Inhouse Notes Android 1.0.12" \
+              --notes "Reviewed default and safer development opt-in." \
               --prerelease --latest=false
           fi
 

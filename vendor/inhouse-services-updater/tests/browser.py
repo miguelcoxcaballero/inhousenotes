@@ -21,24 +21,30 @@ with sync_playwright() as p:
   kind='application/javascript' if file.suffix=='.js' else 'text/css' if file.suffix=='.css' else 'application/json' if file.suffix=='.json' else 'text/html'
   r.fulfill(content_type=kind,body=file.read_text())
  context.route('**/*',route);page=context.new_page();url='https://appassets.androidplatform.net/updates/index.html?inhouse_app=1'
- page.goto(url);page.get_by_role('button',name='Actualizar',exact=True).wait_for()
+ page.goto(url+'&settings=1');page.get_by_role('button',name='Version B').wait_for();assert page.get_by_role('button',name='Version B').get_attribute('aria-pressed')=='true'
+ page.get_by_role('button',name='Version A').click();assert page.evaluate('InhouseUpdater.getState().channel')=='B'
+ page.get_by_role('button',name='I understand — continue').click()
+ page.locator('input[type=range]').focus();page.keyboard.press('End');page.keyboard.press('Tab')
+ page.get_by_role('button',name='Update',exact=True).wait_for()
  assert '0.0.1 → 0.0.4 A' in page.locator('.isu-versions').inner_text()
- assert 'Versiones intermedias: 0.0.2 · 0.0.3' in page.locator('.isu-card').inner_text()
+ assert 'Skipped versions: 0.0.2 · 0.0.3' in page.locator('.isu-card').inner_text()
  output=root/'build/services-updater';output.mkdir(parents=True,exist_ok=True)
  for theme in ('light','dark'):
   page.emulate_media(color_scheme=theme);page.screenshot(path=str(output/f'{theme}.png'))
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
- page.get_by_role('button',name='Actualizar',exact=True).click();assert page.evaluate('installs[0]')=={'url':rows[0]['apkUrl'],'sha':'a'*64}
- page.get_by_role('button',name='Continuar',exact=True).wait_for()
+ page.get_by_role('button',name='Update',exact=True).click();assert page.evaluate('installs[0]')=={'url':rows[0]['apkUrl'],'sha':'a'*64}
+ page.get_by_role('button',name='Continue',exact=True).wait_for()
  page.evaluate('handleInhouseUpdateResult({status:"downloading",downloadedBytes:250000,totalBytes:500000})')
  assert page.locator('progress').get_attribute('value')=='50';assert page.locator('[data-isu-install]').is_disabled()
- page.evaluate('handleInhouseUpdateResult({status:"error",message:"Checksum inválido"})');assert page.get_by_role('button',name='Reintentar').is_enabled()
- page.get_by_role('button',name='Recordármelo más tarde').click();assert page.locator('[role=dialog]').count()==0
+ page.evaluate('handleInhouseUpdateResult({status:"error",message:"Checksum inválido"})');assert page.get_by_role('button',name='Retry').is_enabled()
+ page.get_by_role('button',name='Remind me later').click();assert page.locator('[role=dialog]').count()==0
  state=page.evaluate('InhouseUpdater.getState()');assert state['snooze']['A']>page.evaluate('Date.now()+13*86400000')
  page.goto(url+'&quiet=1');page.wait_for_function('!!window.InhouseUpdater');page.wait_for_timeout(100);assert page.evaluate('offers.length')==0
- page.goto(url+'&settings=1');page.get_by_role('button',name='Versión B').click();page.get_by_text('Aún no hay versiones B.').wait_for()
- page.reload();page.get_by_role('button',name='Versión B').wait_for();assert page.get_by_role('button',name='Versión B').get_attribute('aria-pressed')=='true'
- page.get_by_role('button',name='Versión A').click();page.get_by_role('button',name='Actualizar',exact=True).wait_for()
+ page.goto(url+'&settings=1');page.get_by_role('button',name='Version B').click();page.get_by_text('No releases on version B.').wait_for()
+ page.reload();page.get_by_role('button',name='Version B').wait_for();assert page.get_by_role('button',name='Version B').get_attribute('aria-pressed')=='true'
+ page.get_by_role('button',name='Version A').click();page.get_by_role('button',name='I understand — continue').click()
+ page.locator('input[type=range]').focus();page.keyboard.press('End');page.keyboard.press('Tab')
+ page.get_by_role('button',name='Update',exact=True).wait_for()
  assert page.evaluate('InhouseUpdater.getState().snooze.A')==state['snooze']['A'], 'Manual check must not erase the snooze'
  browser.close()
 print('PASS: actual bundled popup, light/dark layout, exact download, progress/permission/error, persisted 14-day deferral, manual override and A/B settings')

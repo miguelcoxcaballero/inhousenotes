@@ -1,6 +1,7 @@
 /* Inhouse services updater — canonical source: github.com/miguelcoxcaballero/inhouse-services-updater.
  * Edit here, sync the SAME revision into YouTube, Instagram, Notes, Photos and Read.
  * Every new release goes to A with a tiny changelog. Publish B ONLY on the user's explicit request.
+ * B is the user default; A needs warning acknowledgement and a slide confirmation.
  * Updates are optional. Later defers automatic prompts for 14 days; settings always allow a manual check.
  */
 (function (root) {
@@ -12,20 +13,20 @@
     return 0;
   };
   function validateCatalog(value, channel, config) {
-    if (!value || value.schemaVersion !== 1 || value.channel !== channel || !Array.isArray(value.releases)) throw Error('Catálogo no válido.');
+    if (!value || value.schemaVersion !== 1 || value.channel !== channel || !Array.isArray(value.releases)) throw Error('Invalid update catalog.');
     function release(item) {
-      if (!item || !/^\d+\.\d+\.\d+$/.test(item.version) || !Number.isSafeInteger(item.versionCode) || item.versionCode < 1) throw Error('Versión no válida.');
+      if (!item || !/^\d+\.\d+\.\d+$/.test(item.version) || !Number.isSafeInteger(item.versionCode) || item.versionCode < 1) throw Error('Invalid version.');
       const url = new URL(item.apkUrl);
-      if (url.protocol !== 'https:' || url.hostname !== 'github.com' || !url.pathname.startsWith('/' + config.repository + '/releases/download/') || !url.pathname.endsWith('.apk') || url.username || url.password) throw Error('Descarga no válida.');
-      if (!/^[a-f0-9]{64}$/i.test(item.apkSha256) || !Number.isSafeInteger(item.apkSizeBytes) || item.apkSizeBytes < 1) throw Error('Integridad de descarga no válida.');
-      if (typeof item.changelog !== 'string' || !item.changelog.trim() || item.changelog.length > 120) throw Error('El cambio debe ser breve.');
+      if (url.protocol !== 'https:' || url.hostname !== 'github.com' || !url.pathname.startsWith('/' + config.repository + '/releases/download/') || !url.pathname.endsWith('.apk') || url.username || url.password) throw Error('Invalid download.');
+      if (!/^[a-f0-9]{64}$/i.test(item.apkSha256) || !Number.isSafeInteger(item.apkSizeBytes) || item.apkSizeBytes < 1) throw Error('Invalid download integrity.');
+      if (typeof item.changelog !== 'string' || !item.changelog.trim() || item.changelog.length > 120) throw Error('Keep the changelog short.');
       return { ...item, apkUrl: url.href, channel };
     }
     const releases = value.releases.map(release).sort((a, b) => b.versionCode - a.versionCode);
-    if (new Set(releases.map(r => r.versionCode)).size !== releases.length) throw Error('Versiones duplicadas.');
+    if (new Set(releases.map(r => r.versionCode)).size !== releases.length) throw Error('Duplicate versions.');
     const latest = value.latest == null ? null : release(value.latest);
-    if (latest && (!releases.length || latest.versionCode !== releases[0].versionCode || latest.apkSha256 !== releases[0].apkSha256)) throw Error('Catálogo incoherente.');
-    if (!latest && releases.length) throw Error('Falta la última versión.');
+    if (latest && (!releases.length || latest.versionCode !== releases[0].versionCode || latest.apkSha256 !== releases[0].apkSha256)) throw Error('Inconsistent update catalog.');
+    if (!latest && releases.length) throw Error('Missing latest version.');
     return { ...value, latest, releases };
   }
   function newer(release, installed, code) {
@@ -36,7 +37,7 @@
   function create(config) {
     const win = config.window || root, doc = win.document, native = () => win.InhouseNative;
     const key = 'inhouse-services-updater:' + config.appId;
-    let state = { channel: 'A', snooze: {} }, dialog = null, available = null, checking = null, generation = 0;
+    let state = { channel: 'B', developmentConsent: 0, snooze: {} }, dialog = null, available = null, checking = null, generation = 0;
     let lastPrompt = '', timer = null, started = false, installing = false, previousFocus = null;
     const now = () => config.now ? config.now() : Date.now();
     const installed = () => String(config.getVersion?.() || native()?.getAppVersion?.() || config.installedVersion || '0.0.0');
@@ -45,7 +46,7 @@
       try {
         const raw = native()?.getUpdateState ? native().getUpdateState() : win.localStorage.getItem(key);
         const value = raw ? JSON.parse(raw) : {};
-        state = { channel: value.channel === 'B' ? 'B' : 'A', snooze: value.snooze && typeof value.snooze === 'object' ? value.snooze : {} };
+        state = { channel: value.channel === 'A' && value.developmentConsent === 1 ? 'A' : 'B', developmentConsent: value.channel === 'A' && value.developmentConsent === 1 ? 1 : 0, snooze: value.snooze && typeof value.snooze === 'object' ? value.snooze : {} };
       } catch (_) { /* Memory state still permits manual updating when storage is unavailable. */ }
       return state;
     }
@@ -88,11 +89,11 @@
         previousFocus = doc.activeElement;
         dialog = doc.createElement('div'); dialog.id = 'inhouse-services-update'; dialog.className = 'isu-overlay';
         dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-labelledby', 'isu-title');
-        dialog.innerHTML = '<section class="isu-card"><header><span class="isu-logo" aria-hidden="true"><svg viewBox="0 0 40 24"><path d="M4 22L20 6L36 22"/></svg></span><div><small>Inhouse services updater</small><h2 id="isu-title"></h2></div></header><div data-isu-body></div><p class="isu-status" data-isu-status role="status"></p></section>';
+        dialog.innerHTML = '<section class="isu-card"><header><div><small></small><h2 id="isu-title"></h2></div></header><div data-isu-body></div><p class="isu-status" data-isu-status role="status"></p></section>';
         dialog.addEventListener('keydown', event => {
           if (event.key === 'Escape' && !installing) { event.preventDefault(); close(!!available); }
           if (event.key === 'Tab') {
-            const buttons = [...dialog.querySelectorAll('button:not(:disabled),[tabindex="0"]')];
+            const buttons = [...dialog.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),[tabindex="0"]')];
             const first = buttons[0], last = buttons[buttons.length - 1];
             if (event.shiftKey && doc.activeElement === first) { event.preventDefault(); last?.focus(); }
             else if (!event.shiftKey && doc.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -101,6 +102,7 @@
         doc.body.append(dialog);
       }
       dialog.querySelector('h2').textContent = title;
+      dialog.querySelector('header small').textContent = config.appName;
       const body = dialog.querySelector('[data-isu-body]'); body.replaceChildren(); status('');
       return body;
     }
@@ -109,21 +111,54 @@
       const value = el('button', text, className); value.type = 'button'; value.onclick = action; parent.append(value); return value;
     }
     function status(text) { if (dialog) dialog.querySelector('[data-isu-status]').textContent = text; }
+    // B is the default. Legacy implicit A preferences require renewed, explicit consent.
+    function selectChannel(channel) {
+      if (installing) return;
+      readState(); state.channel = channel; state.developmentConsent = channel === 'A' ? 1 : 0;
+      saveState(); generation++; checking = null; available = null; lastPrompt = '';
+      settings('Version ' + channel + ' selected.'); check({ manual: true });
+    }
+    function footer(body) {
+      const value = el('footer', null, 'isu-footer');
+      const brand = el('a', null, 'isu-brand'); brand.href = 'https://inhouse.miguelcoxcaballero.com/';
+      brand.innerHTML = '<span class="isu-mark" aria-hidden="true"><svg viewBox="0 0 40 24"><path d="M4 22L20 6L36 22"/></svg></span><span>Made by Inhouse</span>';
+      const github = el('a', 'GitHub', 'isu-github'); github.href = 'https://github.com/' + config.repository;
+      // Native hosts open these allowlisted links in the browser, outside the installer bridge.
+      value.append(brand, github); body.append(value);
+    }
+    function confirmDevelopment() {
+      // Opening or cancelling this screen never opts in or requests an A catalog.
+      generation++; checking = null; available = null;
+      const body = shell('Use version A?');
+      body.append(el('p', 'Development builds', 'isu-warning-title'));
+      body.append(el('p', 'Version A contains untested development updates. Bugs, instability or data loss are possible. Reviewed updates are released on version B.', 'isu-warning'));
+      let agreed = false;
+      const yes = button(body, 'I understand — continue', () => {
+        agreed = true; yes.hidden = true; track.hidden = false; slider.focus();
+      }, 'isu-primary');
+      const track = el('div', null, 'isu-slide'); track.hidden = true;
+      const label = el('label', 'Slide to confirm version A'); label.htmlFor = 'isu-confirm-a';
+      const slider = el('input'); slider.id = 'isu-confirm-a'; slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '1'; slider.value = '0';
+      slider.setAttribute('aria-label', 'Slide to confirm version A');
+      slider.onchange = () => { if (agreed && Number(slider.value) === 100) selectChannel('A'); else slider.value = '0'; };
+      track.append(label, slider); body.append(track);
+      button(body, 'Keep version B', () => settings(), 'isu-secondary'); footer(body); yes.focus();
+    }
     function settings(message = '') {
-      readState(); const body = shell('Actualizaciones');
-      body.append(el('p', config.appName + ' · ' + installed(), 'isu-app'));
-      body.append(el('p', 'A: cambios recientes. B: versiones revisadas.', 'isu-caption'));
-      const options = el('div', null, 'isu-channels'); options.setAttribute('role', 'group'); options.setAttribute('aria-label', 'Canal de actualizaciones'); body.append(options);
-      ['A', 'B'].forEach(channel => {
-        const value = button(options, 'Versión ' + channel, () => {
-          if (installing) return;
-          readState(); state.channel = channel; saveState(); generation++; checking = null; available = null; lastPrompt = '';
-          settings('Canal ' + channel + ' seleccionado.'); check({ manual: true });
+      readState(); const body = shell('Updates');
+      body.append(el('p', 'Installed version ' + installed(), 'isu-app'));
+      const heading = el('h3', 'Update channel', 'isu-section-title'); body.append(heading);
+      body.append(el('p', 'B: reviewed releases. A: development builds.', 'isu-caption'));
+      const options = el('div', null, 'isu-channels'); options.setAttribute('role', 'group'); options.setAttribute('aria-label', 'Update channel'); body.append(options);
+      ['B', 'A'].forEach(channel => {
+        const value = button(options, 'Version ' + channel, () => {
+          if (installing || state.channel === channel) return;
+          if (channel === 'A') confirmDevelopment(); else selectChannel('B');
         });
         value.setAttribute('aria-pressed', String(state.channel === channel));
       });
-      button(body, 'Buscar actualizaciones', () => check({ manual: true }), 'isu-primary');
-      button(body, 'Volver', () => close(false), 'isu-text');
+      button(body, 'Check for updates', () => check({ manual: true }), 'isu-primary');
+      button(body, 'Done', () => close(false), 'isu-text'); footer(body);
       status(message); options.querySelector('button[aria-pressed="true"]').focus();
     }
     function progress(payload) {
@@ -138,44 +173,44 @@
       if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch (_) { return; } }
       if (!dialog || !payload) return;
       const install = dialog.querySelector('[data-isu-install]'); if (!install) return;
-      if (payload.status === 'downloading') { installing = true; install.disabled = true; progress(payload); status(payload.message || 'Descargando…'); }
-      else if (payload.status === 'ready') { progress({ ...payload, percent: 100 }); status('Confirma la instalación en Android.'); installing = false; }
-      else if (payload.status === 'permission_required') { installing = false; install.disabled = false; install.textContent = 'Continuar'; status('Permite instalar desde esta app y pulsa Continuar.'); }
-      else if (payload.status === 'error') { installing = false; install.disabled = false; install.textContent = 'Reintentar'; status(payload.message || 'No se pudo descargar. Reintenta.'); }
+      if (payload.status === 'downloading') { installing = true; install.disabled = true; progress(payload); status(payload.message || 'Downloading…'); }
+      else if (payload.status === 'ready') { progress({ ...payload, percent: 100 }); status('Confirm installation in Android.'); installing = false; }
+      else if (payload.status === 'permission_required') { installing = false; install.disabled = false; install.textContent = 'Continue'; status('Allow installs from this app, then tap Continue.'); }
+      else if (payload.status === 'error') { installing = false; install.disabled = false; install.textContent = 'Retry'; status(payload.message || 'Download failed. Try again.'); }
       dialog.querySelectorAll('[data-isu-idle]').forEach(b => { b.disabled = installing; });
     }
     function show(value) {
       available = value;
-      const release = value.latest, body = shell('Nueva versión');
+      const release = value.latest, body = shell('Update available');
       body.append(el('p', config.appName, 'isu-app'));
       body.append(el('p', installed() + ' → ' + release.version + ' ' + state.channel, 'isu-versions'));
       const skipped = value.releases.filter(r => r.versionCode < release.versionCode && newer(r, installed(), installedCode()));
-      if (skipped.length) body.append(el('p', 'Versiones intermedias: ' + skipped.slice(0, 3).reverse().map(r => r.version).join(' · ') + (skipped.length > 3 ? ' (+' + (skipped.length - 3) + ')' : ''), 'isu-caption'));
+      if (skipped.length) body.append(el('p', 'Skipped versions: ' + skipped.slice(0, 3).reverse().map(r => r.version).join(' · ') + (skipped.length > 3 ? ' (+' + (skipped.length - 3) + ')' : ''), 'isu-caption'));
       const changes = value.releases.filter(r => newer(r, installed(), installedCode()));
       const list = el('ul', null, 'isu-changes'); changes.slice(0, 3).forEach(r => list.append(el('li', r.version + ' · ' + r.changelog))); body.append(list);
-      if (changes.length > 3) body.append(el('p', '+' + (changes.length - 3) + ' versiones anteriores', 'isu-caption'));
+      if (changes.length > 3) body.append(el('p', '+' + (changes.length - 3) + ' earlier versions', 'isu-caption'));
       const bar = el('div', null, 'isu-progress'); bar.hidden = true; bar.dataset.isuProgress = '';
-      const meter = doc.createElement('progress'); meter.max = 100; meter.value = 0; meter.setAttribute('aria-label', 'Descarga'); bar.append(el('span', '0%'), meter); body.append(bar);
-      const install = button(body, 'Actualizar', () => {
+      const meter = doc.createElement('progress'); meter.max = 100; meter.value = 0; meter.setAttribute('aria-label', 'Download'); bar.append(el('span', '0%'), meter); body.append(bar);
+      const install = button(body, 'Update', () => {
         installing = true; install.disabled = true; dialog.querySelectorAll('[data-isu-idle]').forEach(b => { b.disabled = true; });
-        status('Preparando…'); progress({ percent: 0 });
+        status('Preparing…'); progress({ percent: 0 });
         try {
           if (config.install) config.install(release);
           else if (native()?.installInhouseUpdate) native().installInhouseUpdate(release.apkUrl, release.apkSha256);
           else if (native()?.installAppUpdate) native().installAppUpdate(release.apkUrl, release.apkSha256);
-          else throw Error('Abre la aplicación Android para instalar.');
+          else throw Error('Open the Android app to install.');
         } catch (error) { result({ status: 'error', message: error.message }); }
       }, 'isu-primary'); install.dataset.isuInstall = '';
-      const later = button(body, 'Recordármelo más tarde', () => close(true)); later.dataset.isuIdle = '';
-      body.append(el('p', 'Te avisaremos dentro de 14 días.', 'isu-caption isu-centered'));
-      const change = button(body, 'Canal ' + state.channel + ' · Cambiar', () => settings(), 'isu-text'); change.dataset.isuIdle = '';
+      const later = button(body, 'Remind me later', () => close(true)); later.dataset.isuIdle = '';
+      body.append(el('p', 'We’ll remind you in 14 days.', 'isu-caption isu-centered'));
+      const change = button(body, 'Version ' + state.channel + ' · Change', () => settings(), 'isu-text'); change.dataset.isuIdle = '';
       install.focus();
     }
     async function check({ manual = false } = {}) {
       if (installing || (!manual && snoozed())) return false;
       if (checking) { if (manual) { const found = await checking; if (available && found) show(available); } return checking; }
       readState(); const channel = state.channel, token = generation;
-      if (manual && !dialog) settings(); if (manual) status('Buscando…');
+      if (manual && !dialog) settings(); if (manual) status('Checking…');
       const pending = (async () => {
         try {
           const value = await catalog(channel);
@@ -189,9 +224,9 @@
             }
             return true;
           }
-          if (manual) status(!value.latest ? 'Aún no hay versiones ' + channel + '.' : compareVersions(installed(), value.latest.version) > 0 ? 'Conservas tu versión hasta que ' + channel + ' la alcance.' : 'Estás al día en el canal ' + channel + '.');
+          if (manual) status(!value.latest ? 'No releases on version ' + channel + '.' : compareVersions(installed(), value.latest.version) > 0 ? 'Keep your installed build until version ' + channel + ' catches up.' : 'You’re up to date on version ' + channel + '.');
           return false;
-        } catch (_) { if (manual) status('No se pudo comprobar. Reintenta.'); return false; }
+        } catch (_) { if (manual) status('Could not check for updates. Try again.'); return false; }
       })();
       checking = pending;
       try { return await pending; } finally { if (checking === pending) checking = null; }
