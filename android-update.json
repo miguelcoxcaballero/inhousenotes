@@ -1,10 +1,10 @@
 {
-  "version": "1.0.15",
-  "versionCode": 16,
+  "version": "1.0.16",
+  "versionCode": 17,
   "required": true,
-  "apkSizeBytes": 3171863,
-  "apkSha256": "1793fa2144867fe1aaa510390ea029bac53510319ce1a2249ab0e51873dcced8",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.15/inhouse-notes-release-v1.0.15.apk",
-  "publishedAppVersion": "5.11.52",
-  "releaseNotes": "Neutral updater colors."
+  "apkSizeBytes": 3175615,
+  "apkSha256": "3e43caf063905f7e7473d6b70d6939f96d5e01c1f5511c6df504543d4eaffa85",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.16/inhouse-notes-release-v1.0.16.apk",
+  "publishedAppVersion": "5.11.54",
+  "releaseNotes": "Reliable Android update results."
 }

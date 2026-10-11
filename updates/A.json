@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.0.15",
-    "versionCode": 16,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.15/inhouse-notes-release-v1.0.15.apk",
-    "apkSha256": "1793fa2144867fe1aaa510390ea029bac53510319ce1a2249ab0e51873dcced8",
-    "apkSizeBytes": 3171863,
-    "changelog": "Neutral updater colors.",
-    "releasedAt": "2026-10-11T21:56:26+00:00"
+    "version": "1.0.16",
+    "versionCode": 17,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.16/inhouse-notes-release-v1.0.16.apk",
+    "apkSha256": "3e43caf063905f7e7473d6b70d6939f96d5e01c1f5511c6df504543d4eaffa85",
+    "apkSizeBytes": 3175615,
+    "changelog": "Reliable Android update results.",
+    "releasedAt": "2026-10-11T22:04:02+00:00"
   },
   "releases": [
+    {
+      "version": "1.0.16",
+      "versionCode": 17,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.16/inhouse-notes-release-v1.0.16.apk",
+      "apkSha256": "3e43caf063905f7e7473d6b70d6939f96d5e01c1f5511c6df504543d4eaffa85",
+      "apkSizeBytes": 3175615,
+      "changelog": "Reliable Android update results.",
+      "releasedAt": "2026-10-11T22:04:02+00:00"
+    },
     {
       "version": "1.0.15",
       "versionCode": 16,
