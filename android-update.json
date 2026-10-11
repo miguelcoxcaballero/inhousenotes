@@ -1,10 +1,10 @@
 {
-  "version": "1.0.13",
-  "versionCode": 14,
+  "version": "1.0.14",
+  "versionCode": 15,
   "required": true,
-  "apkSizeBytes": 3171735,
-  "apkSha256": "f8e667c3c9c5fa5009c0f2f31e6b35107ad1ab3334b6c6b71d9fd43c68874686",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.13/inhouse-notes-release-v1.0.13.apk",
-  "publishedAppVersion": "5.11.49",
-  "releaseNotes": "Updated Inhouse services updater."
+  "apkSizeBytes": 3171863,
+  "apkSha256": "5ae9c0d0b98440a650b7f40f9906acf59e8d3b62eb14f62ede1c8a3b4b26345c",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.14/inhouse-notes-release-v1.0.14.apk",
+  "publishedAppVersion": "5.11.50",
+  "releaseNotes": "Live camera and simpler save status."
 }
