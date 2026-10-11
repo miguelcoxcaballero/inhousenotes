@@ -72,3 +72,116 @@ test('Android settings use the common optional popup and preserve channel/remind
   await expect(page.getByRole('button', { name: 'Update', exact: true })).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('native-update-state')).snooze.A)).toBe(deadline);
 });
+
+// Keep Notes and its shared updater real; replace only the Android bridge and
+// remote catalogs. Native state survives reload independently of updater state.
+async function installResultFixture(page) {
+  const release = {
+    version: '1.0.15', versionCode: 16,
+    apkUrl: 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.15/inhouse-notes-release-v1.0.15.apk',
+    apkSha256: 'c'.repeat(64), apkSizeBytes: 400, changelog: 'Show installation results.'
+  };
+  await page.addInitScript(release => {
+    window.nativeInstallRequests = [];
+    window.nativeInstallStateReads = [];
+    window.InhouseNative = {
+      getAppVersion: () => localStorage.getItem('e2e-native-version') || '1.0.14',
+      getAppVersionCode: () => Number(localStorage.getItem('e2e-native-version-code') || 15),
+      getUpdateState: () => localStorage.getItem('native-update-state') || '{}',
+      saveUpdateState: value => localStorage.setItem('native-update-state', value),
+      getInstallState: () => {
+        const value = localStorage.getItem('e2e-native-install-state') || '{}';
+        window.nativeInstallStateReads.push(JSON.parse(value));
+        return value;
+      },
+      installInhouseUpdate: (url, sha256) => {
+        window.nativeInstallRequests.push({ url, sha256 });
+        localStorage.setItem('e2e-native-install-state', JSON.stringify({
+          id: `notes-install-${window.nativeInstallRequests.length}`, status: 'installing',
+          expectedVersionCode: release.versionCode,
+          actualVersionCode: window.InhouseNative.getAppVersionCode()
+        }));
+        window.handleInhouseUpdateResult({ status: 'ready' });
+      }
+    };
+  }, release);
+  const fulfill = async route => {
+    expect(route.request().url()).toContain('/updates/B.json');
+    const catalog = { schemaVersion: 1, channel: 'B', latest: release, releases: [release] };
+    await route.fulfill({ json: route.request().url().includes('api.github.com')
+      ? { content: Buffer.from(JSON.stringify(catalog)).toString('base64') } : catalog });
+  };
+  await page.route('https://raw.githubusercontent.com/**', fulfill);
+  await page.route('https://api.github.com/**', fulfill);
+  return release;
+}
+
+test('returning from a cancelled Android installation enables retry via persisted native state', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  const release = await installResultFixture(page);
+  await page.goto('/?e2e=1&inhouse_app=1');
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open installer', exact: true })).toBeEnabled();
+  await expect(page.getByRole('heading', { name: 'Update installed', exact: true })).toHaveCount(0);
+
+  // Android finishes while Notes is backgrounded; no JavaScript result callback
+  // is delivered. Returning focus must read the new getInstallState contract.
+  await page.evaluate(() => {
+    const result = JSON.parse(localStorage.getItem('e2e-native-install-state'));
+    localStorage.setItem('e2e-native-install-state', JSON.stringify({
+      ...result, status: 'cancelled', message: 'Installation cancelled in Android.'
+    }));
+    window.dispatchEvent(new Event('focus'));
+  });
+  const retry = page.getByRole('button', { name: 'Try again', exact: true });
+  await expect(retry).toBeEnabled();
+  await expect(page.getByRole('status')).toContainText('Installation cancelled in Android.');
+  await expect(page.getByRole('button', { name: 'Later', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => window.nativeInstallStateReads.at(-1).status)).toBe('cancelled');
+  const bounds = await page.locator('.isu-card').boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
+  await expect(retry).toBeInViewport();
+  const screenshot = testInfo.outputPath('installation-cancelled-360px.png');
+  await page.screenshot({ path: screenshot });
+  await testInfo.attach('installation-cancelled-360px', { path: screenshot, contentType: 'image/png' });
+
+  await retry.click();
+  expect(await page.evaluate(() => window.nativeInstallRequests)).toEqual([
+    { url: release.apkUrl, sha256: release.apkSha256 },
+    { url: release.apkUrl, sha256: release.apkSha256 }
+  ]);
+  await expect(page.getByRole('button', { name: 'Open installer', exact: true })).toBeEnabled();
+});
+
+test('Notes restart reports a persisted successful installation and Done dismisses it permanently', async ({ page }) => {
+  const release = await installResultFixture(page);
+  await page.goto('/?e2e=1&inhouse_app=1');
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open installer', exact: true })).toBeEnabled();
+  await expect(page.getByRole('heading', { name: 'Update installed', exact: true })).toHaveCount(0);
+
+  // The updated APK starts a fresh Notes runtime with the package manager's
+  // current version and the previous native attempt's persisted outcome.
+  await page.evaluate(release => {
+    const result = JSON.parse(localStorage.getItem('e2e-native-install-state'));
+    localStorage.setItem('e2e-native-version', release.version);
+    localStorage.setItem('e2e-native-version-code', String(release.versionCode));
+    localStorage.setItem('e2e-native-install-state', JSON.stringify({
+      ...result, status: 'installed', actualVersionCode: release.versionCode, message: 'Update installed.'
+    }));
+  }, release);
+  await page.reload();
+  const dialog = page.getByRole('dialog', { name: 'Update installed', exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(`Inhouse Notes ${release.version}`);
+  expect(await page.evaluate(() => window.nativeInstallStateReads.some(result => result.status === 'installed'))).toBe(true);
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.locator('#inhouse-services-update')).toHaveCount(0);
+
+  await page.reload();
+  await page.waitForFunction(() => !!window.InhouseUpdater);
+  await expect(page.getByRole('heading', { name: 'Update installed', exact: true })).toHaveCount(0);
+  await page.locator('[data-inhouse-update-settings]').first().dispatchEvent('click');
+  await expect(page.getByRole('dialog', { name: 'Updates', exact: true })).toContainText(`Inhouse Notes ${release.version}`);
+});
