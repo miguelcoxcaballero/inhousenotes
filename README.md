@@ -1,6 +1,6 @@
 # inhousenotes
 
-[Android 1.0.16 — A](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.16) · [Android 1.0.13 — B](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.13) · Web 5.11.55. Descarga alternativa de la APK si el instalador se cierra en una versión antigua. Conserva la comprobación del resultado al volver a abrir la app.
+[Android 1.0.16 — A y B](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.16) · Web 5.11.56. Descarga alternativa de la APK si el instalador se cierra en una versión antigua. Conserva la comprobación del resultado al volver a abrir la app.
 
 ## Inhouse services updater
 
