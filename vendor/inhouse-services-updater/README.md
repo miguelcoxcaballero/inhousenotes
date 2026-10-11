@@ -8,6 +8,13 @@ El popup muestra versión instalada, nueva versión, versiones intermedias y has
 
 ## Código compartido
 
+Los hosts web pueden abrir los mismos ajustes dentro de su menú de cuenta con
+`updater.settings('', { container: elemento })`. La región integrada no usa
+overlay, bloqueo de foco ni fondo oscurecido; conserva canales, consentimiento,
+comprobación e instalación. Al cerrar su menú, el host debe llamar `updater.close()`
+para invalidar comprobaciones pendientes y desmontar la región. Sin `container`,
+los hosts existentes conservan el diálogo habitual.
+
 - `web/`: comprobador, selección de canal, recordatorio, popup y ajustes. El mismo código se incluye localmente en todas las aplicaciones; no se carga JavaScript remoto.
 - `android/`: host de Android y el instalador procedente de Inhouse Photos. Descarga reanudable, SHA-256, paquete, versión y certificado.
 - `tools/sync.py`: copia verificada y lock de revisión para los cinco proyectos.
