@@ -8,6 +8,8 @@ Camera tracks stop on close, review and backgrounding, including when a permissi
 
 Validation covers synthetic video capture, yellow-frame geometry, blur rejection, permission denial, late camera grants, retakes, confirmed durable insertion, and responsive layouts. Existing BroadcastChannel, cached document hashes and real WebRTC regression coverage remains in place. The scanner work is merged with the independent editor and save-status improvements.
 
+Known existing limitation: the legacy full-resolution geometry test exceeds its tolerances for the nearly grey `faded-yellow` and strongly curled `strong-right-curl-rose` fixtures. Both errors reproduce with identical values on baseline `1738a84`; the correction algorithm and those assertions are unchanged. Review the captured page before adding it, especially with faded or curled paper.
+
 Save details distinguish the local copy from Google Drive, show upload progress and explain offline, reconnect and failure states. The status button is separate from the read/edit toggle, with keyboard opening, Escape dismissal and focus restoration.
 
 Local save failures remain visible until a successful local write. Full checkpoints retry up to three times, including pending edits in read mode; retries and late results stay tied to their document session. Confirmed local timestamps no longer borrow a Drive save time.
