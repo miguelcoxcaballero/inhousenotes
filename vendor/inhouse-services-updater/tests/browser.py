@@ -27,8 +27,9 @@ with sync_playwright() as p:
  page.get_by_role('button',name='I understand',exact=True).click()
  page.locator('input[type=range]').focus();page.keyboard.press('End');page.keyboard.press('Tab')
  page.get_by_role('button',name='Update',exact=True).wait_for()
- assert page.locator('.isu-versions').inner_text()=='0.0.1 → 0.0.4' and page.locator('.isu-chip').inner_text()=='Version A'
- assert page.locator('.isu-changes small').all_inner_texts()==['0.0.4','0.0.3','0.0.2']
+ assert page.locator('.isu-versions').inner_text()=='0.0.1 → 0.0.4'
+ page.get_by_role('button',name='Details').click();assert page.locator('.isu-changes small').all_inner_texts()==['0.0.3','0.0.2']
+ assert 'Version A' in page.locator('.isu-facts').inner_text()
  output=root/'build/services-updater';output.mkdir(parents=True,exist_ok=True)
  for theme in ('light','dark'):
   page.emulate_media(color_scheme=theme);page.screenshot(path=str(output/f'{theme}.png'))

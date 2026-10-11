@@ -6,7 +6,7 @@
  */
 (function (root) {
   'use strict';
-  const VERSION = '1.1.0', TWO_WEEKS = 14 * 86400000;
+  const VERSION = '1.2.0', TWO_WEEKS = 14 * 86400000;
   const compareVersions = (a, b) => {
     const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
     for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return Math.sign(d); }
@@ -80,18 +80,17 @@
       } catch (error) { if (!first) throw error; }
       return first;
     }
-    // Presentation. Screens: offer (update available), settings, and the version A warning.
-    // Overlays are a bottom sheet on phones and a centered dialog on wide screens; hosts can
-    // embed settings inline. Motion is skipped when reduced motion is requested.
+    // Presentation follows Material Design 3: a modal bottom sheet on phones and a
+    // basic dialog on wide screens, flat surfaces, text/filled buttons aligned to
+    // the end, list items for settings. Secondary facts live behind "Details".
     const ICONS = {
-      mark: '<svg viewBox="0 0 40 24" aria-hidden="true"><path d="M4 22L20 6L36 22"/></svg>',
-      chevron: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+      expand: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>',
       arrow: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
-      warning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8L2.6 20h18.8z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
-      ok: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M7.5 12.3l3 3 6-6.3"/></svg>',
-      error: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 7v6M12 16.6v.1"/></svg>',
+      warning: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5 2.8 20h18.4z"/><path d="M12 10v4.4M12 17.3v.1"/></svg>',
+      done: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+      error: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/></svg>',
     };
-    const LEAVE_MS = 260;
+    const LEAVE_MS = 220;
     const motion = () => typeof win.matchMedia === 'function' && !win.matchMedia('(prefers-reduced-motion: reduce)').matches;
     function close(defer = false) {
       generation++; checking = null;
@@ -125,12 +124,13 @@
         if (!settingsContainer) dialog.setAttribute('aria-modal', 'true');
         dialog.setAttribute('aria-labelledby', 'isu-title');
         const card = el('section', null, 'isu-card'); card.tabIndex = -1;
-        if (!settingsContainer) card.append(el('div', null, 'isu-grabber'));
+        if (!settingsContainer) card.append(el('div', null, 'isu-handle'));
         const body = el('div', null, 'isu-body'); body.dataset.isuBody = ''; card.append(body); dialog.append(card);
         dialog.addEventListener('keydown', event => {
           if (event.key === 'Escape' && !installing) { event.preventDefault(); event.stopPropagation(); close(!!available); }
           if (event.key === 'Tab' && !settingsContainer) {
-            const buttons = [...dialog.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),[tabindex="0"]')].filter(item => !item.closest('[hidden]') && win.getComputedStyle(item).visibility !== 'hidden');
+            const buttons = [...dialog.querySelectorAll('button:not(:disabled),a[href],input:not(:disabled),[tabindex="0"]')]
+              .filter(item => !item.closest('[hidden]') && win.getComputedStyle(item).visibility !== 'hidden');
             const first = buttons[0], last = buttons[buttons.length - 1], inside = buttons.includes(doc.activeElement);
             if (event.shiftKey && (doc.activeElement === first || !inside)) { event.preventDefault(); last?.focus(); }
             else if (!event.shiftKey && (doc.activeElement === last || !inside)) { event.preventDefault(); first?.focus(); }
@@ -144,36 +144,36 @@
       }
       const card = dialog.querySelector('.isu-card'), body = dialog.querySelector('[data-isu-body]');
       transition = { card, body, fresh, from: fresh ? 0 : card.getBoundingClientRect().height };
-      statusNode = el('p', null, 'isu-status'); statusNode.dataset.isuStatus = ''; statusNode.setAttribute('role', 'status');
+      statusNode = el('span', null, 'isu-status'); statusNode.dataset.isuStatus = ''; statusNode.setAttribute('role', 'status');
       card.dataset.screen = screen; body.replaceChildren();
       return body;
     }
-    // Called once a screen is filled: places the status line and animates the change of screen.
+    // Called once a screen is filled: places the status line and runs a fade-through.
     function settle(focus) {
       const { card, body, fresh, from } = transition; transition = null;
       if (!statusNode.isConnected) body.append(statusNode);
       if (focus) focus.focus({ preventScroll: true });
       else if (!fresh || !settingsContainer) card.focus({ preventScroll: true });
-      if (!motion()) return;
-      body.classList.remove('isu-enter'); void body.offsetWidth; body.classList.add('isu-enter');
-      if (!fresh) resize(card, from);
+      if (!motion() || fresh) return;
+      body.classList.remove('isu-swap'); void body.offsetWidth; body.classList.add('isu-swap');
+      resize(card, from);
     }
     function resize(card, from) {
       const to = card.getBoundingClientRect().height;
       if (!motion() || !card.animate || !from || Math.abs(to - from) < 2) return;
       card.style.overflow = 'hidden';
-      card.animate([{ height: from + 'px' }, { height: to + 'px' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' }).onfinish = () => { card.style.overflow = ''; };
+      card.animate([{ height: from + 'px' }, { height: to + 'px' }], { duration: 300, easing: 'cubic-bezier(.2,0,0,1)' }).onfinish = () => { card.style.overflow = ''; };
     }
     function morph(change) {
       const card = dialog?.querySelector('.isu-card'), from = card ? card.getBoundingClientRect().height : 0;
       change(); if (card) resize(card, from);
     }
-    // Swipe the sheet down by its grabber or header to dismiss it, as on Android and iOS.
+    // Drag the sheet down by its handle or headline to dismiss it, as on Android.
     function draggable(card) {
       let drag = null;
       card.addEventListener('pointerdown', event => {
         if (installing || !event.isPrimary || event.pointerType === 'mouse') return;
-        if (event.target.closest('button,a,input') || !event.target.closest('.isu-grabber,.isu-head')) return;
+        if (event.target.closest('button,a,input') || !event.target.closest('.isu-handle,.isu-head')) return;
         drag = { id: event.pointerId, y: event.clientY, dy: 0, last: event.clientY, at: event.timeStamp, speed: 0 };
         card.setPointerCapture?.(event.pointerId); card.classList.add('isu-dragging');
       });
@@ -194,8 +194,8 @@
       card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
     }
     function el(tag, text, className) { const value = doc.createElement(tag); if (text != null) value.textContent = text; if (className) value.className = className; return value; }
-    function svg(name, className) { const value = el('span', null, className); value.innerHTML = ICONS[name]; value.setAttribute('aria-hidden', 'true'); return value; }
-    function button(parent, text, action, className = 'isu-btn isu-tonal') {
+    function icon(name, className) { const value = el('span', null, className || 'isu-icon'); value.innerHTML = ICONS[name]; value.setAttribute('aria-hidden', 'true'); return value; }
+    function button(parent, text, action, className = 'isu-btn isu-text') {
       const value = el('button', text, className); value.type = 'button'; value.onclick = action; parent.append(value); return value;
     }
     function status(text, tone = '') {
@@ -205,19 +205,17 @@
         statusNode.replaceChildren();
         if (!text) return;
         if (tone === 'busy') statusNode.append(el('span', null, 'isu-spinner'));
-        else if (tone) statusNode.append(svg(tone === 'ok' ? 'ok' : 'error', 'isu-status-icon'));
+        else if (tone === 'ok' || tone === 'error' || tone === 'warn') statusNode.append(icon(tone === 'ok' ? 'done' : 'error', 'isu-status-icon'));
         statusNode.append(el('span', text));
       };
       if (!!text !== !!statusNode.textContent && statusNode.isConnected && !transition) morph(apply); else apply();
     }
-    function header(title, options = {}) {
-      const value = el('header', null, 'isu-head' + (options.bar ? ' isu-bar' : ''));
-      if (options.icon) value.append(options.icon);
-      const text = el('div', null, 'isu-head-text'), heading = el('h2', title); heading.id = 'isu-title';
-      text.append(heading); if (options.subtitle) text.append(options.subtitle);
-      value.append(text); return value;
+    function header(title, subtitle, className = '') {
+      const value = el('header', null, 'isu-head' + (className ? ' ' + className : '')), heading = el('h2', title); heading.id = 'isu-title';
+      value.append(heading); if (subtitle) value.append(subtitle);
+      return value;
     }
-    function appIcon() { return svg('mark', 'isu-icon'); }
+    function actions(parent, className = '') { const value = el('div', null, 'isu-actions' + (className ? ' ' + className : '')); parent.append(value); return value; }
     function size(bytes) { return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB'; }
     // B is the default. Legacy implicit A preferences require renewed, explicit consent.
     function selectChannel(channel) {
@@ -226,22 +224,20 @@
       saveState(); generation++; checking = null; available = null; lastPrompt = '';
       settings(); check({ manual: true });
     }
-    function footer(body) {
-      const value = el('footer', null, 'isu-footer');
-      const brand = el('a', null, 'isu-brand'); brand.href = 'https://inhouse.miguelcoxcaballero.com/';
-      brand.append(svg('mark', 'isu-mark'), el('span', 'Made by Inhouse'));
+    function credits(parent) {
+      const value = el('span', null, 'isu-credits');
+      const brand = el('a', 'Made by Inhouse', 'isu-brand'); brand.href = 'https://inhouse.miguelcoxcaballero.com/';
       const github = el('a', 'GitHub', 'isu-github'); github.href = 'https://github.com/' + config.repository;
-      const dot = el('span', '·'); dot.setAttribute('aria-hidden', 'true');
       // Native hosts open these allowlisted links in the browser, outside the installer bridge.
-      value.append(brand, dot, github); body.append(value);
+      value.append(brand, github); parent.append(value); return value;
     }
     // A completed drag (or End on the keyboard) is required; a tap on the track never confirms.
     function slideToConfirm(armed, confirm) {
       const track = el('div', null, 'isu-slide'); track.hidden = true;
       const slider = el('input'); slider.id = 'isu-confirm-a'; slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '1'; slider.value = '0';
       slider.setAttribute('aria-label', 'Slide to confirm version A');
-      const label = el('span', 'Slide to switch', 'isu-slide-label'); label.setAttribute('aria-hidden', 'true');
-      const thumb = svg('arrow', 'isu-slide-thumb');
+      const label = el('span', 'Slide to switch to A', 'isu-slide-label'); label.setAttribute('aria-hidden', 'true');
+      const thumb = icon('arrow', 'isu-slide-thumb');
       track.append(slider, el('span', null, 'isu-slide-fill'), label, thumb);
       const paint = () => track.style.setProperty('--v', String(Number(slider.value) / 100));
       slider.addEventListener('input', paint);
@@ -271,18 +267,19 @@
       // Opening or cancelling this screen never opts in or requests an A catalog.
       generation++; checking = null; available = null;
       const body = shell('warning');
-      body.append(header('Switch to version A?', { icon: svg('warning', 'isu-icon isu-icon-warn') }));
-      body.append(el('p', 'Version A gets untested development updates. Expect bugs, crashes or data loss.', 'isu-warning'));
+      const head = header('Switch to version A?', null, 'isu-centered'); head.prepend(icon('warning', 'isu-icon isu-alert'));
+      body.append(head, el('p', 'Version A gets untested development updates. Expect bugs, crashes or data loss.', 'isu-text-body'));
       let agreed = false;
       const { track, slider } = slideToConfirm(() => agreed, () => selectChannel('A'));
-      const actions = el('div', null, 'isu-actions');
-      button(actions, 'Cancel', () => settings());
-      const yes = button(actions, 'I understand', () => {
+      body.append(track);
+      const row = actions(body);
+      button(row, 'Cancel', () => settings());
+      const yes = button(row, 'I understand', () => {
         agreed = true;
-        morph(() => { yes.hidden = true; track.hidden = false; actions.classList.add('isu-armed'); });
+        morph(() => { yes.hidden = true; track.hidden = false; });
         slider.focus({ preventScroll: true });
-      }, 'isu-btn isu-primary');
-      body.append(track, actions); settle();
+      }, 'isu-btn isu-text isu-primary');
+      settle();
     }
     function settings(message = '', presentation = {}) {
       if (presentation.container && presentation.container !== settingsContainer) {
@@ -290,25 +287,27 @@
         settingsContainer = presentation.container;
       }
       readState(); const body = shell('settings');
-      const head = header('Updates', { bar: true });
-      if (!settingsContainer) button(head, 'Done', () => close(false), 'isu-link');
-      const app = el('div', null, 'isu-app-row'), name = el('div');
-      name.append(el('strong', config.appName), el('span', 'Version ' + installed(), 'isu-app'));
-      app.append(appIcon(), name);
-      body.append(head, app, el('h3', 'Channel', 'isu-label'));
+      body.append(header('Updates', el('p', config.appName + ' ' + installed(), 'isu-sub')));
+      body.append(el('h3', 'Channel', 'isu-subheader'));
       const options = el('div', null, 'isu-channels'); options.setAttribute('role', 'group'); options.setAttribute('aria-label', 'Update channel'); body.append(options);
-      [['B', 'Reviewed releases'], ['A', 'Development builds']].forEach(([channel, note]) => {
+      [['B', 'Reviewed releases'], ['A', 'Development builds, may be unstable']].forEach(([channel, note]) => {
         const value = button(options, null, () => {
           if (installing || state.channel === channel) return;
           if (channel === 'A') confirmDevelopment(); else selectChannel('B');
-        }, 'isu-option');
-        const description = el('span', note, 'isu-option-note'); description.id = 'isu-channel-' + channel;
-        value.append(el('span', 'Version ' + channel, 'isu-option-title'), description, el('span', null, 'isu-radio'));
+        }, 'isu-item');
+        const text = el('span', null, 'isu-item-text'), description = el('span', note, 'isu-item-support'); description.id = 'isu-channel-' + channel;
+        text.append(el('span', 'Version ' + channel, 'isu-item-title'), description);
+        value.append(el('span', null, 'isu-radio'), text);
         value.setAttribute('aria-label', 'Version ' + channel); value.setAttribute('aria-describedby', description.id);
         value.setAttribute('aria-pressed', String(state.channel === channel));
       });
-      button(body, 'Check for updates', () => check({ manual: true }), 'isu-btn isu-tonal isu-check');
-      body.append(statusNode); footer(body);
+      body.append(el('div', null, 'isu-divider'));
+      const checkItem = el('button', null, 'isu-item isu-check'); checkItem.type = 'button'; checkItem.onclick = () => check({ manual: true });
+      const label = el('span', 'Check for updates', 'isu-item-title'); label.id = 'isu-check-label';
+      const text = el('span', null, 'isu-item-text'); text.append(label, statusNode);
+      checkItem.append(text); checkItem.setAttribute('aria-labelledby', label.id); body.append(checkItem);
+      const row = actions(body, 'isu-actions-split'); credits(row);
+      if (!settingsContainer) button(row, 'Done', () => close(false));
       settle(); status(message);
     }
     function progress(payload, label) {
@@ -320,13 +319,13 @@
       const known = payload.percent >= 0 || payload.downloadedBytes != null;
       track.classList.toggle('is-indeterminate', !known);
       if (!known) {
-        meter.removeAttribute('value'); bar.querySelector('.isu-progress-label').textContent = 'Preparing…'; bar.querySelector('.isu-progress-value').textContent = '';
+        meter.removeAttribute('value'); bar.querySelector('.isu-progress-label').textContent = 'Preparing download…'; bar.querySelector('.isu-progress-value').textContent = '';
         return;
       }
       const percent = Math.max(0, Math.min(100, payload.percent >= 0 ? Math.round(payload.percent) : total > 0 ? Math.round(downloaded * 100 / total) : 0));
       meter.value = percent; track.style.setProperty('--p', String(percent / 100));
-      bar.querySelector('.isu-progress-label').textContent = label || (percent >= 100 ? 'Verifying…' : 'Downloading…');
-      bar.querySelector('.isu-progress-value').textContent = downloaded && total ? size(downloaded) + ' of ' + size(total) : percent + '%';
+      bar.querySelector('.isu-progress-label').textContent = label || (percent >= 100 ? 'Verifying…' : 'Downloading… ' + percent + '%');
+      bar.querySelector('.isu-progress-value').textContent = downloaded && total ? size(downloaded) + ' of ' + size(total) : '';
     }
     function result(payload) {
       if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch (_) { return; } }
@@ -343,24 +342,38 @@
       available = value;
       const release = value.latest, body = shell('offer');
       const versions = el('span', null, 'isu-versions'); versions.append(doc.createTextNode(installed() + ' → '), el('b', release.version));
-      const subtitle = el('p', null, 'isu-sub'); subtitle.append(versions, el('span', size(release.apkSizeBytes), 'isu-size'));
-      const head = header('Update available', { icon: appIcon(), subtitle });
-      const channel = button(head, 'Version ' + value.channel, () => settings(), 'isu-chip');
-      channel.setAttribute('aria-label', 'Version ' + value.channel + ', change channel'); channel.dataset.isuIdle = ''; channel.append(svg('chevron'));
-      body.append(head);
+      const subtitle = el('p', null, 'isu-sub'); subtitle.append(versions, doc.createTextNode(' · ' + size(release.apkSizeBytes)));
+      body.append(header('Update available', subtitle));
       const changes = value.releases.filter(r => newer(r, installed(), installedCode()));
-      if (changes.length) {
-        const notes = el('section', null, 'isu-notes'), list = el('ul', null, 'isu-changes');
-        changes.slice(0, 3).forEach(r => { const item = el('li'); item.append(el('span', r.changelog)); if (changes.length > 1) item.append(el('small', r.version)); list.append(item); });
-        notes.append(el('h3', 'What’s new', 'isu-label'), list);
-        if (changes.length > 3) notes.append(el('p', '+' + (changes.length - 3) + ' more', 'isu-more'));
-        body.append(notes);
+      if (changes.length) body.append(el('h3', 'What’s new', 'isu-subheader'), el('p', release.changelog, 'isu-text-body isu-note'));
+      // Everything else stays one tap away: intermediate versions, release date and channel.
+      const more = el('div', null, 'isu-more'); more.id = 'isu-more'; more.hidden = true;
+      const earlier = changes.filter(r => r.versionCode !== release.versionCode);
+      if (earlier.length) {
+        const list = el('ul', null, 'isu-changes');
+        earlier.slice(0, 3).forEach(r => { const item = el('li'); item.append(el('small', r.version), el('span', r.changelog)); list.append(item); });
+        more.append(el('h3', 'Also in this update', 'isu-subheader isu-subheader-first'), list);
+        if (earlier.length > 3) more.append(el('p', '+' + (earlier.length - 3) + ' earlier ' + (earlier.length - 3 === 1 ? 'version' : 'versions'), 'isu-earlier'));
       }
-      body.append(statusNode);
+      const facts = el('dl', null, 'isu-facts'), released = new Date(release.releasedAt || '');
+      if (!Number.isNaN(released.getTime())) {
+        const row = el('div'); row.append(el('dt', 'Released'), el('dd', released.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' }))); facts.append(row);
+      }
+      const channelRow = el('div'), channelValue = el('dd', 'Version ' + value.channel + ' ');
+      const change = button(channelValue, 'Change', () => settings(), 'isu-link'); change.dataset.isuIdle = ''; change.setAttribute('aria-label', 'Change channel');
+      channelRow.append(el('dt', 'Channel'), channelValue); facts.append(channelRow); more.append(facts);
+      const toggle = el('button', null, 'isu-disclosure'); toggle.type = 'button';
+      toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', more.id);
+      toggle.append(el('span', 'Details'), icon('expand'));
+      toggle.onclick = () => {
+        const open = more.hidden;
+        morph(() => { more.hidden = !open; toggle.setAttribute('aria-expanded', String(open)); });
+      };
+      body.append(toggle, more, statusNode);
       const dock = el('div', null, 'isu-dock'); dock.dataset.state = 'idle';
-      const actions = el('div', null, 'isu-actions');
-      const later = button(actions, 'Later', () => close(true)); later.dataset.isuIdle = '';
-      const install = button(actions, 'Update', () => {
+      const row = actions(dock);
+      const later = button(row, 'Later', () => close(true)); later.dataset.isuIdle = '';
+      const install = button(row, 'Update', () => {
         installing = true; install.disabled = true; dialog.querySelectorAll('[data-isu-idle]').forEach(b => { b.disabled = true; });
         status(''); progress({});
         try {
@@ -369,12 +382,12 @@
           else if (native()?.installAppUpdate) native().installAppUpdate(release.apkUrl, release.apkSha256);
           else throw Error('Open the Android app to install.');
         } catch (error) { result({ status: 'error', message: error.message }); }
-      }, 'isu-btn isu-primary'); install.dataset.isuInstall = '';
+      }, 'isu-btn isu-filled isu-primary'); install.dataset.isuInstall = '';
       const bar = el('div', null, 'isu-progress'); bar.dataset.isuProgress = '';
-      const row = el('div', null, 'isu-progress-row'); row.append(el('span', 'Preparing…', 'isu-progress-label'), el('span', '', 'isu-progress-value'));
+      const labels = el('div', null, 'isu-progress-row'); labels.append(el('span', 'Preparing download…', 'isu-progress-label'), el('span', '', 'isu-progress-value'));
       const meter = doc.createElement('progress'); meter.max = 100; meter.value = 0; meter.setAttribute('aria-label', 'Download');
       const track = el('div', null, 'isu-track'); track.append(el('i'));
-      bar.append(row, track, meter); dock.append(actions, bar); body.append(dock);
+      bar.append(track, labels, meter); dock.append(bar); body.append(dock);
       settle();
     }
     async function check({ manual = false } = {}) {
