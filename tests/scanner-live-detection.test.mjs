@@ -11,7 +11,8 @@ const detect = context.window.ScannerPro.LiveDetection.detect;
 // Solving the bilinear inverse makes every rail and small bottom box undergo
 // exactly the same perspective, including pages rotated 90 and 180 degrees.
 function frame({ quad = [[100, 25], [348, 34], [375, 455], [73, 447]], yellow = true,
-  markers = true, paper = true, background = [68, 78, 83], ink = [240, 219, 76], brightness = 1 } = {}) {
+  markers = true, paper = true, background = [68, 78, 83], ink = [240, 219, 76], brightness = 1,
+  bowX = 0, bowY = 0, brokenRail = false, brokenCorner = false } = {}) {
   const width = 480, height = 480, data = new Uint8ClampedArray(width * height * 4);
   const [a, b, c, d] = quad;
   const ex = b[0] - a[0], ey = b[1] - a[1], fx = d[0] - a[0], fy = d[1] - a[1];
@@ -20,9 +21,10 @@ function frame({ quad = [[100, 25], [348, 34], [375, 455], [73, 447]], yellow = 
     for (let x = 0; x < width; x += 1) {
       let u = .5, v = .5;
       for (let i = 0; i < 5; i += 1) {
-        const dx = a[0] + ex * u + fx * v + gx * u * v - x;
-        const dy = a[1] + ey * u + fy * v + gy * u * v - y;
-        const ux = ex + gx * v, uy = ey + gy * v, vx = fx + gx * u, vy = fy + gy * u;
+        const dx = a[0] + ex * u + fx * v + gx * u * v + bowX * Math.sin(Math.PI * v) - x;
+        const dy = a[1] + ey * u + fy * v + gy * u * v + bowY * Math.sin(Math.PI * u) - y;
+        const ux = ex + gx * v, uy = ey + gy * v + bowY * Math.PI * Math.cos(Math.PI * u);
+        const vx = fx + gx * u + bowX * Math.PI * Math.cos(Math.PI * v), vy = fy + gy * u;
         const determinant = ux * vy - uy * vx;
         u -= (dx * vy - dy * vx) / determinant;
         v -= (dy * ux - dx * uy) / determinant;
@@ -39,6 +41,8 @@ function frame({ quad = [[100, 25], [348, 34], [375, 455], [73, 447]], yellow = 
         if (yellow && markers && ((cmX >= 2 && cmX <= 10) || (cmX >= 11 && cmX <= 19))
           && (Math.abs(cmY - 27.43) < line || Math.abs(cmY - 27.93) < line
             || (cmY >= 27.43 && cmY <= 27.93 && Math.abs(cmX * 2 - Math.round(cmX * 2)) < .08))) colour = ink;
+        if (brokenRail && cmX > 19 && cmY > 11 && cmY < 18) colour = [244, 244, 240];
+        if (brokenCorner && cmX > 18 && cmY < 3.5) colour = [244, 244, 240];
         if (cmX > 3 && cmX < 17 && cmY > 4 && cmY < 24 && cmY % 1.7 < .07) colour = [28, 44, 78];
       }
       const offset = (y * width + x) * 4;
@@ -110,4 +114,77 @@ test('rejects clipped sheets and invalid image data', () => {
   assert.equal(detect(frame({ quad: [[-80, -50], [500, -50], [550, 540], [-100, 540]] })), null);
   assert.equal(detect(null), null);
   assert.equal(detect({ width: 480, height: 480, data: [] }), null);
+});
+
+
+test('traces observed curved rails rather than drawing the corner chords', () => {
+  const quad = [[100, 25], [348, 34], [375, 455], [73, 447]];
+  for (const [bowX, bowY] of [[25, 0], [-24, 18], [0, -22]]) {
+    const result = detect(frame({ quad, bowX, bowY }));
+    assert.equal(result?.source, 'yellow');
+    assert.ok(result.confidence >= .78);
+    assert.equal(result.frameEdges.length, 4);
+    const expected = [];
+    for (let side = 0; side < 4; side += 1) {
+      for (let step = 0; step <= 120; step += 1) {
+        const t = step / 120;
+        const u = side === 0 ? (1.5 + 18 * t) / 21 : side === 1 ? 19.5 / 21 : side === 2 ? (19.5 - 18 * t) / 21 : 1.5 / 21;
+        const v = side === 1 ? (1.43 + 27 * t) / 29.7 : side === 2 ? 28.43 / 29.7 : side === 3 ? (28.43 - 27 * t) / 29.7 : 1.43 / 29.7;
+        expected.push({
+          x: ((quad[0][0] * (1 - u) + quad[1][0] * u) * (1 - v) + (quad[3][0] * (1 - u) + quad[2][0] * u) * v + bowX * Math.sin(Math.PI * v)) / 480,
+          y: ((quad[0][1] * (1 - u) + quad[1][1] * u) * (1 - v) + (quad[3][1] * (1 - u) + quad[2][1] * u) * v + bowY * Math.sin(Math.PI * u)) / 480
+        });
+      }
+    }
+    const errors = result.contour.map(point => Math.min(...expected.map(reference => Math.hypot(point.x - reference.x, point.y - reference.y))));
+    assert.ok(Math.max(...errors) < .015, `curve maximum error ${Math.max(...errors)}`);
+    assert.ok(errors.reduce((sum, value) => sum + value, 0) / errors.length < .005);
+    result.frameEdges.forEach((edge, side) => {
+      assert.deepEqual(edge[0], result.quad[side]);
+      assert.deepEqual(edge.at(-1), result.quad[(side + 1) % 4]);
+    });
+    const bends = result.frameEdges.map(edge => {
+      const a = edge[0], b = edge.at(-1), p = edge[Math.floor(edge.length / 2)];
+      return Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / Math.hypot(b.x - a.x, b.y - a.y);
+    });
+    assert.ok(Math.max(...bends) > .02, 'the overlay must actually bend with the ink');
+  }
+});
+
+test('keeps measured rails through a partial reflection and validates every new frame', () => {
+  const previous = detect(frame());
+  const current = detect(frame({ brokenRail: true }), previous);
+  assert.equal(current?.source, 'yellow');
+  assert.ok(current.frameEdgeSupport.some(support => support < .95));
+  assert.ok(current.frameEdgeSupport.filter(support => support > .7).length >= 3);
+  assert.equal(detect(frame({ paper: false, background: [244, 244, 240] }), previous), null);
+});
+
+test('does not confuse the edge of a white sheet on a warm desk with yellow printed ink', () => {
+  for (const background of [[149, 113, 81], [184, 156, 113], [240, 218, 75]]) {
+    const result = detect(frame({ yellow: false, background }));
+    assert.ok(!result || result.source === 'paper', JSON.stringify(result && { source: result.source, confidence: result.confidence }));
+  }
+});
+
+
+test('a previous seed follows a moving curved page without freezing its corners', () => {
+  const quad = [[100, 25], [348, 34], [375, 455], [73, 447]];
+  const options = { quad, bowX: 22, bowY: 12, background: [244, 244, 240] };
+  const previous = detect(frame(options));
+  assert.equal(previous?.source, 'yellow');
+  const moved = quad.map(([x, y]) => [x + 10, y + 7]);
+  const current = detect(frame({ ...options, quad: moved, brokenCorner: true, brokenRail: true }), previous);
+  assert.equal(current?.source, 'yellow');
+  assert.equal(current.tracking, true, 'exercise recovery from the previous frame while the corner is occluded');
+  const average = points => points.reduce((sum, point) => ({ x: sum.x + point.x / points.length, y: sum.y + point.y / points.length }), { x: 0, y: 0 });
+  const before = average(previous.quad), after = average(current.quad);
+  assert.ok(Math.abs(after.x - before.x - 10 / 480) < .008, `horizontal motion ${after.x - before.x}`);
+  assert.ok(Math.abs(after.y - before.y - 7 / 480) < .008, `vertical motion ${after.y - before.y}`);
+  assert.ok(Math.max(...current.quad.map((point, index) => Math.hypot(point.x - previous.quad[index].x, point.y - previous.quad[index].y))) > .018);
+  current.frameEdges.forEach((edge, side) => {
+    assert.deepEqual(edge[0], current.quad[side]);
+    assert.deepEqual(edge.at(-1), current.quad[(side + 1) % 4]);
+  });
+  assert.equal(detect(frame({ paper: false, background: [244, 244, 240] }), current), null);
 });

@@ -233,7 +233,7 @@
 
   <div id="liveReview" hidden>
     <div class="live-review-image">
-      <img id="livePreview" alt="Scanned page">
+      <img id="livePreview" alt="Scanned page" hidden>
     </div>
     <div class="live-review-controls">
       <p id="liveReviewStatus" role="status" aria-live="polite" aria-atomic="true">Check your scan before adding it.</p>
@@ -255,13 +255,14 @@
 <!-- config loader (must load first) -->
 <script src="./configLoader.js?v=5.11.26"></script>
 
-<!-- Lightweight Canvas processing: no WASM/OpenCV or blocking third-party code. -->
-<script src="./processing/lightweight.js?v=5.11.26"></script>
+<!-- Canvas processing with background page detection and curved-surface correction. -->
+<script src="./processing/surface-parameterization.js?v=5.11.58"></script>
+<script src="./processing/lightweight.js?v=5.11.58"></script>
 
 <!-- main app script -->
-<script src="./script.js?v=5.11.51"></script>
-<script src="./processing/liveDetection.js?v=5.11.51"></script>
-<script src="./live-camera.js?v=5.11.51"></script>
+<script src="./script.js?v=5.11.58"></script>
+<script src="./processing/liveDetection.js?v=5.11.58"></script>
+<script src="./live-camera.js?v=5.11.58"></script>
 
 </body>
 </html>
