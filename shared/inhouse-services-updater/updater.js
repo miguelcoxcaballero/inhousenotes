@@ -6,7 +6,7 @@
  */
 (function (root) {
   'use strict';
-  const VERSION = '1.2.0', TWO_WEEKS = 14 * 86400000;
+  const VERSION = '1.2.1', TWO_WEEKS = 14 * 86400000;
   const compareVersions = (a, b) => {
     const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
     for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return Math.sign(d); }
@@ -40,6 +40,13 @@
     let state = { channel: 'B', developmentConsent: 0, snooze: {} }, dialog = null, available = null, checking = null, generation = 0;
     let lastPrompt = '', timer = null, started = false, installing = false, previousFocus = null, settingsContainer = null;
     let statusNode = null, transition = null, closeTimer = null;
+    const installKey = key + ':installation', seenInstallKey = key + ':installation-seen';
+    function savedInstall() {
+      try { return JSON.parse(win.localStorage.getItem(installKey) || 'null'); } catch (_) { return null; }
+    }
+    function saveInstall(value) {
+      try { if (value) win.localStorage.setItem(installKey, JSON.stringify(value)); else win.localStorage.removeItem(installKey); } catch (_) {}
+    }
     const now = () => config.now ? config.now() : Date.now();
     const installed = () => String(config.getVersion?.() || native()?.getAppVersion?.() || config.installedVersion || '0.0.0');
     const installedCode = () => Number(config.getVersionCode?.() || native()?.getAppVersionCode?.() || config.installedVersionCode || 0);
@@ -329,14 +336,70 @@
     }
     function result(payload) {
       if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch (_) { return; } }
-      if (!dialog || !payload) return;
+      if (!payload) return;
+      if (payload.status === 'installed') {
+        // Only the native package manager (or a fresh installed-version read)
+        // confirms installation. Opening Android's dialog is not success.
+        saveInstall(null); installing = false;
+        installationOutcome('Update installed', config.appName + ' ' + installed());
+        return;
+      }
+      if (!dialog) return;
       const install = dialog.querySelector('[data-isu-install]'); if (!install) return;
       const idle = () => { install.closest('[data-state]').dataset.state = 'idle'; };
       if (payload.status === 'downloading') { installing = true; install.disabled = true; progress(payload); status(''); }
-      else if (payload.status === 'ready') { installing = false; progress({ ...payload, percent: 100 }); idle(); install.textContent = 'Installing…'; status('Confirm the installation in Android.'); }
+      else if (payload.status === 'ready' || payload.status === 'installing') {
+        const pending = savedInstall(); if (pending) saveInstall({ ...pending, awaitingResult: true });
+        installing = false; progress({ ...payload, percent: 100 }); idle();
+        install.disabled = false; install.textContent = 'Open installer'; status('Confirm the installation in Android. If the app closes, open it again.');
+      }
       else if (payload.status === 'permission_required') { installing = false; install.disabled = false; install.textContent = 'Continue'; idle(); status('Allow installs from this app, then tap Continue.', 'warn'); }
-      else if (payload.status === 'error') { installing = false; install.disabled = false; install.textContent = 'Try again'; idle(); status(payload.message || 'Download failed.', 'error'); }
+      else if (payload.status === 'error' || payload.status === 'cancelled' || payload.status === 'unconfirmed') {
+        installing = false; install.disabled = false; install.textContent = 'Try again'; idle();
+        status(payload.message || (payload.status === 'cancelled' ? 'Installation cancelled.' : 'The update could not be installed.'), payload.status === 'error' ? 'error' : 'warn');
+      }
       dialog.querySelectorAll('[data-isu-idle]').forEach(b => { b.disabled = installing; });
+    }
+    function installationOutcome(title, message) {
+      // The invisible checker must leave results for the foreground host.
+      if (config.onOffer) return;
+      installing = false; available = null;
+      const body = shell('result'); body.append(header(title), el('p', message, 'isu-text-body'));
+      const row = actions(body); button(row, 'Updates', () => settings()); button(row, 'Done', () => close(false), 'isu-btn isu-filled isu-primary');
+      settle();
+    }
+    function refreshInstallation() {
+      if (config.onOffer || installing || doc.visibilityState === 'hidden') return false;
+      let nativeState = null, seen = '';
+      try {
+        nativeState = JSON.parse(native()?.getInstallState?.() || 'null');
+        seen = win.localStorage.getItem(seenInstallKey) || '';
+      } catch (_) {}
+      const pending = savedInstall();
+      const confirmed = pending && (installedCode() > 0
+        ? installedCode() >= pending.versionCode : compareVersions(installed(), pending.version) >= 0);
+      const activeCode = (dialog?.querySelector('[data-isu-install]') ? available?.latest.versionCode : 0) || 0;
+      const requestedCode = Math.max(pending?.versionCode || 0, activeCode);
+      const relevantPending = pending && pending.versionCode >= activeCode;
+      const resultId = nativeState?.id + ':' + nativeState?.status;
+      if (nativeState?.id && ['installed', 'cancelled', 'error'].includes(nativeState.status) && resultId !== seen
+          && Number(nativeState.expectedVersionCode) >= requestedCode) {
+        // Persist only after the result is rendered, so process death does not
+        // swallow it. Reads from the native bridge remain idempotent.
+        if (nativeState.status === 'installed') result(nativeState);
+        else if (dialog?.querySelector('[data-isu-install]')) result(nativeState);
+        else installationOutcome('Update not installed', nativeState.message || (nativeState.status === 'cancelled' ? 'Installation cancelled.' : 'Android could not install the update.'));
+        try { win.localStorage.setItem(seenInstallKey, resultId); } catch (_) {}
+        saveInstall(null); return true;
+      }
+      if (confirmed && relevantPending) { result({ status: 'installed' }); return true; }
+      if (relevantPending && pending.awaitingResult && !pending.reported) {
+        const message = 'Installation has not been confirmed. You can try again.';
+        if (dialog?.querySelector('[data-isu-install]')) result({ status: 'unconfirmed', message });
+        else installationOutcome('Update not confirmed', message);
+        saveInstall({ ...pending, reported: true }); return true;
+      }
+      return false;
     }
     function show(value) {
       available = value;
@@ -375,6 +438,7 @@
       const later = button(row, 'Later', () => close(true)); later.dataset.isuIdle = '';
       const install = button(row, 'Update', () => {
         installing = true; install.disabled = true; dialog.querySelectorAll('[data-isu-idle]').forEach(b => { b.disabled = true; });
+        saveInstall({ version: release.version, versionCode: release.versionCode, awaitingResult: false });
         status(''); progress({});
         try {
           if (config.install) config.install(release);
@@ -433,17 +497,19 @@
     function start() {
       if (started) return; started = true; readState();
       win.handleInhouseUpdateResult = result;
-      win.addEventListener('focus', automatic); timer = win.setInterval(automatic, 15 * 60000); automatic();
+      win.addEventListener('focus', automatic); doc.addEventListener('visibilitychange', visible);
+      timer = win.setInterval(automatic, 15 * 60000); automatic();
     }
-    function automatic() { check(); }
-    function stop() { win.removeEventListener('focus', automatic); win.clearInterval(timer); started = false; }
+    function automatic() { if (!refreshInstallation()) check(); }
+    function visible() { if (doc.visibilityState !== 'hidden') refreshInstallation(); }
+    function stop() { win.removeEventListener('focus', automatic); doc.removeEventListener('visibilitychange', visible); win.clearInterval(timer); started = false; }
     function offerPending(value) {
       readState(); const valid = validateCatalog(value, state.channel, config);
       if (!snoozed() && newer(valid.latest, installed(), installedCode())) { win.handleInhouseUpdateResult = result; show(valid); return true; }
       return false;
     }
     win.handleInhouseUpdateResult = result;
-    return { start, stop, check, settings, close, result, offerPending, getState: readState, version: VERSION };
+    return { start, stop, check, settings, close, result, offerPending, refreshInstallation, getState: readState, version: VERSION };
   }
   const api = { create, compareVersions, validateCatalog, newer, TWO_WEEKS, VERSION };
   root.InhouseServicesUpdater = api;

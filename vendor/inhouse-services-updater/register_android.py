@@ -31,6 +31,7 @@ def register(project, repository, trust_read=False):
         // A + tiny changelog by default. B needs explicit user request. Updates are optional.
         private com.inhouse.services.updater.PhotosUpdateInstaller servicesInstaller;
         @JavascriptInterface public long getAppVersionCode() { return com.inhouse.services.updater.UpdateState.versionCode(MainActivity.this); }
+        @JavascriptInterface public String getInstallState() { return com.inhouse.services.updater.InstallState.read(MainActivity.this); }
         @JavascriptInterface public String getUpdateState() { return com.inhouse.services.updater.UpdateState.read(MainActivity.this); }
         @JavascriptInterface public void saveUpdateState(String value) { com.inhouse.services.updater.UpdateState.save(MainActivity.this,value); }
         @JavascriptInterface public void installInhouseUpdate(String url,String hash) {
@@ -63,6 +64,9 @@ def register(project, repository, trust_read=False):
     gradle.write_text(text)
     ns='http://schemas.android.com/apk/res/android';ET.register_namespace('android',ns)
     path=app/'src/main/AndroidManifest.xml';tree=ET.parse(path);application=tree.getroot().find('application')
+    install_activity='com.inhouse.services.updater.InstallActivity'
+    if not any(node.get(f'{{{ns}}}name')==install_activity for node in application.findall('activity')):
+        ET.SubElement(application,'activity',{f'{{{ns}}}name':install_activity,f'{{{ns}}}exported':'false',f'{{{ns}}}theme':'@android:style/Theme.DeviceDefault.NoActionBar'})
     provider=ET.SubElement(application,'provider',{f'{{{ns}}}name':'androidx.core.content.FileProvider',f'{{{ns}}}authorities':'${applicationId}.update-provider',f'{{{ns}}}exported':'false',f'{{{ns}}}grantUriPermissions':'true'})
     ET.SubElement(provider,'meta-data',{f'{{{ns}}}name':'android.support.FILE_PROVIDER_PATHS',f'{{{ns}}}resource':'@xml/inhouse_update_paths'})
     tree.write(path,encoding='unicode')

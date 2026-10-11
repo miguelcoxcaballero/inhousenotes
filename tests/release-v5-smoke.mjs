@@ -27,15 +27,17 @@ const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const scannerLive = readText('../scanner/live-camera.js');
 const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.51.md');
+const notes = readText('../RELEASE_NOTES_v5.11.54.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
 const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
+const androidApkVerifier = readText('../.github/scripts/verify_release_apk.py');
+const androidManifestPublisher = readText('../.github/scripts/update_services_manifest.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.51';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.54';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -59,10 +61,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.51/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.51/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.51/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.51/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.54/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.54/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.54/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.54/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -199,8 +201,21 @@ assert.doesNotMatch(
   /"url": "https:\/\/inhousenotes\.com/,
   'Android must paint its bundled launch shell before navigating to the web app'
 );
-assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.14"/);
-assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 15/);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.16"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 17/);
+assert.match(androidApkVerifier, /package: name='com\.local\.inhousenotes' versionCode='17' versionName='1\.0\.16'/);
+assert.match(androidApkVerifier, /certificate\(apk\) == certificate\(previous\)/);
+assert.match(androidManifestPublisher, /'version':'1\.0\.16','versionCode':17/);
+assert.match(androidManifestPublisher, /Reliable Android update results\./);
+assert.match(androidWorkflow, /gh release download android-v1\.0\.15 --pattern inhouse-notes-release-v1\.0\.15\.apk/);
+assert.match(androidWorkflow, /verify_release_apk\.py inhouse-notes-release-v1\.0\.16\.apk/);
+assert.match(androidWorkflow, /cmp inhouse-notes-release-v1\.0\.16\.apk/);
+const verifySignedApkStep = androidWorkflow.indexOf('- name: Verify signed APK and signing continuity');
+const publishApkStep = androidWorkflow.indexOf('- name: Publish versioned APK download');
+const verifyPublicApkStep = androidWorkflow.indexOf('- name: Verify public APK before its catalog');
+const publishCatalogStep = androidWorkflow.indexOf('- name: Publish matching channel A manifest');
+assert.ok(verifySignedApkStep >= 0 && verifySignedApkStep < publishApkStep, 'verify APK identity and signing continuity before publishing');
+assert.ok(publishApkStep < verifyPublicApkStep && verifyPublicApkStep < publishCatalogStep, 'verify the exact public APK before publishing its catalog');
 assert.match(androidLoader, /html, body \{ margin: 0; width: 100%; height: 100%;/);
 assert.match(androidLoader, /position: fixed;\s*inset: 0;\s*display: grid;\s*place-items: center;/);
 assert.match(html, /#toolbar \{[\s\S]{0,500}--toolbar-ink: #1a1a1a;/);
@@ -1146,16 +1161,14 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // Publication metadata must remain tied to an actual APK; shell advances when CI publishes it.
-assert.ok(['1.0.10','1.0.11','1.0.12','1.0.13','1.0.14'].includes(update.version));
+assert.ok(['1.0.10','1.0.11','1.0.12','1.0.13','1.0.14','1.0.15','1.0.16'].includes(update.version));
 assert.ok(update.versionCode >= 11);
 assert.ok(update.apkSizeBytes > 0);
-assert.match(notes, /local save/i);
-assert.match(notes, /Drive/i);
-assert.match(notes, /hidden/i);
-assert.match(notes, /BroadcastChannel/i);
-assert.match(notes, /cached document hashes/i);
-assert.match(notes, /real WebRTC/i);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.51/);
+assert.match(notes, /Reliable Android update results\./);
+assert.match(notes, /Android 1\.0\.16 \(versionCode 17\)/);
+assert.match(notes, /installed app version/i);
+assert.match(notes, /not been tested on a physical Android device/i);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.54/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
@@ -1165,7 +1178,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.51 smoke checks passed.');
+console.log('v5.11.54 smoke checks passed.');
 
 
 

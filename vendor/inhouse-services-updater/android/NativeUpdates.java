@@ -47,7 +47,8 @@ public final class NativeUpdates {
     }
 
     public void onResumed(Activity activity) {
-        if (activity instanceof UpdateActivity || activity.isFinishing() || activity.isDestroyed()) return;
+        if (activity instanceof UpdateActivity || activity instanceof InstallActivity
+                || activity.isFinishing() || activity.isDestroyed()) return;
         try {
             boolean created = updateChecker == null;
             startUpdateChecks();
@@ -120,6 +121,7 @@ public final class NativeUpdates {
     public final class UpdateCheckBridge {
         @JavascriptInterface public String getAppVersion() { return UpdateState.version(application); }
         @JavascriptInterface public long getAppVersionCode() { return UpdateState.versionCode(application); }
+        @JavascriptInterface public String getInstallState() { return InstallState.read(application); }
         @JavascriptInterface public String getUpdateState() { return UpdateState.read(application); }
         @JavascriptInterface public void saveUpdateState(String value) { UpdateState.save(application,value); }
     }

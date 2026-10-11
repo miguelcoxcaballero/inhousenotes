@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the public APK and signing continuity before publishing a catalog."""
+"""Verify APK identity and signing continuity before release and catalog publication."""
 import os
 import re
 import subprocess
@@ -25,7 +25,7 @@ def certificate(path):
 
 assert certificate(apk) == certificate(previous), "Signing key changed"
 badging = subprocess.check_output([str(build_tools / "aapt"), "dump", "badging", str(apk)], text=True)
-assert "package: name='com.local.inhousenotes' versionCode='15' versionName='1.0.14'" in badging, "APK identity/version mismatch"
+assert "package: name='com.local.inhousenotes' versionCode='17' versionName='1.0.16'" in badging, "APK identity/version mismatch"
 assert "uses-permission: name='android.permission.CAMERA'" in badging, "APK cannot request a live camera"
 assert "uses-feature: name='android.hardware.camera'" not in badging, "Camera must remain optional for photo import"
-print("Public APK verified: com.local.inhousenotes 1.0.14 / 15; signing key unchanged.")
+print("APK verified: com.local.inhousenotes 1.0.16 / 17; signing key unchanged.")

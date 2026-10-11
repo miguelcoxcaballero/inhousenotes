@@ -2,12 +2,14 @@
    Follows Material Design 3: modal bottom sheet (surface container low, 28dp top
    corners, 32x4 handle, 640dp max width) on phones and a basic dialog (surface
    container high, 28dp corners, 24dp padding, end-aligned buttons) on wide
-   screens. Containers are flat: only the sheet itself has a shape. */
+   screens. Containers are flat: only the sheet itself has a shape.
+   Neutral Inhouse surfaces are explicit, independent of wallpaper/accent colors.
+   Keep semantic warning/error/success colors confined to their status elements. */
 
 .isu-overlay {
-  --isu-surface: #f8f3ef; --isu-surface-high: #efe9e4; --isu-surface-highest: #e7e1dc;
-  --isu-on-surface: #1e1b19; --isu-on-variant: #4f4844; --isu-outline-variant: #d4ccc6;
-  --isu-primary: #2a2522; --isu-on-primary: #ffffff; --isu-error: #b3261e; --isu-warn: #8b5000; --isu-ok: #1f7a46;
+  --isu-surface: #fafafa; --isu-surface-high: #f0f0f0; --isu-surface-highest: #e5e5e5;
+  --isu-on-surface: #1c1c1c; --isu-on-variant: #4a4a4a; --isu-outline-variant: #d0d0d0;
+  --isu-primary: #242424; --isu-on-primary: #ffffff; --isu-error: #b3261e; --isu-warn: #8b5000; --isu-ok: #1f7a46;
   --isu-font: "Google Sans Text", Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
   --isu-decelerate: cubic-bezier(.05, .7, .1, 1); --isu-accelerate: cubic-bezier(.3, 0, .8, .15); --isu-standard: cubic-bezier(.2, 0, 0, 1);
   position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: flex-end; justify-content: center; box-sizing: border-box;
@@ -16,10 +18,10 @@
   -webkit-tap-highlight-color: transparent; animation: isu-scrim .2s linear backwards;
 }
 @media (prefers-color-scheme: dark) {
-  .isu-overlay { --isu-surface: #1f1c1a; --isu-surface-high: #2a2725; --isu-surface-highest: #35312f; --isu-on-surface: #ebe5e1; --isu-on-variant: #cfc5bf; --isu-outline-variant: #4f4844; --isu-primary: #ebe5e1; --isu-on-primary: #2a2522; --isu-error: #f2b8b5; --isu-warn: #ffb95c; --isu-ok: #7fd8a2; color-scheme: dark; }
+  .isu-overlay { --isu-surface: #1c1c1c; --isu-surface-high: #262626; --isu-surface-highest: #333333; --isu-on-surface: #ededed; --isu-on-variant: #c7c7c7; --isu-outline-variant: #4a4a4a; --isu-primary: #ededed; --isu-on-primary: #242424; --isu-error: #f2b8b5; --isu-warn: #ffb95c; --isu-ok: #7fd8a2; color-scheme: dark; }
 }
-[data-theme=dark] .isu-overlay { --isu-surface: #1f1c1a; --isu-surface-high: #2a2725; --isu-surface-highest: #35312f; --isu-on-surface: #ebe5e1; --isu-on-variant: #cfc5bf; --isu-outline-variant: #4f4844; --isu-primary: #ebe5e1; --isu-on-primary: #2a2522; --isu-error: #f2b8b5; --isu-warn: #ffb95c; --isu-ok: #7fd8a2; color-scheme: dark; }
-[data-theme=light] .isu-overlay { --isu-surface: #f8f3ef; --isu-surface-high: #efe9e4; --isu-surface-highest: #e7e1dc; --isu-on-surface: #1e1b19; --isu-on-variant: #4f4844; --isu-outline-variant: #d4ccc6; --isu-primary: #2a2522; --isu-on-primary: #ffffff; --isu-error: #b3261e; --isu-warn: #8b5000; --isu-ok: #1f7a46; color-scheme: light; }
+[data-theme=dark] .isu-overlay { --isu-surface: #1c1c1c; --isu-surface-high: #262626; --isu-surface-highest: #333333; --isu-on-surface: #ededed; --isu-on-variant: #c7c7c7; --isu-outline-variant: #4a4a4a; --isu-primary: #ededed; --isu-on-primary: #242424; --isu-error: #f2b8b5; --isu-warn: #ffb95c; --isu-ok: #7fd8a2; color-scheme: dark; }
+[data-theme=light] .isu-overlay { --isu-surface: #fafafa; --isu-surface-high: #f0f0f0; --isu-surface-highest: #e5e5e5; --isu-on-surface: #1c1c1c; --isu-on-variant: #4a4a4a; --isu-outline-variant: #d0d0d0; --isu-primary: #242424; --isu-on-primary: #ffffff; --isu-error: #b3261e; --isu-warn: #8b5000; --isu-ok: #1f7a46; color-scheme: light; }
 .isu-overlay *, .isu-inline * { box-sizing: border-box; }
 .isu-overlay [hidden], .isu-inline [hidden] { display: none !important; }
 
@@ -40,6 +42,10 @@
   .isu-handle { display: none; }
   .isu-overlay.isu-leaving .isu-card { transform: none; opacity: 0; transition: opacity .15s linear; }
 }
+
+/* Hosts such as Notes style every header element. Keep their app-bar background,
+   flex layout and spacing out of the popup; .isu-centered below still handles warnings. */
+.isu-head { display: block; margin: 0; padding: 0; min-height: 0; background: transparent; border: 0; z-index: auto; justify-content: normal; }
 
 /* Type */
 .isu-card h2 { margin: 0; font-size: 24px; line-height: 32px; font-weight: 400; letter-spacing: 0; color: var(--isu-on-surface); }

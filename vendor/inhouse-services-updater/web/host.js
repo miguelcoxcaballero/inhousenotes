@@ -7,6 +7,11 @@
   if (quiet) config.onOffer = value => window.InhouseUpdateHost?.offer(JSON.stringify(value));
   const updater = InhouseServicesUpdater.create(config); window.InhouseUpdater = updater;
   let pending = ''; try { pending = window.InhouseNative?.getPendingUpdateManifest?.() || ''; } catch (_) {}
+  if (!quiet) {
+    window.addEventListener('focus', () => updater.refreshInstallation());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) updater.refreshInstallation(); });
+  }
+  if (!quiet && updater.refreshInstallation()) return;
   if (pending) { try { if (!updater.offerPending(JSON.parse(pending))) config.close(); } catch (_) { config.close(); } }
   else if (quiet) updater.start();
   else { updater.settings(); if (new URLSearchParams(location.search).get('settings') !== '1') updater.check({ manual: true }); }
