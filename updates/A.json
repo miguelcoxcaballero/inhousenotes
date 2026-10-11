@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.0.14",
-    "versionCode": 15,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.14/inhouse-notes-release-v1.0.14.apk",
-    "apkSha256": "5ae9c0d0b98440a650b7f40f9906acf59e8d3b62eb14f62ede1c8a3b4b26345c",
+    "version": "1.0.15",
+    "versionCode": 16,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.15/inhouse-notes-release-v1.0.15.apk",
+    "apkSha256": "1793fa2144867fe1aaa510390ea029bac53510319ce1a2249ab0e51873dcced8",
     "apkSizeBytes": 3171863,
-    "changelog": "Live camera and simpler save status.",
-    "releasedAt": "2026-10-11T21:37:17+00:00"
+    "changelog": "Neutral updater colors.",
+    "releasedAt": "2026-10-11T21:56:26+00:00"
   },
   "releases": [
+    {
+      "version": "1.0.15",
+      "versionCode": 16,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.15/inhouse-notes-release-v1.0.15.apk",
+      "apkSha256": "1793fa2144867fe1aaa510390ea029bac53510319ce1a2249ab0e51873dcced8",
+      "apkSizeBytes": 3171863,
+      "changelog": "Neutral updater colors.",
+      "releasedAt": "2026-10-11T21:56:26+00:00"
+    },
     {
       "version": "1.0.14",
       "versionCode": 15,
