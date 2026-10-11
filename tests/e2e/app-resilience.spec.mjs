@@ -287,18 +287,22 @@ test('multi-page scanner insertion is ordered, durable, and preserves shifted pa
   expect(result.checkpoint.snapshot.dirtyPages).toEqual([]);
 });
 
-test('embedded scanner exposes its complete document workflow', async ({ page }) => {
+test('embedded scanner opens directly into the live camera workflow', async ({ page }) => {
   await page.goto('/scanner/index.html?embed=1&session=e2e-scanner', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#landingPage')).toBeHidden();
-  await expect(page.locator('#appContainer')).toBeVisible();
-  await expect(page.locator('#closeEmbedBtn')).toBeVisible();
+  await expect(page.locator('#liveScanner')).toBeVisible();
+  await expect(page.locator('#liveCameraView')).toBeVisible();
+  await expect(page.locator('#liveCloseBtn')).toBeVisible();
+  await expect(page.locator('#liveImportBtn')).toBeVisible();
+  await expect(page.locator('#sourceModal')).not.toHaveClass(/open/);
+  // Existing imports and page editing remain available behind the camera.
   await expect(page.locator('#btnDesktopAdd')).toBeAttached();
   await expect(page.locator('#cropBtn')).toBeAttached();
   await expect(page.locator('#stencilBtn')).toBeAttached();
   await expect(page.locator('#pageList')).toBeAttached();
-  await expect(page.locator('#addToDocumentBtn')).toBeVisible();
-  await expect(page.locator('#exportBtn')).toBeVisible();
-  await expect(page.locator('#downloadEmbedStencilBtn')).toBeVisible();
+  await expect(page.locator('#addToDocumentBtn')).toBeAttached();
+  await expect(page.locator('#exportBtn')).toBeAttached();
+  await expect(page.locator('#downloadEmbedStencilBtn')).toBeAttached();
 });
 
 test('scanner starts offline and processes a stencil without OpenCV', async ({ page }) => {
@@ -308,6 +312,7 @@ test('scanner starts offline and processes a stencil without OpenCV', async ({ p
   await page.goto('/scanner/index.html?embed=1&session=e2e-light-scanner', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#appLoading')).toBeHidden();
   await page.evaluate(() => {
+    ScannerPro.LiveCamera.close();
     window.__scannerProcessingPhases = [];
     addEventListener('scanner-processing-phase', event => {
       window.__scannerProcessingPhases.push(event.detail);

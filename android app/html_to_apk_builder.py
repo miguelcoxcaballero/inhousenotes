@@ -1447,7 +1447,19 @@ class ApkBuilderApp(tk.Tk):
 
         wanted = []
         if package_id == "com.local.inhousenotes":
-            wanted.append("android.permission.REQUEST_INSTALL_PACKAGES")
+            wanted.extend([
+                "android.permission.REQUEST_INSTALL_PACKAGES",
+                "android.permission.CAMERA",
+            ])
+            # Live document scanning uses WebView getUserMedia. Keep the app
+            # installable on devices without a camera (photo import still works).
+            for feature_name in ("android.hardware.camera", "android.hardware.camera.autofocus"):
+                feature = next((node for node in root.findall("uses-feature")
+                                if node.get(f"{ns}name") == feature_name), None)
+                if feature is None:
+                    feature = ET.SubElement(root, "uses-feature")
+                    feature.set(f"{ns}name", feature_name)
+                feature.set(f"{ns}required", "false")
         if self.permission_internet.get():
             wanted.append("android.permission.INTERNET")
         if self.permission_location.get():

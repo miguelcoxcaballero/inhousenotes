@@ -24,8 +24,10 @@ const scannerStyles = readText('../scanner/styles.css');
 const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
+const scannerLive = readText('../scanner/live-camera.js');
+const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.48.md');
+const notes = readText('../RELEASE_NOTES_v5.11.50.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -33,7 +35,7 @@ const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.48';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.50';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -57,10 +59,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.48/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.48/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.48/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.48/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.50/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.50/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.50/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.50/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -113,6 +115,20 @@ assert.match(scanner, /paintEvidenceCloud/);
 assert.match(scanner, /drawYellowBoxCanonical/);
 assert.match(scannerLightweight, /function localStencilEvidence/);
 assert.match(scannerLightweight, /function calibrateFromReference/);
+assert.match(scannerHtml, /id="liveScanner"/);
+assert.match(scannerHtml, /<video[^>]*id="liveVideo"[^>]*autoplay[^>]*muted[^>]*playsinline/);
+assert.match(scannerHtml, /id="liveOverlay"/);
+assert.match(scannerHtml, /id="liveReview"/);
+assert.match(scannerHtml, /id="liveAddBtn"/);
+assert.match(scannerHtml, /processing\/liveDetection\.js/);
+assert.match(scannerHtml, /live-camera\.js/);
+assert.match(scannerLive, /navigator\.mediaDevices\.getUserMedia/);
+assert.match(scannerLive, /audio: false/);
+assert.match(scannerLive, /scanner-live-detection/);
+assert.match(scannerLive, /track\.stop\(\)/);
+assert.match(scannerLive, /ihn-scanner-pages/);
+assert.match(scannerLiveDetection, /SP\.LiveDetection = \{ detect \}/);
+assert.match(androidBuilder, /android\.permission\.CAMERA/);
 // Publishes straight to the gh-pages branch (Settings -> Pages -> Source),
 // replacing the Actions "workflow" deployment API (configure-pages /
 // upload-pages-artifact / pages deployments) after it started repeatedly
@@ -519,6 +535,8 @@ new vm.Script(securityCore, { filename: 'security-core-v5.js' });
 new vm.Script(timelineCore, { filename: 'timeline-core-v5.js' });
 new vm.Script(live, { filename: 'live-collaboration-v5.js' });
 new vm.Script(scanner, { filename: 'scanner/script.js' });
+new vm.Script(scannerLive, { filename: 'scanner/live-camera.js' });
+new vm.Script(scannerLiveDetection, { filename: 'scanner/processing/liveDetection.js' });
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
 new vm.Script(collaborationCore, { filename: 'collaboration-core-v5.js' });
@@ -1125,7 +1143,7 @@ assert.ok(update.apkSizeBytes > 0);
 assert.match(notes, /BroadcastChannel/i);
 assert.match(notes, /cached document hashes/i);
 assert.match(notes, /real WebRTC/i);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.48/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.50/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
@@ -1135,7 +1153,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.48 smoke checks passed.');
+console.log('v5.11.50 smoke checks passed.');
 
 
 
