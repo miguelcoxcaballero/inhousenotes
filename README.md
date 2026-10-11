@@ -1,6 +1,6 @@
 # inhousenotes
 
-[Android 1.0.13 — A y B](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.13) · Web 5.11.49. Incluye Inhouse services updater 1.2.0 y el nuevo aviso y progreso de descarga.
+[Android 1.0.14 — A](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.14) · Web 5.11.51. Cámara en directo habilitada en Android y menú de guardado simplificado. B conserva Android 1.0.13.
 
 ## Inhouse services updater
 

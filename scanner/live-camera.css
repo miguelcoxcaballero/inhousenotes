@@ -100,6 +100,11 @@
   pointer-events: none;
 }
 
+/* Android can paint a native video placeholder before the first camera frame. */
+#liveScanner[data-camera-ready="false"] #liveVideo {
+  visibility: hidden;
+}
+
 #liveScanner[data-phase="error"] #liveStage,
 #liveScanner[data-phase="error"] #liveCaptureBtn,
 #liveScanner[data-phase="error"] #liveProgress {

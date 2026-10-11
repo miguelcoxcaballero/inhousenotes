@@ -29,6 +29,11 @@
   let submitting = false;
   let selection = 0;
   let lastFrameTime = -1;
+  let deliveredFrames = 0;
+  let frameCallback = 0;
+  let lastFrameAt = 0;
+  let startingAt = 0;
+  let resumeAfterPermission = false;
   let previousFocus = null;
   const backgroundElements = new Map();
 
@@ -59,11 +64,16 @@
   const stopCamera = () => {
     clearTimeout(timer);
     timer = 0;
+    if (frameCallback) video.cancelVideoFrameCallback?.(frameCallback);
+    frameCallback = 0;
     if (stream) stream.getTracks().forEach(track => track.stop());
     stream = null;
     video.srcObject = null;
     lastDetection = null;
     lastFrameTime = -1;
+    deliveredFrames = 0;
+    lastFrameAt = 0;
+    root.dataset.cameraReady = 'false';
     resetStability();
     overlayContext.clearRect(0, 0, overlay.width, overlay.height);
     overlay.dataset.detected = 'false';
@@ -82,6 +92,7 @@
   function close() {
     if (submitting) return false;
     generation++;
+    resumeAfterPermission = false;
     stopCamera();
     clearReview();
     root.hidden = true;
@@ -93,19 +104,22 @@
     setState('closed');
     return true;
   }
-  function cameraError(error) {
+  function cameraError(error, interrupted = false) {
+    generation++;
+    resumeAfterPermission = false;
     stopCamera();
     setState('error');
     $('liveRetryBtn').hidden = false;
     const denied = error?.name === 'NotAllowedError' || error?.name === 'SecurityError';
     const missing = error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError';
-    status(denied ? 'Camera permission needed' : missing ? 'No camera found' : 'Camera unavailable',
+    status(interrupted ? 'Camera interrupted' : denied ? 'Camera permission needed' : missing ? 'No camera found' : 'Camera unavailable',
       denied ? 'Allow camera access in your browser or device settings, then try again. You can also choose a photo.'
         : 'Try opening the camera again, or choose a photo to scan.');
   }
   async function open() {
     if (submitting) return;
     const token = ++generation;
+    resumeAfterPermission = false;
     stopCamera();
     clearReview();
     if (root.hidden) {
@@ -136,21 +150,39 @@
         if (error?.name !== 'OverconstrainedError') throw error;
         acquired = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
       }
-      // Permission prompts may resolve after the scanner has been closed.
-      if (token !== generation || document.hidden) {
+      // Android permission sheets can briefly hide the WebView. Keep the
+      // pending request valid, but never keep a granted camera in the background.
+      if (token !== generation) {
         acquired.getTracks().forEach(track => track.stop());
-        if (token === generation) pauseCamera();
+        return;
+      }
+      if (document.hidden) {
+        acquired.getTracks().forEach(track => track.stop());
+        pauseCamera(true);
+        resumeAfterPermission = true;
         return;
       }
       stream = acquired;
       video.srcObject = acquired;
       acquired.getVideoTracks().forEach(track => track.addEventListener('ended', () => {
-        if (token === generation && ['requesting', 'searching', 'stable'].includes(state)) cameraError();
+        if (token === generation && ['starting', 'searching', 'stable', 'capturing'].includes(state)) cameraError(null, true);
       }, { once: true }));
-      await video.play();
-      if (token !== generation) return;
-      setState('searching');
-      status('Find the yellow frame', 'Keep the whole page in view. Capture is automatic when it is steady and clear.');
+      setState('starting');
+      startingAt = performance.now();
+      const observeFrame = () => {
+        frameCallback = video.requestVideoFrameCallback(() => {
+          if (token !== generation || !stream) return;
+          if (!stream.getVideoTracks()[0]?.muted) {
+            deliveredFrames++;
+            lastFrameAt = performance.now();
+          }
+          observeFrame();
+        });
+      };
+      if (video.requestVideoFrameCallback) observeFrame();
+      // play() may stay pending when a device never delivers camera frames.
+      // The frame watchdog below keeps retry available in that case too.
+      void video.play().catch(error => { if (token === generation) cameraError(error); });
       tick(token);
     } catch (error) {
       if (token === generation) cameraError(error);
@@ -206,19 +238,44 @@
     && detection.brightness >= 60 && detection.brightness <= 252
     && detection.coverage >= .16
     && (detection.pageQuad || detection.quad).every(point => point.x >= .008 && point.y >= .008 && point.x <= .992 && point.y <= .992);
+  const currentFrameTime = () => video.requestVideoFrameCallback ? deliveredFrames
+    : video.getVideoPlaybackQuality?.().totalVideoFrames || video.currentTime;
   function tick(token) {
-    if (token !== generation || !['searching', 'stable'].includes(state)) return;
+    if (token !== generation || !['starting', 'searching', 'stable'].includes(state)) return;
     if (document.hidden) { pauseCamera(); return; }
+    const now = performance.now();
+    const frameTime = currentFrameTime();
+    const track = stream?.getVideoTracks()[0];
+    const freshFrame = video.readyState >= 2 && video.videoWidth > 0 && frameTime > 0
+      && frameTime !== lastFrameTime && track?.readyState === 'live' && !track.muted;
+    if (freshFrame && !video.requestVideoFrameCallback) lastFrameAt = now;
+    if (!freshFrame && now - (lastFrameAt || startingAt) > (lastFrameAt ? 5000 : 12000)) {
+      cameraError(null, true);
+      return;
+    }
+    if (track?.muted || (lastFrameAt && now - lastFrameAt > 750)) {
+      resetStability();
+      drawDetection(null);
+      root.dataset.cameraReady = 'false';
+      setState('starting');
+      status('Waiting for camera…', 'Keep the camera available, or choose a photo.');
+    }
     try {
       // Never count repeated frames of a stalled video as stability evidence.
-      if (video.readyState >= 2 && video.currentTime !== lastFrameTime) {
-        lastFrameTime = video.currentTime;
+      if (freshFrame) {
+        const previousFrameTime = lastFrameTime;
+        lastFrameTime = frameTime;
+        // A single decoded frame is not yet a live preview.
+        if (previousFrameTime < 0) {
+          timer = setTimeout(() => tick(token), 120);
+          return;
+        }
+        root.dataset.cameraReady = 'true';
         const detection = detect();
         lastDetection = detection;
         drawDetection(detection);
         window.dispatchEvent(new CustomEvent('scanner-live-detection', { detail: detection }));
         if (captureReady(detection)) {
-          const now = performance.now();
           if (movement(stableAnchor, detection.quad) > .012 || now - lastAnalysisTime > 400) {
             stableAnchor = detection.quad;
             stableSince = now;
@@ -242,12 +299,28 @@
     } catch (error) {
       resetStability();
       drawDetection(null);
+      setState('searching');
       status('Automatic detection unavailable', 'You can capture now and check the page before adding it.');
     }
     timer = setTimeout(() => tick(token), 120);
   }
   const encode = canvas => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not encode this scan')), 'image/jpeg', .94));
   function snapshot() {
+    const track = stream?.getVideoTracks()[0];
+    // Analysis pauses during the capture burst. Older WebViews need their
+    // frame clock sampled here too, especially when JPEG encoding is slow.
+    if (!video.requestVideoFrameCallback && video.readyState >= 2
+      && track?.readyState === 'live' && !track.muted) {
+      const frameTime = currentFrameTime();
+      if (frameTime > 0 && frameTime !== lastFrameTime) {
+        lastFrameTime = frameTime;
+        lastFrameAt = performance.now();
+      }
+    }
+    if (!track || track.readyState !== 'live' || track.muted
+      || !lastFrameAt || performance.now() - lastFrameAt > 750) {
+      throw new Error('The camera image stopped. Open the camera and try again.');
+    }
     const canvas = document.createElement('canvas');
     const scale = Math.min(1, 2560 / Math.max(video.videoWidth, video.videoHeight));
     canvas.width = Math.round(video.videoWidth * scale);
@@ -416,8 +489,11 @@
       $('liveReviewStatus').textContent = message || 'Could not add the page. Your scan is still here; try again.';
     }
   }
-  function pauseCamera() {
-    if (root.hidden || !['requesting', 'searching', 'stable', 'capturing'].includes(state)) return;
+  function pauseCamera(includePermission = false) {
+    if (root.hidden || !['requesting', 'starting', 'searching', 'stable', 'capturing'].includes(state)) return;
+    // A permission dialog is not a cancelled camera request. If it resolves
+    // while hidden, open() releases its stream and resumes once visible.
+    if (state === 'requesting' && !includePermission) return;
     generation++;
     stopCamera();
     clearReview();
@@ -446,8 +522,14 @@
     if (data.type === 'ihn-scanner-init') documentName = String(data.documentName || 'Scanned page').slice(0, 160);
     if (data.type === 'ihn-scanner-result' && submitting) finishSubmission(data.ok === true, data.message);
   });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) pauseCamera(); });
-  window.addEventListener('pagehide', () => { generation++; stopCamera(); clearReview(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pauseCamera();
+    else if (resumeAfterPermission && !root.hidden) void open();
+  });
+  window.addEventListener('pagehide', () => {
+    resumeAfterPermission = false;
+    pauseCamera(true);
+  });
   document.addEventListener('keydown', event => {
     if (root.hidden) return;
     if (event.key === 'Tab') {

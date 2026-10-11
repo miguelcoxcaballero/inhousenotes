@@ -87,8 +87,8 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.11.50';</script>
-    <script src="boot-v5.js?v=5.11.50"></script>
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.11.51';</script>
+    <script src="boot-v5.js?v=5.11.51"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -936,25 +936,25 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 7px;
-            min-width: 82px;
-            min-height: var(--header-btn-size);
-            padding: 0 10px;
-            border: 1px solid var(--border-color);
+            min-width: 40px;
+            min-height: 40px;
+            padding: 0;
+            border: 0;
             border-radius: var(--radius-lg);
-            background: var(--bg-primary);
+            background: transparent;
+            box-shadow: none;
             color: var(--text-secondary);
             font: inherit;
             font-size: 0.72rem;
             cursor: pointer;
         }
 
-        .mode-toggle-status:hover { background: var(--bg-secondary); }
+        .mode-toggle-status:hover { background: transparent; }
         .mode-toggle-status:focus-visible,
         .save-debug-close:focus-visible,
         .save-debug-action:focus-visible { outline: 2px solid var(--accent-blue, #4a90d9); outline-offset: 3px; }
         .mode-toggle-group { gap: 6px; }
-        .save-status-label { font-weight: 600; white-space: nowrap; }
+        .save-status-label { display: none; }
         .mode-toggle-status .save-indicator {
             position: static;
             width: 10px;
@@ -973,7 +973,7 @@
             height: 9px;
             border-radius: 50%;
             background: var(--accent-green);
-            box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.08);
+            box-shadow: none;
             transition: background-color 0.25s ease, transform 0.2s ease;
         }
 
@@ -1010,7 +1010,7 @@
             background: var(--accent-red);
         }
 
-        /* ┄ § 2.3b  Save status: local copy, Drive and optional peers ┄ */
+        /* ┄ § 2.3b  Save status: local copy and Drive ┄ */
         .save-debug-backdrop {
             position: fixed;
             inset: 0;
@@ -1023,12 +1023,12 @@
         }
         .save-debug-backdrop.visible { display: flex; }
         .save-debug-panel {
-            width: min(380px, calc(100vw - 24px));
+            width: min(300px, calc(100vw - 24px));
             max-height: calc(100svh - 110px);
             display: flex;
             flex-direction: column;
-            padding: 18px;
-            border-radius: 18px;
+            padding: 10px 16px 14px;
+            border-radius: 14px;
             background: var(--bg-primary);
             color: var(--text-primary);
             box-shadow: var(--shadow-heavy);
@@ -1036,62 +1036,32 @@
             pointer-events: auto;
         }
         .save-debug-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        .save-debug-eyebrow, .save-debug-section-label { color: var(--text-secondary); font-size: 0.72rem; font-weight: 600; }
+        .save-debug-title { margin: 0; color: var(--text-secondary); font-size: 0.72rem; font-weight: 500; }
         .save-debug-close {
             width: 32px; height: 32px; border: 0; border-radius: 9px;
             background: transparent; color: var(--text-secondary); font-size: 24px; line-height: 1; cursor: pointer;
         }
         .save-debug-close:hover { background: var(--bg-secondary); }
-        .save-debug-hero { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0 20px; }
-        .save-debug-hero-title { margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.4; }
-        .save-debug-description { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.5; overflow-wrap: anywhere; }
-        .save-debug-orb {
-            width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
-            background: color-mix(in srgb, var(--accent-green) 12%, var(--bg-primary));
-            color: var(--accent-green); font-size: 21px; font-weight: 700; flex: 0 0 34px;
-        }
-        .save-debug-orb.paused, .save-debug-orb.uploading {
-            color: var(--accent-orange); background: color-mix(in srgb, var(--accent-orange) 12%, var(--bg-primary));
-        }
-        .save-debug-orb.saving, .save-debug-orb.syncing {
-            color: #4a90d9; background: color-mix(in srgb, #4a90d9 12%, var(--bg-primary));
-        }
-        .save-debug-orb.error {
-            color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-primary));
-        }
-        .save-debug-summary { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
+        .save-debug-summary { display: flex; flex-direction: column; overflow: auto; min-height: 0; }
         .save-device-status {
-            display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 10px; align-items: start;
-            padding: 13px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary);
+            display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+            padding: 10px 0;
         }
-        .save-device-status-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--accent-green); }
-        .save-device-status-dot.active, .save-device-status-dot.recovering { background: var(--accent-orange); }
-        .save-device-status-dot.syncing { background: #4a90d9; }
-        .save-device-status-dot.error { background: var(--accent-red); }
-        .save-device-status-dot.idle { background: var(--text-tertiary, #888); }
-        .save-device-status-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 10px; }
-        .save-device-status-title { font-size: 0.8rem; font-weight: 650; }
-        .save-device-status-label { font-size: 0.69rem; font-weight: 600; color: var(--accent-green); }
-        .save-device-status-label.active, .save-device-status-label.recovering { color: var(--text-primary); }
+        .save-device-status-title { font-size: 0.8rem; }
+        .save-device-status-label { font-size: 0.75rem; color: var(--text-secondary); text-align: right; }
+        .save-device-status-label.active { color: var(--text-primary); }
         .save-device-status-label.syncing { color: #4a90d9; }
         .save-device-status-label.error { color: var(--accent-red); }
-        .save-device-status-label.idle { color: var(--text-secondary); }
-        .save-device-status-detail { margin-top: 6px; color: var(--text-secondary); font-size: 0.74rem; line-height: 1.5; overflow-wrap: anywhere; }
-        .save-device-status-time { margin-top: 7px; font-size: 0.68rem; color: var(--text-secondary); }
-        .save-debug-section-label { padding: 7px 0 0; }
-        .save-upload-progress { display: flex; align-items: center; gap: 10px; padding: 0 3px; font-size: 0.72rem; color: var(--text-secondary); }
-        .save-upload-progress progress { flex: 1; min-width: 0; height: 6px; accent-color: var(--accent-green); }
-        .save-debug-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-color); }
-        .save-debug-hint { font-size: 0.7rem; line-height: 1.5; color: var(--text-secondary); }
-        .save-debug-action { flex-shrink: 0; font-size: 0.73rem; min-height: 36px; }
-        .save-debug-action[hidden] { display: none; }
+        .save-debug-notice { margin: 6px 0 0; font-size: 0.73rem; line-height: 1.5; color: var(--text-secondary); overflow-wrap: anywhere; }
+        .save-debug-action { align-self: flex-end; margin-top: 8px; font-size: 0.75rem; min-height: 36px; }
+        .save-debug-action[hidden], .save-debug-notice[hidden] { display: none; }
         .mode-toggle-status .save-timestamp { display: none; }
         @media (max-width: 720px) {
             .save-debug-backdrop {
                 align-items: flex-end; justify-content: center;
                 padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 78px);
             }
-            .save-debug-panel { width: min(380px, calc(100vw - 24px)); max-height: calc(100svh - 106px); padding: 16px; }
+            .save-debug-panel { max-height: calc(100svh - 106px); }
         }
 
         /* ┄ § 2.3c  Read / Edit mode toggle & save indicator ────────────────
@@ -8590,14 +8560,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script src="collaboration-core-v5.js?v=5.11.50"></script>
-    <script src="live-collaboration-v5.js?v=5.11.50"></script>
-    <script src="runtime-core-v5.js?v=5.11.50"></script>
-    <script src="security-core-v5.js?v=5.11.50"></script>
-    <script src="timeline-core-v5.js?v=5.11.50"></script>
-    <script src="document-processing-v5.js?v=5.11.50"></script>
+    <script src="collaboration-core-v5.js?v=5.11.51"></script>
+    <script src="live-collaboration-v5.js?v=5.11.51"></script>
+    <script src="runtime-core-v5.js?v=5.11.51"></script>
+    <script src="security-core-v5.js?v=5.11.51"></script>
+    <script src="timeline-core-v5.js?v=5.11.51"></script>
+    <script src="document-processing-v5.js?v=5.11.51"></script>
     <script src="shared/inhouse-services-updater/updater.js"></script>
-    <script src="app-v5.js?v=5.11.50"></script>
+    <script src="app-v5.js?v=5.11.51"></script>
 
 </body>
 

@@ -25,7 +25,7 @@ test('save details open by keyboard without changing editor mode and restore foc
 
   await trigger.focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Saved on this device' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Save status' })).toBeVisible();
   await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('button', { name: 'Close save details' })).toBeFocused();
   await expect(mode).toHaveAttribute('aria-pressed', pressed);
@@ -50,7 +50,7 @@ test('local changes and storage failures cannot appear as saved', async ({ page 
     refreshSaveIndicatorState();
   });
   await page.locator('.mode-toggle-status').click();
-  await expect(page.locator('#save-debug-title')).toHaveText('Saving on this device');
+  await expect(page.locator('.mode-toggle-status')).toHaveAttribute('aria-label', 'Saving on this device. Open save details');
   await expect(saveRow(page, 'This device').locator('.save-device-status-label')).toHaveText('Saving');
   await expect(page.getByRole('button', { name: 'Save now', exact: true })).toBeEnabled();
 
@@ -58,9 +58,9 @@ test('local changes and storage failures cannot appear as saved', async ({ page 
     noteLocalSaveFailure();
     refreshSaveIndicatorState();
   });
-  await expect(page.locator('#save-debug-title')).toHaveText('Save needs attention');
+  await expect(page.locator('.mode-toggle-status')).toHaveAttribute('aria-label', 'Save needs attention. Open save details');
   await expect(saveRow(page, 'This device').locator('.save-device-status-label')).toHaveText('Needs attention');
-  await expect(page.locator('#save-debug-description')).toContainText('Keep this document open');
+  await expect(page.locator('.save-debug-notice')).toContainText('Keep this document open');
   await expect(page.getByRole('button', { name: 'Retry save', exact: true })).toBeEnabled();
 });
 
@@ -78,11 +78,10 @@ test('Drive upload and offline waiting remain separate from the saved local copy
     refreshSaveIndicatorState();
   });
   await page.locator('.mode-toggle-status').click();
-  await expect(page.locator('#save-debug-title')).toHaveText('Saving to Google Drive');
+  await expect(page.locator('.mode-toggle-status')).toHaveAttribute('aria-label', 'Saving to Google Drive. Open save details');
   await expect(saveRow(page, 'This device').locator('.save-device-status-label')).toHaveText('Saved');
-  await expect(saveRow(page, 'Google Drive').locator('.save-device-status-label')).toHaveText('Uploading');
-  await expect(page.getByRole('progressbar', { name: 'Upload to Google Drive' })).toHaveAttribute('value', '50');
-  await expect(page.getByRole('button', { name: 'Save now', exact: true })).toBeDisabled();
+  await expect(saveRow(page, 'Google Drive').locator('.save-device-status-label')).toHaveText('Uploading 50%');
+  await expect(page.locator('.save-debug-action')).toBeHidden();
 
   await context.setOffline(true);
   await page.evaluate(() => {
@@ -91,11 +90,11 @@ test('Drive upload and offline waiting remain separate from the saved local copy
     driveUploadProgress = null;
     refreshSaveIndicatorState();
   });
-  await expect(page.locator('#save-debug-title')).toHaveText('Waiting for connection');
+  await expect(page.locator('.mode-toggle-status')).toHaveAttribute('aria-label', 'Waiting for connection. Open save details');
   await expect(saveRow(page, 'This device').locator('.save-device-status-label')).toHaveText('Saved');
   await expect(saveRow(page, 'Google Drive').locator('.save-device-status-label')).toHaveText('Offline');
-  await expect(saveRow(page, 'Google Drive').locator('.save-device-status-detail')).toContainText('automatically when you are online');
-  await expect(page.getByRole('button', { name: 'Save now', exact: true })).toBeDisabled();
+  await expect(page.locator('.save-debug-notice')).toBeHidden();
+  await expect(page.locator('.save-debug-action')).toBeHidden();
 
   await page.evaluate(() => {
     noteLocalSaveFailure();
@@ -105,7 +104,7 @@ test('Drive upload and offline waiting remain separate from the saved local copy
   await expect(retry).toBeEnabled();
   await retry.click();
   await expect(saveRow(page, 'This device').locator('.save-device-status-label')).toHaveText('Saved');
-  await expect(page.locator('#save-debug-title')).toHaveText('Waiting for connection');
+  await expect(page.locator('.mode-toggle-status')).toHaveAttribute('aria-label', 'Waiting for connection. Open save details');
   await expect(saveRow(page, 'Google Drive').locator('.save-device-status-label')).toHaveText('Offline');
 });
 
@@ -116,19 +115,20 @@ test('a recovered operation save clears the popup error along with the indicator
     noteLocalSaveFailure('operations');
     setSaveDebugStatus('Local save failed', { error: true });
     refreshSaveIndicatorState();
-    const before = document.getElementById('save-debug-title').textContent;
+    const before = document.querySelector('.save-device-status-label').textContent;
     confirmLocalSave(Date.now(), 'operations');
     refreshSaveIndicatorState();
     renderSaveDebugPopup();
     return {
       before,
-      title: document.getElementById('save-debug-title').textContent,
+      localStatus: document.querySelector('.save-device-status-label').textContent,
+      noticeHidden: document.querySelector('.save-debug-notice').hidden,
       savedIndicator: document.getElementById('save-indicator').classList.contains('saved'),
       retryVisible: !document.querySelector('.save-debug-action').hidden
     };
   });
   expect(result).toEqual({
-    before: 'Save needs attention', title: 'Saved on this device', savedIndicator: true, retryVisible: false
+    before: 'Needs attention', localStatus: 'Saved', noticeHidden: true, savedIndicator: true, retryVisible: false
   });
 });
 
@@ -198,11 +198,21 @@ for (const visible of [false, true]) {
 }
 
 for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }, { width: 320, height: 568 }]) {
-  test(`save details fit the ${viewport.width} × ${viewport.height} viewport`, async ({ page }) => {
+  test(`save details fit the ${viewport.width} × ${viewport.height} viewport`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await openSavedEditor(page);
     const trigger = page.locator('.mode-toggle-status');
     await expect(trigger).toBeVisible();
+    await expect(page.locator('#save-status-label')).toBeHidden();
+    const appearance = await trigger.evaluate(element => {
+      const style = getComputedStyle(element);
+      const dotStyle = getComputedStyle(element.querySelector('.save-indicator'), '::after');
+      return { border: style.borderWidth, background: style.backgroundColor, shadow: style.boxShadow,
+        dotShadow: dotStyle.boxShadow, width: element.offsetWidth, height: element.offsetHeight };
+    });
+    expect(appearance).toMatchObject({ border: '0px', background: 'rgba(0, 0, 0, 0)', shadow: 'none', dotShadow: 'none' });
+    expect(appearance.width).toBeGreaterThanOrEqual(40);
+    expect(appearance.height).toBeGreaterThanOrEqual(40);
     await trigger.click();
     const panel = page.locator('.save-debug-panel');
     await expect(panel).toBeVisible();
@@ -212,6 +222,11 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
     expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(bounds.height).toBeLessThan(180);
+    await expect(panel.locator('.save-device-status')).toHaveCount(2);
+    await expect(panel.getByRole('button')).toHaveCount(1);
+    await expect(page.locator('.save-debug-notice')).toBeHidden();
+    await page.screenshot({ path: testInfo.outputPath('save-status.png') });
     await expect(page.getByRole('button', { name: 'Close save details' })).toBeInViewport();
   });
 }
