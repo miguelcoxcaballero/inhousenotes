@@ -1,8 +1,6 @@
 # inhousenotes
 
-En preparación: Android 1.0.16 (versionCode 17) · Web 5.11.54. Resultado fiable de las actualizaciones de Android: abrir el instalador no significa que la actualización se haya instalado. No se ha validado esta versión en un dispositivo físico.
-
-Última APK publicada: [Android 1.0.15 — A](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.15). B conserva Android 1.0.13. Los catálogos solo anunciarán 1.0.16 después de publicar y verificar su APK exacta.
+[Android 1.0.16 — A](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.16) · [Android 1.0.13 — B](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.13) · Web 5.11.54. Resultado de instalación verificado al volver a abrir la app, cancelación y reintento. Conserva los colores neutros del actualizador.
 
 ## Inhouse services updater
 
