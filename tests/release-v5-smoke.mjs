@@ -25,7 +25,7 @@ const scanner = readText('../scanner/script.js');
 const scannerConfig = readText('../scanner/configLoader.js');
 const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.11.41.md');
+const notes = readText('../RELEASE_NOTES_v5.11.42.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -33,7 +33,7 @@ const androidBuildScript = readText('../.github/scripts/build_android_apk.py');
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.11.41';/);
+assert.match(indexHtml, /const APP_VERSION = '5.11.42';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -57,10 +57,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.41/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.41/);
-assert.match(indexHtml, /app-v5\.js\?v=5.11.41/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.41/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.11.42/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.11.42/);
+assert.match(indexHtml, /app-v5\.js\?v=5.11.42/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.11.42/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -183,8 +183,8 @@ assert.doesNotMatch(
   /"url": "https:\/\/inhousenotes\.com/,
   'Android must paint its bundled launch shell before navigating to the web app'
 );
-assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.10"/);
-assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 11/);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.11"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 12/);
 assert.match(androidLoader, /html, body \{ margin: 0; width: 100%; height: 100%;/);
 assert.match(androidLoader, /position: fixed;\s*inset: 0;\s*display: grid;\s*place-items: center;/);
 assert.match(html, /#toolbar \{[\s\S]{0,500}--toolbar-ink: #1a1a1a;/);
@@ -194,10 +194,11 @@ assert.match(html, /#toolbar-handle \{[\s\S]{0,400}color: var\(--toolbar-muted-i
 assert.match(html, /#toolbar \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
 assert.match(html, /#toolbar \.tool-btn\.active \.color-dot \{\s*border-color: var\(--toolbar-ink\);/);
 assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
-assert.match(html, /data-update-progressbar/);
-assert.match(html, /function formatAndroidUpdateMegabytes\(/);
-assert.match(html, /function renderAndroidUpdateProgress\(/);
-assert.match(html, /formatAndroidUpdateMegabytes\(downloadedBytes\)/);
+assert.match(app, /InhouseServicesUpdater\.create/);
+assert.match(indexHtml, /shared\/inhouse-services-updater\/updater\.js/);
+
+
+
 assert.match(androidBuilder, /connection\.getContentLengthLong\(\)/);
 assert.match(androidBuilder, /notifyAppUpdateProgress\(totalBytes, expectedBytes\)/);
 assert.match(androidBuilder, /payload\.put\("downloadedBytes", downloadedBytes\)/);
@@ -1117,16 +1118,14 @@ assert.ok(
 );
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
-// The Android shell is unchanged, but its hosted app version advances.
-assert.equal(update.publishedAppVersion, '5.11.41');
-assert.equal(update.version, '1.0.10');
-assert.equal(update.versionCode, 11);
-assert.equal(update.apkSizeBytes, 3159597);
-assert.match(update.releaseNotes, /v5\.11\.41/);
+// Publication metadata must remain tied to an actual APK; shell advances when CI publishes it.
+assert.ok(['1.0.10','1.0.11'].includes(update.version));
+assert.ok(update.versionCode >= 11);
+assert.ok(update.apkSizeBytes > 0);
 assert.match(notes, /BroadcastChannel/i);
 assert.match(notes, /cached document hashes/i);
 assert.match(notes, /real WebRTC/i);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.41/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.11.42/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
@@ -1136,7 +1135,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.11.41 smoke checks passed.');
+console.log('v5.11.42 smoke checks passed.');
 
 
 

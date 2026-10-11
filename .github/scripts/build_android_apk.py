@@ -14,11 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android app" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android app" / "Inhouse Notes Logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.10.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.11.apk"
 APP_NAME = "Inhouse Notes"
 PACKAGE_ID = "com.local.inhousenotes"
-ANDROID_VERSION_NAME = "1.0.10"
-ANDROID_VERSION_CODE = 11
+ANDROID_VERSION_NAME = "1.0.11"
+ANDROID_VERSION_CODE = 12
 
 
 class Value:
@@ -83,6 +83,11 @@ def main() -> None:
     builder.apply_launcher_icon(project_dir, ICON_PATH)
     builder.write_signing_properties(project_dir)
     builder.patch_release_signing(project_dir)
+
+    # Shared updater: edit central repository and sync all five apps; publish A by default.
+    run(["python3", str(REPO_ROOT / "vendor/inhouse-services-updater/verify.py"), str(REPO_ROOT)], REPO_ROOT)
+    import runpy
+    runpy.run_path(str(REPO_ROOT / "vendor/inhouse-services-updater/register_android.py"))["register"](project_dir, REPO_ROOT, trust_read=False)
 
     gradlew = project_dir / "android" / "gradlew"
     gradlew.chmod(gradlew.stat().st_mode | 0o111)
