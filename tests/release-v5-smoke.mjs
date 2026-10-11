@@ -444,15 +444,15 @@ const openDriveEnd = html.indexOf('function updateViewerModeUI()', openDriveStar
 const openDriveSource = html.slice(openDriveStart, openDriveEnd);
 assert.match(openDriveSource, /resumeDetachedExitUploadAfterOpen\(detachedExitSaves\)/);
 assert.doesNotMatch(openDriveSource, /await lifecycleExitSavePromise|await backgroundExitSavePromise/);
-assert.match(html, /This device\$\{overview\.isMain \? ' · Main device'/);
-assert.match(html, /Google Drive<\/div>/);
+assert.match(html, /row\('This device', view\.localLabel/);
+assert.match(html, /row\('Google Drive', view\.driveLabel/);
 assert.match(html, /connection\?\.transport/);
 assert.doesNotMatch(html, />Admin mode</);
 assert.doesNotMatch(html, /save-state-glyph/);
 assert.match(html, /\.mode-toggle-status \.save-indicator::after \{\s*content: "";\s*width: 9px;\s*height: 9px;/);
 assert.match(html, /function getSaveIndicatorSemanticState\(/);
 assert.match(html, /function refreshSaveIndicatorState\(/);
-assert.match(html, /Live connection<\/div>/);
+assert.match(html, /row\('Live connection'/);
 assert.match(html, /driveContentVersion !== driveUploadedContentVersion/);
 assert.match(html, /const PENDING_EXIT_UPLOAD_KEY = 'drive-pending-exit-upload-v1';/);
 assert.match(html, /async function persistExitLocalCheckpoint\(/);
@@ -921,6 +921,7 @@ const storageSaveContext = vm.createContext({
   flushDirtyPages: async () => { storageEvents.push('pages'); return true; },
   buildMetaPayload: () => { storageEvents.push('metadata'); return { pages: [] }; },
   saveToIndexedDb: async () => { storageEvents.push('indexeddb'); return true; },
+  confirmLocalSave: () => {},
   persistTimelineHistory: () => Promise.resolve(),
   scheduleLocalStorageBackup: () => { storageEvents.push('backup'); return true; },
   updateSaveTimestamp: () => storageEvents.push('timestamp')
@@ -940,6 +941,14 @@ const queueStatuses = [];
 const queueSaveContext = vm.createContext({
   console: { error: () => {} },
   state: { isReadOnly: false },
+  localSaveError: '',
+  localSaveRetryTimer: null,
+  clearTimeout: () => {},
+  captureDocumentPersistenceContext: () => ({ session: 1 }),
+  isDocumentPersistenceContextCurrent: () => true,
+  noteLocalSaveFailure: () => {},
+  confirmLocalSave: () => {},
+  scheduleLocalSaveRetry: () => {},
   recordSaveDebug: () => {},
   saveToStorage: async () => { throw new Error('simulated storage failure'); },
   showPendingSaveStatus: () => {},
@@ -1070,7 +1079,7 @@ assert.match(html, /const EMBEDDED_METADATA_MAX_ENCODED_CHARS = 48 \* 1024 \* 10
 assert.match(html, /const EMBEDDED_METADATA_MAX_DECOMPRESSED_BYTES = 96 \* 1024 \* 1024;/);
 assert.match(html, /if \(!workerUnavailable\) throw workerErr;/);
 assert.match(html, /const stride = Math\.max\(1, Math\.floor\(text\.length \/ 4096\)\);/);
-assert.match(html, /documentSessionId \+= 1;[\s\S]{0,420}embeddedMetadataCache\.clear\(\);/);
+assert.match(html, /documentSessionId \+= 1;[\s\S]{0,800}embeddedMetadataCache\.clear\(\);/);
 assert.match(html, /if \(isDocumentSessionTokenValid\(cacheSessionToken\)\) \{\s*embeddedMetadataCache\.set/);
 assert.match(html, /if \(raw\.length > 16384\) return null;/);
 assert.match(html, /const COLLAB_KEYWORD_SECTION_MAX_CHARS = 8 \* 1024 \* 1024;/);
@@ -1140,6 +1149,9 @@ assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\
 assert.ok(['1.0.10','1.0.11','1.0.12','1.0.13'].includes(update.version));
 assert.ok(update.versionCode >= 11);
 assert.ok(update.apkSizeBytes > 0);
+assert.match(notes, /local save/i);
+assert.match(notes, /Drive/i);
+assert.match(notes, /hidden/i);
 assert.match(notes, /BroadcastChannel/i);
 assert.match(notes, /cached document hashes/i);
 assert.match(notes, /real WebRTC/i);
