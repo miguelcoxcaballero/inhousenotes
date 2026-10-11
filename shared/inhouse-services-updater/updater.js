@@ -138,7 +138,7 @@
       if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch (_) { return; } }
       if (!dialog || !payload) return;
       const install = dialog.querySelector('[data-isu-install]'); if (!install) return;
-      if (payload.status === 'downloading') { progress(payload); status(payload.message || 'Descargando…'); }
+      if (payload.status === 'downloading') { installing = true; install.disabled = true; progress(payload); status(payload.message || 'Descargando…'); }
       else if (payload.status === 'ready') { progress({ ...payload, percent: 100 }); status('Confirma la instalación en Android.'); installing = false; }
       else if (payload.status === 'permission_required') { installing = false; install.disabled = false; install.textContent = 'Continuar'; status('Permite instalar desde esta app y pulsa Continuar.'); }
       else if (payload.status === 'error') { installing = false; install.disabled = false; install.textContent = 'Reintentar'; status(payload.message || 'No se pudo descargar. Reintenta.'); }
@@ -208,6 +208,7 @@
       if (!snoozed() && newer(valid.latest, installed(), installedCode())) { win.handleInhouseUpdateResult = result; show(valid); return true; }
       return false;
     }
+    win.handleInhouseUpdateResult = result;
     return { start, stop, check, settings, close, result, offerPending, getState: readState, version: VERSION };
   }
   const api = { create, compareVersions, validateCatalog, newer, TWO_WEEKS, VERSION };
