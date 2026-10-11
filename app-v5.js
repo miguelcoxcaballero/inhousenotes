@@ -15058,7 +15058,9 @@
                 flushOnClose();
             });
 
+            window.addEventListener('offline', () => refreshSaveIndicatorState());
             window.addEventListener('online', () => {
+                refreshSaveIndicatorState();
                 if (readPendingExitUpload()) {
                     resumePendingExitUploadIfNeeded();
                 }
@@ -17962,7 +17964,7 @@
         // panel UI.
         function openPagesPanel() {
             updateCalendarFeatureAvailability();
-            renderPagesList();
+            renderPagesList({ force: true });
             if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
             if (scanPageBtn) scanPageBtn.disabled = !!state.isReadOnly;
             document.getElementById('pages-panel').classList.add('visible');
@@ -19036,7 +19038,10 @@
             }
         }
 
-        function renderPagesList() {
+        function renderPagesList(options = {}) {
+            // Page edits can arrive while this panel is closed. Rebuild from
+            // current state when it opens, without painting hidden thumbnails.
+            if (!options.force && !document.getElementById('pages-panel')?.classList.contains('visible')) return;
             const pagesList = document.getElementById('pages-list');
             pagesList.innerHTML = '';
             const canDeletePages = !state.isReadOnly && state.pages.length > 1;
@@ -19136,13 +19141,18 @@
             }
         }
 
+        const pageListDragBindings = new WeakSet();
+
         function initPageListDrag(list) {
+            // The list survives row replacements, so delegate each drag once.
+            if (pageListDragBindings.has(list)) return;
+            pageListDragBindings.add(list);
             list.addEventListener('pointerdown', (e) => {
                 const handle = e.target.closest('.page-drag-handle');
                 if (!handle) return;
                 const item = handle.closest('.page-item');
                 if (!item) return;
-                if (remotePageMergeToken) return;
+                if (state.isReadOnly || pageStructureDragInProgress || remotePageMergeToken) return;
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -20183,6 +20193,7 @@
                 throw new Error('Document changed before the local checkpoint completed');
             }
             if (!legacyPagesSaved || !operationsSaved || !pagesSaved || pageDirty.size > 0) {
+                noteLocalSaveFailure('checkpoint');
                 throw new Error('Could not save every changed page locally');
             }
             const savedAt = Date.now();
@@ -20195,12 +20206,17 @@
                 context: persistenceContext
             });
             await persistTimelineHistory().catch(() => false);
+            if (!isDocumentPersistenceContextCurrent(persistenceContext)) {
+                throw new Error('Document changed before the local checkpoint completed');
+            }
+            if (!indexedDbSaved && !backupSaved) {
+                noteLocalSaveFailure('checkpoint');
+                throw new Error('Could not create a durable local save checkpoint');
+            }
+            confirmLocalSave(savedAt);
             state.lastSavedAt = savedAt;
             saveDriveSession();
             updateSaveTimestamp();
-            if (!indexedDbSaved && !backupSaved) {
-                throw new Error('Could not create a durable local save checkpoint');
-            }
             return marker;
         }
 
@@ -20430,11 +20446,12 @@
             const driveTs = state.driveLastKnownModified || null;
             const sourceTs = driveTs || state.lastSavedAt || null;
             const label = sourceTs ? formatTime(sourceTs) : '--:--';
-            timestampEl.textContent = label;
-            timestampEl.title = driveTs
+            if (timestampEl.textContent !== label) timestampEl.textContent = label;
+            const title = driveTs
                 ? `Last saved ${label}`
                 : (sourceTs ? `Last edit ${label}` : 'Not saved yet');
-            timestampEl.setAttribute('aria-label', timestampEl.title);
+            if (timestampEl.title !== title) timestampEl.title = title;
+            if (timestampEl.getAttribute('aria-label') !== title) timestampEl.setAttribute('aria-label', title);
         }
 
         function openNotebookDb() {
@@ -21956,6 +21973,7 @@
             const ok = localOk || dbOk;
 
             if (ok) {
+                confirmLocalSave(savedAt);
                 state.lastSavedAt = savedAt;
                 updateSaveTimestamp();
             }
@@ -22628,11 +22646,13 @@
                     if (ok && batch.length > 0) {
                         const latest = batch[batch.length - 1];
                         const savedAt = typeof latest?.savedAt === 'number' ? latest.savedAt : Date.now();
+                        confirmLocalSave(savedAt, 'operations');
                         if (!state.lastSavedAt || savedAt > state.lastSavedAt) {
                             state.lastSavedAt = savedAt;
                         }
                     }
                     if (!ok) {
+                        noteLocalSaveFailure('operations');
                         const failedPages = new Set();
                         batch.forEach(op => {
                             if (Number.isFinite(op?.pageIndex)) failedPages.add(op.pageIndex);
@@ -22667,6 +22687,10 @@
                         }, 250);
                     }
                 }
+            }
+            if (isDocumentSessionTokenValid(sessionToken)) {
+                updateSaveTimestamp();
+                refreshSaveIndicatorState();
             }
             return overallOk;
         }
@@ -22801,8 +22825,63 @@
 
         let saveInProgress = false;
         let saveQueued = false;
+        let localSaveError = '';
+        let localSaveErrorSource = '';
+        let lastLocalSaveAt = null;
+        let localSaveRetryTimer = null;
+        let localSaveRetryAttempts = 0;
         let pausedSaveWatchdogTimer = null;
         let lastPenProcessingPauseAt = 0;
+
+        function getLocalSaveStatus() {
+            return {
+                pending: hasPendingLocalSave(),
+                error: localSaveError,
+                savedAt: lastLocalSaveAt
+            };
+        }
+
+        function noteLocalSaveFailure(source = 'checkpoint') {
+            // A durable operation log can survive a failed page compaction.
+            // Describe the failed checkpoint, without claiming edits were lost.
+            localSaveError = 'The local save could not finish. Keep this document open and retry.';
+            if (!localSaveErrorSource || source === 'checkpoint') {
+                localSaveErrorSource = source;
+            }
+        }
+
+        function confirmLocalSave(savedAt, source = 'checkpoint') {
+            if (Number.isFinite(savedAt) && savedAt > 0) {
+                lastLocalSaveAt = Math.max(lastLocalSaveAt || 0, savedAt);
+            }
+            // A successful stroke append does not repair a failed metadata or
+            // page checkpoint. Only a full checkpoint can clear that failure.
+            if (source === 'checkpoint' || localSaveErrorSource === source) {
+                localSaveError = '';
+                localSaveErrorSource = '';
+            }
+            if (source === 'checkpoint') {
+                clearTimeout(localSaveRetryTimer);
+                localSaveRetryTimer = null;
+                localSaveRetryAttempts = 0;
+            }
+        }
+
+        function scheduleLocalSaveRetry() {
+            if (localSaveRetryTimer || localSaveRetryAttempts >= 3) return;
+            const context = captureDocumentPersistenceContext();
+            const delay = 800 * (2 ** localSaveRetryAttempts);
+            localSaveRetryAttempts += 1;
+            localSaveRetryTimer = setTimeout(() => {
+                localSaveRetryTimer = null;
+                if (!isDocumentPersistenceContextCurrent(context)) return;
+                if (hasSmoothInteraction()) {
+                    saveQueued = true;
+                    return;
+                }
+                void queueSave();
+            }, delay);
+        }
 
         function isDriveSyncPending() {
             return !!(state.driveAutosave && (
@@ -22874,6 +22953,12 @@
                 localPageStructureMutationToken = null;
             }
             documentSessionId += 1;
+            clearTimeout(localSaveRetryTimer);
+            localSaveRetryTimer = null;
+            localSaveRetryAttempts = 0;
+            localSaveError = '';
+            localSaveErrorSource = '';
+            lastLocalSaveAt = null;
             // Any recovery from the previous document is now irrelevant; its
             // captured session token prevents it from mutating this document.
             cleanOriginalRecoveryPromise = null;
@@ -23237,6 +23322,7 @@
             return !!(
                 saveInProgress
                 || saveQueued
+                || localSaveRetryTimer
                 || state.saveTimeout
                 || strokeOpsFlushInProgress
                 || strokeOpsQueue.length > 0
@@ -23960,12 +24046,17 @@
         }
 
         async function queueSave() {
-            if (state.isReadOnly) return;
+            // Read mode prevents new edits, not checkpointing edits already made.
+            if (state.isReadOnly && !hasPendingLocalSave() && !localSaveError) return;
             if (saveInProgress) {
                 saveQueued = true;
                 recordSaveDebug('Local save queued');
                 return;
             }
+            saveQueued = false;
+            clearTimeout(localSaveRetryTimer);
+            localSaveRetryTimer = null;
+            const persistenceContext = captureDocumentPersistenceContext();
             saveInProgress = true;
             recordSaveDebug('Local save started');
             const controller = { aborted: false };
@@ -23983,11 +24074,21 @@
                 }
                 saveInProgress = false;
             }
+            // A completed attempt from the previous document cannot change the
+            // new document's status or arrange a retry against its page store.
+            if (!isDocumentPersistenceContextCurrent(persistenceContext)) {
+                // beginDocumentSession clears the old queue. A request queued
+                // since then belongs to the current document and still needs a
+                // checkpoint once this old attempt releases the writer.
+                if (saveQueued && !hasSmoothInteraction()) return queueSave();
+                return;
+            }
             if (result.cancelled) {
                 saveQueued = true;
                 recordSaveDebug('Local save paused');
                 showPendingSaveStatus();
             } else if (result.ok) {
+                confirmLocalSave(result.savedAt);
                 recordSaveDebug('Local save finished');
                 if (isDriveSyncPending()) {
                     // Local save done, Drive sync still pending — keep saving indicator
@@ -23996,7 +24097,9 @@
                     showStatus('Saved', { savedAt: result.savedAt });
                 }
             } else {
+                noteLocalSaveFailure('checkpoint');
                 showStatus('Save failed', { error: true });
+                if (!saveQueued) scheduleLocalSaveRetry();
             }
             if (saveQueued) {
                 if (hasSmoothInteraction()) {
@@ -28654,35 +28757,149 @@
             recordSaveDebug(text || phase, { phase });
         }
 
+        function getSavePresentation(preferredPhase = '') {
+            const local = getLocalSaveStatus();
+            const connected = !!(state.driveAutosave && state.driveFileId);
+            const offline = navigator.onLine === false;
+            const pendingDrive = hasPendingDriveSave();
+            const reconnect = connected && driveAuthNeedsReconnect;
+            let phase = 'saved';
+            if (local.error || driveSaveBlockedReason) phase = 'error';
+            else if (local.pending) phase = 'saving';
+            else if (driveSaveInProgress) phase = 'uploading';
+            else if (collabPullInProgress) phase = 'syncing';
+            else if (pendingDrive || reconnect) phase = 'paused';
+
+            let driveLabel = 'Saved';
+            let driveDetail = 'Latest changes saved in Google Drive.';
+            let driveClass = '';
+            if (!connected) {
+                driveLabel = 'Not connected';
+                driveDetail = 'This document is not set up to save automatically to Drive.';
+                driveClass = 'idle';
+            } else if (driveSaveBlockedReason) {
+                driveLabel = 'Needs attention';
+                driveDetail = driveSaveBlockedReason;
+                driveClass = 'error';
+            } else if (reconnect) {
+                driveLabel = 'Sign in needed';
+                driveDetail = 'Sign in again to resume saving to Google Drive.';
+                driveClass = 'active';
+            } else if (offline && pendingDrive) {
+                driveLabel = 'Offline';
+                driveDetail = 'Latest changes are waiting for a connection. Drive will update automatically when you are online.';
+                driveClass = 'active';
+            } else if (driveSaveInProgress) {
+                driveLabel = driveSavePhase === 'uploading' ? 'Uploading' : 'Preparing';
+                driveDetail = {
+                    uploading: 'Sending the latest PDF to Drive.',
+                    building: 'Preparing the latest PDF for Drive.',
+                    restoring: 'Restoring PDF pages before saving.',
+                    verifying: 'Checking the latest Drive version before saving.'
+                }[driveSavePhase] || 'Preparing the Drive update.';
+                driveClass = 'syncing';
+            } else if (pendingDrive) {
+                driveLabel = driveSavePhase === 'retrying' ? 'Retrying' : 'Waiting';
+                driveDetail = driveSavePhase === 'retrying'
+                    ? 'The last upload did not finish. Retrying automatically.'
+                    : (local.pending ? 'Waiting for the local copy to finish saving.'
+                        : 'Drive will update after you pause writing.');
+                driveClass = 'active';
+            } else if (collabPullInProgress) {
+                driveLabel = 'Receiving changes';
+                driveDetail = 'Receiving the latest changes from Drive.';
+                driveClass = 'syncing';
+            }
+
+            const localLabel = local.error ? 'Needs attention' : (local.pending ? 'Saving' : (local.savedAt ? 'Saved' : 'No pending changes'));
+            const localDetail = local.error
+                ? local.error
+                : (local.pending ? 'Writing your latest changes to this device.'
+                    : (local.savedAt ? 'Latest changes saved on this device.' : 'No new edits are waiting to save on this device.'));
+            const title = {
+                error: 'Save needs attention',
+                saving: 'Saving on this device',
+                uploading: driveSavePhase === 'uploading' ? 'Saving to Google Drive' : 'Preparing Drive copy',
+                syncing: 'Receiving changes',
+                paused: reconnect ? 'Reconnect to Google Drive' : (offline ? 'Waiting for connection' : 'Waiting to save to Drive'),
+                saved: connected ? (local.savedAt ? 'All changes saved' : 'Saved in Google Drive') : (local.savedAt ? 'Saved on this device' : 'No pending changes')
+            }[phase];
+            const detail = phase === 'error' ? (local.error ? localDetail : (driveSaveBlockedReason || saveDebugState.status))
+                : phase === 'saving' ? localDetail
+                : phase === 'paused' && offline && local.savedAt ? 'Your latest changes are saved on this device.'
+                : phase === 'saved' ? (connected ? (local.savedAt ? 'Your device and Google Drive are up to date.' : 'Your Drive copy is up to date.') : (local.savedAt ? 'This copy is available in this browser. Drive is not connected.' : 'Drive is not connected. New edits will save on this device.'))
+                : driveDetail;
+            const shortLabel = { error: 'Check save', saving: 'Saving', uploading: 'Syncing', syncing: 'Syncing',
+                paused: reconnect ? 'Sign in' : (offline ? 'Offline' : 'Pending'), saved: connected ? 'Saved' : 'Local' }[phase];
+            return { local, connected, offline, pendingDrive, reconnect, phase, title, detail, shortLabel,
+                localLabel, localDetail, driveLabel, driveDetail, driveClass };
+        }
+
         function ensureSaveDebugPopup() {
             if (saveDebugElements) return saveDebugElements;
             const backdrop = document.createElement('div');
             backdrop.className = 'save-debug-backdrop';
             backdrop.innerHTML = `
-                <div class="save-debug-panel" role="dialog" aria-modal="false" aria-labelledby="save-debug-title">
+                <div class="save-debug-panel" id="save-details-panel" role="dialog" aria-modal="false" aria-labelledby="save-debug-title" aria-describedby="save-debug-description">
                     <div class="save-debug-header">
-                        <div class="save-debug-hero"></div>
+                        <span class="save-debug-eyebrow">Save status</span>
                         <button type="button" class="save-debug-close" aria-label="Close save details">&times;</button>
                     </div>
-                    <div class="save-debug-summary" aria-label="Save status by device"></div>
+                    <div class="save-debug-hero" role="status" aria-live="polite"></div>
+                    <div class="save-debug-summary" aria-label="Saved copies"></div>
+                    <div class="save-debug-footer">
+                        <span class="save-debug-hint"></span>
+                        <button type="button" class="btn btn-secondary save-debug-action">Save now</button>
+                    </div>
                 </div>`;
             document.body.appendChild(backdrop);
             const panel = backdrop.querySelector('.save-debug-panel');
             const closeBtn = backdrop.querySelector('.save-debug-close');
             const hero = backdrop.querySelector('.save-debug-hero');
             const summary = backdrop.querySelector('.save-debug-summary');
-            closeBtn.addEventListener('click', closeSaveDebugPopup);
-            backdrop.addEventListener('click', (event) => {
-                if (event.target === backdrop) closeSaveDebugPopup();
+            const action = backdrop.querySelector('.save-debug-action');
+            const hint = backdrop.querySelector('.save-debug-hint');
+            closeBtn.addEventListener('click', () => closeSaveDebugPopup(true));
+            document.addEventListener('pointerdown', event => {
+                if (!backdrop.classList.contains('visible')) return;
+                if (!panel.contains(event.target) && !event.target.closest?.('.mode-toggle-status')) closeSaveDebugPopup();
             });
-            saveDebugElements = { backdrop, panel, hero, summary };
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && backdrop.classList.contains('visible')) {
+                    event.preventDefault();
+                    closeSaveDebugPopup(true);
+                }
+            });
+            action.addEventListener('click', async () => {
+                if (saveDebugElements.actionBusy) return;
+                const local = getLocalSaveStatus();
+                if (driveAuthNeedsReconnect && !local.pending && !local.error) {
+                    signInDrive();
+                    return;
+                }
+                const sessionToken = getDocumentSessionToken();
+                saveDebugElements.actionBusy = true;
+                renderSaveDebugPopup();
+                try {
+                    if (getLocalSaveStatus().pending || getLocalSaveStatus().error) await queueSave();
+                    if (!isDocumentSessionTokenValid(sessionToken)) return;
+                    if (!getLocalSaveStatus().error && !driveAuthNeedsReconnect && hasPendingDriveSave() && navigator.onLine !== false) {
+                        await queueDriveSave(true);
+                    }
+                } finally {
+                    saveDebugElements.actionBusy = false;
+                    refreshSaveIndicatorState();
+                }
+            });
+            saveDebugElements = { backdrop, panel, closeBtn, hero, summary, action, hint, actionBusy: false };
             return saveDebugElements;
         }
 
-        function closeSaveDebugPopup() {
-            if (saveDebugElements?.backdrop) {
-                saveDebugElements.backdrop.classList.remove('visible');
-            }
+        function closeSaveDebugPopup(restoreFocus = false) {
+            if (saveDebugElements?.backdrop) saveDebugElements.backdrop.classList.remove('visible');
+            const trigger = document.querySelector('.mode-toggle-status');
+            trigger?.setAttribute('aria-expanded', 'false');
+            if (restoreFocus) trigger?.focus({ preventScroll: true });
             if (saveDebugRenderInterval) {
                 clearInterval(saveDebugRenderInterval);
                 saveDebugRenderInterval = null;
@@ -28690,199 +28907,99 @@
         }
 
         function renderSaveDebugPopup() {
-            if (!saveDebugElements) return;
             const els = saveDebugElements;
-            const flags = getSaveDebugFlags();
-            const phase = saveDebugState.phase || 'saved';
-            const semanticState = getSaveIndicatorSemanticState(phase);
-            const phaseLabel = {
-                saved: 'Up to date',
-                paused: (typeof navigator !== 'undefined' && navigator.onLine === false)
-                    ? 'Saved on this device'
-                    : 'Waiting to update Drive',
-                building: 'Saving on this device',
-                saving: 'Saving on this device',
-                uploading: 'Updating Drive',
-                syncing: 'Receiving changes',
-                error: 'Save needs attention'
-            }[semanticState] || 'Document status';
-            els.hero.innerHTML = `
-                <span class="save-debug-orb ${escapeSaveDebugText(semanticState)}"></span>
-                <div id="save-debug-title">
-                    <div class="save-debug-hero-title">${escapeSaveDebugText(phaseLabel)}</div>
+            // A closed status panel must not create work on the handwriting path.
+            if (!els?.backdrop.classList.contains('visible')) return;
+            const view = getSavePresentation(saveDebugState.phase);
+            const heroMarkup = `
+                <span class="save-debug-orb ${view.phase}" aria-hidden="true">${view.phase === 'saved' ? '✓' : view.phase === 'error' ? '!' : '·'}</span>
+                <div><h2 id="save-debug-title" class="save-debug-hero-title">${escapeSaveDebugText(view.title)}</h2>
+                <p id="save-debug-description" class="save-debug-description">${escapeSaveDebugText(view.detail)}</p></div>`;
+            if (els.heroMarkup !== heroMarkup) {
+                els.hero.innerHTML = heroMarkup;
+                els.heroMarkup = heroMarkup;
+            }
+            const row = (name, label, detail, style, time = null) => `
+                <div class="save-device-status">
+                    <span class="save-device-status-dot ${style}" aria-hidden="true"></span>
+                    <div><div class="save-device-status-heading"><span class="save-device-status-title">${escapeSaveDebugText(name)}</span>
+                    <span class="save-device-status-label ${style}">${escapeSaveDebugText(label)}</span></div>
+                    <div class="save-device-status-detail">${escapeSaveDebugText(detail)}</div>
+                    ${time ? `<div class="save-device-status-time">Last saved · ${escapeSaveDebugText(formatTime(time))}</div>` : ''}</div>
                 </div>`;
-            const phaseDetails = {
-                processing: 'Saving changes',
-                uploading: 'Updating Drive',
-                syncing: 'Receiving changes',
-                saved: 'Up to date',
-                paused: 'Changes are safe locally'
-            };
-            const rows = [];
-            const overview = typeof getLiveCollaborationOverview === 'function'
-                ? getLiveCollaborationOverview()
-                : { isMain: true, openPeerCount: 0, expectedPeerCount: 0, connectionState: 'solo' };
-            const localClass = flags.blocked ? 'error'
-                : (flags.localSaveInProgress || flags.pageDirtyCount || flags.strokeOpsQueued
-                    ? 'syncing'
-                    : ((flags.driveDirty || flags.deferredDriveSave || flags.driveSaveQueued
-                        || flags.contentVersion !== flags.uploadedVersion) ? 'active' : ''));
-            const localDetail = flags.blocked
-                ? flags.blocked
-                : (flags.localSaveInProgress || flags.pageDirtyCount || flags.strokeOpsQueued
-                    ? 'Saving changes locally'
-                    : (localClass ? 'Changes are safe here and waiting for Drive' : 'Latest changes are safe here'));
-            rows.push(`
-                <div class="save-device-status">
-                    <span class="save-device-status-dot ${localClass}"></span>
-                    <div>
-                        <div class="save-device-status-title">This device${overview.isMain ? ' · Main device' : ''}</div>
-                        <div class="save-device-status-detail">${escapeSaveDebugText(localDetail)}</div>
-                    </div>
-                </div>`);
-
-            const liveClass = overview.connectionState === 'live'
-                ? 'live'
-                : (overview.connectionState === 'reconnecting' ? 'recovering' : 'idle');
-            const liveDetail = overview.openPeerCount > 0
-                ? `Live with ${overview.openPeerCount} other device${overview.openPeerCount === 1 ? '' : 's'}${Number.isFinite(overview.bestRttMs) ? ` · ${formatSaveDebugMs(overview.bestRttMs)}` : ''}`
-                : (overview.connectionState === 'reconnecting'
-                    ? 'Finding the best direct route · Drive stays active'
-                    : 'No other device is online');
-            rows.push(`
-                <div class="save-device-status">
-                    <span class="save-device-status-dot ${liveClass}"></span>
-                    <div>
-                        <div class="save-device-status-title">Live connection</div>
-                        <div class="save-device-status-detail">${escapeSaveDebugText(liveDetail)}</div>
-                    </div>
-                </div>`);
-
-            getPresencePopupUsers(latestPresenceUsers)
-                .filter(record => !record.isOwn)
-                .forEach(record => {
-                    const remotePhase = getPresenceVisibleSavePhase(record) || '';
+            const rows = [
+                row('This device', view.localLabel, view.localDetail, view.local.error ? 'error' : (view.local.pending ? 'syncing' : ''), view.local.savedAt),
+                row('Google Drive', view.driveLabel, view.driveDetail, view.driveClass, view.connected ? state.driveLastKnownModified : null)
+            ];
+            if (view.connected && driveSavePhase === 'uploading' && driveSaveInProgress && driveUploadProgress?.total) {
+                const percent = Math.min(100, Math.max(0, Math.floor(driveUploadProgress.sent / driveUploadProgress.total * 100)));
+                rows.push(`<div class="save-upload-progress"><progress max="100" value="${percent}" aria-label="Upload to Google Drive"></progress><span>${percent}%</span></div>`);
+            }
+            const overview = getLiveCollaborationOverview();
+            const peers = getPresencePopupUsers(latestPresenceUsers).filter(record => !record.isOwn);
+            if (peers.length || overview.openPeerCount > 0 || overview.connectionState === 'reconnecting') {
+                rows.push('<div class="save-debug-section-label">Other devices</div>');
+                if (!peers.length) {
+                    rows.push(row('Live connection', overview.openPeerCount ? 'Connected' : 'Reconnecting',
+                        overview.openPeerCount ? `Live with ${overview.openPeerCount} other device${overview.openPeerCount === 1 ? '' : 's'}.` : 'Trying to reconnect to your other devices.',
+                        overview.openPeerCount ? 'live' : 'recovering'));
+                }
+                for (const record of peers) {
                     const connection = getPresenceConnectionInfo(record);
-                    const remoteClass = ['processing', 'uploading', 'syncing'].includes(remotePhase)
-                        ? 'syncing'
-                        : (connection.connected
-                            ? 'live'
-                            : (connection.recovering ? 'recovering' : 'idle'));
-                    const deviceName = record.v
-                        || (record.d === 'mobile' ? 'Phone' : (record.d === 'tablet' ? 'Tablet' : 'Computer'));
-                    const detail = `${connection.transport}${remotePhase
-                        ? ` · ${phaseDetails[remotePhase] || remotePhase}`
-                        : ''}`;
-                    rows.push(`
-                        <div class="save-device-status">
-                            <span class="save-device-status-dot ${remoteClass}"></span>
-                            <div>
-                                <div class="save-device-status-title">${escapeSaveDebugText(deviceName)}${connection.isMain ? ' · Main device' : ''}</div>
-                                <div class="save-device-status-detail">${escapeSaveDebugText(detail)}</div>
-                            </div>
-                        </div>`);
-                });
-            const driveClass = flags.blocked ? 'error'
-                : (flags.driveSaveInProgress ? 'syncing'
-                    : ((flags.driveDirty || flags.deferredDriveSave || flags.driveSaveQueued
-                        || flags.contentVersion !== flags.uploadedVersion) ? 'active' : ''));
-            const driveDetail = flags.blocked
-                ? flags.blocked
-                : (!flags.autosave
-                    ? 'Not connected for automatic saving'
-                    : (flags.driveSaveInProgress
-                        ? (flags.driveSavePhase === 'uploading'
-                            ? `Uploading to Drive${flags.driveUploadProgress?.total
-                                ? ` · ${Math.min(100, Math.floor(flags.driveUploadProgress.sent / flags.driveUploadProgress.total * 100))}%`
-                                : ''}`
-                            : (flags.driveSavePhase === 'building'
-                                ? 'Preparing the latest PDF'
-                                : (flags.driveSavePhase === 'restoring'
-                                    ? 'Restoring PDF pages'
-                                    : (flags.driveSavePhase === 'verifying'
-                                        ? 'Checking the latest Drive revision'
-                                        : 'Preparing the Drive update'))))
-                        : (driveClass
-                            ? (flags.driveSavePhase === 'retrying'
-                                ? 'Retrying the Drive update'
-                                : ((typeof navigator !== 'undefined' && navigator.onLine === false)
-                                    ? 'Will update when the connection returns'
-                                    : 'Waiting for the latest device changes'))
-                            : 'Latest document is stored in Drive')));
-            rows.push(`
-                <div class="save-device-status">
-                    <span class="save-device-status-dot ${driveClass}"></span>
-                    <div>
-                        <div class="save-device-status-title">Google Drive</div>
-                        <div class="save-device-status-detail">${escapeSaveDebugText(driveDetail)}</div>
-                    </div>
-                </div>`);
-            els.summary.innerHTML = rows.join('');
+                    const remotePhase = getPresenceVisibleSavePhase(record);
+                    const label = { processing: 'Saving', uploading: 'Uploading', syncing: 'Receiving changes', saved: 'Saved', paused: 'Waiting' }[remotePhase]
+                        || (connection.connected ? 'Connected' : 'Reconnecting');
+                    const name = record.v || (record.d === 'mobile' ? 'Phone' : record.d === 'tablet' ? 'Tablet' : 'Computer');
+                    rows.push(row(name, label, connection.transport, connection.connected ? 'live' : 'recovering'));
+                }
+            }
+            const summaryMarkup = rows.join('');
+            if (els.summaryMarkup !== summaryMarkup) {
+                els.summary.innerHTML = summaryMarkup;
+                els.summaryMarkup = summaryMarkup;
+            }
+            const actionable = !!(view.local.error || view.local.pending || view.pendingDrive || view.reconnect || driveSaveBlockedReason);
+            if (els.action.hidden !== !actionable) els.action.hidden = !actionable;
+            const actionDisabled = els.actionBusy || saveInProgress || driveSaveInProgress
+                || (!view.local.error && !view.local.pending && view.offline);
+            if (els.action.disabled !== actionDisabled) els.action.disabled = actionDisabled;
+            const actionLabel = view.local.error ? 'Retry save' : (view.local.pending ? 'Save now' : (view.reconnect ? 'Reconnect Drive' : (view.phase === 'error' ? 'Retry save' : 'Save now')));
+            if (els.action.textContent !== actionLabel) els.action.textContent = actionLabel;
+            const hint = view.phase === 'error' ? 'Keep this document open until saving succeeds.'
+                : view.offline && view.pendingDrive ? 'Drive will resume when you are online.' : 'Changes save automatically.';
+            if (els.hint.textContent !== hint) els.hint.textContent = hint;
         }
 
         function openSaveDebugPopup() {
             const els = ensureSaveDebugPopup();
-            renderSaveDebugPopup();
             els.backdrop.classList.add('visible');
-            if (!saveDebugRenderInterval) {
-                saveDebugRenderInterval = setInterval(renderSaveDebugPopup, 500);
-            }
+            document.querySelector('.mode-toggle-status')?.setAttribute('aria-expanded', 'true');
+            renderSaveDebugPopup();
+            els.closeBtn.focus({ preventScroll: true });
+            if (!saveDebugRenderInterval) saveDebugRenderInterval = setInterval(renderSaveDebugPopup, 1000);
         }
 
         function getSaveIndicatorSemanticState(preferredPhase = '') {
-            const flags = getSaveDebugFlags();
-            const pendingDrive = flags.autosave && (
-                flags.driveDirty
-                || flags.deferredDriveSave
-                || flags.driveSaveQueued
-                || flags.contentVersion !== flags.uploadedVersion
-            );
-            if (flags.blocked) return 'error';
-            // A previous failed attempt must not keep the dot red while a fresh
-            // retry is making progress. Red is for an idle failure or a block.
-            if (flags.driveSaveInProgress) return 'uploading';
-            if (flags.localSaveInProgress || flags.localSaveQueued) return 'saving';
-            if (preferredPhase === 'error') return 'error';
-            if (collabPullInProgress || preferredPhase === 'syncing') return 'syncing';
-            if (flags.driveSaveInProgress || preferredPhase === 'uploading') return 'uploading';
-            if (flags.localSaveInProgress
-                || flags.localSaveQueued
-                || flags.pageDirtyCount
-                || flags.strokeOpsQueued
-                || preferredPhase === 'building'
-                || preferredPhase === 'saving') return 'saving';
-            if (pendingDrive || preferredPhase === 'paused') return 'paused';
-            return 'saved';
+            return getSavePresentation(preferredPhase).phase;
         }
 
         function refreshSaveIndicatorState(preferredPhase = '') {
             const indicator = document.getElementById('save-indicator');
             if (!indicator) return;
-            const semanticState = getSaveIndicatorSemanticState(preferredPhase);
-            const overview = typeof getLiveCollaborationOverview === 'function'
-                ? getLiveCollaborationOverview()
-                : { connectionState: 'solo', openPeerCount: 0 };
-            const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-            const labels = {
-                saved: 'Up to date',
-                paused: offline ? 'Saved on this device' : 'Waiting to update Drive',
-                building: 'Saving on this device',
-                saving: 'Saving on this device',
-                uploading: 'Updating Drive',
-                syncing: 'Receiving changes',
-                error: 'Save needs attention'
-            };
-            for (const stateName of SAVE_STATES) indicator.classList.remove(stateName);
-            indicator.classList.add(semanticState);
-            indicator.dataset.liveState = overview.connectionState || 'solo';
-            const connectionText = overview.openPeerCount > 0
-                ? `Live with ${overview.openPeerCount} other device${overview.openPeerCount === 1 ? '' : 's'}`
-                : (overview.connectionState === 'reconnecting'
-                    ? 'Reconnecting direct connection; Drive remains active'
-                    : 'No other device online');
-            const label = labels[semanticState] || 'Document status';
-            indicator.title = `${label} · ${connectionText}`;
-            indicator.setAttribute('aria-label', indicator.title);
+            const view = getSavePresentation(preferredPhase);
+            if (!indicator.classList.contains(view.phase)) {
+                indicator.classList.remove(...SAVE_STATES);
+                indicator.classList.add(view.phase);
+            }
+            const trigger = indicator.closest('.mode-toggle-status');
+            const label = `${view.title}. Open save details`;
+            if (trigger?.getAttribute('aria-label') !== label) {
+                trigger?.setAttribute('aria-label', label);
+                if (trigger) trigger.title = label;
+            }
+            const statusLabel = document.getElementById('save-status-label');
+            if (statusLabel && statusLabel.textContent !== view.shortLabel) statusLabel.textContent = view.shortLabel;
+            if (indicator.title !== view.title) indicator.title = view.title;
             renderSaveDebugPopup();
         }
 
@@ -28901,21 +29018,14 @@
         function initSaveIndicatorDetails() {
             const indicator = document.getElementById('save-indicator');
             if (!indicator || indicator.dataset.debugBound === 'true') return;
-            const statusTarget = indicator.closest('.mode-toggle-status') || indicator;
+            const statusTarget = indicator.closest('.mode-toggle-status');
+            if (!statusTarget) return;
             indicator.dataset.debugBound = 'true';
-            indicator.setAttribute('role', 'button');
-            indicator.setAttribute('tabindex', '0');
-            statusTarget.setAttribute('role', 'button');
-            statusTarget.setAttribute('tabindex', '0');
-            const openFromIndicator = (event) => {
+            statusTarget.addEventListener('click', event => {
                 event.preventDefault();
                 event.stopPropagation();
-                openSaveDebugPopup();
-            };
-            statusTarget.addEventListener('click', openFromIndicator);
-            statusTarget.addEventListener('keydown', (event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                openFromIndicator(event);
+                if (saveDebugElements?.backdrop.classList.contains('visible')) closeSaveDebugPopup(true);
+                else openSaveDebugPopup();
             });
         }
 
@@ -32656,6 +32766,9 @@
                 },
                 formatTimeForTest(timestamp) {
                     return formatTime(timestamp);
+                },
+                localSaveStatusForTest() {
+                    return getLocalSaveStatus();
                 },
                 // Imports a PDF through the real production path (importPDFData),
                 // exactly as a user's file picker or drag-and-drop would, for

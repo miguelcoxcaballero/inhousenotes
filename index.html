@@ -87,8 +87,8 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.11.48';</script>
-    <script src="boot-v5.js?v=5.11.48"></script>
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.11.49';</script>
+    <script src="boot-v5.js?v=5.11.49"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -933,35 +933,38 @@
         }
 
         .mode-toggle-status {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 15px;
-            min-width: 15px;
-            height: var(--header-btn-size);
-            flex: 0 0 15px;
-            color: var(--text-secondary);
-            pointer-events: auto;
-            opacity: 1;
-            transition: opacity 0.2s ease;
-            cursor: pointer;
-        }
-
-        .mode-toggle-status .save-indicator {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 32px;
-            height: 32px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            gap: 7px;
+            min-width: 82px;
+            min-height: var(--header-btn-size);
+            padding: 0 10px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            font: inherit;
+            font-size: 0.72rem;
+            cursor: pointer;
+        }
+
+        .mode-toggle-status:hover { background: var(--bg-secondary); }
+        .mode-toggle-status:focus-visible,
+        .save-debug-close:focus-visible,
+        .save-debug-action:focus-visible { outline: 2px solid var(--accent-blue, #4a90d9); outline-offset: 3px; }
+        .mode-toggle-group { gap: 6px; }
+        .save-status-label { font-weight: 600; white-space: nowrap; }
+        .mode-toggle-status .save-indicator {
+            position: static;
+            width: 10px;
+            height: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 10px;
             background: transparent !important;
             box-shadow: none;
-            pointer-events: auto;
-            cursor: pointer;
-            transform: translate(-50%, -50%);
         }
 
         .mode-toggle-status .save-indicator::after {
@@ -1007,291 +1010,88 @@
             background: var(--accent-red);
         }
 
-        /* ┄ § 2.3b  Save-debug panel ────────────────────────────────────────
-           Hidden developer panel that shows a real-time breakdown of the
-           save/sync state machine (dirty flags, versions, upload phases).
-           Only accessible via a secret tap sequence; invisible in production.
-        ┄ */
-
+        /* ┄ § 2.3b  Save status: local copy, Drive and optional peers ┄ */
         .save-debug-backdrop {
             position: fixed;
             inset: 0;
             z-index: 2600;
             display: none;
-            align-items: flex-end;
+            align-items: flex-start;
             justify-content: flex-end;
-            padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 72px) 0;
-            background: transparent;
+            padding: 76px 18px 18px;
             pointer-events: none;
         }
-
-        .save-debug-backdrop.visible {
-            display: flex;
-        }
-
+        .save-debug-backdrop.visible { display: flex; }
         .save-debug-panel {
-            width: min(320px, calc(100vw - 24px));
-            max-height: min(420px, calc(100svh - 120px));
+            width: min(380px, calc(100vw - 24px));
+            max-height: calc(100svh - 110px);
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            padding: 12px;
-            border-radius: var(--radius-lg);
+            padding: 18px;
+            border-radius: 18px;
             background: var(--bg-primary);
             color: var(--text-primary);
             box-shadow: var(--shadow-heavy);
             border: 1px solid var(--border-color);
             pointer-events: auto;
         }
-
-        .save-debug-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-        }
-
-        .save-debug-header {
-            min-height: 30px;
-        }
-
+        .save-debug-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .save-debug-eyebrow, .save-debug-section-label { color: var(--text-secondary); font-size: 0.72rem; font-weight: 600; }
         .save-debug-close {
-            width: 32px;
-            height: 32px;
-            border: 0;
-            border-radius: 8px;
-            background: transparent;
-            color: var(--text-primary);
-            font-size: 22px;
-            line-height: 1;
-            cursor: pointer;
+            width: 32px; height: 32px; border: 0; border-radius: 9px;
+            background: transparent; color: var(--text-secondary); font-size: 24px; line-height: 1; cursor: pointer;
         }
-
-        .save-debug-summary {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            overflow: auto;
-            max-height: 300px;
-        }
-
-        .save-device-status {
-            display: grid;
-            grid-template-columns: 10px minmax(0, 1fr);
-            gap: 8px;
-            align-items: start;
-            padding: 9px 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background: var(--bg-secondary);
-        }
-
-        .save-device-status-dot {
-            width: 8px;
-            height: 8px;
-            margin-top: 4px;
-            border-radius: 50%;
-            background: var(--accent-green);
-        }
-
-        .save-device-status-dot.active {
-            background: var(--accent-orange);
-        }
-
-        .save-device-status-dot.syncing {
-            background: #4a90d9;
-        }
-
-        .save-device-status-dot.error {
-            background: var(--accent-red);
-        }
-
-        .save-device-status-dot.live {
-            background: var(--accent-green);
-            box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-green) 14%, transparent);
-        }
-
-        .save-device-status-dot.recovering {
-            background: var(--accent-orange);
-            animation: save-connection-pulse 1.2s ease-in-out infinite alternate;
-        }
-
-        .save-device-status-dot.idle {
-            background: #aaa;
-        }
-
-        @keyframes save-connection-pulse {
-            from { opacity: 0.45; }
-            to { opacity: 1; }
-        }
-
-        .save-device-status-title {
-            font-size: 0.8rem;
-            font-weight: 700;
-        }
-
-        .save-device-status-detail {
-            margin-top: 2px;
-            color: var(--text-secondary);
-            font-size: 0.72rem;
-            line-height: 1.35;
-        }
-
-        .save-debug-hero {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            min-width: 0;
-        }
-
+        .save-debug-close:hover { background: var(--bg-secondary); }
+        .save-debug-hero { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0 20px; }
+        .save-debug-hero-title { margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.4; }
+        .save-debug-description { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.5; overflow-wrap: anywhere; }
         .save-debug-orb {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: var(--accent-green);
-            box-shadow: 0 0 0 4px rgba(75, 181, 67, 0.12);
-            flex: 0 0 24px;
+            width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
+            background: color-mix(in srgb, var(--accent-green) 12%, var(--bg-primary));
+            color: var(--accent-green); font-size: 21px; font-weight: 700; flex: 0 0 34px;
         }
-
-        .save-debug-orb.paused {
-            background: #aaa;
-            box-shadow: 0 0 0 4px rgba(160, 160, 160, 0.16);
+        .save-debug-orb.paused, .save-debug-orb.uploading {
+            color: var(--accent-orange); background: color-mix(in srgb, var(--accent-orange) 12%, var(--bg-primary));
         }
-
-        .save-debug-orb.building {
-            background: #e6c619;
-            box-shadow: 0 0 0 4px rgba(230, 198, 25, 0.18);
+        .save-debug-orb.saving, .save-debug-orb.syncing {
+            color: #4a90d9; background: color-mix(in srgb, #4a90d9 12%, var(--bg-primary));
         }
-
-        .save-debug-orb.uploading {
-            background: var(--accent-orange);
-            box-shadow: 0 0 0 4px rgba(255, 136, 0, 0.16);
-        }
-
-        .save-debug-orb.saving {
-            background: #e6c619;
-            box-shadow: 0 0 0 4px rgba(230, 198, 25, 0.18);
-        }
-
-        .save-debug-orb.syncing {
-            background: #4a90d9;
-            box-shadow: 0 0 0 4px rgba(74, 144, 217, 0.16);
-        }
-
         .save-debug-orb.error {
-            background: var(--accent-red);
-            box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.16);
+            color: var(--accent-red); background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-primary));
         }
-
-        .save-debug-hero-title {
-            font-size: 0.9rem;
-            font-weight: 700;
-            line-height: 1.25;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        .save-debug-summary { display: flex; flex-direction: column; gap: 10px; overflow: auto; min-height: 0; }
+        .save-device-status {
+            display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 10px; align-items: start;
+            padding: 13px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary);
         }
-
-        .save-debug-stat {
-            padding: 9px 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            background: var(--bg-secondary);
-        }
-
-        .save-debug-label {
-            display: block;
-            margin-bottom: 2px;
-            color: var(--text-secondary);
-            font-size: 0.68rem;
-        }
-
-        .save-debug-value {
-            font-size: 0.84rem;
-            font-weight: 600;
-        }
-
-        .save-debug-timeline {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            overflow: auto;
-            max-height: 130px;
-            padding-right: 2px;
-        }
-
-        .save-debug-event {
-            display: grid;
-            grid-template-columns: 72px 10px 1fr auto;
-            gap: 8px;
-            align-items: baseline;
-            padding: 7px 8px;
-            border-radius: 8px;
-            background: var(--bg-secondary);
-            font-size: 0.78rem;
-        }
-
-        .save-debug-event-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: var(--accent-green);
-            align-self: center;
-        }
-
-        .save-debug-event-dot.building {
-            background: #e6c619;
-        }
-
-        .save-debug-event-dot.uploading,
-        .save-debug-event-dot.saving {
-            background: var(--accent-orange);
-        }
-
-        .save-debug-event-dot.paused {
-            background: #aaa;
-        }
-
-        .save-debug-event-dot.syncing {
-            background: #4a90d9;
-        }
-
-        .save-debug-event-dot.error {
-            background: var(--accent-red);
-        }
-
-        .save-debug-event-time,
-        .save-debug-event-delta {
-            color: var(--text-secondary);
-            font-variant-numeric: tabular-nums;
-        }
-
+        .save-device-status-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--accent-green); }
+        .save-device-status-dot.active, .save-device-status-dot.recovering { background: var(--accent-orange); }
+        .save-device-status-dot.syncing { background: #4a90d9; }
+        .save-device-status-dot.error { background: var(--accent-red); }
+        .save-device-status-dot.idle { background: var(--text-tertiary, #888); }
+        .save-device-status-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 10px; }
+        .save-device-status-title { font-size: 0.8rem; font-weight: 650; }
+        .save-device-status-label { font-size: 0.69rem; font-weight: 600; color: var(--accent-green); }
+        .save-device-status-label.active, .save-device-status-label.recovering { color: var(--text-primary); }
+        .save-device-status-label.syncing { color: #4a90d9; }
+        .save-device-status-label.error { color: var(--accent-red); }
+        .save-device-status-label.idle { color: var(--text-secondary); }
+        .save-device-status-detail { margin-top: 6px; color: var(--text-secondary); font-size: 0.74rem; line-height: 1.5; overflow-wrap: anywhere; }
+        .save-device-status-time { margin-top: 7px; font-size: 0.68rem; color: var(--text-secondary); }
+        .save-debug-section-label { padding: 7px 0 0; }
+        .save-upload-progress { display: flex; align-items: center; gap: 10px; padding: 0 3px; font-size: 0.72rem; color: var(--text-secondary); }
+        .save-upload-progress progress { flex: 1; min-width: 0; height: 6px; accent-color: var(--accent-green); }
+        .save-debug-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-color); }
+        .save-debug-hint { font-size: 0.7rem; line-height: 1.5; color: var(--text-secondary); }
+        .save-debug-action { flex-shrink: 0; font-size: 0.73rem; min-height: 36px; }
+        .save-debug-action[hidden] { display: none; }
+        .mode-toggle-status .save-timestamp { display: none; }
         @media (max-width: 720px) {
             .save-debug-backdrop {
-                padding: 0 10px calc(env(safe-area-inset-bottom, 0px) + 74px) 10px;
-                justify-content: center;
+                align-items: flex-end; justify-content: center;
+                padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 78px);
             }
-
-            .save-debug-panel {
-                width: min(320px, calc(100vw - 20px));
-                max-height: min(360px, calc(100svh - 130px));
-            }
-
-            .save-debug-summary { max-height: 250px; }
-        }
-
-        .mode-toggle-status .save-timestamp {
-            position: absolute;
-            left: 50%;
-            top: auto;
-            bottom: 1px;
-            transform: translateX(-50%);
-            font-size: 0.42rem;
-            line-height: 1;
-            text-align: center;
-            white-space: nowrap;
-            letter-spacing: 0;
-            opacity: 0.48;
+            .save-debug-panel { width: min(380px, calc(100vw - 24px)); max-height: calc(100svh - 106px); padding: 16px; }
         }
 
         /* ┄ § 2.3c  Read / Edit mode toggle & save indicator ────────────────
@@ -1302,12 +1102,12 @@
 
         .mode-toggle-btn {
             display: grid;
-            grid-template-columns: 15px 36px auto;
+            grid-template-columns: 36px auto;
             align-items: center;
             justify-content: start;
             column-gap: 8px;
-            width: 136px;
-            min-width: 136px;
+            width: 111px;
+            min-width: 111px;
             min-height: var(--header-btn-size);
             height: var(--header-btn-size);
             padding: 0 12px;
@@ -7368,9 +7168,9 @@
             }
 
             #editor-view .mode-toggle-btn {
-                width: calc(15px + 36px + 34px + 16px + 12px);
+                width: calc(36px + 34px + 8px + 12px);
                 min-width: 0 !important;
-                grid-template-columns: 15px 36px 34px;
+                grid-template-columns: 36px 34px;
                 column-gap: 8px;
                 border-radius: 999px;
                 background: transparent !important;
@@ -7577,11 +7377,7 @@
                 height: var(--header-btn-size);
             }
 
-            #editor-view .mode-toggle-status .save-timestamp {
-                display: block;
-                font-size: 0.42rem;
-                opacity: 0.48;
-            }
+            #editor-view .mode-toggle-status .save-timestamp { display: none; }
 
             #editor-view.read-only .mode-toggle-status .save-indicator {
                 opacity: 1;
@@ -7922,13 +7718,13 @@
                         </svg>
                     </button>
                     <div class="mode-toggle-group">
+                        <button class="mode-toggle-status" type="button" aria-label="Open save details" aria-haspopup="dialog" aria-expanded="false" aria-controls="save-details-panel">
+                            <span class="save-indicator saved" id="save-indicator" aria-hidden="true"></span>
+                            <span class="save-status-label" id="save-status-label">Saved</span>
+                            <span class="save-timestamp" id="save-timestamp" hidden></span>
+                        </button>
                         <button class="btn btn-secondary mode-toggle-btn" id="mode-toggle-btn" type="button"
                             aria-pressed="false" aria-label="Read mode" title="Toggle read/edit mode">
-                            <span class="mode-toggle-status">
-                                <span class="save-indicator saved" id="save-indicator" title="Saved" aria-label="Saved">
-                                </span>
-                                <span class="save-timestamp" id="save-timestamp" aria-live="polite"></span>
-                            </span>
                             <span class="mode-toggle-text" id="mode-toggle-label">Read</span>
                             <span class="mode-toggle-pill" aria-hidden="true">
                                 <span class="mode-toggle-knob"></span>
@@ -8794,14 +8590,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script src="collaboration-core-v5.js?v=5.11.48"></script>
-    <script src="live-collaboration-v5.js?v=5.11.48"></script>
-    <script src="runtime-core-v5.js?v=5.11.48"></script>
-    <script src="security-core-v5.js?v=5.11.48"></script>
-    <script src="timeline-core-v5.js?v=5.11.48"></script>
-    <script src="document-processing-v5.js?v=5.11.48"></script>
+    <script src="collaboration-core-v5.js?v=5.11.49"></script>
+    <script src="live-collaboration-v5.js?v=5.11.49"></script>
+    <script src="runtime-core-v5.js?v=5.11.49"></script>
+    <script src="security-core-v5.js?v=5.11.49"></script>
+    <script src="timeline-core-v5.js?v=5.11.49"></script>
+    <script src="document-processing-v5.js?v=5.11.49"></script>
     <script src="shared/inhouse-services-updater/updater.js"></script>
-    <script src="app-v5.js?v=5.11.48"></script>
+    <script src="app-v5.js?v=5.11.49"></script>
 
 </body>
 
