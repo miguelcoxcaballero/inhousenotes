@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "30dfd544f9eadfa15760c9c74b2c2a80e02750b0",
+  "revision": "ff20596f137119b98844a03a75836099ac7e146b",
   "version": "1.0.0",
   "appId": "notes",
   "files": {
@@ -22,7 +22,7 @@
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "a4a4c494bae17b632257c27c97d1776b538139f06881b4e010074397e6c9fe16"
+      "sha256": "fb2a59b0938d87574ec25f453f9c9c9519d03717e7bbf7ae55ad716f7e368bb1"
     },
     "vendor/inhouse-services-updater/android/NativeUpdates.java": {
       "source": "android/NativeUpdates.java",
@@ -56,6 +56,10 @@
       "source": "tools/register_android.py",
       "sha256": "ef4e36db7fb1880055e1315edc4811ffedf29f2397c7934085390eac2a374d19"
     },
+    "vendor/inhouse-services-updater/tests/browser.py": {
+      "source": "tests/browser.py",
+      "sha256": "51be7b1085a964302e51846ee8e7414173aeb931ed0e735dd01d22db187ecb47"
+    },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
       "sha256": "4328e8e6d10c5505247bca6fa1d5fa31dda5b3b60b7de936548578edfb00bfe3"
@@ -74,7 +78,7 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "a4a4c494bae17b632257c27c97d1776b538139f06881b4e010074397e6c9fe16"
+      "sha256": "fb2a59b0938d87574ec25f453f9c9c9519d03717e7bbf7ae55ad716f7e368bb1"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
