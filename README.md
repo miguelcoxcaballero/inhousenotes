@@ -1,6 +1,6 @@
 # inhousenotes
 
-[Android 1.0.14 — A](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.14) · Web 5.11.51. Cámara en directo habilitada en Android y menú de guardado simplificado. B conserva Android 1.0.13.
+[Android 1.0.15 — A](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.15) · [Android 1.0.13 — B](https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.13) · Web 5.11.53. Inhouse services updater 1.2.1 con colores neutros.
 
 ## Inhouse services updater
 
