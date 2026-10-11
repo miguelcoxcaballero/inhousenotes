@@ -1,9 +1,10 @@
 {
-  "version": "1.0.10",
-  "versionCode": 11,
+  "version": "1.0.11",
+  "versionCode": 12,
   "required": true,
-  "apkSizeBytes": 3159597,
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.10/inhouse-notes-release-v1.0.10.apk",
-  "publishedAppVersion": "5.11.41",
-  "releaseNotes": "Inhouse Notes v5.11.41: reconcile idle local tabs on join, keep edits flowing to all peers, repair missed state without another edit, preserve shared page IDs, and include final remote strokes in durable saving and PDF preparation."
+  "apkSizeBytes": 3171655,
+  "apkSha256": "72fa07c65cfaaaf24665029cba0a1a5971c74e466645eaeaeca55166fa8fec26",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.11/inhouse-notes-release-v1.0.11.apk",
+  "publishedAppVersion": "5.11.42",
+  "releaseNotes": "Canales A/B y recordatorio opcional."
 }

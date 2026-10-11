@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "channel": "A",
-  "latest": null,
-  "releases": []
+  "latest": {
+    "version": "1.0.11",
+    "versionCode": 12,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.11/inhouse-notes-release-v1.0.11.apk",
+    "apkSha256": "72fa07c65cfaaaf24665029cba0a1a5971c74e466645eaeaeca55166fa8fec26",
+    "apkSizeBytes": 3171655,
+    "changelog": "Canales A/B y recordatorio opcional.",
+    "releasedAt": "2026-10-11T15:27:38+00:00"
+  },
+  "releases": [
+    {
+      "version": "1.0.11",
+      "versionCode": 12,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.11/inhouse-notes-release-v1.0.11.apk",
+      "apkSha256": "72fa07c65cfaaaf24665029cba0a1a5971c74e466645eaeaeca55166fa8fec26",
+      "apkSizeBytes": 3171655,
+      "changelog": "Canales A/B y recordatorio opcional.",
+      "releasedAt": "2026-10-11T15:27:38+00:00"
+    }
+  ]
 }
