@@ -6,7 +6,9 @@ Actualizador común de Inhouse YouTube, Instagram, Notes, Photos y Read. Una int
 
 Los cambios nuevos y las publicaciones automáticas van a A. B contiene versiones revisadas y solo se publica por petición expresa del usuario; puede ser una promoción de A o una publicación directa de un APK verificado. Pasar las pruebas no autoriza una publicación B.
 
-El popup muestra versión instalada, nueva versión, versiones intermedias y hasta tres cambios muy breves. Incluye **Actualizar**, **Recordármelo más tarde** (14 días) y **Cambiar canal**. Los ajustes permiten elegir A/B y comprobar manualmente aunque el aviso esté pospuesto. Ninguna actualización bloquea el uso de la app.
+El popup sigue Material Design 3: hoja inferior modal en el móvil y diálogo básico en pantallas anchas, superficies planas y botones alineados al final. Muestra solo lo necesario: «Update available», versión instalada → nueva y tamaño, la novedad principal y **Later** (14 días) / **Update**. «Details» despliega el resto: versiones intermedias (hasta tres y `+N earlier`), fecha y canal con **Change**. Durante la descarga los botones se sustituyen por un indicador de progreso lineal. Deslizar la hoja hacia abajo, tocar fuera o pulsar Atrás/Escape equivale a Later, salvo mientras se descarga. Los ajustes son una lista: canal A/B con botón de opción y «Check for updates» con su estado debajo. Ninguna actualización bloquea el uso de la app.
+
+Las animaciones usan las curvas de Material 3 y se desactivan con `prefers-reduced-motion`. Las pruebas de las apps pueden usar los nombres accesibles `Update`, `Later`, `Details`, `Change channel`, `Try again`, `Continue`, `Version A`, `Version B`, `Check for updates`, `I understand`, `Cancel` y el control `Slide to confirm version A`.
 
 ## Código compartido
 
