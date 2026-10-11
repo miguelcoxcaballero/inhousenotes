@@ -6,21 +6,25 @@
  */
 (function (root) {
   'use strict';
-  const VERSION = '1.2.1', TWO_WEEKS = 14 * 86400000;
+  const VERSION = '1.2.2', TWO_WEEKS = 14 * 86400000;
   const compareVersions = (a, b) => {
     const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
     for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return Math.sign(d); }
     return 0;
   };
+  function validatedApkUrl(value, config) {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com' || !url.pathname.startsWith('/' + config.repository + '/releases/download/') || !url.pathname.endsWith('.apk') || url.username || url.password) throw Error('Invalid download.');
+    return url.href;
+  }
   function validateCatalog(value, channel, config) {
     if (!value || value.schemaVersion !== 1 || value.channel !== channel || !Array.isArray(value.releases)) throw Error('Invalid update catalog.');
     function release(item) {
       if (!item || !/^\d+\.\d+\.\d+$/.test(item.version) || !Number.isSafeInteger(item.versionCode) || item.versionCode < 1) throw Error('Invalid version.');
-      const url = new URL(item.apkUrl);
-      if (url.protocol !== 'https:' || url.hostname !== 'github.com' || !url.pathname.startsWith('/' + config.repository + '/releases/download/') || !url.pathname.endsWith('.apk') || url.username || url.password) throw Error('Invalid download.');
+      const apkUrl = validatedApkUrl(item.apkUrl, config);
       if (!/^[a-f0-9]{64}$/i.test(item.apkSha256) || !Number.isSafeInteger(item.apkSizeBytes) || item.apkSizeBytes < 1) throw Error('Invalid download integrity.');
       if (typeof item.changelog !== 'string' || !item.changelog.trim() || item.changelog.length > 120) throw Error('Keep the changelog short.');
-      return { ...item, apkUrl: url.href, channel };
+      return { ...item, apkUrl, channel };
     }
     const releases = value.releases.map(release).sort((a, b) => b.versionCode - a.versionCode);
     if (new Set(releases.map(r => r.versionCode)).size !== releases.length) throw Error('Duplicate versions.');
@@ -334,6 +338,22 @@
       bar.querySelector('.isu-progress-label').textContent = label || (percent >= 100 ? 'Verifying…' : 'Downloading… ' + percent + '%');
       bar.querySelector('.isu-progress-value').textContent = downloaded && total ? size(downloaded) + ' of ' + size(total) : '';
     }
+    function downloadRecovery(parent, release, hidden = false) {
+      let url;
+      // Persisted attempts are untrusted too; use the same repository-bound URL
+      // validation as the catalog. Never take a download URL from native errors.
+      try { url = validatedApkUrl(release?.apkUrl, config); } catch (_) { return; }
+      const recovery = el('div', null, 'isu-recovery'); recovery.dataset.isuRecovery = ''; recovery.hidden = hidden;
+      const link = el('a', 'Download APK', 'isu-download'); link.href = url;
+      // A regular link lets old Notes/Read hosts open GitHub in the browser.
+      // Their installer bridge, auth-only browser API and new windows may fail.
+      recovery.append(link, el('p', 'Open the downloaded APK from Downloads.', 'isu-recovery-help'));
+      parent.append(recovery);
+    }
+    function showRecovery(visible) {
+      const recovery = dialog?.querySelector('[data-isu-recovery]');
+      if (recovery && recovery.hidden === visible) morph(() => { recovery.hidden = !visible; });
+    }
     function result(payload) {
       if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch (_) { return; } }
       if (!payload) return;
@@ -347,24 +367,27 @@
       if (!dialog) return;
       const install = dialog.querySelector('[data-isu-install]'); if (!install) return;
       const idle = () => { install.closest('[data-state]').dataset.state = 'idle'; };
-      if (payload.status === 'downloading') { installing = true; install.disabled = true; progress(payload); status(''); }
+      if (payload.status === 'downloading') { installing = true; install.disabled = true; showRecovery(false); progress(payload); status(''); }
       else if (payload.status === 'ready' || payload.status === 'installing') {
         const pending = savedInstall(); if (pending) saveInstall({ ...pending, awaitingResult: true });
         installing = false; progress({ ...payload, percent: 100 }); idle();
         install.disabled = false; install.textContent = 'Open installer'; status('Confirm the installation in Android. If the app closes, open it again.');
+        showRecovery(typeof native()?.getInstallState !== 'function');
       }
       else if (payload.status === 'permission_required') { installing = false; install.disabled = false; install.textContent = 'Continue'; idle(); status('Allow installs from this app, then tap Continue.', 'warn'); }
       else if (payload.status === 'error' || payload.status === 'cancelled' || payload.status === 'unconfirmed') {
         installing = false; install.disabled = false; install.textContent = 'Try again'; idle();
         status(payload.message || (payload.status === 'cancelled' ? 'Installation cancelled.' : 'The update could not be installed.'), payload.status === 'error' ? 'error' : 'warn');
+        showRecovery(true);
       }
       dialog.querySelectorAll('[data-isu-idle]').forEach(b => { b.disabled = installing; });
     }
-    function installationOutcome(title, message) {
+    function installationOutcome(title, message, recovery) {
       // The invisible checker must leave results for the foreground host.
       if (config.onOffer) return;
       installing = false; available = null;
       const body = shell('result'); body.append(header(title), el('p', message, 'isu-text-body'));
+      if (recovery) downloadRecovery(body, recovery);
       const row = actions(body); button(row, 'Updates', () => settings()); button(row, 'Done', () => close(false), 'isu-btn isu-filled isu-primary');
       settle();
     }
@@ -388,7 +411,8 @@
         // swallow it. Reads from the native bridge remain idempotent.
         if (nativeState.status === 'installed') result(nativeState);
         else if (dialog?.querySelector('[data-isu-install]')) result(nativeState);
-        else installationOutcome('Update not installed', nativeState.message || (nativeState.status === 'cancelled' ? 'Installation cancelled.' : 'Android could not install the update.'));
+        else installationOutcome('Update not installed', nativeState.message || (nativeState.status === 'cancelled' ? 'Installation cancelled.' : 'Android could not install the update.'),
+          pending?.versionCode === Number(nativeState.expectedVersionCode) ? pending : null);
         try { win.localStorage.setItem(seenInstallKey, resultId); } catch (_) {}
         saveInstall(null); return true;
       }
@@ -396,7 +420,7 @@
       if (relevantPending && pending.awaitingResult && !pending.reported) {
         const message = 'Installation has not been confirmed. You can try again.';
         if (dialog?.querySelector('[data-isu-install]')) result({ status: 'unconfirmed', message });
-        else installationOutcome('Update not confirmed', message);
+        else installationOutcome('Update not confirmed', message, pending);
         saveInstall({ ...pending, reported: true }); return true;
       }
       return false;
@@ -433,13 +457,16 @@
         morph(() => { more.hidden = !open; toggle.setAttribute('aria-expanded', String(open)); });
       };
       body.append(toggle, more, statusNode);
+      // Older installed apps can take the recovery route immediately after a
+      // web refresh, without repeating an installer flow that may be broken.
+      downloadRecovery(body, release, typeof native()?.getInstallState === 'function');
       const dock = el('div', null, 'isu-dock'); dock.dataset.state = 'idle';
       const row = actions(dock);
       const later = button(row, 'Later', () => close(true)); later.dataset.isuIdle = '';
       const install = button(row, 'Update', () => {
         installing = true; install.disabled = true; dialog.querySelectorAll('[data-isu-idle]').forEach(b => { b.disabled = true; });
-        saveInstall({ version: release.version, versionCode: release.versionCode, awaitingResult: false });
-        status(''); progress({});
+        saveInstall({ version: release.version, versionCode: release.versionCode, apkUrl: release.apkUrl, awaitingResult: false });
+        showRecovery(false); status(''); progress({});
         try {
           if (config.install) config.install(release);
           else if (native()?.installInhouseUpdate) native().installInhouseUpdate(release.apkUrl, release.apkSha256);

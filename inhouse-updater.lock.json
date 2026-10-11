@@ -1,7 +1,7 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "0b7d2d49099e6af7b032cca1ffa7340cf3f5405c",
-  "version": "1.2.1",
+  "revision": "f81a3d5e55dfc7941276e8a507948005d41a55af",
+  "version": "1.2.2",
   "appId": "notes",
   "files": {
     "vendor/inhouse-services-updater/web/host.css": {
@@ -18,11 +18,11 @@
     },
     "vendor/inhouse-services-updater/web/updater.css": {
       "source": "web/updater.css",
-      "sha256": "23ef68343785ca71861fabcd4578d8d3249cf62a4e457aead9c7b0e691a55e90"
+      "sha256": "a3959ab6232eb24b7cfa325836c6baee2954de0602a6e784cc13cf52a1f5a82a"
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "7809d37716b11864dd3d885780fb8bf9cf49ba6376a9a6e3c1bca1557d41441d"
+      "sha256": "e6ca3160f7b0ed40ee8ad70ad40248281603c502e7b2ac814b4d87938cce6d70"
     },
     "vendor/inhouse-services-updater/android/InstallActivity.java": {
       "source": "android/InstallActivity.java",
@@ -82,7 +82,7 @@
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "d9590866039ac935e732c776ad870fc044b14eccf8a3f620ac227cad643949b4"
+      "sha256": "d7b0b9fd864e2c10e9e3a364d8f6188f6a06d1060efde0a2f5b74bffa95f0135"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
@@ -90,11 +90,11 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "7809d37716b11864dd3d885780fb8bf9cf49ba6376a9a6e3c1bca1557d41441d"
+      "sha256": "e6ca3160f7b0ed40ee8ad70ad40248281603c502e7b2ac814b4d87938cce6d70"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
-      "sha256": "23ef68343785ca71861fabcd4578d8d3249cf62a4e457aead9c7b0e691a55e90"
+      "sha256": "a3959ab6232eb24b7cfa325836c6baee2954de0602a6e784cc13cf52a1f5a82a"
     }
   }
 }

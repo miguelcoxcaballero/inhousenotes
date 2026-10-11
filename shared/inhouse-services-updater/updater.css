@@ -106,6 +106,9 @@
 .isu-status-icon svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .isu-status[data-tone=ok] .isu-status-icon { color: var(--isu-ok); }
 .isu-spinner { flex: none; width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: isu-spin .8s linear infinite; }
+.isu-recovery { margin-top: 12px; }
+.isu-download { display: inline-flex; align-items: center; min-height: 40px; color: var(--isu-primary); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+.isu-recovery-help { margin: 0; color: var(--isu-on-variant); font-size: 12px; line-height: 18px; }
 
 /* Settings list: 72dp two-line items with a leading radio, as in Android settings */
 .isu-channels { display: grid; margin: 0 -24px; }
