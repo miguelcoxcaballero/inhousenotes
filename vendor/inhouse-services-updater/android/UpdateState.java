@@ -7,7 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 
 /** Shared persistent policy. Edit in inhouse-services-updater and sync every app.
- * A is the default; B requires explicit publication. All prompts are optional. */
+ * B is the default; A requires explicit development consent. B publication still requires user authorization. All prompts are optional. */
 public final class UpdateState {
     private static JSONObject config;
     public static synchronized JSONObject config(Context context) {
@@ -25,18 +25,25 @@ public final class UpdateState {
     public static long versionCode(Context context){
         try{android.content.pm.PackageInfo info=context.getPackageManager().getPackageInfo(context.getPackageName(),0);return Build.VERSION.SDK_INT>=28?info.getLongVersionCode():info.versionCode;}catch(Exception ignored){return 0;}
     }
-    public static String read(Context context){return context.getSharedPreferences("inhouse-services-updater",0).getString("state","{\"channel\":\"A\",\"snooze\":{}}");}
+    public static String read(Context context){
+        String raw=context.getSharedPreferences("inhouse-services-updater",0).getString("state","{}");
+        try{return normalize(new JSONObject(raw)).toString();}catch(Exception ignored){return "{\"channel\":\"B\",\"developmentConsent\":0,\"snooze\":{}}";}
+    }
+    private static JSONObject normalize(JSONObject state) throws org.json.JSONException {
+        boolean consent=state.optString("channel","B").equals("A")&&state.optInt("developmentConsent",0)==1;
+        JSONObject snooze=state.optJSONObject("snooze");if(snooze==null)snooze=new JSONObject();
+        return new JSONObject().put("channel",consent?"A":"B").put("developmentConsent",consent?1:0).put("snooze",new JSONObject().put("A",Math.max(0,snooze.optLong("A",0))).put("B",Math.max(0,snooze.optLong("B",0))));
+    }
     public static void save(Context context,String value){
         try{
             JSONObject state=new JSONObject(value);String channel=state.getString("channel");if(!channel.equals("A")&&!channel.equals("B"))return;
-            JSONObject snooze=state.optJSONObject("snooze");if(snooze==null)snooze=new JSONObject();
-            JSONObject normalized=new JSONObject().put("channel",channel).put("snooze",new JSONObject().put("A",Math.max(0,snooze.optLong("A",0))).put("B",Math.max(0,snooze.optLong("B",0))));
+            JSONObject normalized=normalize(state);
             if(!context.getSharedPreferences("inhouse-services-updater",0).edit().putString("state",normalized.toString()).commit())throw new IllegalStateException("Could not save update preferences");
         }catch(org.json.JSONException ignored){}
     }
-    public static void snooze(Context context){try{JSONObject state=new JSONObject(read(context));JSONObject times=state.optJSONObject("snooze");if(times==null)times=new JSONObject();times.put(state.optString("channel","A"),System.currentTimeMillis()+14L*86400000);state.put("snooze",times);save(context,state.toString());}catch(Exception ignored){}}
+    public static void snooze(Context context){try{JSONObject state=new JSONObject(read(context));JSONObject times=state.optJSONObject("snooze");if(times==null)times=new JSONObject();times.put(state.optString("channel","B"),System.currentTimeMillis()+14L*86400000);state.put("snooze",times);save(context,state.toString());}catch(Exception ignored){}}
     public static boolean accepts(Context context,String catalog){
-        try{JSONObject state=new JSONObject(read(context)),data=new JSONObject(catalog);String channel=state.optString("channel","A");JSONObject times=state.optJSONObject("snooze");JSONObject latest=data.optJSONObject("latest");return channel.equals(data.optString("channel"))&&(times==null||times.optLong(channel,0)<=System.currentTimeMillis())&&latest!=null&&latest.optLong("versionCode",0)>versionCode(context);}catch(Exception ignored){return false;}
+        try{JSONObject state=new JSONObject(read(context)),data=new JSONObject(catalog);String channel=state.optString("channel","B");JSONObject times=state.optJSONObject("snooze");JSONObject latest=data.optJSONObject("latest");return channel.equals(data.optString("channel"))&&(times==null||times.optLong(channel,0)<=System.currentTimeMillis())&&latest!=null&&latest.optLong("versionCode",0)>versionCode(context);}catch(Exception ignored){return false;}
     }
-    public static String offerKey(Context context,String catalog){try{JSONObject state=new JSONObject(read(context)),data=new JSONObject(catalog);return state.optString("channel","A")+":"+data.getJSONObject("latest").optLong("versionCode")+":"+state.optJSONObject("snooze");}catch(Exception ignored){return catalog;}}
+    public static String offerKey(Context context,String catalog){try{JSONObject state=new JSONObject(read(context)),data=new JSONObject(catalog);return state.optString("channel","B")+":"+data.getJSONObject("latest").optLong("versionCode")+":"+state.optJSONObject("snooze");}catch(Exception ignored){return catalog;}}
 }

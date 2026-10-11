@@ -1,6 +1,7 @@
 package com.inhouse.services.updater;
 
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.webkit.*;
 import java.io.*;
@@ -9,7 +10,15 @@ import java.io.*;
 public class UpdateAssetClient extends WebViewClient {
     private final Context context;
     public UpdateAssetClient(Context context){this.context=context;}
-    @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return true;}
+    @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
+        Uri uri=request.getUrl();
+        // Never navigate the installer WebView to external content. Only user-clicked footer links leave the app.
+        if(request.isForMainFrame()&&request.hasGesture()&&"https".equals(uri.getScheme())&&
+           ("github.com".equals(uri.getHost())||"inhouse.miguelcoxcaballero.com".equals(uri.getHost()))) {
+            try{context.startActivity(new Intent(Intent.ACTION_VIEW,uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}catch(Exception ignored){}
+        }
+        return true;
+    }
     @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
         Uri uri=request.getUrl();
         if(!"https".equals(uri.getScheme()) || !"appassets.androidplatform.net".equals(uri.getHost()))return null;

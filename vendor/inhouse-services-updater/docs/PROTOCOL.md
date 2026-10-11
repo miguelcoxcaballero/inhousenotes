@@ -9,3 +9,5 @@ La política se persiste por aplicación. El recordatorio es un plazo de 14 día
 Las publicaciones anteriores a este protocolo pueden necesitar el manifiesto legado `android-update.json` para descubrir el primer APK compatible. Ese manifiesto mantiene `required:true` únicamente porque los comprobadores antiguos interpretan false como ocultar la actualización; el nuevo actualizador nunca lo usa para bloquear la app. La primera migración es A. No se crean versiones B sin instrucción expresa.
 
 Bridge Android: `getAppVersion`, `getAppVersionCode`, `getUpdateState`, `saveUpdateState`, `installAppUpdate(url, sha256)`, `closeUpdater`. Las apps web usan localStorage si el shell antiguo no expone estado nativo. El host permite puente de instalación solo en sus recursos locales de confianza; Instagram/YouTube no reciben ese puente.
+
+- **B is the default update channel.** A requires an English development warning, explicit acknowledgement and slide confirmation. Legacy implicit A preferences migrate to B; choosing B clears A consent. This does not authorize publishing or promoting a B release.
