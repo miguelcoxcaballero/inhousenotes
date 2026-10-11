@@ -8,6 +8,8 @@ Los cambios nuevos y las publicaciones automáticas van a A. B contiene versione
 
 El popup sigue Material Design 3: hoja inferior modal en el móvil y diálogo básico en pantallas anchas, superficies planas y botones alineados al final. Muestra solo lo necesario: «Update available», versión instalada → nueva y tamaño, la novedad principal y **Later** (14 días) / **Update**. «Details» despliega el resto: versiones intermedias (hasta tres y `+N earlier`), fecha y canal con **Change**. Durante la descarga los botones se sustituyen por un indicador de progreso lineal. Deslizar la hoja hacia abajo, tocar fuera o pulsar Atrás/Escape equivale a Later, salvo mientras se descarga. Los ajustes son una lista: canal A/B con botón de opción y «Check for updates» con su estado debajo. Ninguna actualización bloquea el uso de la app.
 
+Las superficies, el texto y los botones usan una paleta neutra de blancos, grises y negros, independiente del color de acento del dispositivo. Los avisos conservan sus colores semánticos. El encabezado del popup queda aislado de los estilos generales de cada app.
+
 Las animaciones usan las curvas de Material 3 y se desactivan con `prefers-reduced-motion`. Las pruebas de las apps pueden usar los nombres accesibles `Update`, `Later`, `Details`, `Change channel`, `Try again`, `Continue`, `Version A`, `Version B`, `Check for updates`, `I understand`, `Cancel` y el control `Slide to confirm version A`.
 
 ## Código compartido

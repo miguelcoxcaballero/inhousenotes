@@ -62,14 +62,14 @@ jobs:
 
       - name: Verify APK exists
         run: |
-          test -s inhouse-notes-release-v1.0.14.apk
-          ls -lh inhouse-notes-release-v1.0.14.apk
+          test -s inhouse-notes-release-v1.0.15.apk
+          ls -lh inhouse-notes-release-v1.0.15.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: inhouse-notes-android-v1.0.14
-          path: inhouse-notes-release-v1.0.14.apk
+          name: inhouse-notes-android-v1.0.15
+          path: inhouse-notes-release-v1.0.15.apk
           if-no-files-found: error
 
 
@@ -77,14 +77,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.14 >/dev/null 2>&1; then
+          if gh release view android-v1.0.15 >/dev/null 2>&1; then
             echo "La versión ya está publicada; incrementa versionName/versionCode antes de generar otra APK."
             exit 1
           else
-            gh release create android-v1.0.14 inhouse-notes-release-v1.0.14.apk \
+            gh release create android-v1.0.15 inhouse-notes-release-v1.0.15.apk \
               --target "$GITHUB_SHA" \
-              --title "Inhouse Notes Android 1.0.14" \
-              --notes "Live camera and simpler save status." \
+              --title "Inhouse Notes Android 1.0.15" \
+              --notes "Neutral updater colors." \
               --prerelease --latest=false
           fi
 
@@ -93,10 +93,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/public-apk" "$RUNNER_TEMP/previous-apk"
-          gh release download android-v1.0.14 --pattern inhouse-notes-release-v1.0.14.apk --dir "$RUNNER_TEMP/public-apk"
-          gh release download android-v1.0.13 --pattern inhouse-notes-release-v1.0.13.apk --dir "$RUNNER_TEMP/previous-apk"
-          cmp inhouse-notes-release-v1.0.14.apk "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.14.apk"
-          python .github/scripts/verify_release_apk.py "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.14.apk" "$RUNNER_TEMP/previous-apk/inhouse-notes-release-v1.0.13.apk"
+          gh release download android-v1.0.15 --pattern inhouse-notes-release-v1.0.15.apk --dir "$RUNNER_TEMP/public-apk"
+          gh release download android-v1.0.14 --pattern inhouse-notes-release-v1.0.14.apk --dir "$RUNNER_TEMP/previous-apk"
+          cmp inhouse-notes-release-v1.0.15.apk "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.15.apk"
+          python .github/scripts/verify_release_apk.py "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.15.apk" "$RUNNER_TEMP/previous-apk/inhouse-notes-release-v1.0.14.apk"
 
       - name: Publish matching channel A manifest
         run: |

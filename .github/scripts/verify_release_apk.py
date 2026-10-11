@@ -25,7 +25,7 @@ def certificate(path):
 
 assert certificate(apk) == certificate(previous), "Signing key changed"
 badging = subprocess.check_output([str(build_tools / "aapt"), "dump", "badging", str(apk)], text=True)
-assert "package: name='com.local.inhousenotes' versionCode='15' versionName='1.0.14'" in badging, "APK identity/version mismatch"
+assert "package: name='com.local.inhousenotes' versionCode='16' versionName='1.0.15'" in badging, "APK identity/version mismatch"
 assert "uses-permission: name='android.permission.CAMERA'" in badging, "APK cannot request a live camera"
 assert "uses-feature: name='android.hardware.camera'" not in badging, "Camera must remain optional for photo import"
-print("Public APK verified: com.local.inhousenotes 1.0.14 / 15; signing key unchanged.")
+print("Public APK verified: com.local.inhousenotes 1.0.15 / 16; signing key unchanged.")
