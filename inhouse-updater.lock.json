@@ -1,7 +1,7 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "53c7b0a6d01bbbc7cee1663c5a5bbac145f896d8",
-  "version": "1.2.0",
+  "revision": "0b7d2d49099e6af7b032cca1ffa7340cf3f5405c",
+  "version": "1.2.1",
   "appId": "notes",
   "files": {
     "vendor/inhouse-services-updater/web/host.css": {
@@ -10,7 +10,7 @@
     },
     "vendor/inhouse-services-updater/web/host.js": {
       "source": "web/host.js",
-      "sha256": "2191f341acf244e5dc2a25ce93ca775a76e76c82456fbe573395131625f04d5d"
+      "sha256": "a89bddc0d8980665d23c01329a40a3e82aaf72b2b94d5059d2acc8bd96018afd"
     },
     "vendor/inhouse-services-updater/web/index.html": {
       "source": "web/index.html",
@@ -18,23 +18,35 @@
     },
     "vendor/inhouse-services-updater/web/updater.css": {
       "source": "web/updater.css",
-      "sha256": "1d1e73efe59468f2f60cbe249736a1b5aebdbe4eb750f9d864064fedead5253b"
+      "sha256": "23ef68343785ca71861fabcd4578d8d3249cf62a4e457aead9c7b0e691a55e90"
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "ed990592bf0eab1d75949f5b9affa3e4d4428facdeca6f091f0749c97dfbc6a2"
+      "sha256": "7809d37716b11864dd3d885780fb8bf9cf49ba6376a9a6e3c1bca1557d41441d"
+    },
+    "vendor/inhouse-services-updater/android/InstallActivity.java": {
+      "source": "android/InstallActivity.java",
+      "sha256": "06e6a9b829259ee7643158b6ee37e193c674606221488ea2904542cb22418640"
+    },
+    "vendor/inhouse-services-updater/android/InstallResultPolicy.java": {
+      "source": "android/InstallResultPolicy.java",
+      "sha256": "fa3fa2727e670ac7dec02bf34f2cf444a0c58648e47efd3c2de5798dc6471aec"
+    },
+    "vendor/inhouse-services-updater/android/InstallState.java": {
+      "source": "android/InstallState.java",
+      "sha256": "937a4dc61a69ee548ab64d0d5e8725a65dedae43600e6a7ae95b2277e870a4ef"
     },
     "vendor/inhouse-services-updater/android/NativeUpdates.java": {
       "source": "android/NativeUpdates.java",
-      "sha256": "388209896c96bcca6200132ce4f78f4841a3ca8c55c5e9080428a3c5a7cd1cd8"
+      "sha256": "055a2650ec5df123a50c1946df07c1b91c3f2c6d90d3ebe8a60f4dc45ce24589"
     },
     "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt": {
       "source": "android/PhotosUpdateInstaller.kt",
-      "sha256": "26900582b0e3bd2e048b2ec11ba835cdb55c2dd2463401f047ba7f552a3a0c8a"
+      "sha256": "3d53a501f97ae0a53bcee48d46a0bb5343299eccd9aa4a3064fa956335a715a4"
     },
     "vendor/inhouse-services-updater/android/UpdateActivity.java": {
       "source": "android/UpdateActivity.java",
-      "sha256": "e179aaba891a8516a0916f6fa43dfc2b3f2f3ea4f0c2787ec63e5c9dfc15854a"
+      "sha256": "5233ec0e4e907ca05c5e637c16052ac50c2fec60bd4a3d4e31d02644cb5834b1"
     },
     "vendor/inhouse-services-updater/android/UpdateAssetClient.java": {
       "source": "android/UpdateAssetClient.java",
@@ -54,7 +66,7 @@
     },
     "vendor/inhouse-services-updater/register_android.py": {
       "source": "tools/register_android.py",
-      "sha256": "ef4e36db7fb1880055e1315edc4811ffedf29f2397c7934085390eac2a374d19"
+      "sha256": "94b27fa92fe86dd607ee27d8c6af7a1291528be27b58b53975201482efc90d23"
     },
     "vendor/inhouse-services-updater/tests/browser.py": {
       "source": "tests/browser.py",
@@ -66,11 +78,11 @@
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "bff9005995f209e260d6034271be027597c914d1dc64642c2f1567e2a3b66b61"
+      "sha256": "8c4b3408113e364b022c82be1b97eea5ba866950511cfc71999ef577fed3ad8f"
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "ae0922a11665a9dec6ac1f5d9f5621c70920e4429fc174affdf23a281f6f5ec2"
+      "sha256": "d9590866039ac935e732c776ad870fc044b14eccf8a3f620ac227cad643949b4"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
@@ -78,11 +90,11 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "ed990592bf0eab1d75949f5b9affa3e4d4428facdeca6f091f0749c97dfbc6a2"
+      "sha256": "7809d37716b11864dd3d885780fb8bf9cf49ba6376a9a6e3c1bca1557d41441d"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",
-      "sha256": "1d1e73efe59468f2f60cbe249736a1b5aebdbe4eb750f9d864064fedead5253b"
+      "sha256": "23ef68343785ca71861fabcd4578d8d3249cf62a4e457aead9c7b0e691a55e90"
     }
   }
 }

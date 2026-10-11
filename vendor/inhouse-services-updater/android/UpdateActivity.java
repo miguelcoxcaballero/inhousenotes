@@ -49,6 +49,7 @@ public class UpdateActivity extends Activity {
     public class InhouseNativeBridge {
         @JavascriptInterface public String getAppVersion(){return UpdateState.version(UpdateActivity.this);}
         @JavascriptInterface public long getAppVersionCode(){return UpdateState.versionCode(UpdateActivity.this);}
+        @JavascriptInterface public String getInstallState(){return InstallState.read(UpdateActivity.this);}
         @JavascriptInterface public String getUpdateState(){return UpdateState.read(UpdateActivity.this);}
         @JavascriptInterface public void saveUpdateState(String value){UpdateState.save(UpdateActivity.this,value);}
         @JavascriptInterface public void closeUpdater(){runOnUiThread(()->finish());}

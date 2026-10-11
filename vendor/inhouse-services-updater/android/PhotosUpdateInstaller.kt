@@ -1,5 +1,6 @@
 package com.inhouse.services.updater
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -15,6 +16,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
 
 // Inhouse services updater: canonical source in miguelcoxcaballero/inhouse-services-updater.
 // Change updater code there first, then sync ALL five apps at the same revision.
@@ -25,13 +27,15 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
   interface Result { fun success(value: String); fun error(code: String, message: String?, details: Any?) }
   fun installUpdate(url: String, expectedSha256: String?, result: Result) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.packageManager.canRequestPackageInstalls()) {
-      activity.startActivity(
-        Intent(
-          Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-          Uri.parse("package:${activity.packageName}"),
-        ),
-      )
-      result.success("permission_required")
+      activity.runOnUiThread {
+        try {
+          activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:${activity.packageName}")))
+          result.success("permission_required")
+        } catch (error: Exception) {
+          result.error("permission_unavailable", "Open Android settings to allow updates from this app, then try again.", null)
+        }
+      }
       return
     }
 
@@ -63,7 +67,7 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
           }
         }
         publishStage("verifying")
-        try {
+        val verifiedPackage = try {
           verifyApk(apkFile, expectedSha256)
         } catch (error: Exception) {
           apkFile.delete()
@@ -79,12 +83,22 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
         activity.runOnUiThread {
           try {
             publishStage("installing")
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-              setDataAndType(apkUri, APK_MIME_TYPE)
+            if (activity.isFinishing || activity.isDestroyed) {
+              throw IllegalStateException("Open the app and try the update again.")
+            }
+            // Use a foreground proxy to receive Android's result and preserve
+            // the expected version across self-update process termination.
+            val installIntent = Intent().apply {
+              setClassName(activity.packageName, "com.inhouse.services.updater.InstallActivity")
+              data = apkUri
+              clipData = ClipData.newRawUri("Update APK", apkUri)
+              putExtra("installId", UUID.randomUUID().toString())
+              putExtra("versionCode", getVersionCode(verifiedPackage))
+              putExtra("versionName", verifiedPackage.versionName ?: "")
               addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(installIntent)
-            result.success("ready")
+            result.success("installing")
           } catch (error: Exception) {
             result.error("installer_unavailable", error.message ?: "Android could not open the installer.", null)
           }
@@ -191,7 +205,7 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
     }
   }
 
-  private fun verifyApk(apkFile: File, expectedSha256: String?) {
+  private fun verifyApk(apkFile: File, expectedSha256: String?): PackageInfo {
     if (!expectedSha256.isNullOrBlank()) {
       val actualSha256 = apkFile.inputStream().use { input ->
         val digest = MessageDigest.getInstance("SHA-256")
@@ -220,6 +234,7 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
     if (getSigningDigests(archive) != getSigningDigests(installed)) {
       throw SecurityException("The update signature does not match Inhouse Photos.")
     }
+    return archive
   }
 
   @Suppress("DEPRECATION")
