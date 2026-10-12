@@ -137,6 +137,10 @@
       point.x += correction[0];
       point.y += correction[1];
     }
+    if (model.registration) {
+      const correction = registrationAt(model.registration, u, v);
+      point.x += correction[0]; point.y += correction[1];
+    }
     return point;
   }
   function initial(quad, width, height) {
@@ -321,7 +325,9 @@
     if (!frame?.paths) return null;
     const scale = Math.min(1, 1000 / Math.max(source.width, source.height)),
       width = Math.round(source.width * scale),
-      height = Math.round(source.height * scale);
+      height = Math.round(source.height * scale),
+      scaleX = width / source.width,
+      scaleY = height / source.height;
     const canvas =
       typeof OffscreenCanvas === "function"
         ? new OffscreenCanvas(width, height)
@@ -345,14 +351,14 @@
     const paths = {};
     for (const name of ["top", "right", "bottom", "left"])
       paths[name] = frame.paths[name].map((p) => ({
-        x: p.x * scale,
-        y: p.y * scale,
+        x: p.x * scaleX - 0.5,
+        y: p.y * scaleY - 0.5,
       }));
     let calibrationTop =
       frame.box?.support >= 0.5 &&
       frame.box.top?.length >= 7 &&
       frame.box.top?.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
-        ? frame.box.top.map((p) => ({ x: p.x * scale, y: p.y * scale }))
+        ? frame.box.top.map((p) => ({ x: p.x * scaleX - 0.5, y: p.y * scaleY - 0.5 }))
         : null;
     const pixel = (x, y, c) =>
       rgba[
@@ -793,8 +799,8 @@
       row: p.row - phase.r0,
       u: (20 + 5 * (p.col - phase.c0)) / W,
       v: (19.3 + 5 * (p.row - phase.r0)) / H,
-      x: p.x / scale,
-      y: p.y / scale,
+      x: (p.x + 0.5) / scaleX,
+      y: (p.y + 0.5) / scaleY,
     }));
     const positions = new Map(),
       duplicates = new Set();
@@ -855,12 +861,108 @@
     diagnostics.rejectedGridOutliers = measured.length - lattice.length;
     if (lattice.length < 350 || lattice.length < measured.length * 0.85)
       return null;
+    const refined = refineDotCenters(source, lattice, pitch / Math.sqrt(scaleX * scaleY), diagnostics);
+    if (refined.length < 350) return null;
     return {
-      points: lattice,
-      pitch: pitch / scale,
+      points: refined,
+      raster: refined.raster,
+      pitch: pitch / Math.sqrt(scaleX * scaleY),
       phaseScore: phase.score,
-      coverage: lattice.length / (35 * 51),
+      coverage: refined.length / (35 * 51),
     };
+  }
+  function refineDotCenters(source, points, pitch, diagnostics, existingRaster = null) {
+    // Observe the blob on the source raster, not only on the 1000px graph
+    // analysis. Canvas coordinates describe pixel edges, so every weighted
+    // sample contributes its centre (index + 0.5) in original source units.
+    const scale = Math.min(1, 2600 / Math.max(source.width, source.height)),
+      width = Math.round(source.width * scale), height = Math.round(source.height * scale),
+      sx = width / source.width, sy = height / source.height,
+      canvas = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(width, height) : document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!existingRaster) ctx.drawImage(source, 0, 0, width, height);
+    const data = existingRaster || ctx.getImageData(0, 0, width, height).data,
+      radius = Math.max(2.8, Math.min(6, pitch * Math.sqrt(sx * sy) * 0.2)),
+      ringRadius = Math.max(3, radius + 1.5), out = [];
+    for (const point of points) {
+      const cx = point.x * sx - 0.5, cy = point.y * sy - 0.5,
+        background = [[], [], []];
+      for (let k = 0; k < 16; k++) {
+        const angle = k * Math.PI / 8,
+          x = clamp(Math.round(cx + Math.cos(angle) * ringRadius), 0, width - 1),
+          y = clamp(Math.round(cy + Math.sin(angle) * ringRadius), 0, height - 1), at = (y * width + x) * 4;
+        for (let c = 0; c < 3; c++) background[c].push(data[at + c]);
+      }
+      const paper = background.map(values => median(values));
+      let sum = 0, wx = 0, wy = 0, xx = 0, yy = 0, xy = 0, peak = 0, edge = 0, coloredMass = 0, coloredPeak = 0;
+      const samples = [];
+      for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++)
+        for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
+          if (x < 0 || y < 0 || x >= width || y >= height || Math.hypot(x - cx, y - cy) > radius) continue;
+          const at = (y * width + x) * 4,
+            contrast = [0, 1, 2].map(c => (paper[c] - data[at + c]) / Math.max(40, paper[c])),
+            low = Math.min(...contrast), high = Math.max(...contrast);
+          // Neutral printed ink inherits local paper colour; coloured ink
+          // and long strokes must not become exact registration anchors.
+          const weight = low >= high * 0.36 - 0.012 && high - low <= high * 0.56 + 0.016
+            ? Math.max(0, (contrast[0] + contrast[1] + contrast[2]) / 3) : 0;
+          if (!weight && high > 0) { coloredMass += high; coloredPeak = Math.max(coloredPeak, high); }
+          peak = Math.max(peak, weight);
+          samples.push({ x, y, weight });
+        }
+      for (const sample of samples) {
+        const weight = Math.max(0, sample.weight - Math.max(0.006, peak * 0.08));
+        const dx = sample.x - cx, dy = sample.y - cy;
+        sum += weight; wx += sample.x * weight; wy += sample.y * weight;
+        xx += dx * dx * weight; yy += dy * dy * weight; xy += dx * dy * weight;
+        if (Math.hypot(dx, dy) > radius * 0.8) edge += weight;
+      }
+      if (sum < 0.035 || peak < 0.018 || (coloredMass > sum * 0.35 && coloredPeak > peak * 0.6)) { out.push({ ...point, centerRefined: false }); continue; }
+      const x = wx / sum, y = wy / sum, dx = x - cx, dy = y - cy,
+        vx = xx / sum - dx * dx, vy = yy / sum - dy * dy, cov = xy / sum - dx * dy,
+        large = (vx + vy + Math.hypot(vx - vy, 2 * cov)) / 2,
+        small = (vx + vy - Math.hypot(vx - vy, 2 * cov)) / 2;
+      if (Math.hypot(dx, dy) > radius * 0.45 || edge / sum > 0.19 ||
+        large > Math.max(0.5, small) * 2.9 || large > radius * radius * 0.35) { out.push({ ...point, centerRefined: false }); continue; }
+      const peakSample = samples.reduce((best, sample) => sample.weight > best.weight ? sample : best, samples[0]),
+        coreRadius = Math.max(1.8, Math.min(4, pitch * Math.sqrt(sx * sy) * 0.14)),
+        paperLuma = paper[0] * 0.2126 + paper[1] * 0.7152 + paper[2] * 0.0722;
+      let coreWeight = 0, coreX = 0, coreY = 0;
+      for (const sample of samples) {
+        if (Math.hypot(sample.x - peakSample.x, sample.y - peakSample.y) > coreRadius) continue;
+        const at = (sample.y * width + sample.x) * 4,
+          luma = data[at] * 0.2126 + data[at + 1] * 0.7152 + data[at + 2] * 0.0722,
+          weight = sample.weight > 0 ? Math.max(0, paperLuma - luma - Math.max(2, peak * paperLuma * 0.035)) : 0;
+        coreWeight += weight; coreX += sample.x * weight; coreY += sample.y * weight;
+      }
+      let finalX = coreWeight ? coreX / coreWeight : x,
+        finalY = coreWeight ? coreY / coreWeight : y;
+      const coreSamples = samples.map(sample => {
+        const at = (sample.y * width + sample.x) * 4;
+        return { ...sample, darkness: paperLuma - (data[at] * 0.2126 + data[at + 1] * 0.7152 + data[at + 2] * 0.0722) };
+      }), peakLuma = Math.max(...coreSamples.map(sample => sample.darkness)),
+        softRadius = pitch * Math.sqrt(sx * sy) * 0.14;
+      // Fractional pixel coverage removes integer window jumps. Iterating a
+      // compact luminance centroid follows the printed core without letting
+      // the surrounding JPEG halo or paper texture displace its anchor.
+      for (let iteration = 0; iteration < 3; iteration++) {
+        let mass = 0, mx = 0, my = 0;
+        for (const sample of coreSamples) {
+          if (sample.weight <= 0) continue;
+          const fraction = clamp(softRadius + 0.5 - Math.hypot(sample.x - finalX, sample.y - finalY), 0, 1),
+            weight = Math.max(0, sample.darkness - Math.max(2, peakLuma * 0.035)) * fraction;
+          mass += weight; mx += sample.x * weight; my += sample.y * weight;
+        }
+        if (mass) { finalX = mx / mass; finalY = my / mass; }
+      }
+      out.push({ ...point, x: (finalX + 0.5) / sx, y: (finalY + 0.5) / sy, centerRefined: true, dotContrast: peak });
+    }
+    diagnostics.sourceRefinedDots = out.filter(p => p.centerRefined).length;
+    diagnostics.ambiguousDotCenters = points.length - diagnostics.sourceRefinedDots;
+    canvas.width = canvas.height = 0;
+    out.raster = data;
+    return out;
   }
   function traceParallels(points, pitch) {
     // Rows and columns are parallel in the *flat sheet*, not in the image.
@@ -1329,6 +1431,166 @@
     return { scale, maximumDisplacement: maximumDisplacement * scale,
       maximumDerivative: maximumDerivative * scale };
   }
+  function refineProjectedCenters(source, model, points, raster) {
+    // Measure the continuous photographed spot in the local flat-page basis.
+    // Bilinear source resampling here is the same image formation used by
+    // the final warp; native integer-pixel moments alone jump for tiny JPEG
+    // dots. This needs only small patches, never a second full-page warp.
+    const scale = Math.min(1, 2600 / Math.max(source.width, source.height)),
+      width = Math.round(source.width * scale), height = Math.round(source.height * scale),
+      sx = width / source.width, sy = height / source.height;
+    const luma = (sourceX, sourceY) => {
+      const x = clamp(sourceX * sx - 0.5, 0, width - 1.001),
+        y = clamp(sourceY * sy - 0.5, 0, height - 1.001),
+        ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, at = (iy * width + ix) * 4;
+      const value = i => raster[i] * 0.2126 + raster[i + 1] * 0.7152 + raster[i + 2] * 0.0722;
+      return (value(at) * (1 - fx) + value(at + 4) * fx) * (1 - fy) +
+        (value(at + width * 4) * (1 - fx) + value(at + width * 4 + 4) * fx) * fy;
+    };
+    return points.map(point => {
+      if (!point.centerRefined) return point;
+      const left = project(model, point.u - 0.1 / W, point.v), right = project(model, point.u + 0.1 / W, point.v),
+        top = project(model, point.u, point.v - 0.1 / H), bottom = project(model, point.u, point.v + 0.1 / H),
+        ax = (right.x - left.x) / 0.2, ay = (right.y - left.y) / 0.2,
+        bx = (bottom.x - top.x) / 0.2, by = (bottom.y - top.y) / 0.2,
+        sample = (x, y) => luma(point.x + ax * x + bx * y, point.y + ay * x + by * y), ring = [];
+      for (let i = 0; i < 24; i++) { const angle = i * Math.PI / 12; ring.push(sample(Math.cos(angle) * 1.8, Math.sin(angle) * 1.8)); }
+      const paper = percentile(ring, 0.65);
+      let peak = 0, px = 0, py = 0;
+      for (let y = -1; y <= 1; y += 0.25) for (let x = -1; x <= 1; x += 0.25) {
+        const dark = paper - sample(x, y);
+        if (dark > peak) { peak = dark; px = x; py = y; }
+      }
+      if (peak < 5) return point;
+      let mass = 0, mx = 0, my = 0;
+      for (let y = -0.875; y <= 0.875; y += 0.125) for (let x = -0.875; x <= 0.875; x += 0.125) {
+        const coverage = clamp((0.8 - Math.hypot(x, y)) / 0.125 + 0.5, 0, 1);
+        if (!coverage) continue;
+        const weight = Math.max(0, paper - sample(px + x, py + y) - Math.max(2, peak * 0.035)) * coverage;
+        mass += weight; mx += (px + x) * weight; my += (py + y) * weight;
+      }
+      if (!mass) return point;
+      mx /= mass; my /= mass;
+      if (Math.hypot(mx, my) > 0.3) return point;
+      return { ...point, x: point.x + ax * mx + bx * my, y: point.y + ay * mx + by * my };
+    });
+  }
+  function registrationAt(field, u, v) {
+    const locate = (positions, value) => {
+      let low = 0, high = positions.length - 1;
+      while (high - low > 1) { const middle = (low + high) >> 1; if (positions[middle] > value) high = middle; else low = middle; }
+      return Math.min(positions.length - 2, low);
+    };
+    const x = locate(field.colPositions, u), y = locate(field.rowPositions, v),
+      tx = clamp((u - field.colPositions[x]) / (field.colPositions[x + 1] - field.colPositions[x]), 0, 1),
+      ty = clamp((v - field.rowPositions[y]) / (field.rowPositions[y + 1] - field.rowPositions[y]), 0, 1),
+      n = field.colPositions.length, i = y * n + x;
+    const value = values => (values[i] * (1 - tx) + values[i + 1] * tx) * (1 - ty) +
+      (values[i + n] * (1 - tx) + values[i + n + 1] * tx) * ty;
+    return [value(field.dx), value(field.dy)];
+  }
+  function registerMeasuredDots(model, points, pitch, options = {}) {
+    // This final calibration uses all reliable real centres, after the physical
+    // fit has passed independent holdouts. Its anchor error is an interpolation
+    // metric, explicitly not another independent validation score.
+    const field = {
+      colPositions: [0, 15 / W, ...Array.from({ length: 35 }, (_, i) => (20 + i * 5) / W), 195 / W, 1],
+      rowPositions: [0, 14.3 / H, ...Array.from({ length: 51 }, (_, i) => (19.3 + i * 5) / H), 284.3 / H, 1],
+    }, cols = field.colPositions.length, rows = field.rowPositions.length,
+      count = cols * rows, candidates = new Map();
+    for (const point of points) {
+      if (point.centerRefined === false) continue;
+      const q = project(model, point.u, point.v), dx = point.x - q.x, dy = point.y - q.y;
+      if (Math.hypot(dx, dy) > pitch * 0.3) continue;
+      candidates.set((point.row + 2) * cols + point.col + 2, { point, dx, dy });
+    }
+    // Compare a candidate to both independently ordered dot families. A
+    // punctuation fragment cannot become a sharp local warp control merely
+    // because a smooth global fit tolerated its error in a long tail.
+    // Raster controls have already passed this measured-centre check. Their
+    // bounded photometric offset is validated by the cell-scale/no-fold tests
+    // below, rather than being mistaken for a new noisy source observation.
+    for (const [index, candidate] of options.rasterControls ? [] : [...candidates]) {
+      const predictions = [];
+      for (const step of [1, cols]) for (const distance of [1, 2]) {
+        const a = candidates.get(index - distance * step), b = candidates.get(index + distance * step);
+        if (a && b) predictions.push({ x: (a.dx + b.dx) / 2, y: (a.dy + b.dy) / 2 });
+      }
+      if (predictions.length >= 2 && Math.hypot(candidate.dx - median(predictions.map(p => p.x)),
+        candidate.dy - median(predictions.map(p => p.y))) > Math.max(0.35, pitch * 0.06)) candidates.delete(index);
+    }
+    const minimum = Math.max(350, Math.floor(points.length * 0.35));
+    if (candidates.size < minimum) return null;
+    const fill = () => {
+      field.dx = Array(count).fill(0); field.dy = Array(count).fill(0);
+      const fixed = new Uint8Array(count);
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++)
+        if (x <= 1 || x >= cols - 2 || y <= 1 || y >= rows - 2) fixed[y * cols + x] = 1;
+      for (const [i, candidate] of candidates) { field.dx[i] = candidate.dx; field.dy[i] = candidate.dy; fixed[i] = 1; }
+      // Only missing controls are interpolated. They are never reported as
+      // detected dots or as accepted exact anchors in the progress overlay.
+      for (let iteration = 0; iteration < 100; iteration++) {
+        let change = 0;
+        for (let y = 2; y < rows - 2; y++) for (let x = 2; x < cols - 2; x++) {
+          const i = y * cols + x;
+          if (fixed[i]) continue;
+          for (const values of [field.dx, field.dy]) {
+            const next = (values[i - 1] + values[i + 1] + values[i - cols] + values[i + cols]) / 4;
+            change = Math.max(change, Math.abs(next - values[i])); values[i] = next;
+          }
+        }
+        if (change < 1e-5) break;
+      }
+    };
+    const sourceNodes = Array.from({ length: count }, (_, i) => project(model,
+      field.colPositions[i % cols], field.rowPositions[Math.floor(i / cols)]));
+    const badCells = () => {
+      const bad = [];
+      for (let y = 1; y < rows - 2; y++) for (let x = 1; x < cols - 2; x++) {
+        const indices = [y * cols + x, y * cols + x + 1, (y + 1) * cols + x, (y + 1) * cols + x + 1];
+        let failed = false;
+        for (const [a, b] of [[0, 1], [2, 3], [0, 2], [1, 3]]) {
+          const i = indices[a], j = indices[b], p = sourceNodes[i], q = sourceNodes[j],
+            length = Math.hypot(q.x - p.x, q.y - p.y),
+            shift = Math.hypot(field.dx[j] - field.dx[i], field.dy[j] - field.dy[i]);
+          if (shift > length * 0.12) failed = true;
+        }
+        const p = indices.map(i => ({ x: sourceNodes[i].x + field.dx[i], y: sourceNodes[i].y + field.dy[i] }));
+        for (const [a, b, c] of [[0, 1, 2], [1, 3, 0], [2, 0, 3], [3, 2, 1]]) {
+          const determinant = (p[b].x - p[a].x) * (p[c].y - p[a].y) - (p[b].y - p[a].y) * (p[c].x - p[a].x),
+            original = sourceNodes[indices[a]], one = sourceNodes[indices[b]], two = sourceNodes[indices[c]],
+            expected = (one.x - original.x) * (two.y - original.y) - (one.y - original.y) * (two.x - original.x);
+          if (!Number.isFinite(determinant) || determinant * expected <= 0) failed = true;
+        }
+        if (failed) bad.push(indices);
+      }
+      return bad;
+    };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      fill();
+      const bad = badCells();
+      if (!bad.length) {
+        const anchors = [...candidates.values()].map(candidate => candidate.point),
+          registered = { ...model, registration: field };
+        if (!visibleSurface(registered)) return null;
+        return { field, anchors, diagnostics: { anchors: anchors.length, rejected: points.length - anchors.length,
+          interpolated: 35 * 51 - anchors.length, localScaleLimit: 0.12, maximumAnchorError: Math.max(...anchors.map(point => {
+            const mapped = project(registered, point.u, point.v);
+            return Math.hypot(mapped.x - point.x, mapped.y - point.y);
+          })) } };
+      }
+      const remove = new Set();
+      for (const cell of bad) {
+        const ranked = cell.filter(i => candidates.has(i)).sort((a, b) =>
+          Math.hypot(candidates.get(b).dx, candidates.get(b).dy) - Math.hypot(candidates.get(a).dx, candidates.get(a).dy));
+        if (ranked.length) remove.add(ranked[0]);
+      }
+      if (!remove.size) return null;
+      for (const i of remove) candidates.delete(i);
+      if (candidates.size < minimum) return null;
+    }
+    return null;
+  }
   function fit(source, detection, options = {}) {
     const diagnostics = options.diagnostics || {};
     const started = performance.now(),
@@ -1449,6 +1711,7 @@
             coarseAngles[index + 1] * fraction,
         );
       }
+      const profileCandidates = [];
       for (const preserveEnds of [false, true]) {
         if (performance.now() >= deadline) break;
         const candidate = optimize(
@@ -1463,6 +1726,7 @@
             preserveEnds,
           ),
           model = prepare(candidate.p, source.width, source.height);
+        profileCandidates.push(candidate);
         // Blank outer margins do not contain dot evidence. First allow the
         // observed perimeter to refine them; if this folds an unobserved
         // margin, try retaining the coarse endpoint tangents while improving
@@ -1473,6 +1737,20 @@
         ) {
           best = candidate;
           break;
+        }
+      }
+      // The unconstrained endpoint solution can fold only its blank margin,
+      // while fixing endpoints can underfit a genuine curl near the dots.
+      // Interpolate the two physical tangent profiles (not 2D coordinates)
+      // and retain a fully visible, independently validated compromise.
+      if (profileCandidates.length === 2) {
+        for (const mix of [0.25, 0.5, 0.75]) {
+          const p = profileCandidates[0].p.map((value, index) =>
+            value * (1 - mix) + profileCandidates[1].p[index] * mix),
+            candidateModel = prepare(p, source.width, source.height),
+            cost = loss(residual(p, training, source.width, source.height, frame, guides));
+          if ((!validateModel(prepare(best.p, source.width, source.height)) || cost < best.cost * 0.985) && validateModel(candidateModel))
+            best = { p, cost, iterations: 0 };
         }
       }
     }
@@ -1520,14 +1798,36 @@
       samples: heldoutGuides.length,
       tangentP90,
     };
+    const present = new Set(points.map(point => `${point.row},${point.col}`)), missing = [];
+    for (let row = 0; row < 51; row++) for (let col = 0; col < 35; col++) {
+      if (present.has(`${row},${col}`)) continue;
+      const u = (20 + col * 5) / W, v = (19.3 + row * 5) / H;
+      missing.push({ ...project(model, u, v), u, v, row, col });
+    }
+    const typicalDotContrast = median(points.filter(point => point.centerRefined).map(point => point.dotContrast)),
+      recovered = refineDotCenters(source, missing, pitch, {}, observed.raster).filter(point =>
+        point.centerRefined && point.dotContrast < typicalDotContrast * 2.3 && (() => {
+          const expected = project(model, point.u, point.v);
+          return Math.hypot(expected.x - point.x, expected.y - point.y) <= Math.max(0.25, Math.min(pitch * 0.08, errors.p90 * 1.2));
+        })()),
+      registrationPoints = refineProjectedCenters(source, model, [...points, ...recovered], observed.raster),
+      registration = registerMeasuredDots(model, registrationPoints, pitch);
+    if (registration) {
+      registration.diagnostics.recovered = registration.anchors.filter(point => !present.has(`${point.row},${point.col}`)).length;
+      registration.field.points = registration.anchors;
+    }
+    if (registration && typeof options.onRegistration === "function")
+      options.onRegistration(observationDetail({ ...observed, points: registration.anchors }, source));
     return {
       type: "developable-pinhole",
       parameters: best.p,
       ...(model.refinement ? { refinement: model.refinement } : {}),
+      ...(registration ? { registration: registration.field } : {}),
       width: source.width,
       height: source.height,
       diagnostics: {
         observations: points.length,
+        registration: registration?.diagnostics || { anchors: 0, rejected: points.length },
         training: observedTraining.length,
         positionalSamples: training.length,
         validation: validation.length,
@@ -1553,15 +1853,149 @@
       },
     };
   }
+  const rasterCalibration = new WeakMap();
+  function refineForRaster(source, surface, options = {}) {
+    const prior = surface && rasterCalibration.get(surface), outputWidth = options.width, outputHeight = options.height,
+      original = prior?.original || surface?.registration;
+    if (!original?.points?.length || !outputWidth || !outputHeight) return null;
+    if (prior?.width === outputWidth && prior?.height === outputHeight) return prior.detail;
+    const started = performance.now();
+    const sourceWidth = source.width, sourceHeight = source.height;
+    let image = options.imageData;
+    if (!image) {
+      const canvas = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(sourceWidth, sourceHeight) : document.createElement("canvas");
+      canvas.width = sourceWidth; canvas.height = sourceHeight;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(source, 0, 0); image = context.getImageData(0, 0, sourceWidth, sourceHeight);
+      canvas.width = canvas.height = 0;
+    }
+    const data = image.data, pitch = surface.diagnostics.pitch,
+      field = { ...original, dx: [...original.dx], dy: [...original.dy] },
+      model = prepare(surface.parameters, surface.width, surface.height);
+    if (surface.refinement) model.refinement = surface.refinement;
+    const coefficients = [0.2126, 0.7152, 0.0722];
+    const luma = (x, y) => {
+      x = clamp(x - 0.5, 0, sourceWidth - 1.001); y = clamp(y - 0.5, 0, sourceHeight - 1.001);
+      const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, at = (iy * sourceWidth + ix) * 4;
+      let out = 0;
+      for (let c = 0; c < 3; c++) {
+        const value = Math.round((data[at + c] * (1 - fx) + data[at + 4 + c] * fx) * (1 - fy) +
+          (data[at + sourceWidth * 4 + c] * (1 - fx) + data[at + sourceWidth * 4 + 4 + c] * fx) * fy);
+        out += value * coefficients[c];
+      }
+      return out;
+    };
+    const fractions = (count, extra) => [...Array.from({length:count+1}, (_,i)=>i/count), ...extra]
+      .sort((a,b)=>a-b).filter((value,i,values)=>!i||value-values[i-1]>1e-7),
+      us = options.mesh?.us || fractions(64,[15/W,195/W,...field.colPositions]),
+      vs = options.mesh?.vs || fractions(80,[14.3/H,274.3/H,279.3/H,284.3/H,...field.rowPositions]),
+      nodes = new Map(),
+      node = (x,y) => { const key=y*us.length+x; let p=nodes.get(key);
+        if(!p){p=project(model,us[x],vs[y]);nodes.set(key,p);} return p; },
+      interval = (values,t) => {let low=0,high=values.length-1;while(high-low>1){const m=(low+high)>>1;if(values[m]<=t)low=m;else high=m;}return low;},
+      baseAt = (u,v) => {const x=interval(us,u),y=interval(vs,v),s=(u-us[x])/(us[x+1]-us[x]),t=(v-vs[y])/(vs[y+1]-vs[y]),
+        a=node(x,y),b=node(x+1,y),c=node(x,y+1),d=node(x+1,y+1);
+        return {x:(a.x*(1-s)+b.x*s)*(1-t)+(c.x*(1-s)+d.x*s)*t,
+          y:(a.y*(1-s)+b.y*s)*(1-t)+(c.y*(1-s)+d.y*s)*t};};
+    const outputPitch = outputWidth * 5 / W, radius = Math.max(2, Math.ceil(outputPitch * 0.14)),
+      search = Math.max(2, Math.ceil(outputPitch * 0.12)), plans = original.points.map(point => {
+        const center = project(model, point.u, point.v),
+          a = project(model, point.u + 1 / outputWidth, point.v),
+          b = project(model, point.u, point.v + 1 / outputHeight);
+        return { point, center, ax: a.x - center.x, ay: a.y - center.y, bx: b.x - center.x, by: b.y - center.y,
+          tx: point.u * outputWidth, ty: point.v * outputHeight,
+          index: (point.row + 2) * field.colPositions.length + point.col + 2 };
+      });
+    let maximumCorrection = 0;
+    // Sample the same output-pixel phase, mesh and rounded RGB values as the
+    // warp. Each calibration step must improve the visible glyph centroid;
+    // retaining the best step avoids toggling between equal-valued peaks.
+    for (let pass = 0; pass < 2; pass++) for (const plan of plans) {
+      const { point, ax, ay, bx, by, tx, ty, index } = plan,
+        samples = new Map();
+      let generation = 0;
+      const sample = (x, y) => {
+          const key=y*outputWidth+x; let prepared=samples.get(key);
+          if(!prepared){
+            const u=(x+0.5)/outputWidth,v=(y+0.5)/outputHeight,
+              col=interval(field.colPositions,u),row=interval(field.rowPositions,v),n=field.colPositions.length;
+            prepared={base:baseAt(u,v),i:row*n+col,n,
+              tx:clamp((u-field.colPositions[col])/(field.colPositions[col+1]-field.colPositions[col]),0,1),
+              ty:clamp((v-field.rowPositions[row])/(field.rowPositions[row+1]-field.rowPositions[row]),0,1),generation:-1};
+            samples.set(key,prepared);
+          }
+          if(prepared.generation===generation)return prepared.value;
+          const {i,n,tx,ty}=prepared,
+            correctionX=(field.dx[i]*(1-tx)+field.dx[i+1]*tx)*(1-ty)+(field.dx[i+n]*(1-tx)+field.dx[i+n+1]*tx)*ty,
+            correctionY=(field.dy[i]*(1-tx)+field.dy[i+1]*tx)*(1-ty)+(field.dy[i+n]*(1-tx)+field.dy[i+n+1]*tx)*ty;
+          prepared.value=luma(prepared.base.x+correctionX,prepared.base.y+correctionY);
+          prepared.generation=generation;
+          return prepared.value;
+        },
+        measure = () => {
+          generation++;
+          const ring = [];
+          for (let i=0;i<24;i++){const angle=i*Math.PI/12;
+            ring.push(sample(Math.round(tx-0.5+Math.cos(angle)*outputPitch*0.36),
+              Math.round(ty-0.5+Math.sin(angle)*outputPitch*0.36)));}
+          const paper=percentile(ring,0.65),cx=Math.round(tx-0.5),cy=Math.round(ty-0.5);
+          let peak=0,px=cx,py=cy;
+          for(let y=cy-search;y<=cy+search;y++)for(let x=cx-search;x<=cx+search;x++){
+            const darkness=paper-sample(x,y);if(darkness>peak){peak=darkness;px=x;py=y;}}
+          if(peak<5)return null;
+          let mass=0,mx=0,my=0;
+          for(let y=-radius;y<=radius;y++)for(let x=-radius;x<=radius;x++){
+            if(x*x+y*y>radius*radius)continue;
+            const weight=Math.max(0,paper-sample(px+x,py+y)-Math.max(2,peak*0.035));
+            mass+=weight;mx+=(px+x+0.5)*weight;my+=(py+y+0.5)*weight;}
+          if(!mass)return null;
+          const dx=mx/mass-tx,dy=my/mass-ty;return {dx,dy,error:Math.hypot(dx,dy)};
+        };
+      let measured=measure();
+      for(let iteration=0;measured && measured.error>0.025 && iteration<3;iteration++){
+        if(measured.error>outputPitch*0.08)break;
+        const oldX=field.dx[index],oldY=field.dy[index];
+        let improved=false;
+        for(const amount of [1,0.5,0.25]){
+          const nextX=oldX+(ax*measured.dx+bx*measured.dy)*amount,
+            nextY=oldY+(ay*measured.dx+by*measured.dy)*amount,
+            correction=Math.hypot(nextX-original.dx[index],nextY-original.dy[index]);
+          if(correction>pitch*0.08)continue;
+          field.dx[index]=nextX;field.dy[index]=nextY;
+          const candidate=measure();
+          if(candidate && candidate.error<measured.error){
+            measured=candidate;improved=true;maximumCorrection=Math.max(maximumCorrection,correction);break;}
+          field.dx[index]=oldX;field.dy[index]=oldY;
+        }
+        if(!improved)break;
+      }
+    }
+    const points = plans.map(({ point, center, index }) => ({ ...point,
+      measuredX: point.measuredX ?? point.x, measuredY: point.measuredY ?? point.y,
+      x: center.x + field.dx[index], y: center.y + field.dy[index] })),
+      registered = registerMeasuredDots(model, points, pitch, {rasterControls:true});
+    if (!registered) return null;
+    registered.field.points = registered.anchors;
+    surface.registration = registered.field;
+    cache.delete(surface);
+    surface.diagnostics.rasterRegistration = { ...registered.diagnostics,
+      width: outputWidth, height: outputHeight, maximumSourceCorrection: maximumCorrection,
+      elapsedMs: performance.now() - started };
+    const detail = { ...observationDetail({ points: registered.anchors, pitch }, source),
+      rasterAligned: true, registrationDiagnostics: surface.diagnostics.rasterRegistration };
+    rasterCalibration.set(surface, { original, width: outputWidth, height: outputHeight, detail });
+    return detail;
+  }
   const cache = new WeakMap();
   function map(surface, u, v) {
     let model = cache.get(surface);
     if (!model) {
       model = prepare(surface.parameters, surface.width, surface.height);
       if (surface.refinement) model.refinement = surface.refinement;
+      if (surface.registration) model.registration = surface.registration;
       cache.set(surface, model);
     }
     return project(model, u, v);
   }
-  SP.MetricSurface = { fit, map, observe };
+  SP.MetricSurface = { fit, map, observe, refineForRaster };
 })();

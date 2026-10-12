@@ -76,3 +76,56 @@ test('stale source-space dot coordinates do not replace photographed-grid recove
   expect(result.method).toBe('recovered-dot-phase');
   expect(result.observations).toBe(0);
 });
+
+test('verified bullet centres survive nearby camera speckles without leaving a second dot pattern', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = 1260; canvas.height = 1782;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+    // A soft printed dot with a sharper, directionally varying camera speckle
+    // nearby. The dark speckle must not replace its verified geometric centre.
+    const stamp = document.createElement('canvas'); stamp.width = stamp.height = 16;
+    const stampContext = stamp.getContext('2d');
+    stampContext.fillStyle = '#b8b8b8'; stampContext.filter = 'blur(.8px)';
+    stampContext.beginPath(); stampContext.arc(8, 8, 1.6, 0, Math.PI * 2); stampContext.fill();
+    const observations = [];
+    for (let col = 0; col < 35; col += 1) for (let row = 0; row < 51; row += 1) {
+      const x = (2 + col * .5) * 60, y = (1.93 + row * .5) * 60;
+      observations.push({ col, row, x, y });
+      context.drawImage(stamp, x - 8, y - 8);
+      const angle = ((row * 13 + col * 7) % 23) / 23 * Math.PI * 2;
+      context.fillStyle = '#a0a0a0';
+      context.fillRect(Math.floor(x + Math.cos(angle) * 3.3), Math.floor(y + Math.sin(angle) * 3.3), 1, 1);
+    }
+    context.strokeStyle = '#969696'; context.lineWidth = 1.5;
+    context.beginPath(); context.moveTo(160, 1011); context.lineTo(1100, 1011); context.stroke();
+    const punctuation = observations.find(point => point.col === 17 && point.row === 25);
+    context.fillStyle = '#646464'; context.beginPath();
+    context.arc(punctuation.x, punctuation.y, 1.8, 0, Math.PI * 2); context.fill();
+    const processed = await ScannerPro.Lightweight.correctColors(canvas, {
+      useStencil: true, preciseStencil: true, dotObservations: observations
+    });
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let dark = 0, count = 0;
+    for (const point of observations.filter(point => point.row < 20)) {
+      for (let dy = -3; dy <= 3; dy += 1) for (let dx = -3; dx <= 3; dx += 1) {
+        const offset = ((Math.floor(point.y) + dy) * canvas.width + Math.floor(point.x) + dx) * 4;
+        if (pixels[offset] < 235) dark += 1;
+        count += 1;
+      }
+    }
+    const darkest = (x, y) => {
+      let minimum = 255;
+      for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+        minimum = Math.min(minimum, pixels[((Math.floor(y) + dy) * canvas.width + Math.floor(x) + dx) * 4]);
+      }
+      return minimum;
+    };
+    return { cleanup: processed.stencilCleanup, darkFraction: dark / count,
+      pencil: darkest(430, 1011), punctuation: darkest(punctuation.x, punctuation.y) };
+  });
+  expect(result.cleanup.method).toBe('observed-dots');
+  expect(result.darkFraction).toBeLessThan(.025);
+  expect(result.pencil).toBeLessThan(195);
+  expect(result.punctuation).toBeLessThan(180);
+});

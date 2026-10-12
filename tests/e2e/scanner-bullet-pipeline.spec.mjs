@@ -18,6 +18,7 @@ test('worker shows measured bullet rows before straightening and restores the pr
       onProgress(stage, detail) { events.push({ stage, detail }); }
     });
     const dots = events.find(event => event.stage === 'dots')?.detail;
+    const registered = events.filter(event => event.stage === 'surface' && event.detail?.points?.length).at(-1)?.detail;
     const warp = events.find(event => event.stage === 'warp' && event.detail?.previewBlob)?.detail;
     const decode = async blob => {
       const bitmap = await createImageBitmap(blob);
@@ -27,9 +28,18 @@ test('worker shows measured bullet rows before straightening and restores the pr
       bitmap.close();
       return canvas;
     };
-    const output = await decode(scan.blob);
+    const output = await decode(scan.previewBlob);
+    const ink = await decode(scan.blob);
+    const inkContext = ink.getContext('2d');
+    const alpha = (x, y) => inkContext.getImageData(Math.round(x / 210 * ink.width),
+      Math.round(y / 297 * ink.height), 1, 1).data[3];
     const result = { stages: events.map(event => event.stage), corrected: scan.corrected,
       templateApplied: scan.templateApplied, worker: scan.timings.worker,
+      inkLayer: scan.inkLayer, templateKind: scan.templateKind, inkType: scan.blob.type,
+      previewType: scan.previewBlob.type,
+      emptyInkAlpha: [[15, 145], [25, 276.8], [101.25, 276.8], [103.75, 276.8],
+        [106.25, 276.8], [108.75, 276.8], [105, 290]].map(([x, y]) => alpha(x, y)),
+      penInkAlpha: alpha(40, 35),
       finalWriting: fixture.lineErrors(output), dots: null, warp: null };
     if (dots) {
       const points = dots.points || [];
@@ -48,6 +58,14 @@ test('worker shows measured bullet rows before straightening and restores the pr
         medianError: errors[Math.floor(errors.length / 2)], p99Error: errors[Math.floor(errors.length * .99)],
         rows: dots.rows?.length, columns: dots.columns?.length,
         allCoordinatesFinite: points.every(point => ['x', 'y', 'u', 'v', 'row', 'col'].every(key => Number.isFinite(point[key]))) };
+    }
+    if (registered) {
+      const measuredSites = new Set(dots.points.map(point => `${point.row}:${point.col}`));
+      result.registration = { count: registered.points.length, space: registered.space,
+        recovered: scan.detection?.frame?.metricSurface?.diagnostics?.registration?.recovered || 0,
+        additionalPoints: registered.points.filter(point => !measuredSites.has(`${point.row}:${point.col}`)).length,
+        impossible: registered.points.filter(point => point.col > 14 && point.col < 20 && point.row > 23 && point.row < 30).length,
+        missingSites: registered.points.filter(point => (point.col * 17 + point.row * 7) % 13 < 2).length };
     }
     if (warp) {
       const beforeTemplate = await decode(warp.previewBlob);
@@ -81,7 +99,8 @@ test('worker shows measured bullet rows before straightening and restores the pr
       }
       result.warp = { writing: { maximum: Math.max(...errors) }, space: warp.space,
         width: warp.width, height: warp.height, count: warp.points?.length,
-        actualPositions: warp.points?.some(point => Math.hypot(point.x - point.targetX, point.y - point.targetY) > .02),
+        targetResidualMaximum: warp.points?.length ? Math.max(...warp.points.map(point =>
+          Math.hypot(point.x - point.targetX, point.y - point.targetY))) : null,
         finitePositions: warp.points?.every(point => ['x', 'y', 'targetX', 'targetY'].every(key => Number.isFinite(point[key]))) };
     }
     const context = output.getContext('2d');
@@ -96,6 +115,12 @@ test('worker shows measured bullet rows before straightening and restores the pr
   expect(report.corrected, JSON.stringify(report)).toBe(true);
   expect(report.worker).toBe(true);
   expect(report.templateApplied).toBe(true);
+  expect(report.inkLayer).toBe(true);
+  expect(report.templateKind).toBe('default');
+  expect(report.inkType).toBe('image/png');
+  expect(report.previewType).toBe('image/png');
+  expect(report.emptyInkAlpha, 'the inserted ink asset contains no baked frame, footer markers or white paper').toEqual([0, 0, 0, 0, 0, 0, 0]);
+  expect(report.penInkAlpha, 'the transparent asset retains the photographed handwriting').toBeGreaterThan(80);
   expect(report.dots, 'progress contains genuine measured points').not.toBeNull();
   expect(report.dots.space).toBe('source');
   expect([report.dots.width, report.dots.height]).toEqual([900, 1180]);
@@ -108,13 +133,22 @@ test('worker shows measured bullet rows before straightening and restores the pr
   expect(report.dots.p99Error).toBeLessThan(2.5);
   expect(report.dots.rows).toBeGreaterThan(35);
   expect(report.dots.columns).toBeGreaterThan(25);
+  expect(report.registration, 'the physical fit is followed by registration of accepted photographed dots').toBeTruthy();
+  expect(report.registration.space).toBe('source');
+  expect(report.registration.additionalPoints, 'new anchors must be reported as recovered observations').toBeLessThanOrEqual(report.registration.recovered);
+  expect(report.registration.impossible, 'recovery cannot invent bullets in an empty region').toBe(0);
+  expect(report.registration.missingSites / report.registration.count, 'recovered points must correspond to printed sites').toBeLessThan(.01);
+  expect(report.registration.count).toBeGreaterThan(500);
+  expect(report.registration.count).toBeLessThanOrEqual(35 * 51);
   expect(report.warp, 'the intermediate preview is the real warped photograph').not.toBeNull();
   expect(report.warp.space).toBe('corrected');
-  expect(report.warp.count).toBe(report.dots.count);
+  expect(report.warp.count).toBe(report.registration.count);
   expect(report.warp.finitePositions).toBe(true);
-  expect(report.warp.actualPositions, 'measured residuals are shown rather than snapping markers to ideal coordinates').toBe(true);
+  // Pixel measurements in scanner-dot-registration.spec.mjs independently
+  // verify these targets in the raw image, before any replacement dots exist.
+  expect(report.warp.targetResidualMaximum, 'accepted points and their actual warped positions agree with the template').toBeLessThan(.05);
   expect(report.warp.writing.maximum, 'ink is already straight before a replacement template can conceal distortion').toBeLessThan(.006);
-  expect(report.finalWriting.maximum, 'the final encoded JPEG retains the original straightened pen strokes').toBeLessThan(.006);
+  expect(report.finalWriting.maximum, 'the composed preview retains the original straightened pen strokes').toBeLessThan(.006);
   const first = stage => report.stages.indexOf(stage);
   expect(first('dots')).toBeLessThan(first('surface'));
   expect(first('surface')).toBeLessThan(first('colors'));

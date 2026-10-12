@@ -3382,7 +3382,8 @@
         onObservations: detail => {
           options.onProgress?.("dots", { ...detail, space: "source" });
           options.onProgress?.("surface", { fitting: true });
-        }
+        },
+        onRegistration: detail => options.onProgress?.("surface", { ...detail, space: "source", registered: true })
       });
       if (surface) detection.frame.metricSurface = surface;
     }
@@ -3551,11 +3552,40 @@
     } finally { preview.width = preview.height = 0; }
   }
 
+  async function encodeScanCanvas(canvas, type = "image/png") {
+    const blob = typeof canvas.convertToBlob === "function"
+      ? await canvas.convertToBlob({ type, quality: .94 })
+      : await new Promise((resolve, reject) => canvas.toBlob(value => value?.size
+        ? resolve(value) : reject(new Error("Could not encode this scan")), type, .94));
+    if (!blob?.size) throw new Error("Could not encode this scan");
+    return blob;
+  }
+
+  function separateScanInk(canvas) {
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    const data = pixels.data;
+    // Reconstruct the cleaned photograph exactly over white, but keep paper
+    // transparent. Neutral pencil becomes black with proportional opacity;
+    // coloured ink retains its hue. The editor can therefore draw its own
+    // uncompressed native template beneath the ink, just like a normal page.
+    for (let i = 0; i < data.length; i += 4) {
+      const paper = Math.min(data[i], data[i + 1], data[i + 2]);
+      const alpha = 255 - paper;
+      if (!alpha) { data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0; continue; }
+      data[i] = Math.round((data[i] - paper) * 255 / alpha);
+      data[i + 1] = Math.round((data[i + 1] - paper) * 255 / alpha);
+      data[i + 2] = Math.round((data[i + 2] - paper) * 255 / alpha);
+      data[i + 3] = alpha;
+    }
+    context.putImageData(pixels, 0, 0);
+  }
+
   async function processScanBlob(blob, options) {
     const started = performance.now();
     const timings = { worker: processingWorker, decodeMs: 0, detectionMs: 0, warpMs: 0,
       previewMs: 0, colorMs: 0, templateMs: 0, encodeMs: 0 };
-    let decoded, source, output, observed, mesh;
+    let decoded, source, output, preview, observed, mesh;
     let templateApplied = false, stencilCleanup;
     const progress = (stage, detail) => { checkProcessingCancelled(options); options.onProgress?.(stage, detail); };
     try {
@@ -3579,7 +3609,7 @@
         // surface simply because two other workers used the wall clock.
         surfaceBudgetMs: processingWorker ? 7800 : undefined,
         onProgress(stage, detail) {
-          if (stage === "dots") observed = detail;
+          if (stage === "dots" || (stage === "surface" && detail?.registered)) observed = detail;
           progress(stage, detail);
         }
       });
@@ -3599,7 +3629,11 @@
       progress("warp");
       const warpStarted = performance.now();
       output = await Light.warp(source, quad, precise ? detection.frame : null,
-        { signal: options.signal, maxDimension: options.maxDimension, onMesh: value => { mesh = value; } });
+        { signal: options.signal, maxDimension: options.maxDimension, onMesh: value => { mesh = value; },
+          onRegistration: detail => {
+            observed = detail;
+            progress("surface", { ...detail, space: "source", registered: true });
+          } });
       timings.warpMs = performance.now() - warpStarted;
       source.width = source.height = 0; source = null;
       const previewStarted = performance.now();
@@ -3626,19 +3660,22 @@
         timings.colorMs = performance.now() - colorsStarted;
         progress("template");
         const templateStarted = performance.now();
-        SP.ScanTemplate.render(output.getContext("2d"), output.width, output.height);
+        separateScanInk(output);
+        preview = document.createElement("canvas");
+        preview.width = output.width; preview.height = output.height;
+        const previewContext = preview.getContext("2d");
+        SP.ScanTemplate.render(previewContext, preview.width, preview.height, { background: true });
+        previewContext.drawImage(output, 0, 0);
         templateApplied = true;
         timings.templateMs = performance.now() - templateStarted;
       }
       progress("encoding");
       const encodeStarted = performance.now();
-      const encoded = typeof output.convertToBlob === "function"
-        ? await output.convertToBlob({ type: "image/jpeg", quality: .94 })
-        : await new Promise((resolve, reject) => output.toBlob(value => value?.size
-          ? resolve(value) : reject(new Error("Could not encode this scan")), "image/jpeg", .94));
+      const encoded = await encodeScanCanvas(output, precise ? "image/png" : "image/jpeg");
+      const previewBlob = preview ? await encodeScanCanvas(preview) : undefined;
       checkProcessingCancelled(options);
       if (!encoded?.size) throw new Error("Could not encode this scan");
-      // Encoding and decoding happen on the worker as well. A malformed JPEG
+      // Encoding and decoding happen on the worker as well. A malformed image
       // must never be advertised as the winning corrected capture.
       decoded = await decodeScanBlob(encoded, options);
       if ((decoded.naturalWidth || decoded.width) !== output.width
@@ -3647,11 +3684,13 @@
       timings.encodeMs = performance.now() - encodeStarted;
       timings.totalMs = performance.now() - started;
       return { blob: encoded, width: output.width, height: output.height, corrected: true,
+        previewBlob, inkLayer: precise, templateKind: precise ? "default" : undefined,
         templateApplied, stencilCleanup, detection, timings };
     } finally {
       decoded?.close?.();
       if (source) source.width = source.height = 0;
       if (output) output.width = output.height = 0;
+      if (preview) preview.width = preview.height = 0;
     }
   }
 
@@ -3745,7 +3784,6 @@
     const sourceWidth = input.width;
     const sourceHeight = input.height;
     const curved = !!frame?.paths && frame.confidence >= 0.18;
-    const map = curved ? (u, v) => mapFramePoint(frame, u, v) : projectivePageMap(pageQuad);
     // Inverse-map one dense surface instead of repeatedly drawing the entire
     // camera image into 1,200 clipped triangles. The latter made Android GPU
     // drivers process the same large photo for every cell, and overlapping
@@ -3755,8 +3793,23 @@
     const fractions = (count, extra) => [...Array.from({ length: count + 1 }, (_, index) => index / count), ...extra]
       .sort((a, b) => a - b)
       .filter((value, index, values) => !index || value - values[index - 1] > 1e-7);
-    const us = fractions(columns, curved ? [1.5 / 21, 19.5 / 21] : []);
-    const vs = fractions(rows, curved ? [1.43 / 29.7, 27.43 / 29.7, 27.93 / 29.7, 28.43 / 29.7] : []);
+    // A registered bullet must be a mesh vertex. Uniform 64×80 sampling
+    // interpolates across those anchors and reintroduces a different error at
+    // each printed dot, even when the surface itself maps its centre exactly.
+    const registration = curved ? frame.metricSurface?.registration : null;
+    const us = fractions(columns, curved
+      ? [1.5 / 21, 19.5 / 21, ...(registration?.colPositions || [])] : []);
+    const vs = fractions(rows, curved
+      ? [1.43 / 29.7, 27.43 / 29.7, 27.93 / 29.7, 28.43 / 29.7,
+        ...(registration?.rowPositions || [])] : []);
+    if (registration && SP.MetricSurface.refineForRaster) {
+      const detail = SP.MetricSurface.refineForRaster(source, frame.metricSurface, {
+        width: output.width, height: output.height, imageData: input, mesh: { us, vs }
+      });
+      if (detail) options.onRegistration?.(detail);
+      checkProcessingCancelled(options);
+    }
+    const map = curved ? (u, v) => mapFramePoint(frame, u, v) : projectivePageMap(pageQuad);
     const grid = vs.map(v => us.map(u => map(u, v)));
     options.onMesh?.({ us, vs, grid });
     const orientation = Math.sign(polygonArea(pageQuad));
@@ -3822,7 +3875,8 @@
     }
     checkProcessingCancelled(options);
     context.putImageData(image, 0, 0);
-    output.scanSurface = { model: curved ? "curved-guided-surface" : "projective", columns, rows };
+    output.scanSurface = { model: curved ? "curved-guided-surface" : "projective",
+      columns: us.length - 1, rows: vs.length - 1, registered: !!registration };
     return output;
   };
 
@@ -4212,7 +4266,11 @@
         // Refuse phase-swapped or stale source-image coordinates.
         if (Math.abs(point.x - nominalX) > pxPerCm * 0.24
           || Math.abs(point.y - nominalY) > pxPerCm * 0.24) continue;
-        let cx = Math.round(point.x), cy = Math.round(point.y), best = null;
+        // Observations use Canvas edge coordinates; this buffer uses integer
+        // pixel indices. Keep the verified geometric centre instead of moving
+        // it onto a darker neighbouring pixel from texture or antialiasing.
+        const cx = Math.round(point.x - 0.5), cy = Math.round(point.y - 0.5);
+        let best = null;
         for (let dy = -2; dy <= 2; dy += 1) {
           for (let dx = -2; dx <= 2; dx += 1) {
             const response = dotResponseAt(cx + dx, cy + dy, 6);
@@ -4221,7 +4279,9 @@
             }
           }
         }
-        if (best) { cx = best.x; cy = best.y; confirmedCount += 1; }
+        // The local search confirms photographic evidence only. Moving the
+        // centre here would discard the alignment established by the warp.
+        if (best) confirmedCount += 1;
         measuredCentres[index] = { x: cx, y: cy, dx: cx - nominalX, dy: cy - nominalY };
         measuredCount += 1;
         measuredColumns.add(column); measuredRows.add(row);
@@ -4446,12 +4506,12 @@
     };
   }
 
-  function smoothPaperIllumination(values, width, height) {
+  function smoothPaperIllumination(values, width, height, options = {}) {
     // A local closing estimates the paper behind thin ink strokes. A simple
     // blur follows dark writing and then mistakes it for a shadow, whitening
     // pencil away. Work on the small illumination map, never on the scan.
     let field = values;
-    const radius = Math.max(2, Math.round(width / 16));
+    const radius = options.radius ?? Math.max(2, Math.round(width / 16));
     const extremum = (horizontal, maximum) => {
       const next = new Float32Array(field.length);
       const length = horizontal ? width : height;
@@ -4481,20 +4541,127 @@
     extremum(false, true);
     extremum(true, false);
     extremum(false, false);
+    const blurRadius = options.blurRadius ?? 3;
+    if (!blurRadius) return field;
     for (const horizontal of [true, false]) {
       const next = new Float32Array(field.length);
       for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
         let sum = 0;
-        for (let delta = -3; delta <= 3; delta += 1) {
+        for (let delta = -blurRadius; delta <= blurRadius; delta += 1) {
           const sx = horizontal ? clamp(x + delta, 0, width - 1) : x;
           const sy = horizontal ? y : clamp(y + delta, 0, height - 1);
           sum += field[sy * width + sx];
         }
-        next[y * width + x] = sum / 7;
+        next[y * width + x] = sum / (2 * blurRadius + 1);
       }
       field = next;
     }
     return field;
+  }
+
+  function observedPaperIllumination(canvas, data, observations) {
+    if (!Array.isArray(observations) || observations.length < 600) return null;
+    const anchors = new Float32Array(35 * 51);
+    let count = 0;
+    const pxPerMM = canvas.width / 210;
+    const offsets = [];
+    for (const radius of [1, 1.8]) for (let sample = 0; sample < 24; sample += 1) {
+      const angle = sample / 24 * Math.PI * 2;
+      offsets.push([Math.cos(angle) * radius * pxPerMM, Math.sin(angle) * radius * pxPerMM]);
+    }
+    for (const point of observations) {
+      const column = point.col ?? point.column, row = point.row;
+      if (!Number.isInteger(column) || !Number.isInteger(row)
+        || column < 0 || column >= 35 || row < 0 || row >= 51
+        || !Number.isFinite(point.x + point.y)) continue;
+      const index = column * 51 + row;
+      if (anchors[index]) continue;
+      const samples = [];
+      for (const [dx, dy] of offsets) {
+        const x = Math.round(point.x - 0.5 + dx);
+        const y = Math.round(point.y - 0.5 + dy);
+        if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
+        const offset = (y * canvas.width + x) * 4;
+        const r = data[offset], g = data[offset + 1], b = data[offset + 2];
+        const maximum = Math.max(r, g, b), minimum = Math.min(r, g, b);
+        if (maximum - minimum > maximum * 0.24) continue;
+        samples.push(r * 0.2126 + g * 0.7152 + b * 0.0722);
+      }
+      if (samples.length < 16) continue;
+      samples.sort((a, b) => a - b);
+      anchors[index] = samples[Math.floor(samples.length * 0.8)];
+      count += 1;
+    }
+    if (count < 600) return null;
+    // Visible printed dots certify actual paper under the illumination. An
+    // opaque drawing hides those dots; continue neighbouring paper across the
+    // resulting gap instead of mistaking the drawing's grey fill for a lamp.
+    const filled = new Float32Array(anchors);
+    for (let column = 0; column < 35; column += 1) for (let row = 0; row < 51; row += 1) {
+      const index = column * 51 + row;
+      if (filled[index]) continue;
+      let weighted = 0, weight = 0;
+      for (let dc = -5; dc <= 5; dc += 1) for (let dr = -5; dr <= 5; dr += 1) {
+        const c = column + dc, r = row + dr;
+        if (c < 0 || c >= 35 || r < 0 || r >= 51 || !anchors[c * 51 + r]) continue;
+        const amount = 1 / (0.5 + dc * dc + dr * dr);
+        weighted += anchors[c * 51 + r] * amount; weight += amount;
+      }
+      if (!weight) {
+        // Detection can miss an entire blurred corner. Never substitute an
+        // arbitrary bright paper value there: that invents a rectangular grey
+        // patch on a dark or blue-lit sheet. Continue the nearest measured
+        // exposure, with distant anchors receiving very little influence.
+        for (let c = 0; c < 35; c += 1) for (let r = 0; r < 51; r += 1) {
+          const sample = anchors[c * 51 + r];
+          if (!sample) continue;
+          const distanceSquared = (c - column) ** 2 + (r - row) ** 2;
+          const amount = 1 / (distanceSquared * distanceSquared);
+          weighted += sample * amount; weight += amount;
+        }
+      }
+      filled[index] = weighted / weight;
+    }
+    const minimums = new Float32Array(anchors.length);
+    for (let column = 0; column < 35; column += 1) for (let row = 0; row < 51; row += 1) {
+      let minimum = Infinity;
+      for (let dc = -1; dc <= 1; dc += 1) for (let dr = -1; dr <= 1; dr += 1) {
+        const c = clamp(column + dc, 0, 34), r = clamp(row + dr, 0, 50);
+        if (anchors[c * 51 + r]) minimum = Math.min(minimum, anchors[c * 51 + r]);
+      }
+      minimums[column * 51 + row] = minimum;
+    }
+    const width = Math.min(512, canvas.width);
+    const height = Math.round(canvas.height * width / canvas.width);
+    const reduced = document.createElement("canvas"); reduced.width = width; reduced.height = height;
+    const context = reduced.getContext("2d", { willReadFrequently: true });
+    context.imageSmoothingQuality = "high"; context.drawImage(canvas, 0, 0, width, height);
+    const rgba = context.getImageData(0, 0, width, height).data;
+    const values = new Float32Array(width * height);
+    const left = Math.ceil(1.78 / 21 * width), right = Math.floor(19.22 / 21 * width);
+    const top = Math.ceil(1.71 / 29.7 * height), bottom = Math.floor(28.15 / 29.7 * height);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const offset = (clamp(y, top, bottom) * width + clamp(x, left, right)) * 4;
+      values[y * width + x] = rgba[offset] * 0.2126 + rgba[offset + 1] * 0.7152 + rgba[offset + 2] * 0.0722;
+    }
+    const fine = smoothPaperIllumination(values, width, height, { radius: 2, blurRadius: 0 });
+    const field = new Float32Array(fine.length);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const column = clamp(((x + 0.5) / width * 210 - 20) / 5, 0, 34);
+      const row = clamp(((y + 0.5) / height * 297 - 19.3) / 5, 0, 50);
+      const c0 = Math.floor(column), c1 = Math.min(34, c0 + 1);
+      const r0 = Math.floor(row), r1 = Math.min(50, r0 + 1);
+      const cx = column - c0, ry = row - r0;
+      const paper = (filled[c0 * 51 + r0] * (1 - cx) + filled[c1 * 51 + r0] * cx) * (1 - ry)
+        + (filled[c0 * 51 + r1] * (1 - cx) + filled[c1 * 51 + r1] * cx) * ry;
+      let minimum = minimums[Math.round(column) * 51 + Math.round(row)];
+      if (!Number.isFinite(minimum)) minimum = paper;
+      const local = fine[y * width + x];
+      const protectDrawing = clamp((minimum - local - 6) / 10, 0, 1);
+      field[y * width + x] = local * (1 - protectDrawing) + paper * protectDrawing;
+    }
+    reduced.width = reduced.height = 0;
+    return { values: field, width, height, anchors: count };
   }
 
   Light.correctColors = async function correctColors(canvas, options = {}) {
@@ -4522,45 +4689,47 @@
       ? await SP.LiveDetection.normalizeIlluminationAsync(image, balanceOptions)
       : SP.LiveDetection?.normalizeIllumination?.(image, balanceOptions);
     const data = balanced?.data || original;
-    // A tiny blurred copy estimates illumination, not content. Comparing a
-    // neutral pixel with this smooth local field separates shadowed paper
-    // from ink without creating hard, patchy thresholds in uneven photos.
+    const observedIllumination = preciseStencil
+      ? observedPaperIllumination(canvas, data, settings.dotObservations) : null;
+    // Without enough visible dots, a small closing still estimates smooth
+    // paper behind thin ink. Reliable observed paper uses the finer field
+    // directly; avoid computing and discarding this fallback for every scan.
     const illuminationCanvas = document.createElement("canvas");
-    illuminationCanvas.width = Math.min(192, canvas.width);
-    illuminationCanvas.height = Math.max(1, Math.round(
-      canvas.height * illuminationCanvas.width / Math.max(1, canvas.width)
-    ));
-    const illuminationContext = illuminationCanvas.getContext("2d", { willReadFrequently: true });
-    illuminationContext.imageSmoothingEnabled = true;
-    illuminationContext.imageSmoothingQuality = "high";
-    illuminationContext.filter = "none";
-    illuminationContext.drawImage(canvas, 0, 0, illuminationCanvas.width, illuminationCanvas.height);
-    illuminationContext.filter = "none";
-    // White balancing preserves the local paper luminance. Measure this field
-    // directly so the synthetic white surround cannot bias a second estimate.
-    const illuminationPixels = illuminationContext.getImageData(
-      0, 0, illuminationCanvas.width, illuminationCanvas.height).data;
-    let illumination = new Float32Array(illuminationCanvas.width * illuminationCanvas.height);
-    const fieldLeft = Math.ceil(1.78 / 21 * illuminationCanvas.width);
-    const fieldRight = Math.floor(19.22 / 21 * illuminationCanvas.width);
-    const fieldTop = Math.ceil(1.71 / 29.7 * illuminationCanvas.height);
-    const fieldBottom = Math.floor(28.15 / 29.7 * illuminationCanvas.height);
-    for (let index = 0; index < illumination.length; index += 1) {
-      // Warp margins are synthetic white, not an exposure measurement. Let
-      // real interior paper continue across this field's edge so its white
-      // surround cannot turn a smooth sheet shadow into a protected grey halo.
-      const x = index % illuminationCanvas.width;
-      const y = Math.floor(index / illuminationCanvas.width);
-      const sx = preciseStencil ? clamp(x, fieldLeft, fieldRight) : x;
-      const sy = preciseStencil ? clamp(y, fieldTop, fieldBottom) : y;
-      const offset = (sy * illuminationCanvas.width + sx) * 4;
-      illumination[index] = illuminationPixels[offset] * 0.2126
-        + illuminationPixels[offset + 1] * 0.7152
-        + illuminationPixels[offset + 2] * 0.0722;
+    let illumination = observedIllumination?.values;
+    if (!observedIllumination) {
+      illuminationCanvas.width = Math.min(192, canvas.width);
+      illuminationCanvas.height = Math.max(1, Math.round(
+        canvas.height * illuminationCanvas.width / Math.max(1, canvas.width)
+      ));
+      const illuminationContext = illuminationCanvas.getContext("2d", { willReadFrequently: true });
+      illuminationContext.imageSmoothingEnabled = true;
+      illuminationContext.imageSmoothingQuality = "high";
+      illuminationContext.drawImage(canvas, 0, 0, illuminationCanvas.width, illuminationCanvas.height);
+      // White balance preserves local luminance. Continue real interior paper
+      // into the synthetic white surround, which did not see the room's light.
+      const illuminationPixels = illuminationContext.getImageData(
+        0, 0, illuminationCanvas.width, illuminationCanvas.height).data;
+      illumination = new Float32Array(illuminationCanvas.width * illuminationCanvas.height);
+      const fieldLeft = Math.ceil(1.78 / 21 * illuminationCanvas.width);
+      const fieldRight = Math.floor(19.22 / 21 * illuminationCanvas.width);
+      const fieldTop = Math.ceil(1.71 / 29.7 * illuminationCanvas.height);
+      const fieldBottom = Math.floor(28.15 / 29.7 * illuminationCanvas.height);
+      for (let index = 0; index < illumination.length; index += 1) {
+        const x = index % illuminationCanvas.width;
+        const y = Math.floor(index / illuminationCanvas.width);
+        const sx = preciseStencil ? clamp(x, fieldLeft, fieldRight) : x;
+        const sy = preciseStencil ? clamp(y, fieldTop, fieldBottom) : y;
+        const offset = (sy * illuminationCanvas.width + sx) * 4;
+        illumination[index] = illuminationPixels[offset] * 0.2126
+          + illuminationPixels[offset + 1] * 0.7152
+          + illuminationPixels[offset + 2] * 0.0722;
+      }
+      illumination = smoothPaperIllumination(illumination, illuminationCanvas.width, illuminationCanvas.height);
     }
-    illumination = smoothPaperIllumination(illumination, illuminationCanvas.width, illuminationCanvas.height);
-    const illuminationXScale = (illuminationCanvas.width - 1) / Math.max(1, canvas.width - 1);
-    const illuminationYScale = (illuminationCanvas.height - 1) / Math.max(1, canvas.height - 1);
+    const illuminationWidth = observedIllumination?.width || illuminationCanvas.width;
+    const illuminationHeight = observedIllumination?.height || illuminationCanvas.height;
+    const illuminationXScale = (illuminationWidth - 1) / Math.max(1, canvas.width - 1);
+    const illuminationYScale = (illuminationHeight - 1) / Math.max(1, canvas.height - 1);
     const pxPerCm = canvas.width / 21;
     const radius = Math.max(5, pxPerCm * 0.28);
     const config = SP.Config || {};
@@ -4641,17 +4810,19 @@
     const colorMarkerX2 = 11.08 * pxPerCm;
     const colorMarkerY1 = 27.48 * pxPerCm;
     const colorMarkerY2 = 27.90 * pxPerCm;
-    const whiteStart = Math.max(145, profile.shadowPoint + 34, profile.paperLuminance * 0.7);
-    const whiteEnd = Math.max(whiteStart + 22, profile.paperLuminance * 0.98);
-    const localPaperFloor = Math.max(68, profile.paperLuminance * 0.27);
     const columnFlags = new Uint8Array(canvas.width);
     const illuminationColumns = new Uint16Array(canvas.width);
+    const illuminationColumnMix = observedIllumination ? new Float32Array(canvas.width) : null;
     for (let x = 0; x < canvas.width; x += 1) {
       columnFlags[x] = (Math.abs(x - yellowX1) < outerBand || Math.abs(x - yellowX2) < outerBand ? 1 : 0)
         | (x < yellowX1 - outerBand || x > yellowX2 + outerBand ? 2 : 0)
         | (x >= colorMarkerX1 && x <= colorMarkerX2 ? 4 : 0)
         | (Math.abs((x / pxPerCm * 2) - Math.round(x / pxPerCm * 2)) < 0.24 ? 8 : 0);
-      illuminationColumns[x] = Math.round(x * illuminationXScale);
+      if (observedIllumination) {
+        const at = clamp((x + 0.5) * illuminationWidth / canvas.width - 0.5, 0, illuminationWidth - 1);
+        illuminationColumns[x] = Math.floor(at);
+        illuminationColumnMix[x] = at - illuminationColumns[x];
+      } else illuminationColumns[x] = Math.round(x * illuminationXScale);
     }
     for (let y = 0; y < canvas.height; y += 1) {
       const outerRow = Math.abs(y - yellowY1) < outerBand || Math.abs(y - yellowY2) < outerBand;
@@ -4660,7 +4831,12 @@
       const inCalibrationBand = y >= calibrationY1 && y <= calibrationY2;
       const printedRailRow = Math.abs(y - 27.43 * pxPerCm) <= outerBand
         || Math.abs(y - 27.93 * pxPerCm) <= outerBand;
-      const illuminationRow = Math.round(y * illuminationYScale) * illuminationCanvas.width;
+      const illuminationAtY = observedIllumination
+        ? clamp((y + 0.5) * illuminationHeight / canvas.height - 0.5, 0, illuminationHeight - 1)
+        : Math.round(y * illuminationYScale);
+      const illuminationRow = Math.floor(illuminationAtY) * illuminationWidth;
+      const illuminationNextRow = Math.min(illuminationHeight - 1, Math.floor(illuminationAtY) + 1) * illuminationWidth;
+      const illuminationRowMix = illuminationAtY - Math.floor(illuminationAtY);
       for (let x = 0; x < canvas.width; x += 1) {
         const offset = (y * canvas.width + x) * 4;
         const r = data[offset], g = data[offset + 1], b = data[offset + 2];
@@ -4704,11 +4880,23 @@
           data[offset] = 255; data[offset + 1] = 255; data[offset + 2] = 255;
           continue;
         }
-        const localBright = illumination[illuminationRow + illuminationColumns[x]];
-        const automaticR = clamp(r * profile.gains[0], 0, 255);
-        const automaticG = clamp(g * profile.gains[1], 0, 255);
-        const automaticB = clamp(b * profile.gains[2], 0, 255);
-        const kind = canCalibrate
+        const fieldColumn = illuminationColumns[x];
+        let localBright = illumination[illuminationRow + fieldColumn];
+        if (observedIllumination) {
+          const mix = illuminationColumnMix[x], next = Math.min(illuminationWidth - 1, fieldColumn + 1);
+          const upper = localBright * (1 - mix) + illumination[illuminationRow + next] * mix;
+          const lower = illumination[illuminationNextRow + fieldColumn] * (1 - mix)
+            + illumination[illuminationNextRow + next] * mix;
+          localBright = upper * (1 - illuminationRowMix) + lower * illuminationRowMix;
+        }
+        // Measured neutral paper uses only relative luminance. Avoid colour
+        // reference projection and three discarded channel gains for the
+        // millions of neutral pixels making up most scanned pages.
+        const measuredNeutral = !!observedIllumination && saturation <= 0.18;
+        const automaticR = measuredNeutral ? 0 : clamp(r * profile.gains[0], 0, 255);
+        const automaticG = measuredNeutral ? 0 : clamp(g * profile.gains[1], 0, 255);
+        const automaticB = measuredNeutral ? 0 : clamp(b * profile.gains[2], 0, 255);
+        const kind = canCalibrate && !measuredNeutral
           ? referenceKindForPixel(
             r, g, b, luminance, saturation, profile.paperLuminance, localBright
           )
@@ -4717,39 +4905,23 @@
           ? calibrateFromReference([r, g, b], referenceByName[kind], profile.sourcePaper, profile.targetPaper)
           : null;
         let outputR = automaticR, outputG = automaticG, outputB = automaticB;
-        if (calibrated) {
+        if (saturation <= 0.18 && (observedIllumination || !calibrated)) {
+          // Recover ink contrast relative to the paper at this pixel. Blending
+          // with a global white target washed faint strokes away even when the
+          // image contained enough local contrast to read them clearly.
+          const paper = Math.max(40, localBright);
+          const noiseFloor = Math.max(1.5, paper * 0.0075);
+          const reflectance = clamp(1 - (paper - luminance - noiseFloor) / paper, 0, 1);
+          // A bounded contrast curve strengthens real pencil; near-paper
+          // camera grain remains white instead of becoming dark speckles.
+          const neutral = profile.targetPaper * reflectance * (0.35 + 0.65 * reflectance);
+          outputR = outputG = outputB = neutral;
+        } else if (calibrated) {
+          // Without measured paper anchors, retain the printed reference's
+          // tonal calibration rather than relying on a broad local estimate.
           outputR = automaticR * (1 - calibrated.mix) + calibrated.mapped[0] * calibrated.mix;
           outputG = automaticG * (1 - calibrated.mix) + calibrated.mapped[1] * calibrated.mix;
           outputB = automaticB * (1 - calibrated.mix) + calibrated.mapped[2] * calibrated.mix;
-        } else if (saturation <= 0.18) {
-          // The paper is the fifth calibration reference. Push neutral bright
-          // pixels to true white while leaving pencil and black writing intact.
-          const position = clamp((luminance - whiteStart) / Math.max(1, whiteEnd - whiteStart), 0, 1);
-          let whiteMix = position * position * (3 - 2 * position);
-          // The blurred illumination value follows smooth shadows but not thin
-          // writing. A soft relative threshold avoids both posterisation and
-          // accidental removal of pencil/grid details.
-          const localDifference = localBright - luminance;
-          // Relative contrast remains meaningful in a deep smooth shadow.
-          // A global brightness floor previously left half a curled page grey.
-          const localPaperAmount = luminance >= localPaperFloor
-            ? clamp((12 - localDifference) / 8, 0, 1)
-            : 0;
-          const smoothLocalPaper = localPaperAmount * localPaperAmount * (3 - 2 * localPaperAmount);
-          // The 192px illumination map intentionally smooths away paper
-          // texture, but also cannot resolve a fine pencil line. A pixel that
-          // is locally darker than that field is likely real detail; reduce
-          // global whitening there and let explicit stencil cleanup handle
-          // only the verified template marks later.
-          const localInkProtection = clamp((localDifference - 2) / 12, 0, 0.92);
-          whiteMix = Math.min(0.98, Math.max(
-            whiteMix * (1 - localInkProtection),
-            smoothLocalPaper * 0.98
-          ));
-          const paper = profile.targetPaper * whiteMix;
-          outputR = automaticR * (1 - whiteMix) + paper;
-          outputG = automaticG * (1 - whiteMix) + paper;
-          outputB = automaticB * (1 - whiteMix) + paper;
         } else {
           // Preserve colours that are not one of the printed references, but
           // restore a small amount of saturation lost through camera exposure.
@@ -4780,6 +4952,7 @@
       canvas,
       calibrated: canCalibrate,
       stencilCleanup,
+      illumination: observedIllumination ? { method: "observed-paper", anchors: observedIllumination.anchors } : { method: "local-paper" },
       samples: validMarkerSamples.length,
       paper: Math.round(profile.paperLuminance),
       references: Object.fromEntries(samples.map(sample => [sample.name, {

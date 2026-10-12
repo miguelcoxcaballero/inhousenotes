@@ -29,7 +29,8 @@ test('three photographs complete their full corrections concurrently outside the
       return { name: ScannerDevelopableFixtures.CASES[index].name,
         corrected: scan.corrected, width: scan.width, height: scan.height,
         quality: scan.detection.quality, surface: scan.detection.frame?.metricSurface?.diagnostics,
-        timings: scan.timings, size: scan.blob.size, type: scan.blob.type };
+        timings: scan.timings, size: scan.blob.size, type: scan.blob.type,
+        previewType: scan.previewBlob?.type, inkLayer: scan.inkLayer, templateKind: scan.templateKind };
     }, error => { throw new Error(`${ScannerDevelopableFixtures.CASES[index].name}: ${error.message}`); })));
     clearInterval(interval);
     return { scans, starts, finishes, ticks };
@@ -48,7 +49,10 @@ test('three photographs complete their full corrections concurrently outside the
     expect(scan.width).toBe(1800);
     expect(scan.height).toBe(2546);
     expect(scan.size).toBeGreaterThan(1000);
-    expect(scan.type).toBe('image/jpeg');
+    expect(scan.type).toBe('image/png');
+    expect(scan.previewType).toBe('image/png');
+    expect(scan.inkLayer).toBe(true);
+    expect(scan.templateKind).toBe('default');
   }
 });
 
