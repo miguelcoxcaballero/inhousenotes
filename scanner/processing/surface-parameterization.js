@@ -148,7 +148,8 @@
     canvas.height = Math.round(source.height * scale);
     const context = canvas.getContext("2d", { willReadFrequently: true });
     context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+    const image = context.getImageData(0, 0, canvas.width, canvas.height);
+    const { data, width, height } = SP.LiveDetection?.normalizeIllumination?.(image) || image;
     const rgbAt = point => {
       const x = clamp(point.x * scale - .5, 0, width - 1.001), y = clamp(point.y * scale - .5, 0, height - 1.001);
       const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;

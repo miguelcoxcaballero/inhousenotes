@@ -111,8 +111,167 @@
     return result;
   }
 
-  function analyse(imageData) {
+  function estimateIllumination(imageData, region = null) {
     const { width, height, data } = imageData;
+    // Rectified scans may have synthetic white margins. Their caller can use
+    // the known physical page interior as the illuminant reference, while live
+    // detection continues to inspect the complete, unmodified camera scene.
+    const bounded = region && [region.x0, region.y0, region.x1, region.y1].every(Number.isFinite)
+      && region.x1 > region.x0 && region.y1 > region.y0;
+    const x0 = bounded ? clamp(Math.ceil(region.x0 * width), 2, width - 2) : 2;
+    const y0 = bounded ? clamp(Math.ceil(region.y0 * height), 2, height - 2) : 2;
+    const x1 = bounded ? clamp(Math.floor(region.x1 * width), x0, width - 2) : width - 2;
+    const y1 = bounded ? clamp(Math.floor(region.y1 * height), y0, height - 2) : height - 2;
+    const referenceArea = bounded ? Math.max(1, (x1 - x0) * (y1 - y0)) : width * height;
+    // A yellow rail under a cool lamp can contain more blue than red. Estimate
+    // the paper's illuminant from the dominant broad, smooth bright material,
+    // then compare ink with that local white rather than an absolute RGB hue.
+    // Return a separate working copy, so detection and optional scan cleanup
+    // can share the estimate without altering the original camera photograph.
+    const bins = 64, histogram = new Float64Array(bins * bins);
+    const stride = Math.max(3, Math.floor(Math.max(width, height) / 160));
+    const samples = new Uint32Array(Math.ceil(width / stride) * Math.ceil(height / stride));
+    let sampleCount = 0;
+    for (let y = y0; y < y1; y += stride) {
+      for (let x = x0; x < x1; x += stride) {
+        const at = (y * width + x) * 4, r = data[at], g = data[at + 1], b = data[at + 2];
+        const light = r * .2126 + g * .7152 + b * .0722;
+        if (light < 75 || Math.min(r, g, b) < 38 || Math.min(r, g, b) < Math.max(r, g, b) * .36) continue;
+        let gradient = 0;
+        for (let channel = 0; channel < 3; channel += 1) gradient += Math.abs(data[at + channel - 4] - data[at + channel + 4])
+          + Math.abs(data[at + channel - width * 4] - data[at + channel + width * 4]);
+        if (gradient > 42) continue;
+        const red = r / g, blue = b / g;
+        const ix = clamp(Math.round(red * 24), 1, bins - 2), iy = clamp(Math.round(blue * 24), 1, bins - 2);
+        const weight = (light / 255) ** 2;
+        histogram[iy * bins + ix] += weight;
+        samples[sampleCount++] = at;
+      }
+    }
+    let peak = 0, peakX = 24, peakY = 24;
+    for (let y = 1; y < bins - 1; y += 1) {
+      for (let x = 1; x < bins - 1; x += 1) {
+        let weight = 0;
+        for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) weight += histogram[(y + dy) * bins + x + dx];
+        if (weight > peak) { peak = weight; peakX = x; peakY = y; }
+      }
+    }
+    let red = 0, blue = 0, weight = 0, count = 0, selectedLight = 0;
+    let neutralCount = 0, neutralLight = 0;
+    for (let index = 0; index < sampleCount; index += 1) {
+      const at = samples[index], r = data[at], g = data[at + 1], b = data[at + 2];
+      const sampleRed = r / g, sampleBlue = b / g;
+      const light = r * .2126 + g * .7152 + b * .0722;
+      if (Math.max(Math.abs(sampleRed - 1), Math.abs(sampleBlue - 1)) < .075) {
+        neutralCount += 1; neutralLight += light;
+      }
+      if (Math.abs(sampleRed - peakX / 24) > .08 || Math.abs(sampleBlue - peakY / 24) > .08) continue;
+      const sampleWeight = (light / 255) ** 2;
+      red += sampleRed * sampleWeight; blue += sampleBlue * sampleWeight; weight += sampleWeight; count += 1;
+      selectedLight += light;
+    }
+    if (count < referenceArea / (stride * stride) * .045 || !weight) return null;
+    red /= weight; blue /= weight;
+    // Preserve the ordinary neutral-light path byte for byte, including faint
+    // grey printing. A cast correction must not invent yellow in neutral ink.
+    if (Math.max(Math.abs(red - 1), Math.abs(blue - 1)) < .085) return null;
+    // A large pastel desk can outnumber the white sheet. A substantial,
+    // independently brighter neutral material is stronger white evidence than
+    // that dominant background colour; do not tint a correctly exposed page.
+    // Tiny white logos/highlights cannot veto an otherwise measured cast.
+    if (neutralCount >= referenceArea / (stride * stride) * .08
+      && neutralLight / neutralCount > selectedLight / count + 12) return null;
+    const columns = Math.max(2, Math.ceil(width / 48)), rows = Math.max(2, Math.ceil(height / 48));
+    const fieldRed = new Float64Array(columns * rows), fieldBlue = new Float64Array(columns * rows);
+    const weights = new Float64Array(columns * rows);
+    for (let index = 0; index < sampleCount; index += 1) {
+      const offset = samples[index], r = data[offset], g = data[offset + 1], b = data[offset + 2];
+      const sampleRed = r / g, sampleBlue = b / g;
+      if (Math.abs(Math.log(sampleRed / red)) > .17 || Math.abs(Math.log(sampleBlue / blue)) > .17) continue;
+      const sampleWeight = ((r * .2126 + g * .7152 + b * .0722) / 255) ** 2;
+      const x = Math.min(columns - 1, Math.floor((offset / 4 % width) / width * columns));
+      const y = Math.min(rows - 1, Math.floor(Math.floor(offset / (width * 4)) / height * rows)), at = y * columns + x;
+      fieldRed[at] += sampleRed * sampleWeight; fieldBlue[at] += sampleBlue * sampleWeight; weights[at] += sampleWeight;
+    }
+    const whiteRed = new Float32Array(weights.length), whiteBlue = new Float32Array(weights.length);
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < columns; x += 1) {
+        let sumRed = red * 3, sumBlue = blue * 3, total = 3;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const xx = x + dx, yy = y + dy;
+            if (xx < 0 || xx >= columns || yy < 0 || yy >= rows) continue;
+            const at = yy * columns + xx, kernel = (dx ? 1 : 2) * (dy ? 1 : 2);
+            sumRed += fieldRed[at] * kernel; sumBlue += fieldBlue[at] * kernel; total += weights[at] * kernel;
+          }
+        }
+        whiteRed[y * columns + x] = sumRed / total;
+        whiteBlue[y * columns + x] = sumBlue / total;
+      }
+    }
+    return { columns, rows, whiteRed, whiteBlue,
+      illumination: { red, blue, coverage: count * stride * stride / referenceArea } };
+  }
+
+  function applyIlluminationRows(imageData, estimate, corrected, from, to) {
+    const { width, height, data } = imageData;
+    const { columns, rows, whiteRed, whiteBlue } = estimate;
+    for (let y = from; y < to; y += 1) {
+      const yy = clamp((y + .5) / height * rows - .5, 0, rows - 1), y0 = Math.floor(yy), y1 = Math.min(rows - 1, y0 + 1), fy = yy - y0;
+      for (let x = 0; x < width; x += 1) {
+        const xx = clamp((x + .5) / width * columns - .5, 0, columns - 1), x0 = Math.floor(xx), x1 = Math.min(columns - 1, x0 + 1), fx = xx - x0;
+        const a = y0 * columns + x0, b = y0 * columns + x1, c = y1 * columns + x0, d = y1 * columns + x1;
+        const wr = (whiteRed[a] * (1 - fx) + whiteRed[b] * fx) * (1 - fy) + (whiteRed[c] * (1 - fx) + whiteRed[d] * fx) * fy;
+        const wb = (whiteBlue[a] * (1 - fx) + whiteBlue[b] * fx) * (1 - fy) + (whiteBlue[c] * (1 - fx) + whiteBlue[d] * fx) * fy;
+        // Keep the estimated paper luminance, avoiding artificial clipping or
+        // exposure/focus improvements when only its colour is being corrected.
+        const level = wr * .2126 + .7152 + wb * .0722, at = (y * width + x) * 4;
+        corrected[at] = data[at] * level / wr;
+        corrected[at + 1] = data[at + 1] * level;
+        corrected[at + 2] = data[at + 2] * level / wb;
+        corrected[at + 3] = data[at + 3];
+      }
+    }
+  }
+
+  const illuminationResult = (imageData, estimate, corrected) => ({ width: imageData.width, height: imageData.height,
+    data: corrected, luminanceData: imageData.luminanceData || imageData.data, illumination: estimate.illumination });
+
+  function normalizeIllumination(imageData, { region } = {}) {
+    const estimate = estimateIllumination(imageData, region);
+    if (!estimate) return imageData;
+    const corrected = new Uint8ClampedArray(imageData.data.length);
+    applyIlluminationRows(imageData, estimate, corrected, 0, imageData.height);
+    return illuminationResult(imageData, estimate, corrected);
+  }
+
+  async function normalizeIlluminationAsync(imageData, { signal, region } = {}) {
+    const checkCancelled = () => {
+      if (!signal?.aborted) return;
+      const error = new Error('Scan cancelled'); error.name = 'AbortError'; throw error;
+    };
+    checkCancelled();
+    const estimate = estimateIllumination(imageData, region);
+    if (!estimate) return imageData;
+    const corrected = new Uint8ClampedArray(imageData.data.length);
+    for (let row = 0; row < imageData.height; row += 48) {
+      checkCancelled();
+      applyIlluminationRows(imageData, estimate, corrected, row, Math.min(imageData.height, row + 48));
+      // Full-resolution cleanup shares the exact detector arithmetic while
+      // allowing retake/cancel and the review animation to run between strips.
+      if (row + 48 < imageData.height) {
+        if (globalThis.scheduler?.yield) await globalThis.scheduler.yield();
+        else await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    checkCancelled();
+    return illuminationResult(imageData, estimate, corrected);
+  }
+
+  function analyse(imageData) {
+    imageData = normalizeIllumination(imageData);
+    const { width, height, data } = imageData;
+    const original = imageData.luminanceData || data;
     const length = width * height;
     const yellow = new Uint8Array(length), neutral = new Uint8Array(length);
     const luminance = new Float32Array(length), chroma = new Float32Array(length);
@@ -122,7 +281,7 @@
       const offset = i * 4, r = data[offset], g = data[offset + 1], b = data[offset + 2];
       const maximum = Math.max(r, g, b), minimum = Math.min(r, g, b);
       const saturation = maximum ? (maximum - minimum) / maximum : 0;
-      const light = r * .2126 + g * .7152 + b * .0722;
+      const light = original[offset] * .2126 + original[offset + 1] * .7152 + original[offset + 2] * .0722;
       luminance[i] = light;
       histogram[Math.round(light)] += 1;
       chroma[i] = (r + g) * .5 - b - Math.abs(r - g) * .34;
@@ -137,7 +296,8 @@
       cumulative += histogram[i];
       if (cumulative >= length * .84) { bright = i; break; }
     }
-    return { width, height, yellow, neutral, luminance, chroma, yellowCount, paperThreshold: Math.max(95, bright - 38) };
+    return { width, height, yellow, neutral, luminance, chroma, yellowCount,
+      illumination: imageData.illumination || null, paperThreshold: Math.max(95, bright - 38) };
   }
 
   const sample = (map, state, point) => map[
@@ -531,6 +691,10 @@
         // Perspective may foreshorten A4 into a square, but a generic square
         // yellow object without the printed strip is not capture evidence.
         if (markerSupport < .5) confidence -= clamp((aspectError - .15) * .5, 0, .18);
+        // A coloured card can itself resemble a shifted white point. Under
+        // corrected illumination, the independent printed calibration strips
+        // must corroborate that this is the intended sheet before auto-capture.
+        if (state.illumination && markerSupport < .5) confidence = Math.min(confidence, .76);
       } else {
         const boundary = paperBoundary(state, quad);
         if (boundary.support < .65 || boundary.contrast < 15) continue;
@@ -553,6 +717,7 @@
         sharpness: quality.sharpness, edgeSharpness: railSharpness(state, frameEdges), brightness: quality.brightness,
         coverage, edgeSupport, markerSupport
       };
+      if (state.illumination) best.illumination = state.illumination;
     }
     if (best) delete best.score;
     return best;
@@ -560,5 +725,5 @@
 
   // Intentionally synchronous and independent of OpenCV/full-resolution scan
   // processing. Feed a <=480px ImageData at a throttled preview cadence.
-  SP.LiveDetection = { detect };
+  SP.LiveDetection = { detect, normalizeIllumination, normalizeIlluminationAsync };
 })();

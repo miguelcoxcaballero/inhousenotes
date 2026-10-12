@@ -126,6 +126,44 @@ test('a folded detection cannot become a plausible looking but mirrored scan', a
   expect(result).toContain('overlaps itself');
 });
 
+test('cold and warm illumination are removed without bleaching pencil or coloured writing', async ({ page }) => {
+  const results = await page.evaluate(async () => {
+    const reports = [];
+    for (const gains of [[.62, .80, 1], [1, .80, .62]]) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 630; canvas.height = 891;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.fillStyle = '#ededed'; context.fillRect(0, 0, 630, 891);
+      context.fillStyle = '#aaaaaa'; context.fillRect(70, 420, 490, 2);
+      context.fillStyle = '#143eb0'; context.fillRect(80, 650, 180, 3);
+      context.fillStyle = '#bf2929'; context.fillRect(370, 650, 180, 3);
+      context.fillStyle = '#3c3c3c'; context.fillRect(90, 710, 120, 70);
+      const pixels = context.getImageData(0, 0, 630, 891);
+      for (let y = 0; y < 891; y++) for (let x = 0; x < 630; x++) {
+        const shade = .65 + .35 * x / 629;
+        for (let c = 0; c < 3; c++) pixels.data[(y * 630 + x) * 4 + c] *= gains[c] * shade;
+      }
+      context.putImageData(pixels, 0, 0);
+      await ScannerPro.Lightweight.correctColors(canvas, { useStencil: false });
+      const at = (x, y) => Array.from(context.getImageData(x, y, 1, 1).data).slice(0, 3);
+      const paper = [90, 180, 320, 520].map(x => at(x, 320));
+      reports.push({
+        paper, pencilContrast: [90, 180, 320, 520].map((x, i) => paper[i][0] - at(x, 420)[0]),
+        blue: at(160, 651), red: at(460, 651), charcoal: at(150, 745)
+      });
+    }
+    return reports;
+  });
+  for (const result of results) {
+    expect(Math.min(...result.paper.flat()), JSON.stringify(result)).toBeGreaterThan(238);
+    expect(Math.max(...result.paper.map(rgb => Math.max(...rgb) - Math.min(...rgb)))).toBeLessThan(12);
+    expect(Math.min(...result.pencilContrast)).toBeGreaterThan(14);
+    expect(result.blue[2] - result.blue[0]).toBeGreaterThan(90);
+    expect(result.red[0] - result.red[2]).toBeGreaterThan(90);
+    expect(Math.max(...result.charcoal)).toBeLessThan(100);
+  }
+});
+
 test('template cleanup preserves isolated punctuation even where it crosses a printed dot', async ({ page }) => {
   const result = await page.evaluate(async () => {
     const canvas = document.createElement('canvas'); canvas.width = 630; canvas.height = 891;

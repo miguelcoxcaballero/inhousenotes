@@ -3,9 +3,11 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { test } from 'node:test';
 
-const context = vm.createContext({ window: {} });
+const context = vm.createContext({ window: {}, setTimeout });
 vm.runInContext(fs.readFileSync(new URL('../scanner/processing/liveDetection.js', import.meta.url), 'utf8'), context);
 const detect = context.window.ScannerPro.LiveDetection.detect;
+const normalizeIllumination = context.window.ScannerPro.LiveDetection.normalizeIllumination;
+const normalizeIlluminationAsync = context.window.ScannerPro.LiveDetection.normalizeIlluminationAsync;
 
 // Render in page coordinates, independently of the detector's hull/edge code.
 // Solving the bilinear inverse makes every rail and small bottom box undergo
@@ -209,4 +211,115 @@ test('small changes in noisy ink do not turn a bowed edge into many little folds
     });
     assert.ok(Math.max(...bow) > 12, 'keep the real broad paper curl');
   }
+});
+
+function illuminated(image, gains, { gradient = false, shadow = false } = {}) {
+  const data = new Uint8ClampedArray(image.data.length);
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const at = (y * image.width + x) * 4;
+      const shade = shadow ? .62 + .38 * x / image.width : 1;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const gain = gains[channel] + (gradient ? (1 - gains[channel]) * .35 * y / image.height : 0);
+        data[at + channel] = image.data[at + channel] * gain * shade;
+      }
+      data[at + 3] = 255;
+    }
+  }
+  return { ...image, data };
+}
+
+test('measures faint yellow rails relative to the paper under cool, warm and mixed illumination', () => {
+  const image = frame({ ink: [225, 218, 174], bowX: 16, bowY: -11 });
+  const reference = detect(image);
+  for (const [name, gains, options] of [
+    ['blue camera white balance', [.54, .75, 1], {}],
+    ['warm lamp', [1, .78, .52], {}],
+    ['green cast', [.72, 1, .76], {}],
+    ['magenta cast', [1, .72, .94], {}],
+    ['cool gradient and shadow', [.54, .75, 1], { gradient: true, shadow: true }]
+  ]) {
+    const input = illuminated(image, gains, options), original = input.data.slice();
+    const result = detect(input);
+    assert.equal(result?.source, 'yellow', name);
+    assert.ok(result.confidence > .88, `${name}: confidence ${result.confidence}`);
+    assert.equal(result.markers.length, 2, name);
+    assert.ok(result.markerSupport >= .65, `${name}: markers ${result.markerSupport}`);
+    const movement = Math.max(...result.quad.map((point, index) => Math.hypot(point.x - reference.quad[index].x, point.y - reference.quad[index].y)));
+    assert.ok(movement < .009, `${name}: illumination moved the corners by ${movement}`);
+    assert.deepEqual(input.data, original, 'illumination analysis must not alter the captured photo');
+  }
+});
+
+test('illumination normalization preserves neutral data and rejects coloured desks and neutral printing', () => {
+  const neutral = frame();
+  assert.equal(normalizeIllumination(neutral), neutral, 'ordinary neutral scenes retain the exact established geometry input');
+  for (const gains of [[.54, .75, 1], [1, .78, .52]]) {
+    const unverified = detect(illuminated(frame({ markers: false }), gains));
+    assert.equal(unverified?.source, 'yellow', 'a measurable outline can remain visible');
+    assert.ok(unverified.confidence <= .76, 'cast-coloured material needs the calibration strips before auto capture');
+    assert.ok(unverified.illumination);
+    for (const options of [
+      { yellow: false },
+      { ink: [175, 175, 175] },
+      { paper: false, background: [240, 218, 75] },
+      { paper: false, background: [114, 177, 230] }
+    ]) {
+      const result = detect(illuminated(frame(options), gains));
+      assert.ok(!result || result.source === 'paper', JSON.stringify({ gains, options, result }));
+      assert.ok(!result || result.confidence < .78);
+    }
+  }
+});
+
+test('full-resolution illumination normalization yields, cancels and matches detector pixels exactly', async () => {
+  const original = illuminated(frame(), [.54, .75, 1]), snapshot = original.data.slice();
+  const synchronous = normalizeIllumination(original);
+  let yielded = false;
+  setTimeout(() => { yielded = true; }, 0);
+  const asynchronous = await normalizeIlluminationAsync(original);
+  assert.ok(yielded, 'processing must yield to pending UI work');
+  assert.deepEqual(asynchronous.data, synchronous.data);
+  assert.deepEqual(asynchronous.illumination, synchronous.illumination);
+  assert.deepEqual(original.data, snapshot);
+  const controller = new AbortController();
+  const cancelled = normalizeIlluminationAsync(original, { signal: controller.signal });
+  setTimeout(() => controller.abort(), 0);
+  await assert.rejects(cancelled, error => error.name === 'AbortError');
+  assert.deepEqual(original.data, snapshot, 'cancelling must retain the original camera photo');
+  const neutral = frame();
+  assert.equal(await normalizeIlluminationAsync(neutral), neutral);
+  await assert.rejects(normalizeIlluminationAsync(neutral, { signal: controller.signal }), error => error.name === 'AbortError');
+});
+
+test('a larger pastel desk cannot recolour a smaller correctly exposed white sheet', () => {
+  const base = [[100, 25], [348, 34], [375, 455], [73, 447]];
+  for (const scale of [.9, .7]) {
+    const quad = base.map(([x, y]) => [240 + (x - 240) * scale, 240 + (y - 240) * scale]);
+    for (const background of [[114, 177, 230], [180, 210, 245], [220, 180, 230]]) {
+      const source = frame({ quad, background }), detection = detect(source);
+      assert.equal(normalizeIllumination(source), source, 'the brighter neutral page must outweigh the larger coloured desk');
+      assert.equal(detection?.source, 'yellow', JSON.stringify({ scale, background }));
+      assert.ok(detection.confidence > .9, JSON.stringify({ scale, background, confidence: detection.confidence }));
+      assert.equal(detection.markers.length, 2);
+    }
+  }
+});
+
+test('rectified-page illumination uses the physical interior rather than synthetic white margins', async () => {
+  const source = illuminated(frame({ background: [244, 244, 240] }), [.54, .75, 1]);
+  for (let y = 0; y < source.height; y += 1) {
+    for (let x = 0; x < source.width; x += 1) {
+      if (x >= source.width * .1 && x <= source.width * .9 && y >= source.height * .06 && y <= source.height * .92) continue;
+      const at = (y * source.width + x) * 4;
+      source.data[at] = source.data[at + 1] = source.data[at + 2] = 255;
+    }
+  }
+  assert.equal(normalizeIllumination(source), source, 'scene-wide neutral material remains a valid live reference');
+  const options = { region: { x0: .12, y0: .08, x1: .88, y1: .90 } };
+  const corrected = normalizeIllumination(source, options);
+  assert.ok(corrected.illumination, 'the known page interior provides its own illuminant');
+  const at = (Math.round(source.height * .45) * source.width + Math.round(source.width * .5)) * 4;
+  assert.ok(Math.abs(corrected.data[at] - corrected.data[at + 2]) < 6, 'the page is neutral despite the artificial white border');
+  assert.deepEqual((await normalizeIlluminationAsync(source, options)).data, corrected.data);
 });

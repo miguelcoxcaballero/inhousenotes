@@ -12,7 +12,6 @@
   const SP = (window.ScannerPro = window.ScannerPro || {});
   const W = 210,
     H = 297,
-    KNOTS = 9,
     STEPS = 128;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const norm = (p) => Math.hypot(...p);
@@ -73,13 +72,16 @@
       cb = Math.cos(beta),
       sb = Math.sin(beta),
       length = (Math.abs(cb) * W + Math.abs(sb) * H) / 2;
-    const angles = [...p.slice(8, 12), 0, ...p.slice(12)],
+    const middle = (p.length - 8) / 2,
+      angles = [...p.slice(8, 8 + middle), 0, ...p.slice(8 + middle)],
+      knots = angles.length,
       xs = [0],
       zs = [0];
+
     let previous = angles[0];
     for (let i = 1; i <= STEPS; i++) {
-      const t = (i / STEPS) * (KNOTS - 1),
-        index = Math.min(KNOTS - 2, Math.floor(t));
+      const t = (i / STEPS) * (knots - 1),
+        index = Math.min(knots - 2, Math.floor(t));
       const angle =
         angles[index] + (angles[index + 1] - angles[index]) * (t - index);
       xs.push(
@@ -340,6 +342,84 @@
         x: p.x * scale,
         y: p.y * scale,
       }));
+    let calibrationTop =
+      frame.box?.support >= 0.5 &&
+      frame.box.top?.length >= 7 &&
+      frame.box.top?.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+        ? frame.box.top.map((p) => ({ x: p.x * scale, y: p.y * scale }))
+        : null;
+    if (calibrationTop?.length >= 3) {
+      let hits = 0,
+        checked = 0;
+      const pixel = (x, y, c) =>
+        rgba[
+          (clamp(Math.round(y), 0, height - 1) * width +
+            clamp(Math.round(x), 0, width - 1)) *
+            4 +
+            c
+        ];
+      for (let i = 1; i < calibrationTop.length - 1; i++) {
+        const a = calibrationTop[i - 1],
+          point = calibrationTop[i],
+          b = calibrationTop[i + 1],
+          length = Math.hypot(b.x - a.x, b.y - a.y);
+        if (length < 1) continue;
+        const nx = -(b.y - a.y) / length,
+          ny = (b.x - a.x) / length,
+          background = [0, 1, 2].map(
+            (c) =>
+              (pixel(point.x + nx * 4, point.y + ny * 4, c) +
+                pixel(point.x - nx * 4, point.y - ny * 4, c)) /
+              2,
+          );
+        let supported = false;
+        for (let offset = -2; offset <= 2; offset++) {
+          const darkness = background.map(
+            (value, c) =>
+              (value - pixel(point.x + nx * offset, point.y + ny * offset, c)) /
+              Math.max(40, value),
+          );
+          if (
+            darkness[2] > 0.02 &&
+            darkness[2] - (darkness[0] + darkness[1]) / 2 > 0.015
+          )
+            supported = true;
+        }
+        checked++;
+        if (supported) hits++;
+      }
+      // Some frame hypotheses infer the box position from page proportions.
+      // Only an actually visible coloured rail may censor grid observations.
+      if (checked < 5 || hits / checked < 0.35) calibrationTop = null;
+    }
+    const aboveCalibration = (point) => {
+      if (!calibrationTop || calibrationTop.length < 2) return true;
+      let closest = Infinity,
+        side = 0;
+      for (let i = 1; i < calibrationTop.length; i++) {
+        const a = calibrationTop[i - 1],
+          b = calibrationTop[i],
+          dx = b.x - a.x,
+          dy = b.y - a.y,
+          length = Math.hypot(dx, dy);
+        if (!length) continue;
+        const t = clamp(
+            ((point.x - a.x) * dx + (point.y - a.y) * dy) / (length * length),
+            0,
+            1,
+          ),
+          distance = Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy);
+        if (distance < closest) {
+          closest = distance;
+          side = ((point.x - a.x) * dy - (point.y - a.y) * dx) / length;
+        }
+      }
+      // The calibration boxes contain sharp corners at the same 5 mm pitch
+      // as the dots. JPEG ringing can make those corners look like extra grid
+      // rows. The measured upper box rail is a physical exclusion boundary;
+      // the last real dot row sits one full pitch above it.
+      return side > pitch * 0.25;
+    };
     const polygon = [
       ...paths.top,
       ...paths.right,
@@ -370,8 +450,7 @@
           offset = index * 4;
         if (value < 5) continue;
         const channels = [rgba[offset], rgba[offset + 1], rgba[offset + 2]],
-          highest = Math.max(...channels),
-          lowest = Math.min(...channels);
+          highest = Math.max(...channels);
         const background = [0, 0, 0];
         for (let dy = -3; dy <= 3; dy++)
           for (let dx = -3; dx <= 3; dx++) {
@@ -379,11 +458,19 @@
             for (let c = 0; c < 3; c++) background[c] += rgba[at + c] / 49;
           }
         const contrast = background.map((value, c) => value - channels[c]);
+        // A neutral printed dot inherits the illuminant of its local paper.
+        // Compare fractional darkening of each channel, not absolute RGB
+        // neutrality: blue room light can tint white paper by more than 50%.
+        const relative = contrast.map(
+            (value, c) => value / Math.max(40, background[c]),
+          ),
+          strongest = Math.max(...relative),
+          weakest = Math.min(...relative);
         if (
-          highest < 45 ||
-          (highest - lowest) / Math.max(1, highest) > 0.32 ||
-          Math.max(...contrast) - Math.min(...contrast) >
-            Math.max(...contrast) * 0.45 + 3
+          highest < 32 ||
+          strongest < 0.014 ||
+          weakest < strongest * 0.36 - 0.012 ||
+          strongest - weakest > strongest * 0.56 + 0.016
         )
           continue;
         let maximum = true;
@@ -407,6 +494,7 @@
         const p = { x, y };
         if (
           !inside(p, polygon) ||
+          !aboveCalibration(p) ||
           Math.min(
             ...Object.values(paths).map((path) => lineDistance(p, path)),
           ) <
@@ -671,45 +759,218 @@
       }
     phases.sort((a, b) => a.score - b.score);
     const phase = phases[0];
-    diagnostics.phases = phases
-      .slice(0, 3)
-      .map((p) => ({
-        c: p.c0,
-        r: p.r0,
-        score: p.score,
-        count: p.selected.length,
-      }));
+    diagnostics.phases = phases.slice(0, 3).map((p) => ({
+      c: p.c0,
+      r: p.r0,
+      score: p.score,
+      count: p.selected.length,
+    }));
     if (
       !phase ||
       phase.score > 0.65 ||
       (phases[1] && phases[1].score - phase.score < 0.25)
     )
       return null;
+    const measured = phase.selected.map((p) => ({
+      col: p.col - phase.c0,
+      row: p.row - phase.r0,
+      u: (20 + 5 * (p.col - phase.c0)) / W,
+      v: (19.3 + 5 * (p.row - phase.r0)) / H,
+      x: p.x / scale,
+      y: p.y / scale,
+    }));
+    const positions = new Map(),
+      duplicates = new Set();
+    for (const point of measured) {
+      const key = `${point.col},${point.row}`;
+      if (positions.has(key)) duplicates.add(key);
+      positions.set(key, point);
+    }
+    const lattice = measured.filter((point) => {
+      if (duplicates.has(`${point.col},${point.row}`)) return false;
+      // A thin pencil stroke can have local maxima that imitate dot centers.
+      // Require agreement with independently ordered neighboring grid dots,
+      // without consulting the fitted 3D surface or modifying any ink pixels.
+      for (const [dc, dr] of [
+        [1, 0],
+        [0, 1],
+      ]) {
+        const neighbors = [];
+        for (const t of [-3, -2, -1, 1, 2, 3]) {
+          const key = `${point.col + dc * t},${point.row + dr * t}`;
+          if (positions.has(key) && !duplicates.has(key))
+            neighbors.push({ ...positions.get(key), t });
+        }
+        if (
+          neighbors.length < 4 ||
+          !neighbors.some((p) => p.t < 0) ||
+          !neighbors.some((p) => p.t > 0)
+        )
+          continue;
+        const matrix = Array.from({ length: 3 }, () => [0, 0, 0]),
+          bx = [0, 0, 0],
+          by = [0, 0, 0];
+        for (const neighbor of neighbors) {
+          const basis = [1, neighbor.t, neighbor.t ** 2];
+          for (let a = 0; a < 3; a++) {
+            bx[a] += basis[a] * neighbor.x;
+            by[a] += basis[a] * neighbor.y;
+            for (let b = 0; b < 3; b++) matrix[a][b] += basis[a] * basis[b];
+          }
+        }
+        const x = solve(matrix, bx),
+          y = solve(matrix, by);
+        if (!x || !y) continue;
+        const errors = neighbors.map((p) =>
+          Math.hypot(
+            x[0] + x[1] * p.t + x[2] * p.t ** 2 - p.x,
+            y[0] + y[1] * p.t + y[2] * p.t ** 2 - p.y,
+          ),
+        );
+        if (
+          Math.max(...errors) < (pitch / scale) * 0.08 &&
+          Math.hypot(x[0] - point.x, y[0] - point.y) > (pitch / scale) * 0.22
+        )
+          return false;
+      }
+      return true;
+    });
+    diagnostics.rejectedGridOutliers = measured.length - lattice.length;
+    if (lattice.length < 350 || lattice.length < measured.length * 0.85)
+      return null;
     return {
-      points: phase.selected.map((p) => ({
-        u: (20 + 5 * (p.col - phase.c0)) / W,
-        v: (19.3 + 5 * (p.row - phase.r0)) / H,
-        x: p.x / scale,
-        y: p.y / scale,
-      })),
+      points: lattice,
       pitch: pitch / scale,
       phaseScore: phase.score,
-      coverage: phase.selected.length / (35 * 51),
+      coverage: lattice.length / (35 * 51),
     };
   }
-  function residual(p, points, width, height, frame) {
+  function traceParallels(points, pitch) {
+    // Rows and columns are parallel in the *flat sheet*, not in the image.
+    // Trace each family in its measured lattice order. A local quadratic
+    // estimates its position and tangent without straightening a curved row
+    // prematurely. Occluded runs remain gaps, never synthetic observations.
+    const curves = [],
+      samples = [];
+    for (const axis of ["row", "col"]) {
+      const along = axis === "row" ? "col" : "row",
+        groups = new Map();
+      for (const point of points) {
+        if (!groups.has(point[axis])) groups.set(point[axis], []);
+        groups.get(point[axis]).push(point);
+      }
+      for (const [index, ordered] of groups) {
+        ordered.sort((a, b) => a[along] - b[along]);
+        let runs = [],
+          run = [];
+        for (const point of ordered) {
+          if (run.length && point[along] - run.at(-1)[along] > 2) {
+            runs.push(run);
+            run = [];
+          }
+          run.push(point);
+        }
+        runs.push(run);
+        for (const run of runs) {
+          if (run.length < 7 || run.at(-1)[along] - run[0][along] < 6) continue;
+          const curve = {
+            axis,
+            index,
+            from: run[0][along],
+            to: run.at(-1)[along],
+            count: run.length,
+            samples: [],
+          };
+          for (let i = 3; i < run.length - 3; i += 4) {
+            const center = run[i],
+              local = run.slice(i - 3, i + 4);
+            if (local.at(-1)[along] - local[0][along] > 10) continue;
+            let weights = local.map(() => 1),
+              cx,
+              cy,
+              errors;
+            for (let iteration = 0; iteration < 3; iteration++) {
+              const matrix = Array.from({ length: 3 }, () => [0, 0, 0]),
+                bx = [0, 0, 0],
+                by = [0, 0, 0];
+              local.forEach((point, j) => {
+                const t = point[along] - center[along],
+                  basis = [1, t, t * t],
+                  weight = weights[j];
+                for (let a = 0; a < 3; a++) {
+                  bx[a] += basis[a] * point.x * weight;
+                  by[a] += basis[a] * point.y * weight;
+                  for (let b = 0; b < 3; b++)
+                    matrix[a][b] += basis[a] * basis[b] * weight;
+                }
+              });
+              cx = solve(matrix, bx);
+              cy = solve(matrix, by);
+              if (!cx || !cy) break;
+              errors = local.map((point) => {
+                const t = point[along] - center[along];
+                return Math.hypot(
+                  cx[0] + cx[1] * t + cx[2] * t * t - point.x,
+                  cy[0] + cy[1] * t + cy[2] * t * t - point.y,
+                );
+              });
+              const threshold = Math.max(pitch * 0.035, median(errors) * 2);
+              weights = errors.map((error) =>
+                Math.min(1, threshold / Math.max(1e-6, error)),
+              );
+            }
+            if (!cx || !cy || percentile(errors, 0.8) > pitch * 0.13) continue;
+            const length = Math.hypot(cx[1], cy[1]);
+            if (length < pitch * 0.4 || length > pitch * 1.8) continue;
+            const sample = {
+              u: center.u,
+              v: center.v,
+              x: cx[0],
+              y: cy[0],
+              tx: cx[1],
+              ty: cy[1],
+              du: axis === "row" ? 5 / W : 0,
+              dv: axis === "col" ? 5 / H : 0,
+            };
+            curve.samples.push(sample);
+          }
+          if (curve.samples.length) curves.push(curve);
+        }
+      }
+    }
+    // Balance the two families and the whole page, independent of traversal
+    // order or how many dots survived handwriting in one particular row.
+    for (const axis of ["row", "col"]) {
+      const family = curves
+        .filter((curve) => curve.axis === axis)
+        .sort((a, b) => a.index - b.index);
+      const candidates = family.flatMap((curve) => curve.samples);
+      const count = Math.min(40, candidates.length);
+      for (let i = 0; i < count; i++)
+        samples.push(
+          candidates[Math.floor(((i + 0.5) * candidates.length) / count)],
+        );
+    }
+    return { curves, samples };
+  }
+  function residual(p, points, width, height, frame, guides = []) {
+    const middle = (p.length - 8) / 2,
+      a = [...p.slice(8, 8 + middle), 0, ...p.slice(8 + middle)],
+      smoothCount = a.length - 2;
+
     const model = prepare(p, width, height),
-      out = new Float64Array(points.length * 2 + 7 + (frame ? 200 : 0));
+      out = new Float64Array(
+        points.length * 2 + smoothCount + (frame ? 200 : 0) + guides.length * 4,
+      );
     points.forEach((point, i) => {
       const predicted = project(model, point.u, point.v);
       out[i * 2] = predicted.x - point.x;
       out[i * 2 + 1] = predicted.y - point.y;
     });
-    const a = [...p.slice(8, 12), 0, ...p.slice(12)];
-    for (let i = 0; i < 7; i++)
+    for (let i = 0; i < smoothCount; i++)
       out[points.length * 2 + i] = (a[i] - 2 * a[i + 1] + a[i + 2]) * 0.5;
     if (frame) {
-      let offset = points.length * 2 + 7;
+      let offset = points.length * 2 + smoothCount;
       for (const name of ["top", "right", "bottom", "left"])
         for (let i = 0; i <= 24; i++) {
           const t = i / 24,
@@ -751,23 +1012,122 @@
           out[offset++] = (point.y - nearest.y) * 0.35;
         }
     }
+    let offset = points.length * 2 + smoothCount + (frame ? 200 : 0);
+    for (const guide of guides) {
+      const center = project(model, guide.u, guide.v),
+        before = project(
+          model,
+          guide.u - guide.du * 0.5,
+          guide.v - guide.dv * 0.5,
+        ),
+        after = project(
+          model,
+          guide.u + guide.du * 0.5,
+          guide.v + guide.dv * 0.5,
+        );
+      // These are 3D camera/surface residuals, not a residual 2D rubber warp.
+      // The shared isometric sheet must explain both parallel curve families.
+      out[offset++] = (center.x - guide.x) * 0.65;
+      out[offset++] = (center.y - guide.y) * 0.65;
+      out[offset++] = (after.x - before.x - guide.tx) * 1.7;
+      out[offset++] = (after.y - before.y - guide.ty) * 1.7;
+    }
     return out;
   }
   const loss = (values) =>
     values.reduce((sum, v) => sum + 2 * (Math.sqrt(1 + v * v) - 1), 0);
-  function optimize(start, points, width, height, deadline, frame) {
+  function surfaceErrors(model, points, frame) {
+    const errors = points.map((point) => {
+        const q = project(model, point.u, point.v);
+        return Math.hypot(q.x - point.x, q.y - point.y);
+      }),
+      borders = [];
+    for (const name of ["top", "right", "bottom", "left"])
+      for (let i = 0; i <= 24; i++) {
+        const t = i / 24,
+          u =
+            name === "left"
+              ? 15 / W
+              : name === "right"
+                ? 195 / W
+                : (15 + 180 * t) / W,
+          v =
+            name === "top"
+              ? 14.3 / H
+              : name === "bottom"
+                ? 284.3 / H
+                : (14.3 + 270 * t) / H;
+        borders.push(lineDistance(project(model, u, v), frame.paths[name]));
+      }
+    return {
+      rms: Math.sqrt(errors.reduce((sum, v) => sum + v * v, 0) / errors.length),
+      p90: percentile(errors, 0.9),
+      p99: percentile(errors, 0.99),
+      borderMedian: median(borders),
+      borderP95: percentile(borders, 0.95),
+    };
+  }
+  function validErrors(errors, pitch) {
+    return (
+      errors.rms <= pitch * 0.14 &&
+      errors.p90 <= pitch * 0.22 &&
+      errors.p99 <= pitch * 0.4 &&
+      errors.borderMedian <= pitch * 0.6 &&
+      errors.borderP95 <= pitch * 1.15
+    );
+  }
+  function visibleSurface(model) {
+    let sign = 0;
+    for (let y = 0; y <= 16; y++)
+      for (let x = 0; x <= 12; x++) {
+        const du = x === 12 ? -0.0001 : 0.0001,
+          dv = y === 16 ? -0.0001 : 0.0001;
+        const p = project(model, x / 12, y / 16),
+          a = project(model, x / 12 + du, y / 16),
+          b = project(model, x / 12, y / 16 + dv),
+          jac =
+            ((a.x - p.x) * (b.y - p.y) - (a.y - p.y) * (b.x - p.x)) / (du * dv);
+        if (
+          !Number.isFinite(jac) ||
+          Math.abs(jac) < 1e-6 ||
+          (sign && Math.sign(jac) !== sign)
+        )
+          return false;
+        sign = Math.sign(jac);
+      }
+    return true;
+  }
+  function optimize(
+    start,
+    points,
+    width,
+    height,
+    deadline,
+    frame,
+    guides = [],
+    maxIterations = 48,
+    preserveEnds = false,
+  ) {
     let p = [...start],
-      r = residual(p, points, width, height, frame),
+      r = residual(p, points, width, height, frame, guides),
       cost = loss(r),
       lambda = 0.01,
       iterations = 0;
-    for (; iterations < 48 && performance.now() < deadline; iterations++) {
+    for (
+      ;
+      iterations < maxIterations && performance.now() < deadline;
+      iterations++
+    ) {
       const jacobian = [];
       for (let j = 0; j < p.length; j++) {
+        if (preserveEnds && (j === 8 || j === p.length - 1)) {
+          jacobian.push(new Float64Array(r.length));
+          continue;
+        }
         const perturbed = [...p],
           epsilon = 1e-4;
         perturbed[j] += epsilon;
-        const next = residual(perturbed, points, width, height, frame);
+        const next = residual(perturbed, points, width, height, frame, guides);
         jacobian.push(next.map((v, i) => (v - r[i]) / epsilon));
       }
       const a = Array.from({ length: p.length }, () => Array(p.length).fill(0)),
@@ -796,7 +1156,7 @@
         Math.log(Math.max(width, height) * 5),
       );
       for (let j = 8; j < p.length; j++) trial[j] = clamp(trial[j], -1.5, 1.5);
-      const next = residual(trial, points, width, height, frame),
+      const next = residual(trial, points, width, height, frame, guides),
         newCost = loss(next);
       if (newCost < cost) {
         const improvement = cost - newCost;
@@ -807,6 +1167,7 @@
         if (improvement < 1e-5) break;
       } else lambda = Math.min(1e8, lambda * 5);
     }
+
     return { p, cost, iterations };
   }
   function fit(source, detection, options = {}) {
@@ -826,11 +1187,60 @@
       ];
     const base = initial(quad, source.width, source.height);
     if (!base) return null;
-    // A uniform subset of the lattice is training data. The remaining points are
-    // independent observations and never participate in camera/shape fitting.
-    const stride = Math.max(4, Math.ceil(points.length / 320)),
-      training = points.filter((_, i) => i % stride === 0),
-      validation = points.filter((_, i) => i % stride !== 0);
+    // Reserve full measured rows and columns for curve tracing. Intervening
+    // dots remain independent holdouts: a denoised guide never incorporates
+    // their coordinates, even where the two printed line families cross.
+    const forTraining = (point) => point.row % 4 === 1 || point.col % 4 === 2,
+      observedTraining = points.filter(forTraining),
+      validation = points.filter((point) => !forTraining(point)),
+      ordered = [...observedTraining].sort(
+        (a, b) => a.row - b.row || a.col - b.col,
+      ),
+      trainingCount = Math.min(260, ordered.length),
+      training = Array.from(
+        { length: trainingCount },
+        (_, i) =>
+          ordered[Math.floor(((i + 0.5) * ordered.length) / trainingCount)],
+      ),
+      parallels = traceParallels(observedTraining, pitch),
+      guides = parallels.samples,
+      heldoutGuides = traceParallels(validation, pitch).samples;
+    const tangentP90For = (model) => {
+      const errors = heldoutGuides.map((guide) => {
+        const before = project(
+            model,
+            guide.u - guide.du * 0.5,
+            guide.v - guide.dv * 0.5,
+          ),
+          after = project(
+            model,
+            guide.u + guide.du * 0.5,
+            guide.v + guide.dv * 0.5,
+          );
+        return Math.hypot(
+          after.x - before.x - guide.tx,
+          after.y - before.y - guide.ty,
+        );
+      });
+      return errors.length ? percentile(errors, 0.9) : null;
+    };
+    const validateModel = (model) =>
+      validErrors(surfaceErrors(model, validation, frame), pitch) &&
+      visibleSurface(model) &&
+      (tangentP90For(model) ?? 0) <= pitch * 0.22;
+    diagnostics.parallels = {
+      rows: new Set(
+        parallels.curves
+          .filter((curve) => curve.axis === "row")
+          .map((curve) => curve.index),
+      ).size,
+      columns: new Set(
+        parallels.curves
+          .filter((curve) => curve.axis === "col")
+          .map((curve) => curve.index),
+      ).size,
+      samples: guides.length,
+    };
     let best = null;
     for (const beta of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
       if (performance.now() > deadline) break;
@@ -845,67 +1255,69 @@
         source.height,
         deadline,
         frame,
+        guides,
       );
       if (!best || result.cost < best.cost) best = result;
     }
     if (!best) return null;
-    const model = prepare(best.p, source.width, source.height),
-      errors = validation.map((p) => {
-        const q = project(model, p.u, p.v);
-        return Math.hypot(q.x - p.x, q.y - p.y);
-      });
-    const rms = Math.sqrt(
-        errors.reduce((sum, v) => sum + v * v, 0) / errors.length,
-      ),
-      p90 = percentile(errors, 0.9),
-      p99 = percentile(errors, 0.99);
-    Object.assign(diagnostics, { rms, p90, p99, parameters: best.p });
-    if (rms > pitch * 0.14 || p90 > pitch * 0.22 || p99 > pitch * 0.4)
-      return null;
-    const borders = [];
-    for (const name of ["top", "right", "bottom", "left"])
-      for (let i = 0; i <= 24; i++) {
-        const t = i / 24,
-          u =
-            name === "left"
-              ? 15 / W
-              : name === "right"
-                ? 195 / W
-                : (15 + 180 * t) / W,
-          v =
-            name === "top"
-              ? 14.3 / H
-              : name === "bottom"
-                ? 284.3 / H
-                : (14.3 + 270 * t) / H;
-        borders.push(lineDistance(project(model, u, v), frame.paths[name]));
+    const coarseModel = prepare(best.p, source.width, source.height),
+      coarseValid = validateModel(coarseModel);
+    // A finer *3D* tangent profile is useful when traced parallels show a
+    // smooth S bend that the initial nine knots cannot represent precisely.
+    // Start it at the coarse physical solution; it cannot invent a 2D mesh.
+    if (guides.length >= 32 && performance.now() < deadline - 180) {
+      const coarseAngles = [...best.p.slice(8, 12), 0, ...best.p.slice(12)],
+        refined = [...best.p.slice(0, 8)];
+      for (let i = 0; i < 13; i++) {
+        if (i === 6) continue;
+        const at = (i * 8) / 12,
+          index = Math.min(7, Math.floor(at)),
+          fraction = at - index;
+        refined.push(
+          coarseAngles[index] * (1 - fraction) +
+            coarseAngles[index + 1] * fraction,
+        );
       }
-    diagnostics.borderP95 = percentile(borders, 0.95);
-    if (
-      median(borders) > pitch * 0.6 ||
-      percentile(borders, 0.95) > pitch * 1.15
-    )
-      return null;
-    // A visible smooth sheet must preserve orientation everywhere. Reject
-    // self-occluding fits instead of sampling a reflected or folded surface.
-    let sign = 0;
-    for (let y = 0; y <= 16; y++)
-      for (let x = 0; x <= 12; x++) {
-        const du = x === 12 ? -0.0001 : 0.0001,
-          dv = y === 16 ? -0.0001 : 0.0001;
-        const p = project(model, x / 12, y / 16),
-          a = project(model, x / 12 + du, y / 16),
-          b = project(model, x / 12, y / 16 + dv),
-          jac =
-            ((a.x - p.x) * (b.y - p.y) - (a.y - p.y) * (b.x - p.x)) / (du * dv);
+      for (const preserveEnds of [false, true]) {
+        if (performance.now() >= deadline) break;
+        const candidate = optimize(
+            refined,
+            training,
+            source.width,
+            source.height,
+            deadline,
+            frame,
+            guides,
+            20,
+            preserveEnds,
+          ),
+          model = prepare(candidate.p, source.width, source.height);
+        // Blank outer margins do not contain dot evidence. First allow the
+        // observed perimeter to refine them; if this folds an unobserved
+        // margin, try retaining the coarse endpoint tangents while improving
+        // only the interior. Both hypotheses face identical validation gates.
         if (
-          !Number.isFinite(jac) ||
-          Math.abs(jac) < 1e-6 ||
-          (sign && Math.sign(jac) !== sign)
-        )
-          return null;
-        sign = Math.sign(jac);
+          (!coarseValid || candidate.cost < best.cost * 0.985) &&
+          validateModel(model)
+        ) {
+          best = candidate;
+          break;
+        }
       }
+    }
+    const model = prepare(best.p, source.width, source.height),
+      errors = surfaceErrors(model, validation, frame),
+      { rms, p90, p99, borderP95 } = errors;
+    Object.assign(diagnostics, errors, { parameters: best.p });
+    if (!validErrors(errors, pitch) || !visibleSurface(model)) return null;
+    // The held-out parallel curves use only held-out dots as well. Their
+    // measured tangent verifies local direction, independently of training.
+    const tangentP90 = tangentP90For(model);
+    if (tangentP90 !== null && tangentP90 > pitch * 0.22) return null;
+    diagnostics.parallelValidation = {
+      samples: heldoutGuides.length,
+      tangentP90,
+    };
     return {
       type: "developable-pinhole",
       parameters: best.p,
@@ -913,14 +1325,18 @@
       height: source.height,
       diagnostics: {
         observations: points.length,
-        training: training.length,
+        training: observedTraining.length,
+        positionalSamples: training.length,
         validation: validation.length,
+        parallels: diagnostics.parallels,
+        parallelValidation: diagnostics.parallelValidation,
+        profileKnots: best.p.length - 7,
         coverage: observed.coverage,
         phaseScore: observed.phaseScore,
         rms,
         p90,
         p99,
-        borderP95: percentile(borders, 0.95),
+        borderP95,
         pitch,
         elapsedMs: performance.now() - started,
         iterations: best.iterations,
