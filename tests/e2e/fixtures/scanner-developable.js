@@ -53,7 +53,8 @@
       const s = -length + ((i - 0.5) * 2 * length) / count;
       const theta = definition.radius
         ? s / definition.radius
-        : (definition.sBend || 0) * Math.cos((Math.PI * s) / length);
+        : (definition.sBend || 0) *
+          Math.cos(((definition.bendFrequency || 1) * Math.PI * s) / length);
       crossSection.push({
         x: crossSection[i - 1].x + (Math.cos(theta) * 2 * length) / count,
         z: crossSection[i - 1].z + (Math.sin(theta) * 2 * length) / count,
@@ -107,6 +108,14 @@
     ctx.fillStyle = "#cbc8bf";
     for (let x = 20; x <= 190; x += 5) {
       for (let y = 19.3; y <= 269.3; y += 5) {
+        const col = Math.round((x - 20) / 5),
+          row = Math.round((y - 19.3) / 5);
+        if (
+          definition.missingGrid &&
+          ((col * 17 + row * 7) % 13 < 2 ||
+            (col > 14 && col < 20 && row > 22 && row < 30))
+        )
+          continue;
         ctx.beginPath();
         ctx.arc(x, y, 0.32, 0, Math.PI * 2);
         ctx.fill();

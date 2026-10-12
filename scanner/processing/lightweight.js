@@ -30,6 +30,14 @@
     return { canvas, context, scale };
   }
 
+  function detectionImage(context, width, height) {
+    const image = context.getImageData(0, 0, width, height);
+    // All geometry stages must see the same paper-relative ink colours. A
+    // cold camera white balance can make actual yellow ink look blue in RGB.
+    // This analysis copy never replaces the photographed pixels used by warp.
+    return SP.LiveDetection?.normalizeIllumination?.(image) || image;
+  }
+
   function isYellow(r, g, b) {
     const max = Math.max(r, g, b);
     const min = Math.min(r, g, b);
@@ -2612,7 +2620,7 @@
     const analysis = createScaledCanvas(source, analysisMaximum);
     const { canvas, context, scale } = analysis;
     const { width, height } = canvas;
-    const pixels = context.getImageData(0, 0, width, height).data;
+    const pixels = detectionImage(context, width, height).data;
     const liveFrame = observedLiveFrame(options.liveDetection, width, height, pixels);
     const paperQuad = detectPaperQuad(width, height, pixels);
     const paperYellowBaseline = estimatePaperYellowBaseline(width, height, pixels, paperQuad);
@@ -3108,7 +3116,7 @@
     if (!frame?.paths || frame.confidence < 0.6) return detection;
     const analysis = createScaledCanvas(source, 1200);
     const { width, height } = analysis.canvas;
-    const pixels = analysis.context.getImageData(0, 0, width, height).data;
+    const pixels = detectionImage(analysis.context, width, height).data;
     const scoreAt = (x, y) => {
       const ix = Math.round(x), iy = Math.round(y);
       if (ix < 1 || iy < 1 || ix >= width - 1 || iy >= height - 1) return 0;
@@ -3171,7 +3179,7 @@
     // with a smoother but unsupported bend.
     const analysis = createScaledCanvas(source, 1200);
     const { width, height } = analysis.canvas;
-    const pixels = analysis.context.getImageData(0, 0, width, height).data;
+    const pixels = detectionImage(analysis.context, width, height).data;
     const colourAt = (x, y) => {
       const ix = Math.round(x), iy = Math.round(y);
       if (ix < 1 || iy < 1 || ix >= width - 1 || iy >= height - 1) return null;
@@ -4073,7 +4081,22 @@
     const preciseStencil = !!settings.preciseStencil;
     const context = canvas.getContext("2d", { willReadFrequently: true });
     const image = context.getImageData(0, 0, canvas.width, canvas.height);
-    const data = image.data;
+    const original = image.data;
+    // Classify paper and ink in a common white balance before whitening.
+    // Otherwise blue-lit paper is treated as coloured writing and the whole
+    // page retains its cast. The shared field keeps local luminance/shadows
+    // and applies the same bounded channel correction to pencil and ink.
+    const balanceOptions = {
+      signal: settings.signal,
+      // The warp's white surround is generated, not measured paper. Estimate
+      // its illuminant from the photographed interior, as the paper profile
+      // does, so synthetic margins cannot veto a real camera colour cast.
+      region: { x0: .12, x1: .88, y0: .08, y1: .9 }
+    };
+    const balanced = SP.LiveDetection?.normalizeIlluminationAsync
+      ? await SP.LiveDetection.normalizeIlluminationAsync(image, balanceOptions)
+      : SP.LiveDetection?.normalizeIllumination?.(image, balanceOptions);
+    const data = balanced?.data || original;
     // A tiny blurred copy estimates illumination, not content. Comparing a
     // neutral pixel with this smooth local field separates shadowed paper
     // from ink without creating hard, patchy thresholds in uneven photos.
@@ -4088,9 +4111,10 @@
     illuminationContext.filter = "none";
     illuminationContext.drawImage(canvas, 0, 0, illuminationCanvas.width, illuminationCanvas.height);
     illuminationContext.filter = "none";
+    // White balancing preserves the local paper luminance. Measure this field
+    // directly so the synthetic white surround cannot bias a second estimate.
     const illuminationPixels = illuminationContext.getImageData(
-      0, 0, illuminationCanvas.width, illuminationCanvas.height
-    ).data;
+      0, 0, illuminationCanvas.width, illuminationCanvas.height).data;
     let illumination = new Float32Array(illuminationCanvas.width * illuminationCanvas.height);
     const fieldLeft = Math.ceil(1.78 / 21 * illuminationCanvas.width);
     const fieldRight = Math.floor(19.22 / 21 * illuminationCanvas.width);
@@ -4214,8 +4238,13 @@
         // the photographed sheet is clipped, extrapolation can otherwise pull
         // a dark folder or desk into this narrow margin. Clean only obvious
         // non-paper pixels; pale shadows and the physical paper edge remain.
+        // Warp fills unobserved margins with neutral white. Those synthetic
+        // pixels never saw the lamp, so an inverse blue cast must not turn
+        // them yellow. Keep the original working buffer for this distinction.
+        const syntheticWhiteMargin = original[offset] >= 254
+          && original[offset + 1] >= 254 && original[offset + 2] >= 254;
         const outsidePaperArtifact = preciseStencil && inPageMargin
-          && (luminance < 105 || (luminance < 178 && saturation > 0.22));
+          && (syntheticWhiteMargin || luminance < 105 || (luminance < 178 && saturation > 0.22));
         if (outsidePaperArtifact) {
           data[offset] = profile.targetPaper;
           data[offset + 1] = profile.targetPaper;
@@ -4315,6 +4344,7 @@
     if (preciseStencil && !settings.skipStencilCleanup) {
       await removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper, settings);
     }
+    if (data !== original) original.set(data);
     context.putImageData(image, 0, 0);
     illuminationCanvas.width = 0;
     illuminationCanvas.height = 0;
