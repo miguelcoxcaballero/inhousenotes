@@ -4,18 +4,7 @@ import fs from 'node:fs';
 const fixtureSource = fs.readFileSync(new URL('./fixtures/scanner-synthetic.js', import.meta.url), 'utf8');
 
 function installCaptureCamera(options = {}) {
-  window.__captureRegression = { streams: [], encodes: 0, invalidOutput: false };
-  const originalEncode = HTMLCanvasElement.prototype.toBlob;
-  HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
-    const outputPage = Math.abs(this.width / this.height - 21 / 29.7) < .003;
-    originalEncode.call(this, blob => {
-      window.__captureRegression.encodes++;
-      if (options.invalidFirstOutput && outputPage && !window.__captureRegression.invalidOutput) {
-        window.__captureRegression.invalidOutput = true;
-        callback(new Blob(['invalid encoded image'], { type: 'image/jpeg' }));
-      } else callback(blob);
-    }, ...args);
-  };
+  window.__captureRegression = { streams: [], invalidOutputs: 0 };
   Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
     configurable: true,
     value: async () => {
@@ -41,22 +30,40 @@ async function installFixture(page, options = {}) {
   await page.addInitScript({ content: `${fixtureSource}\n;(${installCaptureCamera.toString()})(${JSON.stringify(options)});` });
 }
 
-async function holdFirstWarp(frame) {
+async function holdFirstBatch(frame) {
   await frame.evaluate(() => {
-    const original = ScannerPro.Lightweight.warp;
+    const original = ScannerPro.Lightweight.processPageAsync;
     const probe = window.__captureRegression;
-    probe.warpCalls = 0;
-    probe.pendingWarp = false;
-    probe.completedWarps = [];
-    ScannerPro.Lightweight.warp = async function (...args) {
-      const call = ++probe.warpCalls;
+    probe.processingCalls = 0;
+    probe.pendingResults = 0;
+    probe.completedResults = [];
+    const gate = new Promise(resolve => { probe.releaseResults = resolve; });
+    ScannerPro.Lightweight.processPageAsync = async function (...args) {
+      const call = ++probe.processingCalls;
       try {
-        if (call === 1) {
-          probe.pendingWarp = true;
-          await new Promise(resolve => { probe.releaseWarp = resolve; });
+        const processed = await original.apply(this, args);
+        if (call <= 3) {
+          // Hold worker results at the asynchronous boundary. Deliberately
+          // ignore cancellation here to exercise stale-result protection too.
+          probe.pendingResults++;
+          await gate;
         }
-        return await original.apply(this, args);
-      } finally { probe.completedWarps.push(call); }
+        return processed;
+      } finally { probe.completedResults.push(call); }
+    };
+  });
+}
+
+async function invalidateFirstBatch(frame) {
+  await frame.evaluate(() => {
+    const original = ScannerPro.Lightweight.processPageAsync;
+    let calls = 0;
+    ScannerPro.Lightweight.processPageAsync = async function (...args) {
+      const call = ++calls;
+      const processed = await original.apply(this, args);
+      if (call > 3) return processed;
+      __captureRegression.invalidOutputs++;
+      return { ...processed, blob: new Blob(['invalid encoded image'], { type: 'image/jpeg' }) };
     };
   });
 }
@@ -90,15 +97,15 @@ test('capture shows a decoded photo while correction is pending, then inserts on
   const iframe = page.frameLocator('#scanner-editor-frame');
   const frame = await page.locator('#scanner-editor-frame').elementHandle().then(handle => handle.contentFrame());
   await frame.waitForFunction(() => !!window.ScannerPro?.Lightweight);
-  await holdFirstWarp(frame);
-  await frame.waitForFunction(() => window.__captureRegression.pendingWarp, null, { timeout: 20_000 });
+  await holdFirstBatch(frame);
+  await frame.waitForFunction(() => window.__captureRegression.pendingResults > 0, null, { timeout: 20_000 });
   await expect(iframe.locator('#liveScanner')).toHaveAttribute('data-state', 'processing');
   await expectDecodedPreview(frame);
   await expect(iframe.locator('#liveAddBtn')).toBeDisabled();
   expect(await page.evaluate(() => __IHN_TEST_API__.snapshot().pages.length)).toBe(1);
   expect(await frame.evaluate(() => __captureRegression.streams.flatMap(stream => stream.getTracks().map(track => track.readyState))))
     .toEqual(['ended']);
-  await frame.evaluate(() => __captureRegression.releaseWarp());
+  await frame.evaluate(() => __captureRegression.releaseResults());
   await expect(iframe.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 20_000 });
   await expectDecodedPreview(frame);
   await expect(iframe.locator('#liveAddBtn')).toBeEnabled();
@@ -122,10 +129,11 @@ test('capture shows a decoded photo while correction is pending, then inserts on
   expect(errors).toEqual([]);
 });
 
-test('an undecodable processed image retains a valid original and a fresh capture recovers', async ({ page }) => {
+test('three undecodable processed images retain a valid original and a fresh capture recovers', async ({ page }) => {
   test.setTimeout(60_000);
-  await openStandalone(page, { invalidFirstOutput: true });
-  await page.waitForFunction(() => __captureRegression.invalidOutput, null, { timeout: 25_000 });
+  await openStandalone(page);
+  await invalidateFirstBatch(page);
+  await page.waitForFunction(() => __captureRegression.invalidOutputs === 3, null, { timeout: 25_000 });
   await expect(page.locator('#liveScanner')).not.toHaveAttribute('data-state', 'processing', { timeout: 10_000 });
   await expectDecodedPreview(page);
   await expect(page.locator('#liveReviewStatus')).toContainText(/original|could not|couldn't|decode|open|failed|try again|unavailable/i);
@@ -134,6 +142,9 @@ test('an undecodable processed image retains a valid original and a fresh captur
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 25_000 });
   await expectDecodedPreview(page);
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
+  await expect(page.locator('#liveReviewStatus')).not.toContainText('Original photo ready');
+  expect(await page.locator('#livePreview').evaluate(image => image.naturalWidth / image.naturalHeight))
+    .toBeCloseTo(21 / 29.7, 2);
 });
 
 test('invalid imported image leaves processing and a subsequent valid photo can be reviewed', async ({ page }) => {
@@ -154,16 +165,16 @@ test('invalid imported image leaves processing and a subsequent valid photo can 
 test('retaking during correction cancels the old result and keeps the new preview', async ({ page }) => {
   test.setTimeout(50_000);
   await openStandalone(page);
-  await holdFirstWarp(page);
-  await page.waitForFunction(() => __captureRegression.pendingWarp, null, { timeout: 20_000 });
+  await holdFirstBatch(page);
+  await page.waitForFunction(() => __captureRegression.pendingResults > 0, null, { timeout: 20_000 });
   await expectDecodedPreview(page);
   await page.locator('#liveRetakeBtn').click();
   await expect(page.locator('#liveCameraView')).toBeVisible();
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 20_000 });
   await expectDecodedPreview(page);
   const before = await page.locator('#livePreview').getAttribute('src');
-  await page.evaluate(() => __captureRegression.releaseWarp());
-  await expect.poll(() => page.evaluate(() => __captureRegression.completedWarps)).toContain(1);
+  await page.evaluate(() => __captureRegression.releaseResults());
+  await expect.poll(() => page.evaluate(() => __captureRegression.completedResults.length)).toBe(6);
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#livePreview')).toHaveAttribute('src', before);
   await expect(page.locator('#liveAddBtn')).toBeEnabled();

@@ -79,6 +79,9 @@ async function camera(page, mode) {
   await page.goto('/scanner/index.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(mode => {
     if (mode === 'invalid-review') {
+      // Exercise the supported main-thread fallback explicitly: the normal
+      // pipeline now runs detection and warp in dedicated workers.
+      window.Worker = undefined;
       liveResilience.warpCalls = 0;
       ScannerPro.Lightweight.detectPageAsync = async () => ({
         method: 'stencil', confidence: 1,

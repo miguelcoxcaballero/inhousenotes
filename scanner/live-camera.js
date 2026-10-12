@@ -40,6 +40,9 @@
   let documentName = 'Scanned page';
   let submitting = false;
   let selection = 0;
+  let selectedIndex = 0;
+  let explicitSelection = false;
+  let pendingCandidates = 0;
   let lastFrameTime = -1;
   let deliveredFrames = 0;
   let frameCallback = 0;
@@ -101,9 +104,14 @@
     processingController?.abort();
     processingController = null;
     result = null;
-    candidates.forEach(candidate => URL.revokeObjectURL(candidate.url));
+    candidates.forEach(candidate => {
+      URL.revokeObjectURL(candidate.url);
+      if (candidate.resultUrl && candidate.resultUrl !== candidate.url) URL.revokeObjectURL(candidate.resultUrl);
+    });
     candidates = [];
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    pendingCandidates = 0;
+    explicitSelection = false;
+    selectedIndex = 0;
     previewUrl = '';
     $('livePreview').removeAttribute('src');
     $('livePreview').hidden = true;
@@ -531,7 +539,7 @@
         .map(candidate => ({ ...candidate, url: URL.createObjectURL(candidate.blob) }));
       stopCamera();
       showAlternatives();
-      await reviewCandidate(0, token);
+      await reviewCandidates(token);
     } catch (error) {
       if (token === generation) {
         stopCamera();
@@ -547,145 +555,147 @@
       if (candidates.length < 2) return;
       const button = document.createElement('button');
       button.type = 'button';
-      button.setAttribute('aria-label', index === 0 ? 'Review clearest frame' : `Review alternative frame ${index + 1}`);
+      button.setAttribute('aria-label', `Review frame ${index + 1}`);
       const image = document.createElement('img');
       image.src = candidate.url;
       image.alt = '';
       button.append(image);
-      button.onclick = () => { if (!submitting) void reviewCandidate(index, generation); };
+      button.onclick = () => {
+        if (!submitting) { explicitSelection = true; reviewCandidate(index, generation); }
+      };
       $('liveAlternatives').append(button);
     });
   }
-  const decode = blob => new Promise((resolve, reject) => {
+  // Validation never allocates a second full-resolution canvas. The worker
+  // owns the processing pixels; the review keeps only encoded, decoded images.
+  const imageSize = (url, signal) => new Promise((resolve, reject) => {
     const image = new Image();
-    const url = URL.createObjectURL(blob);
-    const finish = () => {
+    let timeout;
+    const finish = error => {
       clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
       image.onload = image.onerror = null;
-      URL.revokeObjectURL(url);
+      if (error) { image.src = ''; reject(error); }
+      else resolve({ width: image.naturalWidth, height: image.naturalHeight });
     };
-    const timeout = setTimeout(() => { finish(); reject(new Error('Image decode timed out')); }, 6000);
-    image.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(1, 2560 / Math.max(image.naturalWidth, image.naturalHeight));
-        canvas.width = Math.round(image.naturalWidth * scale);
-        canvas.height = Math.round(image.naturalHeight * scale);
-        canvas.originalWidth = image.naturalWidth;
-        canvas.originalHeight = image.naturalHeight;
-        if (!canvas.width || !canvas.height) throw new Error('This image is empty');
-        // Copy pixels before releasing the temporary decode URL. The preview
-        // and alternatives keep their own URLs for their entire visible life.
-        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-        finish();
-        resolve(canvas);
-      } catch (error) { finish(); reject(error); }
-    };
-    image.onerror = () => { finish(); reject(new Error('This image could not be opened')); };
+    const abort = () => finish(new DOMException('Scan cancelled', 'AbortError'));
+    if (signal?.aborted) { abort(); return; }
+    signal?.addEventListener('abort', abort, { once: true });
+    timeout = setTimeout(() => finish(new Error('Image decode timed out')), 6000);
+    image.onload = () => finish(image.naturalWidth && image.naturalHeight ? null : new Error('This image is empty'));
+    image.onerror = () => finish(new Error('This image could not be opened'));
     image.src = url;
   });
-  async function reviewCandidate(index, token) {
-    processingController?.abort();
-    const controller = processingController = new AbortController();
-    const selected = ++selection;
+  function reviewCandidate(index, token) {
     const candidate = candidates[index];
-    if (!candidate) return;
-    result = null;
-    setState('processing');
+    if (!candidate || token !== generation) return;
+    selectedIndex = index;
+    const selected = ++selection;
+    result = pendingCandidates ? null : candidate.result || null;
+    setState(pendingCandidates ? 'processing' : 'review');
     $('liveCameraView').hidden = true;
     $('liveReview').hidden = false;
-    $('liveAddBtn').disabled = true;
+    $('liveAddBtn').disabled = !result;
     $('liveAddBtn').textContent = embedded ? 'Add page to document' : 'Save scan';
-    $('liveReviewStatus').textContent = 'Straightening the page…';
+    $('liveReviewStatus').textContent = pendingCandidates
+      ? candidates.length > 1 ? 'Processing photos and choosing the best scan…' : 'Straightening the page…'
+      : result?.corrected ? 'Check the scan.'
+        : result ? 'Original photo ready. Page correction was unavailable; check the photo before adding it.'
+          : candidate.error || 'Could not process this frame. Choose another or scan again.';
     [...$('liveAlternatives').children].forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
     const current = () => token === generation && selected === selection;
     const preview = $('livePreview');
-    const previousUrl = previewUrl;
-    previewUrl = '';
-    preview.hidden = true;
+    const nextUrl = candidate.resultUrl || candidate.url;
     preview.onload = () => { if (current()) preview.hidden = false; };
     preview.onerror = () => { if (current()) preview.hidden = true; };
-    preview.src = candidate.url;
+    if (previewUrl === nextUrl) {
+      if (preview.complete && preview.naturalWidth) preview.hidden = false;
+      return;
+    }
+    previewUrl = nextUrl;
+    preview.hidden = true;
+    preview.src = nextUrl;
     if (preview.complete && preview.naturalWidth) preview.hidden = false;
-    if (previousUrl) URL.revokeObjectURL(previousUrl);
-    let deadline;
-    let original = null;
-    const checkProcessing = () => {
-      if (controller.signal.aborted) throw new DOMException('Scan cancelled', 'AbortError');
-    };
-    const work = async () => {
-      let source, output;
-      try {
-        source = await decode(candidate.blob);
-        original = { blob: candidate.blob, width: source.originalWidth, height: source.originalHeight, name: 'Scanned page' };
-        checkProcessing();
-        // Let the original photo paint before starting detailed correction.
-        await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
-        checkProcessing();
-        if (current()) $('liveReviewStatus').textContent = 'Finding page edges…';
-        const detection = SP.Lightweight.detectPageAsync
-          ? await SP.Lightweight.detectPageAsync(source, { signal: controller.signal, liveDetection: candidate.detection })
-          : SP.Lightweight.detectPage(source, { liveDetection: candidate.detection });
-        checkProcessing();
-        if (detection.quality?.valid === false) {
-          throw new Error(detection.quality.reason || 'The page geometry could not be verified');
-        }
-        const precise = ['stencil', 'marker-guided'].includes(detection.method) && detection.confidence >= .55;
-        const liveQuad = candidate.detection?.pageQuad;
-        const quad = precise ? detection.pageQuad : liveQuad?.map(point => ({ x: point.x * source.width, y: point.y * source.height }));
-        if (current()) $('liveReviewStatus').textContent = 'Straightening the page…';
-        output = quad ? await SP.Lightweight.warp(source, quad, precise ? detection.frame : null,
-          { signal: controller.signal }) : source;
-        checkProcessing();
-        if (current()) $('liveReviewStatus').textContent = 'Finishing the scan…';
-        if (precise) await SP.Lightweight.correctColors(output,
-          { useStencil: true, preciseStencil: true, signal: controller.signal });
-        checkProcessing();
-        const blob = await encode(output);
-        checkProcessing();
-        const verified = await decode(blob);
-        verified.width = verified.height = 0;
-        checkProcessing();
-        return { blob, width: output.width, height: output.height, name: 'Scanned page', corrected: !!quad };
-      } finally {
-        // A superseded async job owns its canvases until it actually settles.
-        // A timeout must not zero a canvas that a warp is still reading.
-        if (output && output !== source) output.width = output.height = 0;
-        if (source) source.width = source.height = 0;
-      }
-    };
-    try {
-      const processed = await Promise.race([work(), new Promise((resolve, reject) => {
-        deadline = setTimeout(() => {
-          controller.abort();
-          reject(new Error('Page correction took too long'));
-        }, 20000);
-      })]);
-      if (!current()) return;
-      result = processed;
-      previewUrl = URL.createObjectURL(processed.blob);
-      preview.src = previewUrl;
+    if (candidate.result?.corrected) {
       preview.classList.remove('scan-reveal');
       void preview.offsetWidth;
       preview.classList.add('scan-reveal');
-      $('liveAddBtn').disabled = false;
-      $('liveReviewStatus').textContent = processed.corrected
-        ? 'Check the scan. You can choose another frame or scan again.'
-        : 'Page edges were not clear. Check the full photo, or scan again.';
-      setState('review');
-    } catch (error) {
-      if (current()) {
-        result = original;
-        $('liveAddBtn').disabled = !result;
-        $('liveReviewStatus').textContent = result
-          ? 'Original photo ready. Page correction was unavailable; check the photo before adding it.'
-          : error.message || 'Could not process this frame. Choose another or scan again.';
-        setState('review');
-      }
-    } finally {
-      clearTimeout(deadline);
-      if (processingController === controller) processingController = null;
     }
+  }
+  function candidateRank(candidate) {
+    if (!candidate.result) return -1;
+    const focus = Math.max(0, candidate.score || 0);
+    if (!candidate.result.corrected || candidate.analysis?.quality?.valid === false) return .1 * focus / (focus + 1);
+    const bounded = value => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+    const diagnostics = candidate.analysis?.frame?.metricSurface?.diagnostics;
+    // A verified correction always beats an uncorrected photo. Within valid
+    // scans, held-out grid and border residuals measure the actual result;
+    // sharpness alone must not select a beautifully focused failed unwrap.
+    const geometry = diagnostics?.pitch > 0
+      ? 1 - .45 * bounded(diagnostics.rms / diagnostics.pitch / .14)
+        - .25 * bounded(diagnostics.p99 / diagnostics.pitch / .4)
+        - .3 * bounded(diagnostics.borderP95 / diagnostics.pitch / 1.15)
+      : .55;
+    const brightness = candidate.detection?.brightness;
+    const exposure = Number.isFinite(brightness) ? 1 - bounded(Math.abs(brightness - 210) / 150) : .5;
+    return 1 + .4 * geometry + .45 * focus / (focus + 1)
+      + .1 * bounded(candidate.analysis?.confidence) + .05 * exposure;
+  }
+  async function reviewCandidates(token) {
+    processingController?.abort();
+    const controller = processingController = new AbortController();
+    const batch = candidates;
+    explicitSelection = false;
+    selectedIndex = 0;
+    pendingCandidates = batch.length;
+    reviewCandidate(0, token);
+    const current = () => token === generation && processingController === controller && !controller.signal.aborted;
+    // Paint the original immediately, then start all three independent worker
+    // pipelines together. Thumbnail changes only switch cached images.
+    await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+    if (!current()) return;
+    await Promise.allSettled(batch.map(async (candidate, index) => {
+      let outputUrl = '';
+      try {
+        const processed = await SP.Lightweight.processPageAsync(candidate.blob,
+          { signal: controller.signal, liveDetection: candidate.detection });
+        if (!current()) return;
+        if (processed.detection?.quality?.valid === false && processed.corrected) {
+          throw new Error('The page geometry could not be verified');
+        }
+        outputUrl = processed.blob === candidate.blob ? candidate.url : URL.createObjectURL(processed.blob);
+        const dimensions = await imageSize(outputUrl, controller.signal);
+        if (!current()) return;
+        candidate.result = { blob: processed.blob, ...dimensions, name: 'Scanned page', corrected: !!processed.corrected };
+        candidate.analysis = processed.detection;
+        candidate.resultUrl = outputUrl;
+        outputUrl = '';
+      } catch (error) {
+        if (!current()) return;
+        candidate.error = error.message;
+        try {
+          const dimensions = await imageSize(candidate.url, controller.signal);
+          if (!current()) return;
+          candidate.result = { blob: candidate.blob, ...dimensions, name: 'Scanned page', corrected: false };
+          candidate.resultUrl = candidate.url;
+        } catch (_) { /* A corrupt original remains unavailable for insertion. */ }
+      } finally {
+        if (outputUrl && outputUrl !== candidate.url) URL.revokeObjectURL(outputUrl);
+        if (current()) {
+          pendingCandidates--;
+          const image = $('liveAlternatives').children[index]?.querySelector('img');
+          if (image && candidate.resultUrl) image.src = candidate.resultUrl;
+          if (explicitSelection && selectedIndex === index) reviewCandidate(index, token);
+        }
+      }
+    }));
+    if (!current()) return;
+    if (!explicitSelection) {
+      selectedIndex = batch.reduce((best, candidate, index) =>
+        candidateRank(candidate) > candidateRank(batch[best]) ? index : best, 0);
+    }
+    reviewCandidate(selectedIndex, token);
+    processingController = null;
   }
   async function importPhoto(file) {
     if (!file || submitting) return;
@@ -694,7 +704,7 @@
     clearReview();
     if (!file.type.startsWith('image/')) { cameraError(); return; }
     candidates = [{ blob: file, url: URL.createObjectURL(file), detection: null, score: 0 }];
-    await reviewCandidate(0, token);
+    await reviewCandidates(token);
   }
   async function addPage() {
     if (!result || submitting || state !== 'review') return;
