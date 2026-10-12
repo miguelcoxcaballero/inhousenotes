@@ -59,7 +59,7 @@
     const hard = smooth((distance + 2) / 4) * upper;
     const bottomDistance = Math.hypot((u - .8) / .25, (v - .86) / .14);
     const lower = 1 - smooth((bottomDistance - .8) / .2);
-    return { exposure: (.96 - .07 * u) * (1 - .38 * soft) * (1 - .41 * hard) * (1 - .3 * lower),
+    return { exposure: (.96 - .07 * u) * (1 - .38 * soft) * (1 - .41 * hard) * (1 - .3 * lower), hard,
       zone: hard > .95 ? 'hardShadow' : Math.abs(distance) < 6 && upper > .95 ? 'shadowEdge'
         : soft > .6 ? 'softShadow' : lower > .9 ? 'lowerShadow' : 'lit' };
   }
@@ -90,10 +90,11 @@
     context.restore();
     const printed = context.getImageData(0, 0, WIDTH, HEIGHT).data;
     const mask = canvas(), maskContext = mask.getContext('2d', { willReadFrequently: true });
-    const ink = new Uint8Array(WIDTH * HEIGHT), samples = {};
+    const ink = new Uint8Array(WIDTH * HEIGHT), samples = {}, strokeColumns = {};
     for (const layer of inkLayers) {
       context.save(); context.scale(SCALE, SCALE);
-      context.fillStyle = context.strokeStyle = layer.color; layer.draw(context); context.restore();
+      context.fillStyle = context.strokeStyle = definition.paleWriting && layer.name === 'bluePen' ? '#b2c1d7' : layer.color;
+      layer.draw(context); context.restore();
       maskContext.clearRect(0, 0, WIDTH, HEIGHT);
       maskContext.save(); maskContext.scale(SCALE, SCALE);
       maskContext.fillStyle = maskContext.strokeStyle = '#000'; layer.draw(maskContext); maskContext.restore();
@@ -103,6 +104,17 @@
         if (alpha[i * 4 + 3] > 235 && printed[i * 4] >= 248 && i % 2 === 0) positions.push(i);
       }
       samples[layer.name] = positions;
+      if (['pencil', 'faintPencil', 'blackPen', 'bluePen'].includes(layer.name)) {
+        // Measure the full painted stroke, including where it crosses printed
+        // bullets. Excluding printed pixels here would hide cleanup cutouts.
+        const columns = new Map();
+        for (let i = 0; i < ink.length; i++) if (alpha[i * 4 + 3] > 100) {
+          const x = i % WIDTH;
+          if (!columns.has(x)) columns.set(x, []);
+          columns.get(x).push(i);
+        }
+        strokeColumns[layer.name] = [...columns].sort((a, b) => a[0] - b[0]);
+      }
     }
     const image = context.getImageData(0, 0, WIDTH, HEIGHT);
     const clean = new Uint8ClampedArray(image.data), paper = { lit: [], hardShadow: [], shadowEdge: [], softShadow: [], lowerShadow: [] };
@@ -126,17 +138,24 @@
       const blob = await new Promise(resolve => source.toBlob(resolve, 'image/jpeg', .94));
       const bitmap = await createImageBitmap(blob); context.drawImage(bitmap, 0, 0); bitmap.close();
     }
-    const dotObservations = dots.filter(point => {
-      // Dropped observations model low-confidence dots, not an erased patch
-      // of paper. The source pixels stay exactly identical to the full case.
-      if (definition.missingCornerObservations && point.col < 13 && point.row < 20) return false;
+    const visibleDots = dots.filter(point => {
       const x = Math.round(point.x), y = Math.round(point.y), radius = 4;
       for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
         if (ink[(y + dy) * WIDTH + x + dx]) return false;
       }
       return true;
     });
-    return { source, clean, samples, paper, dotObservations, gains };
+    // Dropped observations model low-confidence detections, not an erased
+    // patch of paper. Source pixels stay identical to the fully observed case.
+    let dotObservations = visibleDots.filter(point =>
+      !(definition.missingCornerObservations && point.col < 13 && point.row < 20)
+      && !(definition.missingShadowObservations && lightAt(point.x, point.y, definition).hard > .05));
+    if (Number.isInteger(definition.observationLimit) && definition.observationLimit < dotObservations.length) {
+      const full = dotObservations;
+      dotObservations = Array.from({ length: definition.observationLimit }, (_, index) =>
+        full[Math.floor((index + .5) * full.length / definition.observationLimit)]);
+    }
+    return { source, clean, samples, strokeColumns, paper, dotObservations, visibleDotCount: visibleDots.length, gains };
   }
   function measure(source, fixture) {
     const data = source.getContext('2d').getImageData(0, 0, WIDTH, HEIGHT).data;
@@ -159,7 +178,20 @@
         const measurements = summarize(indices);
         byIllumination[zone] = { count: indices.length, contrast: 255 - measurements.median };
       }
-      writing[name] = { ...statistics, contrast: 255 - statistics.median, byIllumination };
+      let continuity;
+      if (fixture.strokeColumns[name]) {
+        let run = 0, longestWhiteRun = 0, missingColumns = 0;
+        const gaps = [];
+        for (const [x, indices] of fixture.strokeColumns[name]) {
+          const darkest = Math.min(...indices.map(index => luminance(data[index * 4], data[index * 4 + 1], data[index * 4 + 2])));
+          if (darkest > 245) {
+            run++; missingColumns++; longestWhiteRun = Math.max(run, longestWhiteRun);
+            gaps.push(x);
+          } else run = 0;
+        }
+        continuity = { longestWhiteRun, missingColumns, columnCount: fixture.strokeColumns[name].length, gaps };
+      }
+      writing[name] = { ...statistics, contrast: 255 - statistics.median, byIllumination, continuity };
     }
     const paper = {};
     for (const [name, positions] of Object.entries(fixture.paper)) paper[name] = summarize(positions);

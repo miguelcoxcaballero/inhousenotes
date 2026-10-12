@@ -92,8 +92,13 @@
     context.fillRect(0, 0, canvas.width, canvas.height);
 
     context.fillStyle = '#c8c5bd';
-    for (let y = 2.1; y < 27.1; y += .5) {
-      for (let x = 2; x < 19.1; x += .5) {
+    // Use the printed editor template's actual 35 × 51 positions. The old
+    // 2.1 cm origin shifted every row by 1.7 mm and described a different
+    // sheet, which an independent alignment check must correctly reject.
+    for (let row = 0; row < 51; row++) {
+      const y = 1.93 + row * .5;
+      for (let col = 0; col < 35; col++) {
+        const x = 2 + col * .5;
         context.beginPath();
         context.arc(x * px, y * px, .032 * px, 0, Math.PI * 2);
         context.fill();

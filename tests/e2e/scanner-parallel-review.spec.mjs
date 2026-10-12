@@ -32,7 +32,7 @@ async function captureThree(page) {
       const index = probe.calls.length;
       probe.calls.push({ blob, options, resolve, reject, index });
     });
-    probe.finish = (index, mode = 'corrected', detectionOverride) => {
+    probe.finish = (index, mode = 'corrected', detectionOverride, outputQuality) => {
       const call = probe.calls[index];
       call.resolve(mode === 'original' ? {
         blob: call.blob, corrected: false, detection: { quality: { valid: false } }
@@ -41,6 +41,7 @@ async function captureThree(page) {
           : index === 2 ? probe.green : probe.red, corrected: true,
         // Dimensions are deliberately wrong: insertion uses decoded bytes.
         width: 1, height: 1,
+        outputQuality,
         detection: detectionOverride || { confidence: .9, quality: { valid: true }, frame: {
           metricSurface: { type: 'developable-pinhole', diagnostics: { validation: 600,
             pitch: 10, rms: index === 2 ? .1 : 1.3, p90: index === 2 ? .2 : 2,
@@ -92,6 +93,49 @@ test('all three photos run concurrently and the best corrected result wins regar
   await expect.poll(async () => (await previewColor(page))[1]).toBeGreaterThan(200);
   expect(await page.evaluate(() => parallelReview.calls.length)).toBe(3);
   expect(await page.evaluate(() => parallelReview.calls.every(call => !call.options.signal.aborted))).toBe(true);
+});
+
+test('clean paper beats a shadowed registered photo without overriding a manual choice', async ({ page }) => {
+  await captureThree(page);
+  await page.evaluate(() => {
+    const detection = { confidence: .95, quality: { valid: true }, frame: {
+      metricSurface: { type: 'developable-pinhole', registration: {}, diagnostics: {
+        validation: 1000, pitch: 10, rms: .2, p90: .4, p99: .8, borderP95: 1,
+        registration: { anchors: 1400, maximumAnchorError: 0 }
+      } }
+    } };
+    const paper = fraction => ({ paperSamples: 1300, paperResidualFraction: fraction,
+      paperMedian: 255, paperP10: fraction > .1 ? 219 : 254, confidence: .9 });
+    parallelReview.finish(2, 'corrected', detection, paper(.003));
+    parallelReview.finish(0, 'corrected', detection, paper(.22));
+    // An absent metric is unknown, not proof of a white background.
+    parallelReview.finish(1, 'corrected', detection);
+  });
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
+  await expect(page.locator('#liveAlternatives button').nth(2)).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await previewColor(page))[1]).toBeGreaterThan(200);
+  await page.locator('#liveAlternatives button').nth(0).click();
+  await expect(page.locator('#liveAlternatives button').nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
+});
+
+test('sparse or invalid paper measurements cannot promote a worse scan', async ({ page }) => {
+  await captureThree(page);
+  await page.evaluate(() => {
+    const detection = { confidence: .95, quality: { valid: true }, frame: {
+      metricSurface: { type: 'developable-pinhole', diagnostics: {
+        validation: 1000, pitch: 10, rms: .2, p90: .4, p99: .8, borderP95: 1
+      } }
+    } };
+    parallelReview.finish(0, 'corrected', detection,
+      { paperSamples: 5, paperResidualFraction: 0, confidence: 1 });
+    parallelReview.finish(1, 'corrected', detection,
+      { paperSamples: 1300, paperResidualFraction: -1, confidence: 1 });
+    parallelReview.finish(2, 'corrected', detection,
+      { paperSamples: 1300, paperResidualFraction: .003, confidence: .9 });
+  });
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
+  await expect(page.locator('#liveAlternatives button').nth(2)).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('choosing a thumbnail keeps that choice while other corrections finish and uses their cached outputs', async ({ page }) => {

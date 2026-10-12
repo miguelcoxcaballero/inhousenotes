@@ -3584,9 +3584,9 @@
   async function processScanBlob(blob, options) {
     const started = performance.now();
     const timings = { worker: processingWorker, decodeMs: 0, detectionMs: 0, warpMs: 0,
-      previewMs: 0, colorMs: 0, templateMs: 0, encodeMs: 0 };
+      alignmentMs: 0, previewMs: 0, colorMs: 0, templateMs: 0, encodeMs: 0 };
     let decoded, source, output, preview, observed, mesh;
-    let templateApplied = false, stencilCleanup;
+    let templateApplied = false, stencilCleanup, outputQuality, dotAlignment;
     const progress = (stage, detail) => { checkProcessingCancelled(options); options.onProgress?.(stage, detail); };
     try {
       progress("decoding");
@@ -3636,6 +3636,21 @@
           } });
       timings.warpMs = performance.now() - warpStarted;
       source.width = source.height = 0; source = null;
+      if (precise && SP.MetricSurface?.certifyRaster) {
+        const alignmentStarted = performance.now();
+        dotAlignment = SP.MetricSurface.certifyRaster(output);
+        timings.alignmentMs = performance.now() - alignmentStarted;
+        checkProcessingCancelled(options);
+        if (dotAlignment.status === "failed") {
+          // A convincing yellow perimeter does not certify the interior of
+          // a bent sheet. Keep the original instead of hiding a failed warp
+          // beneath a straight replacement grid. Other burst frames can win.
+          detection.quality = { ...detection.quality, valid: false, reason: "interior-dots-misaligned" };
+          timings.totalMs = performance.now() - started;
+          return { blob, width, height, corrected: false, templateApplied: false,
+            dotAlignment, detection, timings, failureReason: "The page dots could not be aligned. Try another frame." };
+        }
+      }
       const previewStarted = performance.now();
       const correctedDots = warpedObservations(observed, mesh, output.width, output.height);
       mesh = null;
@@ -3657,6 +3672,7 @@
         const colors = await Light.correctColors(output, { useStencil: true, preciseStencil: true,
           dotObservations: correctedDots?.points, signal: options.signal });
         stencilCleanup = colors?.stencilCleanup;
+        outputQuality = colors?.outputQuality;
         timings.colorMs = performance.now() - colorsStarted;
         progress("template");
         const templateStarted = performance.now();
@@ -3685,7 +3701,7 @@
       timings.totalMs = performance.now() - started;
       return { blob: encoded, width: output.width, height: output.height, corrected: true,
         previewBlob, inkLayer: precise, templateKind: precise ? "default" : undefined,
-        templateApplied, stencilCleanup, detection, timings };
+        templateApplied, stencilCleanup, outputQuality, dotAlignment, detection, timings };
     } finally {
       decoded?.close?.();
       if (source) source.width = source.height = 0;
@@ -4203,7 +4219,10 @@
     // the global periodic vote makes that impossible while still tolerating
     // camera/warp displacement of the printed grid.
     const ringRadius = Math.max(3, Math.ceil(0.095 * pxPerCm));
-    const strokeContinuityRadius = Math.max(1, Math.round(ringRadius * 0.55));
+    // A blurred photographed bullet can be wider than the old inner probe.
+    // Check beyond the printed spot, otherwise its own two sides look like
+    // a pencil stroke and leave a second lattice beneath the native dots.
+    const strokeContinuityRadius = Math.max(ringRadius + 1, Math.round(pxPerCm * 0.14));
     const ringDirections = [
       [1, 0], [-1, 0], [0, 1], [0, -1],
       [Math.SQRT1_2, Math.SQRT1_2], [-Math.SQRT1_2, Math.SQRT1_2],
@@ -4249,10 +4268,13 @@
     const centres = new Array(35 * 51);
     const measuredCentres = new Array(35 * 51);
     const measuredColumns = new Set(), measuredRows = new Set();
-    let measuredCount = 0, confirmedCount = 0;
-    const observed = settings.dotObservations;
-    if (Array.isArray(observed) && observed.length >= 600 && observed.length <= 3000) {
-      for (const point of observed) {
+    let measuredCount = 0, confirmedCount = 0, geometryMeasuredCount = 0;
+    const geometric = Array.isArray(settings.dotObservations) ? settings.dotObservations : [];
+    const photographed = Array.isArray(settings.photographedDotObservations) ? settings.photographedDotObservations : [];
+    const observed = [...geometric, ...photographed];
+    if (observed.length >= 600 && observed.length <= 6000) {
+      for (let observationIndex = 0; observationIndex < observed.length; observationIndex++) {
+        const point = observed[observationIndex];
         const column = point.col ?? point.column;
         const row = point.row;
         if (!Number.isInteger(column) || !Number.isInteger(row)
@@ -4266,6 +4288,11 @@
         // Refuse phase-swapped or stale source-image coordinates.
         if (Math.abs(point.x - nominalX) > pxPerCm * 0.24
           || Math.abs(point.y - nominalY) > pxPerCm * 0.24) continue;
+        // Paper samples can legitimately land on a nearby handwritten i-dot.
+        // They are not source-verified print identities: require agreement
+        // with the corrected lattice before using them to remove any ink.
+        if (observationIndex >= geometric.length && (Math.abs(point.x - nominalX) > pxPerCm * .045
+          || Math.abs(point.y - nominalY) > pxPerCm * .045)) continue;
         // Observations use Canvas edge coordinates; this buffer uses integer
         // pixel indices. Keep the verified geometric centre instead of moving
         // it onto a darker neighbouring pixel from texture or antialiasing.
@@ -4282,8 +4309,10 @@
         // The local search confirms photographic evidence only. Moving the
         // centre here would discard the alignment established by the warp.
         if (best) confirmedCount += 1;
-        measuredCentres[index] = { x: cx, y: cy, dx: cx - nominalX, dy: cy - nominalY };
+        measuredCentres[index] = { x: cx, y: cy, dx: cx - nominalX, dy: cy - nominalY,
+          neutralPrint: point.centerRefined === true && Number.isFinite(point.dotContrast) && point.dotContrast > 0 };
         measuredCount += 1;
+        if (observationIndex < geometric.length) geometryMeasuredCount++;
         measuredColumns.add(column); measuredRows.add(row);
         if (measuredCount % 128 === 0) {
           checkProcessingCancelled(settings);
@@ -4435,6 +4464,7 @@
       }
     }
     const glyphDarkness = new Uint8Array(glyphPixels);
+    let repeatedPeak = 0;
     for (let glyphIndex = 0; glyphIndex < glyphPixels; glyphIndex += 1) {
       const count = glyphCounts[glyphIndex];
       if (!count) continue;
@@ -4457,14 +4487,133 @@
       // segmentation mask. A lower robust quantile avoids learning ink that
       // happens to recur at similar positions, and the capped correction
       // preserves the darker antialiased edge of a real pen stroke.
+      repeatedPeak = Math.max(repeatedPeak, targetPaper - median);
       glyphDarkness[glyphIndex] = Math.max(0, Math.min(112, targetPaper - median));
     }
+    const componentSide = glyphSide;
+    const componentSeen = new Uint8Array(glyphPixels);
+    const componentQueue = new Int32Array(glyphPixels);
+    const searchRadius = Math.min(glyphRadius - 2, Math.max(2, Math.ceil(pxPerCm * .12)));
+    let isolatedRemoved = 0, isolatedRejected = 0, protectedComponents = 0;
+    let protectComponent = false, protectedHalo = 0;
+    const removeIsolatedRepeatedGlyph = (cx, cy, neutralPrint) => {
+      protectComponent = false; protectedHalo = 0;
+      if (repeatedPeak < 5) return false;
+      const darknessAt = (dx, dy) => {
+        const offset = ((cy + dy) * width + cx + dx) * 4;
+        const r = data[offset], g = data[offset + 1], b = data[offset + 2];
+        const darkness = targetPaper - (r * .2126 + g * .7152 + b * .0722);
+        const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+        // Full-resolution source classification already verified this glyph
+        // as neutral print. Colour correction can amplify a local camera
+        // cast; keep that provenance instead of mistaking it for blue ink.
+        // Unverified sites retain the strict neutral test.
+        return chroma <= Math.max(5, darkness * .3)
+          || neutralPrint && chroma <= Math.max(r, g, b) * .22 ? darkness : 0;
+      };
+      let peak = 0, peakX = 0, peakY = 0;
+      for (let dy = -searchRadius; dy <= searchRadius; dy++) for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        if (dx * dx + dy * dy > searchRadius * searchRadius) continue;
+        const value = darknessAt(dx, dy);
+        if (value > peak) { peak = value; peakX = dx; peakY = dy; }
+      }
+      // Punctuation and ink over a bullet are not the repeated printed tone.
+      // Do not turn a darker isolated handwritten mark into background.
+      if (peak < 5) return false;
+      const uncommonTone = peak > Math.max(18, repeatedPeak * 1.4);
+      const threshold = Math.max(3, peak * .12);
+      const start = (peakY + glyphRadius) * componentSide + peakX + glyphRadius;
+      componentSeen.fill(0); componentSeen[start] = 2; componentQueue[0] = start;
+      let head = 0, tail = 1, mass = 0, sumX = 0, sumY = 0, sumXX = 0, sumYY = 0, sumXY = 0;
+      let minX = peakX, maxX = peakX, minY = peakY, maxY = peakY, touchesEdge = false;
+      while (head < tail) {
+        const index = componentQueue[head++], dx = index % componentSide - glyphRadius,
+          dy = Math.floor(index / componentSide) - glyphRadius, weight = Math.max(0, darknessAt(dx, dy) - threshold);
+        mass += weight; sumX += dx * weight; sumY += dy * weight;
+        sumXX += dx * dx * weight; sumYY += dy * dy * weight; sumXY += dx * dy * weight;
+        minX = Math.min(minX, dx); maxX = Math.max(maxX, dx); minY = Math.min(minY, dy); maxY = Math.max(maxY, dy);
+        if (Math.abs(dx) >= glyphRadius - 1 || Math.abs(dy) >= glyphRadius - 1) { touchesEdge = true; continue; }
+        for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+          const next = index + oy * componentSide + ox;
+          if (componentSeen[next]) continue;
+          componentSeen[next] = 1;
+          if (darknessAt(dx + ox, dy + oy) > threshold) {
+            componentSeen[next] = 2; componentQueue[tail++] = next;
+          }
+        }
+      }
+      if (!mass || tail < 2) { isolatedRejected++; return false; }
+      if (touchesEdge) {
+        protectComponent = true; protectedHalo = 1; protectedComponents++; isolatedRejected++; return false;
+      }
+      const mx = sumX / mass, my = sumY / mass, vx = sumXX / mass - mx * mx,
+        vy = sumYY / mass - my * my, covariance = sumXY / mass - mx * my,
+        separation = Math.hypot(vx - vy, 2 * covariance),
+        narrow = Math.max(.1, (vx + vy - separation) / 2), wide = (vx + vy + separation) / 2;
+      // A compact printed spot ends inside its cell. A faint pencil line,
+      // loop or shaded drawing extends to the boundary or is elongated.
+      const extent = Math.max(maxX - minX, maxY - minY);
+      let occupiesCenter = false;
+      for (let dy = -1; dy <= 1 && !occupiesCenter; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (componentSeen[(dy + glyphRadius) * componentSide + dx + glyphRadius] === 2) {
+          occupiesCenter = true; break;
+        }
+      }
+      const offCenter = !occupiesCenter || Math.hypot(mx, my) > Math.max(1, pxPerCm * .035);
+      if (wide / narrow > 3.2 || extent > glyphRadius * 1.35 || offCenter) {
+        // Short asymmetric speckles attached to a repeated glyph can still
+        // use the conservative subtraction. A displaced isolated mark or a
+        // longer stroke is kept, including its antialiased fringe.
+        protectComponent = offCenter || extent > pxPerCm * .12;
+        protectedHalo = extent > pxPerCm * .12 ? 1 : 0;
+        if (protectComponent) protectedComponents++;
+        isolatedRejected++; return false;
+      }
+      if (uncommonTone) {
+        // A darker punctuation core or camera speckle may touch the lighter
+        // printed dot. Preserve the uncommon pixels, not the entire shared
+        // component; otherwise one speckle protects a second printed glyph.
+        const inkThreshold = Math.max(repeatedPeak * 1.2, peak * .6);
+        for (let i = 0; i < tail; i++) {
+          const index = componentQueue[i], dx = index % componentSide - glyphRadius,
+            dy = Math.floor(index / componentSide) - glyphRadius;
+          if (darknessAt(dx, dy) < inkThreshold) componentSeen[index] = 1;
+        }
+        protectComponent = true; protectedComponents++; isolatedRejected++; return false;
+      }
+      const halo = Math.max(1.5, pxPerCm * .025);
+      const rx = (maxX - minX) / 2 + halo, ry = (maxY - minY) / 2 + halo;
+      const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+      for (let dy = Math.floor(centerY - ry); dy <= Math.ceil(centerY + ry); dy++) {
+        for (let dx = Math.floor(centerX - rx); dx <= Math.ceil(centerX + rx); dx++) {
+          if (((dx - centerX) / rx) ** 2 + ((dy - centerY) / ry) ** 2 > 1) continue;
+          const darkness = darknessAt(dx, dy);
+          const componentIndex = (dy + glyphRadius) * componentSide + dx + glyphRadius;
+          const belongs = Math.abs(dx) <= glyphRadius && Math.abs(dy) <= glyphRadius
+            && componentSeen[componentIndex] === 2;
+          if (darkness > 0 && darkness <= peak + 1 && (belongs || darkness <= threshold)) setPaper(cx + dx, cy + dy);
+        }
+      }
+      isolatedRemoved++;
+      return true;
+    };
     for (let column = 0; column < 35; column += 1) {
       checkProcessingCancelled(settings);
       await yieldToBrowser();
       for (let row = 0; row < 51; row += 1) {
-        const { x: cx, y: cy } = centres[column * 51 + row];
+        const { x: cx, y: cy, neutralPrint } = centres[column * 51 + row];
+        if (removeIsolatedRepeatedGlyph(cx, cy, neutralPrint)) continue;
         for (const { dx, dy, index: glyphIndex } of glyphOffsets) {
+          if (protectComponent) {
+            let belongsToInk = false;
+            for (let oy = -protectedHalo; oy <= protectedHalo && !belongsToInk; oy++) for (let ox = -protectedHalo; ox <= protectedHalo; ox++) {
+              if (Math.abs(dx + ox) > glyphRadius || Math.abs(dy + oy) > glyphRadius) continue;
+              if (componentSeen[(dy + oy + glyphRadius) * componentSide + dx + ox + glyphRadius] === 2) {
+                belongsToInk = true; break;
+              }
+            }
+            if (belongsToInk) continue;
+          }
           const lift = glyphDarkness[glyphIndex];
           if (lift < 4) continue;
           const x = cx + dx, y = cy + dy;
@@ -4496,13 +4645,18 @@
         }
       }
     }
-    // Keep uncommon isolated marks. The learned repeated glyph is enough to
-    // remove the template; a second isolated-dot eraser cannot distinguish
-    // a printed dot from a full stop or the dot of a handwritten i.
+    // Compact removal is limited by repeated print tone, shape, connectivity
+    // and source-neutral provenance. Darker punctuation, chromatic ink and
+    // continuous strokes keep the conservative learned-glyph subtraction;
+    // nearby disconnected marks are never included in a dot's halo mask.
     return {
-      method: useObservedCentres ? "observed-dots" : "recovered-dot-phase",
-      observations: measuredCount,
-      confirmed: confirmedCount
+      method: useObservedCentres && geometryMeasuredCount >= 600 ? "observed-dots" : "recovered-dot-phase",
+      observations: geometryMeasuredCount,
+      photographedObservations: measuredCount - geometryMeasuredCount,
+      confirmed: confirmedCount,
+      isolatedRemoved,
+      isolatedRejected,
+      protectedComponents
     };
   }
 
@@ -4560,24 +4714,21 @@
   }
 
   function observedPaperIllumination(canvas, data, observations) {
-    if (!Array.isArray(observations) || observations.length < 600) return null;
     const anchors = new Float32Array(35 * 51);
-    let count = 0;
+    const paperPoints = [];
+    const paperNoise = [];
+    let count = 0, supplied = 0, recovered = 0;
     const pxPerMM = canvas.width / 210;
     const offsets = [];
     for (const radius of [1, 1.8]) for (let sample = 0; sample < 24; sample += 1) {
       const angle = sample / 24 * Math.PI * 2;
       offsets.push([Math.cos(angle) * radius * pxPerMM, Math.sin(angle) * radius * pxPerMM]);
     }
-    for (const point of observations) {
-      const column = point.col ?? point.column, row = point.row;
-      if (!Number.isInteger(column) || !Number.isInteger(row)
-        || column < 0 || column >= 35 || row < 0 || row >= 51
-        || !Number.isFinite(point.x + point.y)) continue;
-      const index = column * 51 + row;
-      if (anchors[index]) continue;
+    const measurePaper = point => {
       const samples = [];
-      for (const [dx, dy] of offsets) {
+      const positions = count % 4 === 0 ? [] : null;
+      for (const sampleOffset of offsets) {
+        const [dx, dy] = sampleOffset;
         const x = Math.round(point.x - 0.5 + dx);
         const y = Math.round(point.y - 0.5 + dy);
         if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
@@ -4586,13 +4737,100 @@
         const maximum = Math.max(r, g, b), minimum = Math.min(r, g, b);
         if (maximum - minimum > maximum * 0.24) continue;
         samples.push(r * 0.2126 + g * 0.7152 + b * 0.0722);
+        positions?.push(sampleOffset);
       }
-      if (samples.length < 16) continue;
+      if (samples.length < 16) return 0;
+      if (samples.length >= 40 && positions) {
+        // Remove the local lighting slope before measuring camera grain.
+        // A median across these paper rings ignores occasional ink crossings
+        // and shadow boundaries; their intensity range is not a noise floor.
+        let sum = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxv = 0, syv = 0;
+        for (let i = 0; i < samples.length; i += 1) {
+          const [dx, dy] = positions[i], value = samples[i];
+          sum += value; sx += dx; sy += dy; sxx += dx * dx; syy += dy * dy;
+          sxy += dx * dy; sxv += dx * value; syv += dy * value;
+        }
+        const n = samples.length, mx = sx / n, my = sy / n, mean = sum / n;
+        const xx = sxx - sx * mx, yy = syy - sy * my, xy = sxy - sx * my;
+        const xv = sxv - sx * mean, yv = syv - sy * mean;
+        const determinant = xx * yy - xy * xy;
+        const gx = determinant > 1e-6 ? (xv * yy - yv * xy) / determinant : 0;
+        const gy = determinant > 1e-6 ? (yv * xx - xv * xy) / determinant : 0;
+        const residuals = samples.map((value, i) => value - mean
+          - gx * (positions[i][0] - mx) - gy * (positions[i][1] - my));
+        const sorted = residuals.slice().sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+        const deviations = residuals.map(value => Math.abs(value - median)).sort((a, b) => a - b);
+        paperNoise.push(deviations[Math.floor(deviations.length / 2)] * 1.4826);
+      }
       samples.sort((a, b) => a - b);
-      anchors[index] = samples[Math.floor(samples.length * 0.8)];
-      count += 1;
+      return samples[Math.floor(samples.length * 0.8)];
+    };
+    for (const point of Array.isArray(observations) ? observations : []) {
+      const column = point.col ?? point.column, row = point.row;
+      if (!Number.isInteger(column) || !Number.isInteger(row)
+        || column < 0 || column >= 35 || row < 0 || row >= 51
+        || !Number.isFinite(point.x + point.y)) continue;
+      const index = column * 51 + row;
+      if (anchors[index]) continue;
+      const paper = measurePaper(point);
+      if (!paper) continue;
+      anchors[index] = paper;
+      paperPoints.push({ x: point.x, y: point.y, col: column, row });
+      count += 1; supplied += 1;
     }
-    if (count < 600) return null;
+    // A dot rejected by the surface fit is not proof that the paper is blank
+    // or painted over. Recover exposure evidence from the rectified raster,
+    // including when the geometric fit has fewer than 600 accepted points.
+    // These observations never move the surface or become geometry anchors.
+    const lumaAt = (x, y) => {
+      const offset = (y * canvas.width + x) * 4;
+      return data[offset] * 0.2126 + data[offset + 1] * 0.7152 + data[offset + 2] * 0.0722;
+    };
+    const ring = [];
+    for (let i = 0; i < 8; i += 1) {
+      const angle = i * Math.PI / 4;
+      ring.push([Math.round(Math.cos(angle) * pxPerMM), Math.round(Math.sin(angle) * pxPerMM)]);
+    }
+    const reach = Math.max(2, Math.round(pxPerMM * 0.7));
+    const step = Math.max(1, Math.round(pxPerMM * 0.22));
+    const core = Math.max(1, Math.round(pxPerMM * 0.12));
+    const safe = reach + Math.ceil(pxPerMM) + core + 1;
+    for (let column = 0; column < 35; column += 1) for (let row = 0; row < 51; row += 1) {
+      const index = column * 51 + row;
+      if (anchors[index]) continue;
+      const cx = Math.round((20 + column * 5) * pxPerMM - 0.5);
+      const cy = Math.round((19.3 + row * 5) * pxPerMM - 0.5);
+      if (cx < safe || cy < safe || cx >= canvas.width - safe || cy >= canvas.height - safe) continue;
+      let best = null;
+      for (let dy = -reach; dy <= reach; dy += step) for (let dx = -reach; dx <= reach; dx += step) {
+        const x = cx + dx, y = cy + dy;
+        const center = (lumaAt(x, y) * 2 + lumaAt(x - core, y) + lumaAt(x + core, y)
+          + lumaAt(x, y - core) + lumaAt(x, y + core)) / 6;
+        let minimum = 255, sum = 0;
+        for (const [rx, ry] of ring) {
+          const value = lumaAt(x + rx, y + ry);
+          minimum = Math.min(minimum, value); sum += value;
+        }
+        const paper = sum / ring.length;
+        const contrast = paper - center;
+        // Continuous handwriting intersects the ring; an opaque grey drawing
+        // has no repeatable central bullet signal. Do not use either as paper.
+        if (contrast < Math.max(3, paper * 0.012) || minimum - center < contrast * 0.32
+          || center < paper * 0.32) continue;
+        const score = contrast - Math.hypot(dx, dy) / Math.max(1, reach) * 0.5;
+        if (!best || score > best.score) best = { x: x + 0.5, y: y + 0.5, score };
+      }
+      if (!best) continue;
+      const paper = measurePaper(best);
+      if (!paper) continue;
+      anchors[index] = paper;
+      paperPoints.push({ x: best.x, y: best.y, col: column, row });
+      count += 1; recovered += 1;
+    }
+    // Sparse evidence still improves a photographed template. Generic pages
+    // with no repeatable bullet signal retain the conservative local field.
+    if (count < 80) return null;
     // Visible printed dots certify actual paper under the illumination. An
     // opaque drawing hides those dots; continue neighbouring paper across the
     // resulting gap instead of mistaking the drawing's grey fill for a lamp.
@@ -4646,6 +4884,7 @@
     }
     const fine = smoothPaperIllumination(values, width, height, { radius: 2, blurRadius: 0 });
     const field = new Float32Array(fine.length);
+    const drawing = new Uint8Array(fine.length);
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
       const column = clamp(((x + 0.5) / width * 210 - 20) / 5, 0, 34);
       const row = clamp(((y + 0.5) / height * 297 - 19.3) / 5, 0, 50);
@@ -4659,9 +4898,13 @@
       const local = fine[y * width + x];
       const protectDrawing = clamp((minimum - local - 6) / 10, 0, 1);
       field[y * width + x] = local * (1 - protectDrawing) + paper * protectDrawing;
+      drawing[y * width + x] = Math.round(protectDrawing * 255);
     }
     reduced.width = reduced.height = 0;
-    return { values: field, width, height, anchors: count };
+    paperNoise.sort((a, b) => a - b);
+    const noiseSigma = paperNoise.length >= 32 ? paperNoise[Math.floor(paperNoise.length / 2)] : 0;
+    return { values: field, drawing, width, height, anchors: count, supplied, recovered, paperPoints,
+      noiseSigma, noiseFloor: clamp(noiseSigma * 2.2, 2, 6) };
   }
 
   Light.correctColors = async function correctColors(canvas, options = {}) {
@@ -4882,21 +5125,31 @@
         }
         const fieldColumn = illuminationColumns[x];
         let localBright = illumination[illuminationRow + fieldColumn];
+        let localDrawing = 0;
         if (observedIllumination) {
           const mix = illuminationColumnMix[x], next = Math.min(illuminationWidth - 1, fieldColumn + 1);
           const upper = localBright * (1 - mix) + illumination[illuminationRow + next] * mix;
           const lower = illumination[illuminationNextRow + fieldColumn] * (1 - mix)
             + illumination[illuminationNextRow + next] * mix;
           localBright = upper * (1 - illuminationRowMix) + lower * illuminationRowMix;
+          const mask = observedIllumination.drawing;
+          const upperDrawing = mask[illuminationRow + fieldColumn] * (1 - mix) + mask[illuminationRow + next] * mix;
+          const lowerDrawing = mask[illuminationNextRow + fieldColumn] * (1 - mix)
+            + mask[illuminationNextRow + next] * mix;
+          localDrawing = (upperDrawing * (1 - illuminationRowMix) + lowerDrawing * illuminationRowMix) / 255;
         }
         // Measured neutral paper uses only relative luminance. Avoid colour
         // reference projection and three discarded channel gains for the
         // millions of neutral pixels making up most scanned pages.
-        const measuredNeutral = !!observedIllumination && saturation <= 0.18;
+        const colouredStroke = saturation > 0.18 || (saturation > 0.105
+          && localBright - luminance > Math.max(6, localBright * 0.035));
+        const measuredNeutral = !!observedIllumination && !colouredStroke;
+        const measuredBlack = measuredNeutral && (luminance < localBright * 0.16
+          || (localDrawing > 0.85 && luminance < localBright * 0.26));
         const automaticR = measuredNeutral ? 0 : clamp(r * profile.gains[0], 0, 255);
         const automaticG = measuredNeutral ? 0 : clamp(g * profile.gains[1], 0, 255);
         const automaticB = measuredNeutral ? 0 : clamp(b * profile.gains[2], 0, 255);
-        const kind = canCalibrate && !measuredNeutral
+        const kind = canCalibrate && (!measuredNeutral || measuredBlack)
           ? referenceKindForPixel(
             r, g, b, luminance, saturation, profile.paperLuminance, localBright
           )
@@ -4905,16 +5158,29 @@
           ? calibrateFromReference([r, g, b], referenceByName[kind], profile.sourcePaper, profile.targetPaper)
           : null;
         let outputR = automaticR, outputG = automaticG, outputB = automaticB;
-        if (saturation <= 0.18 && (observedIllumination || !calibrated)) {
+        if (!colouredStroke && (observedIllumination || !calibrated)) {
           // Recover ink contrast relative to the paper at this pixel. Blending
           // with a global white target washed faint strokes away even when the
           // image contained enough local contrast to read them clearly.
           const paper = Math.max(40, localBright);
-          const noiseFloor = Math.max(1.5, paper * 0.0075);
+          const noiseFloor = Math.max(observedIllumination?.noiseFloor || 2, paper * 0.0075);
           const reflectance = clamp(1 - (paper - luminance - noiseFloor) / paper, 0, 1);
-          // A bounded contrast curve strengthens real pencil; near-paper
-          // camera grain remains white instead of becoming dark speckles.
-          const neutral = profile.targetPaper * reflectance * (0.35 + 0.65 * reflectance);
+          // Strengthen thin pencil independently of broad shaded drawings.
+          // The dark transition retains already-dark ink's measured tone;
+          // light stroke coverage gains contrast without crushing grey fills.
+          const transition = clamp((reflectance - 0.12) / 0.45, 0, 1);
+          const strength = observedIllumination
+            ? (1.25 - localDrawing * 0.6) * transition * transition * (3 - 2 * transition) : 0.65;
+          let neutral = profile.targetPaper * clamp(
+            reflectance - strength * reflectance * (1 - reflectance), 0, 1);
+          if (measuredBlack && calibrated && kind === "black") {
+            // Deep camera blacks include a camera contrast/offset response,
+            // not only exposure. Retain a little measured black-reference
+            // calibration without applying its grey lift to faint writing.
+            const reference = calibrated.mapped[0] * 0.2126 + calibrated.mapped[1] * 0.7152
+              + calibrated.mapped[2] * 0.0722;
+            neutral += (reference - neutral) * (localDrawing > 0.85 ? 1 : 0.25) * calibrated.mix;
+          }
           outputR = outputG = outputB = neutral;
         } else if (calibrated) {
           // Without measured paper anchors, retain the printed reference's
@@ -4931,6 +5197,17 @@
           outputG = balancedLuminance + (automaticG - balancedLuminance) * vibrance;
           outputB = balancedLuminance + (automaticB - balancedLuminance) * vibrance;
         }
+        if (observedIllumination && colouredStroke) {
+          // Increase coloured stroke coverage against white, preserving hue
+          // instead of desaturating pale blue/red handwriting into grey.
+          // Solid fills and already-saturated reference colours retain their
+          // calibrated palette; the extra coverage is for pastel strokes.
+          const coverage = 1 + 0.14 * (1 - localDrawing)
+            * clamp((Math.min(outputR, outputG, outputB) - 40) / 90, 0, 1);
+          outputR = profile.targetPaper - (profile.targetPaper - outputR) * coverage;
+          outputG = profile.targetPaper - (profile.targetPaper - outputG) * coverage;
+          outputB = profile.targetPaper - (profile.targetPaper - outputB) * coverage;
+        }
         data[offset] = Math.round(clamp(outputR, 0, 255));
         data[offset + 1] = Math.round(clamp(outputG, 0, 255));
         data[offset + 2] = Math.round(clamp(outputB, 0, 255));
@@ -4942,8 +5219,44 @@
       }
     }
     const stencilCleanup = preciseStencil && !settings.skipStencilCleanup
-      ? await removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper, settings)
+      ? await removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper,
+        observedIllumination ? { ...settings, photographedDotObservations: observedIllumination.paperPoints } : settings)
       : null;
+    const paperOutput = [];
+    const coveredRegions = new Set();
+    const qualityOffsets = Array.from({ length: 16 }, (_, sample) => {
+      const angle = sample / 16 * Math.PI * 2;
+      return [Math.cos(angle) * pxPerCm * 0.15, Math.sin(angle) * pxPerCm * 0.15];
+    });
+    for (const point of observedIllumination?.paperPoints || []) {
+      const samples = [];
+      // Score actual cleaned paper surrounding an evidenced printed point.
+      // A high quantile ignores a pen crossing the ring without penalising a
+      // page for containing handwriting; a remaining shadow affects the ring.
+      for (const [dx, dy] of qualityOffsets) {
+        const x = Math.round(point.x - 0.5 + dx);
+        const y = Math.round(point.y - 0.5 + dy);
+        if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
+        const offset = (y * canvas.width + x) * 4;
+        const r = data[offset], g = data[offset + 1], b = data[offset + 2];
+        if (Math.max(r, g, b) - Math.min(r, g, b) > 26) continue;
+        samples.push(r * 0.2126 + g * 0.7152 + b * 0.0722);
+      }
+      if (samples.length < 8) continue;
+      samples.sort((a, b) => a - b);
+      paperOutput.push(samples[Math.floor(samples.length * 0.8)]);
+      coveredRegions.add(Math.floor(point.col / 5) * 9 + Math.floor(point.row / 6));
+    }
+    paperOutput.sort((a, b) => a - b);
+    const outputQuality = {
+      method: "verified-dot-surrounds",
+      paperSamples: paperOutput.length,
+      paperResidualFraction: paperOutput.length
+        ? paperOutput.filter(value => value < 235).length / paperOutput.length : null,
+      paperP10: paperOutput.length ? paperOutput[Math.floor(paperOutput.length * 0.1)] : null,
+      paperMedian: paperOutput.length ? paperOutput[Math.floor(paperOutput.length * 0.5)] : null,
+      confidence: Math.min(1, paperOutput.length / 600) * Math.min(1, coveredRegions.size / 50)
+    };
     if (data !== original) original.set(data);
     context.putImageData(image, 0, 0);
     illuminationCanvas.width = 0;
@@ -4952,7 +5265,10 @@
       canvas,
       calibrated: canCalibrate,
       stencilCleanup,
-      illumination: observedIllumination ? { method: "observed-paper", anchors: observedIllumination.anchors } : { method: "local-paper" },
+      outputQuality,
+      illumination: observedIllumination ? { method: "observed-paper", anchors: observedIllumination.anchors,
+        supplied: observedIllumination.supplied, recovered: observedIllumination.recovered,
+        noiseSigma: observedIllumination.noiseSigma, noiseFloor: observedIllumination.noiseFloor } : { method: "local-paper" },
       samples: validMarkerSamples.length,
       paper: Math.round(profile.paperLuminance),
       references: Object.fromEntries(samples.map(sample => [sample.name, {
