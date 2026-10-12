@@ -196,6 +196,45 @@
     };
   }
 
+  function smoothOffsets(offsets, strengths, anchored) {
+    // A paper edge bends continuously; individual yellow pixels cannot justify
+    // a succession of little folds. Fit a robust curve with a second-derivative
+    // penalty, while retaining the observed broad cylindrical/page curl.
+    const size = offsets.length, smoothness = size > 20 ? 18 : 5;
+    let fitted = Float64Array.from(offsets);
+    for (let pass = 0; pass < 3; pass += 1) {
+      const diagonal = new Float64Array(size), lower = new Float64Array(size);
+      const lower2 = new Float64Array(size), rhs = new Float64Array(size);
+      for (let i = 0; i < size; i += 1) {
+        const evidence = strengths[i] > 5 ? clamp(strengths[i] / 18, .3, 1) : .03;
+        const residual = Math.abs(fitted[i] - offsets[i]);
+        const weight = evidence * (pass ? Math.min(1, 1.5 / Math.max(1.5, residual)) : 1);
+        diagonal[i] = weight; rhs[i] = weight * offsets[i];
+      }
+      if (anchored) {
+        diagonal[0] += 1000; diagonal[size - 1] += 1000;
+      }
+      for (let i = 1; i < size - 1; i += 1) {
+        diagonal[i - 1] += smoothness; diagonal[i] += 4 * smoothness; diagonal[i + 1] += smoothness;
+        lower[i] -= 2 * smoothness; lower[i + 1] -= 2 * smoothness; lower2[i + 1] += smoothness;
+      }
+      // Banded Cholesky: linear cost and only five diagonals, even on mobile.
+      const root = new Float64Array(size), first = new Float64Array(size), second = new Float64Array(size);
+      for (let i = 0; i < size; i += 1) {
+        if (i > 1) second[i] = lower2[i] / root[i - 2];
+        if (i > 0) first[i] = (lower[i] - second[i] * first[i - 1]) / root[i - 1];
+        root[i] = Math.sqrt(Math.max(1e-9, diagonal[i] - first[i] ** 2 - second[i] ** 2));
+        rhs[i] = (rhs[i] - (i > 0 ? first[i] * rhs[i - 1] : 0) - (i > 1 ? second[i] * rhs[i - 2] : 0)) / root[i];
+      }
+      fitted = new Float64Array(size);
+      for (let i = size - 1; i >= 0; i -= 1) {
+        fitted[i] = (rhs[i] - (i + 1 < size ? first[i + 1] * fitted[i + 1] : 0)
+          - (i + 2 < size ? second[i + 2] * fitted[i + 2] : 0)) / root[i];
+      }
+    }
+    return fitted;
+  }
+
   // Trace the printed ink, allowing a smooth curved surface instead of fitting
   // all samples to a straight chord. Dynamic programming prevents a single
   // yellow object, a grid intersection or a reflection from pulling a rail.
@@ -253,21 +292,27 @@
     }
     // Fill short gaps from observations on both sides. No unseen corner or
     // frame is accepted: detection still requires independent rail coverage.
-    const points = [];
+    const points = [], observedPoints = [];
+    const fitted = smoothOffsets(offsets, strengths, outer && anchorCorners);
     let hits = 0;
     for (let row = 0; row < samples; row += 1) {
-      const lo = Math.max(0, row - 1), hi = Math.min(samples - 1, row + 1);
-      let offset = 0;
-      for (let index = lo; index <= hi; index += 1) offset += offsets[index];
-      offset /= hi - lo + 1;
-      if (outer && anchorCorners) offset *= Math.min(1, row / 2, (samples - 1 - row) / 2);
+      const offset = fitted[row];
       const center = guide ? guide[row] : mix(start, end, row / (samples - 1));
       points.push({ x: center.x + normal.x * offset, y: center.y + normal.y * offset });
+      let observed = 0;
+      const from = Math.max(0, row - 1), to = Math.min(samples - 1, row + 1);
+      for (let at = from; at <= to; at += 1) observed += offsets[at];
+      observed /= to - from + 1;
+      if (outer && anchorCorners) observed *= Math.min(1, row / 2, (samples - 1 - row) / 2);
+      observedPoints.push({ x: center.x + normal.x * observed, y: center.y + normal.y * observed });
       if (row > 0 && row < samples - 1 && strengths[row] > 5) hits += 1;
     }
-    if (outer && anchorCorners) { points[0] = start; points[points.length - 1] = end; }
+    if (outer && anchorCorners) {
+      points[0] = observedPoints[0] = start;
+      points[points.length - 1] = observedPoints[points.length - 1] = end;
+    }
     return {
-      points, normal, offsets, strengths,
+      points, observedPoints, normal, offsets, strengths,
       support: hits / (samples - 2), narrowSupport: narrowHits / (samples - 2),
       cornerOffset: (Math.abs(offsets[0]) + Math.abs(offsets[1])
         + Math.abs(offsets[samples - 2]) + Math.abs(offsets[samples - 1])) / 4
@@ -470,7 +515,7 @@
         edgeSupport = frameEdgeSupport.reduce((sum, value) => sum + value, 0) / 4;
         if (edgeSupport < (candidate.tracking ? .5 : .59)
           || frameEdgeSupport.filter(value => value >= .5).length < 3) continue;
-        const calibrationResult = calibration(state, quad, frameEdges);
+        const calibrationResult = calibration(state, quad, traces.map(trace => trace.observedPoints));
         markers = calibrationResult.markers;
         markerEdges = calibrationResult.markerEdges;
         markerSupport = calibrationResult.support;

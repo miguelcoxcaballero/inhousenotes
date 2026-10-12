@@ -498,6 +498,10 @@ test('scanner recovers a faded yellow stencil under blur and low saturation', as
     };
   });
 
+  await test.info().attach('faded-stencil-detection', {
+    body: JSON.stringify(result, null, 2),
+    contentType: 'application/json'
+  });
   expect(['stencil', 'marker-guided']).toContain(result.method);
   expect(result.support).toBeGreaterThan(0.45);
   expect(result.boxSupport).toBeGreaterThan(0.45);
@@ -753,11 +757,13 @@ test('scanner follows a curved yellow frame and straightens it with a real mesh'
       support: detection.frame?.support || 0,
       curvature: detection.frame?.curvature || 0,
       boxSupport: detection.frame?.box?.support || 0,
+      quality: detection.quality,
       rows
     };
   });
 
-  expect(result.method).toBe('stencil');
+  expect(['stencil', 'marker-guided']).toContain(result.method);
+  expect(result.quality?.valid, JSON.stringify(result)).toBe(true);
   expect(result.support).toBeGreaterThan(0.45);
   expect(result.curvature).toBeGreaterThan(0.012);
   // One of the two narrow box rails may merge into the vertical teeth under

@@ -23,6 +23,11 @@
   let stableFrames = 0;
   let lastAnalysisTime = 0;
   let lastObservedAt = 0;
+  let visualTarget = null;
+  let visualDetection = null;
+  let visualFrame = 0;
+  let visualFrameAt = 0;
+  let visualResponse = 100;
   let lastQualifiedAt = 0;
   let bufferedFrames = [];
   let bufferEpoch = 0;
@@ -75,6 +80,7 @@
   const stopCamera = () => {
     clearTimeout(timer);
     timer = 0;
+    clearVisualTracking();
     if (frameCallback) video.cancelVideoFrameCallback?.(frameCallback);
     frameCallback = 0;
     if (stream) stream.getTracks().forEach(track => track.stop());
@@ -206,6 +212,7 @@
         });
       };
       if (video.requestVideoFrameCallback) observeFrame();
+      visualFrame = requestAnimationFrame(renderOverlay);
       // play() may stay pending when a device never delivers camera frames.
       // The frame watchdog below keeps retry available in that case too.
       void video.play().catch(error => { if (token === generation) cameraError(error); });
@@ -214,7 +221,7 @@
       if (token === generation) cameraError(error);
     }
   }
-  function drawDetection(detection) {
+  function drawDetection(detection, opacity = 1) {
     const bounds = video.getBoundingClientRect();
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const width = Math.max(1, Math.round(bounds.width * dpr));
@@ -224,6 +231,7 @@
       overlay.height = height;
     }
     overlayContext.clearRect(0, 0, width, height);
+    overlayContext.globalAlpha = opacity;
     overlay.dataset.detected = detection ? 'true' : 'false';
     if (!detection || !video.videoWidth) return;
     const scale = Math.min(width / video.videoWidth, height / video.videoHeight);
@@ -270,14 +278,81 @@
     && detection.brightness >= 60 && detection.brightness <= 252
     && detection.coverage >= .16
     && detection.quad.every(point => point.x >= .008 && point.y >= .008 && point.x <= .992 && point.y <= .992);
-  const smoothDetection = (previous, next) => {
-    if (!previous || previous.source !== next.source || movement(previous.quad, next.quad) > .06) return next;
-    const blend = (oldPoints, points) => points?.map((point, index) => oldPoints?.length === points.length
-      ? { x: oldPoints[index].x * .3 + point.x * .7, y: oldPoints[index].y * .3 + point.y * .7 } : point);
-    return { ...next, quad: blend(previous.quad, next.quad), pageQuad: blend(previous.pageQuad, next.pageQuad),
-      contour: blend(previous.contour, next.contour),
-      frameEdges: next.frameEdges?.map((edge, i) => blend(previous.frameEdges?.[i], edge)) };
+  function clearVisualTracking() {
+    if (visualFrame) cancelAnimationFrame(visualFrame);
+    visualFrame = 0;
+    visualFrameAt = 0;
+    visualTarget = visualDetection = null;
+    drawDetection(null);
+  }
+  const mapGeometry = (previous, next, mapPoint) => {
+    const map = (old, points) => points?.map((point, index) => Array.isArray(point)
+      ? map(old?.[index], point)
+      : old?.length === points.length ? mapPoint(old[index], point) : { ...point });
+    const result = { ...next };
+    ['quad', 'pageQuad', 'frameEdges', 'pageEdges', 'markers', 'markerEdges'].forEach(key => {
+      result[key] = map(previous?.[key], next[key]);
+    });
+    // The outline and its edge samples must describe the exact same curve.
+    result.contour = result.frameEdges?.flat() || map(previous?.contour, next.contour);
+    return result;
   };
+  function observeVisual(next, now) {
+    const previous = lastDetection;
+    if (!visualTarget || !previous || previous.source !== next.source
+      || now - lastObservedAt > 350 || movement(previous.quad, next.quad) > .16) {
+      visualTarget = visualDetection = mapGeometry(null, next, (_, point) => ({ ...point }));
+      visualResponse = 100;
+      drawDetection(visualDetection);
+      return;
+    }
+    // Estimate one common translation/rotation/scale from the measured corners.
+    // Move the complete outline with it, then damp only the remaining local
+    // shape change. Independently smoothing every rail used to make the page
+    // and the bottom markers visibly pull apart during normal hand movement.
+    const center = quad => quad.reduce((sum, point) => ({ x: sum.x + point.x / 4, y: sum.y + point.y / 4 }), { x: 0, y: 0 });
+    const before = center(previous.quad), after = center(next.quad);
+    let dot = 0, cross = 0, span = 0;
+    previous.quad.forEach((point, i) => {
+      const x = point.x - before.x, y = point.y - before.y;
+      const u = next.quad[i].x - after.x, v = next.quad[i].y - after.y;
+      dot += x * u + y * v;
+      cross += x * v - y * u;
+      span += x * x + y * y;
+    });
+    const a = span > 1e-6 ? dot / span : 1, b = span > 1e-6 ? cross / span : 0;
+    const transform = point => ({ x: after.x + a * (point.x - before.x) - b * (point.y - before.y),
+      y: after.y + b * (point.x - before.x) + a * (point.y - before.y) });
+    const commonMotion = Math.max(...previous.quad.map(point => {
+      const moved = transform(point);
+      return Math.hypot(moved.x - point.x, moved.y - point.y);
+    }));
+    const speed = commonMotion / Math.max(16, now - lastObservedAt);
+    visualResponse = Math.max(35, Math.min(110, 110 - speed * 350000));
+    const motionWeight = Math.min(1, .35 + commonMotion / .012);
+    visualTarget = mapGeometry(visualTarget, next, (point, measured) => {
+      const moved = transform(point);
+      const x = point.x + (moved.x - point.x) * motionWeight;
+      const y = point.y + (moved.y - point.y) * motionWeight;
+      return { x: x + (measured.x - x) * .32, y: y + (measured.y - y) * .32 };
+    });
+  }
+  function renderOverlay(now) {
+    visualFrame = 0;
+    if (!stream || root.hidden) return;
+    const age = now - lastObservedAt;
+    if (visualTarget && age <= 350 && root.dataset.cameraReady === 'true') {
+      const elapsed = visualFrameAt ? Math.max(0, now - visualFrameAt) : 16;
+      const alpha = 1 - Math.exp(-Math.min(elapsed, 64) / visualResponse);
+      visualDetection = mapGeometry(visualDetection, visualTarget, (point, target) => ({
+        x: point.x + (target.x - point.x) * alpha,
+        y: point.y + (target.y - point.y) * alpha
+      }));
+      drawDetection(visualDetection, Math.min(1, (350 - age) / 190));
+    } else drawDetection(null);
+    visualFrameAt = now;
+    visualFrame = requestAnimationFrame(renderOverlay);
+  }
   async function bufferFrame(detection, token, now) {
     if (buffering || now - lastBufferedAt < 220) return;
     const epoch = bufferEpoch;
@@ -332,12 +407,12 @@
         root.dataset.cameraReady = 'true';
         const detection = detect();
         if (detection) {
-          lastDetection = smoothDetection(lastDetection, detection);
+          observeVisual(detection, now);
+          lastDetection = detection;
           lastObservedAt = now;
         } else if (now - lastObservedAt > 350) lastDetection = null;
         // Brief misses retain the observed outline, but never count as a
         // qualified frame or authorize capture from an old camera image.
-        drawDetection(lastDetection);
         window.dispatchEvent(new CustomEvent('scanner-live-detection', { detail: detection }));
         if (captureReady(detection)) {
           if (movement(stableAnchor, detection.quad) > .025 || now - lastAnalysisTime > 600) {
@@ -371,11 +446,16 @@
       }
     } catch (error) {
       resetStability();
+      visualTarget = visualDetection = null;
+      lastDetection = null;
+      lastObservedAt = 0;
       drawDetection(null);
       setState('searching');
       status('Automatic detection unavailable', 'You can capture now and check the page before adding it.');
     }
-    timer = setTimeout(() => tick(token), 120);
+    // Analysis has a bounded cadence; drawing runs independently on animation
+    // frames. Subtract detector time instead of adding it to every interval.
+    timer = setTimeout(() => tick(token), Math.max(25, 80 - (performance.now() - now)));
   }
   const encode = canvas => new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Image encoding took too long')), 6000);
@@ -544,9 +624,12 @@
         checkProcessing();
         if (current()) $('liveReviewStatus').textContent = 'Finding page edges…';
         const detection = SP.Lightweight.detectPageAsync
-          ? await SP.Lightweight.detectPageAsync(source, { signal: controller.signal })
-          : SP.Lightweight.detectPage(source);
+          ? await SP.Lightweight.detectPageAsync(source, { signal: controller.signal, liveDetection: candidate.detection })
+          : SP.Lightweight.detectPage(source, { liveDetection: candidate.detection });
         checkProcessing();
+        if (detection.quality?.valid === false) {
+          throw new Error(detection.quality.reason || 'The page geometry could not be verified');
+        }
         const precise = ['stencil', 'marker-guided'].includes(detection.method) && detection.confidence >= .55;
         const liveQuad = candidate.detection?.pageQuad;
         const quad = precise ? detection.pageQuad : liveQuad?.map(point => ({ x: point.x * source.width, y: point.y * source.height }));
@@ -701,7 +784,7 @@
     event.stopImmediatePropagation();
     if (close()) post('ihn-scanner-close');
   }, true);
-  new ResizeObserver(() => drawDetection(lastDetection)).observe(video);
+  new ResizeObserver(() => drawDetection(visualDetection && performance.now() - lastObservedAt <= 350 ? visualDetection : null)).observe(video);
   SP.LiveCamera = { open, close };
   if (embedded) void open();
 })();

@@ -6,7 +6,30 @@ const fixtures = fs.readFileSync(new URL('./fixtures/scanner-synthetic.js', impo
 async function camera(page, mode) {
   await page.addInitScript({ content: fixtures });
   await page.addInitScript(mode => {
-    const fixture = window.liveResilience = { constraints: [], observed: 0, missed: 0, retained: 0, focus: [] };
+    const fixture = window.liveResilience = { constraints: [], observed: 0, missed: 0, retained: 0, focus: [], draws: [], measurements: [] };
+    if (mode.startsWith('visual-')) {
+      // Record the actual rendered frame path, independently of detector events.
+      const paths = new WeakMap();
+      for (const name of ['beginPath', 'moveTo', 'lineTo', 'stroke']) {
+        const original = CanvasRenderingContext2D.prototype[name];
+        CanvasRenderingContext2D.prototype[name] = function (...args) {
+          if (this.canvas.id === 'liveOverlay') {
+            if (name === 'beginPath') paths.set(this, []);
+            if (name === 'moveTo' || name === 'lineTo') paths.get(this)?.push({ x: args[0], y: args[1] });
+            if (name === 'stroke' && this.lineWidth === 3 * Math.min(devicePixelRatio || 1, 2)) {
+              const video = document.getElementById('liveVideo');
+              const scale = Math.min(this.canvas.width / video.videoWidth, this.canvas.height / video.videoHeight);
+              const width = video.videoWidth * scale, height = video.videoHeight * scale;
+              const dx = (this.canvas.width - width) / 2, dy = (this.canvas.height - height) / 2;
+              fixture.draws.push({ at: performance.now(), points: (paths.get(this) || []).map(point => ({
+                x: (point.x - dx) / width, y: (point.y - dy) / height
+              })) });
+            }
+          }
+          return original.apply(this, args);
+        };
+      }
+    }
     navigator.mediaDevices.getUserMedia = async () => {
       const canvas = ScannerSyntheticFixtures.renderCase(ScannerSyntheticFixtures.CASES[0]).source;
       const context = canvas.getContext('2d');
@@ -55,11 +78,44 @@ async function camera(page, mode) {
   }, mode);
   await page.goto('/scanner/index.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(mode => {
+    if (mode === 'invalid-review') {
+      liveResilience.warpCalls = 0;
+      ScannerPro.Lightweight.detectPageAsync = async () => ({
+        method: 'stencil', confidence: 1,
+        pageQuad: [{ x: 0, y: 0 }, { x: 900, y: 0 }, { x: 900, y: 1170 }, { x: 0, y: 1170 }],
+        quality: { valid: false, reason: 'The detected page disagrees with the camera frame', seedAgreement: 0 }
+      });
+      const warp = ScannerPro.Lightweight.warp;
+      ScannerPro.Lightweight.warp = (...args) => {
+        liveResilience.warpCalls++;
+        return warp(...args);
+      };
+    }
     const original = ScannerPro.LiveDetection.detect;
     ScannerPro.LiveDetection.detect = (...args) => {
       const detection = original(...args);
       const fixture = window.liveResilience;
       const state = document.getElementById('liveScanner').dataset.state;
+      if (mode.startsWith('visual-') && (fixture.base || detection?.source === 'yellow')) {
+        fixture.base ||= structuredClone(detection);
+        fixture.startedAt ||= performance.now();
+        const at = performance.now(), elapsed = at - fixture.startedAt;
+        if (mode === 'visual-gap' && elapsed > 600) return null;
+        // Isolate temporal rendering with known measured motion and local
+        // contour noise; the camera itself continues delivering real frames.
+        const dx = Math.max(0, Math.min(.1, (elapsed - 750) * .0001));
+        const noisy = ++fixture.observed % 2 ? .018 : -.018;
+        const shifted = structuredClone(fixture.base);
+        const shift = points => points.map(point => Array.isArray(point) ? shift(point) : { x: point.x + dx, y: point.y });
+        for (const key of ['quad', 'pageQuad', 'frameEdges', 'pageEdges', 'markers', 'markerEdges']) {
+          if (shifted[key]) shifted[key] = shift(shifted[key]);
+        }
+        shifted.frameEdges[0][16].y += noisy;
+        shifted.contour = shifted.frameEdges.flat();
+        shifted.confidence = .7;
+        fixture.measurements.push({ at, dx, first: shifted.contour[0], mid: shifted.contour[16] });
+        return shifted;
+      }
       if (mode === 'burst-loss' && state === 'capturing') return null;
       if (mode === 'brief-loss' && detection?.source === 'yellow') {
         fixture.observed++;
@@ -139,4 +195,52 @@ test('a blurred blank template remains in the live feed instead of passing borde
   expect(focus.length).toBeGreaterThan(3);
   expect(Math.max(...focus.map(sample => sample.interior))).toBeLessThan(32);
   expect(Math.max(...focus.map(sample => sample.edge))).toBeLessThan(160);
+});
+
+test('the complete displayed outline moves between analyses and damps local contour jitter', async ({ page }) => {
+  await camera(page, 'visual-motion');
+  await page.waitForFunction(() => liveResilience.startedAt && performance.now() - liveResilience.startedAt > 2800);
+  const metrics = await page.evaluate(() => {
+    const { startedAt, draws, measurements } = liveResilience;
+    const between = (items, from, to) => items.filter(item => item.at - startedAt > from && item.at - startedAt < to);
+    const motion = between(draws, 900, 1650);
+    const observed = between(measurements, 900, 1650);
+    const changed = motion.slice(1).filter((item, i) => Math.abs(item.points[0].x - motion[i].points[0].x) > .00001).length;
+    const range = values => Math.max(...values) - Math.min(...values);
+    return {
+      changed, observed: observed.length,
+      shownJitter: range(between(draws, 250, 720).map(item => item.points[16].y)),
+      measuredJitter: range(between(measurements, 250, 720).map(item => item.mid.y)),
+      finalMotion: draws.at(-1).points[0].x - measurements[0].first.x
+    };
+  });
+  await test.info().attach('overlay-motion', { body: JSON.stringify(metrics, null, 2), contentType: 'application/json' });
+  expect(metrics.changed).toBeGreaterThan(metrics.observed * 1.5);
+  expect(metrics.shownJitter).toBeLessThan(metrics.measuredJitter * .65);
+  expect(metrics.finalMotion).toBeGreaterThan(.09);
+  expect(metrics.finalMotion).toBeLessThan(.105);
+  await expect(page.locator('#liveReview')).toBeHidden();
+});
+
+test('visual interpolation expires after a lost document and stops when the camera closes', async ({ page }) => {
+  await camera(page, 'visual-gap');
+  await expect(page.locator('#liveOverlay')).toHaveAttribute('data-detected', 'true');
+  await page.waitForFunction(() => liveResilience.startedAt && performance.now() - liveResilience.startedAt > 1050);
+  await expect(page.locator('#liveOverlay')).toHaveAttribute('data-detected', 'false');
+  await expect(page.locator('#liveReview')).toBeHidden();
+  const before = await page.evaluate(() => { ScannerPro.LiveCamera.close(); return liveResilience.draws.length; });
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => liveResilience.draws.length)).toBe(before);
+});
+
+test('invalid page geometry preserves the original photo even when detector confidence is maximal', async ({ page }) => {
+  await camera(page, 'invalid-review');
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 6500 });
+  await expect(page.locator('#liveReviewStatus')).toContainText('Original photo ready');
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
+  const preview = await page.locator('#livePreview').evaluate(image => ({
+    visible: !image.hidden, complete: image.complete, width: image.naturalWidth
+  }));
+  expect(preview).toEqual({ visible: true, complete: true, width: 900 });
+  expect(await page.evaluate(() => liveResilience.warpCalls)).toBe(0);
 });

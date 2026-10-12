@@ -763,11 +763,9 @@
         && Math.abs(entry.normalized[perpendicular] - expected) <= 0.1)
       .sort((first, second) => first.normalized[axis] - second.normalized[axis]);
     if (observed.length < 18) return null;
-    // The neutral ridge was sampled at evenly spaced physical page rows. A
-    // projective inverse of the provisional straight quad changes that row
-    // parameter even when the spatial curve is correct, which makes the warp
-    // slide content vertically along a side. Preserve the observed transverse
-    // coordinate but restore the acquisition order as the canonical axis.
+    // Acquisition-order bins robustly estimate transverse corner offsets.
+    // The actual curve below keeps measured longitudinal coordinates: missing
+    // observations are gaps, not shorter paper.
     const normalized = observed.map((entry, index) => ({
       ...entry.normalized,
       [axis]: index / Math.max(1, observed.length - 1)
@@ -811,9 +809,11 @@
     }
     smoothed = smoothed.map(value => expected + clamp(value - expected, -0.075, 0.075));
     const sourcePath = new Array(sampleCount).fill(null).map((_, sample) => {
-      const scaled = sample / (sampleCount - 1) * (observed.length - 1);
-      const index = Math.min(observed.length - 2, Math.floor(scaled));
-      const mix = scaled - index;
+      const position = sample / (sampleCount - 1);
+      const upper = observed.findIndex(entry => entry.normalized[axis] >= position);
+      const index = upper < 0 ? observed.length - 2 : Math.max(0, upper - 1);
+      const start = observed[index].normalized[axis], end = observed[index + 1].normalized[axis];
+      const mix = (position - start) / Math.max(1e-6, end - start);
       const first = observed[index].source;
       const second = observed[index + 1].source;
       return {
@@ -1267,6 +1267,27 @@
       { u: right.values[count - 1], v: bottom.values[count - 1] },
       { u: left.values[count - 1], v: bottom.values[0] }
     ];
+    const horizontalPosition = (index, bottomEdge = false) => {
+      const amount = index / (count - 1);
+      const left = cornersNormalized[bottomEdge ? 3 : 0].u;
+      const right = cornersNormalized[bottomEdge ? 2 : 1].u;
+      return left + (right - left) * amount;
+    };
+    const valueAt = (values, amount) => {
+      const position = amount * (values.length - 1);
+      const index = clamp(Math.floor(position), 0, values.length - 2);
+      return values[index] + (values[index + 1] - values[index]) * (position - index);
+    };
+    if (neutralRecovery) for (let index = 1; index < count - 1; index += 1) {
+      // Neutral recovery intentionally avoids iterative reseeding. Its
+      // measured corners may nevertheless shift the provisional coordinate
+      // origin. Resample the same ridges between those observed endpoints;
+      // replacing only the endpoints otherwise stretches the first/last cell
+      // and slides every interior calibration square sideways.
+      const topU = horizontalPosition(index), bottomU = horizontalPosition(index, true);
+      topNormalized[index] = { u: topU, v: valueAt(top.values, topU) };
+      bottomNormalized[index] = { u: bottomU, v: valueAt(bottom.values, bottomU) };
+    }
     topNormalized[0] = leftNormalized[0] = cornersNormalized[0];
     topNormalized[count - 1] = rightNormalized[0] = cornersNormalized[1];
     bottomNormalized[count - 1] = rightNormalized[count - 1] = cornersNormalized[2];
@@ -1282,13 +1303,32 @@
     const alignGuideEndpoints = (sourcePath, start, end) => {
       const first = sourcePath[0];
       const last = sourcePath[sourcePath.length - 1];
-      return sourcePath.map((point, index) => {
+      const length = Math.hypot(end.x - start.x, end.y - start.y) || 1;
+      const tx = (end.x - start.x) / length, ty = (end.y - start.y) / length;
+      const startAlong = (start.x - first.x) * tx + (start.y - first.y) * ty;
+      const endAlong = (end.x - last.x) * tx + (end.y - last.y) * ty;
+      const aligned = sourcePath.map((point, index) => {
         const amount = index / Math.max(1, sourcePath.length - 1);
+        const along = startAlong * (1 - amount) + endAlong * amount;
         return {
-          x: point.x + (start.x - first.x) * (1 - amount) + (end.x - last.x) * amount,
-          y: point.y + (start.y - first.y) * (1 - amount) + (end.y - last.y) * amount
+          x: point.x + tx * along,
+          y: point.y + ty * along
         };
       });
+      // Endpoint extrapolation can contain an isolated neighbouring ridge.
+      // Align the row coordinate along the rail, but never spread that
+      // transverse endpoint error across the entire measured side.
+      const span = Math.min(3, aligned.length - 1);
+      for (let index = 0; index < span; index += 1) {
+        const amount = index / span;
+        aligned[index] = { x: start.x * (1 - amount) + aligned[span].x * amount,
+          y: start.y * (1 - amount) + aligned[span].y * amount };
+        const reverse = aligned.length - 1 - index;
+        const anchor = aligned[aligned.length - 1 - span];
+        aligned[reverse] = { x: end.x * (1 - amount) + anchor.x * amount,
+          y: end.y * (1 - amount) + anchor.y * amount };
+      }
+      return aligned;
     };
     if (left.sourcePath?.length === count) {
       paths.left = alignGuideEndpoints(left.sourcePath, paths.top[0], paths.bottom[0]);
@@ -1299,12 +1339,12 @@
       );
     }
     const boxTopPath = boxTop.values.map((value, index) => toSource({
-      u: index / (count - 1),
-      v: value
+      u: neutralRecovery ? horizontalPosition(index, true) : index / (count - 1),
+      v: neutralRecovery ? valueAt(boxTop.values, horizontalPosition(index, true)) : value
     }));
     const boxBottomPath = boxBottom.values.map((value, index) => toSource({
-      u: index / (count - 1),
-      v: value
+      u: neutralRecovery ? horizontalPosition(index, true) : index / (count - 1),
+      v: neutralRecovery ? valueAt(boxBottom.values, horizontalPosition(index, true)) : value
     }));
     const yellowBoxNormalized = normalizedYellow.filter(point => point.u >= -0.015 && point.u <= 1.015
       && point.v >= boxTopExpected - 0.018 && point.v <= boxBottomExpected + 0.018);
@@ -1381,6 +1421,31 @@
     if (!curve?.length) return null;
     if (curve.length === 1) return { x: curve[0].x, y: curve[0].y };
     const scaled = (Number.isFinite(amount) ? amount : 0) * (curve.length - 1);
+    if ((scaled < 0 || scaled > curve.length - 1) && curve.length >= 4) {
+      // The physical blank margin lies outside the measured frame. A single
+      // antialiased endpoint interval is too noisy to determine its tangent;
+      // fit the four interior samples independently of that noisy corner,
+      // then anchor the extrapolation at the corner to preserve continuity.
+      const end = scaled < 0 ? 0 : curve.length - 1;
+      const direction = scaled < 0 ? 1 : -1;
+      const count = Math.min(4, curve.length - 1);
+      let dx = 0, dy = 0, weight = 0, sumDistance = 0, sumX = 0, sumY = 0;
+      for (let step = 1; step <= count; step += 1) {
+        const point = curve[end + direction * step];
+        const distance = direction * step;
+        dx += distance * (point.x - curve[end].x);
+        dy += distance * (point.y - curve[end].y);
+        weight += distance * distance;
+        sumDistance += distance;
+        sumX += point.x - curve[end].x;
+        sumY += point.y - curve[end].y;
+      }
+      dx -= sumDistance * sumX / count;
+      dy -= sumDistance * sumY / count;
+      weight -= sumDistance * sumDistance / count;
+      return { x: curve[end].x + dx / weight * (scaled - end),
+        y: curve[end].y + dy / weight * (scaled - end) };
+    }
     let index = Math.floor(scaled);
     let mix = scaled - index;
     if (index < 0) { mix = scaled; index = 0; }
@@ -1396,6 +1461,9 @@
   }
 
   function mapFramePoint(frame, pageU, pageV) {
+    if (frame.metricSurface && SP.MetricSurface?.map) {
+      return SP.MetricSurface.map(frame.metricSurface, pageU, pageV);
+    }
     const frameU0 = 1.5 / 21;
     const frameU1 = 19.5 / 21;
     const frameV0 = 1.43 / 29.7;
@@ -1750,32 +1818,48 @@
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
       return seed % points.length;
     };
+    // RANSAC revisits these coordinates hundreds of times. Cache the numeric
+    // columns once and reuse scratch storage without changing hypotheses,
+    // sample order or scoring. Only a winning model needs point objects.
+    const independent = new Float64Array(points.length);
+    const dependent = new Float64Array(points.length);
+    const strengths = new Float64Array(points.length);
+    for (let index = 0; index < points.length; index += 1) {
+      independent[index] = points[index][independentKey];
+      dependent[index] = points[index][dependentKey];
+      strengths[index] = Math.min(3, points[index].strength || 1);
+    }
+    const inlierIndices = new Uint32Array(points.length);
+    const occupied = new Uint8Array(120);
     let best = null;
     let bestScore = 0;
     const hypotheses = Math.min(360, Math.max(140, points.length * 2));
     for (let attempt = 0; attempt < hypotheses; attempt += 1) {
-      const first = points[randomIndex()];
-      const second = points[randomIndex()];
-      const delta = second[independentKey] - first[independentKey];
+      const first = randomIndex();
+      const second = randomIndex();
+      const delta = independent[second] - independent[first];
       if (Math.abs(delta) < options.minimumSpan * 0.34) continue;
-      const a = (second[dependentKey] - first[dependentKey]) / delta;
+      const a = (dependent[second] - dependent[first]) / delta;
       // Coordinates are already normalized through the detected paper quad;
       // stencil borders must therefore stay close to horizontal/vertical.
       // A steeper candidate is almost always handwriting or a neighbouring
       // sheet crossing the expected band (not a perspective effect).
       if (Math.abs(a) > (options.maximumSlope || 0.12)) continue;
-      const b = first[dependentKey] - a * first[independentKey];
-      const inliers = [];
+      const b = dependent[first] - a * independent[first];
+      let inlierCount = 0;
+      let weightedSupport = 0;
       let minimum = Infinity;
       let maximum = -Infinity;
-      for (const point of points) {
-        if (Math.abs(point[dependentKey] - (a * point[independentKey] + b)) > options.tolerance) continue;
-        inliers.push(point);
-        minimum = Math.min(minimum, point[independentKey]);
-        maximum = Math.max(maximum, point[independentKey]);
+      for (let index = 0; index < points.length; index += 1) {
+        const coordinate = independent[index];
+        if (Math.abs(dependent[index] - (a * coordinate + b)) > options.tolerance) continue;
+        inlierIndices[inlierCount++] = index;
+        weightedSupport += strengths[index];
+        minimum = Math.min(minimum, coordinate);
+        maximum = Math.max(maximum, coordinate);
       }
       const span = maximum - minimum;
-      if (span < options.minimumSpan || inliers.length < 12) continue;
+      if (span < options.minimumSpan || inlierCount < 12) continue;
       const atCenter = a * 0.5 + b;
       const expectedPenalty = Number.isFinite(options.expected)
         ? 1 + Math.abs(atCenter - options.expected) / (options.expectedTolerance || 0.1)
@@ -1790,16 +1874,17 @@
         : 0;
       const boundaryPenalty = 1 + Math.max(0, inwardOffset)
         / (options.boundaryTolerance || 0.012);
-      const weightedSupport = inliers.reduce((sum, point) => sum + Math.min(3, point.strength || 1), 0);
       const continuityBins = Math.min(120, Math.max(36,
         Math.ceil(span / Math.max(0.006, options.tolerance * 0.7))));
-      const occupied = new Uint8Array(continuityBins);
-      for (const point of inliers) {
-        const bin = clamp(Math.floor((point[independentKey] - minimum)
+      occupied.fill(0, 0, continuityBins);
+      let occupiedCount = 0;
+      for (let index = 0; index < inlierCount; index += 1) {
+        const bin = clamp(Math.floor((independent[inlierIndices[index]] - minimum)
           / Math.max(1e-6, span) * continuityBins), 0, continuityBins - 1);
+        if (!occupied[bin]) occupiedCount += 1;
         occupied[bin] = 1;
       }
-      const continuity = occupied.reduce((sum, value) => sum + value, 0) / continuityBins;
+      const continuity = occupiedCount / continuityBins;
       const continuityWeight = clamp(options.continuityWeight || 0, 0, 0.95);
       const continuityFactor = (1 - continuityWeight)
         + continuityWeight * Math.pow(continuity, 1.35);
@@ -1807,6 +1892,7 @@
         / (expectedPenalty * slopePenalty * anchorPenalty * boundaryPenalty);
       if (score > bestScore) {
         bestScore = score;
+        const inliers = Array.from(inlierIndices.subarray(0, inlierCount), index => points[index]);
         best = { inliers, atCenter, span, minimum, maximum, continuity };
       }
     }
@@ -2450,11 +2536,84 @@
     };
   }
 
-  function detectPageAtScale(source, analysisMaximum) {
+  // A pale book can merge with the sheet in a paper silhouette. Preserve the
+  // independently observed live contour, but remeasure every rail on this
+  // photo before allowing it to anchor still-image reconstruction.
+  function observedLiveFrame(seed, width, height, pixels) {
+    if (seed?.source !== "yellow" || seed.quad?.length !== 4
+      || seed.frameEdges?.length !== 4 || seed.confidence < 0.72) return null;
+    const edges = [], supports = [];
+    for (const edge of seed.frameEdges) {
+      if (!Array.isArray(edge) || edge.length < 8
+        || edge.some(point => !Number.isFinite(point.x) || !Number.isFinite(point.y)
+          || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1)) return null;
+      const points = edge.map(point => ({ x: point.x * width, y: point.y * height }));
+      let hits = 0;
+      const measured = points.map((point, index) => {
+        const before = points[Math.max(0, index - 1)], after = points[Math.min(points.length - 1, index + 1)];
+        const length = Math.hypot(after.x - before.x, after.y - before.y) || 1;
+        const nx = -(after.y - before.y) / length, ny = (after.x - before.x) / length;
+        const chromaAt = (x, y) => {
+          if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return -100;
+          const at = (Math.round(y) * width + Math.round(x)) * 4;
+          const r = pixels[at], g = pixels[at + 1], b = pixels[at + 2];
+          return g >= r * 0.7 && r >= g * 0.82 && b < g * 0.96
+            ? yellowChroma(r, g, b) : -100;
+        };
+        let best = null;
+        // Six analysis pixels allow sub-frame motion, not a jump to another
+        // sheet. A narrow peak must have paper on both sides of the printed ink.
+        for (let step = -12; step <= 12; step += 1) {
+          const offset = step * 0.5;
+          const x = point.x + nx * offset, y = point.y + ny * offset;
+          const center = chromaAt(x, y);
+          const contrast = center - Math.max(chromaAt(x + nx * 3.5, y + ny * 3.5),
+            chromaAt(x - nx * 3.5, y - ny * 3.5));
+          if (center < 9 || contrast < 3) continue;
+          const score = contrast - Math.abs(offset) * 0.65;
+          if (!best || score > best.score) best = { x, y, score };
+        }
+        if (best) hits += 1;
+        return best ? { x: best.x, y: best.y } : point;
+      });
+      edges.push(measured);
+      supports.push(hits / points.length);
+    }
+    if (Math.min(...supports) < 0.58 || supports.filter(value => value >= 0.78).length < 3) return null;
+    // Shared endpoints keep a watertight surface; their correction is the
+    // average of the two independently measured arms at each corner.
+    const quad = edges.map((edge, index) => {
+      const previous = edges[(index + 3) % 4].at(-1);
+      return { x: (edge[0].x + previous.x) / 2, y: (edge[0].y + previous.y) / 2 };
+    });
+    if (!isPlausibleQuad(quad, width, height, { minAreaRatio: 0.12 })) return null;
+    edges.forEach((edge, index) => { edge[0] = quad[index]; edge[edge.length - 1] = quad[(index + 1) % 4]; });
+    return { quad, edges, supports };
+  }
+
+  function contourDistance(frame, observed, width, height) {
+    if (!frame?.paths || !observed) return { maximum: Infinity, mean: Infinity };
+    const reference = observed.edges.flat();
+    let maximum = 0, sum = 0, count = 0;
+    for (const path of Object.values(frame.paths)) for (const point of path) {
+      let nearest = Infinity;
+      for (let index = 0; index < reference.length - 1; index += 1) {
+        const a = reference[index], b = reference[index + 1];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const t = clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+        nearest = Math.min(nearest, Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t));
+      }
+      maximum = Math.max(maximum, nearest); sum += nearest; count += 1;
+    }
+    return { maximum: maximum / Math.hypot(width, height), mean: sum / Math.max(1, count) / Math.hypot(width, height) };
+  }
+
+  function detectPageAtScale(source, analysisMaximum, options = {}) {
     const analysis = createScaledCanvas(source, analysisMaximum);
     const { canvas, context, scale } = analysis;
     const { width, height } = canvas;
     const pixels = context.getImageData(0, 0, width, height).data;
+    const liveFrame = observedLiveFrame(options.liveDetection, width, height, pixels);
     const paperQuad = detectPaperQuad(width, height, pixels);
     const paperYellowBaseline = estimatePaperYellowBaseline(width, height, pixels, paperQuad);
     const mask = new Uint8Array(width * height);
@@ -2763,6 +2922,44 @@
         + (attempt.source === "marker-affine" ? 0.02 : 0);
       return { guided, frame, score, ...attempt };
     }).filter(Boolean).sort((first, second) => second.score - first.score);
+    if (liveFrame) {
+      const paper = extrapolateStencil(liveFrame.quad);
+      const guided = detectMarkerGuidedStencil(paper, width, height, pixels, mask, { trustedAxis: true });
+      // The asymmetric lower strip determines physical orientation; the live
+      // contour itself stays tied to its measured pixels in all orientations.
+      let rotation = 0, bestDistance = Infinity;
+      if (guided) for (let turn = 0; turn < 4; turn += 1) {
+        const distance = liveFrame.quad.reduce((sum, _, index) => sum + Math.hypot(
+          liveFrame.quad[(index + turn) % 4].x - guided.stencilQuad[index].x,
+          liveFrame.quad[(index + turn) % 4].y - guided.stencilQuad[index].y), 0);
+        if (distance < bestDistance) { bestDistance = distance; rotation = turn; }
+      }
+      const quad = liveFrame.quad.map((_, index) => liveFrame.quad[(index + rotation) % 4]);
+      const edges = liveFrame.edges.map((_, index) => liveFrame.edges[(index + rotation) % 4]);
+      const frame = traceYellowFrame(quad, width, height, mask, false, true, traceMask);
+      if (frame) {
+        const resample = edge => Array.from({ length: 25 }, (_, index) => sampleCurve(edge, index / 24));
+        frame.paths = { top: resample(edges[0]), right: resample(edges[1]),
+          bottom: resample(edges[2].slice().reverse()), left: resample(edges[3].slice().reverse()) };
+        frame.corners = frame.refinedStencilQuad = quad;
+        frame.sideSupports = liveFrame.supports.map((_, index) => liveFrame.supports[(index + rotation) % 4]);
+        frame.support = frame.sideSupports.reduce((sum, value) => sum + value, 0) / 4;
+        frame.confidence = clamp((frame.support - 0.16) / 0.68, 0, 1);
+        frame.box.outer = frame.paths.bottom;
+        const confidence = Math.min(0.99, frame.support);
+        resolvedMarkerAttempts.push({ paper: extrapolateStencil(quad), source: "observed-contour",
+          diagnostics: { measuredSideSupports: frame.sideSupports },
+          guided: { ...(guided || {}), stencilQuad: quad, confidence }, frame,
+          score: frame.support * 2 + frame.box.support * 1.25 + confidence * 0.45 });
+      }
+      for (const attempt of resolvedMarkerAttempts) {
+        attempt.seedAgreement = contourDistance(attempt.frame, liveFrame, width, height);
+        // A high aggregate score cannot compensate for following a different
+        // sheet. Compare complete curved rails, not their straight chords.
+        if (attempt.seedAgreement.maximum > 0.025 || attempt.seedAgreement.mean > 0.009) attempt.score -= 4;
+      }
+      resolvedMarkerAttempts.sort((first, second) => second.score - first.score);
+    }
     // A colour-anchored coordinate system is independent of the pale-paper
     // segmentation and therefore remains trustworthy when several sheets
     // touch. Prefer it whenever it can explain a substantial part of both the
@@ -2771,6 +2968,7 @@
     const reliableAttempt = attempt => {
       const frame = attempt.frame;
       if (!frame) return false;
+      if (liveFrame && (attempt.seedAgreement?.maximum > 0.025 || attempt.seedAgreement?.mean > 0.009)) return false;
       // Traced rails may be individually convincing while belonging to two
       // different sheets. Extrapolating that mixture creates the conspicuous
       // black triangle / imaginary corner seen in real camera photos. A page
@@ -2835,6 +3033,13 @@
       } : null
     } : null;
     const finish = result => {
+      if (options.liveDetection?.source === "yellow" && !liveFrame) {
+        // A stale or unsupported capture seed must not silently turn into an
+        // unrelated confident crop. The review can still offer the original.
+        result.quality = { valid: false, reason: "live-contour-not-observed", seedAgreement: null };
+      } else if (!result.quality) {
+        result.quality = { valid: false, reason: "page-frame-not-verified", seedAgreement: null };
+      }
       canvas.width = 0;
       canvas.height = 0;
       return result;
@@ -2861,6 +3066,8 @@
         },
         stencilQuad,
         frame: scaleFrame(tracedFrame),
+        quality: { valid: true, reason: liveFrame ? "observed-contour-agreement" : "frame-and-calibration",
+          seedAgreement: markerResolved.seedAgreement || null, sideSupports: tracedFrame.sideSupports },
         confidence: markerGuided.confidence,
         method: "marker-guided"
       });
@@ -2874,6 +3081,11 @@
         paperCandidate: paperQuad?.map(point => ({ x: point.x / scale, y: point.y / scale })) || null,
         stencilQuad,
         frame: scaleFrame(tracedFrame),
+        quality: { valid: quadFitsObservedImage(extrapolateStencil(resolvedStencil), width, height)
+          && (!liveFrame || (contourDistance(tracedFrame, liveFrame, width, height).maximum <= 0.025
+          && contourDistance(tracedFrame, liveFrame, width, height).mean <= 0.009)),
+          reason: liveFrame ? "contour-consistency" : "frame-only",
+          seedAgreement: liveFrame ? contourDistance(tracedFrame, liveFrame, width, height) : null },
         confidence,
         method: "stencil"
       });
@@ -2952,8 +3164,80 @@
     return detection;
   }
 
-  Light.detectPage = function detectPage(source) {
-    const quick = detectPageAtScale(source, ANALYSIS_FAST_MAX);
+  function measureFrameEvidence(source, detections) {
+    // Candidate support is measured on different downsampled masks. Compare
+    // both reconstructions against the same source pixels before accepting a
+    // finer pass: JPEG and one-pixel motion must not replace an observed rail
+    // with a smoother but unsupported bend.
+    const analysis = createScaledCanvas(source, 1200);
+    const { width, height } = analysis.canvas;
+    const pixels = analysis.context.getImageData(0, 0, width, height).data;
+    const colourAt = (x, y) => {
+      const ix = Math.round(x), iy = Math.round(y);
+      if (ix < 1 || iy < 1 || ix >= width - 1 || iy >= height - 1) return null;
+      const offset = (iy * width + ix) * 4;
+      const r = pixels[offset], g = pixels[offset + 1], b = pixels[offset + 2];
+      const maximum = Math.max(r, g, b);
+      return {
+        luminance: (r + g + b) / 3,
+        chroma: (r + g) * 0.5 - b - Math.abs(r - g) * 0.34,
+        saturation: (maximum - Math.min(r, g, b)) / Math.max(1, maximum)
+      };
+    };
+    const pointAt = (path, amount) => {
+      const point = sampleCurve(path, amount);
+      return { x: point.x * analysis.scale, y: point.y * analysis.scale };
+    };
+    const traceEvidence = path => {
+      if (!path?.length || path.some(point => !Number.isFinite(point?.x) || !Number.isFinite(point?.y))) {
+        return { support: 0, strength: 0 };
+      }
+      let hits = 0, total = 0;
+      for (let index = 2; index < 63; index += 1) {
+        const point = pointAt(path, index / 64);
+        const before = pointAt(path, (index - 1) / 64);
+        const after = pointAt(path, (index + 1) / 64);
+        const length = Math.hypot(after.x - before.x, after.y - before.y) || 1;
+        const nx = -(after.y - before.y) / length, ny = (after.x - before.x) / length;
+        let best = 0;
+        for (let shift = -3; shift <= 3; shift += 0.75) {
+          const center = colourAt(point.x + nx * shift, point.y + ny * shift);
+          const first = colourAt(point.x + nx * (shift - 4), point.y + ny * (shift - 4));
+          const second = colourAt(point.x + nx * (shift + 4), point.y + ny * (shift + 4));
+          if (!center || !first || !second) continue;
+          const chromaticContrast = center.chroma - Math.max(first.chroma, second.chroma);
+          const neutralContrast = center.saturation < 0.2
+            ? Math.min(first.luminance, second.luminance) - center.luminance : 0;
+          best = Math.max(best, Math.max(chromaticContrast, neutralContrast * 0.7) - Math.abs(shift) * 0.35);
+        }
+        if (best >= 3) hits += 1;
+        total += Math.min(1, best / 12);
+      }
+      return { support: hits / 61, strength: total / 61 };
+    };
+    const results = detections.map(detection => {
+      const sides = ["top", "right", "bottom", "left"]
+        .map(name => traceEvidence(detection.frame?.paths?.[name]));
+      const rails = ["top", "bottom"].map(name => traceEvidence(detection.frame?.box?.[name]));
+      return {
+        sideSupports: sides.map(side => side.support),
+        score: Math.min(...sides.map(side => side.support)) * 2
+          + sides.reduce((sum, side) => sum + side.strength, 0) / 4
+          + rails.reduce((sum, rail) => sum + rail.strength, 0) * 0.2
+      };
+    });
+    analysis.canvas.width = analysis.canvas.height = 0;
+    return results;
+  }
+
+  Light.detectPage = function detectPage(source, options = {}) {
+    if (!options.liveDetection && SP.LiveDetection?.detect) {
+      const preview = createScaledCanvas(source, 480);
+      const liveDetection = SP.LiveDetection.detect(preview.context.getImageData(0, 0, preview.canvas.width, preview.canvas.height));
+      preview.canvas.width = preview.canvas.height = 0;
+      options = { ...options, liveDetection };
+    }
+    const quick = detectPageAtScale(source, ANALYSIS_FAST_MAX, options);
     const frame = quick.frame;
     const finiteQuickQuad = quick.pageQuad?.length === 4
       && quick.pageQuad.every(point => Number.isFinite(point?.x) && Number.isFinite(point?.y));
@@ -2983,10 +3267,46 @@
           // absent.
           || ((frame?.box?.support || 0) < 0.72
             && (frame?.support || 0) < 0.9)));
-    const detection = refineObservedFrame(source, needsDetailedPass
-      ? detectPageAtScale(source, ANALYSIS_MAX)
-      : quick);
-    return SP.SurfaceParameterization?.refine(source, detection) || detection;
+    let selected = quick;
+    if (needsDetailedPass) {
+      const detailed = detectPageAtScale(source, ANALYSIS_MAX, options);
+      const weakest = result => Math.min(...(result.frame?.sideSupports || [0]));
+      const coarseHasCompleteEvidence = quick.method === "marker-guided"
+        && quick.frame?.support >= 0.9 && quick.frame?.box?.support >= 0.85
+        && (quick.quality?.valid !== false || detailed.quality?.valid !== true);
+      const [coarseEvidence, detailedEvidence] = measureFrameEvidence(source, [quick, detailed]);
+      // Extra pixels are another observation, not proof of a better fit.
+      // Raster rounding or JPEG can break a fine-scale rail and make RANSAC
+      // invent a corner even while the coarse pass explains all four sides.
+      const degraded = coarseHasCompleteEvidence && (
+        (detailed.method !== "marker-guided" && detailed.frame?.support <= quick.frame.support + 0.03)
+        || (weakest(quick) >= 0.94 && weakest(detailed) < weakest(quick) - 0.04)
+        || detailedEvidence.score < coarseEvidence.score - 0.06
+        || (quick.quality?.valid === true && detailed.quality?.valid === false));
+      if (!degraded) selected = detailed;
+      selected.scaleSelection = { resolution: degraded ? ANALYSIS_FAST_MAX : ANALYSIS_MAX,
+        coarseEvidence, detailedEvidence };
+    }
+    let detection = refineObservedFrame(source, selected);
+    detection = SP.SurfaceParameterization?.refine(source, detection) || detection;
+    if (detection.quality?.valid && options.liveDetection?.frameEdges?.length === 4) {
+      const width = source.naturalWidth || source.videoWidth || source.width;
+      const height = source.naturalHeight || source.videoHeight || source.height;
+      const observed = { edges: options.liveDetection.frameEdges.map(edge => edge.map(point => ({
+        x: point.x * width, y: point.y * height
+      }))) };
+      const agreement = contourDistance(detection.frame, observed, width, height);
+      detection.quality.seedAgreement = agreement;
+      if (agreement.maximum > 0.025 || agreement.mean > 0.009) {
+        detection.quality.valid = false;
+        detection.quality.reason = "refined-contour-disagreement";
+      }
+    }
+    if (detection.quality?.valid && detection.frame && SP.MetricSurface?.fit) {
+      const surface = SP.MetricSurface.fit(source, detection);
+      if (surface) detection.frame.metricSurface = surface;
+    }
+    return detection;
   };
 
   Light.detectPageAsync = async function detectPageAsync(source, options = {}) {
@@ -2994,7 +3314,7 @@
     const fallback = async () => {
       await yieldToBrowser();
       checkProcessingCancelled(options);
-      return Light.detectPage(source);
+      return Light.detectPage(source, options);
     };
     if (!moduleUrl || typeof Worker !== "function" || typeof createImageBitmap !== "function"
       || typeof OffscreenCanvas !== "function") return fallback();
@@ -3030,7 +3350,7 @@
         options.signal?.addEventListener("abort", abort, { once: true });
         timer = setTimeout(() => finish(reject, new Error("Page analysis took too long. Try another frame.")),
           Math.max(1000, Math.min(60000, options.timeoutMs || 20000)));
-        worker.postMessage({ bitmap, config: SP.Config || {} }, [bitmap]);
+        worker.postMessage({ bitmap, config: SP.Config || {}, liveDetection: options.liveDetection || null }, [bitmap]);
       } catch (_) {
         bitmap.close();
         unavailable();

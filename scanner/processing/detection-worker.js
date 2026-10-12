@@ -7,12 +7,13 @@ self.document = {
     return new OffscreenCanvas(1, 1);
   }
 };
-importScripts(`surface-parameterization.js${self.location.search}`, `lightweight.js${self.location.search}`);
+importScripts(`liveDetection.js${self.location.search}`, `surface-parameterization.js${self.location.search}`,
+  `metric-surface.js${self.location.search}`, `lightweight.js${self.location.search}`);
 self.onmessage = event => {
-  const { bitmap, config } = event.data;
+  const { bitmap, config, liveDetection } = event.data;
   try {
     self.ScannerPro.Config = config;
-    const detection = self.ScannerPro.Lightweight.detectPage(bitmap);
+    const detection = self.ScannerPro.Lightweight.detectPage(bitmap, { liveDetection });
     self.postMessage({ detection });
   } catch (error) {
     self.postMessage({ error: error?.message || "The page could not be analysed." });

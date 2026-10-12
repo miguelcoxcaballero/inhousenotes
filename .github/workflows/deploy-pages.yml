@@ -58,6 +58,7 @@ jobs:
           test -f "$site_dir/scanner/script.js"
           test -f "$site_dir/scanner/processing/detection-worker.js"
           test -f "$site_dir/scanner/processing/surface-parameterization.js"
+          test -f "$site_dir/scanner/processing/metric-surface.js"
           echo "Production artifact: $(find "$site_dir" -type f | wc -l) files, $(du -sh "$site_dir" | cut -f1)"
 
       # Publishes straight to the gh-pages branch, which GitHub Pages is
