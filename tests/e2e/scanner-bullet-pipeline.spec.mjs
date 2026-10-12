@@ -37,6 +37,7 @@ test('worker shows measured bullet rows before straightening and restores the pr
       templateApplied: scan.templateApplied, worker: scan.timings.worker,
       inkLayer: scan.inkLayer, templateKind: scan.templateKind, inkType: scan.blob.type,
       previewType: scan.previewBlob.type,
+      outputQuality: scan.outputQuality,
       emptyInkAlpha: [[15, 145], [25, 276.8], [101.25, 276.8], [103.75, 276.8],
         [106.25, 276.8], [108.75, 276.8], [105, 290]].map(([x, y]) => alpha(x, y)),
       penInkAlpha: alpha(40, 35),
@@ -119,6 +120,10 @@ test('worker shows measured bullet rows before straightening and restores the pr
   expect(report.templateKind).toBe('default');
   expect(report.inkType).toBe('image/png');
   expect(report.previewType).toBe('image/png');
+  expect(report.outputQuality?.paperSamples, 'output quality reaches the review from the processing worker').toBeGreaterThan(100);
+  expect(report.outputQuality.confidence).toBeGreaterThan(.5);
+  expect(report.outputQuality.paperResidualFraction).toBeGreaterThanOrEqual(0);
+  expect(report.outputQuality.paperResidualFraction).toBeLessThan(.08);
   expect(report.emptyInkAlpha, 'the inserted ink asset contains no baked frame, footer markers or white paper').toEqual([0, 0, 0, 0, 0, 0, 0]);
   expect(report.penInkAlpha, 'the transparent asset retains the photographed handwriting').toBeGreaterThan(80);
   expect(report.dots, 'progress contains genuine measured points').not.toBeNull();

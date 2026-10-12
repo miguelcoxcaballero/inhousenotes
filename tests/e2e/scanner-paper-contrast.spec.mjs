@@ -5,7 +5,11 @@ const cases = [
   { name: 'neutral-shadow', gains: [1, 1, 1] },
   { name: 'cool-shadow', gains: [.63, .81, 1] },
   { name: 'warm-shadow-jpeg', gains: [1, .84, .66], jpeg: true },
-  { name: 'cool-shadow-with-missing-corner-dots', gains: [.63, .81, 1], missingCornerObservations: true }
+  { name: 'cool-shadow-with-missing-corner-dots', gains: [.63, .81, 1], missingCornerObservations: true },
+  { name: 'cool-shadow-with-sparse-dots', gains: [.63, .81, 1], observationLimit: 480 },
+  { name: 'cool-shadow-without-dot-observations', gains: [.63, .81, 1], observationLimit: 0 },
+  { name: 'cool-shadow-with-unobserved-triangle', gains: [.63, .81, 1], missingShadowObservations: true },
+  { name: 'neutral-shadow-with-faint-blue-ink', gains: [1, 1, 1], paleWriting: true }
 ];
 
 for (const definition of cases) test(`white paper and stronger writing survive ${definition.name}`, async ({ page }, testInfo) => {
@@ -17,14 +21,14 @@ for (const definition of cases) test(`white paper and stronger writing survive $
     const before = ScannerPaperContrastFixtures.measure(fixture.source, fixture);
     const original = fixture.source.toDataURL('image/png');
     const started = performance.now();
-    await ScannerPro.Lightweight.correctColors(fixture.source, {
+    const processing = await ScannerPro.Lightweight.correctColors(fixture.source, {
       useStencil: true, preciseStencil: true, dotObservations: fixture.dotObservations
     });
     const elapsedMs = performance.now() - started;
     const after = ScannerPaperContrastFixtures.measure(fixture.source, fixture);
     const cleaned = fixture.source.toDataURL('image/png');
-    return { before, after, elapsedMs, observedDots: fixture.dotObservations.length,
-      original, cleaned };
+    return { before, after, elapsedMs, observedDots: fixture.dotObservations.length, visibleDots: fixture.visibleDotCount,
+      illumination: processing?.illumination, outputQuality: processing?.outputQuality, original, cleaned };
   }, definition);
   for (const key of ['original', 'cleaned']) {
     const path = testInfo.outputPath(`${definition.name}-${key}.png`);
@@ -33,7 +37,9 @@ for (const definition of cases) test(`white paper and stronger writing survive $
     delete result[key];
   }
   console.log(definition.name, JSON.stringify(result));
-  expect(result.observedDots).toBeGreaterThan(1300);
+  if (Number.isInteger(definition.observationLimit)) expect(result.observedDots).toBe(definition.observationLimit);
+  else expect(result.observedDots).toBeGreaterThan(1300);
+  expect(result.visibleDots, 'dropping detections never removes printed pixels').toBe(1653);
   expect(result.observedDots, 'opaque drawing hides real bullet observations').toBeLessThan(1785);
   for (const [zone, paper] of Object.entries(result.after.paper)) {
     expect(paper.count, zone).toBeGreaterThan(30);
@@ -48,8 +54,16 @@ for (const definition of cases) test(`white paper and stronger writing survive $
   expect(shadedPencil.shadowEdge.contrast, 'the pencil continues across the shadow edge').toBeGreaterThan(30);
   expect(result.after.writing.faintPencil.contrast, 'faint writing is strengthened instead of bleached').toBeGreaterThan(38);
   expect(result.after.writing.punctuation.contrast, 'isolated punctuation survives stencil cleanup').toBeGreaterThan(60);
+  for (const name of ['pencil', 'faintPencil', 'blackPen', 'bluePen']) {
+    expect(result.before.writing[name].continuity.longestWhiteRun, `${name}: source is a continuous stroke`).toBe(0);
+    expect(result.after.writing[name].continuity.longestWhiteRun,
+      `${name}: removing photographed bullets must not cut through handwriting`).toBeLessThanOrEqual(1);
+  }
   expect(result.after.writing.blackPen.median).toBeLessThan(65);
-  expect(result.after.blueChroma, 'blue ink keeps its colour').toBeGreaterThan(70);
+  expect(result.after.blueChroma, 'blue ink keeps its colour').toBeGreaterThan(definition.paleWriting ? 25 : 70);
+  if (definition.paleWriting) {
+    expect(result.after.writing.bluePen.contrast, 'faint blue handwriting remains legible').toBeGreaterThan(55);
+  }
   expect(result.after.writing.grayDrawing.median, 'a gray filled drawing is ink, not a shadow').toBeLessThan(195);
   expect(result.after.writing.grayDrawing.median, 'a gray drawing is not crushed to black').toBeGreaterThan(60);
   expect(result.after.writing.charcoalDrawing.median).toBeLessThan(110);

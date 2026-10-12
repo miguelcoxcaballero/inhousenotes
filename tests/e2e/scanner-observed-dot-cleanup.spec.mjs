@@ -129,3 +129,100 @@ test('verified bullet centres survive nearby camera speckles without leaving a s
   expect(result.pencil).toBeLessThan(195);
   expect(result.punctuation).toBeLessThan(180);
 });
+
+test('soft photographed dots are removed across the whole page, including sites missing from geometry', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = 840; canvas.height = 1188;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+    const actual = [], observed = [];
+    context.filter = 'blur(1.4px)'; context.fillStyle = '#a8a8a8';
+    for (let row = 0; row < 51; row++) for (let col = 0; col < 35; col++) {
+      const x = (20 + col * 5) * 4 + 1.8 * Math.sin(row * .43 + col * .14);
+      const y = (19.3 + row * 5) * 4 + 1.5 * Math.cos(col * .39 + row * .17);
+      context.beginPath(); context.arc(x, y, 1.2 + .2 * Math.sin(row + col), 0, Math.PI * 2); context.fill();
+      const point = { x, y, row, col }; actual.push(point);
+      if ((row * 7 + col * 11) % 5) observed.push(point);
+    }
+    context.filter = 'none';
+    context.strokeStyle = '#c6c6c6'; context.lineWidth = 1.4;
+    context.beginPath(); context.moveTo(110, 579); context.lineTo(735, 579); context.stroke();
+    const punctuation = actual.find(point => point.row === 25 && point.col === 17);
+    context.fillStyle = '#a6a6a6'; context.beginPath();
+    context.arc(punctuation.x + 4, punctuation.y + 1, 1.1, 0, Math.PI * 2); context.fill();
+    const before = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const processed = await ScannerPro.Lightweight.correctColors(canvas, {
+      useStencil: true, preciseStencil: true, dotObservations: observed
+    });
+    const after = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    // Known handwriting regions are excluded, but NO sites are excluded for
+    // being unobserved, poorly registered or too faint for the detector.
+    const allCleanSites = actual.filter(point => point.row < 23 || point.row > 27);
+    const darkness = data => {
+      let sum = 0, count = 0;
+      for (const point of allCleanSites) for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) {
+        const at = ((Math.floor(point.y) + dy) * canvas.width + Math.floor(point.x) + dx) * 4;
+        sum += 255 - data[at]; count++;
+      }
+      return sum / count;
+    };
+    const darkest = (x, y) => {
+      let value = 255;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++)
+        value = Math.min(value, after[((Math.floor(y) + dy) * canvas.width + Math.floor(x) + dx) * 4]);
+      return value;
+    };
+    return { before: darkness(before), after: darkness(after), sites: allCleanSites.length,
+      observed: observed.length, cleanup: processed.stencilCleanup,
+      pencil: darkest(330, 579), punctuation: darkest(punctuation.x + 4, punctuation.y + 1) };
+  });
+  console.log('soft-grid cleanup', JSON.stringify(result));
+  expect(result.sites).toBeGreaterThan(result.observed);
+  expect(result.after, 'the photographed lattice cannot remain underneath the native template').toBeLessThan(result.before * .08);
+  expect(result.cleanup.isolatedRemoved).toBeGreaterThan(1300);
+  expect(result.pencil).toBeLessThan(215);
+  expect(result.punctuation).toBeLessThan(190);
+});
+
+test('a faint handwritten i-dot near a missing printed site is not mistaken for recovered print', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width = 840; canvas.height = 1188;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+    const marks = [180, 195, 210, 225, 235].map((tone, index) => ({ tone, row: 25, col: 10 + index * 3 }));
+    const observed = [];
+    context.filter = 'blur(1.4px)'; context.fillStyle = '#a8a8a8';
+    for (let row = 0; row < 51; row++) for (let col = 0; col < 35; col++) {
+      if (marks.some(mark => mark.row === row && mark.col === col)) continue;
+      const x = (20 + col * 5) * 4, y = (19.3 + row * 5) * 4;
+      context.beginPath(); context.arc(x, y, 1.2, 0, Math.PI * 2); context.fill();
+      observed.push({ x, y, row, col });
+    }
+    context.filter = 'none';
+    for (const mark of marks) {
+      mark.x = (20 + mark.col * 5) * 4 + 3; mark.y = (19.3 + mark.row * 5) * 4;
+      context.fillStyle = `rgb(${mark.tone}, ${mark.tone}, ${mark.tone})`;
+      context.beginPath(); context.arc(mark.x, mark.y, 1.1, 0, Math.PI * 2); context.fill();
+      context.fillRect(mark.x - .5, mark.y + 8, 1, 8);
+    }
+    const control = document.createElement('canvas'); control.width = canvas.width; control.height = canvas.height;
+    control.getContext('2d').drawImage(canvas, 0, 0);
+    await ScannerPro.Lightweight.correctColors(control, { useStencil: true, preciseStencil: true,
+      dotObservations: observed, skipStencilCleanup: true });
+    const processed = await ScannerPro.Lightweight.correctColors(canvas, {
+      useStencil: true, preciseStencil: true, dotObservations: observed
+    });
+    const darkest = (image, mark) => {
+      const pixels = image.getContext('2d').getImageData(Math.floor(mark.x) - 2, Math.floor(mark.y) - 2, 5, 5).data;
+      let minimum = 255;
+      for (let i = 0; i < pixels.length; i += 4) minimum = Math.min(minimum, pixels[i]);
+      return minimum;
+    };
+    return { marks: marks.map(mark => ({ tone: mark.tone, before: darkest(control, mark), after: darkest(canvas, mark) })),
+      cleanup: processed.stencilCleanup };
+  });
+  console.log('faint punctuation protection', JSON.stringify(result));
+  for (const mark of result.marks) {
+    expect(mark.after, `preserve the handwritten dot at pencil tone ${mark.tone}`).toBeLessThanOrEqual(mark.before + 3);
+  }
+});

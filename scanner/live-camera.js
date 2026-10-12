@@ -798,10 +798,10 @@
     const registration = diagnostics?.rasterRegistration || diagnostics?.registration;
     const registered = physical && !!surface.registration && registration?.anchors >= 350
       && Number.isFinite(registration.maximumAnchorError) && registration.maximumAnchorError < .01;
-    // Compare independently verified levels first: registered 3D, physical
-    // 3D, a planar correction, then an original. Raw focus cannot promote a
-    // photo whose interior geometry was never verified above one that was.
-    const tier = registered ? 3 : physical ? 2 : 1;
+    // Physical validation remains a prerequisite. Within verified photos,
+    // compare the cleaned output too: exact anchor interpolation alone says
+    // nothing about the grey shadows that survived colour correction.
+    const tier = physical ? 2 : 1;
     const geometry = physical
       ? 1 - .45 * bounded(diagnostics.rms / diagnostics.pitch / .14)
         - .25 * bounded(diagnostics.p99 / diagnostics.pitch / .4)
@@ -809,8 +809,14 @@
       : .55;
     const brightness = candidate.detection?.brightness;
     const exposure = Number.isFinite(brightness) ? 1 - bounded(Math.abs(brightness - 210) / 150) : .5;
-    return tier + .4 * geometry + .45 * focus / (focus + 1)
-      + .1 * bounded(candidate.analysis?.confidence) + .05 * exposure;
+    const quality = candidate.outputQuality;
+    const measuredPaper = quality?.paperSamples >= 100 && quality.confidence >= .5
+      && Number.isFinite(quality.paperResidualFraction) && quality.paperResidualFraction >= 0;
+    // Sampled paper excludes the dot cores and handwriting. An unknown
+    // measurement stays neutral; it is never advertised as spotless paper.
+    const cleanPaper = measuredPaper ? 1 - bounded(quality.paperResidualFraction / .08) : .5;
+    return tier + (registered ? .25 : 0) + .4 * cleanPaper + .17 * geometry
+      + .08 * focus / (focus + 1) + .03 * bounded(candidate.analysis?.confidence) + .02 * exposure;
   }
   async function reviewCandidates(token) {
     processingController?.abort();
@@ -854,6 +860,7 @@
         candidate.result = { blob: processed.blob, ...dimensions, name: 'Scanned page', corrected: !!processed.corrected,
           inkLayer: processed.inkLayer === true, templateKind: processed.templateKind };
         candidate.analysis = processed.detection;
+        candidate.outputQuality = processed.outputQuality;
         candidate.resultUrl = outputUrl;
         outputUrl = '';
       } catch (error) {

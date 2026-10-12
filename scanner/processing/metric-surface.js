@@ -1853,6 +1853,259 @@
       },
     };
   }
+  // Independently inspect photographed dots in the actual warped raster. A
+  // good yellow border alone cannot certify the interior of a curved page.
+  // This is a read-only alignment gate, not another source of warp anchors:
+  // small independent centroid jitter is tolerated, coherent regional bow is
+  // not. The regular-neighbour check distinguishes a printed dot pattern from
+  // freeform writing, for which this check is explicitly not applicable.
+  function certifyRaster(source, options = {}) {
+    const started = performance.now(),
+      scale = Math.min(1, 1100 / Math.max(source.width, source.height)),
+      width = Math.round(source.width * scale),
+      height = Math.round(source.height * scale),
+      scaleX = width / source.width,
+      scaleY = height / source.height;
+    let analysis = source;
+    if (scale < 1) {
+      analysis =
+        typeof OffscreenCanvas === "function"
+          ? new OffscreenCanvas(width, height)
+          : document.createElement("canvas");
+      analysis.width = width;
+      analysis.height = height;
+      analysis.getContext("2d").drawImage(source, 0, 0, width, height);
+    }
+    const image =
+        (scale === 1 && options.imageData) ||
+        analysis
+          .getContext("2d", { willReadFrequently: true })
+          .getImageData(0, 0, width, height),
+      data = image.data,
+      pitch = (width * 5) / W,
+      search = Math.max(2, Math.ceil(pitch * 0.55)),
+      radius = Math.max(2, Math.ceil(pitch * 0.18)),
+      candidates = [],
+      seen = new Map(),
+      tileCols = 5,
+      tileRows = 6;
+    const sample = (x, y) =>
+      (clamp(y, 0, height - 1) * width + clamp(x, 0, width - 1)) * 4;
+    for (let row = 0; row < 51; row++)
+      for (let col = 0; col < 35; col++) {
+        const u = (20 + col * 5) / W,
+          v = (19.3 + row * 5) / H,
+          tx = u * width,
+          ty = v * height,
+          cx = Math.round(tx - 0.5),
+          cy = Math.round(ty - 0.5),
+          background = [[], [], []];
+        for (let k = 0; k < 24; k++) {
+          const angle = (k * Math.PI) / 12,
+            at = sample(
+              Math.round(tx - 0.5 + Math.cos(angle) * pitch * 0.72),
+              Math.round(ty - 0.5 + Math.sin(angle) * pitch * 0.72),
+            );
+          for (let c = 0; c < 3; c++) background[c].push(data[at + c]);
+        }
+        const paper = background.map((values) => percentile(values, 0.65)),
+          paperLuma = paper[0] * 0.2126 + paper[1] * 0.7152 + paper[2] * 0.0722;
+        let peak = 0,
+          px = cx,
+          py = cy;
+        const darkness = (at) => {
+          const r = (paper[0] - data[at]) / Math.max(40, paper[0]),
+            g = (paper[1] - data[at + 1]) / Math.max(40, paper[1]),
+            b = (paper[2] - data[at + 2]) / Math.max(40, paper[2]),
+            low = Math.min(r, g, b),
+            high = Math.max(r, g, b);
+          return low >= high * 0.36 - 0.012 && high - low <= high * 0.56 + 0.016
+            ? Math.max(
+                0,
+                paperLuma -
+                  (data[at] * 0.2126 +
+                    data[at + 1] * 0.7152 +
+                    data[at + 2] * 0.0722),
+              )
+            : 0;
+        };
+        for (let y = cy - search; y <= cy + search; y++)
+          for (let x = cx - search; x <= cx + search; x++) {
+            const value = darkness(sample(x, y));
+            if (value > peak) {
+              peak = value;
+              px = x;
+              py = y;
+            }
+          }
+        if (peak < 5 || peak > paperLuma * 0.55) continue;
+        let mass = 0,
+          mx = 0,
+          my = 0,
+          mxx = 0,
+          myy = 0,
+          mxy = 0,
+          edge = 0;
+        const floor = Math.max(2, peak * 0.06);
+        for (let y = -radius; y <= radius; y++)
+          for (let x = -radius; x <= radius; x++) {
+            const distance = x * x + y * y;
+            if (distance > radius * radius) continue;
+            const weight = Math.max(0, darkness(sample(px + x, py + y)) - floor);
+            mass += weight;
+            mx += x * weight;
+            my += y * weight;
+            mxx += x * x * weight;
+            myy += y * y * weight;
+            mxy += x * y * weight;
+            if (distance > radius * radius * 0.64) edge += weight;
+          }
+        if (mass < peak * 1.2 || edge / mass > 0.3) continue;
+        const ox = mx / mass,
+          oy = my / mass,
+          vx = mxx / mass - ox * ox,
+          vy = myy / mass - oy * oy,
+          cov = mxy / mass - ox * oy,
+          large = (vx + vy + Math.hypot(vx - vy, 2 * cov)) / 2,
+          small = (vx + vy - Math.hypot(vx - vy, 2 * cov)) / 2;
+        if (large > Math.max(0.5, small) * 3.5 || large > radius * radius * 0.5)
+          continue;
+        const x = px + ox + 0.5,
+          y = py + oy + 0.5,
+          dx = x - tx,
+          dy = y - ty,
+          point = {
+            x,
+            y,
+            u,
+            v,
+            row,
+            col,
+            dx,
+            dy,
+            contrast: peak / paperLuma,
+            error: Math.hypot(dx, dy),
+          },
+          key =
+            Math.round(x / (pitch * 0.18)) + "," + Math.round(y / (pitch * 0.18)),
+          prior = seen.get(key);
+        if (!prior || prior.error > point.error) seen.set(key, point);
+      }
+    candidates.push(...seen.values());
+    const typical = median(candidates.map((point) => point.contrast)),
+      points = candidates.filter(
+        (point) => point.contrast <= Math.max(0.12, typical * 2.5),
+      ),
+      tiles = Array.from({ length: tileCols * tileRows }, () => []);
+    for (const point of points)
+      tiles[
+        Math.min(tileRows - 1, Math.floor((point.row / 51) * tileRows)) *
+          tileCols +
+          Math.min(tileCols - 1, Math.floor((point.col / 35) * tileCols))
+      ].push(point);
+    const buckets = new Map(),
+      bucketKey = (x, y) => `${x},${y}`;
+    points.forEach((point, index) => {
+      const key = bucketKey(
+        Math.floor(point.x / pitch),
+        Math.floor(point.y / pitch),
+      );
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(index);
+    });
+    let pairCount = 0,
+      regularPairs = 0;
+    points.forEach((point, index) => {
+      const cx = Math.floor(point.x / pitch),
+        cy = Math.floor(point.y / pitch);
+      for (let y = cy - 2; y <= cy + 2; y++)
+        for (let x = cx - 2; x <= cx + 2; x++) {
+          for (const otherIndex of buckets.get(bucketKey(x, y)) || []) {
+            if (otherIndex <= index) continue;
+            const other = points[otherIndex],
+              dx = Math.abs(other.x - point.x),
+              dy = Math.abs(other.y - point.y);
+            // Use physical neighbours rather than canonical cell identities:
+            // a half-period phase error must remain recognizable as a lattice.
+            for (const [along, across] of [
+              [dx, dy],
+              [dy, dx],
+            ]) {
+              if (
+                along > pitch * 0.55 &&
+                along < pitch * 1.45 &&
+                across < pitch * 0.75
+              ) {
+                pairCount++;
+                if (across < pitch * 0.35) regularPairs++;
+              }
+            }
+          }
+        }
+    });
+    const regularity = regularPairs / Math.max(1, pairCount),
+      supported = tiles.filter((points) => points.length >= 6),
+      coherent = supported.map((points) =>
+        Math.hypot(
+          median(points.map((p) => p.dx)),
+          median(points.map((p) => p.dy)),
+        ),
+      ),
+      errors = points.map((point) => point.error),
+      coherentP90 = coherent.length ? percentile(coherent, 0.9) : null,
+      p90 = errors.length ? percentile(errors, 0.9) : null,
+      p95 = errors.length ? percentile(errors, 0.95) : null,
+      misaligned =
+        points.filter((point) => point.error > pitch * 0.14).length /
+        Math.max(1, points.length),
+      evidence =
+        points.length >= 240 &&
+        supported.length >= 10 &&
+        pairCount >= 160 &&
+        regularity >= 0.6,
+      failed =
+        evidence &&
+        (coherentP90 > pitch * 0.06 || p90 > pitch * 0.16 || misaligned > 0.2),
+      status = !evidence ? "not-applicable" : failed ? "failed" : "verified";
+    const result = {
+      status,
+      reason: !evidence
+        ? "insufficient-visible-dot-pattern"
+        : failed
+          ? "photographed-dots-misaligned"
+          : "photographed-dots-aligned",
+      observations: points.length,
+      coverage: points.length / (35 * 51),
+      occupiedTiles: supported.length,
+      totalTiles: tiles.length,
+      regularPairs,
+      pairCount,
+      regularity,
+      pitch: pitch / scaleX,
+      p90Px: p90 === null ? null : p90 / scaleX,
+      p95Px: p95 === null ? null : p95 / scaleX,
+      coherentP90Px: coherentP90 === null ? null : coherentP90 / scaleX,
+      misalignedFraction: misaligned,
+      analysisWidth: width,
+      analysisHeight: height,
+      elapsedMs: performance.now() - started,
+      ...(options.includePoints
+        ? {
+            points: points.map((point) => ({
+              ...point,
+              x: point.x / scaleX,
+              y: point.y / scaleY,
+              dx: point.dx / scaleX,
+              dy: point.dy / scaleY,
+              error: Math.hypot(point.dx / scaleX, point.dy / scaleY),
+            })),
+          }
+        : {}),
+    };
+    if (analysis !== source) analysis.width = analysis.height = 0;
+    return result;
+  }
+
   const rasterCalibration = new WeakMap();
   function refineForRaster(source, surface, options = {}) {
     const prior = surface && rasterCalibration.get(surface), outputWidth = options.width, outputHeight = options.height,
@@ -1997,5 +2250,5 @@
     }
     return project(model, u, v);
   }
-  SP.MetricSurface = { fit, map, observe, refineForRaster };
+  SP.MetricSurface = { fit, map, observe, refineForRaster, certifyRaster };
 })();
