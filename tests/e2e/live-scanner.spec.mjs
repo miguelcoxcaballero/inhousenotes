@@ -212,6 +212,9 @@ test('denied camera permission offers image import and retry without trapping th
   });
   await expect(page.locator('#liveReview')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('#livePreview')).toBeVisible();
+  // The original image appears immediately while correction is still running.
+  // Wait for the controller's bounded review transition before testing Add.
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 20_000 });
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
 });
 

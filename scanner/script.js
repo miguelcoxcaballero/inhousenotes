@@ -1351,6 +1351,7 @@
         page.processedH = processed.height;
         page.yellowUsed = out.usedYellow;
         page.marker = out.marker;
+        page.original = out.original === true;
         page.status = "done";
         if (page.previewUrl) {
           URL.revokeObjectURL(page.previewUrl);
@@ -1621,6 +1622,21 @@
         method: opts.forceNoYellow ? "manual" : "stencil"
       }
       : await SP.Lightweight.detectPageAsync(srcCanvas);
+    if (detection.quality?.valid === false) {
+      // Rejected geometry must not choose another sheet or silently fall back
+      // to an unrelated frame. Keep independent pixels: the source canvas can
+      // be released/reloaded separately when the page is cropped or evicted.
+      const original = document.createElement("canvas");
+      original.width = srcCanvas.width;
+      original.height = srcCanvas.height;
+      original.getContext("2d").drawImage(srcCanvas, 0, 0);
+      return {
+        canvas: original,
+        pageQuad: [{ x: 0, y: 0 }, { x: original.width, y: 0 },
+          { x: original.width, y: original.height }, { x: 0, y: original.height }],
+        marker: null, usedYellow: false, original: true
+      };
+    }
     const usedYellow = !opts.forceNoYellow && detection.confidence > 0;
     const preciseStencil = usedYellow
       && (detection.method === "stencil" || detection.method === "marker-guided");
@@ -1750,7 +1766,7 @@
         thumbWrap.appendChild(spinner);
       }
       card.querySelector(".filename").textContent = p.name || "Untitled";
-      card.querySelector(".page-meta").textContent = `Page ${i + 1}`;
+      card.querySelector(".page-meta").textContent = `Page ${i + 1}${p.original ? " · Original photo" : ""}`;
       card.querySelector(".btn-del").setAttribute("aria-label", `Delete page ${i + 1}`);
 
       card.addEventListener("click", e => { if (!e.target.closest(".btn-del")) select(i); });
@@ -1927,7 +1943,7 @@
     }
   };
   const applyStencilPreview = async p => {
-    if (!p) return;
+    if (!p || p.original) return;
     const seq = ++stencilSeq;
     let srcCanvas = p.processed;
     let tmpCanvas = null;
@@ -1941,7 +1957,7 @@
     }
     if (!srcCanvas) return;
     if (seq !== stencilSeq) return;
-    if (!S.stencil || S.pages[S.i] !== p) { if (tmpCanvas) releaseCanvas(tmpCanvas); return; }
+    if (!S.stencil || p.original || S.pages[S.i] !== p) { if (tmpCanvas) releaseCanvas(tmpCanvas); return; }
     if (MEM.low) {
       E.stencil.width = srcCanvas.width;
       E.stencil.height = srcCanvas.height;
@@ -1966,7 +1982,7 @@
       sctx.drawImage(composite, 0, 0);
     }
     if (tmpCanvas) releaseCanvas(tmpCanvas);
-    if (seq !== stencilSeq || !S.stencil || S.pages[S.i] !== p) return;
+    if (seq !== stencilSeq || !S.stencil || p.original || S.pages[S.i] !== p) return;
     E.img.style.display = "none";
     E.stencil.style.display = "block";
   };
@@ -2329,7 +2345,7 @@
     if (S.i < 0 || S.crop) return;
     const p = S.pages[S.i];
     if (!p) return;
-    const keepAnimationUntilStencil = !!S.stencil
+    const keepAnimationUntilStencil = !!S.stencil && !p.original
       && (!p.status || p.status === "done")
       && E.processing.classList.contains("active");
     E.paper.style.display = "block";
@@ -2346,10 +2362,10 @@
       E.crop.style.display = "none";
       const ready = !p.status || p.status === "done";
       $("cropBtn").disabled = !ready;
-      $("stencilBtn").disabled = !ready;
-      $("stencilBtn").classList.toggle("active", !!S.stencil);
+      $("stencilBtn").disabled = !ready || p.original;
+      $("stencilBtn").classList.toggle("active", !!S.stencil && !p.original);
       E.stencil.style.display = "none";
-      if (S.stencil && ready) {
+      if (S.stencil && ready && !p.original) {
         const stencilReady = applyStencilPreview(p);
         if (keepAnimationUntilStencil) {
           Promise.resolve(stencilReady).finally(() => {
@@ -2360,7 +2376,8 @@
         clearProcessingAnimation();
       }
       fit();
-      stageOffImmediate();
+      if (p.original) stageOnImmediate("Original photo · page correction unavailable");
+      else stageOffImmediate();
       releaseStageUrl(p, true);
     if (MEM.low && !S.crop) dropCanvasesIfLowMem(p);
   }
@@ -2389,8 +2406,8 @@
     E.crop.style.display = "none";
     const ready = !p.status || p.status === "done";
     $("cropBtn").disabled = !ready;
-    $("stencilBtn").disabled = !ready;
-    $("stencilBtn").classList.toggle("active", !!S.stencil);
+    $("stencilBtn").disabled = !ready || p.original;
+    $("stencilBtn").classList.toggle("active", !!S.stencil && !p.original);
 
     if (!ready) {
       const stageSrc = p.stageUrl || p.previewUrl;
@@ -2436,11 +2453,12 @@
       }
 
       E.stencil.style.display = "none";
-      if (S.stencil) {
+      if (S.stencil && !p.original) {
         applyStencilPreview(p);
       }
       fit();
-      stageOffImmediate();
+      if (p.original) stageOnImmediate("Original photo · page correction unavailable");
+      else stageOffImmediate();
     trimCanvasCache(p.id);
     if (MEM.low && !S.crop) dropCanvasesIfLowMem(p);
     if (prev && prev.status === "done") releaseStageUrl(prev, true);
@@ -2517,6 +2535,7 @@
           p.processedH = processed.height;
           p.yellowUsed = out.usedYellow;
           p.marker = out.marker;
+          p.original = out.original === true;
           p.status = "done";
           processed = null;
 
@@ -2548,6 +2567,7 @@
   function toggleStencil() {
     if (S.i < 0 || S.crop) return;
     const p = S.pages[S.i];
+    if (p.original) return;
     if (p.status && p.status !== "done") {
       toast("Processing...");
       return;
@@ -2812,7 +2832,7 @@
         const page = S.pages[i];
         const decoded = await drawScannerPageImage(page, workCanvas, workContext);
         if (!decoded) throw new Error(`Page ${i + 1} could not be decoded`);
-        if (S.stencil) {
+        if (S.stencil && !page.original) {
           await applyStencilToContext(
             workContext,
             workCanvas.width,
@@ -2881,7 +2901,7 @@
         if (!ok) continue;
         if (exportedPages > 0) doc.addPage();
 
-        if (S.stencil) {
+        if (S.stencil && !p.original) {
           await applyStencilToContext(
             workContext,
             workCanvas.width,

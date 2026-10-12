@@ -12,7 +12,7 @@ const detect = context.window.ScannerPro.LiveDetection.detect;
 // exactly the same perspective, including pages rotated 90 and 180 degrees.
 function frame({ quad = [[100, 25], [348, 34], [375, 455], [73, 447]], yellow = true,
   markers = true, paper = true, background = [68, 78, 83], ink = [240, 219, 76], brightness = 1,
-  bowX = 0, bowY = 0, brokenRail = false, brokenCorner = false } = {}) {
+  bowX = 0, bowY = 0, brokenRail = false, brokenCorner = false, railJitter = 0, railPhase = 0 } = {}) {
   const width = 480, height = 480, data = new Uint8ClampedArray(width * height * 4);
   const [a, b, c, d] = quad;
   const ex = b[0] - a[0], ey = b[1] - a[1], fx = d[0] - a[0], fy = d[1] - a[1];
@@ -34,9 +34,11 @@ function frame({ quad = [[100, 25], [348, 34], [375, 455], [73, 447]], yellow = 
         colour = [244, 244, 240];
         const cmX = u * 21, cmY = v * 29.7;
         const line = .065;
-        if (yellow && (((Math.abs(cmX - 1.5) < line || Math.abs(cmX - 19.5) < line)
+        const railX = cmX + (v > .09 && v < .91 ? railJitter * Math.sin(cmY * 4 + railPhase) : 0);
+        const railY = cmY + (u > .13 && u < .87 ? railJitter * Math.sin(cmX * 6 + railPhase) : 0);
+        if (yellow && (((Math.abs(railX - 1.5) < line || Math.abs(railX - 19.5) < line)
           && cmY > 1.43 - line && cmY < 28.43 + line)
-          || ((Math.abs(cmY - 1.43) < line || Math.abs(cmY - 28.43) < line)
+          || ((Math.abs(railY - 1.43) < line || Math.abs(railY - 28.43) < line)
             && cmX > 1.5 - line && cmX < 19.5 + line))) colour = ink;
         if (yellow && markers && ((cmX >= 2 && cmX <= 10) || (cmX >= 11 && cmX <= 19))
           && (Math.abs(cmY - 27.43) < line || Math.abs(cmY - 27.93) < line
@@ -187,4 +189,24 @@ test('a previous seed follows a moving curved page without freezing its corners'
     assert.deepEqual(edge.at(-1), current.quad[(side + 1) % 4]);
   });
   assert.equal(detect(frame({ paper: false, background: [244, 244, 240] }), current), null);
+});
+
+test('small changes in noisy ink do not turn a bowed edge into many little folds', () => {
+  for (const railPhase of [0, 2.2]) {
+    const result = detect(frame({ bowX: 22, bowY: 12, railJitter: .14, railPhase }));
+    assert.equal(result?.source, 'yellow');
+    assert.ok(result.confidence >= .78);
+    const changes = result.frameEdges.flatMap(edge => edge.slice(1, -1).map((point, index) =>
+      Math.hypot(edge[index].x - 2 * point.x + edge[index + 2].x,
+        edge[index].y - 2 * point.y + edge[index + 2].y) * 480));
+    // The source has a smooth 22px bow plus ~2px sampling/ink perturbations.
+    // Those perturbations must not become sharp visible bends in the overlay.
+    assert.ok(Math.max(...changes) < .65, `local bend ${Math.max(...changes)}px`);
+    assert.ok(changes.reduce((sum, value) => sum + value, 0) / changes.length < .2);
+    const bow = result.frameEdges.map(edge => {
+      const a = edge[0], b = edge.at(-1), center = edge[Math.floor(edge.length / 2)];
+      return Math.abs((b.x - a.x) * (a.y - center.y) - (a.x - center.x) * (b.y - a.y)) / Math.hypot(b.x - a.x, b.y - a.y) * 480;
+    });
+    assert.ok(Math.max(...bow) > 12, 'keep the real broad paper curl');
+  }
 });

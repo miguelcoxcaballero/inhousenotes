@@ -27,6 +27,26 @@ test('still detection runs in a worker and cancellation leaves the camera respon
   expect(result.cancellation).toBe('AbortError');
 });
 
+test('a capture contour absent from the still image cannot certify a different crop', async ({ page }) => {
+  await page.addScriptTag({ url: '/tests/e2e/fixtures/scanner-physical.js' });
+  const result = await page.evaluate(async () => {
+    const source = ScannerPhysicalFixtures.render(ScannerPhysicalFixtures.CASES[0]).source;
+    const preview = document.createElement('canvas');
+    preview.width = 360; preview.height = Math.round(360 * source.height / source.width);
+    const context = preview.getContext('2d');
+    context.drawImage(source, 0, 0, preview.width, preview.height);
+    const seed = ScannerPro.LiveDetection.detect(context.getImageData(0, 0, preview.width, preview.height));
+    const good = await ScannerPro.Lightweight.detectPageAsync(source, { liveDetection: seed });
+    const misplaced = structuredClone(seed);
+    for (const point of misplaced.quad) point.x += .12;
+    for (const edge of misplaced.frameEdges) for (const point of edge) point.x += .12;
+    const bad = await ScannerPro.Lightweight.detectPageAsync(source, { liveDetection: misplaced });
+    return { good: good.quality, bad: bad.quality };
+  });
+  expect(result.good.valid).toBe(true);
+  expect(result.bad.valid, 'stale camera coordinates must fall back to the original photo').toBe(false);
+});
+
 test('surface resampling is cancellable between bands without completing a stale image', async ({ page }) => {
   const result = await page.evaluate(async () => {
     const source = document.createElement('canvas');
