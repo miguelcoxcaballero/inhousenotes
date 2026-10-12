@@ -969,20 +969,32 @@
       const position = sample / (sampleCount - 1);
       const localPoints = points.filter(point => Math.abs(point.u - position) <= window
         && point.v >= 0.86 && point.v <= 1.12);
+      const localV = new Float64Array(localPoints.length);
+      const localBits = new Uint32Array(localPoints.length);
+      const inBoxRail = new Uint8Array(localPoints.length);
+      for (let index = 0; index < localPoints.length; index += 1) {
+        const point = localPoints[index];
+        const bin = clamp(Math.floor((point.u - (position - window)) / (window * 2) * occupancyBins), 0, occupancyBins - 1);
+        localV[index] = point.v;
+        localBits[index] = 1 << bin;
+        inBoxRail[index] = railExistsAt(0, point.u) ? 1 : 0;
+      }
+      let boxAvailable = 0;
+      for (let bin = 0; bin < occupancyBins; bin += 1) {
+        const u = position - window + (bin + 0.5) / occupancyBins * window * 2;
+        if (railExistsAt(0, u)) boxAvailable += 1;
+      }
       const horizontalSupport = (target, rail) => {
-        const occupied = new Uint8Array(occupancyBins);
-        for (const point of localPoints) {
-          if (!railExistsAt(rail, point.u)) continue;
-          if (Math.abs(point.v - target) > ridgeTolerance) continue;
-          const bin = clamp(Math.floor((point.u - (position - window)) / (window * 2) * occupancyBins), 0, occupancyBins - 1);
-          occupied[bin] = 1;
+        // Twenty occupancy bins fit in one integer. Membership and the bin
+        // coordinates are invariant across the 255 trial rail positions.
+        let occupied = 0;
+        for (let index = 0; index < localV.length; index += 1) {
+          if (rail !== 2 && !inBoxRail[index]) continue;
+          if (Math.abs(localV[index] - target) <= ridgeTolerance) occupied |= localBits[index];
         }
-        let available = 0;
-        for (let bin = 0; bin < occupancyBins; bin += 1) {
-          const u = position - window + (bin + 0.5) / occupancyBins * window * 2;
-          if (railExistsAt(rail, u)) available += 1;
-        }
-        const count = occupied.reduce((sum, value) => sum + value, 0);
+        let count = 0;
+        while (occupied) { occupied &= occupied - 1; count += 1; }
+        const available = rail === 2 ? occupancyBins : boxAvailable;
         return { count, available, ratio: count / Math.max(1, available) };
       };
       let best = null;
@@ -1856,6 +1868,25 @@
       dependent[index] = points[index][dependentKey];
       strengths[index] = Math.min(3, points[index].strength || 1);
     }
+    // Points arrive in image-scan order. Most contiguous blocks lie well
+    // outside a particular line's tolerance; their bounding box can reject
+    // that hypothesis without visiting every point. Surviving points retain
+    // their original order and the exact residual/weight calculations.
+    const blockSize = 32;
+    const blockCount = Math.ceil(points.length / blockSize);
+    const bounds = new Float64Array(blockCount * 4);
+    for (let block = 0; block < blockCount; block += 1) {
+      let minimumX = Infinity, maximumX = -Infinity;
+      let minimumY = Infinity, maximumY = -Infinity;
+      const end = Math.min(points.length, (block + 1) * blockSize);
+      for (let index = block * blockSize; index < end; index += 1) {
+        minimumX = Math.min(minimumX, independent[index]);
+        maximumX = Math.max(maximumX, independent[index]);
+        minimumY = Math.min(minimumY, dependent[index]);
+        maximumY = Math.max(maximumY, dependent[index]);
+      }
+      bounds.set([minimumX, maximumX, minimumY, maximumY], block * 4);
+    }
     const inlierIndices = new Uint32Array(points.length);
     const occupied = new Uint8Array(120);
     const continuityWeight = clamp(options.continuityWeight || 0, 0, 0.95);
@@ -1891,13 +1922,23 @@
       let weightedSupport = 0;
       let minimum = Infinity;
       let maximum = -Infinity;
-      for (let index = 0; index < points.length; index += 1) {
-        const coordinate = independent[index];
-        if (Math.abs(dependent[index] - (a * coordinate + b)) > options.tolerance) continue;
-        inlierIndices[inlierCount++] = index;
-        weightedSupport += strengths[index];
-        minimum = Math.min(minimum, coordinate);
-        maximum = Math.max(maximum, coordinate);
+      for (let block = 0; block < blockCount; block += 1) {
+        const bound = block * 4;
+        const low = a * bounds[bound + (a < 0 ? 1 : 0)] + b;
+        const high = a * bounds[bound + (a < 0 ? 0 : 1)] + b;
+        // A tiny guard only admits extra work at floating-point boundaries;
+        // it never discards an inlier accepted by the original residual test.
+        if (bounds[bound + 2] - high > options.tolerance + 1e-12
+          || low - bounds[bound + 3] > options.tolerance + 1e-12) continue;
+        const end = Math.min(points.length, (block + 1) * blockSize);
+        for (let index = block * blockSize; index < end; index += 1) {
+          const coordinate = independent[index];
+          if (Math.abs(dependent[index] - (a * coordinate + b)) > options.tolerance) continue;
+          inlierIndices[inlierCount++] = index;
+          weightedSupport += strengths[index];
+          minimum = Math.min(minimum, coordinate);
+          maximum = Math.max(maximum, coordinate);
+        }
       }
       const span = maximum - minimum;
       if (span < options.minimumSpan || inlierCount < 12) continue;
@@ -3336,7 +3377,13 @@
       }
     }
     if (detection.quality?.valid && detection.frame && SP.MetricSurface?.fit) {
-      const surface = SP.MetricSurface.fit(source, detection, { budgetMs: options.surfaceBudgetMs });
+      const surface = SP.MetricSurface.fit(source, detection, {
+        budgetMs: options.surfaceBudgetMs,
+        onObservations: detail => {
+          options.onProgress?.("dots", { ...detail, space: "source" });
+          options.onProgress?.("surface", { fitting: true });
+        }
+      });
       if (surface) detection.frame.metricSurface = surface;
     }
     return detection;
@@ -3376,14 +3423,19 @@
       const unavailable = () => finish(resolve, fallback());
       try {
         worker = new Worker(workerUrl);
-        worker.onmessage = event => event.data.error
-          ? finish(reject, new Error(event.data.error))
-          : finish(resolve, event.data.detection);
+        worker.onmessage = event => {
+          if (settled) return;
+          const data = event.data;
+          if (data.progress) { options.onProgress?.(data.progress, data.detail); return; }
+          if (data.error) finish(reject, new Error(data.error));
+          else finish(resolve, data.detection);
+        };
         worker.onerror = unavailable;
         options.signal?.addEventListener("abort", abort, { once: true });
         timer = setTimeout(() => finish(reject, new Error("Page analysis took too long. Try another frame.")),
           Math.max(1000, Math.min(60000, options.timeoutMs || 20000)));
-        worker.postMessage({ bitmap, config: SP.Config || {}, liveDetection: options.liveDetection || null }, [bitmap]);
+        worker.postMessage({ bitmap, config: SP.Config || {}, liveDetection: options.liveDetection || null,
+          reportProgress: !!options.onProgress, surfaceBudgetMs: options.surfaceBudgetMs }, [bitmap]);
       } catch (_) {
         bitmap.close();
         unavailable();
@@ -3432,11 +3484,80 @@
     });
   }
 
+  function warpedObservations(observed, mesh, width, height) {
+    if (!observed?.points?.length || !mesh) return null;
+    const { us, vs, grid } = mesh;
+    const cellAt = (values, at) => {
+      let lo = 0, hi = values.length - 1;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (at < values[mid]) hi = mid; else lo = mid;
+      }
+      return Math.min(values.length - 2, lo);
+    };
+    const points = [], indices = new Map();
+    observed.points.forEach((point, index) => {
+      let u = point.u, v = point.v, error = Infinity;
+      // Invert the exact bilinear cells that sampled the photograph, rather
+      // than snapping the detected dots to their ideal template positions.
+      for (let iteration = 0; iteration < 7; iteration++) {
+        const column = cellAt(us, u), row = cellAt(vs, v);
+        const du = us[column + 1] - us[column], dv = vs[row + 1] - vs[row];
+        const s = (u - us[column]) / du, t = (v - vs[row]) / dv;
+        const a = grid[row][column], b = grid[row][column + 1];
+        const c = grid[row + 1][column], d = grid[row + 1][column + 1];
+        const x = (a.x * (1 - s) + b.x * s) * (1 - t) + (c.x * (1 - s) + d.x * s) * t;
+        const y = (a.y * (1 - s) + b.y * s) * (1 - t) + (c.y * (1 - s) + d.y * s) * t;
+        const ex = x - point.x, ey = y - point.y;
+        error = Math.hypot(ex, ey);
+        if (error < .01) break;
+        const xu = ((b.x - a.x) * (1 - t) + (d.x - c.x) * t) / du;
+        const yu = ((b.y - a.y) * (1 - t) + (d.y - c.y) * t) / du;
+        const xv = ((c.x - a.x) * (1 - s) + (d.x - b.x) * s) / dv;
+        const yv = ((c.y - a.y) * (1 - s) + (d.y - b.y) * s) / dv;
+        const determinant = xu * yv - xv * yu;
+        if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-8) break;
+        u = clamp(u - (ex * yv - ey * xv) / determinant, 0, 1);
+        v = clamp(v - (ey * xu - ex * yu) / determinant, 0, 1);
+      }
+      // Uninvertible observations are omitted, never fabricated. Line runs
+      // below split at those gaps instead of drawing across missing evidence.
+      if (!Number.isFinite(u + v) || error > .1) return;
+      indices.set(index, points.length);
+      points.push({ ...point, x: u * width, y: v * height,
+        targetX: point.u * width, targetY: point.v * height });
+    });
+    const remapRuns = runs => (runs || []).flatMap(run => {
+      const result = []; let group = [];
+      for (const index of run.points) {
+        if (indices.has(index)) group.push(indices.get(index));
+        else { if (group.length > 1) result.push({ index: run.index, points: group }); group = []; }
+      }
+      if (group.length > 1) result.push({ index: run.index, points: group });
+      return result;
+    });
+    return { width, height, pitch: width * 5 / 210, space: "corrected", points,
+      rows: remapRuns(observed.rows), columns: remapRuns(observed.columns) };
+  }
+
+  async function scanPreviewBlob(output, options) {
+    const preview = createScaledCanvas(output, 720).canvas;
+    try {
+      checkProcessingCancelled(options);
+      return typeof preview.convertToBlob === "function"
+        ? await preview.convertToBlob({ type: "image/jpeg", quality: .9 })
+        : await new Promise((resolve, reject) => preview.toBlob(value => value?.size
+          ? resolve(value) : reject(new Error("Could not preview this scan")), "image/jpeg", .9));
+    } finally { preview.width = preview.height = 0; }
+  }
+
   async function processScanBlob(blob, options) {
     const started = performance.now();
-    const timings = { worker: processingWorker, decodeMs: 0, detectionMs: 0, warpMs: 0, colorMs: 0, encodeMs: 0 };
-    let decoded, source, output;
-    const progress = stage => { checkProcessingCancelled(options); options.onProgress?.(stage); };
+    const timings = { worker: processingWorker, decodeMs: 0, detectionMs: 0, warpMs: 0,
+      previewMs: 0, colorMs: 0, templateMs: 0, encodeMs: 0 };
+    let decoded, source, output, observed, mesh;
+    let templateApplied = false, stencilCleanup;
+    const progress = (stage, detail) => { checkProcessingCancelled(options); options.onProgress?.(stage, detail); };
     try {
       progress("decoding");
       decoded = await decodeScanBlob(blob, options);
@@ -3456,7 +3577,11 @@
         // A three-photo burst can share one CPU core. Preserve the same
         // available fitting work per photograph instead of dropping its 3D
         // surface simply because two other workers used the wall clock.
-        surfaceBudgetMs: processingWorker ? 7800 : undefined
+        surfaceBudgetMs: processingWorker ? 7800 : undefined,
+        onProgress(stage, detail) {
+          if (stage === "dots") observed = detail;
+          progress(stage, detail);
+        }
       });
       timings.detectionMs = performance.now() - detectionStarted;
       checkProcessingCancelled(options);
@@ -3466,20 +3591,44 @@
       }));
       if (detection.quality?.valid === false || !quad) {
         timings.totalMs = performance.now() - started;
-        return { blob, width, height, corrected: false, detection, timings,
+        return { blob, width, height, corrected: false, templateApplied, detection, timings,
           failureReason: detection.quality?.reason || "Page edges could not be verified" };
       }
+      progress("surface", { verified: !!detection.frame?.metricSurface,
+        diagnostics: detection.frame?.metricSurface?.diagnostics });
       progress("warp");
       const warpStarted = performance.now();
       output = await Light.warp(source, quad, precise ? detection.frame : null,
-        { signal: options.signal, maxDimension: options.maxDimension });
+        { signal: options.signal, maxDimension: options.maxDimension, onMesh: value => { mesh = value; } });
       timings.warpMs = performance.now() - warpStarted;
       source.width = source.height = 0; source = null;
+      const previewStarted = performance.now();
+      const correctedDots = warpedObservations(observed, mesh, output.width, output.height);
+      mesh = null;
+      if (options.previewProgress && options.onProgress) {
+        try {
+          const previewBlob = await scanPreviewBlob(output, options);
+          progress("warp", { ...correctedDots, width: output.width, height: output.height,
+            space: "corrected", previewBlob });
+        } catch (_) {
+          // Diagnostic thumbnails are optional. A preview encoder failure
+          // must not discard a valid full-resolution correction.
+          checkProcessingCancelled(options);
+        }
+      }
+      timings.previewMs = performance.now() - previewStarted;
       if (precise) {
         progress("colors");
         const colorsStarted = performance.now();
-        await Light.correctColors(output, { useStencil: true, preciseStencil: true, signal: options.signal });
+        const colors = await Light.correctColors(output, { useStencil: true, preciseStencil: true,
+          dotObservations: correctedDots?.points, signal: options.signal });
+        stencilCleanup = colors?.stencilCleanup;
         timings.colorMs = performance.now() - colorsStarted;
+        progress("template");
+        const templateStarted = performance.now();
+        SP.ScanTemplate.render(output.getContext("2d"), output.width, output.height);
+        templateApplied = true;
+        timings.templateMs = performance.now() - templateStarted;
       }
       progress("encoding");
       const encodeStarted = performance.now();
@@ -3497,7 +3646,8 @@
       decoded.close?.(); decoded = null;
       timings.encodeMs = performance.now() - encodeStarted;
       timings.totalMs = performance.now() - started;
-      return { blob: encoded, width: output.width, height: output.height, corrected: true, detection, timings };
+      return { blob: encoded, width: output.width, height: output.height, corrected: true,
+        templateApplied, stencilCleanup, detection, timings };
     } finally {
       decoded?.close?.();
       if (source) source.width = source.height = 0;
@@ -3539,7 +3689,7 @@
         worker.onmessage = event => {
           if (settled || fallbackStarted) return;
           const data = event.data;
-          if (data.progress) { options.onProgress?.(data.progress); return; }
+          if (data.progress) { options.onProgress?.(data.progress, data.detail); return; }
           if (data.unsupported || data.needsImageDecoder) { fallback(); return; }
           if (data.error) {
             const error = new Error(data.error); error.name = data.name || "Error";
@@ -3549,7 +3699,7 @@
         worker.onerror = fallback;
         worker.postMessage({ operation: "process", blob, config: SP.Config || {},
           liveDetection: options.liveDetection || null, maxDimension: options.maxDimension,
-          timeoutMs: options.timeoutMs });
+          timeoutMs: options.timeoutMs, previewProgress: options.previewProgress === true });
       } catch (_) { fallback(); }
     });
   };
@@ -3608,6 +3758,7 @@
     const us = fractions(columns, curved ? [1.5 / 21, 19.5 / 21] : []);
     const vs = fractions(rows, curved ? [1.43 / 29.7, 27.43 / 29.7, 27.93 / 29.7, 28.43 / 29.7] : []);
     const grid = vs.map(v => us.map(u => map(u, v)));
+    options.onMesh?.({ us, vs, grid });
     const orientation = Math.sign(polygonArea(pageQuad));
     const cross = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
     for (let row = 0; row < vs.length - 1; row += 1) {
@@ -3926,17 +4077,18 @@
       const minimum = Math.min(r, g, b);
       return {
         luminance: r * 0.2126 + g * 0.7152 + b * 0.0722,
-        saturation: maximum ? (maximum - minimum) / maximum : 0,
-        yellow: isYellow(r, g, b),
-        printedWarm: r >= g * 0.9 && g >= b * 1.08 && r >= b * 1.18
+        saturation: maximum ? (maximum - minimum) / maximum : 0
       };
     };
     const removePrintedInk = (x, y, force = false) => {
+      if (force) { setPaper(x, y); return; }
+      const offset = (y * width + x) * 4;
+      const r = data[offset], g = data[offset + 1], b = data[offset + 2];
       const metrics = metricsAt(x, y);
       // Outer rails and marker wells contain no user content and can be
       // cleared unconditionally. In the footer boxes preserve very dark or
       // chromatic handwriting while removing yellow and neutral print residue.
-      if (force || metrics.yellow || metrics.printedWarm
+      if (isYellow(r, g, b) || (r >= g * 0.9 && g >= b * 1.08 && r >= b * 1.18)
         || (metrics.saturation <= 0.19 && metrics.luminance >= 72 && metrics.luminance < 246)) {
         setPaper(x, y);
       }
@@ -4003,16 +4155,18 @@
       [Math.SQRT1_2, Math.SQRT1_2], [-Math.SQRT1_2, Math.SQRT1_2],
       [Math.SQRT1_2, -Math.SQRT1_2], [-Math.SQRT1_2, -Math.SQRT1_2]
     ];
+    const ringOffsets = ringDirections.map(([ux, uy]) => [
+      Math.round(ux * ringRadius), Math.round(uy * ringRadius)
+    ]);
+    const strokeOffsets = [[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2], [Math.SQRT1_2, -Math.SQRT1_2]]
+      .map(([ux, uy]) => [Math.round(ux * strokeContinuityRadius), Math.round(uy * strokeContinuityRadius)]);
     const dotResponseAt = (x, y, minimumSupports = ringDirections.length) => {
       const center = metricsAt(x, y);
       if (center.saturation > 0.38 || center.luminance < 105 || center.luminance > 238) return null;
       let ringSum = 0;
       let supports = 0;
-      for (const [ux, uy] of ringDirections) {
-        const ring = metricsAt(
-          Math.round(x + ux * ringRadius),
-          Math.round(y + uy * ringRadius)
-        );
+      for (const [dx, dy] of ringOffsets) {
+        const ring = metricsAt(x + dx, y + dy);
         // A continuous stroke necessarily remains dark in at least one radial
         // direction. A printed circular dot is surrounded by lighter paper in
         // all eight directions.
@@ -4038,75 +4192,151 @@
       }
       return { matches, contrast };
     };
-    const nominalPhase = scorePhase(0, 0);
-    let bestPhase = { x: 0, y: 0, ...nominalPhase };
-    for (let yStep = -10; yStep <= 10; yStep += 1) {
-      checkProcessingCancelled(settings);
-      await yieldToBrowser();
-      for (let xStep = -10; xStep <= 10; xStep += 1) {
-        const x = xStep * 0.02, y = yStep * 0.02;
-        const score = scorePhase(x, y);
-        if (score.matches > bestPhase.matches
-          || (score.matches === bestPhase.matches && score.contrast > bestPhase.contrast)) {
-          bestPhase = { x, y, ...score };
-        }
-      }
-    }
-    // Sparse synthetic/mostly-written pages do not contain enough template
-    // evidence to justify moving the lattice away from its canonical phase.
-    const gridPhase = bestPhase.matches >= nominalPhase.matches + 5
-      ? bestPhase
-      : { x: 0, y: 0 };
-    // Residual perspective and real paper curl move the printed lattice by a
-    // few pixels across the page. One global phase smears the learned glyph
-    // over many locations and leaves most photographed dots untouched. Track
-    // a phase only where a whole block supplies repeated isolated marks.
     const centres = new Array(35 * 51);
-    for (let blockColumn = 0; blockColumn < 35; blockColumn += 7) {
-      for (let blockRow = 0; blockRow < 51; blockRow += 9) {
-        checkProcessingCancelled(settings);
-        await yieldToBrowser();
-        const endColumn = Math.min(35, blockColumn + 7);
-        const endRow = Math.min(51, blockRow + 9);
-        let best = { x: gridPhase.x, y: gridPhase.y, matches: 0, contrast: 0 };
-        for (let yStep = -5; yStep <= 5; yStep += 1) {
-          for (let xStep = -5; xStep <= 5; xStep += 1) {
-            const xPhase = gridPhase.x + xStep * 0.04;
-            const yPhase = gridPhase.y + yStep * 0.04;
-            let matches = 0, contrast = 0;
-            for (let column = blockColumn; column < endColumn; column += 1) {
-              for (let row = blockRow; row < endRow; row += 1) {
-                const response = dotResponseAt(
-                  Math.round((2 + column * 0.5 + xPhase) * pxPerCm),
-                  Math.round((1.93 + row * 0.5 + yPhase) * pxPerCm), 6);
-                if (response) { matches += 1; contrast += Math.min(30, response.contrast); }
-              }
-            }
-            if (matches > best.matches || matches === best.matches && contrast > best.contrast) {
-              best = { x: xPhase, y: yPhase, matches, contrast };
+    const measuredCentres = new Array(35 * 51);
+    const measuredColumns = new Set(), measuredRows = new Set();
+    let measuredCount = 0, confirmedCount = 0;
+    const observed = settings.dotObservations;
+    if (Array.isArray(observed) && observed.length >= 600 && observed.length <= 3000) {
+      for (const point of observed) {
+        const column = point.col ?? point.column;
+        const row = point.row;
+        if (!Number.isInteger(column) || !Number.isInteger(row)
+          || column < 0 || column >= 35 || row < 0 || row >= 51
+          || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+        const index = column * 51 + row;
+        if (measuredCentres[index]) continue;
+        const nominalX = (2 + column * 0.5) * pxPerCm;
+        const nominalY = (1.93 + row * 0.5) * pxPerCm;
+        // Inverse-mapped observations belong to this physical lattice cell.
+        // Refuse phase-swapped or stale source-image coordinates.
+        if (Math.abs(point.x - nominalX) > pxPerCm * 0.24
+          || Math.abs(point.y - nominalY) > pxPerCm * 0.24) continue;
+        let cx = Math.round(point.x), cy = Math.round(point.y), best = null;
+        for (let dy = -2; dy <= 2; dy += 1) {
+          for (let dx = -2; dx <= 2; dx += 1) {
+            const response = dotResponseAt(cx + dx, cy + dy, 6);
+            if (response && (!best || response.contrast > best.contrast)) {
+              best = { x: cx + dx, y: cy + dy, contrast: response.contrast };
             }
           }
         }
-        const reliable = best.matches >= Math.max(8, (endColumn - blockColumn) * (endRow - blockRow) * 0.22);
-        const phase = reliable ? best : gridPhase;
-        for (let column = blockColumn; column < endColumn; column += 1) {
-          for (let row = blockRow; row < endRow; row += 1) {
-            let cx = Math.round((2 + column * 0.5 + phase.x) * pxPerCm);
-            let cy = Math.round((1.93 + row * 0.5 + phase.y) * pxPerCm);
-            if (reliable) {
-              let localBest = null;
-              const search = Math.max(2, Math.round(pxPerCm * 0.04));
-              for (let dy = -search; dy <= search; dy += 1) {
-                for (let dx = -search; dx <= search; dx += 1) {
-                  const response = dotResponseAt(cx + dx, cy + dy, 6);
-                  if (response && (!localBest || response.contrast > localBest.contrast)) {
-                    localBest = { x: cx + dx, y: cy + dy, contrast: response.contrast };
-                  }
+        if (best) { cx = best.x; cy = best.y; confirmedCount += 1; }
+        measuredCentres[index] = { x: cx, y: cy, dx: cx - nominalX, dy: cy - nominalY };
+        measuredCount += 1;
+        measuredColumns.add(column); measuredRows.add(row);
+        if (measuredCount % 128 === 0) {
+          checkProcessingCancelled(settings);
+          await yieldToBrowser();
+        }
+      }
+    }
+    const useObservedCentres = measuredCount >= 600
+      && measuredColumns.size >= 25 && measuredRows.size >= 36
+      && confirmedCount >= Math.min(180, measuredCount * 0.18);
+    if (useObservedCentres) {
+      // Geometry already found these actual ink dots in the source photo.
+      // Their inverse-warped positions avoid searching the whole lattice
+      // again, and retain local displacement that one global phase misses.
+      const measured = measuredCentres.filter(Boolean);
+      const globalDX = medianNumber(measured.map(point => point.dx));
+      const globalDY = medianNumber(measured.map(point => point.dy));
+      for (let column = 0; column < 35; column += 1) {
+        checkProcessingCancelled(settings);
+        if (column % 7 === 0) await yieldToBrowser();
+        for (let row = 0; row < 51; row += 1) {
+          const index = column * 51 + row;
+          if (measuredCentres[index]) { centres[index] = measuredCentres[index]; continue; }
+          let weight = 0, sumX = 0, sumY = 0;
+          // A mark hidden by writing is not a new observation. Continue only
+          // the smooth displacement of its observed neighbours; the shared
+          // glyph subtraction below still protects uncommon ink and strokes.
+          for (let dc = -4; dc <= 4; dc += 1) {
+            if (column + dc < 0 || column + dc >= 35) continue;
+            for (let dr = -4; dr <= 4; dr += 1) {
+              if (row + dr < 0 || row + dr >= 51) continue;
+              const nearby = measuredCentres[(column + dc) * 51 + row + dr];
+              if (!nearby) continue;
+              const amount = 1 / (0.5 + dc * dc + dr * dr);
+              weight += amount; sumX += nearby.dx * amount; sumY += nearby.dy * amount;
+            }
+          }
+          centres[index] = {
+            x: Math.round((2 + column * 0.5) * pxPerCm + (weight ? sumX / weight : globalDX)),
+            y: Math.round((1.93 + row * 0.5) * pxPerCm + (weight ? sumY / weight : globalDY))
+          };
+        }
+      }
+    } else {
+      const nominalPhase = scorePhase(0, 0);
+      let bestPhase = { x: 0, y: 0, ...nominalPhase };
+      for (let yStep = -10; yStep <= 10; yStep += 1) {
+        checkProcessingCancelled(settings);
+        await yieldToBrowser();
+        for (let xStep = -10; xStep <= 10; xStep += 1) {
+          const x = xStep * 0.02, y = yStep * 0.02;
+          const score = scorePhase(x, y);
+          if (score.matches > bestPhase.matches
+            || (score.matches === bestPhase.matches && score.contrast > bestPhase.contrast)) {
+            bestPhase = { x, y, ...score };
+          }
+        }
+      }
+      // Sparse synthetic/mostly-written pages do not contain enough template
+      // evidence to justify moving the lattice away from its canonical phase.
+      const gridPhase = bestPhase.matches >= nominalPhase.matches + 5
+        ? bestPhase
+        : { x: 0, y: 0 };
+      // Residual perspective and real paper curl move the printed lattice by a
+      // few pixels across the page. One global phase smears the learned glyph
+      // over many locations and leaves most photographed dots untouched. Track
+      // a phase only where a whole block supplies repeated isolated marks.
+      for (let blockColumn = 0; blockColumn < 35; blockColumn += 7) {
+        for (let blockRow = 0; blockRow < 51; blockRow += 9) {
+          checkProcessingCancelled(settings);
+          await yieldToBrowser();
+          const endColumn = Math.min(35, blockColumn + 7);
+          const endRow = Math.min(51, blockRow + 9);
+          let best = { x: gridPhase.x, y: gridPhase.y, matches: 0, contrast: 0 };
+          for (let yStep = -5; yStep <= 5; yStep += 1) {
+            for (let xStep = -5; xStep <= 5; xStep += 1) {
+              const xPhase = gridPhase.x + xStep * 0.04;
+              const yPhase = gridPhase.y + yStep * 0.04;
+              let matches = 0, contrast = 0;
+              for (let column = blockColumn; column < endColumn; column += 1) {
+                for (let row = blockRow; row < endRow; row += 1) {
+                  const response = dotResponseAt(
+                    Math.round((2 + column * 0.5 + xPhase) * pxPerCm),
+                    Math.round((1.93 + row * 0.5 + yPhase) * pxPerCm), 6);
+                  if (response) { matches += 1; contrast += Math.min(30, response.contrast); }
                 }
               }
-              if (localBest) { cx = localBest.x; cy = localBest.y; }
+              if (matches > best.matches || matches === best.matches && contrast > best.contrast) {
+                best = { x: xPhase, y: yPhase, matches, contrast };
+              }
             }
-            centres[column * 51 + row] = { x: cx, y: cy };
+          }
+          const reliable = best.matches >= Math.max(8, (endColumn - blockColumn) * (endRow - blockRow) * 0.22);
+          const phase = reliable ? best : gridPhase;
+          for (let column = blockColumn; column < endColumn; column += 1) {
+            for (let row = blockRow; row < endRow; row += 1) {
+              let cx = Math.round((2 + column * 0.5 + phase.x) * pxPerCm);
+              let cy = Math.round((1.93 + row * 0.5 + phase.y) * pxPerCm);
+              if (reliable) {
+                let localBest = null;
+                const search = Math.max(2, Math.round(pxPerCm * 0.04));
+                for (let dy = -search; dy <= search; dy += 1) {
+                  for (let dx = -search; dx <= search; dx += 1) {
+                    const response = dotResponseAt(cx + dx, cy + dy, 6);
+                    if (response && (!localBest || response.contrast > localBest.contrast)) {
+                      localBest = { x: cx + dx, y: cy + dy, contrast: response.contrast };
+                    }
+                  }
+                }
+                if (localBest) { cx = localBest.x; cy = localBest.y; }
+              }
+              centres[column * 51 + row] = { x: cx, y: cy };
+            }
           }
         }
       }
@@ -4118,6 +4348,16 @@
     const glyphRadius = Math.max(4, Math.ceil(0.22 * pxPerCm));
     const glyphSide = glyphRadius * 2 + 1;
     const glyphPixels = glyphSide * glyphSide;
+    // The same disk is sampled in all 1,785 cells. Build its integer support
+    // once rather than recomputing a square root for every photographed dot.
+    const glyphOffsets = [];
+    for (let dy = -glyphRadius; dy <= glyphRadius; dy += 1) {
+      for (let dx = -glyphRadius; dx <= glyphRadius; dx += 1) {
+        if (Math.hypot(dx, dy) <= glyphRadius) glyphOffsets.push({
+          dx, dy, index: (dy + glyphRadius) * glyphSide + dx + glyphRadius
+        });
+      }
+    }
     const glyphHistograms = new Uint16Array(glyphPixels * 256);
     const glyphCounts = new Uint16Array(glyphPixels);
     for (let column = 0; column < 35; column += 1) {
@@ -4125,16 +4365,12 @@
       await yieldToBrowser();
       for (let row = 0; row < 51; row += 1) {
         const { x: cx, y: cy } = centres[column * 51 + row];
-        for (let dy = -glyphRadius; dy <= glyphRadius; dy += 1) {
-          for (let dx = -glyphRadius; dx <= glyphRadius; dx += 1) {
-            if (Math.hypot(dx, dy) > glyphRadius) continue;
-            const metrics = metricsAt(cx + dx, cy + dy);
-            if (metrics.saturation > 0.48) continue;
-            const glyphIndex = (dy + glyphRadius) * glyphSide + dx + glyphRadius;
-            const luminance = clamp(Math.round(metrics.luminance), 0, 255);
-            glyphHistograms[glyphIndex * 256 + luminance] += 1;
-            glyphCounts[glyphIndex] += 1;
-          }
+        for (const { dx, dy, index: glyphIndex } of glyphOffsets) {
+          const metrics = metricsAt(cx + dx, cy + dy);
+          if (metrics.saturation > 0.48) continue;
+          const luminance = clamp(Math.round(metrics.luminance), 0, 255);
+          glyphHistograms[glyphIndex * 256 + luminance] += 1;
+          glyphCounts[glyphIndex] += 1;
         }
       }
     }
@@ -4168,37 +4404,34 @@
       await yieldToBrowser();
       for (let row = 0; row < 51; row += 1) {
         const { x: cx, y: cy } = centres[column * 51 + row];
-        for (let dy = -glyphRadius; dy <= glyphRadius; dy += 1) {
-          for (let dx = -glyphRadius; dx <= glyphRadius; dx += 1) {
-            if (Math.hypot(dx, dy) > glyphRadius) continue;
-            const glyphIndex = (dy + glyphRadius) * glyphSide + dx + glyphRadius;
-            const lift = glyphDarkness[glyphIndex];
-            if (lift < 4) continue;
-            const x = cx + dx, y = cy + dy;
-            const metrics = metricsAt(x, y);
-            // Only consider neutral pixels; dark strokes are protected by the
-            // continuity test below, even when their antialiased pixels are
-            // as light as the printed dot itself.
-            if (metrics.saturation > 0.42 || metrics.luminance < 70) continue;
-            // A dot is radially isolated; a pen stroke continues through it.
-            // Keep any pixel with dark neighbours on both sides of an axis,
-            // including pale/anti-aliased strokes that a simple threshold
-            // cannot tell apart from the printed grid.
-            const continuesAsStroke = [
-              [1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2], [Math.SQRT1_2, -Math.SQRT1_2]
-            ].some(([ux, uy]) => {
-              const before = metricsAt(Math.round(x - ux * strokeContinuityRadius), Math.round(y - uy * strokeContinuityRadius));
-              const after = metricsAt(Math.round(x + ux * strokeContinuityRadius), Math.round(y + uy * strokeContinuityRadius));
-              return before.luminance < 245
-                && after.luminance < 245
-                && before.luminance <= metrics.luminance + 28
-                && after.luminance <= metrics.luminance + 28;
-            });
-            if (continuesAsStroke) continue;
-            const offset = (y * width + x) * 4;
-            for (let channel = 0; channel < 3; channel += 1) {
-              data[offset + channel] = Math.min(targetPaper, data[offset + channel] + lift);
+        for (const { dx, dy, index: glyphIndex } of glyphOffsets) {
+          const lift = glyphDarkness[glyphIndex];
+          if (lift < 4) continue;
+          const x = cx + dx, y = cy + dy;
+          const metrics = metricsAt(x, y);
+          // Only consider neutral pixels; dark strokes are protected by the
+          // continuity test below, even when their antialiased pixels are
+          // as light as the printed dot itself.
+          if (metrics.saturation > 0.42 || metrics.luminance < 70) continue;
+          // A dot is radially isolated; a pen stroke continues through it.
+          // Keep any pixel with dark neighbours on both sides of an axis,
+          // including pale/anti-aliased strokes that a simple threshold
+          // cannot tell apart from the printed grid.
+          let continuesAsStroke = false;
+          for (const [sx, sy] of strokeOffsets) {
+            const before = metricsAt(x - sx, y - sy);
+            const after = metricsAt(x + sx, y + sy);
+            if (before.luminance < 245 && after.luminance < 245
+              && before.luminance <= metrics.luminance + 28
+              && after.luminance <= metrics.luminance + 28) {
+              continuesAsStroke = true;
+              break;
             }
+          }
+          if (continuesAsStroke) continue;
+          const offset = (y * width + x) * 4;
+          for (let channel = 0; channel < 3; channel += 1) {
+            data[offset + channel] = Math.min(targetPaper, data[offset + channel] + lift);
           }
         }
       }
@@ -4206,7 +4439,11 @@
     // Keep uncommon isolated marks. The learned repeated glyph is enough to
     // remove the template; a second isolated-dot eraser cannot distinguish
     // a printed dot from a full stop or the dot of a handwritten i.
-
+    return {
+      method: useObservedCentres ? "observed-dots" : "recovered-dot-phase",
+      observations: measuredCount,
+      confirmed: confirmedCount
+    };
   }
 
   function smoothPaperIllumination(values, width, height) {
@@ -4404,20 +4641,33 @@
     const colorMarkerX2 = 11.08 * pxPerCm;
     const colorMarkerY1 = 27.48 * pxPerCm;
     const colorMarkerY2 = 27.90 * pxPerCm;
+    const whiteStart = Math.max(145, profile.shadowPoint + 34, profile.paperLuminance * 0.7);
+    const whiteEnd = Math.max(whiteStart + 22, profile.paperLuminance * 0.98);
+    const localPaperFloor = Math.max(68, profile.paperLuminance * 0.27);
+    const columnFlags = new Uint8Array(canvas.width);
+    const illuminationColumns = new Uint16Array(canvas.width);
+    for (let x = 0; x < canvas.width; x += 1) {
+      columnFlags[x] = (Math.abs(x - yellowX1) < outerBand || Math.abs(x - yellowX2) < outerBand ? 1 : 0)
+        | (x < yellowX1 - outerBand || x > yellowX2 + outerBand ? 2 : 0)
+        | (x >= colorMarkerX1 && x <= colorMarkerX2 ? 4 : 0)
+        | (Math.abs((x / pxPerCm * 2) - Math.round(x / pxPerCm * 2)) < 0.24 ? 8 : 0);
+      illuminationColumns[x] = Math.round(x * illuminationXScale);
+    }
     for (let y = 0; y < canvas.height; y += 1) {
+      const outerRow = Math.abs(y - yellowY1) < outerBand || Math.abs(y - yellowY2) < outerBand;
+      const marginRow = y < yellowY1 - outerBand || y > yellowY2 + outerBand;
+      const markerRow = y >= colorMarkerY1 && y <= colorMarkerY2;
+      const inCalibrationBand = y >= calibrationY1 && y <= calibrationY2;
+      const printedRailRow = Math.abs(y - 27.43 * pxPerCm) <= outerBand
+        || Math.abs(y - 27.93 * pxPerCm) <= outerBand;
+      const illuminationRow = Math.round(y * illuminationYScale) * illuminationCanvas.width;
       for (let x = 0; x < canvas.width; x += 1) {
         const offset = (y * canvas.width + x) * 4;
         const r = data[offset], g = data[offset + 1], b = data[offset + 2];
-        const inOuterBand = Math.abs(x - yellowX1) < outerBand
-          || Math.abs(x - yellowX2) < outerBand
-          || Math.abs(y - yellowY1) < outerBand
-          || Math.abs(y - yellowY2) < outerBand;
-        const inPageMargin = x < yellowX1 - outerBand
-          || x > yellowX2 + outerBand
-          || y < yellowY1 - outerBand
-          || y > yellowY2 + outerBand;
-        const inColorMarkers = x >= colorMarkerX1 && x <= colorMarkerX2
-          && y >= colorMarkerY1 && y <= colorMarkerY2;
+        const flags = columnFlags[x];
+        const inOuterBand = !!(flags & 1) || outerRow;
+        const inPageMargin = !!(flags & 2) || marginRow;
+        const inColorMarkers = !!(flags & 4) && markerRow;
         const max = Math.max(r, g, b);
         const min = Math.min(r, g, b);
         const saturation = max ? (max - min) / max : 0;
@@ -4439,14 +4689,9 @@
           data[offset + 2] = profile.targetPaper;
           continue;
         }
-        const inCalibrationBand = y >= calibrationY1 && y <= calibrationY2;
         const warmPrintedYellow = r >= g * 0.85 && g >= r * 0.78
           && g >= b * 1.06 && r >= b * 1.12 && yellowChroma(r, g, b) >= 6;
-        const onPrintedRail = inOuterBand || (inCalibrationBand && (
-          Math.abs(y - 27.43 * pxPerCm) <= outerBand
-          || Math.abs(y - 27.93 * pxPerCm) <= outerBand
-          || Math.abs((x / pxPerCm * 2) - Math.round(x / pxPerCm * 2)) < 0.24
-        ));
+        const onPrintedRail = inOuterBand || (inCalibrationBand && (printedRailRow || !!(flags & 8)));
         const shouldNeutralize = useStencil && (
           ((inOuterBand || inCalibrationBand) && isYellow(r, g, b))
           // Warm camera casts can move the printed yellow outside the strict
@@ -4459,9 +4704,7 @@
           data[offset] = 255; data[offset + 1] = 255; data[offset + 2] = 255;
           continue;
         }
-        const illuminationX = Math.round(x * illuminationXScale);
-        const illuminationY = Math.round(y * illuminationYScale);
-        const localBright = illumination[illuminationY * illuminationCanvas.width + illuminationX];
+        const localBright = illumination[illuminationRow + illuminationColumns[x]];
         const automaticR = clamp(r * profile.gains[0], 0, 255);
         const automaticG = clamp(g * profile.gains[1], 0, 255);
         const automaticB = clamp(b * profile.gains[2], 0, 255);
@@ -4481,8 +4724,6 @@
         } else if (saturation <= 0.18) {
           // The paper is the fifth calibration reference. Push neutral bright
           // pixels to true white while leaving pencil and black writing intact.
-          const whiteStart = Math.max(145, profile.shadowPoint + 34, profile.paperLuminance * 0.7);
-          const whiteEnd = Math.max(whiteStart + 22, profile.paperLuminance * 0.98);
           const position = clamp((luminance - whiteStart) / Math.max(1, whiteEnd - whiteStart), 0, 1);
           let whiteMix = position * position * (3 - 2 * position);
           // The blurred illumination value follows smooth shadows but not thin
@@ -4491,7 +4732,6 @@
           const localDifference = localBright - luminance;
           // Relative contrast remains meaningful in a deep smooth shadow.
           // A global brightness floor previously left half a curled page grey.
-          const localPaperFloor = Math.max(68, profile.paperLuminance * 0.27);
           const localPaperAmount = luminance >= localPaperFloor
             ? clamp((12 - localDifference) / 8, 0, 1)
             : 0;
@@ -4529,9 +4769,9 @@
         await yieldToBrowser();
       }
     }
-    if (preciseStencil && !settings.skipStencilCleanup) {
-      await removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper, settings);
-    }
+    const stencilCleanup = preciseStencil && !settings.skipStencilCleanup
+      ? await removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper, settings)
+      : null;
     if (data !== original) original.set(data);
     context.putImageData(image, 0, 0);
     illuminationCanvas.width = 0;
@@ -4539,6 +4779,7 @@
     return {
       canvas,
       calibrated: canCalibrate,
+      stencilCleanup,
       samples: validMarkerSamples.length,
       paper: Math.round(profile.paperLuminance),
       references: Object.fromEntries(samples.map(sample => [sample.name, {

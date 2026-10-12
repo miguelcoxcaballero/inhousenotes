@@ -43,6 +43,7 @@
   let selectedIndex = 0;
   let explicitSelection = false;
   let pendingCandidates = 0;
+  let processingVisualFrame = 0;
   let lastFrameTime = -1;
   let deliveredFrames = 0;
   let frameCallback = 0;
@@ -103,10 +104,12 @@
     selection++;
     processingController?.abort();
     processingController = null;
+    clearProcessingVisual();
     result = null;
     candidates.forEach(candidate => {
       URL.revokeObjectURL(candidate.url);
       if (candidate.resultUrl && candidate.resultUrl !== candidate.url) URL.revokeObjectURL(candidate.resultUrl);
+      if (candidate.processingPreviewUrl) URL.revokeObjectURL(candidate.processingPreviewUrl);
     });
     candidates = [];
     pendingCandidates = 0;
@@ -114,6 +117,7 @@
     selectedIndex = 0;
     previewUrl = '';
     $('livePreview').removeAttribute('src');
+    $('livePreview').onload = $('livePreview').onerror = null;
     $('livePreview').hidden = true;
     $('liveAlternatives').replaceChildren();
     $('liveAddBtn').disabled = true;
@@ -586,6 +590,146 @@
     image.onerror = () => finish(new Error('This image could not be opened'));
     image.src = url;
   });
+  const processingStages = ['decoding', 'detection', 'dots', 'surface', 'warp', 'colors', 'template', 'encoding'];
+  function clearProcessingVisual() {
+    cancelAnimationFrame(processingVisualFrame);
+    processingVisualFrame = 0;
+    const canvas = $('liveProcessingOverlay');
+    canvas.hidden = true;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    delete canvas.dataset.mode;
+    delete canvas.dataset.pointCount;
+    $('liveProcessingSteps').hidden = true;
+  }
+  function processingStatus(candidate) {
+    if (candidate.result || candidate.error) return 'Comparing scans…';
+    const count = candidate.processingGeometry?.points?.length || 0;
+    switch (candidate.processingStage) {
+      case 'decoding': return 'Opening photo…';
+      case 'detection': return 'Finding the page…';
+      case 'dots': return count ? `${count} bullet points found` : 'Finding bullet points…';
+      case 'surface':
+      case 'warp': return count ? `Straightening ${count} bullet points…` : 'Straightening the page…';
+      case 'colors': return 'Cleaning the page…';
+      case 'template': return 'Applying the page template…';
+      case 'encoding': return 'Preparing scan…';
+      default: return candidates.length > 1 ? 'Processing photos and choosing the best scan…' : 'Straightening the page…';
+    }
+  }
+  function updateProcessingSteps(candidate) {
+    const steps = $('liveProcessingSteps');
+    steps.hidden = !pendingCandidates || !!candidate.result || !!candidate.error;
+    const phase = candidate.processingStage;
+    const active = ['decoding', 'detection', 'dots'].includes(phase) ? 'dots'
+      : ['surface', 'warp'].includes(phase) ? 'surface'
+        : phase === 'colors' ? 'colors' : ['template', 'encoding'].includes(phase) ? 'template' : '';
+    let beforeCurrent = !!active;
+    [...steps.children].forEach(step => {
+      const current = step.dataset.step === active;
+      if (current) beforeCurrent = false;
+      step.dataset.complete = String(beforeCurrent);
+      if (current) step.setAttribute('aria-current', 'step');
+      else step.removeAttribute('aria-current');
+    });
+  }
+  function scheduleProcessingOverlay() {
+    if (processingVisualFrame) return;
+    processingVisualFrame = requestAnimationFrame(() => {
+      processingVisualFrame = 0;
+      drawProcessingOverlay();
+    });
+  }
+  function drawProcessingOverlay() {
+    const canvas = $('liveProcessingOverlay');
+    const preview = $('livePreview');
+    const candidate = candidates[selectedIndex];
+    const warped = !!candidate?.processingPreviewUrl && previewUrl === candidate.processingPreviewUrl;
+    const geometry = warped ? candidate?.processingWarpGeometry : candidate?.processingGeometry;
+    // Geometry belongs to one capture and one displayed image. Never draw a
+    // late worker's points over another thumbnail or the finished document.
+    if (!pendingCandidates || candidate?.result || candidate?.error || !geometry?.points?.length
+      || preview.hidden || !preview.complete || !preview.naturalWidth || !['dots', 'surface', 'warp', 'colors'].includes(candidate.processingStage)) {
+      canvas.hidden = true;
+      return;
+    }
+    if (!warped && previewUrl !== candidate.url) { canvas.hidden = true; return; }
+    const width = preview.clientWidth, height = preview.clientHeight;
+    if (!width || !height) { canvas.hidden = true; return; }
+    const ratio = Math.min(2, devicePixelRatio || 1);
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    const context = canvas.getContext('2d');
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    const scale = Math.min(width / preview.naturalWidth, height / preview.naturalHeight);
+    const imageWidth = preview.naturalWidth * scale, imageHeight = preview.naturalHeight * scale;
+    const offsetX = (width - imageWidth) / 2, offsetY = (height - imageHeight) / 2;
+    const location = point => {
+      const x = point.x / geometry.width;
+      const y = point.y / geometry.height;
+      return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 1 && y >= 0 && y <= 1
+        ? { x: offsetX + x * imageWidth, y: offsetY + y * imageHeight } : null;
+    };
+    const points = geometry.points.map(location);
+    context.save();
+    context.beginPath(); context.rect(offsetX, offsetY, imageWidth, imageHeight); context.clip();
+    // Each run contains only observed neighbours. Missing parts of the sheet
+    // are never filled with an invented grid or connected across long gaps.
+    const guides = (runs, color, locations = points) => {
+      context.strokeStyle = color;
+      context.lineWidth = .8;
+      context.beginPath();
+      (runs || []).forEach(run => {
+        let connected = false;
+        (run.points || []).forEach(index => {
+          const point = locations[index];
+          if (!point) { connected = false; return; }
+          if (connected) context.lineTo(point.x, point.y);
+          else { context.moveTo(point.x, point.y); connected = true; }
+        });
+      });
+      context.stroke();
+    };
+    if (warped) {
+      // These faint straight segments are the target positions; the bright
+      // dots and coloured paths below remain the measured warped positions.
+      const targets = geometry.points.map(point => Number.isFinite(point.targetX) && Number.isFinite(point.targetY)
+        ? { x: offsetX + point.targetX / geometry.width * imageWidth,
+          y: offsetY + point.targetY / geometry.height * imageHeight } : null);
+      context.setLineDash([2, 3]);
+      guides(geometry.rows, '#ffffff60', targets);
+      guides(geometry.columns, '#ffffff40', targets);
+      context.setLineDash([]);
+    }
+    guides(geometry.rows, '#f4d84b99');
+    guides(geometry.columns, '#70e0e680');
+    context.fillStyle = '#fff4a7';
+    context.beginPath();
+    points.forEach(point => {
+      if (!point) return;
+      context.moveTo(point.x + 1.4, point.y);
+      context.arc(point.x, point.y, 1.4, 0, Math.PI * 2);
+    });
+    context.fill();
+    context.restore();
+    canvas.dataset.mode = warped ? 'corrected' : 'observed';
+    canvas.dataset.pointCount = String(points.filter(Boolean).length);
+    canvas.hidden = false;
+  }
+  function receiveProcessingProgress(candidate, index, token, current, stage, detail) {
+    if (!current() || candidate.processingComplete || !processingStages.includes(stage)) return;
+    candidate.processingStage = stage;
+    if (detail?.points?.length && detail.width > 0 && detail.height > 0 && ['dots', 'surface'].includes(stage)) {
+      candidate.processingGeometry = detail;
+    }
+    if (stage === 'warp' && detail?.previewBlob instanceof Blob) {
+      if (candidate.processingPreviewUrl) URL.revokeObjectURL(candidate.processingPreviewUrl);
+      candidate.processingPreviewUrl = URL.createObjectURL(detail.previewBlob);
+      candidate.processingWarpGeometry = detail.space === 'corrected' && detail.points?.length ? detail : null;
+    }
+    if (index === selectedIndex) reviewCandidate(index, token);
+  }
+  if (typeof ResizeObserver === 'function') new ResizeObserver(scheduleProcessingOverlay).observe($('livePreview'));
+  else window.addEventListener('resize', scheduleProcessingOverlay);
   function reviewCandidate(index, token) {
     const candidate = candidates[index];
     if (!candidate || token !== generation) return;
@@ -598,24 +742,41 @@
     $('liveAddBtn').disabled = !result;
     $('liveAddBtn').textContent = embedded ? 'Add page to document' : 'Save scan';
     $('liveReviewStatus').textContent = pendingCandidates
-      ? candidates.length > 1 ? 'Processing photos and choosing the best scan…' : 'Straightening the page…'
+      ? processingStatus(candidate)
       : result?.corrected ? 'Check the scan.'
         : result ? 'Original photo ready. Page correction was unavailable; check the photo before adding it.'
           : candidate.error || 'Could not process this frame. Choose another or scan again.';
+    if (pendingCandidates) updateProcessingSteps(candidate);
+    else clearProcessingVisual();
+    $('liveProcessingOverlay').hidden = true;
     [...$('liveAlternatives').children].forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
     const current = () => token === generation && selected === selection;
     const preview = $('livePreview');
-    const nextUrl = candidate.resultUrl || candidate.url;
-    preview.onload = () => { if (current()) preview.hidden = false; };
-    preview.onerror = () => { if (current()) preview.hidden = true; };
+    const nextUrl = candidate.resultUrl || candidate.processingPreviewUrl || candidate.url;
+    preview.onload = () => {
+      if (current()) { preview.hidden = false; scheduleProcessingOverlay(); }
+    };
+    preview.onerror = () => {
+      if (!current()) return;
+      preview.hidden = true;
+      // A diagnostic preview is optional; failure must not hide the original
+      // or make a valid final result unavailable.
+      if (nextUrl === candidate.processingPreviewUrl) {
+        URL.revokeObjectURL(candidate.processingPreviewUrl);
+        candidate.processingPreviewUrl = '';
+        reviewCandidate(index, token);
+      }
+    };
     if (previewUrl === nextUrl) {
       if (preview.complete && preview.naturalWidth) preview.hidden = false;
+      scheduleProcessingOverlay();
       return;
     }
     previewUrl = nextUrl;
     preview.hidden = true;
     preview.src = nextUrl;
     if (preview.complete && preview.naturalWidth) preview.hidden = false;
+    scheduleProcessingOverlay();
     if (candidate.result?.corrected) {
       preview.classList.remove('scan-reveal');
       void preview.offsetWidth;
@@ -658,7 +819,8 @@
       let outputUrl = '';
       try {
         const processed = await SP.Lightweight.processPageAsync(candidate.blob,
-          { signal: controller.signal, liveDetection: candidate.detection });
+          { signal: controller.signal, liveDetection: candidate.detection, previewProgress: true,
+            onProgress: (stage, detail) => receiveProcessingProgress(candidate, index, token, current, stage, detail) });
         if (!current()) return;
         if (processed.detection?.quality?.valid === false && processed.corrected) {
           throw new Error('The page geometry could not be verified');
@@ -682,10 +844,15 @@
       } finally {
         if (outputUrl && outputUrl !== candidate.url) URL.revokeObjectURL(outputUrl);
         if (current()) {
+          candidate.processingComplete = true;
           pendingCandidates--;
           const image = $('liveAlternatives').children[index]?.querySelector('img');
           if (image && candidate.resultUrl) image.src = candidate.resultUrl;
-          if (explicitSelection && selectedIndex === index) reviewCandidate(index, token);
+          const processingUrl = candidate.processingPreviewUrl;
+          candidate.processingPreviewUrl = '';
+          if (selectedIndex === index) reviewCandidate(index, token);
+          if (processingUrl) URL.revokeObjectURL(processingUrl);
+          candidate.processingGeometry = candidate.processingWarpGeometry = null;
         }
       }
     }));

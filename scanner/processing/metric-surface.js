@@ -128,10 +128,16 @@
     const X = r[0] * xx + r[1] * yy + r[2] * z + p[3] * 100,
       Y = r[3] * xx + r[4] * yy + r[5] * z + p[4] * 100;
     const Z = r[6] * xx + r[7] * yy + r[8] * z + model.depth;
-    return {
+    const point = {
       x: model.width / 2 + (model.focal * X) / Z,
       y: model.height / 2 + (model.focal * Y) / Z,
     };
+    if (model.refinement) {
+      const correction = refinementAt(model.refinement, u, v);
+      point.x += correction[0];
+      point.y += correction[1];
+    }
+    return point;
   }
   function initial(quad, width, height) {
     const f = Math.max(width, height) * 1.4,
@@ -1181,6 +1187,148 @@
 
     return { p, cost, iterations };
   }
+  function observationDetail(observed, source) {
+    // These are measured dot centres, not resampled curves or inferred dots.
+    // Group references keep the worker message small and preserve real gaps.
+    const points = observed.points.map((point) => ({ ...point }));
+    const families = {};
+    for (const [name, axis, along] of [["rows", "row", "col"], ["columns", "col", "row"]]) {
+      const groups = new Map();
+      points.forEach((point, index) => {
+        if (!groups.has(point[axis])) groups.set(point[axis], []);
+        groups.get(point[axis]).push(index);
+      });
+      families[name] = [];
+      for (const [index, group] of groups) {
+        group.sort((a, b) => points[a][along] - points[b][along]);
+        let run = [];
+        for (const at of group) {
+          if (run.length && points[at][along] - points[run.at(-1)][along] > 2) {
+            if (run.length > 1) families[name].push({ index, points: run });
+            run = [];
+          }
+          run.push(at);
+        }
+        if (run.length > 1) families[name].push({ index, points: run });
+      }
+    }
+    return { width: source.width, height: source.height, pitch: observed.pitch, points, ...families };
+  }
+
+  function splineBasis(value, count) {
+    const at = clamp(value, 0, 1) * (count - 1),
+      cell = Math.floor(at), t = at - cell,
+      weights = [(1 - t) ** 3 / 6, (3 * t ** 3 - 6 * t * t + 4) / 6,
+        (-3 * t ** 3 + 3 * t * t + 3 * t + 1) / 6, t ** 3 / 6];
+    const merged = new Map();
+    for (let i = 0; i < 4; i++) {
+      const index = clamp(cell + i - 1, 0, count - 1);
+      merged.set(index, (merged.get(index) || 0) + weights[i]);
+    }
+    return [...merged];
+  }
+  function refinementBasis(field, u, v) {
+    // Dots constrain the interior and observed rails anchor the perimeter.
+    // Fade to the physical model at the outside paper edge, where no printed
+    // observations constrain extrapolation through the blank margin.
+    const fade = (at, low, high, outerLow, outerHigh) => {
+      const t = at < low ? (at - outerLow) / (low - outerLow)
+        : at > high ? (outerHigh - at) / (outerHigh - high) : 1;
+      const x = clamp(t, 0, 1);
+      return x * x * (3 - 2 * x);
+    };
+    const weight = fade(u, 15 / W, 195 / W, 0, 1) *
+      fade(v, 14.3 / H, 284.3 / H, 0, 1);
+    if (!weight) return [];
+    const out = [], xs = splineBasis(u, field.cols), ys = splineBasis(v, field.rows);
+    for (const [y, wy] of ys) for (const [x, wx] of xs)
+      out.push([y * field.cols + x, wx * wy * weight]);
+    return out;
+  }
+  function refinementAt(field, u, v) {
+    let x = 0, y = 0;
+    for (const [i, weight] of refinementBasis(field, u, v)) {
+      x += field.dx[i] * weight;
+      y += field.dy[i] * weight;
+    }
+    return [x, y];
+  }
+  function fitMeasuredRefinement(model, training, pitch, frame) {
+    // A low-dimensional smooth residual accounts for lens/print error and
+    // small local departures from a single developable bend. It never fits
+    // held-out dots and cannot rescue a physically rejected sheet.
+    const field = { cols: 9, rows: 13 }, count = field.cols * field.rows,
+      matrix = Array.from({ length: count }, () => Array(count).fill(0)),
+      bx = Array(count).fill(0), by = Array(count).fill(0);
+    const penalty = (terms, weight) => {
+      for (const [i, a] of terms) for (const [j, b] of terms)
+        matrix[i][j] += a * b * weight;
+    };
+    const anchors = [];
+    for (const name of ["top", "right", "bottom", "left"]) for (let i = 0; i <= 24; i++) {
+      const t = i / 24,
+        u = name === "left" ? 15 / W : name === "right" ? 195 / W : (15 + 180 * t) / W,
+        v = name === "top" ? 14.3 / H : name === "bottom" ? 284.3 / H : (14.3 + 270 * t) / H,
+        p = project(model, u, v), path = frame.paths[name];
+      let nearest = null, distance = Infinity;
+      for (let j = 0; j < path.length - 1; j++) {
+        const a = path[j], b = path[j + 1], dx = b.x - a.x, dy = b.y - a.y,
+          f = clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1),
+          q = { x: a.x + f * dx, y: a.y + f * dy }, d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d < distance) { nearest = q; distance = d; }
+      }
+      // A noisy rail estimate far from an already validated physical fit
+      // must not pull the dot field into an unobserved corner.
+      if (nearest && distance <= pitch * 0.22) anchors.push({ ...nearest, u, v, weight: 0.4 });
+    }
+    for (const point of [...training, ...anchors]) {
+      const q = project(model, point.u, point.v),
+        rx = point.x - q.x, ry = point.y - q.y,
+        weight = (point.weight || 1) * Math.min(1, pitch * 0.08 / Math.max(1e-6, Math.hypot(rx, ry))),
+        basis = refinementBasis(field, point.u, point.v);
+      for (const [i, a] of basis) {
+        bx[i] += a * rx * weight;
+        by[i] += a * ry * weight;
+        for (const [j, b] of basis) matrix[i][j] += a * b * weight;
+      }
+    }
+    for (let y = 0; y < field.rows; y++) for (let x = 0; x < field.cols; x++) {
+      const i = y * field.cols + x;
+      matrix[i][i] += x === 0 || x === field.cols - 1 || y === 0 || y === field.rows - 1 ? 0.5 : 0.025;
+      if (x && x < field.cols - 1) penalty([[i - 1, 1], [i, -2], [i + 1, 1]], 0.12);
+      if (y && y < field.rows - 1) penalty([[i - field.cols, 1], [i, -2], [i + field.cols, 1]], 0.12);
+    }
+    field.dx = solve(matrix, bx);
+    field.dy = solve(matrix, by);
+    return field.dx && field.dy ? field : null;
+  }
+  function boundRefinement(model, refined, pitch) {
+    // Derive a single conservative gain from displacement and local scale,
+    // without consulting any held-out dots. Back off the whole smooth field
+    // rather than clipping individual control points or loosening a bound.
+    let maximumDisplacement = 0, maximumDerivative = 0;
+    for (let y = 0; y <= 48; y++) for (let x = 0; x <= 36; x++) {
+      const u = x / 36, v = y / 48, step = 0.0001,
+        p = project(model, u, v), q = project(refined, u, v);
+      maximumDisplacement = Math.max(maximumDisplacement, Math.hypot(p.x - q.x, p.y - q.y));
+      for (const [du, dv] of [[step, 0], [0, step]]) {
+        const a = project(model, u + du, v + dv), b = project(refined, u + du, v + dv),
+          length = Math.hypot(a.x - p.x, a.y - p.y);
+        maximumDerivative = Math.max(maximumDerivative,
+          Math.hypot((b.x - q.x) - (a.x - p.x), (b.y - q.y) - (a.y - p.y)) / Math.max(1e-9, length));
+      }
+    }
+    const scale = Math.min(1, pitch * 0.22 / Math.max(1e-9, maximumDisplacement),
+      0.08 / Math.max(1e-9, maximumDerivative));
+    if (!Number.isFinite(scale) || scale < 0.35) return null;
+    if (scale < 1) {
+      refined.refinement.dx = refined.refinement.dx.map(v => v * scale);
+      refined.refinement.dy = refined.refinement.dy.map(v => v * scale);
+    }
+    if (!visibleSurface(refined)) return null;
+    return { scale, maximumDisplacement: maximumDisplacement * scale,
+      maximumDerivative: maximumDerivative * scale };
+  }
   function fit(source, detection, options = {}) {
     const diagnostics = options.diagnostics || {};
     const started = performance.now(),
@@ -1189,6 +1337,8 @@
     if (!frame?.paths || frame.confidence < 0.65) return null;
     const observed = observe(source, frame, diagnostics);
     if (!observed) return null;
+    if (typeof options.onObservations === "function")
+      options.onObservations(observationDetail(observed, source));
     const { points, pitch } = observed,
       quad = [
         frame.paths.top[0],
@@ -1252,7 +1402,7 @@
       ).size,
       samples: guides.length,
     };
-    let best = null;
+    let best = null, starts = 0;
     for (const beta of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
       if (performance.now() > deadline) break;
       const p = [...base];
@@ -1268,7 +1418,17 @@
         frame,
         guides,
       );
+      starts++;
       if (!best || result.cost < best.cost) best = result;
+      // A different bend-axis seed is unnecessary after an independently
+      // checked subpixel fit already explains both measured line families.
+      // Difficult pages still exhaust all starts and the original budget.
+      const candidateModel = prepare(result.p, source.width, source.height),
+        candidateErrors = surfaceErrors(candidateModel, validation, frame);
+      if (candidateErrors.rms < pitch * 0.025 &&
+        candidateErrors.p99 < pitch * 0.065 &&
+        (tangentP90For(candidateModel) ?? Infinity) < pitch * 0.035 &&
+        validErrors(candidateErrors, pitch) && visibleSurface(candidateModel)) break;
     }
     if (!best) return null;
     const coarseModel = prepare(best.p, source.width, source.height),
@@ -1316,15 +1476,46 @@
         }
       }
     }
-    const model = prepare(best.p, source.width, source.height),
-      errors = surfaceErrors(model, validation, frame),
-      { rms, p90, p99, borderP95 } = errors;
+    let model = prepare(best.p, source.width, source.height),
+      errors = surfaceErrors(model, validation, frame);
     Object.assign(diagnostics, errors, { parameters: best.p });
     if (!validErrors(errors, pitch) || !visibleSurface(model)) return null;
     // The held-out parallel curves use only held-out dots as well. Their
     // measured tangent verifies local direction, independently of training.
-    const tangentP90 = tangentP90For(model);
+    let tangentP90 = tangentP90For(model);
     if (tangentP90 !== null && tangentP90 > pitch * 0.22) return null;
+    const baseErrors = errors,
+      field = fitMeasuredRefinement(model, observedTraining, pitch, frame);
+    let refinementBounds = null;
+    if (field) {
+      const refined = { ...model, refinement: field },
+        bounds = boundRefinement(model, refined, pitch);
+      if (bounds) {
+        const refinedErrors = surfaceErrors(refined, validation, frame),
+          refinedTangent = tangentP90For(refined);
+        if (refinedErrors.rms < errors.rms * 0.88 &&
+          refinedErrors.p90 < errors.p90 * 0.93 &&
+          refinedErrors.p99 <= errors.p99 * 1.03 &&
+          (refinedTangent ?? 0) <= Math.max((tangentP90 ?? 0) * 1.03, pitch * 0.025) &&
+          validErrors(refinedErrors, pitch)) {
+          model = refined;
+          errors = refinedErrors;
+          tangentP90 = refinedTangent;
+          refinementBounds = bounds;
+        }
+      }
+    }
+    diagnostics.measuredRefinement = {
+      accepted: !!model.refinement,
+      training: observedTraining.length,
+      validation: validation.length,
+      beforeRMS: baseErrors.rms,
+      afterRMS: errors.rms,
+      controls: model.refinement ? model.refinement.cols * model.refinement.rows : 0,
+      ...(refinementBounds || {}),
+    };
+    const { rms, p90, p99, borderP95 } = errors;
+    Object.assign(diagnostics, errors);
     diagnostics.parallelValidation = {
       samples: heldoutGuides.length,
       tangentP90,
@@ -1332,6 +1523,7 @@
     return {
       type: "developable-pinhole",
       parameters: best.p,
+      ...(model.refinement ? { refinement: model.refinement } : {}),
       width: source.width,
       height: source.height,
       diagnostics: {
@@ -1341,6 +1533,7 @@
         validation: validation.length,
         parallels: diagnostics.parallels,
         parallelValidation: diagnostics.parallelValidation,
+        measuredRefinement: diagnostics.measuredRefinement,
         profileKnots: best.p.length - 7,
         coverage: observed.coverage,
         phaseScore: observed.phaseScore,
@@ -1351,6 +1544,7 @@
         pitch,
         elapsedMs: performance.now() - started,
         iterations: best.iterations,
+        starts,
       },
       profile: {
         arcLengthMm: 2 * model.length,
@@ -1364,6 +1558,7 @@
     let model = cache.get(surface);
     if (!model) {
       model = prepare(surface.parameters, surface.width, surface.height);
+      if (surface.refinement) model.refinement = surface.refinement;
       cache.set(surface, model);
     }
     return project(model, u, v);

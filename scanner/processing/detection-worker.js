@@ -8,9 +8,10 @@ self.document = {
   }
 };
 importScripts(`liveDetection.js${self.location.search}`, `surface-parameterization.js${self.location.search}`,
-  `metric-surface.js${self.location.search}`, `lightweight.js${self.location.search}`);
+  `metric-surface.js${self.location.search}`, `scan-template.js${self.location.search}`, `lightweight.js${self.location.search}`);
 self.onmessage = async event => {
-  const { operation, bitmap, blob, config, liveDetection, maxDimension, timeoutMs } = event.data;
+  const { operation, bitmap, blob, config, liveDetection, maxDimension, timeoutMs,
+    previewProgress, reportProgress, surfaceBudgetMs } = event.data;
   try {
     self.ScannerPro.Config = config;
     if (operation === "process") {
@@ -20,13 +21,14 @@ self.onmessage = async event => {
         return;
       }
       const result = await self.ScannerPro.Lightweight.processPageAsync(blob, {
-        liveDetection, maxDimension, timeoutMs,
-        onProgress: progress => self.postMessage({ progress })
+        liveDetection, maxDimension, timeoutMs, previewProgress,
+        onProgress: (progress, detail) => self.postMessage({ progress, detail })
       });
       self.postMessage({ result });
       return;
     }
-    const detection = self.ScannerPro.Lightweight.detectPage(bitmap, { liveDetection });
+    const detection = self.ScannerPro.Lightweight.detectPage(bitmap, { liveDetection, surfaceBudgetMs,
+      onProgress: reportProgress ? (progress, detail) => self.postMessage({ progress, detail }) : undefined });
     self.postMessage({ detection });
   } catch (error) {
     self.postMessage({ error: error?.message || "The page could not be analysed.", name: error?.name,
