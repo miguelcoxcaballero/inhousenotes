@@ -55,6 +55,7 @@ jobs:
           test -f "$site_dir/index.html"
           test -f "$site_dir/CNAME"
           test -f "$site_dir/app-v5.js"
+          test -f "$site_dir/bullet-template.js"
           test -f "$site_dir/scanner/script.js"
           test -f "$site_dir/scanner/processing/detection-worker.js"
           test -f "$site_dir/scanner/processing/surface-parameterization.js"

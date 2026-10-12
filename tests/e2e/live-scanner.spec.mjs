@@ -179,8 +179,11 @@ test('retaking releases the previous camera and only confirmation inserts the sc
     return result.snapshot;
   });
   expect(saved.pages).toHaveLength(2);
-  expect(saved.pages[1].backgroundSource).toBe('custom');
-  expect(saved.pages[1].backgroundImage).toMatch(/^data:image\/jpeg/);
+  expect(saved.pages[1].backgroundSource).toBe('template');
+  expect(saved.pages[1].templateKind).toBe('default');
+  expect(saved.pages[1].backgroundImage).toBeNull();
+  expect(saved.pages[1].images).toHaveLength(1);
+  expect(saved.pages[1].images[0].src).toMatch(/^data:image\/png/);
   expect(saved.dirtyPages).toEqual([]);
 });
 

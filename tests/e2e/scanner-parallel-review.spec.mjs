@@ -32,7 +32,7 @@ async function captureThree(page) {
       const index = probe.calls.length;
       probe.calls.push({ blob, options, resolve, reject, index });
     });
-    probe.finish = (index, mode = 'corrected') => {
+    probe.finish = (index, mode = 'corrected', detectionOverride) => {
       const call = probe.calls[index];
       call.resolve(mode === 'original' ? {
         blob: call.blob, corrected: false, detection: { quality: { valid: false } }
@@ -41,8 +41,9 @@ async function captureThree(page) {
           : index === 2 ? probe.green : probe.red, corrected: true,
         // Dimensions are deliberately wrong: insertion uses decoded bytes.
         width: 1, height: 1,
-        detection: { confidence: .9, quality: { valid: true }, frame: {
-          metricSurface: { diagnostics: { pitch: 10, rms: index === 2 ? .1 : 1.3,
+        detection: detectionOverride || { confidence: .9, quality: { valid: true }, frame: {
+          metricSurface: { type: 'developable-pinhole', diagnostics: { validation: 600,
+            pitch: 10, rms: index === 2 ? .1 : 1.3, p90: index === 2 ? .2 : 2,
             p99: index === 2 ? .5 : 3.8, borderP95: index === 2 ? 1 : 10 } }
         } }
       });
@@ -108,6 +109,39 @@ test('choosing a thumbnail keeps that choice while other corrections finish and 
   await expect.poll(async () => (await previewColor(page))[1]).toBeGreaterThan(200);
   expect(await page.evaluate(() => parallelReview.calls.length)).toBe(3);
 });
+
+for (const registered of [false, true]) {
+  test(`${registered ? 'registered dots' : 'held-out physical geometry'} take priority over a superficially stronger correction`, async ({ page }) => {
+    await captureThree(page);
+    await page.evaluate(registered => {
+      const physical = (weak, anchored = false) => ({
+        confidence: weak ? .1 : .99, quality: { valid: true }, frame: {
+          metricSurface: {
+            type: 'developable-pinhole', ...(anchored ? { registration: {} } : {}),
+            diagnostics: { pitch: 10, validation: 600,
+              rms: weak ? 1.3 : .1, p90: weak ? 2 : .2,
+              p99: weak ? 3.8 : .5, borderP95: weak ? 10 : 1,
+              ...(anchored ? { registration: { anchors: 1400, maximumAnchorError: 0 } } : {}) }
+          }
+        }
+      });
+      // This tempting correction has either no interior evidence, or an
+      // excellent physical fit without registration to actual bullet centres.
+      parallelReview.finish(0, 'corrected', registered ? physical(false)
+        : { confidence: .99, quality: { valid: true } });
+      const unverified = physical(false, true);
+      unverified.frame.metricSurface.diagnostics.validation = 0;
+      parallelReview.finish(1, 'corrected', unverified);
+      // The least flattering metrics within the valid physical limits still
+      // carry stronger evidence than the lower verification tier.
+      parallelReview.finish(2, 'corrected', physical(true, registered));
+    }, registered);
+    await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
+    await expect(page.locator('#liveAlternatives button').nth(2)).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await previewColor(page))[1]).toBeGreaterThan(200);
+    await expect(page.locator('#liveAddBtn')).toBeEnabled();
+  });
+}
 
 test('closing aborts every pending photo and ignores late completions without retaining image URLs', async ({ page }) => {
   await captureThree(page);

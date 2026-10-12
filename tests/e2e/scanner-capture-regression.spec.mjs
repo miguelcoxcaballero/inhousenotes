@@ -114,17 +114,25 @@ test('capture shows a decoded photo while correction is pending, then inserts on
   await expect(page.locator('#scanner-editor-overlay')).not.toHaveClass(/visible/);
   const persisted = await page.evaluate(async () => {
     const saved = (await __IHN_TEST_API__.checkpointBeforeLeaving()).snapshot;
-    const source = saved.pages[1].backgroundImage;
+    const scannedPage = saved.pages[1];
+    const source = scannedPage.images[0]?.src;
     const image = new Image(); image.src = source; await image.decode();
     const canvas = document.createElement('canvas'); canvas.width = 20; canvas.height = 20;
-    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0, 20, 20);
+    const context = canvas.getContext('2d'); context.fillStyle = '#fff'; context.fillRect(0, 0, 20, 20);
+    context.drawImage(image, 0, 0, 20, 20);
     const rgba = context.getImageData(0, 0, 20, 20).data;
     const brightness = Array.from(rgba).filter((_, index) => index % 4 < 3).reduce((total, value) => total + value, 0) / 1200;
-    return { pages: saved.pages.length, width: image.naturalWidth, height: image.naturalHeight, brightness, dirtyPages: saved.dirtyPages };
+    return { pages: saved.pages.length, width: image.naturalWidth, height: image.naturalHeight, brightness,
+      backgroundSource: scannedPage.backgroundSource, backgroundImage: scannedPage.backgroundImage,
+      templateKind: scannedPage.templateKind, type: source.slice(0, 22), dirtyPages: saved.dirtyPages };
   });
   expect(persisted.pages).toBe(2);
   expect(persisted.width / persisted.height).toBeCloseTo(21 / 29.7, 2);
   expect(persisted.brightness).toBeGreaterThan(170);
+  expect(persisted.backgroundSource).toBe('template');
+  expect(persisted.templateKind).toBe('default');
+  expect(persisted.backgroundImage).toBeNull();
+  expect(persisted.type).toBe('data:image/png;base64,');
   expect(persisted.dirtyPages).toEqual([]);
   expect(errors).toEqual([]);
 });

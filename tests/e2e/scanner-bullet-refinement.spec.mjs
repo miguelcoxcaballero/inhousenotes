@@ -20,7 +20,7 @@ test('measured bullet rows correct remaining local bow and report only observed 
     });
     returned = true;
     if (!surface) return { accepted: false, diagnostics };
-    const base = { ...surface, refinement: undefined }, errors = [], beforeErrors = [];
+    const base = { ...surface, refinement: undefined, registration: undefined }, errors = [], beforeErrors = [];
     for (let y = 27; y <= 257; y += 7) for (let x = 27; x <= 183; x += 7) {
       const u = x / 210, v = y / 297, truth = rendered.map(u, v);
       const after = ScannerPro.MetricSurface.map(surface, u, v), before = ScannerPro.MetricSurface.map(base, u, v);

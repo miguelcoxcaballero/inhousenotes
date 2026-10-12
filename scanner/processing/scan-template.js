@@ -1,6 +1,5 @@
-/* The printed A4 bullet-journal stencil used by scanner downloads and scans.
- * Geometry and SVG are preserved from scanner/script.js's canonical stencil.
- * Canvas rendering has no paper fill, so applying it cannot whiten handwriting.
+/* Printable scanner SVGs retain their original format. Canvas previews use
+ * the same native renderer as editor pages; scan ink remains a separate layer.
  */
 (function (root) {
   "use strict";
@@ -80,90 +79,11 @@
       : STENCIL_BG_SVG.replace('<rect x="0" y="0" width="21" height="29.7" fill="white"/>', "");
   }
 
-  // Kept deliberately small: the canvas may be a full-resolution OffscreenCanvas
-  // in a worker, while this reusable dot stamp is only a few dozen pixels.
-  let dotStamp = null;
-  function makeDotStamp(scale) {
-    if (dotStamp && dotStamp.scale === scale) return dotStamp;
-    const dot = geometry.bullets;
-    const size = Math.max(3, Math.ceil(2 * (dot.radius + 4 * dot.blur) * scale) + 2);
-    const canvas = typeof root.OffscreenCanvas === "function" ? new root.OffscreenCanvas(size, size)
-      : root.document.createElement("canvas");
-    canvas.width = canvas.height = size;
-    const context = canvas.getContext("2d");
-    context.fillStyle = dot.color;
-    context.filter = `blur(${dot.blur * scale}px)`;
-    context.beginPath();
-    context.arc(size / 2, size / 2, dot.radius * scale, 0, Math.PI * 2);
-    context.fill();
-    dotStamp = { canvas, scale, sizeMM: size / scale };
-    return dotStamp;
-  }
-
-  function roundedRect(context, x, y, width, height, radius) {
-    context.moveTo(x + radius, y);
-    context.lineTo(x + width - radius, y);
-    context.quadraticCurveTo(x + width, y, x + width, y + radius);
-    context.lineTo(x + width, y + height - radius);
-    context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    context.lineTo(x + radius, y + height);
-    context.quadraticCurveTo(x, y + height, x, y + height - radius);
-    context.lineTo(x, y + radius);
-    context.quadraticCurveTo(x, y, x + radius, y);
-    context.closePath();
-  }
-
   function render(context, width, height, options = {}) {
-    if (!context || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-      throw new TypeError("A valid scan canvas is required for the printed template.");
-    }
-    const scaleX = width / geometry.widthMM, scaleY = height / geometry.heightMM;
-    context.save();
-    try {
-      context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
-      context.globalAlpha = 1;
-      // Ink survives where it crosses the printed pattern. On clean white paper
-      // these are the exact canonical stencil colours; there is no white layer.
-      context.globalCompositeOperation = "multiply";
-      context.filter = "none";
-      context.shadowColor = "transparent";
-      context.shadowBlur = 0;
-      if (options.dots !== false) {
-        const dot = geometry.bullets;
-        const stamp = makeDotStamp(Math.max(scaleX, scaleY));
-        const half = stamp.sizeMM / 2;
-        for (let row = 0; row < dot.rows; row++) for (let column = 0; column < dot.columns; column++) {
-          context.drawImage(stamp.canvas, dot.x + column * dot.pitch - half,
-            dot.y + row * dot.pitch - half, stamp.sizeMM, stamp.sizeMM);
-        }
-      }
-      const frame = geometry.frame, boxes = geometry.boxes, markers = geometry.markers;
-      context.strokeStyle = frame.color;
-      context.lineWidth = frame.stroke;
-      context.lineCap = "butt";
-      context.lineJoin = "miter";
-      context.setLineDash([]);
-      context.beginPath();
-      roundedRect(context, frame.x, frame.y, frame.width, frame.height, frame.radius);
-      for (const x of boxes.starts) {
-        roundedRect(context, x, boxes.y, boxes.width, boxes.height, frame.radius);
-        for (let offset = boxes.pitch; offset < boxes.width; offset += boxes.pitch) {
-          context.moveTo(x + offset, boxes.y);
-          context.lineTo(x + offset, boxes.y + boxes.height);
-        }
-      }
-      context.stroke();
-      for (let index = 0; index < markers.centers.length; index++) {
-        context.beginPath();
-        context.arc(markers.centers[index], markers.y, markers.radius, 0, Math.PI * 2);
-        context.fillStyle = markers.colors[index];
-        context.fill();
-        context.stroke();
-      }
-    } finally {
-      context.restore();
-    }
-    return context.canvas;
+    if (!root.InhouseBulletTemplate) throw new Error("The native page template renderer is unavailable.");
+    return root.InhouseBulletTemplate.render(context, width, height, {
+      ...options, background: options.background === true
+    });
   }
 
   SP.ScanTemplate = Object.freeze({ geometry, svg, render });

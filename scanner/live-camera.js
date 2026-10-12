@@ -785,21 +785,31 @@
   }
   function candidateRank(candidate) {
     if (!candidate.result) return -1;
-    const focus = Math.max(0, candidate.score || 0);
+    const focus = Math.max(0, Number.isFinite(candidate.score) ? candidate.score : 0);
     if (!candidate.result.corrected || candidate.analysis?.quality?.valid === false) return .1 * focus / (focus + 1);
     const bounded = value => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
-    const diagnostics = candidate.analysis?.frame?.metricSurface?.diagnostics;
-    // A verified correction always beats an uncorrected photo. Within valid
-    // scans, held-out grid and border residuals measure the actual result;
-    // sharpness alone must not select a beautifully focused failed unwrap.
-    const geometry = diagnostics?.pitch > 0
+    const surface = candidate.analysis?.frame?.metricSurface;
+    const diagnostics = surface?.diagnostics;
+    const physical = candidate.analysis?.quality?.valid === true
+      && surface?.type === 'developable-pinhole' && diagnostics?.validation > 0
+      && Number.isFinite(diagnostics.pitch) && diagnostics.pitch > 0
+      && [['rms', .14], ['p90', .22], ['p99', .4], ['borderP95', 1.15]].every(([key, limit]) =>
+        Number.isFinite(diagnostics[key]) && diagnostics[key] >= 0 && diagnostics[key] <= diagnostics.pitch * limit);
+    const registration = diagnostics?.rasterRegistration || diagnostics?.registration;
+    const registered = physical && !!surface.registration && registration?.anchors >= 350
+      && Number.isFinite(registration.maximumAnchorError) && registration.maximumAnchorError < .01;
+    // Compare independently verified levels first: registered 3D, physical
+    // 3D, a planar correction, then an original. Raw focus cannot promote a
+    // photo whose interior geometry was never verified above one that was.
+    const tier = registered ? 3 : physical ? 2 : 1;
+    const geometry = physical
       ? 1 - .45 * bounded(diagnostics.rms / diagnostics.pitch / .14)
         - .25 * bounded(diagnostics.p99 / diagnostics.pitch / .4)
         - .3 * bounded(diagnostics.borderP95 / diagnostics.pitch / 1.15)
       : .55;
     const brightness = candidate.detection?.brightness;
     const exposure = Number.isFinite(brightness) ? 1 - bounded(Math.abs(brightness - 210) / 150) : .5;
-    return 1 + .4 * geometry + .45 * focus / (focus + 1)
+    return tier + .4 * geometry + .45 * focus / (focus + 1)
       + .1 * bounded(candidate.analysis?.confidence) + .05 * exposure;
   }
   async function reviewCandidates(token) {
@@ -825,10 +835,24 @@
         if (processed.detection?.quality?.valid === false && processed.corrected) {
           throw new Error('The page geometry could not be verified');
         }
-        outputUrl = processed.blob === candidate.blob ? candidate.url : URL.createObjectURL(processed.blob);
+        const displayBlob = processed.previewBlob || processed.blob;
+        outputUrl = displayBlob === candidate.blob ? candidate.url : URL.createObjectURL(displayBlob);
         const dimensions = await imageSize(outputUrl, controller.signal);
         if (!current()) return;
-        candidate.result = { blob: processed.blob, ...dimensions, name: 'Scanned page', corrected: !!processed.corrected };
+        if (processed.previewBlob) {
+          // The visible composite and the ink asset have separate lifetimes.
+          // Verify the asset we will insert too, before offering this capture.
+          const inkUrl = URL.createObjectURL(processed.blob);
+          try {
+            const inkDimensions = await imageSize(inkUrl, controller.signal);
+            if (inkDimensions.width !== dimensions.width || inkDimensions.height !== dimensions.height) {
+              throw new Error('The scan layers do not match');
+            }
+          } finally { URL.revokeObjectURL(inkUrl); }
+          if (!current()) return;
+        }
+        candidate.result = { blob: processed.blob, ...dimensions, name: 'Scanned page', corrected: !!processed.corrected,
+          inkLayer: processed.inkLayer === true, templateKind: processed.templateKind };
         candidate.analysis = processed.detection;
         candidate.resultUrl = outputUrl;
         outputUrl = '';
@@ -878,7 +902,7 @@
     if (!embedded) {
       const link = document.createElement('a');
       link.href = previewUrl || $('livePreview').src;
-      link.download = 'scan.jpg';
+      link.download = result.inkLayer ? 'scan.png' : 'scan.jpg';
       link.click();
       return;
     }

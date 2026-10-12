@@ -7,7 +7,7 @@ self.document = {
     return new OffscreenCanvas(1, 1);
   }
 };
-importScripts(`liveDetection.js${self.location.search}`, `surface-parameterization.js${self.location.search}`,
+importScripts(`../../bullet-template.js${self.location.search}`, `liveDetection.js${self.location.search}`, `surface-parameterization.js${self.location.search}`,
   `metric-surface.js${self.location.search}`, `scan-template.js${self.location.search}`, `lightweight.js${self.location.search}`);
 self.onmessage = async event => {
   const { operation, bitmap, blob, config, liveDetection, maxDimension, timeoutMs,
