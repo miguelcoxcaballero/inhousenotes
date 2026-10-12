@@ -11,9 +11,14 @@
   const ANALYSIS_MAX = 800;
   const OUTPUT_LONG_EDGE = 2546;
   const moduleUrl = typeof document !== "undefined" ? document.currentScript?.src : null;
+  const processingWorker = typeof WorkerGlobalScope !== "undefined" && globalThis instanceof WorkerGlobalScope;
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const yieldToBrowser = () => {
+    // Each still has its own disposable worker. No UI events need a turn on
+    // that thread, and termination cancels it immediately. Avoid the 4 ms
+    // timer clamp hundreds of row-band yields would otherwise accumulate.
+    if (processingWorker) return Promise.resolve();
     if (globalThis.scheduler?.yield) return globalThis.scheduler.yield();
     return new Promise(resolve => setTimeout(resolve, 0));
   };
@@ -625,10 +630,24 @@
   function traceFrameSide(points, axis, perpendicular, expected, sampleCount = 19, maxDeviation = 0.052, preserveEndpoints = false) {
     const candidateSets = new Array(sampleCount);
     const window = 0.72 / (sampleCount - 1);
+    // Each yellow pixel belongs to at most two overlapping sample windows.
+    // Assign it once, retaining source order and the exact distance predicate,
+    // instead of scanning the entire page again for every border sample.
+    const localPointSets = Array.from({ length: sampleCount }, () => []);
+    for (const point of points) {
+      if (!(Math.abs(point[perpendicular] - expected) <= maxDeviation)) continue;
+      const coordinate = point[axis];
+      const nearest = Math.floor(coordinate * (sampleCount - 1));
+      for (let sample = Math.max(0, nearest - 1);
+        sample <= Math.min(sampleCount - 1, nearest + 1); sample += 1) {
+        if (Math.abs(coordinate - sample / (sampleCount - 1)) <= window) {
+          localPointSets[sample].push(point);
+        }
+      }
+    }
     for (let sample = 0; sample < sampleCount; sample += 1) {
       const position = sample / (sampleCount - 1);
-      const localPoints = points.filter(point => Math.abs(point[axis] - position) <= window
-        && Math.abs(point[perpendicular] - expected) <= maxDeviation);
+      const localPoints = localPointSets[sample];
       const candidates = localPoints
         .map(point => point[perpendicular])
         .sort((a, b) => a - b);
@@ -1839,6 +1858,20 @@
     }
     const inlierIndices = new Uint32Array(points.length);
     const occupied = new Uint8Array(120);
+    const continuityWeight = clamp(options.continuityWeight || 0, 0, 0.95);
+    const measureContinuity = (minimum, span, inlierCount) => {
+      const continuityBins = Math.min(120, Math.max(36,
+        Math.ceil(span / Math.max(0.006, options.tolerance * 0.7))));
+      occupied.fill(0, 0, continuityBins);
+      let occupiedCount = 0;
+      for (let index = 0; index < inlierCount; index += 1) {
+        const bin = clamp(Math.floor((independent[inlierIndices[index]] - minimum)
+          / Math.max(1e-6, span) * continuityBins), 0, continuityBins - 1);
+        if (!occupied[bin]) occupiedCount += 1;
+        occupied[bin] = 1;
+      }
+      return occupiedCount / continuityBins;
+    };
     let best = null;
     let bestScore = 0;
     const hypotheses = Math.min(360, Math.max(140, points.length * 2));
@@ -1882,18 +1915,9 @@
         : 0;
       const boundaryPenalty = 1 + Math.max(0, inwardOffset)
         / (options.boundaryTolerance || 0.012);
-      const continuityBins = Math.min(120, Math.max(36,
-        Math.ceil(span / Math.max(0.006, options.tolerance * 0.7))));
-      occupied.fill(0, 0, continuityBins);
-      let occupiedCount = 0;
-      for (let index = 0; index < inlierCount; index += 1) {
-        const bin = clamp(Math.floor((independent[inlierIndices[index]] - minimum)
-          / Math.max(1e-6, span) * continuityBins), 0, continuityBins - 1);
-        if (!occupied[bin]) occupiedCount += 1;
-        occupied[bin] = 1;
-      }
-      const continuity = occupiedCount / continuityBins;
-      const continuityWeight = clamp(options.continuityWeight || 0, 0, 0.95);
+      // Local ridge fits do not weight continuity. Its value still belongs in
+      // the winning model, but cannot change the score of discarded models.
+      const continuity = continuityWeight ? measureContinuity(minimum, span, inlierCount) : 0;
       const continuityFactor = (1 - continuityWeight)
         + continuityWeight * Math.pow(continuity, 1.35);
       const score = weightedSupport * continuityFactor * (1 + Math.min(1, span / 0.82))
@@ -1901,7 +1925,8 @@
       if (score > bestScore) {
         bestScore = score;
         const inliers = Array.from(inlierIndices.subarray(0, inlierCount), index => points[index]);
-        best = { inliers, atCenter, span, minimum, maximum, continuity };
+        best = { inliers, atCenter, span, minimum, maximum,
+          continuity: continuityWeight ? continuity : measureContinuity(minimum, span, inlierCount) };
       }
     }
     if (!best) return null;
@@ -3311,7 +3336,7 @@
       }
     }
     if (detection.quality?.valid && detection.frame && SP.MetricSurface?.fit) {
-      const surface = SP.MetricSurface.fit(source, detection);
+      const surface = SP.MetricSurface.fit(source, detection, { budgetMs: options.surfaceBudgetMs });
       if (surface) detection.frame.metricSurface = surface;
     }
     return detection;
@@ -3363,6 +3388,169 @@
         bitmap.close();
         unavailable();
       }
+    });
+  };
+
+  async function decodeScanBlob(blob, options) {
+    checkProcessingCancelled(options);
+    if (typeof createImageBitmap === "function") {
+      try {
+        const bitmap = await createImageBitmap(blob);
+        if (options.signal?.aborted) {
+          bitmap.close();
+          checkProcessingCancelled(options);
+        }
+        return bitmap;
+      } catch (error) {
+        checkProcessingCancelled(options);
+        if (typeof Image !== "function") {
+          // Some supported imports (notably SVG in Chromium) require the
+          // document's image decoder even when JPEG works in the worker.
+          error.needsImageDecoder = true;
+          throw error;
+        }
+      }
+    }
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      const url = URL.createObjectURL(blob);
+      const finish = (callback, value) => {
+        image.onload = image.onerror = null;
+        options.signal?.removeEventListener("abort", abort);
+        URL.revokeObjectURL(url);
+        callback(value);
+      };
+      const abort = () => {
+        finish(reject, new DOMException("Scan processing cancelled", "AbortError"));
+        image.src = "";
+      };
+      image.onload = () => finish(resolve, image);
+      image.onerror = () => finish(reject, new Error("This image could not be opened"));
+      options.signal?.addEventListener("abort", abort, { once: true });
+      if (options.signal?.aborted) { abort(); return; }
+      image.src = url;
+    });
+  }
+
+  async function processScanBlob(blob, options) {
+    const started = performance.now();
+    const timings = { worker: processingWorker, decodeMs: 0, detectionMs: 0, warpMs: 0, colorMs: 0, encodeMs: 0 };
+    let decoded, source, output;
+    const progress = stage => { checkProcessingCancelled(options); options.onProgress?.(stage); };
+    try {
+      progress("decoding");
+      decoded = await decodeScanBlob(blob, options);
+      const width = decoded.naturalWidth || decoded.width;
+      const height = decoded.naturalHeight || decoded.height;
+      if (!width || !height) throw new Error("This image is empty");
+      source = createScaledCanvas(decoded, 2560).canvas;
+      decoded.close?.(); decoded = null;
+      timings.decodeMs = performance.now() - started;
+      progress("detection");
+      const detectionStarted = performance.now();
+      // The same yielding fallback also supports older WebViews without
+      // OffscreenCanvas; current Android performs all of these stages in a
+      // dedicated worker without sending full-size pixel buffers to the UI.
+      const detection = await Light.detectPageAsync(source, {
+        ...options,
+        // A three-photo burst can share one CPU core. Preserve the same
+        // available fitting work per photograph instead of dropping its 3D
+        // surface simply because two other workers used the wall clock.
+        surfaceBudgetMs: processingWorker ? 7800 : undefined
+      });
+      timings.detectionMs = performance.now() - detectionStarted;
+      checkProcessingCancelled(options);
+      const precise = ["stencil", "marker-guided"].includes(detection.method) && detection.confidence >= .55;
+      const quad = precise ? detection.pageQuad : options.liveDetection?.pageQuad?.map(point => ({
+        x: point.x * source.width, y: point.y * source.height
+      }));
+      if (detection.quality?.valid === false || !quad) {
+        timings.totalMs = performance.now() - started;
+        return { blob, width, height, corrected: false, detection, timings,
+          failureReason: detection.quality?.reason || "Page edges could not be verified" };
+      }
+      progress("warp");
+      const warpStarted = performance.now();
+      output = await Light.warp(source, quad, precise ? detection.frame : null,
+        { signal: options.signal, maxDimension: options.maxDimension });
+      timings.warpMs = performance.now() - warpStarted;
+      source.width = source.height = 0; source = null;
+      if (precise) {
+        progress("colors");
+        const colorsStarted = performance.now();
+        await Light.correctColors(output, { useStencil: true, preciseStencil: true, signal: options.signal });
+        timings.colorMs = performance.now() - colorsStarted;
+      }
+      progress("encoding");
+      const encodeStarted = performance.now();
+      const encoded = typeof output.convertToBlob === "function"
+        ? await output.convertToBlob({ type: "image/jpeg", quality: .94 })
+        : await new Promise((resolve, reject) => output.toBlob(value => value?.size
+          ? resolve(value) : reject(new Error("Could not encode this scan")), "image/jpeg", .94));
+      checkProcessingCancelled(options);
+      if (!encoded?.size) throw new Error("Could not encode this scan");
+      // Encoding and decoding happen on the worker as well. A malformed JPEG
+      // must never be advertised as the winning corrected capture.
+      decoded = await decodeScanBlob(encoded, options);
+      if ((decoded.naturalWidth || decoded.width) !== output.width
+        || (decoded.naturalHeight || decoded.height) !== output.height) throw new Error("The scan could not be verified");
+      decoded.close?.(); decoded = null;
+      timings.encodeMs = performance.now() - encodeStarted;
+      timings.totalMs = performance.now() - started;
+      return { blob: encoded, width: output.width, height: output.height, corrected: true, detection, timings };
+    } finally {
+      decoded?.close?.();
+      if (source) source.width = source.height = 0;
+      if (output) output.width = output.height = 0;
+    }
+  }
+
+  Light.processPageAsync = function processPageAsync(blob, options = {}) {
+    return new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      const settings = { ...options, signal: controller.signal };
+      let worker, settled = false, fallbackStarted = false, timer;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        options.signal?.removeEventListener("abort", abort);
+        worker?.terminate();
+        controller.abort();
+        callback(value);
+      };
+      const abort = () => finish(reject, new DOMException("Scan processing cancelled", "AbortError"));
+      const fallback = () => {
+        if (settled || fallbackStarted) return;
+        fallbackStarted = true;
+        worker?.terminate(); worker = null;
+        processScanBlob(blob, settings).then(value => finish(resolve, value), error => finish(reject, error));
+      };
+      options.signal?.addEventListener("abort", abort, { once: true });
+      if (options.signal?.aborted) { abort(); return; }
+      timer = setTimeout(() => finish(reject, new Error("Page correction took too long. Try another frame.")),
+        Math.max(1000, Math.min(60000, options.timeoutMs || 20000)));
+      if (!moduleUrl || typeof Worker !== "function" || typeof createImageBitmap !== "function"
+        || typeof OffscreenCanvas !== "function") { fallback(); return; }
+      try {
+        const workerUrl = new URL("detection-worker.js", moduleUrl);
+        workerUrl.search = new URL(moduleUrl).search;
+        worker = new Worker(workerUrl);
+        worker.onmessage = event => {
+          if (settled || fallbackStarted) return;
+          const data = event.data;
+          if (data.progress) { options.onProgress?.(data.progress); return; }
+          if (data.unsupported || data.needsImageDecoder) { fallback(); return; }
+          if (data.error) {
+            const error = new Error(data.error); error.name = data.name || "Error";
+            finish(reject, error);
+          } else finish(resolve, data.result);
+        };
+        worker.onerror = fallback;
+        worker.postMessage({ operation: "process", blob, config: SP.Config || {},
+          liveDetection: options.liveDetection || null, maxDimension: options.maxDimension,
+          timeoutMs: options.timeoutMs });
+      } catch (_) { fallback(); }
     });
   };
 
@@ -4093,7 +4281,7 @@
       // does, so synthetic margins cannot veto a real camera colour cast.
       region: { x0: .12, x1: .88, y0: .08, y1: .9 }
     };
-    const balanced = SP.LiveDetection?.normalizeIlluminationAsync
+    const balanced = !processingWorker && SP.LiveDetection?.normalizeIlluminationAsync
       ? await SP.LiveDetection.normalizeIlluminationAsync(image, balanceOptions)
       : SP.LiveDetection?.normalizeIllumination?.(image, balanceOptions);
     const data = balanced?.data || original;

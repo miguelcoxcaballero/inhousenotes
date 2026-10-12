@@ -127,10 +127,10 @@ test('a faint scene is either reconstructed correctly or explicitly kept as the 
   const input = await page.evaluate(() => {
     const definition = ScannerSceneFixtures.CASES.find(candidate => candidate.name === 'faint-soft-s-bend-on-pale-book');
     window.__faintScene = ScannerSceneFixtures.render(definition);
-    const detect = ScannerPro.Lightweight.detectPageAsync;
-    ScannerPro.Lightweight.detectPageAsync = async function (...args) {
-      const result = await detect.apply(this, args);
-      window.__faintDetection = result;
+    const process = ScannerPro.Lightweight.processPageAsync;
+    ScannerPro.Lightweight.processPageAsync = async function (...args) {
+      const result = await process.apply(this, args);
+      window.__faintDetection = result.detection;
       return result;
     };
     return __faintScene.source.toDataURL('image/png').split(',')[1];

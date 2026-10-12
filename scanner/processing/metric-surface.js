@@ -348,16 +348,36 @@
       frame.box.top?.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
         ? frame.box.top.map((p) => ({ x: p.x * scale, y: p.y * scale }))
         : null;
+    const pixel = (x, y, c) =>
+      rgba[
+        (clamp(Math.round(y), 0, height - 1) * width +
+          clamp(Math.round(x), 0, width - 1)) *
+          4 +
+          c
+      ];
+    const visibleCalibrationRail = (point, nx, ny) => {
+      const background = [0, 1, 2].map(
+        (c) =>
+          (pixel(point.x + nx * 4, point.y + ny * 4, c) +
+            pixel(point.x - nx * 4, point.y - ny * 4, c)) /
+          2,
+      );
+      for (let offset = -2; offset <= 2; offset++) {
+        const darkness = background.map(
+          (value, c) =>
+            (value - pixel(point.x + nx * offset, point.y + ny * offset, c)) /
+            Math.max(40, value),
+        );
+        if (
+          darkness[2] > 0.02 &&
+          darkness[2] - (darkness[0] + darkness[1]) / 2 > 0.015
+        ) return true;
+      }
+      return false;
+    };
     if (calibrationTop?.length >= 3) {
       let hits = 0,
         checked = 0;
-      const pixel = (x, y, c) =>
-        rgba[
-          (clamp(Math.round(y), 0, height - 1) * width +
-            clamp(Math.round(x), 0, width - 1)) *
-            4 +
-            c
-        ];
       for (let i = 1; i < calibrationTop.length - 1; i++) {
         const a = calibrationTop[i - 1],
           point = calibrationTop[i],
@@ -365,28 +385,9 @@
           length = Math.hypot(b.x - a.x, b.y - a.y);
         if (length < 1) continue;
         const nx = -(b.y - a.y) / length,
-          ny = (b.x - a.x) / length,
-          background = [0, 1, 2].map(
-            (c) =>
-              (pixel(point.x + nx * 4, point.y + ny * 4, c) +
-                pixel(point.x - nx * 4, point.y - ny * 4, c)) /
-              2,
-          );
-        let supported = false;
-        for (let offset = -2; offset <= 2; offset++) {
-          const darkness = background.map(
-            (value, c) =>
-              (value - pixel(point.x + nx * offset, point.y + ny * offset, c)) /
-              Math.max(40, value),
-          );
-          if (
-            darkness[2] > 0.02 &&
-            darkness[2] - (darkness[0] + darkness[1]) / 2 > 0.015
-          )
-            supported = true;
-        }
+          ny = (b.x - a.x) / length;
         checked++;
-        if (supported) hits++;
+        if (visibleCalibrationRail(point, nx, ny)) hits++;
       }
       // Some frame hypotheses infer the box position from page proportions.
       // Only an actually visible coloured rail may censor grid observations.
@@ -395,7 +396,10 @@
     const aboveCalibration = (point) => {
       if (!calibrationTop || calibrationTop.length < 2) return true;
       let closest = Infinity,
-        side = 0;
+        side = 0,
+        nearest = null,
+        normalX = 0,
+        normalY = 0;
       for (let i = 1; i < calibrationTop.length; i++) {
         const a = calibrationTop[i - 1],
           b = calibrationTop[i],
@@ -412,13 +416,20 @@
         if (distance < closest) {
           closest = distance;
           side = ((point.x - a.x) * dy - (point.y - a.y) * dx) / length;
+          nearest = { x: a.x + t * dx, y: a.y + t * dy };
+          normalX = -dy / length;
+          normalY = dx / length;
         }
       }
       // The calibration boxes contain sharp corners at the same 5 mm pitch
       // as the dots. JPEG ringing can make those corners look like extra grid
       // rows. The measured upper box rail is a physical exclusion boundary;
       // the last real dot row sits one full pitch above it.
-      return side > pitch * 0.25;
+      // A rail can be well observed overall while its interpolated end bends
+      // over genuine dots. Require colour evidence at this particular segment
+      // before using it to exclude a point, retaining the full last grid row.
+      return side > pitch * 0.25 || !nearest
+        || !visibleCalibrationRail(nearest, normalX, normalY);
     };
     const polygon = [
       ...paths.top,
