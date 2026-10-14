@@ -105,7 +105,7 @@
     ctx.scale(scale, scale);
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, PAGE.width, PAGE.height);
-    ctx.fillStyle = "#cbc8bf";
+    ctx.fillStyle = definition.dotColor || "#cbc8bf";
     for (let x = 20; x <= 190; x += 5) {
       for (let y = 19.3; y <= 269.3; y += 5) {
         const col = Math.round((x - 20) / 5),

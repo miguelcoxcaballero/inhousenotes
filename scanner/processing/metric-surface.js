@@ -321,7 +321,7 @@
         d[key] * (1 - u) * v);
     return { x: coordinate("x"), y: coordinate("y") };
   }
-  function observe(source, frame, diagnostics = {}) {
+  function observe(source, frame, diagnostics = {}, faint = false) {
     if (!frame?.paths) return null;
     const scale = Math.min(1, 1000 / Math.max(source.width, source.height)),
       width = Math.round(source.width * scale),
@@ -471,7 +471,7 @@
         const index = y * width + x,
           value = response[index],
           offset = index * 4;
-        if (value < 5) continue;
+        if (value < (faint ? 1.7 : 5)) continue;
         const channels = [rgba[offset], rgba[offset + 1], rgba[offset + 2]],
           highest = Math.max(...channels);
         const background = [0, 0, 0];
@@ -539,6 +539,11 @@
     const typicalContrast = median(points.map((p) => p.strength));
     points = points.filter((p) => p.strength < typicalContrast * 2.3);
     diagnostics.candidates = points.length;
+    diagnostics.faintDotPass = faint;
+    // Camera antialiasing and warm exposure can reduce small printed dots to
+    // a few intensity levels. Recover them only when the normal pass lacks
+    // evidence; the lattice graph, holdouts and raster gate remain unchanged.
+    if (points.length < 350 && !faint) return observe(source, frame, diagnostics, true);
     if (points.length < 350 || points.length > 4500) return null;
     const hash = new Map(),
       cell = pitch * 1.5,
@@ -769,7 +774,10 @@
               ),
             );
         }
-        if (boundary.some((side) => side.length < 12)) continue;
+        diagnostics.maximumBoundaryEvidence ||= [0,0,0,0];
+        boundary.forEach((side,i) => diagnostics.maximumBoundaryEvidence[i] = Math.max(diagnostics.maximumBoundaryEvidence[i], side.length));
+        if (boundary.some((side) => side.length < (faint ? 3 : 12))
+          || boundary.reduce((total, side) => total + side.length, 0) < 80) continue;
         phases.push({
           c0,
           r0,
@@ -782,6 +790,7 @@
       }
     phases.sort((a, b) => a.score - b.score);
     const phase = phases[0];
+    if (!phase && !faint) return observe(source, frame, diagnostics, true);
     diagnostics.phases = phases.slice(0, 3).map((p) => ({
       c: p.c0,
       r: p.r0,
@@ -859,16 +868,20 @@
       return true;
     });
     diagnostics.rejectedGridOutliers = measured.length - lattice.length;
-    if (lattice.length < 350 || lattice.length < measured.length * 0.85)
+    if (lattice.length < 350 || lattice.length < measured.length * (faint ? 0.6 : 0.85))
       return null;
     const refined = refineDotCenters(source, lattice, pitch / Math.sqrt(scaleX * scaleY), diagnostics);
-    if (refined.length < 350) return null;
+    // Low-contrast recovery adds candidates, not authority. Only centres
+    // independently measured in the source raster train a faint-dot surface.
+    const confirmed = faint ? refined.filter(point => point.centerRefined) : refined;
+    diagnostics.discardedAmbiguousCenters = refined.length - confirmed.length;
+    if (confirmed.length < 350) return null;
     return {
-      points: refined,
+      points: confirmed,
       raster: refined.raster,
       pitch: pitch / Math.sqrt(scaleX * scaleY),
       phaseScore: phase.score,
-      coverage: refined.length / (35 * 51),
+      coverage: confirmed.length / (35 * 51),
     };
   }
   function refineDotCenters(source, points, pitch, diagnostics, existingRaster = null) {
@@ -1664,7 +1677,7 @@
       ).size,
       samples: guides.length,
     };
-    let best = null, starts = 0;
+    let best = null, bestValid = false, starts = 0;
     for (const beta of [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4]) {
       if (performance.now() > deadline) break;
       const p = [...base];
@@ -1681,7 +1694,12 @@
         guides,
       );
       starts++;
-      if (!best || result.cost < best.cost) best = result;
+      const validCandidate = validateModel(prepare(result.p, source.width, source.height));
+      // A numerically cheaper fit can fold the blank paper margin. It must
+      // not displace a visible surface that passes the independent holdouts.
+      if (!best || (validCandidate && !bestValid) || (validCandidate === bestValid && result.cost < best.cost)) {
+        best = result; bestValid = validCandidate;
+      }
       // A different bend-axis seed is unnecessary after an independently
       // checked subpixel fit already explains both measured line families.
       // Difficult pages still exhaust all starts and the original budget.

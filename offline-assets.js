@@ -19,6 +19,7 @@ self.INHOUSE_OFFLINE_ASSETS=[
   "/scanner/index.html",
   "/scanner/live-camera.css",
   "/scanner/live-camera.js",
+  "/scanner/processing/capture-quality.js",
   "/scanner/processing/colorTransform.js",
   "/scanner/processing/colourValues.js",
   "/scanner/processing/detection-worker.js",
