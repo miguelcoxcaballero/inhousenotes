@@ -9521,13 +9521,12 @@
         function createDriveFolderArt(folder, options = {}) {
             const art = document.createElement('div');
             art.className = 'drive-folder-art';
-            art.innerHTML = '<span class="drive-folder-back" aria-hidden="true"></span><span class="drive-folder-sheets" aria-hidden="true"></span><span class="drive-folder-cover"><span class="drive-folder-cover-face"><span class="drive-folder-print"><span class="drive-card-title"></span><span class="drive-folder-rule" aria-hidden="true"></span><span class="drive-card-sub"></span></span></span><span class="drive-folder-cover-inside" aria-hidden="true"></span></span>';
+            art.innerHTML = '<span class="drive-folder-back" aria-hidden="true"></span><span class="drive-folder-sheets" aria-hidden="true"></span><span class="drive-folder-cover"><span class="drive-folder-cover-face"><span class="drive-folder-print"><span class="drive-card-title"></span><span class="drive-folder-rule" aria-hidden="true"></span></span></span><span class="drive-folder-cover-inside" aria-hidden="true"></span></span>';
             applyDriveTitleWithSharedIcon(art.querySelector('.drive-card-title'), folder, 'Folder');
             const longestWord = String(folder?.name || '').split(/\s+/).reduce((max, word) => Math.max(max, word.length), 0);
-            // The name is printed across ~75% of the cover: shrink it so its
+            // The name is printed across ~78% of the cover: shrink it so its
             // longest word fits on one line instead of breaking mid-word.
-            if (longestWord > 11) art.style.setProperty('--folder-name-size', `${Math.max(6, 116 / longestWord).toFixed(2)}cqi`);
-            art.querySelector('.drive-card-sub').textContent = options.sub || (isSharedDriveDoc(folder) ? 'Shared folder' : 'Folder');
+            if (longestWord > 10) art.style.setProperty('--folder-name-size', `${Math.max(6, 120 / longestWord).toFixed(2)}cqi`);
             if (options.menu) art.querySelector('.drive-folder-cover-face').appendChild(createDriveItemMenu(folder));
             applyDriveFolderPalette(art, resolveDriveFolderColor(folder));
             return art;

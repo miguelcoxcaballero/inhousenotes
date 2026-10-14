@@ -97,6 +97,90 @@
         }
     }
 
+    // ── Published release check ──
+    // The browser can keep showing an older release after a reload: GitHub
+    // Pages answers with HTTP caching, and an older service worker serves the
+    // page from its offline copy. Ask the live site which release is
+    // published (service-worker.js carries it), bypassing every cache. When
+    // it is newer than the running one, drop the old offline copy of the
+    // pages and reload, once per release per tab, and never while a document
+    // is open in the editor (that waits until the tab is next shown).
+    function readAppVersion() {
+        const source = documentRef.getElementById('inhouse-app-version')?.textContent || '';
+        return source.match(/APP_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]/)?.[1] || '';
+    }
+
+    function compareVersions(a, b) {
+        const x = a.split('.').map(Number);
+        const y = b.split('.').map(Number);
+        for (let i = 0; i < 3; i += 1) {
+            if (x[i] !== y[i]) return x[i] - y[i];
+        }
+        return 0;
+    }
+
+    function watchPublishedVersion() {
+        const running = readAppVersion();
+        if (!running || typeof root.fetch !== 'function') return;
+        if ((root.location.search || '').includes('oauth_callback')) return;
+        const RELOAD_KEY = 'ihn-release-reload';
+        let checking = false;
+        let lastCheck = 0;
+
+        const isEditing = () => {
+            const editor = documentRef.getElementById('editor-view');
+            return !!editor && !editor.classList.contains('hidden');
+        };
+
+        const reloadInto = async (published) => {
+            try {
+                if (root.sessionStorage.getItem(RELOAD_KEY) === published) return;
+                root.sessionStorage.setItem(RELOAD_KEY, published);
+            } catch (error) {
+                return; // Without a guard against reload loops, do nothing.
+            }
+            try {
+                const registration = await root.navigator.serviceWorker?.getRegistration();
+                await registration?.update();
+            } catch (error) { /* the reload below still revalidates the page */ }
+            try {
+                for (const key of await root.caches.keys()) {
+                    if (!key.startsWith('inhouse-shell-') || key === `inhouse-shell-${published}`) continue;
+                    const cache = await root.caches.open(key);
+                    await cache.delete('/index.html');
+                    await cache.delete('/scanner/index.html');
+                }
+            } catch (error) { /* no Cache Storage: nothing stale to drop */ }
+            root.location.reload();
+        };
+
+        const check = async () => {
+            if (checking || root.navigator.onLine === false) return;
+            checking = true;
+            lastCheck = Date.now();
+            try {
+                const response = await root.fetch(`/service-worker.js?release-check=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) return;
+                const published = (await response.text()).match(/const VERSION='(\d+\.\d+\.\d+)'/)?.[1] || '';
+                if (published && compareVersions(published, running) > 0 && !isEditing()) await reloadInto(published);
+            } catch (error) {
+                // Offline or blocked: keep the running release.
+            } finally {
+                checking = false;
+            }
+        };
+
+        const start = () => setTimeout(check, 1200);
+        if (documentRef.readyState === 'complete') start();
+        else root.addEventListener('load', start, { once: true });
+        documentRef.addEventListener('visibilitychange', () => {
+            if (documentRef.visibilityState === 'visible' && Date.now() - lastCheck > 60000) void check();
+        });
+        root.addEventListener('pageshow', (event) => {
+            if (event.persisted) void check();
+        });
+    }
+
     if (root.InhouseBackgroundChannel?.postMessage) {
         const send = (type, result) => root.InhouseBackgroundChannel.postMessage(JSON.stringify({type,result}));
         root.InhouseBackground = Object.freeze({schedule:()=>send('schedule'),cancel:()=>send('cancel'),complete:value=>send('complete',JSON.parse(value))});
@@ -104,6 +188,7 @@
     applySavedTheme();
     handleOAuthCallback();
     selectBootDestination();
+    watchPublishedVersion();
     if (documentRef.readyState === 'loading') {
         let revealed = false;
         const observer = new MutationObserver(() => {
