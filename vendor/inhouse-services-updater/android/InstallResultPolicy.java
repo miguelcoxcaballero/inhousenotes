@@ -17,6 +17,20 @@ public final class InstallResultPolicy {
         return resultCode == 0 ? "cancelled" : "error";
     }
 
+    // PackageInstaller public status constants (kept Android-free for JVM tests).
+    public static String sessionMessage(int status) {
+        switch (status) {
+            case 0: return "Update installed.";
+            case 2: return "Android blocked this installation. Check device restrictions.";
+            case 3: return "Installation cancelled. You can try again.";
+            case 4: return "Android could not read the update package. Try again.";
+            case 5: return "Android found a conflicting package or signature.";
+            case 6: return "Android needs more free storage to install this update.";
+            case 7: return "This update is not compatible with this device.";
+            default: return "Android could not install the update. Use Download APK or try again.";
+        }
+    }
+
     public static String failureMessage(int packageResult) {
         switch (packageResult) {
             case -4: return "Android needs more free storage to install this update.";

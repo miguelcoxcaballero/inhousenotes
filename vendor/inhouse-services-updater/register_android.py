@@ -67,6 +67,9 @@ def register(project, repository, trust_read=False):
     install_activity='com.inhouse.services.updater.InstallActivity'
     if not any(node.get(f'{{{ns}}}name')==install_activity for node in application.findall('activity')):
         ET.SubElement(application,'activity',{f'{{{ns}}}name':install_activity,f'{{{ns}}}exported':'false',f'{{{ns}}}theme':'@android:style/Theme.DeviceDefault.NoActionBar'})
+    receiver='com.inhouse.services.updater.InstallReceiver'
+    if not any(node.get(f'{{{ns}}}name')==receiver for node in application.findall('receiver')):
+        ET.SubElement(application,'receiver',{f'{{{ns}}}name':receiver,f'{{{ns}}}exported':'false'})
     provider=ET.SubElement(application,'provider',{f'{{{ns}}}name':'androidx.core.content.FileProvider',f'{{{ns}}}authorities':'${applicationId}.update-provider',f'{{{ns}}}exported':'false',f'{{{ns}}}grantUriPermissions':'true'})
     ET.SubElement(provider,'meta-data',{f'{{{ns}}}name':'android.support.FILE_PROVIDER_PATHS',f'{{{ns}}}resource':'@xml/inhouse_update_paths'})
     tree.write(path,encoding='unicode')

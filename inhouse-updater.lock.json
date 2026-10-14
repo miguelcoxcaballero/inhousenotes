@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "6621ca1dbb519d171d723f118052e42ef5d5c001",
+  "revision": "bc2a212305daae87d188674aebc6c562a045d923",
   "version": "1.2.3",
   "appId": "notes",
   "files": {
@@ -22,15 +22,19 @@
     },
     "vendor/inhouse-services-updater/web/updater.js": {
       "source": "web/updater.js",
-      "sha256": "e0dad1ac3e720e7f59e24c9f4ad5a9dc2e78ef5fbbec0cfd392029e896a3b5d8"
+      "sha256": "8c241150b90f634c6ff37be6a9e5ad50496f2d363103e0d712c99f78a9a0741c"
     },
     "vendor/inhouse-services-updater/android/InstallActivity.java": {
       "source": "android/InstallActivity.java",
-      "sha256": "06e6a9b829259ee7643158b6ee37e193c674606221488ea2904542cb22418640"
+      "sha256": "c1da429bbd62cd752480f561b291a8e315ec9e64100dc06f84e66a44e834947e"
+    },
+    "vendor/inhouse-services-updater/android/InstallReceiver.java": {
+      "source": "android/InstallReceiver.java",
+      "sha256": "930f0b7dd767ce48739b2393c1d3f70ee84ab52366f24574daf40f2f5bc33621"
     },
     "vendor/inhouse-services-updater/android/InstallResultPolicy.java": {
       "source": "android/InstallResultPolicy.java",
-      "sha256": "fa3fa2727e670ac7dec02bf34f2cf444a0c58648e47efd3c2de5798dc6471aec"
+      "sha256": "252a55707ed7cd859434c93bf0edeecd0ba0b1ae402c358d9ab34232b2124e80"
     },
     "vendor/inhouse-services-updater/android/InstallState.java": {
       "source": "android/InstallState.java",
@@ -42,7 +46,7 @@
     },
     "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt": {
       "source": "android/PhotosUpdateInstaller.kt",
-      "sha256": "3d53a501f97ae0a53bcee48d46a0bb5343299eccd9aa4a3064fa956335a715a4"
+      "sha256": "c8b0c32d6e5f312e5cb3e2da4d78bd26fa38060877e7cbc336865ca9f01a471d"
     },
     "vendor/inhouse-services-updater/android/UpdateActivity.java": {
       "source": "android/UpdateActivity.java",
@@ -66,7 +70,7 @@
     },
     "vendor/inhouse-services-updater/register_android.py": {
       "source": "tools/register_android.py",
-      "sha256": "94b27fa92fe86dd607ee27d8c6af7a1291528be27b58b53975201482efc90d23"
+      "sha256": "26fdd25d74d24447a46fab33f91e9f581f6c11fb6e9c8ad8e141a559bbac9bbf"
     },
     "vendor/inhouse-services-updater/tests/browser.py": {
       "source": "tests/browser.py",
@@ -82,7 +86,7 @@
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "2f38236468fee22679241cd9ef1b66c3d0939061f84877161769e80dbb8b9a14"
+      "sha256": "581fb417abeccbf60574c6d1352a613ddd8a97f39c0a792ffb916d002f7190e2"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
@@ -90,7 +94,7 @@
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
-      "sha256": "e0dad1ac3e720e7f59e24c9f4ad5a9dc2e78ef5fbbec0cfd392029e896a3b5d8"
+      "sha256": "8c241150b90f634c6ff37be6a9e5ad50496f2d363103e0d712c99f78a9a0741c"
     },
     "shared/inhouse-services-updater/updater.css": {
       "source": "web/updater.css",

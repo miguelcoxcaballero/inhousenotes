@@ -56,24 +56,25 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
           .take(16)
         val partialFile = File(updateDirectory, "inhouse-photos-$fileKey.apk.part")
         val apkFile = File(updateDirectory, "inhouse-photos-$fileKey.apk")
-        download(url, partialFile)
-        if (apkFile.exists() && !apkFile.delete()) {
-          throw IllegalStateException("Could not replace the previous update package.")
+        // Retry the already verified package instead of downloading it again.
+        var verifiedPackage: PackageInfo? = null
+        if (apkFile.isFile) {
+          try { verifiedPackage = verifyApk(apkFile, expectedSha256) }
+          catch (_: Exception) { apkFile.delete() }
         }
-        if (!partialFile.renameTo(apkFile)) {
-          partialFile.copyTo(apkFile, overwrite = true)
-          if (!partialFile.delete()) {
-            partialFile.deleteOnExit()
+        if (verifiedPackage == null) {
+          download(url, partialFile)
+          if (!partialFile.renameTo(apkFile)) {
+            partialFile.copyTo(apkFile, overwrite = true)
+            partialFile.delete()
+          }
+          publishStage("verifying")
+          try { verifiedPackage = verifyApk(apkFile, expectedSha256) }
+          catch (error: Exception) {
+            apkFile.delete(); partialFile.delete(); throw error
           }
         }
-        publishStage("verifying")
-        val verifiedPackage = try {
-          verifyApk(apkFile, expectedSha256)
-        } catch (error: Exception) {
-          apkFile.delete()
-          partialFile.delete()
-          throw error
-        }
+        val verified = verifiedPackage ?: throw SecurityException("Invalid update package.")
 
         val apkUri = FileProvider.getUriForFile(
           activity,
@@ -93,8 +94,8 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
               data = apkUri
               clipData = ClipData.newRawUri("Update APK", apkUri)
               putExtra("installId", UUID.randomUUID().toString())
-              putExtra("versionCode", getVersionCode(verifiedPackage))
-              putExtra("versionName", verifiedPackage.versionName ?: "")
+              putExtra("versionCode", getVersionCode(verified))
+              putExtra("versionName", verified.versionName ?: "")
               addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(installIntent)
