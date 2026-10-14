@@ -603,7 +603,7 @@
     image.onerror = () => finish(new Error('This image could not be opened'));
     image.src = url;
   });
-  const processingStages = ['decoding', 'detection', 'dots', 'surface', 'warp', 'colors', 'template', 'encoding'];
+  const processingStages = ['decoding', 'detection', 'dots', 'surface', 'warp', 'colors', 'vectors', 'template', 'encoding'];
   function clearProcessingVisual() {
     cancelAnimationFrame(processingVisualFrame);
     processingVisualFrame = 0;
@@ -624,6 +624,7 @@
       case 'surface':
       case 'warp': return count ? `Straightening ${count} bullet points…` : 'Straightening the page…';
       case 'colors': return 'Cleaning the page…';
+      case 'vectors': return 'Creating editable ink…';
       case 'template': return 'Applying the page template…';
       case 'encoding': return 'Preparing scan…';
       default: return candidates.length > 1 ? 'Processing photos and choosing the best scan…' : 'Straightening the page…';
@@ -635,7 +636,7 @@
     const phase = candidate.processingStage;
     const active = ['decoding', 'detection', 'dots'].includes(phase) ? 'dots'
       : ['surface', 'warp'].includes(phase) ? 'surface'
-        : phase === 'colors' ? 'colors' : ['template', 'encoding'].includes(phase) ? 'template' : '';
+        : ['colors', 'vectors'].includes(phase) ? 'colors' : ['template', 'encoding'].includes(phase) ? 'template' : '';
     let beforeCurrent = !!active;
     [...steps.children].forEach(step => {
       const current = step.dataset.step === active;
@@ -872,7 +873,8 @@
           if (!current()) return;
         }
         candidate.result = { blob: processed.blob, ...dimensions, name: 'Scanned page', corrected: !!processed.corrected,
-          inkLayer: processed.inkLayer === true, templateKind: processed.templateKind };
+          inkLayer: processed.inkLayer === true, templateKind: processed.templateKind,
+          editableInk: processed.editableInk };
         candidate.analysis = processed.detection;
         candidate.outputQuality = processed.outputQuality;
         candidate.resultUrl = outputUrl;

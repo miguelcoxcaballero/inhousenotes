@@ -3633,7 +3633,7 @@
     const timings = { worker: processingWorker, decodeMs: 0, detectionMs: 0, warpMs: 0,
       alignmentMs: 0, previewMs: 0, colorMs: 0, templateMs: 0, encodeMs: 0 };
     let decoded, source, output, preview, observed, mesh;
-    let templateApplied = false, stencilCleanup, outputQuality, dotAlignment;
+    let templateApplied = false, stencilCleanup, outputQuality, dotAlignment, editableInk;
     const progress = (stage, detail) => { checkProcessingCancelled(options); options.onProgress?.(stage, detail); };
     try {
       progress("decoding");
@@ -3732,9 +3732,19 @@
         stencilCleanup = colors?.stencilCleanup;
         outputQuality = colors?.outputQuality;
         timings.colorMs = performance.now() - colorsStarted;
+        separateScanInk(output);
+        progress("vectors");
+        const vectorStarted = performance.now();
+        const inkContext = output.getContext("2d", { willReadFrequently: true });
+        editableInk = await SP.InkVectorizer.fromPixels(inkContext.getImageData(0, 0, output.width, output.height),
+          { signal: options.signal });
+        // Review exactly the same opaque native pens that will be inserted.
+        // The photograph is never left behind underneath editable strokes.
+        inkContext.clearRect(0, 0, output.width, output.height);
+        SP.InkVectorizer.render(inkContext, editableInk);
+        timings.vectorMs = performance.now() - vectorStarted;
         progress("template");
         const templateStarted = performance.now();
-        separateScanInk(output);
         preview = document.createElement("canvas");
         preview.width = output.width; preview.height = output.height;
         const previewContext = preview.getContext("2d");
@@ -3758,7 +3768,7 @@
       timings.encodeMs = performance.now() - encodeStarted;
       timings.totalMs = performance.now() - started;
       return { blob: encoded, width: output.width, height: output.height, corrected: true,
-        previewBlob, inkLayer: precise, templateKind: precise ? "default" : undefined,
+        previewBlob, editableInk, inkLayer: precise, templateKind: precise ? "default" : undefined,
         templateApplied, stencilCleanup, outputQuality, dotAlignment, detection, timings };
     } finally {
       decoded?.close?.();

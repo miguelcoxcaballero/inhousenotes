@@ -30,7 +30,10 @@ test('three photographs complete their full corrections concurrently outside the
         corrected: scan.corrected, width: scan.width, height: scan.height,
         quality: scan.detection.quality, surface: scan.detection.frame?.metricSurface?.diagnostics,
         timings: scan.timings, size: scan.blob.size, type: scan.blob.type,
-        previewType: scan.previewBlob?.type, inkLayer: scan.inkLayer, templateKind: scan.templateKind };
+        previewType: scan.previewBlob?.type, inkLayer: scan.inkLayer, templateKind: scan.templateKind,
+        vectors: { version: scan.editableInk?.version, backend: scan.editableInk?.backend,
+          count: scan.editableInk?.strokes?.length,
+          colours: [...new Set(scan.editableInk?.strokes?.map(stroke => stroke.color))] } };
     }, error => { throw new Error(`${ScannerDevelopableFixtures.CASES[index].name}: ${error.message}`); })));
     clearInterval(interval);
     return { scans, starts, finishes, ticks };
@@ -53,6 +56,11 @@ test('three photographs complete their full corrections concurrently outside the
     expect(scan.previewType).toBe('image/png');
     expect(scan.inkLayer).toBe(true);
     expect(scan.templateKind).toBe('default');
+    expect(scan.vectors.version).toBe(1);
+    expect(scan.vectors.backend).toBe('rust');
+    expect(scan.vectors.count).toBeGreaterThan(0);
+    expect(scan.vectors.colours.every(colour => ['#4D4D4D','#002FD9','#E81010'].includes(colour))).toBe(true);
+    expect(scan.timings.vectorMs).toBeGreaterThan(0);
   }
 });
 

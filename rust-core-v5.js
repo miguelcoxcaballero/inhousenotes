@@ -120,5 +120,20 @@
             };
         } catch (_) { if (context) core.surface_fit_drop(context); blocks.forEach(release); return null; }
     }
-    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, separateInk, surfaceFit, available: () => !!core });
+    function inkAxes(rgba, width, height) {
+        if (!core?.ink_axes || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+            || width < 2 || height < 2 || width > 4096 || height > 4096 || width*height > 12000000
+            || rgba?.length !== width*height*4) return null;
+        let pixels, mask, radii;
+        try {
+            pixels=allocation(rgba.length); mask=allocation(width*height); radii=allocation(width*height*2);
+            view(pixels).set(rgba);
+            const status=core.ink_axes(pixels.pointer,width,height,mask.pointer,radii.pointer);
+            if (status===2) return {rejected:true};
+            if (status!==1) return null;
+            return {mask:view(mask).slice(), radii:new Uint16Array(core.memory.buffer,radii.pointer,width*height).slice(), backend:'rust'};
+        } catch (_) { return null; }
+        finally { release(pixels); release(mask); release(radii); }
+    }
+    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, separateInk, surfaceFit, inkAxes, available: () => !!core });
 })(globalThis);

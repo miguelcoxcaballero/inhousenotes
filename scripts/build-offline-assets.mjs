@@ -1,7 +1,7 @@
 import { readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 const roots=['vendor/pdfjs','vendor/pdf-lib','vendor/jspdf','scanner'];
-const files=['index.html','boot-v5.js','app-v5.js','bullet-template.js','collaboration-core-v5.js','live-collaboration-v5.js','runtime-core-v5.js',
+const files=['index.html','boot-v5.js','app-v5.js','bullet-template.js','ink-palette.js','collaboration-core-v5.js','live-collaboration-v5.js','runtime-core-v5.js',
     'security-core-v5.js','timeline-core-v5.js','document-processing-v5.js','document-processing-worker-v5.js','rust-core-v5.js','wasm/inhouse_notes_core.wasm',
     'offline-store-v5.js','offline-sync-v5.js','offline-library-v5.js','offline-app-v5.js','offline-v5.css','shared/inhouse-services-updater/updater.js'];
 async function walk(path){for(const entry of await readdir(path,{withFileTypes:true})){
