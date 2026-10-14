@@ -137,22 +137,17 @@ test('capture shows a decoded photo while correction is pending, then inserts on
   expect(errors).toEqual([]);
 });
 
-test('three undecodable processed images retain a valid original and a fresh capture recovers', async ({ page }) => {
-  test.setTimeout(60_000);
+test('undecodable corrected images cannot be added and an automatic fresh capture recovers', async ({ page }) => {
+  test.setTimeout(60000);
   await openStandalone(page);
   await invalidateFirstBatch(page);
-  await page.waitForFunction(() => __captureRegression.invalidOutputs === 3, null, { timeout: 25_000 });
-  await expect(page.locator('#liveScanner')).not.toHaveAttribute('data-state', 'processing', { timeout: 10_000 });
+  await page.waitForFunction(() => __captureRegression.invalidOutputs === 3, null, {timeout:25000});
+  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state','review',{timeout:25000});
+  await expect(page.locator('#liveAddBtn')).toBeEnabled({timeout:20000});
   await expectDecodedPreview(page);
-  await expect(page.locator('#liveReviewStatus')).toContainText(/original|could not|couldn't|decode|open|failed|try again|unavailable/i);
-  await expect(page.locator('#liveAddBtn')).toBeEnabled();
-  await page.locator('#liveRetakeBtn').click();
-  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 25_000 });
-  await expectDecodedPreview(page);
-  await expect(page.locator('#liveAddBtn')).toBeEnabled();
   await expect(page.locator('#liveReviewStatus')).not.toContainText('Original photo ready');
-  expect(await page.locator('#livePreview').evaluate(image => image.naturalWidth / image.naturalHeight))
-    .toBeCloseTo(21 / 29.7, 2);
+  expect(await page.evaluate(() => __captureRegression.streams.length)).toBeGreaterThanOrEqual(2);
 });
 
 test('invalid imported image leaves processing and a subsequent valid photo can be reviewed', async ({ page }) => {
@@ -188,4 +183,25 @@ test('retaking during correction cancels the old result and keeps the new previe
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
   expect(await page.evaluate(() => __captureRegression.streams.flatMap(stream => stream.getTracks().map(track => track.readyState))))
     .toEqual(['ended', 'ended']);
+});
+
+
+test('a verified scan can be added while slower backup photos are still processing', async ({ page }) => {
+  test.setTimeout(60000);
+  await openStandalone(page);
+  await page.evaluate(() => {
+    const original=ScannerPro.Lightweight.processPageAsync;
+    let calls=0;
+    const gate=new Promise(resolve=>{__captureRegression.releaseBackups=resolve;});
+    ScannerPro.Lightweight.processPageAsync=async function(...args) {
+      const index=++calls, result=await original.apply(this,args);
+      if(index>1) await gate;
+      return result;
+    };
+  });
+  await expect(page.locator('#liveAddBtn')).toBeEnabled({timeout:20000});
+  await expect(page.locator('#liveReviewStatus')).toContainText('Scan ready');
+  await expectDecodedPreview(page);
+  await page.evaluate(()=>__captureRegression.releaseBackups());
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Check the scan.',{timeout:10000});
 });

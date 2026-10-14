@@ -42,3 +42,20 @@ test('mesh sampling matches clamped canvas bytes and is reusable after disposal'
         }
     }
 });
+
+test('Rust ink separation reconstructs coloured and neutral photographs over white',()=>{
+    const data=Uint8ClampedArray.from([255,255,255,255, 25,66,180,255, 193,193,193,255, 254,216,190,255, 0,0,0,255]);
+    const original=data.slice();
+    assert.equal(scope.InhouseRust.separateInk(data),true);
+    assert.equal(data[3],0);
+    for(let i=0;i<data.length;i+=4)for(let c=0;c<3;c++){
+        const composited=data[i+c]*data[i+3]/255+255-data[i+3];
+        assert.ok(Math.abs(composited-original[i+c])<=1);
+    }
+});
+test('Rust scan buffers reject inconsistent paper fields before allocating',()=>{
+    assert.equal(scope.InhouseRust.scanColors(new Uint8Array(16),new Uint8Array(8),2,2,new Float32Array(4),null,2,2,new Float64Array(61)),null);
+    assert.equal(scope.InhouseRust.scanColors(new Uint8Array(0),new Uint8Array(0),0,2,new Float32Array(4),null,2,2,new Float64Array(61)),null);
+    assert.equal(scope.InhouseRust.scanColors(new Uint8Array(16),new Uint8Array(16),2,2,new Float32Array(3),null,2,2,new Float64Array(61)),null);
+    assert.equal(scope.InhouseRust.scanColors(new Uint8Array(16),new Uint8Array(16),2,2,new Float32Array(4),new Uint8Array(3),2,2,new Float64Array(61)),null);
+});

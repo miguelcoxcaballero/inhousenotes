@@ -56,5 +56,31 @@
         } catch (_) { return null; }
         finally { release(input); release(rgb); release(alpha); }
     }
-    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, available: () => !!core });
+    function scanColors(rgba, original, width, height, field, mask, fw, fh, parameters) {
+        if (!core?.correct_scan_rows || ![width,height,fw,fh].every(value => Number.isSafeInteger(value) && value > 0)
+            || width > 16384 || height > 16384 || rgba.length !== width * height * 4 || original.length !== rgba.length || field.length !== fw * fh
+            || parameters.length !== 61 || (mask && mask.length !== fw * fh)) return null;
+        const blocks = [];
+        const copy = array => { const block = allocation(array.byteLength); blocks.push(block);
+            view(block).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)); return block; };
+        try {
+            const data = copy(rgba), raw = copy(original), light = copy(field), drawing = mask ? copy(mask) : null, params = copy(parameters);
+            let disposed = false;
+            return {
+                rows(from, to) { if (!disposed) core.correct_scan_rows(data.pointer, raw.pointer, width, height,
+                    light.pointer, drawing?.pointer || 0, fw, fh, params.pointer, from, to); },
+                copyTo(destination) { if (!disposed) destination.set(view(data)); },
+                dispose() { if (!disposed) { disposed = true; blocks.forEach(release); } }
+            };
+        } catch (_) { blocks.forEach(release); return null; }
+    }
+    function separateInk(rgba) {
+        if (!core?.separate_ink || !rgba?.length || rgba.length % 4) return false;
+        let pixels;
+        try { pixels = allocation(rgba.length); view(pixels).set(rgba);
+            core.separate_ink(pixels.pointer, rgba.length / 4); rgba.set(view(pixels)); return true;
+        } catch (_) { return false; }
+        finally { release(pixels); }
+    }
+    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, separateInk, available: () => !!core });
 })(globalThis);

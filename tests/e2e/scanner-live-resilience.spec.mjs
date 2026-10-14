@@ -31,6 +31,7 @@ async function camera(page, mode) {
       }
     }
     navigator.mediaDevices.getUserMedia = async () => {
+      fixture.opened = (fixture.opened || 0) + 1;
       const canvas = ScannerSyntheticFixtures.renderCase(ScannerSyntheticFixtures.CASES[0]).source;
       const context = canvas.getContext('2d');
       if (mode.startsWith('blank-')) {
@@ -153,6 +154,7 @@ async function camera(page, mode) {
       }
       return detection;
     };
+    addEventListener('scanner-capture-quality', event => { liveResilience.lastPhotoQuality = event.detail; });
     addEventListener('scanner-live-detection', event => {
       if (event.detail?.source === 'yellow') liveResilience.focus.push({
         interior: event.detail.sharpness, edge: event.detail.edgeSharpness
@@ -201,7 +203,7 @@ test('the first clear frame survives a detection miss during the backup burst', 
 
 test('a crisp blank template captures using measured border focus despite its empty interior', async ({ page }) => {
   await camera(page, 'blank-crisp');
-  await expect(page.locator('#liveReview')).toBeVisible({ timeout: 6500 });
+  try { await expect(page.locator('#liveReview')).toBeVisible({ timeout: 6500 }); } catch(error) { console.log('BLANK_FOCUS',await page.evaluate(()=>({quality:liveResilience.lastPhotoQuality,focus:liveResilience.focus.at(-1)}))); throw error; }
   await expect(page.locator('#liveAddBtn')).toBeEnabled({ timeout: 20000 });
   const focus = await page.evaluate(() => liveResilience.focus);
   expect(focus.length).toBeGreaterThanOrEqual(1);
@@ -258,18 +260,12 @@ test('visual interpolation expires after a lost document and stops when the came
   expect(await page.evaluate(() => liveResilience.draws.length)).toBe(before);
 });
 
-test('invalid page geometry preserves the original photo even when detector confidence is maximal', async ({ page }) => {
+test('invalid page geometry cannot be inserted and automatically returns to the camera', async ({ page }) => {
   await camera(page, 'invalid-review');
-  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 6500 });
-  await expect(page.locator('#liveReviewStatus')).toContainText('Original photo ready');
-  await expect(page.locator('#liveAddBtn')).toBeEnabled();
-  const preview = await page.locator('#livePreview').evaluate(image => ({
-    visible: !image.hidden, complete: image.complete, width: image.naturalWidth
-  }));
-  expect(preview).toEqual({ visible: true, complete: true, width: 900 });
+  await expect.poll(() => page.evaluate(() => liveResilience.opened), {timeout:10000}).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('#liveAddBtn')).toBeDisabled();
   expect(await page.evaluate(() => liveResilience.warpCalls)).toBe(0);
 });
-
 
 test('one clear video frame is frozen immediately and survives loss of the page during slow JPEG encoding', async ({ page }) => {
   await camera(page, 'single-clear');

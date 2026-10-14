@@ -41,7 +41,7 @@ function installCameraFixture(options) {
     canvas.height = original.height;
     const context = canvas.getContext('2d');
     const paint = () => {
-      context.filter = fake.mode === 'blurred' ? 'blur(16px)' : 'none';
+      context.filter = fake.mode === 'blurred' ? 'blur(16px)' : fake.mode === 'slightly-blurred' ? 'blur(3px)' : 'none';
       context.drawImage(original, 0, 0);
       context.filter = 'none';
       if (fake.mode === 'unmarked') {
@@ -190,7 +190,7 @@ test('retaking releases the previous camera and only confirmation inserts the sc
   expect(saved.dirtyPages).toEqual([]);
 });
 
-for (const mode of ['blurred', 'unmarked']) {
+for (const mode of ['blurred', 'slightly-blurred', 'unmarked']) {
   test(`a ${mode} camera image never triggers automatic capture`, async ({ page }) => {
     await openScanner(page, { mode });
     await page.waitForFunction(() => document.getElementById('liveVideo').currentTime > .5);
@@ -326,7 +326,7 @@ test('a short camera mute resumes live frames without capturing a stale frame', 
 
 test('older WebViews can capture three live frames even when image encoding is slow', async ({ page }) => {
   test.setTimeout(45_000);
-  await openScanner(page, { mode: 'unmarked', legacyVideoFrames: true, slowEncoding: true });
+  await openScanner(page, { mode: 'document', legacyVideoFrames: true, slowEncoding: true, deferCapture: true });
   await expect(page.locator('#liveVideo')).toBeVisible();
   await page.locator('#liveCaptureBtn').click();
   await expect(page.locator('#liveAddBtn')).toBeEnabled({ timeout: 30_000 });

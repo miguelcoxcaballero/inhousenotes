@@ -42,6 +42,7 @@
   let startingAt = 0;
   let resumeAfterPermission = false;
   let previousFocus = null;
+  let automaticCapture = false;
   const backgroundElements = new Map();
 
   const post = (type, payload = {}) => {
@@ -449,6 +450,26 @@
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
     return canvas;
   }
+  function showFrozenCapture(canvas, token) {
+    const thumbnail = document.createElement('canvas');
+    const scale = Math.min(1, 720 / Math.max(canvas.width, canvas.height));
+    thumbnail.width = Math.max(1, Math.round(canvas.width * scale));
+    thumbnail.height = Math.max(1, Math.round(canvas.height * scale));
+    try {
+      thumbnail.getContext('2d').drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
+      const image = $('livePreview');
+      previewUrl = thumbnail.toDataURL('image/jpeg', .85);
+      image.onload = () => { if (token === generation) image.hidden = false; };
+      image.src = previewUrl;
+      image.hidden = false;
+      $('liveCameraView').hidden = true;
+      $('liveReview').hidden = false;
+      $('liveAddBtn').disabled = true;
+      $('liveReviewStatus').textContent = 'Preparing the scan…';
+      clearProcessingVisual();
+    } catch (_) { /* Optional thumbnail never replaces the full captured photo. */ }
+    finally { thumbnail.width = thumbnail.height = 0; }
+  }
   async function nextCaptureFrame(previousFrame, token) {
     const deadline = performance.now() + 180;
     while (token === generation && performance.now() < deadline) {
@@ -460,6 +481,26 @@
   async function capture(automatic = false, triggerDetection = null) {
     if (!['searching', 'stable'].includes(state)) return;
     const token = generation;
+    let frozenFirst, frozenFirstQuality;
+    if (automatic) {
+      try {
+        frozenFirst = snapshot();
+        const quality = frozenFirstQuality = SP.CaptureQuality.inspect(frozenFirst, triggerDetection || lastDetection);
+        window.dispatchEvent(new CustomEvent('scanner-capture-quality', {detail:quality}));
+        if (!quality.valid) {
+          frozenFirst.width = frozenFirst.height = 0;
+          resetReadiness();
+          setState('searching');
+          status('Focusing on the page…', 'Scanning automatically when the writing is sharp.');
+          timer = setTimeout(() => tick(token), 80);
+          return;
+        }
+      } catch (_) {
+        if (frozenFirst) frozenFirst.width = frozenFirst.height = 0;
+        setState('searching'); timer = setTimeout(() => tick(token), 80); return;
+      }
+    }
+    automaticCapture = automatic;
     const anchor = (triggerDetection || lastDetection)?.quad;
     const encodings = [];
     let captureError;
@@ -467,12 +508,12 @@
     setState('capturing');
     clearTimeout(timer);
     status('Page captured', 'Choosing the clearest photo automatically.');
-    const saveFrame = (canvas, detection) => {
+    const saveFrame = (canvas, detection, photoQuality) => {
       const width = canvas.width, height = canvas.height;
       // Freeze all three images without waiting for each JPEG callback. The
       // first good image survives focus changes or motion during the burst.
       encodings.push(encode(canvas).then(blob => ({ blob, detection,
-        score: focusScore(detection), width, height
+        score: focusScore(detection) * (photoQuality ? Math.min(1.5, photoQuality.clarity / .5) : 1), width, height
       })).catch(error => { captureError = error; return null; })
         .finally(() => { canvas.width = canvas.height = 0; }));
     };
@@ -483,12 +524,16 @@
         previousFrame = currentFrameTime();
         let canvas;
         try {
-          canvas = snapshot();
+          canvas = index === 0 && frozenFirst ? frozenFirst : snapshot();
+          frozenFirst = null;
           // This is the exact decoded frame analyzed by tick in this JS task;
           // re-running detection would discard it if autofocus changes later.
           const detection = index === 0 && triggerDetection ? triggerDetection : detect(canvas, lastDetection);
-          if (automatic && (!captureReady(detection) || movement(anchor, detection.quad) > .03)) continue;
-          saveFrame(canvas, detection);
+          const photoQuality = index === 0 && frozenFirstQuality ? frozenFirstQuality
+            : detection?.source === 'yellow' ? SP.CaptureQuality.inspect(canvas, detection) : null;
+          if (automatic && (!captureReady(detection) || movement(anchor, detection.quad) > .03 || !photoQuality?.valid)) continue;
+          saveFrame(canvas, detection, photoQuality);
+          if (index === 0) showFrozenCapture(canvas, token);
           canvas = null; // Encoding owns this frozen canvas until it settles.
         } catch (error) { captureError = error; }
         finally { if (canvas) canvas.width = canvas.height = 0; }
@@ -703,18 +748,19 @@
     if (!candidate || token !== generation) return;
     selectedIndex = index;
     const selected = ++selection;
-    result = pendingCandidates ? null : candidate.result || null;
-    setState(pendingCandidates ? 'processing' : 'review');
+    if (submitting) return;
+    const waiting = pendingCandidates > 0 && !(candidate.processingComplete && candidate.result?.corrected);
+    result = waiting || !candidate.result?.corrected ? null : candidate.result;
+    setState(waiting ? 'processing' : 'review');
     $('liveCameraView').hidden = true;
     $('liveReview').hidden = false;
     $('liveAddBtn').disabled = !result;
     $('liveAddBtn').textContent = embedded ? 'Add page to document' : 'Save scan';
-    $('liveReviewStatus').textContent = pendingCandidates
+    $('liveReviewStatus').textContent = waiting
       ? processingStatus(candidate)
-      : result?.corrected ? 'Check the scan.'
-        : result ? 'Original photo ready. Page correction was unavailable; check the photo before adding it.'
-          : candidate.error || 'Could not process this frame. Choose another or scan again.';
-    if (pendingCandidates) updateProcessingSteps(candidate);
+      : result ? pendingCandidates ? 'Scan ready. Checking the other photos…' : 'Check the scan.'
+        : candidate.error || 'Page correction could not be verified. Scan again or choose a clearer photo.';
+    if (waiting) updateProcessingSteps(candidate);
     else clearProcessingVisual();
     $('liveProcessingOverlay').hidden = true;
     [...$('liveAlternatives').children].forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
@@ -849,7 +895,11 @@
           if (image && candidate.resultUrl) image.src = candidate.resultUrl;
           const processingUrl = candidate.processingPreviewUrl;
           candidate.processingPreviewUrl = '';
-          if (selectedIndex === index) reviewCandidate(index, token);
+          if (!explicitSelection) {
+            const ready = batch.map((value, i) => ({ value, i })).filter(({ value }) => value.processingComplete && value.result?.corrected);
+            if (ready.length) selectedIndex = ready.reduce((best, next) => candidateRank(next.value) > candidateRank(best.value) ? next : best).i;
+          }
+          reviewCandidate(selectedIndex, token);
           if (processingUrl) URL.revokeObjectURL(processingUrl);
           candidate.processingGeometry = candidate.processingWarpGeometry = null;
         }
@@ -862,6 +912,11 @@
     }
     reviewCandidate(selectedIndex, token);
     processingController = null;
+    if (automaticCapture && !batch.some(candidate => candidate.result?.corrected)) {
+      $('liveAddBtn').disabled = true;
+      $('liveReviewStatus').textContent = 'Looking for a clearer scan…';
+      timer = setTimeout(() => { if (token === generation && !root.hidden && !document.hidden && !submitting) void open(); }, 350);
+    }
   }
   async function importPhoto(file) {
     if (!file || submitting) return;
@@ -869,6 +924,7 @@
     stopCamera();
     clearReview();
     if (!file.type.startsWith('image/')) { cameraError(); return; }
+    automaticCapture = false;
     candidates = [{ blob: file, url: URL.createObjectURL(file), detection: null, score: 0 }];
     await reviewCandidates(token);
   }
@@ -882,6 +938,9 @@
       return;
     }
     submitting = true;
+    processingController?.abort();
+    processingController = null;
+    pendingCandidates = 0;
     $('liveAddBtn').disabled = true;
     $('liveRetakeBtn').disabled = true;
     $('liveCloseBtn').disabled = true;

@@ -11,7 +11,11 @@ root = Path(__file__).resolve().parents[2]
 version = re.search(r"const APP_VERSION = '([^']+)'", (root / 'index.html').read_text())[1]
 revision = os.environ['GITHUB_SHA']
 expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
-            for name in ('app-v5.js', 'service-worker.js', 'updates/A.json', 'updates/B.json')}
+            for name in ('app-v5.js', 'service-worker.js', 'updates/A.json', 'updates/B.json',
+                         'rust-core-v5.js', 'wasm/inhouse_notes_core.wasm',
+                         'scanner/index.html', 'scanner/configLoader.js', 'scanner/live-camera.js',
+                         'scanner/processing/capture-quality.js', 'scanner/processing/lightweight.js',
+                         'scanner/processing/metric-surface.js')}
 deadline = time.monotonic() + 180
 attempt = 0
 while True:
@@ -29,7 +33,7 @@ while True:
         for name, digest in expected.items():
             if hashlib.sha256(fetch(name)).hexdigest() != digest:
                 raise RuntimeError(f'Pages still serves a different {name}')
-        print(f'PUBLIC RELEASE VERIFIED: https://inhousenotes.com/ v{version}; commit {revision}; app, service worker and A/B catalogs match.', flush=True)
+        print(f'PUBLIC RELEASE VERIFIED: https://inhousenotes.com/ v{version}; commit {revision}; app, scanner, Rust, service worker and A/B catalogs match.', flush=True)
         break
     except Exception as error:
         if time.monotonic() >= deadline:

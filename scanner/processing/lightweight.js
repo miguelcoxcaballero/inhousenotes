@@ -3377,7 +3377,9 @@
       }
     }
     if (detection.quality?.valid && detection.frame && SP.MetricSurface?.fit) {
+      const surfaceDiagnostics = {};
       const surface = SP.MetricSurface.fit(source, detection, {
+        diagnostics: surfaceDiagnostics,
         budgetMs: options.surfaceBudgetMs,
         onObservations: detail => {
           options.onProgress?.("dots", { ...detail, space: "source" });
@@ -3386,6 +3388,7 @@
         onRegistration: detail => options.onProgress?.("surface", { ...detail, space: "source", registered: true })
       });
       if (surface) detection.frame.metricSurface = surface;
+      else detection.frame.surfaceDiagnostics = surfaceDiagnostics;
     }
     return detection;
   };
@@ -3569,7 +3572,7 @@
     // transparent. Neutral pencil becomes black with proportional opacity;
     // coloured ink retains its hue. The editor can therefore draw its own
     // uncompressed native template beneath the ink, just like a normal page.
-    for (let i = 0; i < data.length; i += 4) {
+    if (!globalThis.InhouseRust?.separateInk?.(data)) for (let i = 0; i < data.length; i += 4) {
       const paper = Math.min(data[i], data[i + 1], data[i + 2]);
       const alpha = 255 - paper;
       if (!alpha) { data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0; continue; }
@@ -3671,6 +3674,7 @@
         const colorsStarted = performance.now();
         const colors = await Light.correctColors(output, { useStencil: true, preciseStencil: true,
           dotObservations: correctedDots?.points, signal: options.signal });
+        timings.colors = colors?.pixelProcessing;
         stencilCleanup = colors?.stencilCleanup;
         outputQuality = colors?.outputQuality;
         timings.colorMs = performance.now() - colorsStarted;
@@ -3953,6 +3957,9 @@
         } else if (name === "green") {
           valid = g >= r + 2 && g >= b + 4;
           colourScore = g * 2 - r - b;
+        } else if (name === "yellow") {
+          valid = isYellow(r,g,b) || (luminance > 45 && luminance < 240 && chroma < 15);
+          colourScore = yellowChroma(r,g,b) * 1.5 + (255-luminance) * .25;
         } else {
           valid = luminance < 165 && chroma <= 72;
           colourScore = 255 - luminance - chroma * 0.72;
@@ -3964,7 +3971,7 @@
     }
     if (candidates.length < 3) return null;
     candidates.sort((first, second) => second.score - first.score);
-    const selected = candidates.slice(0, clamp(Math.ceil(candidates.length * 0.28), 5, 72));
+    const selected = candidates.slice(0, clamp(Math.ceil(candidates.length * 0.28), 5, 12));
     return ["r", "g", "b"].map(channel => {
       const values = selected.map(candidate => candidate[channel]).sort((a, b) => a - b);
       return values[Math.floor(values.length / 2)] / 255;
@@ -4012,7 +4019,7 @@
         }
       }
     }
-    const ridge = 0.42;
+    const ridge = 0.012;
     for (let i = 0; i < 4; i += 1) xtx[i][i] += ridge;
     return identity.map((fallback, channel) => {
       const rhs = xty[channel].map((value, index) => value + ridge * fallback[index]);
@@ -5029,12 +5036,10 @@
         [1.5, 6], [1.5, 14.8], [1.5, 23],
         [19.5, 6], [19.5, 14.8], [19.5, 23],
         [6, 1.43], [10.5, 1.43], [15, 1.43]
-      ].map(([x, y]) => medianSample(
-        data, canvas.width, canvas.height,
-        x * pxPerCm, y * pxPerCm, pxPerCm * 0.19,
-        stencilReference
+      ].map(([x, y]) => sampleCalibrationMarker(
+        data, canvas.width, canvas.height, x * pxPerCm, y * pxPerCm, pxPerCm * .19, 'yellow'
       )));
-      const targetYellow = config.TARGET_YELLOW || { R: 240, G: 219, B: 76 };
+      const targetYellow = { R: 240, G: 219, B: 76 }; // Exact editor/printed template, independent of detection hue settings.
       samples.push({
         name: "yellow",
         source: yellowSource,
@@ -5051,6 +5056,41 @@
       [...validMarkerSamples, ...(yellowSample?.source ? [yellowSample] : [])]
         .map(sample => [sample.name, sample])
     );
+    // Fit the camera response jointly from all four pigments, the printed
+    // yellow and measured paper. Normalize each reference by nearby paper so
+    // a shadow over the bottom strip is not learned as a page-wide exposure.
+    const localPaperAt = (x, y) => {
+      const channels = [[], [], []];
+      for (let dy = -3; dy <= 3; dy++) for (let dx = -4; dx <= 4; dx++) {
+        const sx = clamp(Math.round((x + dx * .045) * pxPerCm), 0, canvas.width - 1);
+        const sy = clamp(Math.round((y + dy * .045) * pxPerCm), 0, canvas.height - 1);
+        const offset = (sy * canvas.width + sx) * 4;
+        const rgb = [data[offset], data[offset + 1], data[offset + 2]];
+        if (Math.min(...rgb) < 60 || Math.max(...rgb) - Math.min(...rgb) > 55) continue;
+        rgb.forEach((value, channel) => channels[channel].push(value));
+      }
+      return channels.map((values, channel) => {
+        values.sort((a,b) => a-b);
+        return values.length >= 8 ? values[Math.floor(values.length * .8)] : profile.sourcePaper[channel];
+      });
+    };
+    const normalizedReferences = validMarkerSamples.map(sample => {
+      const definition = markerDefinitions.find(([, name]) => name === sample.name);
+      const paper = localPaperAt(definition[0], 28.15);
+      return { ...sample, source: sample.source.map((v,c) => clamp(v * 255 / Math.max(60,paper[c]),0,1)), weight: 2 };
+    });
+    if (yellowSample?.source) {
+      const paper = localPaperAt(10.5, 1.85);
+      normalizedReferences.push({ ...yellowSample,
+        source: yellowSample.source.map((v,c) => clamp(v * 255 / Math.max(60,paper[c]),0,1)), weight: 1.2 });
+    }
+    normalizedReferences.push({ name: 'paper', source: [1,1,1], target: [1,1,1], weight: 8 });
+    const colorMatrix = canCalibrate ? buildColorMatrix(normalizedReferences) : null;
+    const matrixError = colorMatrix ? Math.sqrt(normalizedReferences.reduce((total, sample) => total
+      + sample.target.reduce((sum, target, c) => sum + (colorMatrix[c][0] * sample.source[0]
+        + colorMatrix[c][1] * sample.source[1] + colorMatrix[c][2] * sample.source[2] + colorMatrix[c][3] - target) ** 2, 0), 0)
+      / (normalizedReferences.length * 3)) : null;
+    const calibratedMatrix = colorMatrix && matrixError < .14 ? colorMatrix : null;
     const outerBand = pxPerCm * 0.12;
     const yellowX1 = 1.5 * pxPerCm;
     const yellowX2 = 19.5 * pxPerCm;
@@ -5076,7 +5116,29 @@
         illuminationColumnMix[x] = at - illuminationColumns[x];
       } else illuminationColumns[x] = Math.round(x * illuminationXScale);
     }
-    for (let y = 0; y < canvas.height; y += 1) {
+    const colorParameters = new Float64Array(61);
+    colorParameters.set([+preciseStencil, +useStencil, +!!observedIllumination, observedIllumination?.noiseFloor || 2,
+      ...profile.gains, ...profile.sourcePaper, profile.paperLuminance, profile.targetPaper, +canCalibrate, +!!calibratedMatrix]);
+    if (calibratedMatrix) colorParameters.set(calibratedMatrix.flat(), 14);
+    ['red','black','blue','green','yellow'].forEach((name,index) => {
+      const sample = referenceByName[name];
+      if (sample?.source) colorParameters.set([1, ...sample.source, ...sample.target], 26 + index * 7);
+    });
+    await globalThis.InhouseRust?.ready;
+    checkProcessingCancelled(settings);
+    const pixelsStarted = performance.now();
+    const rustColors = settings.disableRust ? null : globalThis.InhouseRust?.scanColors?.(data, original, canvas.width, canvas.height,
+      illumination, observedIllumination?.drawing, illuminationWidth, illuminationHeight, colorParameters);
+    if (rustColors) {
+      try {
+        for (let from = 0; from < canvas.height; from += processingWorker ? canvas.height : 96) {
+          checkProcessingCancelled(settings);
+          rustColors.rows(from, Math.min(canvas.height, from + (processingWorker ? canvas.height : 96)));
+          if (!processingWorker) await yieldToBrowser();
+        }
+        rustColors.copyTo(data);
+      } finally { rustColors.dispose(); }
+    } else for (let y = 0; y < canvas.height; y += 1) {
       const outerRow = Math.abs(y - yellowY1) < outerBand || Math.abs(y - yellowY2) < outerBand;
       const marginRow = y < yellowY1 - outerBand || y > yellowY2 + outerBand;
       const markerRow = y >= colorMarkerY1 && y <= colorMarkerY2;
@@ -5191,6 +5253,12 @@
             neutral += (reference - neutral) * (localDrawing > 0.85 ? 1 : 0.25) * calibrated.mix;
           }
           outputR = outputG = outputB = neutral;
+        } else if (calibratedMatrix && colouredStroke) {
+          const paper = Math.max(40, localBright);
+          const nr = clamp(r / paper * profile.paperLuminance / Math.max(40, profile.sourcePaper[0]), 0, 1.2), ng = clamp(g / paper * profile.paperLuminance / Math.max(40, profile.sourcePaper[1]), 0, 1.2), nb = clamp(b / paper * profile.paperLuminance / Math.max(40, profile.sourcePaper[2]), 0, 1.2);
+          outputR = 255 * (calibratedMatrix[0][0] * nr + calibratedMatrix[0][1] * ng + calibratedMatrix[0][2] * nb + calibratedMatrix[0][3]);
+          outputG = 255 * (calibratedMatrix[1][0] * nr + calibratedMatrix[1][1] * ng + calibratedMatrix[1][2] * nb + calibratedMatrix[1][3]);
+          outputB = 255 * (calibratedMatrix[2][0] * nr + calibratedMatrix[2][1] * ng + calibratedMatrix[2][2] * nb + calibratedMatrix[2][3]);
         } else if (calibrated) {
           // Without measured paper anchors, retain the printed reference's
           // tonal calibration rather than relying on a broad local estimate.
@@ -5207,15 +5275,37 @@
           outputB = balancedLuminance + (automaticB - balancedLuminance) * vibrance;
         }
         if (observedIllumination && colouredStroke) {
+          // Thin pen lines lose chroma through camera/JPEG subsampling more
+          // than the large reference circles do. Recover that extra dilution
+          // around their luminance; preserve hue and leave solid fills alone.
+          const strongest = Math.max(outputR, outputG, outputB);
+          const weakest = Math.min(outputR, outputG, outputB);
+          const dilution = 1 - clamp((strongest-weakest) / Math.max(1,strongest),0,1);
+          const vibrance = 1 + .6 * (1-localDrawing) * dilution;
+          const tone = outputR*.2126 + outputG*.7152 + outputB*.0722;
+          outputR = tone + (outputR-tone)*vibrance;
+          outputG = tone + (outputG-tone)*vibrance;
+          outputB = tone + (outputB-tone)*vibrance;
           // Increase coloured stroke coverage against white, preserving hue
           // instead of desaturating pale blue/red handwriting into grey.
           // Solid fills and already-saturated reference colours retain their
           // calibrated palette; the extra coverage is for pastel strokes.
-          const coverage = 1 + 0.14 * (1 - localDrawing)
+          const coverage = 1 + 0.38 * (1 - localDrawing)
             * clamp((Math.min(outputR, outputG, outputB) - 40) / 90, 0, 1);
           outputR = profile.targetPaper - (profile.targetPaper - outputR) * coverage;
           outputG = profile.targetPaper - (profile.targetPaper - outputG) * coverage;
           outputB = profile.targetPaper - (profile.targetPaper - outputB) * coverage;
+        }
+        // Near-black JPEG channels may be clipped under a warm lamp. A colour
+        // matrix cannot recover that missing signal; preserve their dark tone
+        // rather than lifting dark writing into a mustard/pastel fill.
+        if (colouredStroke && max < 100 && luminance < 80 && r > g && g > b && g >= r * .35) {
+          const limit = (automaticR * .2126 + automaticG * .7152 + automaticB * .0722) * 1.1 + 3;
+          const mappedLuminance = outputR * .2126 + outputG * .7152 + outputB * .0722;
+          if (mappedLuminance > limit) {
+            const scale = limit / mappedLuminance;
+            outputR *= scale; outputG *= scale; outputB *= scale;
+          }
         }
         data[offset] = Math.round(clamp(outputR, 0, 255));
         data[offset + 1] = Math.round(clamp(outputG, 0, 255));
@@ -5227,6 +5317,8 @@
         await yieldToBrowser();
       }
     }
+    const pixelsMs = performance.now() - pixelsStarted;
+    const cleanupStarted = performance.now();
     const stencilCleanup = preciseStencil && !settings.skipStencilCleanup
       ? await removePhotographedStencil(data, canvas.width, canvas.height, pxPerCm, profile.targetPaper,
         observedIllumination ? { ...settings, photographedDotObservations: observedIllumination.paperPoints } : settings)
@@ -5272,7 +5364,9 @@
     illuminationCanvas.height = 0;
     return {
       canvas,
+      pixelProcessing: { backend: rustColors ? "rust" : "javascript", pixelsMs, cleanupMs: performance.now() - cleanupStarted },
       calibrated: canCalibrate,
+      calibration: { method: calibratedMatrix ? "paper-relative-six-reference" : "bounded-reference-fallback", matrixError, matrix: calibratedMatrix, sourcePaper: profile.sourcePaper, normalizedReferences, references: normalizedReferences.map(sample => sample.name) },
       stencilCleanup,
       outputQuality,
       illumination: observedIllumination ? { method: "observed-paper", anchors: observedIllumination.anchors,

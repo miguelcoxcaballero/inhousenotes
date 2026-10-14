@@ -179,18 +179,18 @@ test('the automatically selected frame shows its finished scan while the remaini
   await expect(page.locator('#liveProcessingOverlay')).toBeVisible();
   await page.evaluate(() => processingVisual.finish(0));
   await expect.poll(() => page.locator('#livePreview').evaluate(image => image.naturalWidth)).toBe(420);
-  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'processing');
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#liveAlternatives button').first()).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#liveReviewStatus')).toHaveText('Comparing scans…');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Scan ready. Checking the other photos…');
   await expect(page.locator('#liveProcessingOverlay')).toBeHidden();
   await expect(page.locator('#liveProcessingSteps')).toBeHidden();
-  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
   await page.evaluate(() => {
     processingVisual.progress(1, 'dots');
     processingVisual.progress(0, 'warp', { previewBlob: processingVisual.warp });
   });
   await expect(page.locator('#liveProcessingOverlay')).toBeHidden();
-  await expect(page.locator('#liveReviewStatus')).toHaveText('Comparing scans…');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Scan ready. Checking the other photos…');
   await page.evaluate(() => { processingVisual.finish(1); processingVisual.finish(2); });
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
