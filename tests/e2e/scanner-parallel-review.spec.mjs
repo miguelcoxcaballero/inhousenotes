@@ -41,6 +41,7 @@ async function captureThree(page) {
           : index === 2 ? probe.green : probe.red, corrected: true,
         // Dimensions are deliberately wrong: insertion uses decoded bytes.
         width: 1, height: 1,
+        dotAlignment: { status: 'verified' },
         outputQuality,
         detection: detectionOverride || { confidence: .9, quality: { valid: true }, frame: {
           metricSurface: { type: 'developable-pinhole', diagnostics: { validation: 600,
@@ -186,6 +187,24 @@ for (const registered of [false, true]) {
     await expect(page.locator('#liveAddBtn')).toBeEnabled();
   });
 }
+
+test('camera review rejects corrected results without independent final dot verification', async ({ page }) => {
+  await captureThree(page);
+  await page.evaluate(() => {
+    for (const [index, status] of [undefined, 'not-applicable', 'failed'].entries()) {
+      const call = parallelReview.calls[index];
+      if (call.options.requireGrid !== true) throw new Error('Camera did not require the photographed grid');
+      call.resolve({ blob: parallelReview.red, corrected: true,
+        detection: { confidence: 1, quality: { valid: true } },
+        ...(status ? { dotAlignment: { status } } : {}) });
+    }
+  });
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
+  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  for (let index = 0; index < 3; index++) {
+    await expect(page.locator('#liveAlternatives button').nth(index)).toBeDisabled();
+  }
+});
 
 test('closing aborts every pending photo and ignores late completions without retaining image URLs', async ({ page }) => {
   await captureThree(page);

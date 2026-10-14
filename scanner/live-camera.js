@@ -43,6 +43,15 @@
   let resumeAfterPermission = false;
   let previousFocus = null;
   let automaticCapture = false;
+  let readinessSamples = 0;
+  let readinessStartedAt = 0;
+  let readinessCompletedAt = 0;
+  let lastQualifiedLiveAt = 0;
+  let readinessCheckedAt = 0;
+  let readinessPending = false;
+  let readinessRequest = 0;
+  let readinessController = null;
+  let manualReadinessRequested = false;
   const backgroundElements = new Map();
 
   const post = (type, payload = {}) => {
@@ -63,10 +72,20 @@
     $('liveHint').textContent = hint;
     $('liveHint').hidden = !hint;
   };
-  const resetReadiness = () => { $('liveProgress').value = 0; };
+  const resetReadiness = () => {
+    readinessSamples = readinessStartedAt = readinessCompletedAt = 0;
+    $('liveProgress').value = 0;
+  };
   const stopCamera = () => {
     clearTimeout(timer);
     timer = 0;
+    readinessRequest++;
+    readinessController?.abort();
+    readinessController = null;
+    readinessPending = manualReadinessRequested = false;
+    readinessCheckedAt = 0;
+    lastQualifiedLiveAt = 0;
+    SP.CaptureQuality?.disposeReadiness?.();
     clearVisualTracking();
     if (frameCallback) video.cancelVideoFrameCallback?.(frameCallback);
     frameCallback = 0;
@@ -269,8 +288,10 @@
   const focusScore = detection => Math.max((detection?.sharpness || 0) / 32,
     (detection?.edgeSharpness || 0) / 160);
   const captureReady = detection => detection?.source === 'yellow'
-    && detection.confidence >= .78 && focusScore(detection) >= 1
-    && detection.brightness >= 60 && detection.brightness <= 252
+    && detection.confidence >= .86 && focusScore(detection) >= 1
+    && detection.edgeSupport >= .7 && detection.markerSupport >= .55
+    && detection.frameEdgeSupport?.filter(support => support >= .7).length >= 3
+    && detection.brightness >= 75 && detection.brightness <= 252
     && detection.coverage >= .16
     && detection.quad.every(point => point.x >= .008 && point.y >= .008 && point.x <= .992 && point.y <= .992);
   function clearVisualTracking() {
@@ -391,15 +412,14 @@
         // qualified frame or authorize capture from an old camera image.
         window.dispatchEvent(new CustomEvent('scanner-live-detection', { detail: detection }));
         if (captureReady(detection)) {
-          // The live image already passed focus, exposure and frame checks.
-          // Freeze it synchronously before another camera frame can replace it.
-          // Phone movement after this point cannot invalidate the good photo.
-          $('liveProgress').value = 1;
+          lastQualifiedLiveAt = now;
           setState('stable');
-          void capture(true, detection);
-          return;
+          status('Checking page…');
+          if (!readinessPending && now - readinessCheckedAt >= 160) void checkReadiness(detection, token, true);
         } else {
-          resetReadiness();
+          // A brief detector miss may pause the evidence window, but neither
+          // retained outlines nor repeated frames count as another good photo.
+          if (now - lastQualifiedLiveAt > 500) resetReadiness();
           setState('searching');
           status(detection && focusScore(detection) < 1 ? 'Focusing…' : 'Fit the yellow frame');
         }
@@ -411,7 +431,7 @@
       lastObservedAt = 0;
       drawDetection(null);
       setState('searching');
-      status('Automatic detection unavailable', 'You can capture now and check the page before adding it.');
+      status('Could not check the page', 'Try again or choose a photo.');
     }
     // Analysis has a bounded cadence; drawing runs independently on animation
     // frames. Subtract detector time instead of adding it to every interval.
@@ -477,28 +497,80 @@
     }
     return false;
   }
-  async function capture(automatic = false, triggerDetection = null) {
-    if (!['searching', 'stable'].includes(state)) return;
-    const token = generation;
-    let frozenFirst, frozenFirstQuality;
-    if (automatic) {
-      try {
-        frozenFirst = snapshot();
-        const quality = frozenFirstQuality = SP.CaptureQuality.inspect(frozenFirst, triggerDetection || lastDetection);
-        window.dispatchEvent(new CustomEvent('scanner-capture-quality', {detail:quality}));
-        if (!quality.valid) {
-          frozenFirst.width = frozenFirst.height = 0;
-          resetReadiness();
-          setState('searching');
-          status('Focusing…');
-          timer = setTimeout(() => tick(token), 80);
-          return;
-        }
-      } catch (_) {
-        if (frozenFirst) frozenFirst.width = frozenFirst.height = 0;
-        setState('searching'); timer = setTimeout(() => tick(token), 80); return;
+  const inspectReadiness = (canvas, detection, signal) => SP.CaptureQuality.inspectReadinessAsync
+    ? SP.CaptureQuality.inspectReadinessAsync(canvas, detection, { signal })
+    : Promise.resolve(SP.CaptureQuality.inspectReadiness(canvas, detection));
+  async function checkReadiness(detection, token, automatic) {
+    if (readinessPending) {
+      if (!automatic) manualReadinessRequested = true;
+      return;
+    }
+    const request = ++readinessRequest;
+    const controller = readinessController ||= new AbortController();
+    readinessPending = true;
+    manualReadinessRequested = !automatic;
+    let canvas;
+    try {
+      canvas = snapshot();
+      const frozenAt = performance.now();
+      // Reobserve this exact still; a confident outline from an earlier video
+      // frame cannot authorize a different photograph during phone motion.
+      const observed = detect(canvas, detection);
+      const quality = automatic && !captureReady(observed)
+        ? { valid: false, reason: 'page-not-ready', grid: null }
+        : await inspectReadiness(canvas, observed, controller.signal);
+      if (token !== generation || request !== readinessRequest || controller.signal.aborted) return;
+      const captureAutomatically = automatic && !manualReadinessRequested;
+      window.dispatchEvent(new CustomEvent('scanner-capture-quality', { detail: quality }));
+      if (token !== generation || request !== readinessRequest || controller.signal.aborted) return;
+      if (!quality.valid) resetReadiness();
+      else {
+        // Expire gaps between checks, not time spent analysing a good frame.
+        // Slower phones must be able to accumulate the same evidence.
+        if (frozenAt - readinessCompletedAt > 650) resetReadiness();
+        if (!readinessSamples) readinessStartedAt = frozenAt;
+        readinessCompletedAt = performance.now();
+        readinessSamples++;
+      }
+      const elapsedMs = quality.valid ? frozenAt - readinessStartedAt : 0;
+      const ready = quality.valid && (!captureAutomatically || (readinessSamples >= 3 && elapsedMs >= 300));
+      $('liveProgress').value = ready ? 1 : Math.min(.95, readinessSamples / 3);
+      window.dispatchEvent(new CustomEvent('scanner-capture-readiness', {
+        detail: { ...quality, samples: readinessSamples, elapsedMs, ready }
+      }));
+      if (token !== generation || request !== readinessRequest || controller.signal.aborted) return;
+      if (ready) {
+        readinessPending = false;
+        // The last inspected frame becomes the first burst photo. Do not
+        // replace it with a newer, unverified frame after asynchronous work.
+        const prepared = { canvas, quality };
+        canvas = null;
+        setState('stable');
+        void capture(captureAutomatically, observed, prepared);
+      } else {
+        setState(quality.valid ? 'stable' : 'searching');
+        status(quality.valid ? 'Checking page…' : quality.reason === 'focus-or-motion-blur' ? 'Focusing…' : 'Finding page dots…');
+      }
+    } catch (error) {
+      if (token === generation && request === readinessRequest && error?.name !== 'AbortError') {
+        resetReadiness();
+        setState('searching');
+        status('Checking page…');
+      }
+    } finally {
+      if (canvas) canvas.width = canvas.height = 0;
+      if (request === readinessRequest) {
+        readinessPending = manualReadinessRequested = false;
+        readinessCheckedAt = performance.now();
       }
     }
+  }
+  async function capture(automatic = false, triggerDetection = null, prepared = null) {
+    if (!['searching', 'stable'].includes(state)) return;
+    const token = generation;
+    if (!prepared) { void checkReadiness(triggerDetection || lastDetection, token, automatic); return; }
+    let frozenFirst = prepared.canvas;
+    const frozenFirstQuality = prepared.quality;
     automaticCapture = automatic;
     const anchor = (triggerDetection || lastDetection)?.quad;
     const encodings = [];
@@ -511,7 +583,7 @@
       const width = canvas.width, height = canvas.height;
       // Freeze all three images without waiting for each JPEG callback. The
       // first good image survives focus changes or motion during the burst.
-      encodings.push(encode(canvas).then(blob => ({ blob, detection,
+      encodings.push(encode(canvas).then(blob => ({ blob, detection, requireGrid: true,
         score: focusScore(detection) * (photoQuality ? Math.min(1.5, photoQuality.clarity / .5) : 1), width, height
       })).catch(error => { captureError = error; return null; })
         .finally(() => { canvas.width = canvas.height = 0; }));
@@ -525,12 +597,13 @@
         try {
           canvas = index === 0 && frozenFirst ? frozenFirst : snapshot();
           frozenFirst = null;
-          // This is the exact decoded frame analyzed by tick in this JS task;
-          // re-running detection would discard it if autofocus changes later.
+          // The first still is already verified. Backups each need their own
+          // sharpness and photographed-lattice evidence before encoding.
           const detection = index === 0 && triggerDetection ? triggerDetection : detect(canvas, lastDetection);
           const photoQuality = index === 0 && frozenFirstQuality ? frozenFirstQuality
-            : detection?.source === 'yellow' ? SP.CaptureQuality.inspect(canvas, detection) : null;
-          if (automatic && (!captureReady(detection) || movement(anchor, detection.quad) > .03 || !photoQuality?.valid)) continue;
+            : detection?.source === 'yellow' ? await inspectReadiness(canvas, detection, readinessController?.signal) : null;
+          if (token !== generation) return;
+          if (!photoQuality?.valid || (automatic && (!captureReady(detection) || movement(anchor, detection.quad) > .03))) continue;
           saveFrame(canvas, detection, photoQuality);
           if (index === 0) showFrozenCapture(canvas, token);
           canvas = null; // Encoding owns this frozen canvas until it settles.
@@ -845,10 +918,14 @@
       try {
         const processed = await SP.Lightweight.processPageAsync(candidate.blob,
           { signal: controller.signal, liveDetection: candidate.detection, previewProgress: true,
+            requireGrid: candidate.requireGrid === true,
             onProgress: (stage, detail) => receiveProcessingProgress(candidate, index, token, current, stage, detail) });
         if (!current()) return;
         if (processed.detection?.quality?.valid === false && processed.corrected) {
           throw new Error('The page geometry could not be verified');
+        }
+        if (candidate.requireGrid && processed.corrected && processed.dotAlignment?.status !== 'verified') {
+          throw new Error('The corrected page dots could not be verified');
         }
         const displayBlob = processed.previewBlob || processed.blob;
         outputUrl = displayBlob === candidate.blob ? candidate.url : URL.createObjectURL(displayBlob);

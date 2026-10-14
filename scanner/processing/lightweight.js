@@ -3721,6 +3721,22 @@
         return { blob, width, height, corrected: false, templateApplied, detection, timings,
           failureReason: detection.quality?.reason || "Page edges could not be verified" };
       }
+      if (options.requireGrid) {
+        const surface = detection.frame?.metricSurface;
+        // Camera capture promises a readable bullet page. A good perimeter
+        // alone is not evidence that its interior can be straightened: the
+        // physical fit must have observed a complete, ordered dot lattice and
+        // validated it against held-out source points. Imports keep accepting
+        // ordinary bordered paper when this explicit requirement is absent.
+        if (!precise || surface?.type !== "developable-pinhole"
+          || !(surface.diagnostics?.observations >= 350)
+          || !(surface.diagnostics?.validation > 0)) {
+          detection.quality = { ...detection.quality, valid: false, reason: "page-dot-grid-unverified" };
+          timings.totalMs = performance.now() - started;
+          return { blob, width, height, corrected: false, templateApplied: false, detection, timings,
+            failureReason: "The page dots are not clear enough to straighten. Try another frame." };
+        }
+      }
       progress("surface", { verified: !!detection.frame?.metricSurface,
         diagnostics: detection.frame?.metricSurface?.diagnostics });
       progress("warp");
@@ -3733,13 +3749,14 @@
           } });
       timings.warpMs = performance.now() - warpStarted;
       source.width = source.height = 0; source = null;
-      if (precise && SP.MetricSurface?.certifyRaster) {
+      if (precise && (SP.MetricSurface?.certifyRaster || options.requireGrid)) {
         const alignmentStarted = performance.now();
-        dotAlignment = SP.MetricSurface.certifyRaster(output);
+        dotAlignment = SP.MetricSurface?.certifyRaster?.(output);
         timings.alignmentMs = performance.now() - alignmentStarted;
         checkProcessingCancelled(options);
-        if (dotAlignment.status === "failed") {
-          if (!options.forceDetailed && detection.scaleSelection?.reason === 'verified-full-source-surface') {
+        if (dotAlignment?.status === "failed" || (options.requireGrid && dotAlignment?.status !== "verified")) {
+          if (SP.MetricSurface?.certifyRaster && !options.forceDetailed
+            && detection.scaleSelection?.reason === 'verified-full-source-surface') {
             // A valid physical fit still has to explain the final pixels.
             // Retry the finer observation before rejecting this photograph.
             const recoveryMs = performance.now()-started;
@@ -3752,10 +3769,14 @@
           // A convincing yellow perimeter does not certify the interior of
           // a bent sheet. Keep the original instead of hiding a failed warp
           // beneath a straight replacement grid. Other burst frames can win.
-          detection.quality = { ...detection.quality, valid: false, reason: "interior-dots-misaligned" };
+          const misaligned = dotAlignment?.status === "failed";
+          detection.quality = { ...detection.quality, valid: false,
+            reason: misaligned ? "interior-dots-misaligned" : "interior-dot-grid-unverified" };
           timings.totalMs = performance.now() - started;
           return { blob, width, height, corrected: false, templateApplied: false,
-            dotAlignment, detection, timings, failureReason: "The page dots could not be aligned. Try another frame." };
+            dotAlignment, detection, timings, failureReason: misaligned
+              ? "The page dots could not be aligned. Try another frame."
+              : "The corrected page dots could not be verified. Try another frame." };
         }
       }
       const previewStarted = performance.now();
@@ -3874,7 +3895,8 @@
         worker.onerror = fallback;
         worker.postMessage({ operation: "process", blob, config: SP.Config || {},
           liveDetection: options.liveDetection || null, maxDimension: options.maxDimension,
-          timeoutMs: options.timeoutMs, previewProgress: options.previewProgress === true });
+          timeoutMs: options.timeoutMs, previewProgress: options.previewProgress === true,
+          requireGrid: options.requireGrid === true });
       } catch (_) { fallback(); }
     });
   };
