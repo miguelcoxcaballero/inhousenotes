@@ -2683,6 +2683,8 @@
   }
 
   function detectPageAtScale(source, analysisMaximum, options = {}) {
+    const profile = {}; let checkpoint = performance.now();
+    const measured = name => { const now=performance.now(); profile[name]=now-checkpoint; checkpoint=now; };
     const analysis = createScaledCanvas(source, analysisMaximum);
     const { canvas, context, scale } = analysis;
     const { width, height } = canvas;
@@ -2690,6 +2692,7 @@
     const liveFrame = observedLiveFrame(options.liveDetection, width, height, pixels);
     const paperQuad = detectPaperQuad(width, height, pixels);
     const paperYellowBaseline = estimatePaperYellowBaseline(width, height, pixels, paperQuad);
+    measured('paperMs');
     const mask = new Uint8Array(width * height);
     const traceMask = new Uint8Array(width * height);
     let yellowPixels = 0;
@@ -2721,6 +2724,7 @@
 
     let markerPaperCandidates = markerAnchoredPaperCandidates(
       width, height, pixels, mask, paperQuad);
+    measured('initialMaskAndMarkersMs');
     let neutralBandDiagnostics = null;
     if (markerPaperCandidates.length) {
       // The first pass intentionally uses a strict colour mask so it can find
@@ -2875,6 +2879,7 @@
       }
     }
 
+    measured('refinedMaskAndMarkersMs');
     // The unmarked-frame fallback must use rails on the observed sheet.
     // Strong yellow material outside the paper otherwise supplies the first
     // and last pixels on every column, replacing the real top/bottom border
@@ -3107,10 +3112,28 @@
       } : null
     } : null;
     const finish = result => {
+      measured('fitFramesMs'); result.analysisTimings = profile;
       if (options.liveDetection?.source === "yellow" && !liveFrame) {
-        // A stale or unsupported capture seed must not silently turn into an
-        // unrelated confident crop. The review can still offer the original.
-        result.quality = { valid: false, reason: "live-contour-not-observed", seedAgreement: null };
+        // A thin, antialiased yellow line may fail the stricter seed ridge
+        // test while an independent marker/rail reconstruction observes it.
+        // Accept that reconstruction only on the same complete contour and
+        // with separately measured support on this photograph's pixels.
+        const seed = options.liveDetection;
+        const validEdges = seed.frameEdges?.length === 4 && seed.frameEdges.every(edge => edge?.length >= 8
+          && edge.every(point => Number.isFinite(point.x) && Number.isFinite(point.y)
+            && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1));
+        const agreement = validEdges && result.frame && contourDistance(result.frame,
+          { edges: seed.frameEdges.map(edge => edge.map(point => ({x:point.x*source.width,y:point.y*source.height}))) },
+          source.width, source.height);
+        const evidence = result.quality?.valid && result.method === 'marker-guided' && agreement
+          && agreement.maximum <= .025 && agreement.mean <= .009
+          ? measureFrameEvidence(source, [result])[0] : null;
+        const recovered = evidence && Math.min(...evidence.sideSupports) >= .58
+          && evidence.sideSupports.filter(value => value >= .78).length >= 3;
+        result.quality = recovered
+          ? { ...result.quality, valid:true, reason:'independently-observed-contour', seedAgreement:agreement,
+            measuredSideSupports:evidence.sideSupports }
+          : { valid:false, reason:'live-contour-not-observed', seedAgreement:agreement || null };
       } else if (!result.quality) {
         result.quality = { valid: false, reason: "page-frame-not-verified", seedAgreement: null };
       }
@@ -3311,11 +3334,11 @@
       preview.canvas.width = preview.canvas.height = 0;
       options = { ...options, liveDetection };
     }
-    const quick = detectPageAtScale(source, ANALYSIS_FAST_MAX, options);
+    const quick = detectPageAtScale(source, options.forceDetailed ? ANALYSIS_MAX : ANALYSIS_FAST_MAX, options);
     const frame = quick.frame;
     const finiteQuickQuad = quick.pageQuad?.length === 4
       && quick.pageQuad.every(point => Number.isFinite(point?.x) && Number.isFinite(point?.y));
-    const needsDetailedPass = !finiteQuickQuad
+    let needsDetailedPass = !finiteQuickQuad
       || quick.method === "fallback"
       || (quick.method === "paper" && quick.confidence > 0)
       || (quick.method === "marker-guided"
@@ -3341,7 +3364,56 @@
           // absent.
           || ((frame?.box?.support || 0) < 0.72
             && (frame?.support || 0) < 0.9)));
-    let selected = quick;
+    if (options.forceDetailed) {
+      needsDetailedPass = false;
+      quick.scaleSelection = {resolution:ANALYSIS_MAX,reason:'raster-recovery'};
+    }
+    const finalize = selected => {
+      let detection = refineObservedFrame(source, selected);
+      detection = SP.SurfaceParameterization?.refine(source, detection) || detection;
+      if (detection.quality?.valid && options.liveDetection?.frameEdges?.length === 4) {
+        const width = source.naturalWidth || source.videoWidth || source.width;
+        const height = source.naturalHeight || source.videoHeight || source.height;
+        const observed = { edges: options.liveDetection.frameEdges.map(edge => edge.map(point => ({
+          x: point.x * width, y: point.y * height
+        }))) };
+        const agreement = contourDistance(detection.frame, observed, width, height);
+        detection.quality.seedAgreement = agreement;
+        if (agreement.maximum > 0.025 || agreement.mean > 0.009) {
+          detection.quality.valid = false;
+          detection.quality.reason = 'refined-contour-disagreement';
+        }
+      }
+      if (detection.quality?.valid && detection.frame && SP.MetricSurface?.fit) {
+        const surfaceDiagnostics = {};
+        const surface = SP.MetricSurface.fit(source, detection, {
+          diagnostics: surfaceDiagnostics,
+          budgetMs: options.surfaceBudgetMs,
+          onObservations: detail => {
+            options.onProgress?.('dots', { ...detail, space:'source' });
+            options.onProgress?.('surface', { fitting:true });
+          },
+          onRegistration: detail => options.onProgress?.('surface', { ...detail, space:'source', registered:true })
+        });
+        if (surface) detection.frame.metricSurface = surface;
+        else detection.frame.surfaceDiagnostics = surfaceDiagnostics;
+      }
+      return detection;
+    };
+    let selected = quick, completed = null;
+    if (needsDetailedPass && quick.quality?.valid && quick.method === 'marker-guided' && quick.confidence >= .98
+      && quick.frame?.support >= .88 && quick.frame?.box?.support >= .72
+      && quick.frame.sideSupports?.every(support => support >= .7)) {
+      // The finer border pass is a recovery path. If the smaller analysis
+      // already explains the independently measured full-source dots and
+      // perimeter with a validated 3D surface, don't repeat the whole search.
+      const candidate = finalize(JSON.parse(JSON.stringify(quick)));
+      if (candidate.frame?.metricSurface) {
+        completed = candidate;
+        completed.scaleSelection = {resolution:ANALYSIS_FAST_MAX,reason:'verified-full-source-surface'};
+        needsDetailedPass = false;
+      }
+    }
     if (needsDetailedPass) {
       const detailed = detectPageAtScale(source, ANALYSIS_MAX, options);
       const weakest = result => Math.min(...(result.frame?.sideSupports || [0]));
@@ -3361,41 +3433,13 @@
       selected.scaleSelection = { resolution: degraded ? ANALYSIS_FAST_MAX : ANALYSIS_MAX,
         coarseEvidence, detailedEvidence };
     }
-    let detection = refineObservedFrame(source, selected);
-    detection = SP.SurfaceParameterization?.refine(source, detection) || detection;
-    if (detection.quality?.valid && options.liveDetection?.frameEdges?.length === 4) {
-      const width = source.naturalWidth || source.videoWidth || source.width;
-      const height = source.naturalHeight || source.videoHeight || source.height;
-      const observed = { edges: options.liveDetection.frameEdges.map(edge => edge.map(point => ({
-        x: point.x * width, y: point.y * height
-      }))) };
-      const agreement = contourDistance(detection.frame, observed, width, height);
-      detection.quality.seedAgreement = agreement;
-      if (agreement.maximum > 0.025 || agreement.mean > 0.009) {
-        detection.quality.valid = false;
-        detection.quality.reason = "refined-contour-disagreement";
-      }
-    }
-    if (detection.quality?.valid && detection.frame && SP.MetricSurface?.fit) {
-      const surfaceDiagnostics = {};
-      const surface = SP.MetricSurface.fit(source, detection, {
-        diagnostics: surfaceDiagnostics,
-        budgetMs: options.surfaceBudgetMs,
-        onObservations: detail => {
-          options.onProgress?.("dots", { ...detail, space: "source" });
-          options.onProgress?.("surface", { fitting: true });
-        },
-        onRegistration: detail => options.onProgress?.("surface", { ...detail, space: "source", registered: true })
-      });
-      if (surface) detection.frame.metricSurface = surface;
-      else detection.frame.surfaceDiagnostics = surfaceDiagnostics;
-    }
-    return detection;
+    return completed || finalize(selected);
   };
 
   Light.detectPageAsync = async function detectPageAsync(source, options = {}) {
     checkProcessingCancelled(options);
     const fallback = async () => {
+      await globalThis.InhouseRust?.ready;
       await yieldToBrowser();
       checkProcessingCancelled(options);
       return Light.detectPage(source, options);
@@ -3645,6 +3689,16 @@
         timings.alignmentMs = performance.now() - alignmentStarted;
         checkProcessingCancelled(options);
         if (dotAlignment.status === "failed") {
+          if (!options.forceDetailed && detection.scaleSelection?.reason === 'verified-full-source-surface') {
+            // A valid physical fit still has to explain the final pixels.
+            // Retry the finer observation before rejecting this photograph.
+            const recoveryMs = performance.now()-started;
+            output.width=output.height=0; output=null; mesh=null; observed=null;
+            progress('detection',{retry:true});
+            const recovered = await processScanBlob(blob,{...options,forceDetailed:true});
+            recovered.timings = {...recovered.timings,recoveryMs,totalMs:performance.now()-started};
+            return recovered;
+          }
           // A convincing yellow perimeter does not certify the interior of
           // a bent sheet. Keep the original instead of hiding a failed warp
           // beneath a straight replacement grid. Other burst frames can win.
@@ -4525,7 +4579,7 @@
         // cast; keep that provenance instead of mistaking it for blue ink.
         // Unverified sites retain the strict neutral test.
         return chroma <= Math.max(5, darkness * .3)
-          || neutralPrint && chroma <= Math.max(r, g, b) * .22 ? darkness : 0;
+          || neutralPrint && chroma <= Math.max(r, g, b) * .5 ? darkness : 0;
       };
       let peak = 0, peakX = 0, peakY = 0;
       for (let dy = -searchRadius; dy <= searchRadius; dy++) for (let dx = -searchRadius; dx <= searchRadius; dx++) {
@@ -5212,8 +5266,13 @@
         // Measured neutral paper uses only relative luminance. Avoid colour
         // reference projection and three discarded channel gains for the
         // millions of neutral pixels making up most scanned pages.
-        const colouredStroke = saturation > 0.18 || (saturation > 0.105
-          && localBright - luminance > Math.max(6, localBright * 0.035));
+        const inkDeficit = localBright - luminance;
+        // Camera JPEG chroma spreads beyond the sharp luminance edge. Colour
+        // alone must not turn those otherwise paper-bright pixels into ink.
+        const hasInkContrast = !observedIllumination
+          || inkDeficit > Math.max(observedIllumination.noiseFloor * 1.5,localBright * .025);
+        const colouredStroke = hasInkContrast && (saturation > 0.18 || (saturation > 0.105
+          && inkDeficit > Math.max(6, localBright * 0.035)));
         const measuredNeutral = !!observedIllumination && !colouredStroke;
         const measuredBlack = measuredNeutral && (luminance < localBright * 0.16
           || (localDrawing > 0.85 && luminance < localBright * 0.26));
@@ -5281,7 +5340,9 @@
           const strongest = Math.max(outputR, outputG, outputB);
           const weakest = Math.min(outputR, outputG, outputB);
           const dilution = 1 - clamp((strongest-weakest) / Math.max(1,strongest),0,1);
-          const vibrance = 1 + .6 * (1-localDrawing) * dilution;
+          const edge = clamp((inkDeficit / Math.max(40,localBright) - .025) / .16,0,1);
+          const edgeStrength = edge * edge * (3 - 2 * edge);
+          const vibrance = 1 + .6 * (1-localDrawing) * dilution * edgeStrength;
           const tone = outputR*.2126 + outputG*.7152 + outputB*.0722;
           outputR = tone + (outputR-tone)*vibrance;
           outputG = tone + (outputG-tone)*vibrance;
@@ -5290,7 +5351,7 @@
           // instead of desaturating pale blue/red handwriting into grey.
           // Solid fills and already-saturated reference colours retain their
           // calibrated palette; the extra coverage is for pastel strokes.
-          const coverage = 1 + 0.38 * (1 - localDrawing)
+          const coverage = 1 + 0.38 * (1 - localDrawing) * edgeStrength
             * clamp((Math.min(outputR, outputG, outputB) - 40) / 90, 0, 1);
           outputR = profile.targetPaper - (profile.targetPaper - outputR) * coverage;
           outputG = profile.targetPaper - (profile.targetPaper - outputG) * coverage;

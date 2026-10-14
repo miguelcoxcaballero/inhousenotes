@@ -82,5 +82,43 @@
         } catch (_) { return false; }
         finally { release(pixels); }
     }
-    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, separateInk, available: () => !!core });
+    function surfaceFit(parameters, points, width, height, frame, guides = [], preserveEnds = false) {
+        if (!core?.surface_fit_new || parameters.length < 10 || parameters.length > 32 || (parameters.length - 8) % 2
+            || points.length > 4500 || guides.length > 160 || !Number.isFinite(width) || !Number.isFinite(height)
+            || width <= 0 || height <= 0) return null;
+        const paths = [], offsets = [0];
+        if (frame) for (const name of ['top','right','bottom','left']) {
+            const path = frame.paths?.[name];
+            if (!path || path.length < 2 || path.length > 1024) return null;
+            path.forEach(point => paths.push(point.x, point.y)); offsets.push(paths.length / 2);
+        }
+        else offsets.push(0,0,0,0);
+        const inputs = [new Float64Array(parameters), new Float64Array(points.flatMap(point => [point.u,point.v,point.x,point.y])),
+            new Float64Array(paths), new Uint32Array(offsets),
+            new Float64Array(guides.flatMap(guide => [guide.u,guide.v,guide.x,guide.y,guide.du,guide.dv,guide.tx,guide.ty]))];
+        if (inputs.some(array => !array.every(Number.isFinite))) return null;
+        const blocks = []; let context = 0;
+        try {
+            for (const input of inputs) {
+                const block = allocation(Math.max(8,input.byteLength)); blocks.push(block);
+                view(block).set(new Uint8Array(input.buffer,input.byteOffset,input.byteLength));
+            }
+            const info = allocation(16); blocks.push(info);
+            context = core.surface_fit_new(blocks[0].pointer,parameters.length,blocks[1].pointer,points.length,
+                blocks[2].pointer,paths.length/2,blocks[3].pointer,blocks[4].pointer,guides.length,width,height,+preserveEnds);
+            if (!context) throw new Error('Surface input rejected');
+            let disposed = false;
+            return {
+                step() { return !disposed && core.surface_fit_step(context,1) === 1; },
+                result() {
+                    if (disposed) return null;
+                    core.surface_fit_result(context,blocks[0].pointer,info.pointer);
+                    const values = new Float64Array(core.memory.buffer,info.pointer,2);
+                    return {p:Array.from(new Float64Array(core.memory.buffer,blocks[0].pointer,parameters.length)),cost:values[0],iterations:values[1],backend:'rust'};
+                },
+                dispose() { if (!disposed) { disposed=true; core.surface_fit_drop(context); blocks.forEach(release); } }
+            };
+        } catch (_) { if (context) core.surface_fit_drop(context); blocks.forEach(release); return null; }
+    }
+    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, separateInk, surfaceFit, available: () => !!core });
 })(globalThis);

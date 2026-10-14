@@ -545,6 +545,19 @@
     // evidence; the lattice graph, holdouts and raster gate remain unchanged.
     if (points.length < 350 && !faint) return observe(source, frame, diagnostics, true);
     if (points.length < 350 || points.length > 4500) return null;
+    let measuredRaster = null;
+    if (faint) {
+      // Camera grain can imitate a tiny dot. Reject it in the source raster
+      // before a nearest-neighbour graph lets it change a whole row's index.
+      const centers = refineDotCenters(source, points.map(point => ({ ...point,
+        x: (point.x + .5) / scaleX, y: (point.y + .5) / scaleY })),
+        pitch / Math.sqrt(scaleX * scaleY), diagnostics);
+      measuredRaster = centers.raster;
+      points = centers.filter(point => point.centerRefined).map(point => ({ ...point,
+        x: point.x * scaleX - .5, y: point.y * scaleY - .5 }));
+      diagnostics.confirmedCandidates = points.length;
+      if (points.length < 350) return null;
+    }
     const hash = new Map(),
       cell = pitch * 1.5,
       key = (x, y) => `${x},${y}`;
@@ -622,7 +635,9 @@
                   Math.abs(across) > along * 0.3
                 )
                   return;
-                const error = along + Math.abs(across) * 0.3;
+                // Prefer the measured one-pitch neighbour. Choosing the
+                // shortest link favoured camera speckles halfway between dots.
+                const error = Math.abs(along - 1) + Math.abs(across) * 0.3;
                 if (error < errors[d]) {
                   errors[d] = error;
                   links[i][d] = j;
@@ -797,10 +812,12 @@
       score: p.score,
       count: p.selected.length,
     }));
+    const completeMeasuredExtent = faint && maxC-minC === 34 && maxR-minR === 50
+      && phase?.c0 === minC && phase?.r0 === minR;
     if (
       !phase ||
       phase.score > 0.65 ||
-      (phases[1] && phases[1].score - phase.score < 0.25)
+      (phases[1] && phases[1].score - phase.score < 0.25 && !completeMeasuredExtent)
     )
       return null;
     const measured = phase.selected.map((p) => ({
@@ -870,7 +887,7 @@
     diagnostics.rejectedGridOutliers = measured.length - lattice.length;
     if (lattice.length < 350 || lattice.length < measured.length * (faint ? 0.6 : 0.85))
       return null;
-    const refined = refineDotCenters(source, lattice, pitch / Math.sqrt(scaleX * scaleY), diagnostics);
+    const refined = refineDotCenters(source, lattice, pitch / Math.sqrt(scaleX * scaleY), diagnostics, measuredRaster);
     // Low-contrast recovery adds candidates, not authority. Only centres
     // independently measured in the source raster train a faint-dot surface.
     const confirmed = faint ? refined.filter(point => point.centerRefined) : refined;
@@ -1240,6 +1257,17 @@
     maxIterations = 48,
     preserveEnds = false,
   ) {
+    const rust = globalThis.InhouseRust?.surfaceFit?.(start,points,width,height,frame,guides,preserveEnds);
+    if (rust) {
+      try {
+        for (let step=0;step<maxIterations && performance.now()<deadline;step++) {
+          if (!rust.step()) break;
+        }
+        const result = rust.result();
+        if (result && result.p.every(Number.isFinite) && Number.isFinite(result.cost)) return result;
+      } catch (_) { /* Keep the optional numerical backend's host fallback. */ }
+      finally { rust.dispose(); }
+    }
     let p = [...start],
       r = residual(p, points, width, height, frame, guides),
       cost = loss(r),
@@ -1300,7 +1328,7 @@
       } else lambda = Math.min(1e8, lambda * 5);
     }
 
-    return { p, cost, iterations };
+    return { p, cost, iterations, backend:'javascript' };
   }
   function observationDetail(observed, source) {
     // These are measured dot centres, not resampled curves or inferred dots.
@@ -1768,7 +1796,8 @@
             candidateModel = prepare(p, source.width, source.height),
             cost = loss(residual(p, training, source.width, source.height, frame, guides));
           if ((!validateModel(prepare(best.p, source.width, source.height)) || cost < best.cost * 0.985) && validateModel(candidateModel))
-            best = { p, cost, iterations: 0 };
+            best = { p, cost, iterations: 0,
+              backend:profileCandidates.every(candidate=>candidate.backend === 'rust') ? 'rust' : 'javascript' };
         }
       }
     }
@@ -1862,6 +1891,7 @@
         pitch,
         elapsedMs: performance.now() - started,
         iterations: best.iterations,
+        backend: best.backend,
         starts,
       },
       profile: {

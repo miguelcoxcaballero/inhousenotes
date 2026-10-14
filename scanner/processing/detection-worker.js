@@ -14,6 +14,9 @@ self.onmessage = async event => {
     previewProgress, reportProgress, surfaceBudgetMs } = event.data;
   try {
     self.ScannerPro.Config = config;
+    // Module loading starts at import time; don't begin the synchronous 3D
+    // solver while that promise is still pending and silently choose JS.
+    await self.InhouseRust?.ready;
     if (operation === "process") {
       if (typeof OffscreenCanvas.prototype.convertToBlob !== "function"
         || !new OffscreenCanvas(1, 1).getContext("2d")) {

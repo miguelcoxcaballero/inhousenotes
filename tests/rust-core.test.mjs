@@ -59,3 +59,19 @@ test('Rust scan buffers reject inconsistent paper fields before allocating',()=>
     assert.equal(scope.InhouseRust.scanColors(new Uint8Array(16),new Uint8Array(16),2,2,new Float32Array(3),null,2,2,new Float64Array(61)),null);
     assert.equal(scope.InhouseRust.scanColors(new Uint8Array(16),new Uint8Array(16),2,2,new Float32Array(4),new Uint8Array(3),2,2,new Float64Array(61)),null);
 });
+
+test('Rust surface contexts reject invalid correspondences and release independently',()=>{
+    const p=new Float64Array(16);p[5]=Math.log(1000);p[6]=Math.log(1000);
+    assert.equal(scope.InhouseRust.surfaceFit(p,[{u:NaN,v:.5,x:100,y:150}],200,300,null),null);
+    const points=[{u:.2,v:.3,x:37,y:90.6},{u:.8,v:.7,x:163,y:209.4}];
+    const fit=scope.InhouseRust.surfaceFit(p,points,200,300,null);
+    assert.ok(fit);
+    for(let i=0;i<3;i++)fit.step();
+    assert.ok(Number.isFinite(fit.result().cost));
+    assert.equal(fit.result().p.length,16);
+    fit.dispose();fit.dispose();
+    assert.equal(fit.step(),false);
+    assert.equal(fit.result(),null);
+    const next=scope.InhouseRust.surfaceFit(p,points,200,300,null);
+    assert.ok(next);next.dispose();
+});
