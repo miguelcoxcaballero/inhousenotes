@@ -1179,6 +1179,8 @@ assert.match(app, /function playDriveFolderClose\(/);
 assert.match(app, /if \(requestedFolderId !== driveCurrentFolderId\) return;/);
 assert.match(app, /document\.body\.appendChild\(menuEl\)/);
 assert.match(app, /are printed on the front of the\n        \/\/ cover/);
+assert.match(app, /function getDriveFolderViewTint\(color\)/);
+assert.match(app, /fadeDriveFolderGhostColour\(ghost, folderColor, getDriveFolderViewTint\(folderColor\)/);
 assert.match(indexHtml, /document-processing-v5\.js\?v=5.13.0/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
