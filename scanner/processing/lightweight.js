@@ -40,7 +40,33 @@
     // All geometry stages must see the same paper-relative ink colours. A
     // cold camera white balance can make actual yellow ink look blue in RGB.
     // This analysis copy never replaces the photographed pixels used by warp.
-    return SP.LiveDetection?.normalizeIllumination?.(image) || image;
+    const balanced = SP.LiveDetection?.normalizeIllumination?.(image) || image;
+    // Geometry thresholds describe ink contrast in an ordinary exposure. A
+    // sharp but dim photograph can retain every printed rail while all its
+    // pixels sit below those thresholds. Only a measured four-colour footer
+    // may authorize lifting this disposable analysis copy. The source photo,
+    // focus gate and independent full-source dot certification remain intact.
+    const samples = [];
+    const stride = Math.max(4, Math.floor(Math.max(width, height) / 40));
+    for (let y = 0; y < height; y += stride) for (let x = 0; x < width; x += stride) {
+      const at = (y * width + x) * 4;
+      samples.push(image.data[at] * .2126 + image.data[at + 1] * .7152 + image.data[at + 2] * .0722);
+    }
+    samples.sort((a, b) => a - b);
+    if (samples[Math.floor(samples.length * .9)] >= 112) return balanced;
+    const references = balanced.colourReferences || SP.LiveDetection?.findColourReferences?.(image);
+    const white = references?.white;
+    const paperLight = white && white[0] * .2126 + white[1] * .7152 + white[2] * .0722;
+    if (!Number.isFinite(paperLight) || paperLight < 32 || paperLight >= 112) return balanced;
+    const gain = Math.min(3, 152 / paperLight);
+    const data = new Uint8ClampedArray(balanced.data.length);
+    for (let at = 0; at < data.length; at += 4) {
+      data[at] = balanced.data[at] * gain;
+      data[at + 1] = balanced.data[at + 1] * gain;
+      data[at + 2] = balanced.data[at + 2] * gain;
+      data[at + 3] = balanced.data[at + 3];
+    }
+    return { ...balanced, data, analysisExposureGain: gain };
   }
 
   function isYellow(r, g, b) {
@@ -64,6 +90,26 @@
 
   function yellowChroma(r, g, b) {
     return (r + g) * 0.5 - b - Math.abs(r - g) * 0.34;
+  }
+
+  function hasLocalYellowRidge(index, width, height, pixels) {
+    const x = index % width, y = Math.floor(index / width), at = index * 4;
+    const center = yellowChroma(pixels[at], pixels[at + 1], pixels[at + 2]);
+    const chromaAt = (xx, yy) => {
+      const offset = (yy * width + xx) * 4;
+      return yellowChroma(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
+    };
+    // White-balancing a cool-lit page can turn a separately lit neutral desk
+    // yellow. A printed rail is a narrow ridge with paper on BOTH sides; a
+    // filled desk or its one-sided silhouette is not. Measure perpendicular
+    // contrast, retaining oblique/curved rails without accepting flat colour.
+    for (const radius of [3, 5]) {
+      if (x >= radius && x + radius < width
+        && center - Math.max(chromaAt(x - radius, y), chromaAt(x + radius, y)) >= 2) return true;
+      if (y >= radius && y + radius < height
+        && center - Math.max(chromaAt(x, y - radius), chromaAt(x, y + radius)) >= 2) return true;
+    }
+    return false;
   }
 
   function estimatePaperYellowBaseline(width, height, pixels, paperQuad) {
@@ -2697,7 +2743,8 @@
     const traceMask = new Uint8Array(width * height);
     let yellowPixels = 0;
     for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
-      const strictYellow = isYellow(pixels[i], pixels[i + 1], pixels[i + 2]);
+      const strictYellow = isYellow(pixels[i], pixels[i + 1], pixels[i + 2])
+        && hasLocalYellowRidge(p, width, height, pixels);
       let yellow = strictYellow;
       let normalized = null;
       if (!strictYellow && paperQuad
@@ -3999,7 +4046,7 @@
     });
   }
 
-  function sampleCalibrationMarker(data, width, height, centerX, centerY, radius, name) {
+  function sampleCalibrationMarker(data, width, height, centerX, centerY, radius, name, paper = null) {
     const candidates = [];
     const minimumX = clamp(Math.floor(centerX - radius), 0, width - 1);
     const maximumX = clamp(Math.ceil(centerX + radius), 0, width - 1);
@@ -4007,8 +4054,16 @@
     const maximumY = clamp(Math.ceil(centerY + radius), 0, height - 1);
     for (let y = minimumY; y <= maximumY; y += 1) {
       for (let x = minimumX; x <= maximumX; x += 1) {
+        const distance = Math.hypot(x - centerX, y - centerY) / Math.max(1, radius);
+        if (distance > 1) continue;
         const offset = (y * width + x) * 4;
-        const r = data[offset], g = data[offset + 1], b = data[offset + 2];
+        const rawR = data[offset], rawG = data[offset + 1], rawB = data[offset + 2];
+        // A printed pigment is relative to nearby paper, not an absolute
+        // camera RGB hue. This also keeps a dark blue swatch measurable under
+        // a warm lamp without confusing its neighbouring black disc with it.
+        const r = paper ? rawR * 255 / Math.max(20, paper[0]) : rawR;
+        const g = paper ? rawG * 255 / Math.max(20, paper[1]) : rawG;
+        const b = paper ? rawB * 255 / Math.max(20, paper[2]) : rawB;
         const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
         const chroma = Math.max(r, g, b) - Math.min(r, g, b);
         let colourScore = -Infinity;
@@ -4027,15 +4082,17 @@
           valid = g >= r + 2 && g >= b + 4;
           colourScore = g * 2 - r - b;
         } else if (name === "yellow") {
-          valid = isYellow(r,g,b) || (luminance > 45 && luminance < 240 && chroma < 15);
+          // Grey, bleached printing still has a measured ridge. Unmarked
+          // paper at the expected frame coordinate is never a reference.
+          valid = luminance < 249 && (isYellow(r,g,b)
+            || (luminance > 45 && luminance < 240 && chroma < 15));
           colourScore = yellowChroma(r,g,b) * 1.5 + (255-luminance) * .25;
         } else {
           valid = luminance < 165 && chroma <= 72;
           colourScore = 255 - luminance - chroma * 0.72;
         }
         if (!valid) continue;
-        const distance = Math.hypot(x - centerX, y - centerY) / Math.max(1, radius);
-        candidates.push({ r, g, b, score: colourScore - distance * 18 });
+        candidates.push({ r: rawR, g: rawG, b: rawB, score: colourScore - distance * 18 });
       }
     }
     if (candidates.length < 3) return null;
@@ -5059,75 +5116,13 @@
     const illuminationXScale = (illuminationWidth - 1) / Math.max(1, canvas.width - 1);
     const illuminationYScale = (illuminationHeight - 1) / Math.max(1, canvas.height - 1);
     const pxPerCm = canvas.width / 21;
-    const radius = Math.max(5, pxPerCm * 0.28);
+    // Stay inside each 1.25 mm printed disc. The former 2.8 mm search
+    // reached adjacent markers, letting a misplaced/missing swatch borrow its
+    // neighbour's colour instead of measuring the known physical position.
+    const radius = Math.max(2, pxPerCm * 0.115);
     const config = SP.Config || {};
     const targets = config.CALIBRATION_TARGETS || {};
     const profile = estimatePaperProfile(data, canvas.width, canvas.height, preciseStencil);
-    const markerDefinitions = [
-      [10.125, "red", [1, 0, 0]],
-      [10.375, "black", [0, 0, 0]],
-      [10.625, "blue", [0, 0, 1]],
-      [10.875, "green", [110 / 255, 1, 18 / 255]]
-    ];
-    const samples = preciseStencil
-      ? markerDefinitions.map(([x, name, fallback]) => ({
-        name,
-        source: sampleCalibrationMarker(
-          data,
-          canvas.width,
-          canvas.height,
-          x * pxPerCm,
-          27.68 * pxPerCm,
-          radius,
-          name
-        ),
-        target: (targets[name] || fallback.map(value => value * 255)).map(value => value / 255),
-        weight: name === "black" ? 1.4 : 1
-      }))
-      : [];
-    if (preciseStencil) {
-      // A single side can be shaded or partially hidden. Sample several parts
-      // of the printed frame and use their median as the page's yellow ink.
-      // Some cameras bleach that ink until it is effectively grey. The frame
-      // geometry is already known after warping, so a darker neutral ridge at
-      // these exact coordinates is still a valid fifth calibration reference.
-      const stencilReference = (r, g, b) => {
-        if (isYellow(r, g, b)) return true;
-        const maximum = Math.max(r, g, b);
-        const minimum = Math.min(r, g, b);
-        const saturation = maximum ? (maximum - minimum) / maximum : 0;
-        const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
-        return saturation <= 0.14
-          && luminance >= 45
-          && luminance <= profile.paperLuminance - 4.5;
-      };
-      const yellowSource = medianColorSamples([
-        [1.5, 6], [1.5, 14.8], [1.5, 23],
-        [19.5, 6], [19.5, 14.8], [19.5, 23],
-        [6, 1.43], [10.5, 1.43], [15, 1.43]
-      ].map(([x, y]) => sampleCalibrationMarker(
-        data, canvas.width, canvas.height, x * pxPerCm, y * pxPerCm, pxPerCm * .19, 'yellow'
-      )));
-      const targetYellow = { R: 240, G: 219, B: 76 }; // Exact editor/printed template, independent of detection hue settings.
-      samples.push({
-        name: "yellow",
-        source: yellowSource,
-        target: [targetYellow.R / 255, targetYellow.G / 255, targetYellow.B / 255],
-        weight: 0.75
-      });
-    }
-    const validMarkerSamples = samples.filter(sample => sample.name !== "yellow" && markerLooksValid(sample.name, sample.source));
-    const yellowSample = samples.find(sample => sample.name === "yellow");
-    const canCalibrate = preciseStencil
-      && validMarkerSamples.length === markerDefinitions.length
-      && !!yellowSample?.source;
-    const referenceByName = Object.fromEntries(
-      [...validMarkerSamples, ...(yellowSample?.source ? [yellowSample] : [])]
-        .map(sample => [sample.name, sample])
-    );
-    // Fit the camera response jointly from all four pigments, the printed
-    // yellow and measured paper. Normalize each reference by nearby paper so
-    // a shadow over the bottom strip is not learned as a page-wide exposure.
     const localPaperAt = (x, y) => {
       const channels = [[], [], []];
       for (let dy = -3; dy <= 3; dy++) for (let dx = -4; dx <= 4; dx++) {
@@ -5135,25 +5130,80 @@
         const sy = clamp(Math.round((y + dy * .045) * pxPerCm), 0, canvas.height - 1);
         const offset = (sy * canvas.width + sx) * 4;
         const rgb = [data[offset], data[offset + 1], data[offset + 2]];
-        if (Math.min(...rgb) < 60 || Math.max(...rgb) - Math.min(...rgb) > 55) continue;
+        // These are verified blank template positions. Requiring bright,
+        // already neutral RGB would reject the very casts being calibrated.
+        if (Math.min(...rgb) < 12 || Math.max(...rgb) < 30) continue;
         rgb.forEach((value, channel) => channels[channel].push(value));
       }
       return channels.map((values, channel) => {
         values.sort((a,b) => a-b);
-        return values.length >= 8 ? values[Math.floor(values.length * .8)] : profile.sourcePaper[channel];
+        return values.length >= 16 ? values[Math.floor(values.length * .8)] : profile.sourcePaper[channel];
       });
     };
-    const normalizedReferences = validMarkerSamples.map(sample => {
-      const definition = markerDefinitions.find(([, name]) => name === sample.name);
-      const paper = localPaperAt(definition[0], 28.15);
-      return { ...sample, source: sample.source.map((v,c) => clamp(v * 255 / Math.max(60,paper[c]),0,1)), weight: 2 };
-    });
-    if (yellowSample?.source) {
-      const paper = localPaperAt(10.5, 1.85);
-      normalizedReferences.push({ ...yellowSample,
-        source: yellowSample.source.map((v,c) => clamp(v * 255 / Math.max(60,paper[c]),0,1)), weight: 1.2 });
+    const relativeToPaper = (source, paper) => source?.map((value, channel) =>
+      clamp(value * 255 / Math.max(20, paper[channel]), 0, 1));
+    const markerDefinitions = [
+      [10.125, "red", [1, 0, 0]],
+      [10.375, "black", [0, 0, 0]],
+      [10.625, "blue", [0, 0, 1]],
+      [10.875, "green", [110 / 255, 1, 18 / 255]]
+    ];
+    const samples = preciseStencil ? markerDefinitions.map(([x, name, fallback]) => {
+      const paper = localPaperAt(x, 28.15);
+      const source = sampleCalibrationMarker(data, canvas.width, canvas.height,
+        x * pxPerCm, 27.68 * pxPerCm, radius, name, paper);
+      return { name, source, normalizedSource: relativeToPaper(source, paper),
+        target: (targets[name] || fallback.map(value => value * 255)).map(value => value / 255),
+        weight: name === "black" ? 1.4 : 1 };
+    }) : [];
+    if (preciseStencil) {
+      // Normalize every measured rail by its own adjacent paper before
+      // combining them. A shadow on one side must not become a global colour
+      // response, and a washed-out/missing rail must not masquerade as yellow.
+      const yellowMeasurements = [
+        [1.5, 6, 1.85, 6], [1.5, 14.8, 1.85, 14.8], [1.5, 23, 1.85, 23],
+        [19.5, 6, 19.15, 6], [19.5, 14.8, 19.15, 14.8], [19.5, 23, 19.15, 23],
+        [6, 1.43, 6, 1.85], [10.5, 1.43, 10.5, 1.85], [15, 1.43, 15, 1.85]
+      ].map(([x, y, paperX, paperY]) => {
+        const paper = localPaperAt(paperX, paperY);
+        const source = sampleCalibrationMarker(data, canvas.width, canvas.height,
+          x * pxPerCm, y * pxPerCm, pxPerCm * .19, "yellow", paper);
+        return source && { source, normalizedSource: relativeToPaper(source, paper) };
+      }).filter(Boolean);
+      samples.push({ name: "yellow",
+        source: yellowMeasurements.length >= 3 ? medianColorSamples(yellowMeasurements.map(sample => sample.source)) : null,
+        normalizedSource: yellowMeasurements.length >= 3
+          ? medianColorSamples(yellowMeasurements.map(sample => sample.normalizedSource)) : null,
+        target: [240 / 255, 219 / 255, 76 / 255], weight: .75 });
     }
+    const validMarkerSamples = samples.filter(sample => sample.name !== "yellow"
+      && markerLooksValid(sample.name, sample.normalizedSource));
+    const yellowSample = samples.find(sample => sample.name === "yellow");
+    // All four independently located pigments are required for a fitted
+    // camera response. Yellow improves the fit when measurable, but losing
+    // that faint rail no longer discards four strong colour references.
+    const canCalibrate = preciseStencil && validMarkerSamples.length === markerDefinitions.length;
+    const normalizedReferences = validMarkerSamples.map(sample => ({
+      ...sample, source: sample.normalizedSource, weight: 2
+    }));
     normalizedReferences.push({ name: 'paper', source: [1,1,1], target: [1,1,1], weight: 8 });
+    const markerMatrix = canCalibrate ? buildColorMatrix(normalizedReferences) : null;
+    const yellowError = markerMatrix && yellowSample?.normalizedSource
+      ? Math.sqrt(yellowSample.target.reduce((sum, target, channel) => sum
+        + (markerMatrix[channel].slice(0, 3).reduce((value, coefficient, input) =>
+          value + coefficient * yellowSample.normalizedSource[input], markerMatrix[channel][3]) - target) ** 2, 0) / 3)
+      : null;
+    // A neutral shadow edge at the frame position is useful geometric
+    // evidence, but cannot redefine yellow when the four pigments disagree.
+    // Check that extra reference independently before letting it affect ink.
+    const yellowVerified = !!yellowSample?.normalizedSource && (yellowError == null || yellowError < .2);
+    if (yellowVerified) normalizedReferences.splice(normalizedReferences.length - 1, 0, {
+      ...yellowSample, source: yellowSample.normalizedSource, weight: 1.2
+    });
+    const referenceByName = Object.fromEntries(
+      [...validMarkerSamples, ...(yellowVerified ? [yellowSample] : [])]
+        .map(sample => [sample.name, sample])
+    );
     const colorMatrix = canCalibrate ? buildColorMatrix(normalizedReferences) : null;
     const matrixError = colorMatrix ? Math.sqrt(normalizedReferences.reduce((total, sample) => total
       + sample.target.reduce((sum, target, c) => sum + (colorMatrix[c][0] * sample.source[0]
@@ -5442,7 +5492,7 @@
       canvas,
       pixelProcessing: { backend: rustColors ? "rust" : "javascript", pixelsMs, cleanupMs: performance.now() - cleanupStarted },
       calibrated: canCalibrate,
-      calibration: { method: calibratedMatrix ? "paper-relative-six-reference" : "bounded-reference-fallback", matrixError, matrix: calibratedMatrix, sourcePaper: profile.sourcePaper, normalizedReferences, references: normalizedReferences.map(sample => sample.name) },
+      calibration: { method: calibratedMatrix ? (yellowVerified ? "paper-relative-six-reference" : "paper-relative-four-markers") : "bounded-reference-fallback", matrixError, yellowError, matrix: calibratedMatrix, sourcePaper: profile.sourcePaper, normalizedReferences, references: normalizedReferences.map(sample => sample.name) },
       stencilCleanup,
       outputQuality,
       illumination: observedIllumination ? { method: "observed-paper", anchors: observedIllumination.anchors,
@@ -5453,8 +5503,8 @@
       references: Object.fromEntries(samples.map(sample => [sample.name, {
         source: sample.source?.map(value => Math.round(value * 255)) || null,
         valid: sample.name === "yellow"
-          ? !!sample.source
-          : markerLooksValid(sample.name, sample.source)
+          ? yellowVerified
+          : markerLooksValid(sample.name, sample.normalizedSource)
       }]))
     };
   };

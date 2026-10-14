@@ -14,7 +14,7 @@ const normalizeIlluminationAsync = context.window.ScannerPro.LiveDetection.norma
 // exactly the same perspective, including pages rotated 90 and 180 degrees.
 function frame({ quad = [[100, 25], [348, 34], [375, 455], [73, 447]], yellow = true,
   markers = true, paper = true, background = [68, 78, 83], ink = [240, 219, 76], brightness = 1,
-  bowX = 0, bowY = 0, brokenRail = false, brokenCorner = false, railJitter = 0, railPhase = 0 } = {}) {
+  bowX = 0, bowY = 0, brokenRail = false, brokenCorner = false, railJitter = 0, railPhase = 0, colourMarkers = false } = {}) {
   const width = 480, height = 480, data = new Uint8ClampedArray(width * height * 4);
   const [a, b, c, d] = quad;
   const ex = b[0] - a[0], ey = b[1] - a[1], fx = d[0] - a[0], fy = d[1] - a[1];
@@ -45,6 +45,12 @@ function frame({ quad = [[100, 25], [348, 34], [375, 455], [73, 447]], yellow = 
         if (yellow && markers && ((cmX >= 2 && cmX <= 10) || (cmX >= 11 && cmX <= 19))
           && (Math.abs(cmY - 27.43) < line || Math.abs(cmY - 27.93) < line
             || (cmY >= 27.43 && cmY <= 27.93 && Math.abs(cmX * 2 - Math.round(cmX * 2)) < .08))) colour = ink;
+        if (colourMarkers) {
+          const colours = Array.isArray(colourMarkers) ? colourMarkers : [[255, 0, 0], [0, 0, 0], [0, 0, 255], [110, 255, 18]];
+          for (let marker = 0; marker < 4; marker += 1) {
+            if (Math.hypot(cmX - (10.125 + marker * .25), cmY - 27.68) < .125) colour = colours[marker];
+          }
+        }
         if (brokenRail && cmX > 19 && cmY > 11 && cmY < 18) colour = [244, 244, 240];
         if (brokenCorner && cmX > 18 && cmY < 3.5) colour = [244, 244, 240];
         if (cmX > 3 && cmX < 17 && cmY > 4 && cmY < 24 && cmY % 1.7 < .07) colour = [28, 44, 78];
@@ -322,4 +328,81 @@ test('rectified-page illumination uses the physical interior rather than synthet
   const at = (Math.round(source.height * .45) * source.width + Math.round(source.width * .5)) * 4;
   assert.ok(Math.abs(corrected.data[at] - corrected.data[at + 2]) < 6, 'the page is neutral despite the artificial white border');
   assert.deepEqual((await normalizeIlluminationAsync(source, options)).data, corrected.data);
+});
+
+function locallyIlluminatedPage(gains, { offset = 0, colourMarkers = true, yellow = true } = {}) {
+  const source = frame({ colourMarkers, yellow, ink: [225, 218, 174], bowX: 16, bowY: -11 });
+  for (let at = 0; at < source.data.length; at += 4) {
+    const desk = source.data[at] === 68 && source.data[at + 1] === 78 && source.data[at + 2] === 83;
+    for (let channel = 0; channel < 3; channel += 1) source.data[at + channel] = desk ? 235
+      : source.data[at + channel] * gains[channel] + offset;
+  }
+  return source;
+}
+
+test('four ordered colour circles select the page illuminant independently of a brighter neutral desk', () => {
+  for (const [name, gains] of [['cool', [.42, .65, 1]], ['warm', [1, .62, .32]],
+    ['green', [.4, 1, .55]], ['magenta', [1, .45, .86]]]) {
+    const source = locallyIlluminatedPage(gains), snapshot = source.data.slice();
+    const refs = context.window.ScannerPro.LiveDetection.findColourReferences(source);
+    assert.ok(refs, name);
+    assert.equal(refs.points.length, 4);
+    assert.ok(refs.paperSupport >= .67, name);
+    assert.ok(refs.points.every(point => point.y > 400 && point.x > 210 && point.x < 240), name);
+    const normalized = normalizeIllumination(source);
+    assert.equal(normalized.illumination?.reference, 'colour-markers', name);
+    assert.equal(normalized.luminanceData, source.data, 'focus and exposure retain original camera intensities');
+    const result = detect(source);
+    assert.equal(result?.source, 'yellow', name);
+    assert.ok(result.confidence > .86, `${name}: ${result.confidence}`);
+    assert.ok(result.markerSupport >= .65, `${name}: bottom boxes ${result.markerSupport}`);
+    assert.deepEqual(source.data, snapshot, 'the raw photograph must remain unchanged');
+  }
+});
+
+test('verified colour references retain the frame in low exposure without manufacturing capture quality', () => {
+  for (const gains of [[.28, .28, .28], [.33, .24, .16]]) {
+    const source = locallyIlluminatedPage(gains), result = detect(source);
+    assert.equal(result?.source, 'yellow');
+    assert.ok(result.brightness < 75, `original low brightness ${result.brightness}`);
+    assert.ok(result.confidence <= .76, 'better colour evidence cannot authorize a dim automatic capture');
+    assert.ok(result.frameEdgeSupport.filter(support => support >= .7).length >= 3);
+  }
+});
+
+test('bright paper with a veiling reflection keeps independently measured rails', () => {
+  const source = locallyIlluminatedPage([.9, .9, .9], { offset: 55 });
+  const result = detect(source);
+  assert.equal(result?.source, 'yellow');
+  assert.ok(result.frameEdgeSupport.filter(support => support >= .7).length >= 3);
+  assert.ok(result.confidence > .78);
+});
+
+test('missing, reordered or occluded colour circles cannot become an illuminant reference', () => {
+  const red = [255, 0, 0], black = [0, 0, 0], blue = [0, 0, 255], green = [110, 255, 18], white = [244, 244, 240];
+  for (const colourMarkers of [false, [red, black, green, blue], [red, white, blue, green], [red, black, white, green]]) {
+    assert.equal(context.window.ScannerPro.LiveDetection.findColourReferences(frame({ colourMarkers })), null);
+  }
+  const noRails = locallyIlluminatedPage([.42, .65, 1], { yellow: false });
+  assert.ok(context.window.ScannerPro.LiveDetection.findColourReferences(noRails));
+  const result = detect(noRails);
+  assert.ok(!result || result.source === 'paper');
+  assert.ok(!result || result.confidence < .78, 'four colours alone are not a document frame');
+});
+
+test('a small ordered row of laptop icons at the image edge is not page calibration', () => {
+  const width = 360, height = 480, data = new Uint8ClampedArray(width * height * 4);
+  for (let at = 0; at < data.length; at += 4) { data[at] = 124; data[at + 1] = 90; data[at + 2] = 104; data[at + 3] = 255; }
+  const colours = [[255, 0, 0], [0, 0, 0], [0, 0, 255], [110, 255, 18]];
+  for (let marker = 0; marker < 4; marker += 1) {
+    const cx = 355 - marker * 1.4, cy = 95 + marker * 3.8;
+    for (let y = 90; y < 112; y += 1) for (let x = 344; x < 360; x += 1) {
+      if (Math.hypot(x - cx, y - cy) > 1.7) continue;
+      const at = (y * width + x) * 4;
+      for (let channel = 0; channel < 3; channel += 1) data[at + channel] = colours[marker][channel];
+    }
+  }
+  assert.equal(context.window.ScannerPro.LiveDetection.findColourReferences({ width, height, data }), null,
+    'red-to-green orientation would place the actual sheet beyond the right image edge');
+  assert.equal(detect({ width, height, data }), null);
 });
