@@ -1747,8 +1747,6 @@
         const driveMenuLogoutBtnEditor = document.getElementById('btn-drive-menu-logout-editor');
         const driveHomeBtn = document.getElementById('btn-drive-home');
         const driveBackBtn = document.getElementById('btn-drive-back');
-        const driveHomeFoldersEl = document.getElementById('drive-home-folders');
-        const driveHomeFoldersEmptyEl = document.getElementById('drive-home-folders-empty');
         const driveFolderViewEl = document.getElementById('drive-folder-view');
         const driveFolderViewScrollEl = document.getElementById('drive-folder-view-scroll');
         const driveFolderViewTitleEl = document.getElementById('drive-folder-view-title');
@@ -5701,9 +5699,7 @@
         function applyTheme(mode, persist = false) {
             const next = mode === 'dark' ? 'dark' : 'light';
             document.documentElement.dataset.theme = next;
-            if (typeof isDriveFolderViewOpen === 'function' && isDriveFolderViewOpen() && driveFolderViewEl.dataset.folderColor) {
-                applyDriveFolderViewPalette(driveFolderViewEl.dataset.folderColor);
-            }
+            if (typeof repaintDriveFolders === 'function' && driveFolderViewEl) repaintDriveFolders();
             if (persist) {
                 try {
                     localStorage.setItem(THEME_KEY, next);
@@ -6624,7 +6620,6 @@
             driveCurrentFolderId = 'root';
             driveFolderViewOriginId = null;
             hideDriveFolderView();
-            if (driveHomeFoldersEl) driveHomeFoldersEl.innerHTML = '';
             driveFolderMetaCache.clear();
             if (driveRecentsEl) driveRecentsEl.innerHTML = '';
             if (driveStarredEl) driveStarredEl.innerHTML = '';
@@ -9175,7 +9170,7 @@
             driveFolderStack.forEach((crumb, index) => {
                 const btn = document.createElement('button');
                 btn.className = `drive-breadcrumb${index === driveFolderStack.length - 1 ? ' active' : ''}`;
-                const label = crumb.id === 'root' ? `${crumb.name}/` : crumb.name;
+                const label = crumb.id === 'root' && driveFolderStack.length === 1 ? `${crumb.name}/` : crumb.name;
                 btn.textContent = label;
                 if (index < driveFolderStack.length - 1) {
                     btn.addEventListener('click', () => navigateDriveBreadcrumb(index));
@@ -9342,14 +9337,6 @@
             if (emptyEl) {
                 emptyEl.classList.toggle('hidden', hasFolders || hasFiles);
             }
-            if (!nested) renderDriveHomeFolders(folderList);
-        }
-
-        function renderDriveHomeFolders(folders) {
-            if (!driveHomeFoldersEl) return;
-            const list = Array.isArray(folders) ? folders : [];
-            diffRenderDriveList(driveHomeFoldersEl, list, createDriveFolderCard);
-            if (driveHomeFoldersEmptyEl) driveHomeFoldersEmptyEl.classList.toggle('hidden', list.length > 0);
         }
 
         function navigateDriveBreadcrumb(index) {
@@ -9378,13 +9365,6 @@
             return raw;
         }
 
-        function mixDriveHex(hex, target, amount) {
-            const a = parseInt(hex.slice(1), 16);
-            const b = parseInt(target.slice(1), 16);
-            const channel = (shift) => Math.round(((a >> shift) & 255) * (1 - amount) + ((b >> shift) & 255) * amount);
-            return '#' + ((1 << 24) | (channel(16) << 16) | (channel(8) << 8) | channel(0)).toString(16).slice(1);
-        }
-
         function driveRelativeLuminance(hex) {
             const n = parseInt(hex.slice(1), 16);
             const linear = (value) => {
@@ -9394,40 +9374,129 @@
             return 0.2126 * linear(n >> 16) + 0.7152 * linear((n >> 8) & 255) + 0.0722 * linear(n & 255);
         }
 
-        function applyDriveFolderPalette(el, color) {
+        function driveHexToHsl(hex) {
+            const n = parseInt(hex.slice(1), 16);
+            const r = (n >> 16) / 255;
+            const g = ((n >> 8) & 255) / 255;
+            const b = (n & 255) / 255;
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const l = (max + min) / 2;
+            const d = max - min;
+            if (!d) return [0, 0, l * 100];
+            const s = d / (1 - Math.abs(2 * l - 1));
+            let h;
+            if (max === r) h = ((g - b) / d) % 6;
+            else if (max === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            return [(h * 60 + 360) % 360, s * 100, l * 100];
+        }
+
+        function driveHslToHex(h, s, l) {
+            const sat = Math.max(0, Math.min(100, s)) / 100;
+            const light = Math.max(0, Math.min(100, l)) / 100;
+            const k = (n) => (n + h / 30) % 12;
+            const a = sat * Math.min(light, 1 - light);
+            const channel = (n) => Math.round(255 * (light - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+            return '#' + ((1 << 24) | (channel(0) << 16) | (channel(8) << 8) | channel(4)).toString(16).slice(1);
+        }
+
+        // Yellows turn snot green when their hue leans towards green, and
+        // muddy brown when they are darkened. Pull them towards amber/gold
+        // (by `pull`, 0..1) before any shading, so they stay honey and gold.
+        function warmDriveFolderHue(h, pull) {
+            if (h <= 42 || h >= 72) return h;
+            return h - (h - 42) * pull;
+        }
+
+        function isDriveNightTheme() {
+            return document.documentElement.dataset.theme === 'dark';
+        }
+
+        // The colour a folder is drawn in. By day it is the Drive colour
+        // (yellows nudged warmer); at night it is quieter: less saturated and
+        // darker, but warm hues keep enough light to read as gold, not brown.
+        function displayDriveFolderColor(base) {
+            const [h0, s0, l0] = driveHexToHsl(base);
+            const warm = s0 > 8 && h0 >= 28 && h0 < 72;
+            if (!isDriveNightTheme()) {
+                return warm ? driveHslToHex(warmDriveFolderHue(h0, 0.45), s0, l0) : base;
+            }
+            if (warm) {
+                return driveHslToHex(warmDriveFolderHue(h0, 0.85), Math.min(s0, 70) * 0.78, Math.max(53, Math.min(58, l0 * 0.8)));
+            }
+            return driveHslToHex(h0, s0 * 0.68, Math.max(28, Math.min(l0, 62) * 0.8));
+        }
+
+        // A darker shade for the back and tab. Warm hues drift towards orange
+        // as they darken, the way a real manila folder's shadow does.
+        function shadeDriveFolderColor(color, amount) {
+            const [h, s, l] = driveHexToHsl(color);
+            const warm = s > 8 && h >= 28 && h < 72;
+            return driveHslToHex(warm ? h - amount * 0.25 : h, s, l - amount);
+        }
+
+        // Paints a folder from its colour: either a Drive colour (`base`), or,
+        // with `exact`, a colour that is already what should be shown.
+        function applyDriveFolderPalette(el, base, options = {}) {
             if (!el) return;
+            const color = options.exact ? base : displayDriveFolderColor(base);
+            const night = isDriveNightTheme();
+            const [h, s, l] = driveHexToHsl(color);
             const luminance = driveRelativeLuminance(color);
             // Pick whichever ink has the higher contrast on this folder colour.
             const darkInk = (luminance + 0.05) / 0.0614 >= 1.05 / (luminance + 0.05);
             el.style.setProperty('--folder-color', color);
-            el.style.setProperty('--folder-cover', mixDriveHex(color, '#ffffff', 0.08));
-            el.style.setProperty('--folder-inside', mixDriveHex(color, '#ffffff', 0.3));
-            el.style.setProperty('--folder-tab', mixDriveHex(color, '#000000', 0.18));
+            el.style.setProperty('--folder-cover', driveHslToHex(h, s, l + 2));
+            el.style.setProperty('--folder-inside', driveHslToHex(h, s * 0.85, Math.min(94, l + (night ? 9 : 14))));
+            el.style.setProperty('--folder-tab', shadeDriveFolderColor(color, night ? 6 : 12));
             el.style.setProperty('--folder-ink', darkInk ? '#1f1a14' : '#ffffff');
             el.style.setProperty('--folder-hl', darkInk ? 'rgba(0, 0, 0, 0.07)' : 'rgba(255, 255, 255, 0.2)');
             el.style.setProperty('--folder-hl-strong', darkInk ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.3)');
             el.style.setProperty('--folder-line', darkInk ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.55)');
+            if (!options.exact) el.dataset.folderColor = base;
+        }
+
+        // Re-shades every folder on screen after a theme switch.
+        function repaintDriveFolders() {
+            document.querySelectorAll('.drive-folder-art[data-folder-color]').forEach((art) => {
+                applyDriveFolderPalette(art, art.dataset.folderColor);
+            });
+            if (isDriveFolderViewOpen() && driveFolderViewEl.dataset.folderColor) {
+                applyDriveFolderViewPalette(driveFolderViewEl.dataset.folderColor);
+            }
         }
 
         // The name, its kind and the ⋮ menu are printed on the front of the
         // cover, so they swing away with it when the folder opens.
         // The opened folder sits on a softer version of its colour: a pastel
-        // in light mode, a muted dark tone at night, so a full screen of it
+        // in light mode, a warm near-black at night, so a full screen of it
         // is calm rather than loud. The opening animation fades towards it.
         function getDriveFolderViewTint(color) {
-            const night = document.documentElement.dataset.theme === 'dark';
-            const bg = night ? mixDriveHex(color, '#141414', 0.7) : mixDriveHex(color, '#f7f6f1', 0.6);
+            const [h0, s0] = driveHexToHsl(color);
+            if (isDriveNightTheme()) {
+                // Dark yellows read as olive, so the night tint leans amber.
+                const h = warmDriveFolderHue(h0, 0.9);
+                const s = Math.min(s0 * 0.3, 18);
+                return {
+                    bg: driveHslToHex(h, s, 14),
+                    inside: driveHslToHex(h, s, 18),
+                    tab: displayDriveFolderColor(color)
+                };
+            }
+            const h = warmDriveFolderHue(h0, 0.6);
+            const s = Math.min(s0, 85) * 0.62;
             return {
-                bg,
-                inside: night ? mixDriveHex(bg, '#ffffff', 0.06) : mixDriveHex(bg, '#ffffff', 0.45),
-                tab: night ? mixDriveHex(color, '#141414', 0.4) : mixDriveHex(color, '#f7f6f1', 0.2)
+                bg: driveHslToHex(h, s, 89),
+                inside: driveHslToHex(h, s, 94),
+                tab: driveHslToHex(h, s * 1.2, 78)
             };
         }
 
         function applyDriveFolderViewPalette(color) {
             if (!driveFolderViewEl) return;
             const tint = getDriveFolderViewTint(color);
-            applyDriveFolderPalette(driveFolderViewEl, tint.bg);
+            applyDriveFolderPalette(driveFolderViewEl, tint.bg, { exact: true });
             driveFolderViewEl.style.setProperty('--folder-inside', tint.inside);
             driveFolderViewEl.style.setProperty('--folder-tab', tint.tab);
             driveFolderViewEl.dataset.folderColor = color;
@@ -9436,8 +9505,12 @@
         function createDriveFolderArt(folder, options = {}) {
             const art = document.createElement('div');
             art.className = 'drive-folder-art';
-            art.innerHTML = '<span class="drive-folder-back" aria-hidden="true"></span><span class="drive-folder-sheets" aria-hidden="true"></span><span class="drive-folder-cover"><span class="drive-folder-cover-face"><span class="drive-folder-print"><span class="drive-card-title"></span><span class="drive-folder-rule" aria-hidden="true"></span><span class="drive-card-sub"></span></span><span class="drive-folder-imprint" aria-hidden="true"><svg viewBox="0 0 40 24" fill="none"><path d="M4 22 L20 6 L36 22" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>inhouse notes</span></span><span class="drive-folder-cover-inside" aria-hidden="true"></span></span>';
+            art.innerHTML = '<span class="drive-folder-back" aria-hidden="true"></span><span class="drive-folder-sheets" aria-hidden="true"></span><span class="drive-folder-cover"><span class="drive-folder-cover-face"><span class="drive-folder-print"><span class="drive-card-title"></span><span class="drive-folder-rule" aria-hidden="true"></span><span class="drive-card-sub"></span></span></span><span class="drive-folder-cover-inside" aria-hidden="true"></span></span>';
             applyDriveTitleWithSharedIcon(art.querySelector('.drive-card-title'), folder, 'Folder');
+            const longestWord = String(folder?.name || '').split(/\s+/).reduce((max, word) => Math.max(max, word.length), 0);
+            // The name is printed across ~75% of the cover: shrink it so its
+            // longest word fits on one line instead of breaking mid-word.
+            if (longestWord > 11) art.style.setProperty('--folder-name-size', `${Math.max(6, 116 / longestWord).toFixed(2)}cqi`);
             art.querySelector('.drive-card-sub').textContent = options.sub || (isSharedDriveDoc(folder) ? 'Shared folder' : 'Folder');
             if (options.menu) art.querySelector('.drive-folder-cover-face').appendChild(createDriveItemMenu(folder));
             applyDriveFolderPalette(art, resolveDriveFolderColor(folder));
@@ -9492,7 +9565,9 @@
             const ghost = art ? art.cloneNode(true) : createDriveFolderArt({ name: fallbackName, folderColorRgb: fallbackColor });
             ghost.classList.add('drive-folder-ghost');
             ghost.removeAttribute('style');
-            applyDriveFolderPalette(ghost, art ? (art.style.getPropertyValue('--folder-color') || fallbackColor) : fallbackColor);
+            const nameSize = art?.style.getPropertyValue('--folder-name-size');
+            if (nameSize) ghost.style.setProperty('--folder-name-size', nameSize);
+            applyDriveFolderPalette(ghost, art?.dataset.folderColor || fallbackColor);
             Object.assign(ghost.style, {
                 left: `${rect.left}px`,
                 top: `${rect.top}px`,
@@ -9506,20 +9581,33 @@
         function fadeDriveFolderGhostColour(ghost, from, to, timing) {
             const back = ghost.querySelector('.drive-folder-back');
             const inside = ghost.querySelector('.drive-folder-cover-inside');
-            const fromTint = from.inside ? from : { bg: from, inside: mixDriveHex(from, '#ffffff', 0.3) };
-            const toTint = to.inside ? to : { bg: to, inside: mixDriveHex(to, '#ffffff', 0.3) };
-            back?.animate([
-                { backgroundColor: fromTint.bg },
-                { backgroundColor: fromTint.bg, offset: timing.start },
-                { backgroundColor: toTint.bg, offset: timing.end },
-                { backgroundColor: toTint.bg }
-            ], { duration: timing.duration, easing: 'ease-in-out', fill: 'forwards' });
-            inside?.animate([
-                { backgroundColor: fromTint.inside },
-                { backgroundColor: fromTint.inside, offset: timing.start },
-                { backgroundColor: toTint.inside, offset: timing.end },
-                { backgroundColor: toTint.inside }
-            ], { duration: timing.duration, easing: 'ease-in-out', fill: 'forwards' });
+            const folderTint = (tint) => (tint.inside ? tint : {
+                bg: ghost.style.getPropertyValue('--folder-color') || tint,
+                inside: ghost.style.getPropertyValue('--folder-inside') || tint
+            });
+            const fromTint = folderTint(from);
+            const toTint = folderTint(to);
+            const midOffset = (timing.start + timing.end) / 2;
+            const fade = (a, b) => [
+                { backgroundColor: a },
+                { backgroundColor: a, offset: timing.start },
+                { backgroundColor: midDriveFolderColor(a, b), offset: midOffset },
+                { backgroundColor: b, offset: timing.end },
+                { backgroundColor: b }
+            ];
+            back?.animate(fade(fromTint.bg, toTint.bg), { duration: timing.duration, easing: 'ease-in-out', fill: 'forwards' });
+            inside?.animate(fade(fromTint.inside, toTint.inside), { duration: timing.duration, easing: 'ease-in-out', fill: 'forwards' });
+        }
+
+        // Halfway colour of a fade. A straight RGB blend from a yellow to a
+        // dark tone passes through mustard brown, so the midpoint is taken in
+        // HSL with the saturation dipped: the fade goes through a soft taupe.
+        function midDriveFolderColor(a, b) {
+            const [ha, sa, la] = driveHexToHsl(a);
+            const [hb, sb, lb] = driveHexToHsl(b);
+            let h = sa < 5 ? hb : (sb < 5 ? ha : ha + ((((hb - ha) % 360) + 540) % 360 - 180) / 2);
+            h = (h + 360) % 360;
+            return driveHslToHex(h, Math.min(sa, sb) * (Math.min(la, lb) < 25 ? 0.6 : 0.85), (la + lb) / 2);
         }
 
         function playDriveFolderOpen(art, entry, onReveal) {
@@ -9894,7 +9982,6 @@
             } else {
                 fillSkeletons(driveFoldersEl, 4, buildDriveFolderSkeleton);
                 fillSkeletons(driveFolderFilesEl, 8, buildDriveCardSkeleton);
-                fillSkeletons(driveHomeFoldersEl, 4, buildDriveFolderSkeleton);
             }
             if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
             if (driveSharedEmptyEl) driveSharedEmptyEl.classList.add('hidden');
