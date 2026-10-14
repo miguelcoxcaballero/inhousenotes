@@ -14,7 +14,7 @@ expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
             for name in ('app-v5.js', 'service-worker.js', 'updates/A.json', 'updates/B.json',
                          'rust-core-v5.js', 'wasm/inhouse_notes_core.wasm', 'ink-palette.js',
                          'scanner/processing/ink-vectorizer.js',
-                         'scanner/index.html', 'scanner/configLoader.js', 'scanner/live-camera.js',
+                         'scanner/index.html', 'scanner/configLoader.js', 'scanner/live-camera.js', 'scanner/live-camera.css',
                          'scanner/processing/detection-worker.js',
                          'scanner/processing/capture-quality.js', 'scanner/processing/lightweight.js',
                          'scanner/processing/metric-surface.js')}

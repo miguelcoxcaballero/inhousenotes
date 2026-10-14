@@ -124,9 +124,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
-  padding: 20px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+  padding: 16px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
   background: #171819;
   border-top: 1px solid #ffffff0d;
 }
@@ -139,7 +139,8 @@
 #liveStatus,
 #liveReviewStatus {
   font-family: "Google Sans", Roboto, sans-serif;
-  font-size: 16px;
+  margin: 0;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.4;
   text-align: center;
@@ -281,8 +282,8 @@
 #liveProcessingSteps {
   display: flex;
   justify-content: center;
-  gap: 16px;
-  margin: -6px 0 0;
+  gap: 6px;
+  margin: 0;
   padding: 0;
   list-style: none;
   color: #aaa;
@@ -290,21 +291,24 @@
 }
 
 #liveProcessingSteps li {
-  padding-bottom: 4px;
-  border-bottom: 2px solid transparent;
+  width: 30px;
+  height: 3px;
+  border-radius: 3px;
+  background: #ffffff26;
+  transition: background 160ms ease;
 }
 
 #liveProcessingSteps li[aria-current="step"] {
-  border-bottom-color: var(--live-yellow);
-  color: var(--live-yellow);
+  background: var(--live-yellow);
+  animation: live-stage-pulse 1100ms ease-in-out infinite;
 }
 
 #liveProcessingSteps li[data-complete="true"] {
-  color: #e1e1e1;
+  background: var(--live-yellow);
 }
 
 #liveReview:not([hidden]) #livePreview.scan-reveal {
-  animation: live-scan-reveal 380ms cubic-bezier(.2, .8, .2, 1) both;
+  animation: live-scan-reveal 180ms cubic-bezier(.2, .8, .2, 1) both;
 }
 
 #liveAlternatives {
@@ -354,8 +358,25 @@
   color: var(--live-yellow);
 }
 
+#liveScanner[data-state="processing"] #liveReviewStatus::before,
+#liveScanner[data-state="capturing"] #liveReviewStatus::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid #ffffff26;
+  border-top-color: var(--live-yellow);
+  border-radius: 50%;
+  animation: live-processing-spin 800ms linear infinite;
+}
+
+#liveScanner[data-state="review"] #liveReviewStatus { color: var(--live-muted); }
+@keyframes live-processing-spin { to { transform: rotate(360deg); } }
+@keyframes live-stage-pulse { 50% { opacity: .45; } }
 @keyframes live-scan-reveal {
-  from { opacity: .3; transform: scale(.88); }
+  from { transform: scale(.985); }
   to { opacity: 1; transform: scale(1); }
 }
 

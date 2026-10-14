@@ -29,7 +29,7 @@ async function prepare(page, camera = false) {
     const context = canvas.getContext('2d'); context.fillStyle = '#eee'; context.fillRect(0, 0, 800, 1000);
     const input = canvas.toDataURL('image/png');
     canvas.width = 420; canvas.height = 594;
-    context.fillStyle = '#fff'; context.fillRect(0, 0, 420, 594);
+    ScannerPro.ScanTemplate.render(context,420,594,{background:true});
     probe.warp = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     probe.geometry = {
       width: 800, height: 1000, space: 'source', pitch: 100,
@@ -95,7 +95,7 @@ test('measured bullet points and curved runs align with the contained photo with
   await expect(overlay).toBeVisible();
   await expect(overlay).toHaveAttribute('data-point-count', '6');
   await expect(overlay).toHaveAttribute('data-mode', 'observed');
-  await expect(page.locator('#liveReviewStatus')).toHaveText('6 bullet points found');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Finding dots…');
   await expect(page.locator('[data-step="dots"]')).toHaveAttribute('aria-current', 'step');
   // The third location lies in a long missing run. The fourth is an ideal
   // target that differs from the measured dot and must not replace it.
@@ -103,7 +103,7 @@ test('measured bullet points and curved runs align with the contained photo with
   expect(alpha[0]).toBeGreaterThan(230); expect(alpha[1]).toBeGreaterThan(230);
   expect(alpha[2]).toBe(0); expect(alpha[3]).toBe(0);
   await page.evaluate(() => processingVisual.progress(0, 'surface', {}));
-  await expect(page.locator('#liveReviewStatus')).toHaveText('Straightening 6 bullet points…');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Straightening…');
   await expect(page.locator('[data-step="surface"]')).toHaveAttribute('aria-current', 'step');
   // Rotation/resize changes letterboxing, not the measured source positions.
   await page.setViewportSize({ width: 844, height: 390 });
@@ -129,7 +129,7 @@ test('warp progress displays actual corrected observations and removes all guide
   expect(await page.locator('#livePreview').evaluate(image => [image.naturalWidth, image.naturalHeight])).toEqual([420, 594]);
   expect((await overlaySamples(page, { width: 420, height: 594 }, [[50, 160]]))[0]).toBeGreaterThan(230);
   await page.evaluate(() => processingVisual.progress(0, 'template', {}));
-  await expect(overlay).toBeHidden();
+  await expect(overlay).toBeVisible();
   await expect(page.locator('[data-step="template"]')).toHaveAttribute('aria-current', 'step');
   await page.evaluate(() => processingVisual.finish(0));
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
@@ -138,11 +138,11 @@ test('warp progress displays actual corrected observations and removes all guide
   await expect(page.locator('#liveProcessingSteps')).toBeHidden();
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
   const pixels = await page.locator('#livePreview').evaluate(image => {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 8;
-    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0, 8, 8);
-    return [...context.getImageData(0, 0, 8, 8).data];
+    const canvas = document.createElement('canvas'); canvas.width = 420; canvas.height = 594;
+    const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+    return [...context.getImageData(0, 0, 420, 594).data];
   });
-  expect(pixels.every(value => value === 255)).toBe(true);
+  expect(pixels.some(value => value < 200)).toBe(true);
   const before = await page.evaluate(() => processingVisual.activeUrls.size);
   await page.evaluate(() => processingVisual.progress(0, 'warp', { previewBlob: processingVisual.warp }));
   expect(await page.evaluate(() => processingVisual.activeUrls.size)).toBe(before);
@@ -157,12 +157,12 @@ test('each capture keeps its own observed dots and closed scans ignore late prog
       points: processingVisual.geometry.points.slice(0, 2), rows: [{ index: 0, points: [0, 1] }], columns: [] });
   });
   await expect(page.locator('#liveProcessingOverlay')).toHaveAttribute('data-point-count', '6');
-  await expect(page.locator('#liveReviewStatus')).toHaveText('6 bullet points found');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Finding dots…');
   await page.locator('#liveAlternatives button').nth(1).click();
   await expect(page.locator('#liveProcessingOverlay')).toHaveAttribute('data-point-count', '2');
-  await expect(page.locator('#liveReviewStatus')).toHaveText('2 bullet points found');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Finding dots…');
   await page.evaluate(() => processingVisual.progress(0, 'template', {}));
-  await expect(page.locator('#liveReviewStatus')).toHaveText('2 bullet points found');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Finding dots…');
   await page.locator('#liveCloseBtn').click();
   await page.evaluate(() => {
     processingVisual.progress(1, 'warp', { previewBlob: processingVisual.warp });
@@ -181,7 +181,7 @@ test('the automatically selected frame shows its finished scan while the remaini
   await expect.poll(() => page.locator('#livePreview').evaluate(image => image.naturalWidth)).toBe(420);
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#liveAlternatives button').first()).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#liveReviewStatus')).toHaveText('Scan ready. Checking the other photos…');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Ready');
   await expect(page.locator('#liveProcessingOverlay')).toBeHidden();
   await expect(page.locator('#liveProcessingSteps')).toBeHidden();
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
@@ -190,7 +190,7 @@ test('the automatically selected frame shows its finished scan while the remaini
     processingVisual.progress(0, 'warp', { previewBlob: processingVisual.warp });
   });
   await expect(page.locator('#liveProcessingOverlay')).toBeHidden();
-  await expect(page.locator('#liveReviewStatus')).toHaveText('Scan ready. Checking the other photos…');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Ready');
   await page.evaluate(() => { processingVisual.finish(1); processingVisual.finish(2); });
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
@@ -207,8 +207,37 @@ test('a selected backup that fails correction cannot replace a successful scan',
   await expect(page.locator('#liveAlternatives button').first()).toHaveAttribute('aria-pressed','true');
   await expect(page.locator('#liveAlternatives button').nth(1)).toBeDisabled();
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
-  await expect(page.locator('#liveReviewStatus')).toHaveText('Scan ready. Checking the other photos…');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Ready');
   await page.evaluate(()=>processingVisual.calls[2].resolve({blob:processingVisual.calls[2].blob,corrected:false}));
-  await expect(page.locator('#liveReviewStatus')).toHaveText('Check the scan.');
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Ready');
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
+});
+
+
+test('dots, yellow frame and four reference circles stay visible through the final processing stages',async({page})=>{
+  await prepare(page);
+  const sample=()=>page.locator('#livePreview').evaluate(image=>{
+    const c=document.createElement('canvas');c.width=image.naturalWidth;c.height=image.naturalHeight;
+    const x=c.getContext('2d');x.drawImage(image,0,0);
+    return [[15,60],[20,19.3],[101.25,276.8],[103.75,276.8],[106.25,276.8],[108.75,276.8]].map(([a,b])=>
+      [...x.getImageData(Math.floor(a*c.width/210),Math.floor(b*c.width/210),1,1).data]);
+  });
+  await page.evaluate(()=>processingVisual.progress(0,'warp',{...processingVisual.geometry,width:420,height:594,
+    space:'corrected',previewBlob:processingVisual.warp}));
+  await expect.poll(()=>page.locator('#livePreview').evaluate(i=>i.naturalWidth)).toBe(420);
+  const reference=await sample();
+  expect(reference[0][2]).toBeLessThan(200);expect(reference[1][0]).toBeLessThan(230);
+  expect(reference[2][0]).toBeGreaterThan(reference[2][2]);expect(reference[3][0]).toBeLessThan(100);
+  expect(reference[4][2]).toBeGreaterThan(reference[4][0]);expect(reference[5][1]).toBeGreaterThan(reference[5][0]);
+  for(const stage of ['colors','vectors','template','encoding']){
+    await page.evaluate(stage=>processingVisual.progress(0,stage,{}),stage);
+    await expect(page.locator('#livePreview')).toBeVisible();
+    await expect(page.locator('#liveProcessingOverlay')).toBeVisible();
+    expect(await sample()).toEqual(reference);
+  }
+  await page.emulateMedia({reducedMotion:'reduce'});
+  expect(await page.locator('#liveReviewStatus').evaluate(e=>getComputedStyle(e,'::before').animationName)).toBe('none');
+  await page.evaluate(()=>processingVisual.finish(0));
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
+  expect(await sample()).toEqual(reference);
 });

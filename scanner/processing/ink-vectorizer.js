@@ -5,9 +5,9 @@
   const palette = root.InhouseInkPalette;
   const yieldTask = () => new Promise(resolve => setTimeout(resolve, 0));
   function check(signal) { if (signal?.aborted) throw new DOMException('Scan cancelled', 'AbortError'); }
-  function colour(r, g, b) {
+  function colour(r, g, b, alpha) {
     const hi=Math.max(r,g,b), lo=Math.min(r,g,b);
-    if (hi-lo<36 || hi-lo<hi*.2) return 1;
+    if (hi-lo<36 || hi-lo<hi*.2 || (hi-lo)*alpha<255*12) return 1;
     const scale=225/(hi-lo), c=[(r-lo)*scale,(g-lo)*scale,(b-lo)*scale];
     const targets=[[0,0,0],[0,49,225],[225,0,0]];
     let best=Infinity, label=1;
@@ -22,29 +22,26 @@
     const offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
     for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
       const i=y*width+x;
-      if(rgba[i*4+3]>=16)mask[i]=colour(rgba[i*4],rgba[i*4+1],rgba[i*4+2]);
+      if(rgba[i*4+3]>=16)mask[i]=colour(rgba[i*4],rgba[i*4+1],rgba[i*4+2],rgba[i*4+3]);
     }
     await yieldTask();check(signal);
     const initial=mask.slice();
     for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
       const i=y*width+x;if(!initial[i])continue;
-      const alpha=rgba[i*4+3];let peak=alpha,bestAlpha=0,bestDistance=0,bestLabel=0;
+      const alpha=rgba[i*4+3];let peak=alpha;
       for(let yy=Math.max(0,y-3);yy<=Math.min(height-1,y+3);yy++)for(let xx=Math.max(0,x-3);xx<=Math.min(width-1,x+3);xx++){
-        const j=yy*width+xx,a=rgba[j*4+3],distance=(xx-x)**2+(yy-y)**2;peak=Math.max(peak,a);
-        if(initial[j]>1&&a>=48&&a*(bestDistance+1)>bestAlpha*(distance+1)){
-          bestAlpha=a;bestDistance=distance;bestLabel=initial[j];}
+        peak=Math.max(peak,rgba[(yy*width+xx)*4+3]);
       }
       if(alpha*100<peak*35)mask[i]=0;
-      else if(initial[i]===1&&bestLabel>1&&alpha*5<bestAlpha*4)mask[i]=bestLabel;
     }
     await yieldTask();check(signal);
     const seen=new Uint8Array(n), queue=[],anchors=[];let active=[];
     for(let start=0;start<n;start++){
       if(!mask[start]||seen[start])continue;
       queue.length=0;queue.push(start);seen[start]=1;
-      const label=mask[start];let head=0,peak=0;
+      let head=0,peak=0;
       while(head<queue.length){const i=queue[head++];peak=Math.max(peak,rgba[i*4+3]);
-        for(const delta of offsets){const j=i+delta;if(!seen[j]&&mask[j]===label){seen[j]=1;queue.push(j);}}}
+        for(const delta of offsets){const j=i+delta;if(!seen[j]&&mask[j]!==0){seen[j]=1;queue.push(j);}}}
       if(peak<24||(queue.length===1&&peak<90)){for(const i of queue)mask[i]=0;}
       else {
         for(const i of queue){active.push(i);radii[i]=12000;}
@@ -59,9 +56,9 @@
     seen.fill(0);for(const i of anchors)seen[i]=1;
     await yieldTask();check(signal);
     for(let i=0;i<n;i++)if(mask[i])for(const [delta,cost] of [[-1,3],[-width,3],[-width-1,4],[1-width,4]]){
-      const j=i+delta;radii[i]=Math.min(radii[i],mask[j]===mask[i]?radii[j]+cost:cost);}
+      const j=i+delta;radii[i]=Math.min(radii[i],mask[j]!==0?radii[j]+cost:cost);}
     for(let i=n-1;i>=0;i--)if(mask[i])for(const [delta,cost] of [[1,3],[width,3],[width+1,4],[width-1,4]]){
-      const j=i+delta;radii[i]=Math.min(radii[i],mask[j]===mask[i]?radii[j]+cost:cost);}
+      const j=i+delta;radii[i]=Math.min(radii[i],mask[j]!==0?radii[j]+cost:cost);}
     const p=new Uint8Array(8),remove=[];let work=0;
     for(;;){let changed=false;
       for(let phase=0;phase<2;phase++){
@@ -69,7 +66,7 @@
         remove.length=0;
         for(const i of active){const label=mask[i];if(!label||seen[i])continue;
           let count=0,changes=0;
-          for(let k=0;k<8;k++){p[k]=+(mask[i+offsets[k]]===label);count+=p[k];}
+          for(let k=0;k<8;k++){p[k]=+(mask[i+offsets[k]]!==0);count+=p[k];}
           if(count<2||count>6)continue;
           for(let k=0;k<8;k++)changes+=+(p[k]===0&&p[(k+1)%8]===1);
           if(changes!==1)continue;
@@ -80,6 +77,17 @@
       }
       if(!changed)break;
       active=active.filter(i=>mask[i]);await yieldTask();check(signal);
+    }
+    for(const i of active){
+      if(!mask[i])continue;
+      const x=i%width,y=Math.floor(i/width),radius=Math.max(2,Math.min(8,Math.floor((radii[i]+2)/3))),votes=[0,0,0,0];
+      for(let yy=Math.max(0,y-radius);yy<=Math.min(height-1,y+radius);yy++)for(let xx=Math.max(0,x-radius);xx<=Math.min(width-1,x+radius);xx++){
+        const j=yy*width+xx,label=initial[j],d2=(xx-x)**2+(yy-y)**2;
+        if(!label||d2>radius*radius)continue;
+        const alpha=rgba[j*4+3];votes[label]+=Math.floor(alpha*alpha*256/(1+d2));
+      }
+      const total=votes[1]+votes[2]+votes[3],label=votes[2]>votes[3]?2:3;
+      mask[i]=votes[label]*100>=total*22&&votes[label]*2>=votes[5-label]*3?label:1;
     }
     return {mask,radii,backend:'javascript'};
   }
@@ -97,20 +105,22 @@
     }
     return points.filter((_,index)=>keep[index]);
   }
-  async function trace(axes,width,height,signal) {
+  async function trace(axes,width,height,signal,rgba) {
     const {mask,radii}=axes,used=new Uint8Array(mask.length),strokes=[];
     const offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
     const nodes=[];let totalPoints=0;
     const edges=i=>{let bits=0;for(let k=0;k<8;k++){
-      if(mask[i+offsets[k]]!==mask[i])continue;
+      if(!mask[i+offsets[k]])continue;
       // A diagonal beside a cardinal edge is the same junction, not a tiny
       // triangular loop. True diagonal handwriting remains connected.
-      if(k%2&&(mask[i+offsets[(k+7)%8]]===mask[i]||mask[i+offsets[(k+1)%8]]===mask[i]))continue;
+      if(k%2&&(mask[i+offsets[(k+7)%8]]||mask[i+offsets[(k+1)%8]]))continue;
       bits|=1<<k;
     }return bits;};
     const count=bits=>{let n=0;while(bits){bits&=bits-1;n++;}return n;};
     for(let i=0;i<mask.length;i++)if(mask[i])nodes.push(i);
-    const emit=path=>{
+    const defaults=root.InhouseInkDefaults;
+    const standard=defaults.width*Math.sqrt(width/defaults.pageWidth*height/defaults.pageHeight);
+    const emit=(path,label)=>{
       // Split only sustained width changes; never force a thick crossing's
       // local radius onto the entire handwritten line.
       const chunks=[];let begin=0;
@@ -120,8 +130,27 @@
       }
       chunks.push(path.slice(begin));
       for(const chunk of chunks){
-        const widths=chunk.map(i=>radii[i]).sort((a,b)=>a-b);
-        const penWidth=Math.max(1,widths[Math.floor(widths.length/2)]*2/3-1);
+        // Measure both sides across the axis. A one-sided distance transform
+        // underestimates every even-width pen by one pixel (2px became 1px).
+        const widths=chunk.map((i,k)=>{
+          const a=chunk[Math.max(0,k-3)],b=chunk[Math.min(chunk.length-1,k+3)];
+          const dx=b%width-a%width,dy=Math.floor(b/width)-Math.floor(a/width),length=Math.hypot(dx,dy);
+          if(!length)return Math.max(1,radii[i]*2/3-1);
+          const nx=-dy/length,ny=dx/length,x=i%width+.5,y=Math.floor(i/width)+.5;
+          let coverage=rgba[i*4+3],peak=coverage;
+          // Very short junction branches can point across the main axis.
+          // Limit the cross-section by the inscribed radius, never by the
+          // length of a coincident neighbouring stroke.
+          const limit=Math.min(32,radii[i]/3+1);
+          for(const sign of [-1,1])for(let d=.5;d<=limit;d+=.5){
+            const xx=Math.floor(x+nx*d*sign),yy=Math.floor(y+ny*d*sign);
+            if(xx<0||xx>=width||yy<0||yy>=height||!radii[yy*width+xx])break;
+            const alpha=rgba[(yy*width+xx)*4+3];coverage+=alpha;peak=Math.max(peak,alpha);
+          }
+          return Math.min(radii[i]*2/3+1,coverage/Math.max(1,peak)*.5);
+        }).sort((a,b)=>a-b);
+        const measured=Math.max(1,widths[Math.floor(widths.length/2)]);
+        const penWidth=measured>=standard*.75&&measured<=standard*1.35?standard:measured;
         const reduced=simplify(chunk.map(i=>({x:i%width+.5,y:Math.floor(i/width)+.5})));
         const points=[reduced[0]],step=Math.max(1,width/397);
         // Native partial erasing splits sampled pens. Keep at most two logical
@@ -133,7 +162,35 @@
         if(points.length===1)points.push({x:points[0].x+.001,y:points[0].y});
         totalPoints+=points.length;
         if(strokes.length>=60000||totalPoints>500000)throw new Error('This scan contains too much detail. Try a clearer photo.');
-        strokes.push({tool:'pen',color:palette[mask[chunk[0]]-1],width:penWidth,points});
+        strokes.push({tool:'pen',color:palette[label-1],width:penWidth,points});
+      }
+    };
+    const emitColours=path=>{
+      // Short changes along a pen are camera noise, not separate coloured
+      // contours. Smooth the axis only; crossings still split into branches.
+      const radius=Math.max(2,Math.round(width/794*2));
+      const labels=path.map((_,index)=>{
+        const votes=[0,0,0,0];
+        for(let k=Math.max(0,index-radius);k<=Math.min(path.length-1,index+radius);k++)votes[mask[path[k]]]++;
+        let label=mask[path[index]];
+        for(let k=1;k<=3;k++)if(votes[k]>votes[label])label=k;
+        return label;
+      });
+      const runs=[];
+      for(let start=0;start<path.length;){let end=start+1;while(end<path.length&&labels[end]===labels[start])end++;
+        runs.push({start,end,label:labels[start]});start=end;}
+      const minimum=Math.max(4,Math.round(width/794*4));
+      for(let k=0;k<runs.length;k++){
+        const run=runs[k];if(run.end-run.start>=minimum)continue;
+        const left=runs[k-1],right=runs[k+1];
+        if(left&&right&&left.label===right.label)run.label=left.label;
+        else if(left&&left.end-left.start>=minimum&&(!right||right.end-right.start<minimum))run.label=left.label;
+        else if(right&&right.end-right.start>=minimum&&(!left||left.end-left.start<minimum))run.label=right.label;
+      }
+      for(let k=0;k<runs.length;k++){
+        const run=runs[k];let end=run.end;
+        while(k+1<runs.length&&runs[k+1].label===run.label)end=runs[++k].end;
+        emit(path.slice(run.start,Math.min(path.length,end+1)),run.label);
       }
     };
     const walk=(start,direction)=>{
@@ -144,13 +201,13 @@
         if(count(adjacent)!==2||!available)break;
         i=next;k=0;while(!(available&(1<<k)))k++;
       }
-      emit(path);
+      emitColours(path);
     };
     for(const loops of [false,true]){
       let work=0;
       for(const i of nodes){const adjacent=edges(i);
         if(!loops&&count(adjacent)===2)continue;
-        if(!loops&&!adjacent){emit([i]);continue;}
+        if(!loops&&!adjacent){emitColours([i]);continue;}
         for(let k=0;k<8;k++)if((adjacent&~used[i])&(1<<k))walk(i,k);
         if(++work%2000===0){await yieldTask();check(signal);}
       }
@@ -166,7 +223,7 @@
       ||await fallback(data,width,height,options.signal);
     if(axes.rejected)throw new Error('Ink could not be separated. Try a clearer photo.');
     check(options.signal);
-    const strokes=await trace(axes,width,height,options.signal);
+    const strokes=await trace(axes,width,height,options.signal,data);
     return {version:1,width,height,strokes,backend:axes.backend};
   }
   // Exactly the editor's opaque pen path, also used for the scan preview.
