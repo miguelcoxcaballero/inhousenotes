@@ -334,7 +334,7 @@
         const IMAGE_INSERT_MAX_DIM = 960;
         const IMAGE_INSERT_TARGET_BYTES = 130 * 1024;
         const IMAGE_INSERT_MIN_DIM = 320;
-        const SELECTION_ALLOWED_COLORS = ['#4D4D4D', '#002FD9', '#E81010'];
+        const SELECTION_ALLOWED_COLORS = window.InhouseInkPalette;
         const SELECTION_ALLOWED_COLOR_MAP = new Map(
             SELECTION_ALLOWED_COLORS.map(color => [color.toLowerCase(), color])
         );
@@ -18624,6 +18624,29 @@
             return true;
         }
 
+        function validateScannedInk(ink, width, height) {
+            if (ink == null) return null; // Existing scanner integrations remain readable.
+            if (ink.version !== 1 || ink.width !== width || ink.height !== height
+                || !Array.isArray(ink.strokes) || ink.strokes.length > 60000) {
+                throw new Error('Invalid editable scan ink');
+            }
+            let points = 0;
+            return ink.strokes.map(stroke => {
+                if (stroke?.tool !== 'pen' || !SELECTION_ALLOWED_COLORS.includes(stroke.color)
+                    || !Number.isFinite(stroke.width) || stroke.width <= 0 || stroke.width > Math.max(width, height)
+                    || !Array.isArray(stroke.points) || stroke.points.length < 2
+                    || (points += stroke.points.length) > 500000) throw new Error('Invalid editable scan stroke');
+                return { tool: 'pen', color: stroke.color, width: stroke.width,
+                    points: stroke.points.map(point => {
+                        if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)
+                            || point.x < 0 || point.y < 0 || point.x > width || point.y > height) {
+                            throw new Error('Invalid editable scan coordinates');
+                        }
+                        return { x: point.x, y: point.y, p: .5 };
+                    }) };
+            });
+        }
+
         function validateScannerPages(inputPages) {
             if (!Array.isArray(inputPages) || inputPages.length < 1) {
                 throw new Error('No scanned pages were received');
@@ -18660,12 +18683,15 @@
                 }
                 const width = Math.max(1, Math.min(12000, Math.round(rawWidth)));
                 const height = Math.max(1, Math.min(12000, Math.round(rawHeight)));
+                if (entry.editableInk != null && !inkLayer) throw new Error('Editable scan ink requires a verified native page');
+                const strokes = validateScannedInk(entry.editableInk, width, height);
                 return {
                     blob,
                     width,
                     height,
                     name: String(entry.name || `Scan ${index + 1}`).slice(0, 160),
                     inkLayer,
+                    strokes,
                     templateKind: inkLayer ? TEMPLATE_KINDS.DEFAULT : null
                 };
             });
@@ -18712,6 +18738,12 @@
                         dataUrl,
                         inkLayer: incoming.inkLayer,
                         templateKind: incoming.templateKind,
+                        strokes: incoming.strokes?.map(stroke => {
+                            const { pageWidth, pageHeight } = getScannedPageLogicalSize(incoming.width, incoming.height);
+                            const sx = pageWidth / incoming.width, sy = pageHeight / incoming.height;
+                            return { ...stroke, width: stroke.width * Math.sqrt(sx * sy),
+                                points: stroke.points.map(point => ({ x: point.x * sx, y: point.y * sy, p: .5 })) };
+                        }),
                         ...getScannedPageLogicalSize(incoming.width, incoming.height)
                     });
                     if ((index + 1) % 2 === 0) await yieldToMainThread();
@@ -19521,7 +19553,12 @@
                         pageWidth: asset.pageWidth,
                         pageHeight: asset.pageHeight
                     });
-                    if (nativeInkLayer) {
+                    if (nativeInkLayer && Array.isArray(asset.strokes)) {
+                        // Ordinary pens participate in erasing, selection, history,
+                        // collaboration and PDF metadata exactly like handwritten ink.
+                        page.strokes = asset.strokes.map(stroke => ({ ...stroke, id: generateStrokeId() }));
+                        stampCollaborativeItems(page.strokes);
+                    } else if (nativeInkLayer) {
                         // Images are durable across local saves, collaboration,
                         // timeline restores and PDF round-trips; bakedBackground
                         // is only a transient rendering cache and must not hold ink.
@@ -19539,7 +19576,7 @@
                     }
                     page.preview = null;
                     page.bakedBackground = null;
-                    page.strokeCount = 0;
+                    page.strokeCount = page.strokes.length;
                     page.unloaded = false;
                     page.pendingUnload = false;
                     page.needsRedraw = true;

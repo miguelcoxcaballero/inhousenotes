@@ -1,6 +1,7 @@
 //! Numeric pixel kernels only. Geometry validation, cancellation and persistence
 //! remain with the host. All dimensions/pointers are supplied by the private JS adapter.
 mod surface;
+mod ink;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 

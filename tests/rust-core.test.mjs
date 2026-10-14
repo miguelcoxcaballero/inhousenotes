@@ -75,3 +75,30 @@ test('Rust surface contexts reject invalid correspondences and release independe
     const next=scope.InhouseRust.surfaceFit(p,points,200,300,null);
     assert.ok(next);next.dispose();
 });
+
+test('Rust scan axes preserve faint pen cores in the discrete palette without mutating inputs',()=>{
+    const width=120,height=80,rgba=new Uint8Array(width*height*4);
+    for(const [row,colour,alpha] of [[15,[0,0,0],26],[35,[0,40,225],180],[55,[220,0,0],200]]){
+        for(let y=row-2;y<=row+2;y++)for(let x=10;x<110;x++)rgba.set([...colour,alpha],(y*width+x)*4);
+    }
+    const before=rgba.slice();
+    for(let run=0;run<6;run++){
+        const axes=scope.InhouseRust.inkAxes(rgba,width,height);
+        assert.equal(axes.backend,'rust');
+        for(const [y,label] of [[15,1],[35,2],[55,3]]){
+            assert.equal(axes.mask[y*width+50],label);
+            assert.ok(axes.radii[y*width+50]>=6);
+        }
+        assert.ok([...axes.mask].every(value=>value<=3));
+        assert.deepEqual(rgba,before);
+    }
+    const blank=scope.InhouseRust.inkAxes(new Uint8Array(width*height*4),width,height);
+    assert.ok(blank.mask.every(value=>value===0));assert.ok(blank.radii.every(value=>value===0));
+});
+
+test('Rust scan axes reject malformed and unbounded image allocations',()=>{
+    for(const [data,width,height] of [[new Uint8Array(16),3,3],[new Uint8Array(16),Infinity,2],
+        [new Uint8Array(16),2.5,2],[new Uint8Array(16),1,4],[new Uint8Array(4),4097,4097]]){
+        assert.equal(scope.InhouseRust.inkAxes(data,width,height),null);
+    }
+});
