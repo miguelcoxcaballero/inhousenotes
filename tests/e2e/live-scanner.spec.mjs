@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 
-const fixtureSource = fs.readFileSync(new URL('./fixtures/scanner-synthetic.js', import.meta.url), 'utf8');
+const fixtureSource = ['scanner-synthetic.js', 'scanner-developable.js']
+  .map(name => fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')).join('\n');
 
 // Supply real video frames and MediaStream tracks. Only the physical camera
 // boundary is replaced: detection, drawing, capture, warp and handoff stay real.
@@ -34,8 +35,15 @@ function installCameraFixture(options) {
     if (fake.detections.length > 40) fake.detections.shift();
   });
   const createStream = () => {
-    const definition = ScannerSyntheticFixtures.CASES[0];
-    const original = ScannerSyntheticFixtures.renderCase(definition).source;
+    // Camera captures now require a physically straightenable bullet lattice.
+    // The import fixture remains independent and retains its old Coons warp.
+    const rendered = ScannerDevelopableFixtures.render({ radius: 0, axis: 0, pitch: .1, yaw: .1 });
+    const original = rendered.source;
+    fake.expectedFrame = [[15 / 210, 14.3 / 297], [195 / 210, 14.3 / 297],
+      [195 / 210, 284.3 / 297], [15 / 210, 284.3 / 297]].map(([u, v]) => {
+      const point = rendered.map(u, v);
+      return { x: point.x / original.width, y: point.y / original.height };
+    });
     const canvas = document.createElement('canvas');
     canvas.width = original.width;
     canvas.height = original.height;
@@ -99,7 +107,7 @@ async function openScanner(page, options = {}) {
   await expect(page.locator('#liveScanner')).toBeVisible();
 }
 
-test('live video draws the yellow frame and captures as soon as the page is clear', async ({ page }) => {
+test('live video draws the yellow frame and captures after verifying the sharp bullet page', async ({ page }) => {
   test.setTimeout(45_000);
   await openScanner(page, { deferCapture: true });
   await expect(page.locator('#liveVideo')).toBeVisible();
@@ -112,13 +120,9 @@ test('live video draws the yellow frame and captures as soon as the page is clea
     const canvas = document.getElementById('liveOverlay');
     const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     const detection = window.__scannerCameraFixture.detections.filter(Boolean).at(-1);
-    const definition = ScannerSyntheticFixtures.CASES[0];
-    const map = ScannerSyntheticFixtures.mappingFor(definition);
-    const { u0, u1, v0, v1 } = ScannerSyntheticFixtures.FRAME;
-    const expected = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => map(u, v));
+    const expected = window.__scannerCameraFixture.expectedFrame;
     const cornerError = detection ? Math.max(...detection.quad.map((point, index) =>
-      Math.hypot(point.x - expected[index].x / definition.width,
-        point.y - expected[index].y / definition.height))) : Infinity;
+      Math.hypot(point.x - expected[index].x, point.y - expected[index].y))) : Infinity;
     let yellow = 0;
     let left = canvas.width, right = 0, top = canvas.height, bottom = 0;
     for (let y = 0; y < canvas.height; y += 1) {
@@ -171,7 +175,8 @@ test('retaking releases the previous camera and only confirmation inserts the sc
   expect(await page.evaluate(() => window.__IHN_TEST_API__.snapshot().pages.length)).toBe(1);
   await scanner.locator('#liveRetakeBtn').click();
   await expect(scanner.locator('#liveCameraView')).toBeVisible();
-  await expect(scanner.locator('#liveReview')).toBeVisible({ timeout: 30_000 });
+  await expect(scanner.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 30_000 });
+  await expect(scanner.locator('#liveAddBtn')).toBeEnabled();
   expect(await scanner.locator('body').evaluate(() => window.__scannerCameraFixture.trackStates()))
     .toEqual(['ended', 'ended']);
   expect(await page.evaluate(() => window.__IHN_TEST_API__.snapshot().pages.length)).toBe(1);
@@ -185,8 +190,11 @@ test('retaking releases the previous camera and only confirmation inserts the sc
   expect(saved.pages[1].backgroundSource).toBe('template');
   expect(saved.pages[1].templateKind).toBe('default');
   expect(saved.pages[1].backgroundImage).toBeNull();
-  expect(saved.pages[1].images).toHaveLength(1);
-  expect(saved.pages[1].images[0].src).toMatch(/^data:image\/png/);
+  expect(saved.pages[1].images).toEqual([]);
+  expect(saved.pages[1].strokes.length).toBeGreaterThan(0);
+  expect(saved.pages[1].strokes.every(stroke => stroke.tool === 'pen'
+    && stroke.width > 0 && stroke.points.length > 0
+    && stroke.points.every(point => Number.isFinite(point.x) && Number.isFinite(point.y)))).toBe(true);
   expect(saved.dirtyPages).toEqual([]);
 });
 
