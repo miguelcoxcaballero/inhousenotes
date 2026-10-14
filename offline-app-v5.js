@@ -113,10 +113,11 @@
         await restore(doc,false);
         return buildPdfBlob({sessionToken:getDocumentSessionToken(),...DRIVE_UPLOAD_PDF_OPTIONS});
     }
-    async function merge(doc,meta) {
+    async function merge(doc,meta,remoteBlob) {
         // Called after local PDF construction, so this isolated editor contains
         // the exact local snapshot plus its persisted baseline and tombstones.
-        const result=await pullRemoteChanges(meta,{allowWhileLocalPending:true,preserveLocalUnsynced:true,visualSync:false});
+        const result=await pullRemoteChanges(meta,{allowWhileLocalPending:true,preserveLocalUnsynced:true,visualSync:false,
+            downloadedSnapshot:remoteBlob instanceof Blob?{fileId:state.driveFileId,blob:remoteBlob,meta}:null});
         if(!result || result.error || result.busy || result.deferred || result.stale)throw new Error('Concurrent changes could not be merged yet');
         return buildPdfBlob({sessionToken:getDocumentSessionToken(),...DRIVE_UPLOAD_PDF_OPTIONS});
     }
@@ -162,7 +163,7 @@
                 if(active?.enabled===false||(localStorage.getItem('drive-hint-email')||'').toLowerCase()!==account)throw new Error('Account signed out');
                 return driveFetch(url,options);
             };
-            result=await root.InhouseOfflineSync.run(account,{fetch:guardedFetch,build:workerBuild,merge:async(doc,meta)=>{await restore(doc,false);return merge(doc,meta);},
+            result=await root.InhouseOfflineSync.run(account,{fetch:guardedFetch,build:workerBuild,merge:async(doc,meta,remoteBlob)=>{await restore(doc,false);return merge(doc,meta,remoteBlob);},
                 skip:id=>editor?.documentId===id&&editor.expires>Date.now()});
         } catch(error) {result={pending:1,errors:[{message:error.message}]};}
         finally {
