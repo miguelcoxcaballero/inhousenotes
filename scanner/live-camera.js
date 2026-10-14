@@ -61,6 +61,7 @@
   const status = (title, hint = '') => {
     $('liveStatus').textContent = title;
     $('liveHint').textContent = hint;
+    $('liveHint').hidden = !hint;
   };
   const resetReadiness = () => { $('liveProgress').value = 0; };
   const stopCamera = () => {
@@ -152,7 +153,7 @@
     $('liveRetryBtn').hidden = true;
     setState('requesting');
     $('liveCloseBtn').focus({ preventScroll: true });
-    status('Opening camera…', 'Point the camera at the whole page, including the yellow frame and bottom squares.');
+    status('Opening camera…');
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera API unavailable');
       let acquired;
@@ -367,7 +368,7 @@
       drawDetection(null);
       root.dataset.cameraReady = 'false';
       setState('starting');
-      status('Waiting for camera…', 'Keep the camera available, or choose a photo.');
+      status('Waiting for camera…');
     }
     try {
       // Never count repeated frames of a stalled video as stability evidence.
@@ -400,9 +401,7 @@
         } else {
           resetReadiness();
           setState('searching');
-          status(detection ? detection.source === 'yellow' ? 'Looking for a clear view' : 'Page found · looking for yellow marks' : 'Find the yellow frame',
-            detection && focusScore(detection) < 1 ? 'The camera is focusing automatically.'
-              : 'Include all four edges and the bottom squares.');
+          status(detection && focusScore(detection) < 1 ? 'Focusing…' : 'Fit the yellow frame');
         }
       }
     } catch (error) {
@@ -465,7 +464,7 @@
       $('liveCameraView').hidden = true;
       $('liveReview').hidden = false;
       $('liveAddBtn').disabled = true;
-      $('liveReviewStatus').textContent = 'Preparing the scan…';
+      $('liveReviewStatus').textContent = 'Scanning…';
       clearProcessingVisual();
     } catch (_) { /* Optional thumbnail never replaces the full captured photo. */ }
     finally { thumbnail.width = thumbnail.height = 0; }
@@ -491,7 +490,7 @@
           frozenFirst.width = frozenFirst.height = 0;
           resetReadiness();
           setState('searching');
-          status('Focusing on the page…', 'Scanning automatically when the writing is sharp.');
+          status('Focusing…');
           timer = setTimeout(() => tick(token), 80);
           return;
         }
@@ -507,7 +506,7 @@
     let previousFrame = currentFrameTime();
     setState('capturing');
     clearTimeout(timer);
-    status('Page captured', 'Choosing the clearest photo automatically.');
+    status('Scanning…');
     const saveFrame = (canvas, detection, photoQuality) => {
       const width = canvas.width, height = canvas.height;
       // Freeze all three images without waiting for each JPEG callback. The
@@ -543,7 +542,7 @@
         if (captureError) throw captureError;
         resetReadiness();
         setState('searching');
-        status('Looking for a clear view', 'Scanning automatically when the page is clear.');
+        status('Focusing…');
         tick(token);
         return;
       }
@@ -616,18 +615,15 @@
   }
   function processingStatus(candidate) {
     if (candidate.result || candidate.error) return 'Comparing scans…';
-    const count = candidate.processingGeometry?.points?.length || 0;
     switch (candidate.processingStage) {
-      case 'decoding': return 'Opening photo…';
-      case 'detection': return 'Finding the page…';
-      case 'dots': return count ? `${count} bullet points found` : 'Finding bullet points…';
+      case 'decoding':
+      case 'detection':
+      case 'dots': return 'Finding dots…';
       case 'surface':
-      case 'warp': return count ? `Straightening ${count} bullet points…` : 'Straightening the page…';
-      case 'colors': return 'Cleaning the page…';
-      case 'vectors': return 'Creating editable ink…';
-      case 'template': return 'Applying the page template…';
-      case 'encoding': return 'Preparing scan…';
-      default: return candidates.length > 1 ? 'Processing photos and choosing the best scan…' : 'Straightening the page…';
+      case 'warp': return 'Straightening…';
+      case 'colors': return 'Adjusting colour…';
+      case 'vectors': return 'Tracing ink…';
+      default: return 'Finishing…';
     }
   }
   function updateProcessingSteps(candidate) {
@@ -662,7 +658,7 @@
     // Geometry belongs to one capture and one displayed image. Never draw a
     // late worker's points over another thumbnail or the finished document.
     if (!pendingCandidates || candidate?.result || candidate?.error || !geometry?.points?.length
-      || preview.hidden || !preview.complete || !preview.naturalWidth || !['dots', 'surface', 'warp', 'colors'].includes(candidate.processingStage)) {
+      || preview.hidden || !preview.complete || !preview.naturalWidth || !['dots', 'surface', 'warp', 'colors', 'vectors', 'template', 'encoding'].includes(candidate.processingStage)) {
       canvas.hidden = true;
       return;
     }
@@ -756,47 +752,45 @@
     $('liveCameraView').hidden = true;
     $('liveReview').hidden = false;
     $('liveAddBtn').disabled = !result;
-    $('liveAddBtn').textContent = embedded ? 'Add page to document' : 'Save scan';
+    $('liveAddBtn').textContent = embedded ? 'Add page' : 'Save';
     $('liveReviewStatus').textContent = waiting
       ? processingStatus(candidate)
-      : result ? pendingCandidates ? 'Scan ready. Checking the other photos…' : 'Check the scan.'
-        : candidate.error || 'Page correction could not be verified. Scan again or choose a clearer photo.';
+      : result ? 'Ready'
+        : candidate.error || 'Couldn’t correct this photo. Try again.';
     if (waiting) updateProcessingSteps(candidate);
     else clearProcessingVisual();
-    $('liveProcessingOverlay').hidden = true;
     [...$('liveAlternatives').children].forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
     const current = () => token === generation && selected === selection;
     const preview = $('livePreview');
     const nextUrl = candidate.resultUrl || candidate.processingPreviewUrl || candidate.url;
-    preview.onload = () => {
-      if (current()) { preview.hidden = false; scheduleProcessingOverlay(); }
-    };
-    preview.onerror = () => {
+    if (previewUrl === nextUrl) {
+      scheduleProcessingOverlay();
+      return;
+    }
+    // Decode offscreen, then swap atomically: progress must never blank the
+    // page, its dots or calibration markers while the next image loads.
+    const incoming = new Image();
+    incoming.onload = () => {
       if (!current()) return;
-      preview.hidden = true;
-      // A diagnostic preview is optional; failure must not hide the original
-      // or make a valid final result unavailable.
+      previewUrl = nextUrl;
+      preview.src = nextUrl;
+      preview.hidden = false;
+      scheduleProcessingOverlay();
+      if (candidate.result?.corrected) {
+        preview.classList.remove('scan-reveal');
+        void preview.offsetWidth;
+        preview.classList.add('scan-reveal');
+      }
+    };
+    incoming.onerror = () => {
+      if (!current()) return;
       if (nextUrl === candidate.processingPreviewUrl) {
         URL.revokeObjectURL(candidate.processingPreviewUrl);
         candidate.processingPreviewUrl = '';
         reviewCandidate(index, token);
       }
     };
-    if (previewUrl === nextUrl) {
-      if (preview.complete && preview.naturalWidth) preview.hidden = false;
-      scheduleProcessingOverlay();
-      return;
-    }
-    previewUrl = nextUrl;
-    preview.hidden = true;
-    preview.src = nextUrl;
-    if (preview.complete && preview.naturalWidth) preview.hidden = false;
-    scheduleProcessingOverlay();
-    if (candidate.result?.corrected) {
-      preview.classList.remove('scan-reveal');
-      void preview.offsetWidth;
-      preview.classList.add('scan-reveal');
-    }
+    incoming.src = nextUrl;
   }
   function candidateRank(candidate) {
     if (!candidate.result) return -1;
@@ -952,7 +946,7 @@
     $('liveAddBtn').disabled = true;
     $('liveRetakeBtn').disabled = true;
     $('liveCloseBtn').disabled = true;
-    $('liveReviewStatus').textContent = 'Adding page to document…';
+    $('liveReviewStatus').textContent = 'Adding…';
     if (!post('ihn-scanner-pages', { pages: [result], documentName, stencil: false })) {
       finishSubmission(false, 'The document is no longer available.');
     }

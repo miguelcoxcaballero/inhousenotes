@@ -231,3 +231,66 @@ test('saving immediately after reopening restores history and starts source reco
   expect(second.hasLegacyBakedOverlay).toBe(false);
   expect(second.history.map(entry => entry.id)).toContain(first.history[0].id);
 });
+
+test('partial erasing a scanned-size page copies only touched pens and undo preserves the rest',async({page,context})=>{
+  await page.goto('/?e2e=1');await page.waitForFunction(()=>window.__IHN_TEST_API__);
+  await page.evaluate(()=>__IHN_TEST_API__.prepareEraserFixtureForTest('eraser-area',3000,100));
+  await page.waitForFunction(()=>!__IHN_TEST_API__.densePaintStatusForTest().pending);
+  const target=await page.evaluate(()=>{
+    const strokes=__IHN_TEST_API__.snapshot().pages[0].strokes;
+    window.clonePointVisits=0;
+    window.untouchedPen=JSON.stringify(strokes.find(s=>s.id==='dense-0'));
+    for(const stroke of strokes){
+      Object.defineProperty(stroke.points,'map',{configurable:true,value:function(...args){
+        clonePointVisits+=this.length;return Array.prototype.map.apply(this,args);
+      }});
+    }
+    const c=document.querySelector('canvas.page-canvas[data-page="0"]'),r=c.getBoundingClientRect();
+    return {x:r.left+153*r.width/794,y:r.top+203*r.height/1123};
+  });
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...target,button:'left',buttons:1,clickCount:1,pointerType:'pen'});
+  await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',...target,buttons:1,pointerType:'pen'});
+  await expect.poll(()=>page.evaluate(()=>__IHN_TEST_API__.eraserPixelsForTest().center)).toEqual([255,255,255,255]);
+  const arrivingId=await page.evaluate(()=>__IHN_TEST_API__.addSyntheticStroke(0,'arrived-during-erase'));
+  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+  expect(await page.evaluate(()=>clonePointVisits)).toBeLessThan(15000);
+  const intact=()=>page.evaluate(()=>JSON.stringify(__IHN_TEST_API__.snapshot().pages[0].strokes.find(s=>s.id==='dense-0'))===untouchedPen);
+  expect(await intact()).toBe(true);
+  expect(await page.evaluate(id=>__IHN_TEST_API__.snapshot().pages[0].strokes.some(s=>s.id===id),arrivingId)).toBe(true);
+  await page.locator('#btn-undo').click();
+  await page.waitForFunction(()=>!__IHN_TEST_API__.densePaintStatusForTest().pending);
+  expect(await intact()).toBe(true);
+  expect(await page.evaluate(id=>__IHN_TEST_API__.snapshot().pages[0].strokes.some(s=>s.id===id),arrivingId)).toBe(true);
+  expect((await page.evaluate(()=>__IHN_TEST_API__.eraserPixelsForTest())).center[0]).toBeLessThan(30);
+  await page.locator('#btn-redo').click();
+  await page.waitForFunction(()=>!__IHN_TEST_API__.densePaintStatusForTest().pending);
+  expect(await intact()).toBe(true);
+  expect(await page.evaluate(id=>__IHN_TEST_API__.snapshot().pages[0].strokes.some(s=>s.id===id),arrivingId)).toBe(true);
+  expect((await page.evaluate(()=>__IHN_TEST_API__.eraserPixelsForTest())).center).toEqual([255,255,255,255]);
+});
+
+test('background scan repaints do not replay stored pens while the stylus is drawing',async({page,context})=>{
+  await page.goto('/?e2e=1');await page.waitForFunction(()=>window.__IHN_TEST_API__);
+  await page.evaluate(()=>__IHN_TEST_API__.seedDensePageForTest(3000,100));
+  await page.waitForFunction(()=>!__IHN_TEST_API__.densePaintStatusForTest().pending);
+  await page.locator('[data-tool="pen"][data-color="#E81010"]').click();
+  const target=await page.evaluate(()=>{
+    const canvas=document.querySelector('canvas.page-canvas[data-page="0"]'),r=canvas.getBoundingClientRect();
+    window.storedPenReplays=0;
+    const stroke=CanvasRenderingContext2D.prototype.stroke;
+    CanvasRenderingContext2D.prototype.stroke=function(...args){if(args[0] instanceof Path2D)storedPenReplays++;return stroke.apply(this,args);};
+    return {x:r.left+307*r.width/794,y:r.top+500*r.height/1123};
+  });
+  const cdp=await context.newCDPSession(page);
+  await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...target,button:'left',buttons:1,clickCount:1,pointerType:'pen'});
+  await page.evaluate(()=>__IHN_TEST_API__.redrawDensePageForTest());
+  for(let i=1;i<=8;i++){
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:target.x+i*3,y:target.y+i,buttons:1,pointerType:'pen'});
+    await page.waitForTimeout(16);
+  }
+  expect(await page.evaluate(()=>storedPenReplays)).toBe(0);
+  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:target.x+24,y:target.y+8,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+  await page.waitForFunction(()=>!__IHN_TEST_API__.densePaintStatusForTest().pending);
+  expect((await page.evaluate(()=>__IHN_TEST_API__.snapshot().pages[0].strokes)).filter(s=>s.color==='#E81010')).toHaveLength(1);
+});

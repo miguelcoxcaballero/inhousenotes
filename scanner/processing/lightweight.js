@@ -3592,6 +3592,9 @@
     const preview = createScaledCanvas(output, 720).canvas;
     try {
       checkProcessingCancelled(options);
+      // Keep the native paper references visible through every corrected
+      // progress image. Never show the temporary template-free ink buffer.
+      if (options.precise) SP.ScanTemplate.render(preview.getContext("2d"), preview.width, preview.height, { background: false });
       return typeof preview.convertToBlob === "function"
         ? await preview.convertToBlob({ type: "image/jpeg", quality: .9 })
         : await new Promise((resolve, reject) => preview.toBlob(value => value?.size
@@ -3713,7 +3716,7 @@
       mesh = null;
       if (options.previewProgress && options.onProgress) {
         try {
-          const previewBlob = await scanPreviewBlob(output, options);
+          const previewBlob = await scanPreviewBlob(output, { ...options, precise });
           progress("warp", { ...correctedDots, width: output.width, height: output.height,
             space: "corrected", previewBlob });
         } catch (_) {
@@ -3755,8 +3758,10 @@
       }
       progress("encoding");
       const encodeStarted = performance.now();
-      const encoded = await encodeScanCanvas(output, precise ? "image/png" : "image/jpeg");
-      const previewBlob = preview ? await encodeScanCanvas(preview) : undefined;
+      const [encoded, previewBlob] = await Promise.all([
+        encodeScanCanvas(output, precise ? "image/png" : "image/jpeg"),
+        preview ? encodeScanCanvas(preview) : undefined
+      ]);
       checkProcessingCancelled(options);
       if (!encoded?.size) throw new Error("Could not encode this scan");
       // Encoding and decoding happen on the worker as well. A malformed image

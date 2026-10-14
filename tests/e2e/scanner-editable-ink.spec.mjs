@@ -212,4 +212,59 @@ test('a photographed page reaches the document as native pens through the actual
   expect(inserted.images).toEqual([]);expect(inserted.backgroundImage).toBeNull();
   expect(inserted.backgroundSource).toBe('template');expect(inserted.strokes.length).toBeGreaterThan(0);
   expect(inserted.strokes.every(s=>s.tool==='pen'&&['#4D4D4D','#002FD9','#E81010'].includes(s.color))).toBe(true);
+  // Junction tangents must not mistake a line's length for its width.
+  expect(Math.max(...inserted.strokes.map(s=>s.width))).toBeLessThan(8);
+});
+
+test('mixed camera fringes produce one red axis, while real blue and black crossings keep their colour',async({page})=>{
+  await page.goto('/scanner/index.html?embed=1&session=colours');
+  const result=await page.evaluate(async()=>{
+    const c=document.createElement('canvas');c.width=794;c.height=1123;
+    const x=c.getContext('2d');x.lineCap='round';
+    const curve=()=>{x.beginPath();x.moveTo(90,160);x.bezierCurveTo(160,70,220,250,370,150);};
+    // The photograph's dark centre and blue JPEG edge are all the SAME red pen.
+    x.strokeStyle='rgba(20,50,160,.45)';x.lineWidth=7;curve();x.stroke();
+    x.strokeStyle='#ba1722';x.lineWidth=6;curve();x.stroke();
+    x.strokeStyle='#343434';x.lineWidth=1.5;curve();x.stroke();
+    x.fillStyle='#164fbb';x.fillRect(100,400,300,3);
+    x.fillStyle='#292929';x.fillRect(249,365,3,80);
+    // A pale neutral dot with sensor tint must not become a red pen.
+    x.fillStyle='rgba(90,0,0,.1)';x.fillRect(500,500,3,3);
+    const pixels=x.getImageData(0,0,c.width,c.height);
+    const ink=await ScannerPro.InkVectorizer.fromPixels(pixels);
+    const js=await ScannerPro.InkVectorizer.fromPixels(pixels,{forceJavaScript:true});
+    return {strokes:ink.strokes,parity:JSON.stringify(ink.strokes)===JSON.stringify(js.strokes)};
+  });
+  expect(result.parity).toBe(true);
+  const red=result.strokes.filter(s=>s.points.some(p=>p.y<300));
+  expect(red.length).toBeLessThanOrEqual(3);
+  expect(red.every(s=>s.color==='#E81010')).toBe(true);
+  expect(result.strokes.some(s=>s.color==='#002FD9'&&s.points.some(p=>p.x<150&&p.y>395))).toBe(true);
+  expect(result.strokes.some(s=>s.color==='#4D4D4D'&&s.points.some(p=>p.y>360&&p.y<380))).toBe(true);
+  const dust=result.strokes.filter(s=>s.points.some(p=>p.x>490));
+  expect(dust).toHaveLength(1);expect(dust[0].color).toBe('#4D4D4D');
+});
+
+test('near-standard pen widths snap to the editor width at either scan resolution, preserving thin and thick pens',async({page})=>{
+  await page.goto('/scanner/index.html?embed=1&session=widths');
+  const result=await page.evaluate(async()=>{
+    const reports=[];
+    for(const scale of [1,2]){
+      const c=document.createElement('canvas');c.width=794*scale;c.height=1123*scale;
+      const ctx=c.getContext('2d');ctx.scale(scale,scale);ctx.strokeStyle='#ba1722';ctx.lineCap='round';
+      [1,2,2.5,6].forEach((w,k)=>{ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(100,100+k*100+(k===0?.5:0));ctx.lineTo(400,100+k*100+(k===0?.5:0));ctx.stroke();});
+      const ink=await ScannerPro.InkVectorizer.fromPixels(ctx.getImageData(0,0,c.width,c.height));
+      reports.push(ink.strokes.map(s=>({width:s.width/scale,y:s.points[0].y/scale})).sort((a,b)=>a.y-b.y));
+    }
+    return {reports,standard:InhouseInkDefaults.width};
+  });
+  for(const report of result.reports){
+    expect(report).toHaveLength(4);
+    expect(report[0].width).toBeLessThan(1.5);
+    expect(report[1].width).toBeCloseTo(result.standard,6);
+    expect(report[2].width).toBeCloseTo(result.standard,6);
+    expect(report[3].width).toBeGreaterThan(4.5);
+  }
+  await page.goto('/?e2e=1');
+  for(const pen of await page.locator('[data-tool="pen"][data-width]').all())expect(Number(await pen.getAttribute('data-width'))).toBe(result.standard);
 });

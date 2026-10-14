@@ -4115,6 +4115,12 @@
             let currentEraseGestureId = null;
             let liveErasePublished = false;
             let areaEraseBefore = null;
+            const areaEraseTouchedIds = new Set();
+            const trackAreaErase = changeSet => {
+                if (state.currentTool !== 'eraser-area') return;
+                for (const id of changeSet.removedStrokeIds) areaEraseTouchedIds.add(id);
+                for (const stroke of changeSet.addedStrokes) areaEraseTouchedIds.add(stroke.id);
+            };
             let areaEraseChanged = false;
             let lastEraserPoint = null;
             let isLassoing = false;
@@ -4201,6 +4207,7 @@
                     }
                 }
                 if (changed) {
+                    trackAreaErase(changeSet);
                     scheduleEraserRedraw(pageIndex);
                     if (typeof publishLiveErasePreview === 'function'
                         && currentErasePageId
@@ -4280,7 +4287,13 @@
                     currentEraseGestureId = `erase-${generateStrokeId()}`;
                     liveErasePublished = false;
                     const changeSet = { removedStrokeIds: [], addedStrokes: [] };
-                    areaEraseBefore = cloneStrokesArray(state.pages[pageIndex].strokes);
+                    // Stored point arrays are replaced by edits, never changed by
+                    // erasing. Snapshot only metadata now, and clone the affected
+                    // pens at commit instead of every point on a dense scan.
+                    areaEraseTouchedIds.clear();
+                    areaEraseBefore = state.pages[pageIndex].strokes.map(stroke => ({
+                        ...stroke, ...(stroke.syncStamp ? { syncStamp: { ...stroke.syncStamp } } : {})
+                    }));
                     lastEraserPoint = pos;
                     areaEraseChanged = eraseAreaAtPoint(
                         pageIndex,
@@ -4290,6 +4303,7 @@
                         { deferRedraw: true, changeSet }
                     ) || areaEraseChanged;
                     if (areaEraseChanged) {
+                        trackAreaErase(changeSet);
                         scheduleEraserRedraw(pageIndex);
                         if (typeof publishLiveErasePreview === 'function' && currentErasePageId) {
                             publishLiveErasePreview(currentErasePageId, currentEraseGestureId, changeSet);
@@ -4432,16 +4446,18 @@
                         const page = state.pages[pageIndex];
                         const beforeIds = new Set(areaEraseBefore.map(stroke => stroke?.id).filter(Boolean));
                         stampCollaborativeItems(
-                            (page.strokes || []).filter(stroke => stroke?.id && !beforeIds.has(stroke.id))
+                            (page.strokes || []).filter(stroke => areaEraseTouchedIds.has(stroke?.id) && !beforeIds.has(stroke.id))
                         );
-                        const after = cloneStrokesArray(page.strokes);
-                        // Track deleted stroke IDs for collaborative sync
-                        const afterIds = new Set(after.map(s => s.id).filter(Boolean));
-                        trackDeletedStrokeIds(page, areaEraseBefore.filter(bs => bs.id && !afterIds.has(bs.id)));
+                        const afterIds = new Set(page.strokes.map(s => s.id).filter(Boolean));
+                        const removed = areaEraseBefore.filter(stroke => areaEraseTouchedIds.has(stroke.id) && !afterIds.has(stroke.id));
+                        const after = cloneStrokesArray(page.strokes.filter(stroke => areaEraseTouchedIds.has(stroke.id) && !beforeIds.has(stroke.id)));
+                        // Undo already merges by ID; unchanged pens do not need
+                        // to be copied into each partial-erasing history entry.
+                        trackDeletedStrokeIds(page, removed);
                         saveToHistory({
                             type: 'erase-area',
                             pageIndex: pageIndex,
-                            before: areaEraseBefore,
+                            before: cloneStrokesArray(removed),
                             after
                         });
                         scheduleSave(false, pageIndex);
@@ -11875,7 +11891,9 @@
                         };
                     })
                 };
+                recordEraserDamage(pageIndex, page.strokes[item.index]);
                 page.strokes[item.index] = updated;
+                recordEraserDamage(pageIndex, updated);
             });
 
             if (Array.isArray(originalImages) && originalImages.length > 0) {
@@ -11899,7 +11917,8 @@
                 });
             }
 
-            redrawPage(pageIndex);
+            if (originalImages?.length) redrawPage(pageIndex, { duringErase: true });
+            else scheduleEraserRedraw(pageIndex);
         }
 
         function setupSelectionBoxEvents(selectionBox, pageIndex) {
@@ -11991,7 +12010,22 @@
             };
         }
 
+        let selectionMoveFrame = 0;
+        let selectionMoveEvent = null;
+        function flushSelectionMove() {
+            cancelAnimationFrame(selectionMoveFrame);
+            selectionMoveFrame = 0;
+            const event = selectionMoveEvent;
+            selectionMoveEvent = null;
+            if (event) applySelectionPointerMove(event);
+        }
         function onSelectionPointerMove(e) {
+            if (!state.selectionTransform || e.pointerId !== state.selectionTransform.pointerId) return;
+            e.preventDefault();
+            selectionMoveEvent = e;
+            if (!selectionMoveFrame) selectionMoveFrame = requestAnimationFrame(flushSelectionMove);
+        }
+        function applySelectionPointerMove(e) {
             if (state.isReadOnly) return;
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
@@ -12107,6 +12141,7 @@
             if (state.isReadOnly) return;
             if (!state.selectionTransform) return;
             if (e.pointerId !== state.selectionTransform.pointerId) return;
+            flushSelectionMove();
             const { pageIndex, originalStrokes, originalImages } = state.selectionTransform;
             const afterStrokes = captureStrokes(pageIndex, state.selection.strokeIndices);
             const afterImages = captureImages(pageIndex, state.selection.imageIndices);
@@ -12287,6 +12322,7 @@
             const cached = strokeBoundsCache.get(stroke);
             if (
                 cached
+                && cached.points === points
                 && cached.pointCount === points.length
                 && cached.firstX === first.x
                 && cached.firstY === first.y
@@ -12311,6 +12347,7 @@
                 minY,
                 maxX,
                 maxY,
+                points,
                 pointCount: points.length,
                 firstX: first.x,
                 firstY: first.y,
@@ -12611,6 +12648,7 @@
         // ── § 4.6  Core drawing engine ────────────────────────────────────────
         // Low-level Canvas 2D routines: smooth Bezier stroke rendering,
         // highlighter blending, eraser paths, and image drawing on the canvas.
+        const penPathCache = new WeakMap();
         function drawSmoothStroke(ctx, stroke) {
             if (!stroke || !stroke.points || stroke.points.length === 0) return;
             if (stroke.tool === 'highlighter') {
@@ -12623,50 +12661,28 @@
             ctx.lineWidth = getStrokeWidth(stroke);
 
             const points = stroke.points;
-            if (points.length === 1) {
-                drawSinglePointStroke(ctx, stroke);
-                return;
+            // Populate hit-test bounds during the sliced page paint. The
+            // first eraser contact must not scan every point in the document.
+            getStrokeBounds(stroke);
+            const first = points[0], last = points[points.length - 1];
+            let cached = penPathCache.get(points);
+            if (!cached || cached.length !== points.length || cached.firstX !== first.x
+                || cached.firstY !== first.y || cached.lastX !== last.x || cached.lastY !== last.y) {
+                const path = new Path2D();
+                path.moveTo(first.x, first.y);
+                if (points.length === 2) path.lineTo(last.x, last.y);
+                else {
+                    path.lineTo((first.x + points[1].x) / 2, (first.y + points[1].y) / 2);
+                    for (let i = 1; i < points.length - 1; i++) {
+                        const current = points[i], next = points[i + 1];
+                        path.quadraticCurveTo(current.x, current.y, (current.x + next.x) / 2, (current.y + next.y) / 2);
+                    }
+                    path.lineTo(last.x, last.y);
+                }
+                cached = { path, length: points.length, firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y };
+                penPathCache.set(points, cached);
             }
-            if (points.length === 2) {
-                ctx.beginPath();
-                ctx.moveTo(points[0].x, points[0].y);
-                ctx.lineTo(points[1].x, points[1].y);
-                ctx.stroke();
-                return;
-            }
-
-            const p0 = points[0];
-            const p1 = points[1];
-            let prevMid = {
-                x: (p0.x + p1.x) / 2,
-                y: (p0.y + p1.y) / 2
-            };
-
-            // A single path for the whole stroke, not one beginPath()/stroke()
-            // per point: style (including lineJoin='round', set above) is
-            // constant across every segment, so splitting them only cost one
-            // Canvas2D draw call per point — 10k-20k draw calls on a heavily
-            // written page, which is the dominant cost of a full-page repaint
-            // (redrawPage draws every stroke) during erasing, zooming and
-            // page-switch.
-            ctx.beginPath();
-            ctx.moveTo(p0.x, p0.y);
-            ctx.lineTo(prevMid.x, prevMid.y);
-
-            for (let i = 1; i < points.length - 1; i++) {
-                const current = points[i];
-                const next = points[i + 1];
-                const mid = {
-                    x: (current.x + next.x) / 2,
-                    y: (current.y + next.y) / 2
-                };
-                ctx.quadraticCurveTo(current.x, current.y, mid.x, mid.y);
-                prevMid = mid;
-            }
-
-            const last = points[points.length - 1];
-            ctx.lineTo(last.x, last.y);
-            ctx.stroke();
+            ctx.stroke(cached.path);
         }
 
         function drawImagesOnContext(ctx, page, pageIndex, onload) {
@@ -12870,6 +12886,9 @@
                         || canvas.width !== target.width || canvas.height !== target.height) {
                         discard(); return;
                     }
+                    // Background repaints must yield before doing work while
+                    // the local pen is down, not only before the final blit.
+                    if (!options.duringErase && isPenWriting) { setTimeout(paint, 40); return; }
                     const started = performance.now();
                     while (phase < 2) {
                         const items = phase === 0 ? covers : strokes;
@@ -33242,8 +33261,8 @@
                     redrawPage(0);
                     return performance.now() - start;
                 },
-                async prepareEraserFixtureForTest(tool) {
-                    await this.seedDensePageForTest(260, 15);
+                async prepareEraserFixtureForTest(tool, count = 260, points = 15) {
+                    await this.seedDensePageForTest(count, points);
                     state.currentTool = tool;
                     state.eraserWidth = 16;
                     state.pages[0].strokes.push({ id: 'erase-target', tool: 'pen', color: '#000000', width: 6,

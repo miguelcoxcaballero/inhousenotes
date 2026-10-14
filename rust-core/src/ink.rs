@@ -1,11 +1,13 @@
 //! Clean, transparent scan ink -> palette-labelled medial axes. No page/template
 //! pixels enter this kernel. The host traces the axes into ordinary editor pens.
 
-fn colour(r: u8, g: u8, b: u8) -> u8 {
+fn colour(r: u8, g: u8, b: u8, alpha: u8) -> u8 {
     let (r, g, b) = (r as f32, g as f32, b as f32);
     let hi = r.max(g).max(b);
     let lo = r.min(g).min(b);
-    if hi - lo < 36.0 || hi - lo < hi * 0.2 {
+    // Unpremultiplication amplifies tiny JPEG colour errors on pale paper.
+    // Require chroma in the original, covered pixel as well as a clear hue.
+    if hi - lo < 36.0 || hi - lo < hi * 0.2 || (hi - lo) * (alpha as f32) < 255.0 * 12.0 {
         return 1;
     }
     let scale = 225.0 / (hi - lo);
@@ -54,7 +56,12 @@ pub unsafe extern "C" fn ink_axes(
         for x in 1..width - 1 {
             let i = y * width + x;
             if rgba[i * 4 + 3] >= 16 {
-                mask[i] = colour(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
+                mask[i] = colour(
+                    rgba[i * 4],
+                    rgba[i * 4 + 1],
+                    rgba[i * 4 + 2],
+                    rgba[i * 4 + 3],
+                );
             }
         }
     }
@@ -68,32 +75,17 @@ pub unsafe extern "C" fn ink_axes(
                 continue;
             }
             let alpha = rgba[i * 4 + 3] as u32;
-            let (mut peak, mut best_alpha, mut best_distance, mut best_label) =
-                (alpha, 0u32, 0u32, 0u8);
+            let mut peak = alpha;
             for yy in y.saturating_sub(3)..=(y + 3).min(height - 1) {
                 for xx in x.saturating_sub(3)..=(x + 3).min(width - 1) {
-                    let j = yy * width + xx;
-                    let a = rgba[j * 4 + 3] as u32;
-                    peak = peak.max(a);
-                    let distance = (xx.abs_diff(x).pow(2) + yy.abs_diff(y).pow(2)) as u32;
-                    if initial[j] > 1
-                        && a >= 48
-                        && a * (best_distance + 1) > best_alpha * (distance + 1)
-                    {
-                        best_alpha = a;
-                        best_distance = distance;
-                        best_label = initial[j];
-                    }
+                    peak = peak.max(rgba[(yy * width + xx) * 4 + 3] as u32);
                 }
             }
             if alpha * 100 < peak * 35 {
                 mask[i] = 0;
-            } else if initial[i] == 1 && best_label > 1 && alpha * 5 < best_alpha * 4 {
-                mask[i] = best_label;
             }
         }
     }
-    drop(initial);
     let offsets = [
         -(width as isize),
         1 - width as isize,
@@ -115,7 +107,6 @@ pub unsafe extern "C" fn ink_axes(
         queue.clear();
         queue.push(start);
         seen[start] = true;
-        let label = mask[start];
         let mut head = 0;
         let mut peak = 0;
         while head < queue.len() {
@@ -124,7 +115,7 @@ pub unsafe extern "C" fn ink_axes(
             peak = peak.max(rgba[i * 4 + 3]);
             for delta in offsets {
                 let j = (i as isize + delta) as usize;
-                if !seen[j] && mask[j] == label {
+                if !seen[j] && mask[j] != 0 {
                     seen[j] = true;
                     queue.push(j);
                 }
@@ -170,11 +161,7 @@ pub unsafe extern "C" fn ink_axes(
                 (1 - width as isize, 4),
             ] {
                 let j = (i as isize + delta) as usize;
-                dist[i] = dist[i].min(if mask[j] == mask[i] {
-                    dist[j] + cost
-                } else {
-                    cost
-                });
+                dist[i] = dist[i].min(if mask[j] != 0 { dist[j] + cost } else { cost });
             }
         }
     }
@@ -187,15 +174,12 @@ pub unsafe extern "C" fn ink_axes(
                 (width as isize - 1, 4),
             ] {
                 let j = (i as isize + delta) as usize;
-                dist[i] = dist[i].min(if mask[j] == mask[i] {
-                    dist[j] + cost
-                } else {
-                    cost
-                });
+                dist[i] = dist[i].min(if mask[j] != 0 { dist[j] + cost } else { cost });
             }
         }
     }
-    // Topology-preserving thinning, separately for each discrete colour.
+    // Thin the whole ink silhouette once. Colour boundaries are not pen edges:
+    // thinning each hue separately creates the rainbow outlines of a scan.
     let mut remove = Vec::new();
     let mut work = 0usize;
     loop {
@@ -211,7 +195,7 @@ pub unsafe extern "C" fn ink_axes(
                 if label == 0 || seen[i] {
                     continue;
                 }
-                let p = offsets.map(|delta| (mask[(i as isize + delta) as usize] == label) as u8);
+                let p = offsets.map(|delta| (mask[(i as isize + delta) as usize] != 0) as u8);
                 let count: u8 = p.iter().sum();
                 if !(2..=6).contains(&count) {
                     continue;
@@ -240,6 +224,40 @@ pub unsafe extern "C" fn ink_axes(
             break;
         }
         active.retain(|&i| mask[i] != 0);
+    }
+    // Classify only the surviving medial axis, using the covered ink across
+    // its width. A dark core can belong to a coloured pen; weak chromatic JPEG
+    // edges cannot overrule it, nor seed independent coloured outlines.
+    for &i in &active {
+        if mask[i] == 0 {
+            continue;
+        }
+        let (x, y) = (i % width, i / width);
+        let radius = ((dist[i] as usize + 2) / 3).clamp(2, 8);
+        let mut votes = [0u64; 4];
+        for yy in y.saturating_sub(radius)..=(y + radius).min(height - 1) {
+            for xx in x.saturating_sub(radius)..=(x + radius).min(width - 1) {
+                let j = yy * width + xx;
+                let label = initial[j] as usize;
+                if label == 0 {
+                    continue;
+                }
+                let d2 = xx.abs_diff(x).pow(2) + yy.abs_diff(y).pow(2);
+                if d2 > radius * radius {
+                    continue;
+                }
+                let alpha = rgba[j * 4 + 3] as u64;
+                votes[label] += alpha * alpha * 256 / (1 + d2 as u64);
+            }
+        }
+        let total = votes[1] + votes[2] + votes[3];
+        let colour = if votes[2] > votes[3] { 2 } else { 3 };
+        mask[i] = if votes[colour] * 100 >= total * 22 && votes[colour] * 2 >= votes[5 - colour] * 3
+        {
+            colour as u8
+        } else {
+            1
+        };
     }
     1
 }
