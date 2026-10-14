@@ -18,21 +18,12 @@
   let timer = 0;
   let state = 'closed';
   let lastDetection = null;
-  let stableAnchor = null;
-  let stableSince = 0;
-  let stableFrames = 0;
-  let lastAnalysisTime = 0;
   let lastObservedAt = 0;
   let visualTarget = null;
   let visualDetection = null;
   let visualFrame = 0;
   let visualFrameAt = 0;
   let visualResponse = 100;
-  let lastQualifiedAt = 0;
-  let bufferedFrames = [];
-  let bufferEpoch = 0;
-  let buffering = false;
-  let lastBufferedAt = 0;
   let processingController = null;
   let candidates = [];
   let result = null;
@@ -70,17 +61,7 @@
     $('liveStatus').textContent = title;
     $('liveHint').textContent = hint;
   };
-  const resetStability = () => {
-    stableAnchor = null;
-    stableSince = 0;
-    stableFrames = 0;
-    lastAnalysisTime = 0;
-    lastQualifiedAt = 0;
-    bufferedFrames = [];
-    bufferEpoch++;
-    lastBufferedAt = 0;
-    $('liveProgress').value = 0;
-  };
+  const resetReadiness = () => { $('liveProgress').value = 0; };
   const stopCamera = () => {
     clearTimeout(timer);
     timer = 0;
@@ -96,7 +77,7 @@
     deliveredFrames = 0;
     lastFrameAt = 0;
     root.dataset.cameraReady = 'false';
-    resetStability();
+    resetReadiness();
     overlayContext.clearRect(0, 0, overlay.width, overlay.height);
     overlay.dataset.detected = 'false';
   };
@@ -365,25 +346,6 @@
     visualFrameAt = now;
     visualFrame = requestAnimationFrame(renderOverlay);
   }
-  async function bufferFrame(detection, token, now) {
-    if (buffering || now - lastBufferedAt < 220) return;
-    const epoch = bufferEpoch;
-    buffering = true;
-    lastBufferedAt = now;
-    let canvas;
-    try {
-      canvas = snapshot();
-      const blob = await encode(canvas);
-      if (token !== generation || epoch !== bufferEpoch || !['searching', 'stable'].includes(state)) return;
-      bufferedFrames.push({ blob, detection, score: focusScore(detection), at: now,
-        width: canvas.width, height: canvas.height });
-      bufferedFrames = bufferedFrames.filter(frame => now - frame.at <= 1200).slice(-3);
-    } catch (_) { /* A failed reserve frame does not interrupt the live feed. */ }
-    finally {
-      if (canvas) canvas.width = canvas.height = 0;
-      buffering = false;
-    }
-  }
   const currentFrameTime = () => video.requestVideoFrameCallback ? deliveredFrames
     : video.getVideoPlaybackQuality?.().totalVideoFrames || video.currentTime;
   function tick(token) {
@@ -400,7 +362,7 @@
       return;
     }
     if (track?.muted || (lastFrameAt && now - lastFrameAt > 750)) {
-      resetStability();
+      resetReadiness();
       drawDetection(null);
       root.dataset.cameraReady = 'false';
       setState('starting');
@@ -427,37 +389,23 @@
         // qualified frame or authorize capture from an old camera image.
         window.dispatchEvent(new CustomEvent('scanner-live-detection', { detail: detection }));
         if (captureReady(detection)) {
-          if (movement(stableAnchor, detection.quad) > .025 || now - lastAnalysisTime > 600) {
-            resetStability();
-            stableAnchor = detection.quad;
-            stableSince = now;
-          }
-          lastAnalysisTime = now;
-          lastQualifiedAt = now;
-          stableFrames++;
-          void bufferFrame(detection, token, now);
-          const progress = Math.min(1, (now - stableSince) / 800, stableFrames / 5);
-          $('liveProgress').value = progress;
+          // The live image already passed focus, exposure and frame checks.
+          // Freeze it synchronously before another camera frame can replace it.
+          // Phone movement after this point cannot invalidate the good photo.
+          $('liveProgress').value = 1;
           setState('stable');
-          status('Hold steady…', 'The yellow frame is aligned. Capturing the clearest frame automatically.');
-          if (progress >= 1) { void capture(true); return; }
-        } else if (stableAnchor && now - lastQualifiedAt <= 350
-          && (!detection || (detection.source === 'yellow' && movement(stableAnchor, detection.quad) <= .025))) {
-          // Autofocus and yellow-border detection can fluctuate for one or two
-          // frames. Pause progress rather than restarting the whole hold.
-          lastAnalysisTime = now;
-          setState('stable');
-          status('Hold steady…', 'Waiting for a clear frame.');
+          void capture(true, detection);
+          return;
         } else {
-          resetStability();
+          resetReadiness();
           setState('searching');
-          status(detection ? detection.source === 'yellow' ? 'Keep the page clear and fully in view' : 'Page found · looking for yellow marks' : 'Find the yellow frame',
-            detection && focusScore(detection) < 1 ? 'Hold still and let the camera focus, or capture now to review manually.'
-              : 'Include all four edges and the bottom squares. You can also capture now.');
+          status(detection ? detection.source === 'yellow' ? 'Looking for a clear view' : 'Page found · looking for yellow marks' : 'Find the yellow frame',
+            detection && focusScore(detection) < 1 ? 'The camera is focusing automatically.'
+              : 'Include all four edges and the bottom squares.');
         }
       }
     } catch (error) {
-      resetStability();
+      resetReadiness();
       visualTarget = visualDetection = null;
       lastDetection = null;
       lastObservedAt = 0;
@@ -501,47 +449,67 @@
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
     return canvas;
   }
-  async function capture(automatic = false) {
+  async function nextCaptureFrame(previousFrame, token) {
+    const deadline = performance.now() + 180;
+    while (token === generation && performance.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 12));
+      if (currentFrameTime() !== previousFrame) return true;
+    }
+    return false;
+  }
+  async function capture(automatic = false, triggerDetection = null) {
     if (!['searching', 'stable'].includes(state)) return;
     const token = generation;
-    const anchor = lastDetection?.quad;
-    const reserve = automatic ? bufferedFrames.filter(frame => performance.now() - frame.at <= 1200
-      && movement(anchor, frame.detection.quad) <= .025) : [];
-    const captured = [...reserve];
+    const anchor = (triggerDetection || lastDetection)?.quad;
+    const encodings = [];
+    let captureError;
+    let previousFrame = currentFrameTime();
     setState('capturing');
     clearTimeout(timer);
-    status('Capturing…', 'Keep still for a moment.');
+    status('Page captured', 'Choosing the clearest photo automatically.');
+    const saveFrame = (canvas, detection) => {
+      const width = canvas.width, height = canvas.height;
+      // Freeze all three images without waiting for each JPEG callback. The
+      // first good image survives focus changes or motion during the burst.
+      encodings.push(encode(canvas).then(blob => ({ blob, detection,
+        score: focusScore(detection), width, height
+      })).catch(error => { captureError = error; return null; })
+        .finally(() => { canvas.width = canvas.height = 0; }));
+    };
     try {
-      // Include recent clear frames from before the shutter. A focus/exposure
-      // adjustment immediately after detection must not lose the good scan.
-      const attempts = Math.max(1, 3 - captured.length);
-      let captureError;
-      for (let index = 0; index < attempts; index++) {
-        if (index) await new Promise(resolve => setTimeout(resolve, 130));
+      for (let index = 0; index < 3; index++) {
+        if (index && !await nextCaptureFrame(previousFrame, token)) break;
         if (token !== generation) return;
+        previousFrame = currentFrameTime();
         let canvas;
         try {
           canvas = snapshot();
-          const detection = detect(canvas, lastDetection);
+          // This is the exact decoded frame analyzed by tick in this JS task;
+          // re-running detection would discard it if autofocus changes later.
+          const detection = index === 0 && triggerDetection ? triggerDetection : detect(canvas, lastDetection);
           if (automatic && (!captureReady(detection) || movement(anchor, detection.quad) > .03)) continue;
-          const blob = await encode(canvas);
-          if (token !== generation) return;
-          captured.push({ blob, detection, score: focusScore(detection), width: canvas.width, height: canvas.height });
+          saveFrame(canvas, detection);
+          canvas = null; // Encoding owns this frozen canvas until it settles.
         } catch (error) { captureError = error; }
         finally { if (canvas) canvas.width = canvas.height = 0; }
       }
       if (token !== generation) return;
-      if (!captured.length) {
+      if (!encodings.length) {
         if (captureError) throw captureError;
-        resetStability();
+        resetReadiness();
         setState('searching');
-        status('The page moved', 'Hold steady while the yellow frame is visible.');
+        status('Looking for a clear view', 'Scanning automatically when the page is clear.');
         tick(token);
         return;
       }
-      candidates = captured.sort((first, second) => second.score - first.score).slice(0, 3)
-        .map(candidate => ({ ...candidate, url: URL.createObjectURL(candidate.blob) }));
+      // The photos are frozen; the user can move the phone while encoding and
+      // page correction finish. No more camera frames are needed.
       stopCamera();
+      const captured = (await Promise.all(encodings)).filter(Boolean);
+      if (token !== generation) return;
+      if (!captured.length) throw captureError || new Error('Could not encode this scan');
+      candidates = captured.sort((first, second) => second.score - first.score)
+        .map(candidate => ({ ...candidate, url: URL.createObjectURL(candidate.blob) }));
       showAlternatives();
       await reviewCandidates(token);
     } catch (error) {

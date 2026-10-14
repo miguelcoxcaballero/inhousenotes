@@ -25,9 +25,11 @@ function installCameraFixture(options) {
     detections: [],
     pending: [],
     stopFrames: [],
-    frames: 0
+    frames: 0,
+    allowCapture: !options.deferCapture
   };
   addEventListener('scanner-live-detection', event => {
+    if (!fake.allowCapture && event.detail) event.detail.confidence = .7;
     fake.detections.push(event.detail);
     if (fake.detections.length > 40) fake.detections.shift();
   });
@@ -97,9 +99,9 @@ async function openScanner(page, options = {}) {
   await expect(page.locator('#liveScanner')).toBeVisible();
 }
 
-test('live video draws the detected yellow frame and captures a stable page for review', async ({ page }) => {
+test('live video draws the yellow frame and captures as soon as the page is clear', async ({ page }) => {
   test.setTimeout(45_000);
-  await openScanner(page);
+  await openScanner(page, { deferCapture: true });
   await expect(page.locator('#liveVideo')).toBeVisible();
   await page.waitForFunction(() => {
     const video = document.getElementById('liveVideo');
@@ -143,6 +145,7 @@ test('live video draws the detected yellow frame and captures a stable page for 
   expect(overlay.markers).toBe(2);
   expect(overlay.cornerError).toBeLessThan(.025);
   expect(overlay.constraints.audio).toBe(false);
+  await page.evaluate(() => { __scannerCameraFixture.allowCapture = true; });
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 30_000 });
   await expect(page.locator('#livePreview')).toBeVisible();
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
