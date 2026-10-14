@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.0.17",
-    "versionCode": 18,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.17/inhouse-notes-release-v1.0.17.apk",
-    "apkSha256": "91384a7ab7a377fe44f3dbb7991a915efa13f533236801efff74c21b98bcab35",
-    "apkSizeBytes": 3500244,
-    "changelog": "Offline documents and background sync.",
-    "releasedAt": "2026-10-14T11:59:09+00:00"
+    "version": "1.0.18",
+    "versionCode": 19,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.18/inhouse-notes-release-v1.0.18.apk",
+    "apkSha256": "f3ee11a515d00b76277a64965caf4444f3edf81e3c641e025d0597be65621ad4",
+    "apkSizeBytes": 3501180,
+    "changelog": "Reliable installer and APK recovery.",
+    "releasedAt": "2026-10-14T12:53:37+00:00"
   },
   "releases": [
+    {
+      "version": "1.0.18",
+      "versionCode": 19,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.18/inhouse-notes-release-v1.0.18.apk",
+      "apkSha256": "f3ee11a515d00b76277a64965caf4444f3edf81e3c641e025d0597be65621ad4",
+      "apkSizeBytes": 3501180,
+      "changelog": "Reliable installer and APK recovery.",
+      "releasedAt": "2026-10-14T12:53:37+00:00"
+    },
     {
       "version": "1.0.17",
       "versionCode": 18,

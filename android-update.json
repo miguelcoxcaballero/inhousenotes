@@ -1,10 +1,10 @@
 {
-  "version": "1.0.17",
-  "versionCode": 18,
+  "version": "1.0.18",
+  "versionCode": 19,
   "required": true,
-  "apkSizeBytes": 3500244,
-  "apkSha256": "91384a7ab7a377fe44f3dbb7991a915efa13f533236801efff74c21b98bcab35",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.17/inhouse-notes-release-v1.0.17.apk",
-  "publishedAppVersion": "5.12.0",
-  "releaseNotes": "Offline documents and background sync."
+  "apkSizeBytes": 3501180,
+  "apkSha256": "f3ee11a515d00b76277a64965caf4444f3edf81e3c641e025d0597be65621ad4",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.18/inhouse-notes-release-v1.0.18.apk",
+  "publishedAppVersion": "5.12.3",
+  "releaseNotes": "Reliable installer and APK recovery."
 }

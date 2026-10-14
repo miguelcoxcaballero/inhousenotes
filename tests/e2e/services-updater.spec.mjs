@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 test('B release opens the shared download manager and forwards native progress', async ({ page }) => {
-  const release = { version: '1.0.13', versionCode: 14, apkUrl: 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.13/inhouse-notes-release-v1.0.13.apk', apkSha256: 'b'.repeat(64), apkSizeBytes: 400, changelog: 'Updated Inhouse services updater.' };
+  const release = { version: '1.0.19', versionCode: 20, apkUrl: 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.19/inhouse-notes-release-v1.0.19.apk', apkSha256: 'b'.repeat(64), apkSizeBytes: 400, changelog: 'Updated Inhouse services updater.' };
   await page.addInitScript(() => {
     window.InhouseNative = {
-      getAppVersion: () => '1.0.12', getAppVersionCode: () => 13,
+      getAppVersion: () => '1.0.18', getAppVersionCode: () => 19,
       getUpdateState: () => '{}', saveUpdateState: () => {},
       installInhouseUpdate: (url, sha256) => {
         window.requestedUpdate = { url, sha256 };
@@ -18,7 +18,7 @@ test('B release opens the shared download manager and forwards native progress',
   });
   await page.goto('/?e2e=1&inhouse_app=1');
   await expect(page.getByRole('heading', { name: 'Update available', exact: true })).toBeVisible();
-  await expect(page.locator('.isu-versions')).toHaveText('1.0.12 → 1.0.13');
+  await expect(page.locator('.isu-versions')).toHaveText('1.0.18 → 1.0.19');
   await page.getByRole('button', { name: 'Update', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.requestedUpdate)).toEqual({ url: release.apkUrl, sha256: release.apkSha256 });
   await expect(page.getByRole('progressbar', { name: 'Download' })).toHaveAttribute('value', '50');
@@ -120,7 +120,11 @@ test('returning from a cancelled Android installation enables retry via persiste
   await page.setViewportSize({ width: 360, height: 800 });
   const release = await installResultFixture(page);
   await page.goto('/?e2e=1&inhouse_app=1');
+  const download = page.getByRole('link', { name: 'Download APK', exact: true });
+  await expect(download).toBeVisible();
+  await expect(download).toHaveAttribute('href', release.apkUrl.replace('/releases/download/', '/releases/tag/').replace(/\/[^/]+\.apk$/, ''));
   await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(download).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open installer', exact: true })).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'Update installed', exact: true })).toHaveCount(0);
 
@@ -184,4 +188,28 @@ test('Notes restart reports a persisted successful installation and Done dismiss
   await expect(page.getByRole('heading', { name: 'Update installed', exact: true })).toHaveCount(0);
   await page.locator('[data-inhouse-update-settings]').first().dispatchEvent('click');
   await expect(page.getByRole('dialog', { name: 'Updates', exact: true })).toContainText(`Inhouse Notes ${release.version}`);
+});
+
+
+test('the installed 1.0.16 shell escapes its broken installer through the versioned GitHub page', async ({ page }) => {
+  let nativeCalls = 0;
+  await page.exposeFunction('recordNativeInstall', () => { nativeCalls++; });
+  await page.addInitScript(() => {
+    window.InhouseNative = {
+      getAppVersion: () => '1.0.16', getAppVersionCode: () => 17,
+      getUpdateState: () => '{}', saveUpdateState: () => {},
+      getInstallState: () => '{}',
+      installInhouseUpdate: () => window.recordNativeInstall()
+    };
+  });
+  const release = { version: '1.0.18', versionCode: 19,
+    apkUrl: 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.18/inhouse-notes-release-v1.0.18.apk',
+    apkSha256: 'd'.repeat(64), apkSizeBytes: 3501180, changelog: 'Reliable installer and APK recovery.' };
+  await page.route('https://raw.githubusercontent.com/**', route => route.fulfill({ json: { schemaVersion: 1, channel: 'B', latest: release, releases: [release] } }));
+  const releasePage = 'https://github.com/miguelcoxcaballero/inhousenotes/releases/tag/android-v1.0.18';
+  await page.route(releasePage, route => route.fulfill({ contentType: 'text/html', body: '<h1>Release assets</h1>' }));
+  await page.goto('/?e2e=1&inhouse_app=1');
+  await page.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(page).toHaveURL(releasePage);
+  expect(nativeCalls).toBe(0);
 });
