@@ -107,10 +107,12 @@ test('cold offline navigation restores cached app, folder tree and independent d
 test('visible controls create a folder and document offline and keep the last edit when switching',async({page,context})=>{
  await page.addInitScript(()=>localStorage.setItem('drive-hint-email','controls@example.test'));
  await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());await context.setOffline(true);
+ await page.locator('#home-nav [data-home-tab="files"]').click();
  await page.locator('#btn-drive-new-folder').click();await page.locator('#new-folder-name').fill('Trips');
  await page.locator('#new-folder-confirm').click();
  const folder=page.locator('#drive-folders [data-drive-item-id]').filter({hasText:'Trips'});
  await expect(folder).toBeVisible();await folder.click();
+ await expect(page.locator('#drive-folder-view')).toBeVisible();await expect(page.locator('#drive-folder-view-title')).toHaveText('Trips');
  await page.locator('#btn-drive-new').click();await page.locator('#folder-picker-name').fill('Travel notes');
  await page.locator('#folder-picker-confirm').click();await expect(page.locator('#editor-view')).toBeVisible();
  const saved=await page.evaluate(async()=>{
