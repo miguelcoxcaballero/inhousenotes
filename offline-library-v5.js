@@ -12,10 +12,16 @@
     async function reload() {
         if (!account) return;
         const requestedAccount=account;
-        const [items,docs]=await Promise.all([S.list('entries',requestedAccount),S.list('documents',requestedAccount)]);
+        const [items,docs,driveRoot]=await Promise.all([S.list('entries',requestedAccount),S.list('documents',requestedAccount),S.read('settings',requestedAccount,'drive-root')]);
         if(account!==requestedAccount)return;
         const aliases=new Map(items.filter(e=>e.remoteId && e.remoteId!==e.id).map(e=>[e.remoteId,e.id]));
-        entries=items.filter(e=>!aliases.has(e.id)).map(e=>({...e,parents:(e.parents||['root']).map(p=>aliases.get(p)||p)}));
+        if(driveRoot?.remoteId)aliases.set(driveRoot.remoteId,'root');
+        const byId=new Map(items.map(e=>[e.id,e]));
+        entries=items.filter(e=>!aliases.has(e.id)).map(e=>{
+            const remote=!e.pending&&e.remoteId?byId.get(e.remoteId):null;
+            const item=remote?{...e,...remote,id:e.id,remoteId:e.remoteId}:e;
+            return {...item,parents:(item.parents||['root']).map(p=>aliases.get(p)||p)};
+        });
         documents=new Map(docs.map(doc=>[doc.id,doc]));
         document.querySelectorAll('[data-drive-item-id]').forEach(card=>decorate(card,card.dataset.driveItemId));
     }
@@ -32,6 +38,11 @@
     function folder(id, search='') {
         const needle=search.toLowerCase();
         return entries.filter(e=>!e.trashed && (e.parents||[]).includes(id||'root') && (!needle||e.name?.toLowerCase().includes(needle)));
+    }
+    function combine(remote,parent,search='') {
+        const local=folder(parent,search).filter(e=>e.pending||e.id.startsWith('local-'));
+        const ids=new Set(local.flatMap(e=>[e.id,e.remoteId]));
+        return [...local,...remote.filter(e=>!ids.has(e.id))];
     }
     function home() {
         const files=entries.filter(e=>!e.trashed&&e.mimeType==='application/pdf');
@@ -53,7 +64,7 @@
     }
     async function capture() {
         clearTimeout(captureTimer);
-        if (isWorker || !host || !account) return;
+        if (isWorker || !initialized || !host || !account) return;
         if (capturePromise) {await capturePromise;return capture();}
         const captureAccount=account;
         const task=(async()=>{
@@ -76,7 +87,7 @@
         return complete;
     }
     function scheduleCapture() {
-        if (isWorker || !host || !account) return;
+        if (isWorker || !initialized || !host || !account) return;
         clearTimeout(captureTimer);
         captureTimer=setTimeout(()=>{
             if (host.busy()) {scheduleCapture();return;}
@@ -130,6 +141,8 @@
             const rootResponse=await host.fetch('https://www.googleapis.com/drive/v3/files/root?fields=id');
             if(!rootResponse.ok)throw new Error('Could not read Drive root');
             const rootId=(await rootResponse.json()).id;
+            if(account!==catalogAccount)return;
+            await S.put('settings',catalogAccount,'drive-root',{remoteId:rootId});
             let pageToken='';const found=new Set();
             do {
                 const params=new URLSearchParams({q:"trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')",
@@ -156,7 +169,8 @@
     }
     async function kick() {
         if (isWorker || !initialized || !resumed || !account || offline() || syncFrame || host.busy()) return;
-        if (!(await S.list('outbox',account)).length || syncFrame) return;
+        const queue=await S.list('outbox',account);
+        if (!queue.some(op=>op.kind==='folder'||!host.activeDocument?.()||op.id!==host.currentId()) || syncFrame) return;
         const frame=document.createElement('iframe');frame.hidden=true;frame.title='Background document sync';
         frame.src=`/?offline-worker=1&v=${encodeURIComponent(host.version)}`;
         syncFrame=frame;document.body.appendChild(frame);
@@ -209,15 +223,16 @@
         
     }
     async function resume() {
-        if(isWorker)return;
+        if(isWorker||!initialized)return;
         await capture();resumed=true;kick().catch(()=>{});catalogue().catch(()=>{});
     }
     async function useAccount(email) {
         const next=String(email||'').trim().toLowerCase();
         if(!next||next===account)return;
-        account=next;await reload();host.refreshed?.();kick();
+        account=next;await reload();host.refreshed?.();kick();catalogue().catch(()=>{});
     }
+    function disable() {initialized=false;resumed=false;}
     function logout() {account='';entries=[];documents.clear();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
-    root.InhouseOfflineLibrary=Object.freeze({init,resume,account:()=>account,offline,ready:()=>initialized&&!!account,folder,home,observed,cache,capture,scheduleCapture,prepared,
+    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&!!account,folder,combine,home,observed,cache,capture,scheduleCapture,prepared,
         openRecord,pin,createFolder,catalogue,kick,scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
 })(window);

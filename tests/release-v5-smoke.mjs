@@ -1162,8 +1162,8 @@ assert.ok(
 assert.match(remoteMergeCheckpointSource, /if \(!indexedDbSaved && !backupSaved\)/);
 
 // Publication metadata must remain tied to an actual APK; shell advances when CI publishes it.
-assert.ok(['1.0.10','1.0.11','1.0.12','1.0.13','1.0.14','1.0.15','1.0.16'].includes(update.version));
-assert.ok(update.versionCode >= 11);
+assert.equal(update.version, '1.0.17');
+assert.equal(update.versionCode, 18);
 assert.ok(update.apkSizeBytes > 0);
 assert.match(notes, /per-account offline library/);
 assert.match(notes, /Android background synchronization uses WorkManager/);

@@ -105,7 +105,7 @@
         if(doc&&!doc.dirty&&doc.lastUploadedAt&&doc.session===getDocumentSessionToken()
             &&doc.contentVersion===driveContentVersion&&driveDirty&&!hasSmoothInteraction()) {
             const readOnly=state.isReadOnly;
-            await restore(doc,true);setReadOnlyMode(readOnly,{force:true});
+            await restore(doc,!!editorView&&!editorView.classList.contains('hidden'));setReadOnlyMode(readOnly,{force:true});
         }
         renderHome();
     }
@@ -127,7 +127,7 @@
             refreshToken:useAndroidPkceFlow()?localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY):null,clientId:useAndroidPkceFlow()?ANDROID_OAUTH_CLIENT_ID:null});
     }
     async function initialize() {
-        await L.init({version:APP_VERSION,currentId,busy:()=>hasSmoothInteraction()||driveOpenInProgress,
+        await L.init({version:APP_VERSION,currentId,activeDocument:()=>document.visibilityState==='visible'&&editorView&&!editorView.classList.contains('hidden'),busy:()=>hasSmoothInteraction()||driveOpenInProgress,
             identity:()=>({id:currentId(),version:driveContentVersion,session:getDocumentSessionToken()}),
             capture,fetch:driveFetch,status:text=>showStatus(text,{preserveState:true}),error:error=>{if(error?.name!=='AbortError')showStatus('Offline copy could not be saved. Keep this document open.',{error:true});},
             download:async file=>{
@@ -157,7 +157,12 @@
             const profile=await (await driveFetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json();
             if(profile.user?.emailAddress?.toLowerCase()!==account)throw new Error('Background account changed');
             const editor=await S.read('leases',account,'editor');
-            result=await root.InhouseOfflineSync.run(account,{fetch:driveFetch,build:workerBuild,merge:async(doc,meta)=>{await restore(doc,false);return merge(doc,meta);},
+            const guardedFetch=async(url,options)=>{
+                const active=await S.read('settings','__session__','active');
+                if(active?.enabled===false||(localStorage.getItem('drive-hint-email')||'').toLowerCase()!==account)throw new Error('Account signed out');
+                return driveFetch(url,options);
+            };
+            result=await root.InhouseOfflineSync.run(account,{fetch:guardedFetch,build:workerBuild,merge:async(doc,meta)=>{await restore(doc,false);return merge(doc,meta);},
                 skip:id=>editor?.documentId===id&&editor.expires>Date.now()});
         } catch(error) {result={pending:1,errors:[{message:error.message}]};}
         finally {
@@ -172,6 +177,7 @@
         state.driveHeadRevisionId=null;state.driveRevisionVersion=null;state.driveLastKnownModified=null;
         markDriveHydrated(id);driveDirty=true;
         await L.capture();saveDriveSession();L.kick();
+        if(navigator.onLine!==false)setTimeout(()=>queueDriveSave(true).catch(()=>{}),0);
         return id;
     }
     async function confirmed(fileId,blob,meta,version,session) {

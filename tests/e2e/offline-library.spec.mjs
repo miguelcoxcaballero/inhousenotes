@@ -103,3 +103,23 @@ test('cold offline navigation restores cached app, folder tree and independent d
     expect(restored.ink).toContain('cold-ink');
     await expect(page.locator('#welcome-view')).toBeHidden();
 });
+
+test('visible controls create a folder and document offline and keep the last edit when switching',async({page,context})=>{
+ await page.addInitScript(()=>localStorage.setItem('drive-hint-email','controls@example.test'));
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());await context.setOffline(true);
+ await page.locator('#btn-drive-new-folder').click();await page.locator('#new-folder-name').fill('Trips');
+ await page.locator('#new-folder-confirm').click();
+ const folder=page.locator('#drive-folders [data-drive-item-id]').filter({hasText:'Trips'});
+ await expect(folder).toBeVisible();await folder.click();
+ await page.locator('#btn-drive-new').click();await page.locator('#folder-picker-name').fill('Travel notes');
+ await page.locator('#folder-picker-confirm').click();await expect(page.locator('#editor-view')).toBeVisible();
+ const saved=await page.evaluate(async()=>{
+  const first=state.driveFileId;
+  state.pages[0].strokes.push({id:'last-moment',tool:'pen',color:'#000',width:2,points:[{x:2,y:3},{x:6,y:7}]});
+  bumpDriveContentVersion();
+  await createNewDriveDocumentWithFolder(state.driveParentIds[0],'Next');
+  const doc=await InhouseOfflineStore.read('documents',InhouseOfflineLibrary.account(),first);
+  return {first,ids:doc.snapshot.pages[0].strokes.map(s=>s.id)};
+ });
+ expect(saved.ids).toContain('last-moment');
+});

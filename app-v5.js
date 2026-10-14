@@ -2143,7 +2143,9 @@
             loadDriveSession();
             updateDriveProfileUI(null);
             showFastInitialView();
-            const offlineLibraryReady = window.InhouseOfflineApp.initialize();
+            const offlineLibraryReady = window.InhouseOfflineApp.initialize().catch(error=>{
+                window.InhouseOfflineLibrary.disable();console.warn('Offline library unavailable:',error);
+            });
             initDriveAuth();
             setupMobileHomePullToRefresh();
             document.documentElement.dataset.appReady = 'true';
@@ -6229,26 +6231,31 @@
             if (OFFLINE_WORKER) return;
             const localLibrary = window.InhouseOfflineLibrary?.ready();
             const signedIn = !!driveAccessToken;
-            const reconnecting = !!driveAuthNeedsReconnect && !!state.driveFileId && !driveSignedOut;
+            const reconnecting = !!driveAuthNeedsReconnect && !driveSignedOut;
             const connectedOrRecoverable = signedIn || reconnecting || localLibrary || !!window.__INHOUSE_BOOT_SIGNED_IN__;
             const hasPendingShared = !!window.pendingSharedDriveId;
             const pendingSharedOpenFailed = hasPendingShared && sharedLinkSignInPrompted;
-            if (driveLoginBtn) driveLoginBtn.style.display = connectedOrRecoverable ? 'none' : 'inline-flex';
+            if (driveLoginBtn) {
+                driveLoginBtn.style.display = (!connectedOrRecoverable || reconnecting && navigator.onLine!==false) ? 'inline-flex' : 'none';
+                driveLoginBtn.textContent = reconnecting ? 'Reconnect' : 'Sign in';
+            }
             if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !connectedOrRecoverable);
             if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !connectedOrRecoverable);
             if (driveSearchInput) driveSearchInput.disabled = !signedIn && !localLibrary;
             if (driveNewBtn) driveNewBtn.disabled = !signedIn && !localLibrary;
             if (driveNewFolderBtn) driveNewFolderBtn.disabled = !signedIn && !localLibrary;
             if (driveBinBtn) driveBinBtn.disabled = !signedIn;
-            if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
+            if (driveBackBtn) driveBackBtn.disabled = (!signedIn && !localLibrary) || driveFolderStack.length <= 1;
             if (driveStatusEl) {
-                driveStatusEl.textContent = reconnecting
+                driveStatusEl.textContent = localLibrary && navigator.onLine===false
+                    ? 'Offline · changes stay on this device'
+                    : reconnecting
                     ? 'Drive connection paused. Sign in again to continue syncing.'
                     : signedIn
                     ? 'Loading your PDFs...'
                     : (hasPendingShared
                         ? (pendingSharedOpenFailed ? 'Opening public preview...' : 'Opening shared document...')
-                        : 'Sign in to browse your Drive.');
+                        : localLibrary ? 'Connecting to Drive…' : 'Sign in to browse your Drive.');
             }
             if (!connectedOrRecoverable) {
                 if (driveStarredEmptyEl) driveStarredEmptyEl.classList.add('hidden');
@@ -6509,7 +6516,9 @@
                 });
         }
 
-        function signOutDrive() {
+        async function signOutDrive() {
+            try {await window.InhouseOfflineLibrary?.capture();}
+            catch(error) {showStatus('Keep this document open: its offline copy could not be saved.',{error:true});return;}
             window.InhouseOfflineStore?.put('settings','__session__','active',{enabled:false}).catch(()=>{});
             const offlineAccount=window.InhouseOfflineLibrary?.account();
             if(offlineAccount)window.InhouseOfflineStore?.put('settings',offlineAccount,'background-auth',{}).catch(()=>{});
@@ -8382,6 +8391,10 @@
             if (!safeFolderName) {
                 throw new Error('Drive folder name is required');
             }
+            if(navigator.onLine===false&&window.InhouseOfflineLibrary?.ready()) {
+                const existing=window.InhouseOfflineLibrary.folder(options.parentId||'root').find(e=>e.name===safeFolderName&&e.mimeType==='application/vnd.google-apps.folder');
+                return existing?.id||(await window.InhouseOfflineLibrary.createFolder(options.parentId||'root',safeFolderName)).id;
+            }
             const queryParts = [
                 `name='${escapeDriveQueryValue(safeFolderName)}'`,
                 `mimeType='application/vnd.google-apps.folder'`,
@@ -8425,7 +8438,7 @@
         // behavior of allowing duplicate folder names is expected (the user
         // is explicitly asking for a new one, not reusing an existing one).
         async function createDriveFolder(parentId, name) {
-            if (navigator.onLine === false || parentId?.startsWith('local-')) return window.InhouseOfflineLibrary.createFolder(parentId,name);
+            if (window.InhouseOfflineLibrary?.ready()) return window.InhouseOfflineLibrary.createFolder(parentId,name);
             const metadata = {
                 name,
                 mimeType: 'application/vnd.google-apps.folder',
@@ -8460,7 +8473,7 @@
             if (!name) return;
             closeNewFolderModal();
             try {
-                if (navigator.onLine !== false) await ensureDriveToken(false);
+                if (!window.InhouseOfflineLibrary?.ready()) await ensureDriveToken(false);
                 await createDriveFolder(driveCurrentFolderId, name);
                 showStatus('Folder created', { preserveState: true });
                 refreshDriveFolderContents();
@@ -8471,9 +8484,8 @@
         }
 
         async function findDrivePdfInFolder(folderId, fileBaseName, options = {}) {
-            await window.InhouseOfflineLibrary?.capture();
-            state.offlineLocalId = null;
             const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
+            if(navigator.onLine===false&&window.InhouseOfflineLibrary?.ready())return window.InhouseOfflineLibrary.folder(folderId).find(e=>e.mimeType==='application/pdf'&&(e.name===safeBase||e.name===`${safeBase}.pdf`))||null;
             const nameQuery = [`${safeBase}.pdf`, safeBase]
                 .map(name => `name='${escapeDriveQueryValue(name)}'`)
                 .join(' or ');
@@ -8517,7 +8529,7 @@
             const fileBaseName = `${config.filePrefix}${year}`;
             try {
                 showLoading(`Checking ${config.label} ${year}...`);
-                await ensureDriveToken(false);
+                if(navigator.onLine!==false)await ensureDriveToken(false);
                 const folderId = await ensureNamedDriveFolder(config.folderName);
                 const existingFile = await findDrivePdfInFolder(folderId, fileBaseName);
                 hideLoading();
@@ -9323,11 +9335,12 @@
         }
 
         async function refreshDriveFolderContents(options = {}) {
-            if (navigator.onLine === false && window.InhouseOfflineLibrary?.ready()) {window.InhouseOfflineApp.renderFolder();return;}
+            const remoteFolderId=window.InhouseOfflineLibrary?.ready()?await window.InhouseOfflineStore.resolveId(window.InhouseOfflineLibrary.account(),driveCurrentFolderId):driveCurrentFolderId;
+            if ((navigator.onLine === false || !remoteFolderId) && window.InhouseOfflineLibrary?.ready()) {window.InhouseOfflineApp.renderFolder();return;}
             try {
                 const search = driveSearchInput ? driveSearchInput.value.trim() : '';
                 const baseParts = [
-                    `'${driveCurrentFolderId}' in parents`,
+                    `'${remoteFolderId}' in parents`,
                     'trashed=false'
                 ];
                 if (search) {
@@ -9352,6 +9365,10 @@
                     files: filesData.files || []
                 };
                 await window.InhouseOfflineLibrary?.observed([...driveFolderCache.folders,...driveFolderCache.files],driveCurrentFolderId);
+                if(window.InhouseOfflineLibrary?.ready()) {
+                    const combined=window.InhouseOfflineLibrary.combine([...driveFolderCache.folders,...driveFolderCache.files],driveCurrentFolderId,search);
+                    driveFolderCache={folders:combined.filter(e=>e.mimeType==='application/vnd.google-apps.folder'),files:combined.filter(e=>e.mimeType==='application/pdf')};
+                }
                 renderDriveFolderContents(driveFolderCache.folders, driveFolderCache.files);
                 updateDriveStatusCounts();
             } catch (err) {
@@ -9766,15 +9783,18 @@
             });
         }
 
+        let offlineOpenInProgress = false;
         async function openDriveFile(file) {
-            if (!file || !file.id) return;
+            if (!file || !file.id || driveOpenInProgress || offlineOpenInProgress) return;
             if (window.InhouseOfflineLibrary?.ready()) {
+                offlineOpenInProgress=true;
                 try {
                     await window.InhouseOfflineLibrary.capture();
                     const local = await window.InhouseOfflineLibrary.openRecord(file);
                     if (local) {await window.InhouseOfflineApp.restore(local);return;}
                     if (navigator.onLine === false) {showStatus('Connect to download this document',{preserveState:true});return;}
                 } catch(error) {showStatus('Could not open the offline copy. Your changes are retained.',{error:true});return;}
+                finally {offlineOpenInProgress=false;}
             }
             state.offlineLocalId = null;
             if (driveOpenInProgress) return;
@@ -10209,6 +10229,10 @@
         }
 
         async function createNewDriveDocumentWithFolder(folderId, fileBaseName, options = {}) {
+            if(driveOpenInProgress || offlineOpenInProgress)return false;
+            try {await window.InhouseOfflineLibrary?.capture();}
+            catch(error) {showStatus('Keep this document open: its offline copy could not be saved.',{error:true});return false;}
+            state.offlineLocalId = null;
             const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
             const fileName = `${safeBase}.pdf`;
             const templateKind = normalizeTemplateKind(options.templateKind);
@@ -10285,7 +10309,7 @@
 
             try {
                 showLoading('Creating PDF...');
-                if (navigator.onLine === false || folderId?.startsWith('local-')) {
+                if (window.InhouseOfflineLibrary?.ready()) {
                     await window.InhouseOfflineApp.newDocument();
                     showStatus('Created on this device',{preserveState:true});return true;
                 }
@@ -10518,16 +10542,19 @@
         }
 
         async function refreshFolderPickerFolders() {
-            if (navigator.onLine === false && window.InhouseOfflineLibrary?.ready()) {
+            const remoteFolderId=window.InhouseOfflineLibrary?.ready()?await window.InhouseOfflineStore.resolveId(window.InhouseOfflineLibrary.account(),folderPickerCurrentFolderId):folderPickerCurrentFolderId;
+            if ((navigator.onLine === false || !remoteFolderId) && window.InhouseOfflineLibrary?.ready()) {
                 renderFolderPickerList(window.InhouseOfflineLibrary.folder(folderPickerCurrentFolderId).filter(e=>e.mimeType==='application/vnd.google-apps.folder'));return;
             }
             if (!driveAccessToken || !folderPickerList) return;
             try {
-                const q = encodeURIComponent(`'${folderPickerCurrentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+                const q = encodeURIComponent(`'${remoteFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
                 const fields = encodeURIComponent('files(id,name,folderColorRgb)');
                 const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=name&pageSize=200&fields=${fields}`);
                 const data = await res.json();
-                renderFolderPickerList(data.files || []);
+                const folders=(data.files||[]).map(e=>({...e,mimeType:'application/vnd.google-apps.folder'}));
+                await window.InhouseOfflineLibrary?.observed(folders,folderPickerCurrentFolderId);
+                renderFolderPickerList(window.InhouseOfflineLibrary?.ready()?window.InhouseOfflineLibrary.combine(folders,folderPickerCurrentFolderId).filter(e=>e.mimeType==='application/vnd.google-apps.folder'):folders);
             } catch (err) {
                 renderFolderPickerList([]);
             }
@@ -22611,6 +22638,14 @@
         }
 
         async function yieldToMainThread() {
+            if(OFFLINE_WORKER || document.hidden) {
+                await new Promise(resolve=>{
+                    const channel=new MessageChannel();
+                    channel.port1.onmessage=()=>{channel.port1.close();channel.port2.close();resolve();};
+                    channel.port2.postMessage(null);
+                });
+                return;
+            }
             await new Promise((resolve) => {
                 if (typeof requestAnimationFrame === 'function') {
                     requestAnimationFrame(() => resolve());
@@ -29270,7 +29305,7 @@
                     return;
                 }
             } catch (err) { }
-            if (preferAnimationFrame) {
+            if (preferAnimationFrame || OFFLINE_WORKER) {
                 await yieldToMainThread();
                 return;
             }
@@ -29678,13 +29713,13 @@
                                     throwIfSessionInvalid();
                                 }
                             }
-                            // Then: remove truly identical strokes (same content)
+                            // Distinct stroke IDs represent distinct marks, even at identical coordinates.
                             const seen = new Set();
                             const unique = [];
                             for (let strokeIndex = 0; strokeIndex < pageData.strokes.length; strokeIndex += 1) {
                                 const s = pageData.strokes[strokeIndex];
                                 const pts = Array.isArray(s.points) ? s.points : [];
-                                const fp = `${s.tool}|${s.color}|${s.width}|${pts.length}|${pts[0]?.x},${pts[0]?.y}|${pts[pts.length-1]?.x},${pts[pts.length-1]?.y}`;
+                                const fp = s.id ? `id:${s.id}` : JSON.stringify([s.tool,s.color,s.width,pts]);
                                 if (!seen.has(fp)) {
                                     seen.add(fp);
                                     unique.push(s);
@@ -31399,7 +31434,7 @@
                     const seen = new Set();
                     exportStrokes = exportStrokes.filter(s => {
                         const pts = Array.isArray(s.points) ? s.points : [];
-                        const fp = `${s.tool}|${s.color}|${s.width}|${pts.length}|${pts[0]?.x},${pts[0]?.y}|${pts[pts.length-1]?.x},${pts[pts.length-1]?.y}`;
+                        const fp = s.id ? `id:${s.id}` : JSON.stringify([s.tool,s.color,s.width,pts]);
                         if (seen.has(fp)) return false;
                         seen.add(fp);
                         return true;
@@ -31958,13 +31993,13 @@
                     continue;
                 }
 
-                // Deduplicate truly identical strokes before export (content fingerprint, not just ID).
+                // Preserve distinct marks; legacy id-less strokes require all their points to match.
                 let exportStrokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
                 if (exportStrokes.length > 1) {
                     const seen = new Set();
                     exportStrokes = exportStrokes.filter(s => {
                         const pts = Array.isArray(s.points) ? s.points : [];
-                        const fp = `${s.tool}|${s.color}|${s.width}|${pts.length}|${pts[0]?.x},${pts[0]?.y}|${pts[pts.length-1]?.x},${pts[pts.length-1]?.y}`;
+                        const fp = s.id ? `id:${s.id}` : JSON.stringify([s.tool,s.color,s.width,pts]);
                         if (seen.has(fp)) return false;
                         seen.add(fp);
                         return true;
