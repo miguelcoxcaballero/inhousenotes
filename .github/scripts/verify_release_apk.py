@@ -26,13 +26,14 @@ def certificate(path):
 
 assert certificate(apk) == certificate(previous), "Signing key changed"
 badging = subprocess.check_output([str(build_tools / "aapt"), "dump", "badging", str(apk)], text=True)
-assert "package: name='com.local.inhousenotes' versionCode='18' versionName='1.0.17'" in badging, "APK identity/version mismatch"
+assert "package: name='com.local.inhousenotes' versionCode='19' versionName='1.0.18'" in badging, "APK identity/version mismatch"
 assert "uses-permission: name='android.permission.CAMERA'" in badging, "APK cannot request a live camera"
 assert "uses-feature: name='android.hardware.camera'" not in badging, "Camera must remain optional for photo import"
 manifest = subprocess.check_output([str(build_tools / "aapt"), "dump", "xmltree", str(apk), "AndroidManifest.xml"], text=True)
 assert 'com.inhouse.services.updater.InstallActivity' in manifest, "Installer result activity is not registered"
+assert 'com.inhouse.services.updater.InstallReceiver' in manifest, 'Session receiver is not registered'
 with ZipFile(apk) as archive:
     dex = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.dex'))
-    for symbol in (b'InstallActivity', b'InstallState', b'InstallResultPolicy', b'getInstallState', b'InhouseSyncWorker', b'InhouseBackgroundSync'):
+    for symbol in (b'InstallActivity', b'InstallReceiver', b'android/content/pm/PackageInstaller', b'InstallState', b'InstallResultPolicy', b'getInstallState', b'InhouseSyncWorker', b'InhouseBackgroundSync'):
         assert symbol in dex, f"Installer result implementation missing: {symbol!r}"
-print("APK verified: com.local.inhousenotes 1.0.17 / 18; signing key unchanged.")
+print("APK verified: com.local.inhousenotes 1.0.18 / 19; signing key unchanged.")

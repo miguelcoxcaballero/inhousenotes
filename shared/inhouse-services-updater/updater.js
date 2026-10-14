@@ -380,7 +380,7 @@
         const pending = savedInstall(); if (pending) saveInstall({ ...pending, awaitingResult: true });
         installing = false; progress({ ...payload, percent: 100 }); idle();
         install.disabled = false; install.textContent = 'Open installer'; status('Confirm the installation in Android. If the app closes, open it again.');
-        showRecovery(typeof native()?.getInstallState !== 'function');
+        showRecovery(true);
       }
       else if (payload.status === 'permission_required') { installing = false; install.disabled = false; install.textContent = 'Continue'; idle(); status('Allow installs from this app, then tap Continue.', 'warn'); }
       else if (payload.status === 'error' || payload.status === 'cancelled' || payload.status === 'unconfirmed') {
@@ -465,9 +465,9 @@
         morph(() => { more.hidden = !open; toggle.setAttribute('aria-expanded', String(open)); });
       };
       body.append(toggle, more, statusNode);
-      // Older installed apps can take the recovery route immediately after a
-      // web refresh, without repeating an installer flow that may be broken.
-      downloadRecovery(body, release, typeof native()?.getInstallState === 'function');
+      // A bridge method is not evidence that the OEM installer works. Keep a
+      // recovery route available even on shells with native result reporting.
+      downloadRecovery(body, release);
       const dock = el('div', null, 'isu-dock'); dock.dataset.state = 'idle';
       const row = actions(dock);
       const later = button(row, 'Later', () => close(true)); later.dataset.isuIdle = '';

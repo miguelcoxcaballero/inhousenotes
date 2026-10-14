@@ -1,26 +1,45 @@
 package com.inhouse.services.updater;
 
 import android.app.Activity;
-import android.content.ClipData;
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.pm.PackageInstaller;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import java.io.InputStream;
+import java.io.OutputStream;
 
-/** Foreground proxy that retains Android's installer result and verifies the package. */
+/** Foreground staging UI. PackageInstaller owns the APK and the terminal result. */
 public final class InstallActivity extends Activity {
-    private static final int INSTALL_REQUEST = 4817;
     private final Handler main = new Handler(Looper.getMainLooper());
     private String attemptId;
     private boolean launched;
-    private boolean leftForInstaller;
-    private boolean returned;
+    private volatile boolean returned;
+    private volatile int sessionId = -1;
     private boolean resumed;
+    private final Runnable check = new Runnable() {
+        @Override public void run() {
+            if (!resumed || returned || isFinishing()) return;
+            String state = InstallState.status(InstallActivity.this, attemptId);
+            if ("installed".equals(state) || "error".equals(state) || "cancelled".equals(state)) {
+                returned = true; finish(); return;
+            }
+            // A self-update may kill the process before the receiver executes.
+            long expected = InstallState.expectedVersion(InstallActivity.this, attemptId);
+            if (expected > 0 && InstallState.actualVersion(InstallActivity.this) >= expected) {
+                complete("installed", "Update installed."); return;
+            }
+            main.postDelayed(this, 500);
+        }
+    };
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -32,28 +51,65 @@ public final class InstallActivity extends Activity {
             finish(); return;
         }
         try {
-            if (saved == null) {
-                InstallState.begin(this, attemptId, expected, getIntent().getStringExtra("versionName"));
-            } else {
+            if (saved == null) InstallState.begin(this, attemptId, expected, getIntent().getStringExtra("versionName"));
+            else {
                 if (!InstallState.isCurrent(this, attemptId)) { finish(); return; }
                 launched = saved.getBoolean("launched");
-                leftForInstaller = saved.getBoolean("leftForInstaller");
+                sessionId = saved.getInt("sessionId", -1);
             }
             if (InstallState.actualVersion(this) >= expected) {
                 complete("installed", "Update installed."); return;
             }
             showProgress();
-            if (!launched) {
-                Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE).setData(uri)
-                    .putExtra(Intent.EXTRA_RETURN_RESULT, true)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                install.setClipData(ClipData.newRawUri("Update APK", uri));
-                launched = true;
-                startActivityForResult(install, INSTALL_REQUEST);
-            }
         } catch (Exception error) {
-            complete("error", "Android could not open the installer. Try again.");
+            complete("error", "Android could not prepare the installer. Try again.");
         }
+    }
+
+    private void stage() {
+        launched = true;
+        new Thread(() -> {
+            PackageInstaller installer = getPackageManager().getPackageInstaller();
+            int created = -1;
+            boolean committed = false;
+            try {
+                PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+                params.setAppPackageName(getPackageName());
+                if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED);
+                created = installer.createSession(params);
+                sessionId = created;
+                try (PackageInstaller.Session session = installer.openSession(created)) {
+                    try (InputStream input = getContentResolver().openInputStream(getIntent().getData());
+                         OutputStream output = session.openWrite("base.apk", 0, -1)) {
+                        if (input == null) throw new java.io.IOException("Missing APK");
+                        byte[] buffer = new byte[64 * 1024];
+                        int count;
+                        while ((count = input.read(buffer)) != -1) {
+                            if (returned) throw new java.io.IOException("Installation interrupted");
+                            output.write(buffer, 0, count);
+                        }
+                        session.fsync(output);
+                    }
+                    if (returned || !InstallState.isCurrent(this, attemptId) || !"installing".equals(InstallState.status(this, attemptId))) throw new java.io.IOException("Installation interrupted");
+                    Intent callback = new Intent(this, InstallReceiver.class)
+                        .setAction(getPackageName() + ".INSTALL_RESULT." + attemptId)
+                        .putExtra("installId", attemptId);
+                    // The system fills EXTRA_STATUS and the confirmation Intent.
+                    // Mutable is required for PackageInstaller, with an explicit component.
+                    int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                    if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+                    PendingIntent result = PendingIntent.getBroadcast(this, created, callback, flags);
+                    session.commit(result.getIntentSender());
+                    committed = true;
+                }
+            } catch (Exception error) {
+                main.post(() -> { if (!returned) complete("error", "Android could not start the installation. Use Download APK or try again."); });
+            } finally {
+                if (!committed && created >= 0) {
+                    try { installer.abandonSession(created); } catch (Exception ignored) {}
+                }
+            }
+        }, "InhouseInstallSession").start();
     }
 
     private void showProgress() {
@@ -66,81 +122,42 @@ public final class InstallActivity extends Activity {
         TextView text = new TextView(this);
         text.setText("Complete the installation in Android.");
         text.setGravity(Gravity.CENTER);
-        text.setPadding(0, padding, 0, 0);
+        text.setPadding(0, padding, 0, padding);
         content.addView(text);
+        Button back = new Button(this);
+        back.setText("Back to app");
+        back.setOnClickListener(view -> onBackPressed());
+        content.addView(back);
         setContentView(content);
-    }
-
-    @Override protected void onActivityResult(int request, int result, Intent data) {
-        super.onActivityResult(request, result, data);
-        if (request != INSTALL_REQUEST || returned) return;
-        returned = true;
-        long expected = InstallState.expectedVersion(this, attemptId);
-        String outcome = InstallResultPolicy.callback(expected, InstallState.actualVersion(this), result);
-        String message = "installed".equals(outcome) ? "Update installed."
-            : "cancelled".equals(outcome) ? "Installation cancelled. You can try again."
-            : result == RESULT_OK ? "Could not confirm the installation. Try again."
-            : InstallResultPolicy.failureMessage(data == null ? 0
-                : data.getIntExtra("android.intent.extra.INSTALL_RESULT", 0));
-        complete(outcome, message);
     }
 
     private void complete(String status, String message) {
         returned = true;
         try { InstallState.finish(this, attemptId, status, message); }
-        catch (RuntimeException ignored) { /* The getter retains an in-memory storage error. */ }
+        catch (RuntimeException ignored) {}
         finally { finish(); }
     }
-
-    @Override protected void onPause() {
-        resumed = false;
-        if (launched) leftForInstaller = true;
-        super.onPause();
-    }
-
     @Override protected void onResume() {
-        super.onResume();
-        resumed = true;
-        checkInstallerReturn();
+        super.onResume(); resumed = true;
+        // Start only once this Activity is foreground, so Android can show consent.
+        if (!launched && !returned && !isFinishing() && attemptId != null) stage();
+        main.removeCallbacks(check); main.post(check);
     }
-
-    @Override public void onWindowFocusChanged(boolean focused) {
-        super.onWindowFocusChanged(focused);
-        if (focused) checkInstallerReturn();
+    @Override protected void onPause() {
+        resumed = false; main.removeCallbacks(check); super.onPause();
     }
-
-    private void checkInstallerReturn() {
-        if (!launched || !leftForInstaller || returned) return;
-        // Some OEM installers lose Activity results. A return without a result
-        // is unknown, not proof of success or cancellation; leave retry usable.
-        main.postDelayed(() -> {
-            if (!resumed || !hasWindowFocus() || returned || isFinishing() || isDestroyed()) return;
-            long expected = InstallState.expectedVersion(this, attemptId);
-            if (expected > 0 && InstallState.actualVersion(this) >= expected) {
-                complete("installed", "Update installed.");
-            } else {
-                complete("error", "Could not confirm the installation. Try again.");
-            }
-        }, 500);
-    }
-
     @Override public void onBackPressed() {
-        complete("error", "Could not confirm the installation. Try again.");
+        if (sessionId >= 0) {
+            try { getPackageManager().getPackageInstaller().abandonSession(sessionId); } catch (Exception ignored) {}
+        }
+        complete("error", "Installation has not been confirmed. Use Download APK or try again.");
     }
-
     @Override protected void onSaveInstanceState(Bundle out) {
-        out.putBoolean("launched", launched);
-        out.putBoolean("leftForInstaller", leftForInstaller);
+        out.putBoolean("launched", launched); out.putInt("sessionId", sessionId);
         super.onSaveInstanceState(out);
     }
-
     @Override protected void onDestroy() {
         main.removeCallbacksAndMessages(null);
-        if (isFinishing() && !returned) {
-            // Also cover system/predictive Back that bypasses onBackPressed.
-            try { InstallState.finish(this, attemptId, "error", "Could not confirm the installation. Try again."); }
-            catch (RuntimeException ignored) {}
-        }
         super.onDestroy();
     }
 }
