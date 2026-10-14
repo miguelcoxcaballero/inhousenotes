@@ -87,9 +87,9 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.13.2';</script>
-    <script src="boot-v5.js?v=5.13.2"></script>
-    <link rel="stylesheet" href="offline-v5.css?v=5.13.2">
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.14.0';</script>
+    <script src="boot-v5.js?v=5.14.0"></script>
+    <link rel="stylesheet" href="offline-v5.css?v=5.14.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -7896,8 +7896,11 @@
             border-radius: 6px;
         }
 
-        /* Same footprint as an A4 sheet; the tab sticks out into the gap
-           the way the stacked pages do on a sheet. */
+        /* A manila folder with the footprint of an A4 sheet. The back panel
+           is cut with a tab along its top edge, the front cover is cut a
+           little lower so the tab and the tops of the sheets show, and both
+           share one colour, a faint paper grain and the creases by the fold.
+           Everything stays inside the sheet's footprint. */
         .drive-folder-art {
             position: relative;
             width: 100%;
@@ -7905,45 +7908,54 @@
             perspective: 1100px;
             perspective-origin: 0 50%;
             container-type: inline-size;
+            --folder-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.25 0 0 0 0 0.1 0 0 0 0.2 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)'/%3E%3C/svg%3E");
         }
 
         .drive-folder-back {
             position: absolute;
-            inset: 0;
-            border-radius: 3px 10px 10px 3px;
-            background: var(--folder-color);
-            box-shadow: inset 9px 0 12px -9px rgba(0, 0, 0, 0.3), 0 8px 18px rgba(40, 25, 10, 0.16), 0 1px 2px rgba(40, 25, 10, 0.18);
+            top: 6%;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            border-radius: 2px 7px 7px 2px;
+            background-color: var(--folder-color);
+            background-image: var(--folder-grain);
+            background-size: 120px 120px;
+            box-shadow: inset 9px 0 12px -9px rgba(0, 0, 0, 0.28);
+            filter: drop-shadow(0 6px 10px rgba(40, 25, 10, 0.14)) drop-shadow(0 1px 1px rgba(40, 25, 10, 0.2));
         }
 
+        /* The tab is part of the back panel: same board, same colour. */
         .drive-folder-back::after {
             content: '';
             position: absolute;
-            top: 12%;
-            right: -8px;
-            width: 10px;
-            height: 24%;
-            border-radius: 0 6px 6px 0;
-            background: var(--folder-tab);
-            box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.12);
+            right: 7%;
+            bottom: calc(100% - 1px);
+            width: 44%;
+            height: calc(6.4cqi + 1px);
+            background-color: inherit;
+            background-image: inherit;
+            background-size: inherit;
+            clip-path: polygon(0 100%, 5% 42%, 8% 14%, 12% 2%, 16% 0, 84% 0, 88% 2%, 92% 14%, 95% 42%, 100% 100%);
         }
 
         .drive-folder-sheets {
             position: absolute;
-            top: 3%;
-            right: 2.5%;
-            bottom: 3%;
-            left: 5%;
-            border-radius: 2px;
+            top: 7.4%;
+            right: 3%;
+            bottom: 1.5%;
+            left: 4%;
+            border-radius: 1px;
             background: repeating-linear-gradient(180deg, transparent 0 9px, #e3e8ef 9px 10px) 0 18px / 100% calc(100% - 26px) no-repeat, #fff;
-            box-shadow: 2px 2px 0 -1px #f3f3ef, 2px 2px 0 0 rgba(0, 0, 0, 0.1);
+            box-shadow: 0 -2px 0 -1px #f3f3ef, 3px -3px 0 -1px #fbfbf8, 3px -3px 0 0 rgba(0, 0, 0, 0.08);
         }
 
         .drive-folder-cover {
             position: absolute;
-            top: 0;
+            top: 9.5%;
             bottom: 0;
             left: 0;
-            width: 94%;
+            width: 100%;
             transform-origin: 0 50%;
             transform-style: preserve-3d;
             transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
@@ -7953,22 +7965,27 @@
         .drive-folder-cover-inside {
             position: absolute;
             inset: 0;
-            border-radius: 3px 8px 8px 3px;
+            border-radius: 2px 7px 7px 2px;
             -webkit-backface-visibility: hidden;
             backface-visibility: hidden;
         }
 
         .drive-folder-cover-face {
             background:
-                linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0, rgba(0, 0, 0, 0.1) 7%, rgba(255, 255, 255, 0.2) 7.6%, rgba(255, 255, 255, 0) 9.5%, rgba(255, 255, 255, 0) 12%, rgba(0, 0, 0, 0.07) 12.4%, rgba(0, 0, 0, 0) 13.6%),
-                linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 45%),
+                linear-gradient(90deg, rgba(0, 0, 0, 0.09) 0, rgba(0, 0, 0, 0.09) 5%, rgba(255, 255, 255, 0.22) 5.5%, rgba(255, 255, 255, 0) 7%, rgba(255, 255, 255, 0) 8.6%, rgba(0, 0, 0, 0.07) 9%, rgba(0, 0, 0, 0) 10%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0, rgba(255, 255, 255, 0) 1.6%),
+                linear-gradient(160deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 45%),
+                var(--folder-grain) 0 0 / 120px 120px,
                 var(--folder-cover);
-            box-shadow: 3px 0 6px rgba(0, 0, 0, 0.14);
+            box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.12), 2px 1px 5px rgba(0, 0, 0, 0.1);
         }
 
         .drive-folder-cover-inside {
             transform: rotateY(180deg);
-            background: linear-gradient(270deg, rgba(0, 0, 0, 0.12) 0, rgba(0, 0, 0, 0) 10%), var(--folder-inside);
+            background:
+                linear-gradient(270deg, rgba(0, 0, 0, 0.12) 0, rgba(0, 0, 0, 0) 10%),
+                var(--folder-grain) 0 0 / 120px 120px,
+                var(--folder-inside);
         }
 
         @media (hover: hover) and (pointer: fine) {
@@ -7977,12 +7994,13 @@
             }
         }
 
-        /* Printed on the cover: name, a rule, the kind and the ⋮ menu */
+        /* Printed on the cover, clear of the creases: the name over a rule,
+           and the ⋮ menu in the bottom corner. */
         .drive-folder-print {
             position: absolute;
-            top: 9%;
-            right: 9%;
-            left: 16%;
+            top: 7%;
+            right: 8%;
+            left: 14%;
             display: flex;
             flex-direction: column;
             gap: 5px;
@@ -7990,10 +8008,10 @@
         }
 
         #drive-home .drive-folder-print .drive-card-title {
-            -webkit-line-clamp: 3;
+            -webkit-line-clamp: 4;
             font-family: 'Comfortaa', cursive;
             /* Sized to the folder, smaller for names with a long word (see createDriveFolderArt). */
-            font-size: var(--folder-name-size, 10cqi);
+            font-size: var(--folder-name-size, 11cqi);
             font-weight: 700;
             line-height: 1.2;
             letter-spacing: -0.02em;
@@ -8002,7 +8020,7 @@
         }
 
         #drive-home .drive-folder-print .drive-card-title-text {
-            -webkit-line-clamp: 3;
+            -webkit-line-clamp: 4;
         }
 
         .drive-folder-rule {
@@ -8010,16 +8028,6 @@
             height: 1px;
             background: currentColor;
             opacity: 0.35;
-        }
-
-        #drive-home .drive-folder-print .drive-card-sub {
-            margin: 0;
-            font-size: 0.62rem;
-            font-weight: 600;
-            letter-spacing: 0.09em;
-            text-transform: uppercase;
-            color: inherit;
-            opacity: 0.72;
         }
 
         /* Bottom right, below the name: the generic card menu sits top right,
@@ -8122,18 +8130,6 @@
             width: 14px;
             background: var(--folder-inside, #efdcb5);
             box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.14), 4px 0 10px rgba(0, 0, 0, 0.08);
-            pointer-events: none;
-        }
-
-        .drive-folder-view-tab {
-            position: absolute;
-            top: 26px;
-            right: 0;
-            z-index: 1;
-            width: 10px;
-            height: 110px;
-            border-radius: 7px 0 0 7px;
-            background: var(--folder-tab, #c9a465);
             pointer-events: none;
         }
 
@@ -8653,7 +8649,6 @@
         </div>
         <!-- An opened folder: it fills the content area in the folder's own colour. -->
         <section class="drive-folder-view hidden" id="drive-folder-view" aria-label="Folder">
-            <span class="drive-folder-view-tab" aria-hidden="true"></span>
             <div class="drive-folder-view-scroll" id="drive-folder-view-scroll">
                 <div class="drive-folder-view-inner">
                     <div class="drive-folder-view-head">
@@ -9673,19 +9668,19 @@
     <script defer src="vendor/jspdf/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script defer src="vendor/pdfjs/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script defer src="vendor/pdf-lib/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script defer src="collaboration-core-v5.js?v=5.13.2"></script>
-    <script defer src="live-collaboration-v5.js?v=5.13.2"></script>
-    <script defer src="runtime-core-v5.js?v=5.13.2"></script>
-    <script defer src="security-core-v5.js?v=5.13.2"></script>
-    <script defer src="timeline-core-v5.js?v=5.13.2"></script>
-    <script defer src="document-processing-v5.js?v=5.13.2"></script>
+    <script defer src="collaboration-core-v5.js?v=5.14.0"></script>
+    <script defer src="live-collaboration-v5.js?v=5.14.0"></script>
+    <script defer src="runtime-core-v5.js?v=5.14.0"></script>
+    <script defer src="security-core-v5.js?v=5.14.0"></script>
+    <script defer src="timeline-core-v5.js?v=5.14.0"></script>
+    <script defer src="document-processing-v5.js?v=5.14.0"></script>
     <script defer src="shared/inhouse-services-updater/updater.js?v=1.2.3"></script>
-    <script defer src="bullet-template.js?v=5.13.2"></script>
-    <script defer src="offline-store-v5.js?v=5.13.2"></script>
-    <script defer src="offline-sync-v5.js?v=5.13.2"></script>
-    <script defer src="offline-library-v5.js?v=5.13.2"></script>
-    <script defer src="offline-app-v5.js?v=5.13.2"></script>
-    <script defer src="app-v5.js?v=5.13.2"></script>
+    <script defer src="bullet-template.js?v=5.14.0"></script>
+    <script defer src="offline-store-v5.js?v=5.14.0"></script>
+    <script defer src="offline-sync-v5.js?v=5.14.0"></script>
+    <script defer src="offline-library-v5.js?v=5.14.0"></script>
+    <script defer src="offline-app-v5.js?v=5.14.0"></script>
+    <script defer src="app-v5.js?v=5.14.0"></script>
 
 </body>
 

@@ -1,11 +1,14 @@
 'use strict';
-const VERSION='5.13.2';
+const VERSION='5.14.0';
 const CACHE=`inhouse-shell-${VERSION}`;
 importScripts('offline-assets.js', 'offline-store-v5.js', 'offline-sync-v5.js');
 self.addEventListener('install',event=>event.waitUntil((async()=>{
     const cache=await caches.open(CACHE);
     // Installation is atomic: an incomplete shell never displaces a working one.
     await cache.addAll(self.INHOUSE_OFFLINE_ASSETS);
+    // Take over right away instead of waiting for every tab to close, so a
+    // reload shows the release that was just published.
+    await self.skipWaiting();
 })()));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{
     for(const key of await caches.keys())if(key.startsWith('inhouse-shell-')&&key!==CACHE)await caches.delete(key);
@@ -20,7 +23,7 @@ self.addEventListener('fetch',event=>{
     if(!self.INHOUSE_OFFLINE_ASSETS.includes(path))return;
     const requestedVersion=url.searchParams.get('v');
     if(requestedVersion&&/^\d+\.\d+\.\d+$/.test(requestedVersion)&&requestedVersion!==VERSION)return;
-    event.respondWith((async()=>{
+    event.respondWith(path.endsWith('.html')?freshPage(event.request,path):(async()=>{
         const cache=await caches.open(CACHE);
         const cached=await cache.match(path);
         if(cached)return cached;
@@ -29,6 +32,23 @@ self.addEventListener('fetch',event=>{
         return response;
     })());
 });
+// Pages go to the network first (revalidating the HTTP cache) so a reload
+// always gets the published release; the cached copy is only for offline or
+// a network that has not answered within a few seconds. A page from a newer
+// release is passed through but not cached here: its versioned assets belong
+// to the next worker's cache.
+async function freshPage(request,path){
+    const cache=await caches.open(CACHE);
+    const network=fetch(request,{cache:'no-cache'}).then(async response=>{
+        if(response.ok&&(await response.clone().text()).includes(`v=${VERSION}`))await cache.put(path,response.clone());
+        return response;
+    });
+    network.catch(()=>{});
+    const cached=await cache.match(path);
+    if(!cached)return network;
+    const timeout=new Promise(resolve=>setTimeout(()=>resolve(null),4000));
+    try{return (await Promise.race([network,timeout]))||cached;}catch(_){return cached;}
+}
 async function backgroundSync() {
     const S=self.InhouseOfflineStore;
     const session=await S.read('settings','__session__','active');
