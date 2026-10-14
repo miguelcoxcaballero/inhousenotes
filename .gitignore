@@ -17,3 +17,5 @@ android app/apk-output/
 
 .DS_Store
 Thumbs.db
+
+/rust-core/target/

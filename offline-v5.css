@@ -1,0 +1,12 @@
+html[data-boot-destination="drive"]:not([data-app-ready="true"]) #welcome-view { display:none !important; }
+html[data-boot-destination="drive"]:not([data-app-ready="true"]) #drive-home { display:flex !important; }
+.offline-unavailable { opacity:.42; filter:grayscale(1); }
+.offline-settings { color:inherit; background:var(--bg-color,#fafaf8); border:1px solid #9995; border-radius:18px; width:min(440px,85vw); padding:24px; }
+.offline-settings::backdrop { background:#0005; }
+.offline-settings h2 { margin-top:0; font-size:20px; }
+.offline-settings p { font-size:13px; opacity:.75; }
+.offline-settings input { width:65px; padding:6px; margin:8px; color:inherit; background:transparent; border:1px solid #9998; border-radius:6px; }
+.offline-settings button { font:inherit; cursor:pointer; padding:8px 14px; border-radius:20px; border:1px solid #9996; background:transparent; color:inherit; }
+.offline-settings-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+.offline-settings-actions button[value="save"] { background:#f5df4d; color:#151515; border:0; }
+.offline-recoveries { max-height:240px; overflow:auto; }

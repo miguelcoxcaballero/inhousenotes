@@ -3828,6 +3828,9 @@
     const map = curved ? (u, v) => mapFramePoint(frame, u, v) : projectivePageMap(pageQuad);
     const grid = vs.map(v => us.map(u => map(u, v)));
     options.onMesh?.({ us, vs, grid });
+    await globalThis.InhouseRust?.ready;
+    const rustWarp = options.disableRust ? null : globalThis.InhouseRust?.warp(input, output.width, output.height);
+    try {
     const orientation = Math.sign(polygonArea(pageQuad));
     const cross = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
     for (let row = 0; row < vs.length - 1; row += 1) {
@@ -3854,6 +3857,10 @@
         }
         if (cross(tl, tr, bl) * orientation <= 1e-7 || cross(br, bl, tr) * orientation <= 1e-7) {
           throw new Error("The page surface overlaps itself. Keep the whole sheet visible and try another frame.");
+        }
+        if (rustWarp) {
+          rustWarp.cell(leftX, rightX, topY, bottomY, tl, tr, bl, br);
+          continue;
         }
         const cellWidth = rightX - leftX;
         const firstU = (startX + 0.5 - leftX) / cellWidth;
@@ -3890,6 +3897,8 @@
       if (row % 3 === 2) await yieldToBrowser();
     }
     checkProcessingCancelled(options);
+    rustWarp?.copyTo(pixels);
+    } finally { rustWarp?.dispose(); }
     context.putImageData(image, 0, 0);
     output.scanSurface = { model: curved ? "curved-guided-surface" : "projective",
       columns: us.length - 1, rows: vs.length - 1, registered: !!registration };

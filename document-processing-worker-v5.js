@@ -1,9 +1,32 @@
+importScripts(`rust-core-v5.js${self.location.search}`);
 'use strict';
 importScripts(`timeline-core-v5.js${self.location.search}`);
 importScripts(`collaboration-core-v5.js${self.location.search}`);
 let nextObject = 0;
 const documents = new Map();
 const objects = new Map();
+const pngRasterCache = new Map();
+let pngRasterCacheBytes = 0;
+const PNG_RASTER_CACHE_LIMIT = 32 * 1024 * 1024;
+async function preparedPng(bytes) {
+    const buffer = bytes instanceof ArrayBuffer || ArrayBuffer.isView(bytes) ? bytes : null;
+    const key = buffer && self.crypto?.subtle ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',buffer)),v=>v.toString(16).padStart(2,'0')).join('') : null;
+    if (key && pngRasterCache.has(key)) {
+        const raster=pngRasterCache.get(key);pngRasterCache.delete(key);pngRasterCache.set(key,raster);return raster;
+    }
+    const {image:png}=await PDFLib.PngEmbedder.for(bytes);
+    const [colorBytes,alphaBytes]=await Promise.all([deflateBytes(png.rgbChannel),png.alphaChannel?deflateBytes(png.alphaChannel):null]);
+    const raster={width:png.width,height:png.height,colorBytes,alphaBytes};
+    const size=colorBytes.byteLength+(alphaBytes?.byteLength||0);
+    if(key && size<=PNG_RASTER_CACHE_LIMIT) {
+        while(pngRasterCacheBytes+size>PNG_RASTER_CACHE_LIMIT&&pngRasterCache.size) {
+            const oldest=pngRasterCache.keys().next().value, value=pngRasterCache.get(oldest);
+            pngRasterCacheBytes-=value.colorBytes.byteLength+(value.alphaBytes?.byteLength||0);pngRasterCache.delete(oldest);
+        }
+        pngRasterCache.set(key,raster);pngRasterCacheBytes+=size;
+    }
+    return raster;
+}
 function remember(value, owner) {
     const id = ++nextObject;
     objects.set(id, { value, owner });
@@ -75,10 +98,12 @@ async function deflateBytes(bytes) {
 async function preparePdfRaster(canvas) {
     const { width, height } = canvas;
     const rgba = canvas.getContext('2d').getImageData(0, 0, width, height).data;
-    const rgb = new Uint8Array(width * height * 3);
-    const alpha = new Uint8Array(width * height);
-    let transparent = false;
-    for (let p = 0, c = 0; p < alpha.length; p++, c += 4) {
+    await self.InhouseRust?.ready;
+    const rustSplit = self.InhouseRust?.splitRgba(rgba);
+    const rgb = rustSplit?.rgb || new Uint8Array(width * height * 3);
+    const alpha = rustSplit ? rustSplit.alpha : new Uint8Array(width * height);
+    let transparent = rustSplit?.transparent || false;
+    if (!rustSplit) for (let p = 0, c = 0; p < alpha.length; p++, c += 4) {
         rgb[p * 3] = rgba[c]; rgb[p * 3 + 1] = rgba[c + 1]; rgb[p * 3 + 2] = rgba[c + 2];
         alpha[p] = rgba[c + 3];
         transparent ||= alpha[p] !== 255;
@@ -156,7 +181,7 @@ async function processTask(type, data) {
         return ihnCanonicalDocumentHash(JSON.parse(data.json), data.structure, data.calendar, data.name, data.fields);
     }
     if (type.startsWith('pdf')) {
-        if (!self.PDFLib) importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js');
+        if (!self.PDFLib) importScripts('vendor/pdf-lib/pdf-lib.min.js');
         if (type === 'pdfReady') return true;
         if (type === 'pdfLoad' || type === 'pdfCreate') {
             if (type === 'pdfLoad') {
@@ -181,11 +206,7 @@ async function processTask(type, data) {
                 // Imported PNG backgrounds use exactly pdf-lib's decoder, but
                 // native compression instead of recompressing them in JS during
                 // final serialization. Preserve all decoded RGB/alpha samples.
-                const { image: png } = await PDFLib.PngEmbedder.for(data.bytes);
-                const [colorBytes, alphaBytes] = await Promise.all([
-                    deflateBytes(png.rgbChannel), png.alphaChannel ? deflateBytes(png.alphaChannel) : null
-                ]);
-                raster = { width: png.width, height: png.height, colorBytes, alphaBytes };
+                raster = await preparedPng(data.bytes);
             }
             const image = raster ? embedPreparedRaster(doc, raster) : await doc[data.kind](data.bytes);
             return { id: remember(image, data.id), ref: { objectNumber: image.ref.objectNumber } };
