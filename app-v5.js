@@ -8734,8 +8734,10 @@
                     if (settled) return;
                     settled = true;
                     preview.closest('.drive-card')?.style.removeProperty('--sheet-ratio');
-                    preview.classList.remove('is-loading', 'is-loaded');
-                    preview.replaceChildren(icon);
+                    preview.classList.remove('is-loading', 'is-loaded', 'is-landscape');
+                    // Keep the title and actions over the sheet when its image fails.
+                    img.remove();
+                    preview.prepend(icon);
                 };
 
                 const revealImage = async () => {
@@ -8761,6 +8763,7 @@
                         else if (card) card.style.removeProperty('--sheet-ratio');
                         preview.classList.remove('is-loading');
                         preview.classList.add('is-loaded');
+                        preview.classList.toggle('is-landscape', img.naturalWidth > img.naturalHeight);
                     });
                 };
 
@@ -8938,7 +8941,8 @@
             const card = document.createElement('div');
             card.className = 'drive-card';
             card.appendChild(createDriveQuickActions(file));
-            card.appendChild(createDrivePreview(file));
+            const preview = createDrivePreview(file);
+            card.appendChild(preview);
             if (file?.starred) {
                 const flag = document.createElement('span');
                 flag.className = 'drive-sheet-flag';
@@ -8947,7 +8951,7 @@
             }
             const info = createDriveCardInfo(file, describeDriveFile(file), 'Untitled');
             info.querySelector('.drive-card-sub').dataset.fileSub = 'true';
-            card.appendChild(info);
+            preview.appendChild(info);
             window.InhouseOfflineLibrary?.decorate(card,file.id);
             bindDriveCardActivation(card, () => openDriveFile(file));
             return card;
