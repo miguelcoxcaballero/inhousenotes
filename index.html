@@ -87,9 +87,9 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.13.0';</script>
-    <script src="boot-v5.js?v=5.13.0"></script>
-    <link rel="stylesheet" href="offline-v5.css?v=5.13.0">
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.13.1';</script>
+    <script src="boot-v5.js?v=5.13.1"></script>
+    <link rel="stylesheet" href="offline-v5.css?v=5.13.1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -7490,11 +7490,16 @@
             margin-bottom: 40px;
         }
 
-        #drive-home[data-home-tab="home"] .drive-section[data-home-section="home"],
-        #drive-home[data-home-tab="starred"] .drive-section[data-home-section="starred"],
-        #drive-home[data-home-tab="shared"] .drive-section[data-home-section="shared"],
-        #drive-home[data-home-tab="files"] .drive-section[data-home-section="files"] {
+        #drive-home[data-home-tab="home"] .drive-section[data-home-section~="home"],
+        #drive-home[data-home-tab="starred"] .drive-section[data-home-section~="starred"],
+        #drive-home[data-home-tab="shared"] .drive-section[data-home-section~="shared"],
+        #drive-home[data-home-tab="files"] .drive-section[data-home-section~="files"] {
             display: block;
+        }
+
+        #drive-home[data-home-tab="home"] .drive-tab-only,
+        #drive-home:not([data-home-tab="home"]) .drive-home-only {
+            display: none;
         }
 
         #drive-home .drive-section-header {
@@ -7616,6 +7621,31 @@
             grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
             gap: 32px 28px;
             margin-bottom: 0;
+        }
+
+        /* On Home, Starred and Shared are rows like Recents; their own tab shows the grid. */
+        #drive-home[data-home-tab="home"] #drive-starred,
+        #drive-home[data-home-tab="home"] #drive-shared {
+            display: flex;
+            gap: 28px;
+            overflow-x: auto;
+            overscroll-behavior-x: contain;
+            scroll-snap-type: x proximity;
+            scrollbar-width: none;
+            padding: 22px 10px 12px;
+            margin: -22px -10px 0;
+        }
+
+        #drive-home[data-home-tab="home"] #drive-starred::-webkit-scrollbar,
+        #drive-home[data-home-tab="home"] #drive-shared::-webkit-scrollbar {
+            display: none;
+        }
+
+        #drive-home[data-home-tab="home"] #drive-starred > *,
+        #drive-home[data-home-tab="home"] #drive-shared > * {
+            min-width: 0;
+            flex: 0 0 138px;
+            scroll-snap-align: start;
         }
 
         /* A4 sheet with pages underneath */
@@ -7858,6 +7888,7 @@
             aspect-ratio: 3 / 4;
             perspective: 1100px;
             perspective-origin: 0 50%;
+            container-type: inline-size;
         }
 
         .drive-folder-back {
@@ -7930,7 +7961,7 @@
             }
         }
 
-        /* Printed on the cover: name, kind, a rule, the ⋮ menu and a small imprint */
+        /* Printed on the cover: name, a rule, the kind and the ⋮ menu */
         .drive-folder-print {
             position: absolute;
             top: 9%;
@@ -7945,7 +7976,8 @@
         #drive-home .drive-folder-print .drive-card-title {
             -webkit-line-clamp: 3;
             font-family: 'Comfortaa', cursive;
-            font-size: 0.86rem;
+            /* Sized to the folder, smaller for names with a long word (see createDriveFolderArt). */
+            font-size: var(--folder-name-size, 10cqi);
             font-weight: 700;
             line-height: 1.2;
             letter-spacing: -0.02em;
@@ -7974,30 +8006,11 @@
             opacity: 0.72;
         }
 
-        .drive-folder-imprint {
-            position: absolute;
-            bottom: 8%;
-            left: 16%;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            font-family: 'Comfortaa', cursive;
-            font-size: 0.55rem;
-            font-weight: 600;
-            letter-spacing: -0.01em;
-            color: var(--folder-ink);
-            opacity: 0.5;
-            white-space: nowrap;
-            pointer-events: none;
-        }
-
-        .drive-folder-imprint svg {
-            width: 13px;
-            height: 8px;
-        }
-
+        /* Bottom right, below the name: the generic card menu sits top right,
+           where it would cover long names. */
         #drive-home .drive-folder-cover-face .drive-card-menu {
             position: absolute;
+            top: auto;
             right: 4px;
             bottom: 4px;
             margin: 0;
@@ -8352,6 +8365,16 @@
                 flex-basis: 112px;
             }
 
+            #drive-home[data-home-tab="home"] #drive-starred,
+            #drive-home[data-home-tab="home"] #drive-shared {
+                gap: 18px;
+            }
+
+            #drive-home[data-home-tab="home"] #drive-starred > *,
+            #drive-home[data-home-tab="home"] #drive-shared > * {
+                flex-basis: 112px;
+            }
+
             #drive-home .drive-file-grid,
             #drive-home .drive-sheet-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -8531,30 +8554,26 @@
                     autocomplete="off">
                 <div class="drive-status" id="drive-status">Sign in to browse your Drive.</div>
             </div>
-            <!-- Home tab: Recents first, then the root folders. -->
+            <!-- Home tab: Recents, Starred and Shared as rows. Starred and Shared also
+                 have their own tab, where the same lists show as a full grid. -->
             <section class="drive-section" data-home-section="home">
                 <div class="drive-section-header">
                     <h2 class="drive-section-title">Recents</h2>
                 </div>
                 <div class="drive-recents" id="drive-recents"></div>
             </section>
-            <section class="drive-section" data-home-section="home">
-                <div class="drive-section-header">
-                    <h2 class="drive-section-title">Folders</h2>
-                    <button class="drive-section-link" type="button" data-home-tab-link="files">
-                        My Drive
+            <section class="drive-section" data-home-section="home starred">
+                <div class="drive-section-header drive-home-only">
+                    <h2 class="drive-section-title">Starred</h2>
+                    <button class="drive-section-link drive-home-only" type="button" data-home-tab-link="starred">
+                        See all
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                             stroke-linejoin="round" aria-hidden="true">
                             <path d="m9 6 6 6-6 6" />
                         </svg>
                     </button>
                 </div>
-                <div class="drive-folder-grid" id="drive-home-folders"></div>
-                <div class="drive-empty hidden" id="drive-home-folders-empty">No folders yet.</div>
-            </section>
-            <!-- Starred tab -->
-            <section class="drive-section" data-home-section="starred">
-                <div class="drive-page-header">
+                <div class="drive-page-header drive-tab-only">
                     <div>
                         <h2 class="drive-page-title">Starred</h2>
                         <p class="drive-page-subtitle">Notebooks and folders you marked as favorites.</p>
@@ -8563,9 +8582,18 @@
                 <div class="drive-file-grid" id="drive-starred"></div>
                 <div class="drive-empty hidden" id="drive-starred-empty">No starred PDFs yet.</div>
             </section>
-            <!-- Shared tab -->
-            <section class="drive-section" data-home-section="shared">
-                <div class="drive-page-header">
+            <section class="drive-section" data-home-section="home shared">
+                <div class="drive-section-header drive-home-only">
+                    <h2 class="drive-section-title">Shared</h2>
+                    <button class="drive-section-link drive-home-only" type="button" data-home-tab-link="shared">
+                        See all
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" aria-hidden="true">
+                            <path d="m9 6 6 6-6 6" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="drive-page-header drive-tab-only">
                     <div>
                         <h2 class="drive-page-title">Shared with me</h2>
                         <p class="drive-page-subtitle">Notebooks other people shared with you.</p>
@@ -9629,19 +9657,19 @@
     <script defer src="vendor/jspdf/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script defer src="vendor/pdfjs/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script defer src="vendor/pdf-lib/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script defer src="collaboration-core-v5.js?v=5.13.0"></script>
-    <script defer src="live-collaboration-v5.js?v=5.13.0"></script>
-    <script defer src="runtime-core-v5.js?v=5.13.0"></script>
-    <script defer src="security-core-v5.js?v=5.13.0"></script>
-    <script defer src="timeline-core-v5.js?v=5.13.0"></script>
-    <script defer src="document-processing-v5.js?v=5.13.0"></script>
+    <script defer src="collaboration-core-v5.js?v=5.13.1"></script>
+    <script defer src="live-collaboration-v5.js?v=5.13.1"></script>
+    <script defer src="runtime-core-v5.js?v=5.13.1"></script>
+    <script defer src="security-core-v5.js?v=5.13.1"></script>
+    <script defer src="timeline-core-v5.js?v=5.13.1"></script>
+    <script defer src="document-processing-v5.js?v=5.13.1"></script>
     <script defer src="shared/inhouse-services-updater/updater.js?v=1.2.3"></script>
-    <script defer src="bullet-template.js?v=5.13.0"></script>
-    <script defer src="offline-store-v5.js?v=5.13.0"></script>
-    <script defer src="offline-sync-v5.js?v=5.13.0"></script>
-    <script defer src="offline-library-v5.js?v=5.13.0"></script>
-    <script defer src="offline-app-v5.js?v=5.13.0"></script>
-    <script defer src="app-v5.js?v=5.13.0"></script>
+    <script defer src="bullet-template.js?v=5.13.1"></script>
+    <script defer src="offline-store-v5.js?v=5.13.1"></script>
+    <script defer src="offline-sync-v5.js?v=5.13.1"></script>
+    <script defer src="offline-library-v5.js?v=5.13.1"></script>
+    <script defer src="offline-app-v5.js?v=5.13.1"></script>
+    <script defer src="app-v5.js?v=5.13.1"></script>
 
 </body>
 
