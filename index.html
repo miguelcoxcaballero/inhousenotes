@@ -87,9 +87,9 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.12.3';</script>
-    <script src="boot-v5.js?v=5.12.3"></script>
-    <link rel="stylesheet" href="offline-v5.css?v=5.12.3">
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.13.0';</script>
+    <script src="boot-v5.js?v=5.13.0"></script>
+    <link rel="stylesheet" href="offline-v5.css?v=5.13.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -7201,7 +7201,7 @@
             #drive-home #btn-drive-new {
                 position: fixed;
                 right: calc(env(safe-area-inset-right, 0px) + 16px);
-                bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+                bottom: calc(env(safe-area-inset-bottom, 0px) + 12px + 56px + 16px);
                 width: 52px;
                 height: 52px;
                 min-height: 52px;
@@ -7449,6 +7449,864 @@
                 transition-duration: 0.01ms;
             }
         }
+
+        /* ┄ § 2.11  Home: tabs, A4 sheets and manila folders (5.13) ┄┄┄┄┄┄┄┄┄┄┄┄┄
+           Files are full A4 sheets with pages underneath; folders are vertical
+           manila folders that open like a book. The bottom navigation copies
+           the inhouse photos FloatingPhotoNavigation: a 56px capsule (radius
+           28) with 16/8/16/12 margins, 6px inner padding, a 44px selected pill
+           with a 20px icon and 14px/500 labels, in the photos Material 3 tones. */
+        #drive-home {
+            --home-nav-bg: #eeeeee;
+            --home-nav-selected: #ffdbc9;
+            --home-nav-on-selected: #5c4131;
+            --home-nav-label: #4c4546;
+            --home-nav-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 4px 10px 2px rgba(0, 0, 0, 0.06);
+            --home-nav-space: calc(76px + env(safe-area-inset-bottom, 0px));
+            --sheet-stack-1: #fbfbf9;
+            --sheet-stack-2: #f0efeb;
+            --sheet-stack-edge: rgba(0, 0, 0, 0.14);
+            --sheet-shadow: 0 1px 2px rgba(40, 30, 20, 0.1), 0 8px 20px rgba(40, 30, 20, 0.1);
+        }
+
+        [data-theme="dark"] #drive-home {
+            --home-nav-bg: #1f1f1f;
+            --home-nav-selected: #5b4130;
+            --home-nav-on-selected: #ffdcc6;
+            --home-nav-label: #cfc4c5;
+            --home-nav-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 12px 2px rgba(0, 0, 0, 0.35);
+            --sheet-stack-1: #e6e6e2;
+            --sheet-stack-2: #d6d6d1;
+            --sheet-stack-edge: rgba(0, 0, 0, 0.45);
+            --sheet-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 22px rgba(0, 0, 0, 0.45);
+        }
+
+        #drive-home .drive-main {
+            padding-bottom: calc(var(--home-nav-space) + 40px);
+        }
+
+        #drive-home .drive-section[data-home-section] {
+            display: none;
+            margin-bottom: 40px;
+        }
+
+        #drive-home[data-home-tab="home"] .drive-section[data-home-section="home"],
+        #drive-home[data-home-tab="starred"] .drive-section[data-home-section="starred"],
+        #drive-home[data-home-tab="shared"] .drive-section[data-home-section="shared"],
+        #drive-home[data-home-tab="files"] .drive-section[data-home-section="files"] {
+            display: block;
+        }
+
+        #drive-home .drive-section-header {
+            margin-bottom: 16px;
+            flex-wrap: nowrap;
+        }
+
+        #drive-home .drive-section-title,
+        .drive-subsection-title {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            text-transform: none;
+            color: var(--text-primary);
+        }
+
+        .drive-subsection-title {
+            margin-bottom: 16px;
+        }
+
+        #drive-home .drive-folder-grid + .drive-subsection-title {
+            margin-top: 38px;
+        }
+
+        .drive-section-link {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-secondary);
+            font: inherit;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .drive-section-link:hover {
+            background: rgba(0, 0, 0, 0.05);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .drive-section-link:hover {
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .drive-section-link svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .drive-page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 26px;
+            flex-wrap: wrap;
+        }
+
+        .drive-page-title {
+            margin: 0;
+            font-size: 1.75rem;
+            font-weight: 600;
+            line-height: 1.1;
+            letter-spacing: -0.035em;
+            color: var(--text-primary);
+        }
+
+        .drive-page-subtitle {
+            margin: 6px 0 0;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        /* Rows and grids of sheets and folders */
+        #drive-home .drive-recents {
+            gap: 28px;
+            padding: 22px 10px 12px;
+            margin: -22px -10px 0;
+            scroll-snap-type: x proximity;
+            scrollbar-width: none;
+        }
+
+        #drive-home .drive-recents::-webkit-scrollbar {
+            display: none;
+        }
+
+        #drive-home .drive-recents .drive-card,
+        #drive-home .drive-recents .drive-card-skeleton {
+            min-width: 0;
+            flex: 0 0 138px;
+        }
+
+        #drive-home .drive-file-grid,
+        #drive-home .drive-sheet-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+            gap: 40px 28px;
+            padding-top: 20px;
+            margin-top: -20px;
+        }
+
+        #drive-home .drive-sheet-grid-items {
+            display: contents;
+        }
+
+        #drive-home .drive-folder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+            gap: 32px 28px;
+            margin-bottom: 0;
+        }
+
+        /* A4 sheet with pages underneath */
+        #drive-home .drive-card {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 0;
+            padding: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            position: relative;
+            cursor: pointer;
+            transition: none;
+        }
+
+        #drive-home .drive-card:hover {
+            box-shadow: none;
+        }
+
+        #drive-home .drive-card:focus-visible {
+            outline: 2px solid var(--accent-orange);
+            outline-offset: 6px;
+            border-radius: 4px;
+        }
+
+        #drive-home .drive-card-preview {
+            aspect-ratio: 210 / 297;
+            width: 100%;
+            border-radius: 2px;
+            background: #fff;
+            box-shadow:
+                3px 3px 0 -1px var(--sheet-stack-1),
+                3px 3px 0 0 var(--sheet-stack-edge),
+                6px 6px 0 -2px var(--sheet-stack-2),
+                6px 6px 0 -1px var(--sheet-stack-edge),
+                var(--sheet-shadow);
+            transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        [data-theme="dark"] #drive-home .drive-card-preview {
+            background: #fff;
+        }
+
+        [data-theme="dark"] #drive-home .drive-card-preview img {
+            filter: brightness(0.92);
+        }
+
+        #drive-home .drive-card:hover .drive-card-preview,
+        #drive-home .drive-card:focus-visible .drive-card-preview {
+            transform: translateY(-4px);
+        }
+
+        #drive-home .drive-card-icon {
+            width: 30%;
+            height: auto;
+            color: rgba(0, 0, 0, 0.16);
+        }
+
+        .drive-sheet-flag {
+            position: absolute;
+            top: -7px;
+            right: 14px;
+            z-index: 2;
+            width: 13px;
+            height: 24px;
+            background: #ffde00;
+            clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+            filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+            pointer-events: none;
+            transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #drive-home .drive-card:hover .drive-sheet-flag {
+            transform: translateY(-4px);
+        }
+
+        .drive-card-info {
+            display: flex;
+            align-items: flex-start;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .drive-card-text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        #drive-home .drive-card-title {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            padding-right: 0;
+            font-size: 0.84rem;
+            font-weight: 600;
+            line-height: 1.3;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            color: var(--text-primary);
+        }
+
+        #drive-home .drive-card-title.is-shared {
+            display: flex;
+            align-items: flex-start;
+            gap: 5px;
+        }
+
+        #drive-home .drive-card-title-text {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            white-space: normal;
+        }
+
+        #drive-home .drive-shared-icon {
+            margin-top: 1px;
+        }
+
+        .drive-card-sub {
+            margin-top: 3px;
+            font-size: 0.74rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #drive-home .drive-card-menu {
+            position: static;
+            flex: 0 0 auto;
+            margin: -5px -7px 0 0;
+        }
+
+        #drive-home .drive-card-more {
+            width: 30px;
+            height: 30px;
+        }
+
+        #drive-home .drive-card-more:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        [data-theme="dark"] #drive-home .drive-card-more:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Quick actions over a sheet, like a selection in the editor */
+        .drive-card-tools {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            z-index: 6;
+            display: flex;
+            gap: 2px;
+            padding: 4px;
+            border-radius: 12px;
+            background: #fff;
+            color: #1a1a1a;
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.06);
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, 6px);
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+
+        [data-theme="dark"] .drive-card-tools {
+            background: #232322;
+            color: #f3f2ee;
+            box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.07);
+        }
+
+        .drive-card-tools button {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: inherit;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+        }
+
+        .drive-card-tools button:hover {
+            background: rgba(127, 127, 127, 0.14);
+        }
+
+        .drive-card-tools button.is-on {
+            color: #c99a00;
+        }
+
+        .drive-card-tools svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        @media (hover: hover) and (pointer: fine) {
+            #drive-home .drive-card:hover .drive-card-tools,
+            #drive-home .drive-card:focus-within .drive-card-tools {
+                opacity: 1;
+                pointer-events: auto;
+                transform: translate(-50%, 0);
+            }
+        }
+
+        /* Vertical manila folder that opens like a book */
+        #drive-home .drive-folder-card {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+            padding: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            position: relative;
+            cursor: pointer;
+        }
+
+        #drive-home .drive-folder-card:hover {
+            box-shadow: none;
+        }
+
+        #drive-home .drive-folder-card:focus-visible {
+            outline: 2px solid var(--accent-orange);
+            outline-offset: 6px;
+            border-radius: 6px;
+        }
+
+        .drive-folder-art {
+            position: relative;
+            width: calc(100% - 8px);
+            aspect-ratio: 3 / 4;
+            perspective: 1100px;
+            perspective-origin: 0 50%;
+        }
+
+        .drive-folder-back {
+            position: absolute;
+            inset: 0;
+            border-radius: 3px 10px 10px 3px;
+            background: var(--folder-color);
+            box-shadow: inset 9px 0 12px -9px rgba(0, 0, 0, 0.3), 0 8px 18px rgba(40, 25, 10, 0.16), 0 1px 2px rgba(40, 25, 10, 0.18);
+        }
+
+        .drive-folder-back::after {
+            content: '';
+            position: absolute;
+            top: 12%;
+            right: -8px;
+            width: 10px;
+            height: 24%;
+            border-radius: 0 6px 6px 0;
+            background: var(--folder-tab);
+            box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.12);
+        }
+
+        .drive-folder-sheets {
+            position: absolute;
+            top: 3%;
+            right: 2.5%;
+            bottom: 3%;
+            left: 5%;
+            border-radius: 2px;
+            background: repeating-linear-gradient(180deg, transparent 0 9px, #e3e8ef 9px 10px) 0 18px / 100% calc(100% - 26px) no-repeat, #fff;
+            box-shadow: 2px 2px 0 -1px #f3f3ef, 2px 2px 0 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .drive-folder-cover {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 94%;
+            transform-origin: 0 50%;
+            transform-style: preserve-3d;
+            transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+        }
+
+        .drive-folder-cover-face,
+        .drive-folder-cover-inside {
+            position: absolute;
+            inset: 0;
+            border-radius: 3px 8px 8px 3px;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+        }
+
+        .drive-folder-cover-face {
+            background:
+                linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0, rgba(0, 0, 0, 0.1) 7%, rgba(255, 255, 255, 0.2) 7.6%, rgba(255, 255, 255, 0) 9.5%, rgba(255, 255, 255, 0) 12%, rgba(0, 0, 0, 0.07) 12.4%, rgba(0, 0, 0, 0) 13.6%),
+                linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 45%),
+                var(--folder-cover);
+            box-shadow: 3px 0 6px rgba(0, 0, 0, 0.14);
+        }
+
+        .drive-folder-cover-inside {
+            transform: rotateY(180deg);
+            background: linear-gradient(270deg, rgba(0, 0, 0, 0.12) 0, rgba(0, 0, 0, 0) 10%), var(--folder-inside);
+        }
+
+        @media (hover: hover) and (pointer: fine) {
+            #drive-home .drive-folder-card:hover .drive-folder-cover {
+                transform: rotateY(-18deg);
+            }
+        }
+
+        .drive-folder-ghost {
+            position: fixed;
+            z-index: 70;
+            margin: 0;
+            pointer-events: none;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        .drive-folder-ghost .drive-folder-cover {
+            transition: none;
+        }
+
+        /* Skeletons keep the shape of what is loading */
+        #drive-home .drive-card-skeleton,
+        #drive-home .drive-folder-card-skeleton {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 0;
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        #drive-home .drive-card-skeleton .skeleton-preview {
+            order: -1;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 210 / 297;
+            border-radius: 2px;
+        }
+
+        #drive-home .drive-card-skeleton .skeleton-bar.title,
+        #drive-home .drive-folder-card-skeleton .skeleton-bar {
+            width: 70%;
+            height: 12px;
+            border-radius: 6px;
+        }
+
+        #drive-home .drive-folder-card-skeleton .skeleton-icon {
+            width: calc(100% - 8px);
+            min-width: 0;
+            height: auto;
+            min-height: 0;
+            aspect-ratio: 3 / 4;
+            border-radius: 3px 10px 10px 3px;
+        }
+
+        /* An opened folder fills the content area in its own colour */
+        #drive-home .drive-folder-view {
+            position: absolute;
+            top: var(--drive-folder-view-top, 64px);
+            right: 0;
+            bottom: 0;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--folder-color, #e3c58e);
+            color: var(--folder-ink, #1f1a14);
+            --sheet-shadow: 0 2px 4px rgba(0, 0, 0, 0.14), 0 12px 28px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.35s ease, color 0.35s ease;
+        }
+
+        #drive-home .drive-folder-view.hidden {
+            display: none;
+        }
+
+        .drive-folder-view::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 1;
+            width: 14px;
+            background: var(--folder-inside, #efdcb5);
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.14), 4px 0 10px rgba(0, 0, 0, 0.08);
+            pointer-events: none;
+        }
+
+        .drive-folder-view-tab {
+            position: absolute;
+            top: 26px;
+            right: 0;
+            z-index: 1;
+            width: 10px;
+            height: 110px;
+            border-radius: 7px 0 0 7px;
+            background: var(--folder-tab, #c9a465);
+            pointer-events: none;
+        }
+
+        .drive-folder-view-scroll {
+            position: relative;
+            flex: 1;
+            overflow: auto;
+            padding: 0 40px calc(var(--home-nav-space) + 40px) 46px;
+            overscroll-behavior: contain;
+        }
+
+        .drive-folder-view-inner {
+            max-width: 1080px;
+            margin: 0 auto;
+            transition: opacity 0.22s ease;
+        }
+
+        .drive-folder-view.is-switching .drive-folder-view-inner {
+            opacity: 0;
+        }
+
+        .drive-folder-view-head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 28px 0;
+        }
+
+        .drive-folder-view-heading {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .drive-folder-view-heading h2 {
+            margin: 0;
+            font-family: 'Comfortaa', cursive;
+            font-size: 1.75rem;
+            font-weight: 700;
+            line-height: 1.15;
+            letter-spacing: -0.03em;
+            color: inherit;
+            overflow-wrap: anywhere;
+        }
+
+        .drive-folder-view-btn {
+            width: 44px;
+            height: 44px;
+            flex: 0 0 auto;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: var(--folder-hl, rgba(0, 0, 0, 0.07));
+            color: inherit;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .drive-folder-view-btn:hover {
+            background: var(--folder-hl-strong, rgba(0, 0, 0, 0.12));
+        }
+
+        .drive-folder-view-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .drive-folder-view .drive-breadcrumbs {
+            margin: 4px 0 0;
+            color: inherit;
+            opacity: 0.8;
+        }
+
+        .drive-folder-view .drive-breadcrumb,
+        .drive-folder-view .drive-breadcrumb.active {
+            color: inherit;
+            background: transparent;
+        }
+
+        .drive-folder-view .drive-breadcrumb:hover {
+            background: var(--folder-hl, rgba(0, 0, 0, 0.07));
+        }
+
+        .drive-folder-view .drive-card-title,
+        .drive-folder-view .drive-card-sub,
+        .drive-folder-view .drive-card-more {
+            color: inherit;
+        }
+
+        #drive-home .drive-folder-view .drive-card-title {
+            color: inherit;
+        }
+
+        .drive-folder-view .drive-card-sub {
+            opacity: 0.75;
+        }
+
+        .drive-folder-view .drive-folder-grid:not(:empty) {
+            margin-bottom: 40px;
+        }
+
+        .drive-folder-view .drive-empty {
+            margin-top: 24px;
+            border-color: var(--folder-line, rgba(0, 0, 0, 0.25));
+            background: transparent;
+            color: inherit;
+        }
+
+        .drive-new-sheet {
+            align-self: start;
+            width: 100%;
+            aspect-ratio: 210 / 297;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: 1.5px dashed var(--folder-line, rgba(0, 0, 0, 0.25));
+            border-radius: 3px;
+            background: var(--folder-hl, rgba(0, 0, 0, 0.07));
+            color: inherit;
+            font: inherit;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .drive-new-sheet:hover {
+            background: var(--folder-hl-strong, rgba(0, 0, 0, 0.12));
+        }
+
+        .drive-new-sheet svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        /* Bottom navigation (inhouse photos FloatingPhotoNavigation) */
+        .home-nav {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 80;
+            display: flex;
+            justify-content: center;
+            padding: 8px calc(16px + env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+            pointer-events: none;
+        }
+
+        .home-nav-capsule {
+            display: flex;
+            width: 100%;
+            max-width: 496px;
+            height: 56px;
+            padding: 0 6px;
+            border-radius: 28px;
+            background: var(--home-nav-bg);
+            box-shadow: var(--home-nav-shadow);
+            overflow: hidden;
+            pointer-events: auto;
+        }
+
+        .home-nav-tab {
+            flex: var(--home-nav-flex, 5) 1 0px;
+            min-width: 0;
+            display: flex;
+            align-items: stretch;
+            padding: 6px 0;
+            border: none;
+            border-radius: 28px;
+            background: transparent;
+            font: inherit;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .home-nav-tab.is-active {
+            flex: 0 0 auto;
+        }
+
+        .home-nav-tab:focus-visible {
+            outline: 2px solid var(--accent-orange);
+            outline-offset: -2px;
+        }
+
+        .home-nav-pill {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 0 8px;
+            border-radius: 28px;
+            color: var(--home-nav-label);
+            font-size: 14px;
+            font-weight: 500;
+            line-height: 1;
+            transition: background-color 0.2s ease;
+        }
+
+        .home-nav-tab:hover .home-nav-pill {
+            background: rgba(127, 127, 127, 0.08);
+        }
+
+        .home-nav-tab.is-active .home-nav-pill {
+            padding: 0 12px;
+            background: var(--home-nav-selected);
+            color: var(--home-nav-on-selected);
+        }
+
+        .home-nav-pill svg {
+            display: none;
+            width: 20px;
+            height: 20px;
+            flex: 0 0 auto;
+        }
+
+        .home-nav-tab.is-active .home-nav-pill svg {
+            display: block;
+        }
+
+        .home-nav-pill > span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @media (max-width: 720px) {
+            #drive-home .drive-main {
+                padding-bottom: calc(var(--home-nav-space) + 84px);
+            }
+
+            .home-nav-capsule {
+                max-width: 560px;
+            }
+
+            #drive-home .drive-recents {
+                gap: 18px;
+            }
+
+            #drive-home .drive-recents .drive-card,
+            #drive-home .drive-recents .drive-card-skeleton {
+                flex-basis: 112px;
+            }
+
+            #drive-home .drive-file-grid,
+            #drive-home .drive-sheet-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 28px 16px;
+            }
+
+            #drive-home .drive-folder-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 24px 16px;
+            }
+
+            #drive-home .drive-card-title {
+                font-size: 0.78rem;
+            }
+
+            .drive-page-title {
+                font-size: 1.5rem;
+            }
+
+            .drive-folder-view-scroll {
+                padding: 0 16px calc(var(--home-nav-space) + 84px) 28px;
+            }
+
+            .drive-folder-view-head {
+                gap: 10px;
+                padding: 18px 0 20px;
+            }
+
+            .drive-folder-view-heading h2 {
+                font-size: 1.35rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .drive-folder-cover,
+            #drive-home .drive-card-preview,
+            .drive-sheet-flag,
+            .drive-card-tools,
+            .drive-folder-view-inner,
+            #drive-home .drive-folder-view {
+                transition: none;
+            }
+        }
     </style>
     <link rel="stylesheet" href="shared/inhouse-services-updater/updater.css?v=1.2.3">
 </head>
@@ -7504,7 +8362,7 @@
     </div>
 
     <!-- ── § 3.2  Drive home view ──────────────────────────────────────────── -->
-    <div id="drive-home" class="hidden">
+    <div id="drive-home" class="hidden" data-home-tab="home">
         <div class="drive-topbar">
             <div class="drive-brand">
                 <svg viewBox="0 0 40 24" fill="none">
@@ -7585,22 +8443,56 @@
                     autocomplete="off">
                 <div class="drive-status" id="drive-status">Sign in to browse your Drive.</div>
             </div>
-            <section class="drive-section">
+            <!-- Home tab: Recents first, then the root folders. -->
+            <section class="drive-section" data-home-section="home">
                 <div class="drive-section-header">
-                    <div class="drive-section-title">Recents</div>
+                    <h2 class="drive-section-title">Recents</h2>
                 </div>
                 <div class="drive-recents" id="drive-recents"></div>
             </section>
-            <section class="drive-section">
+            <section class="drive-section" data-home-section="home">
                 <div class="drive-section-header">
-                    <div class="drive-section-title">Starred</div>
+                    <h2 class="drive-section-title">Folders</h2>
+                    <button class="drive-section-link" type="button" data-home-tab-link="files">
+                        My Drive
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" aria-hidden="true">
+                            <path d="m9 6 6 6-6 6" />
+                        </svg>
+                    </button>
                 </div>
-                <div class="drive-recents" id="drive-starred"></div>
+                <div class="drive-folder-grid" id="drive-home-folders"></div>
+                <div class="drive-empty hidden" id="drive-home-folders-empty">No folders yet.</div>
+            </section>
+            <!-- Starred tab -->
+            <section class="drive-section" data-home-section="starred">
+                <div class="drive-page-header">
+                    <div>
+                        <h2 class="drive-page-title">Starred</h2>
+                        <p class="drive-page-subtitle">Notebooks and folders you marked as favorites.</p>
+                    </div>
+                </div>
+                <div class="drive-file-grid" id="drive-starred"></div>
                 <div class="drive-empty hidden" id="drive-starred-empty">No starred PDFs yet.</div>
             </section>
-            <section class="drive-section">
-                <div class="drive-section-header">
-                    <div class="drive-section-title">My Drive</div>
+            <!-- Shared tab -->
+            <section class="drive-section" data-home-section="shared">
+                <div class="drive-page-header">
+                    <div>
+                        <h2 class="drive-page-title">Shared with me</h2>
+                        <p class="drive-page-subtitle">Notebooks other people shared with you.</p>
+                    </div>
+                </div>
+                <div class="drive-file-grid" id="drive-shared"></div>
+                <div class="drive-empty hidden" id="drive-shared-empty">No shared docs.</div>
+            </section>
+            <!-- Files tab: the root of My Drive. Subfolders open in #drive-folder-view. -->
+            <section class="drive-section" data-home-section="files">
+                <div class="drive-page-header">
+                    <div>
+                        <h2 class="drive-page-title">My Drive</h2>
+                        <p class="drive-page-subtitle">Your folders and notebooks.</p>
+                    </div>
                     <div class="drive-section-actions">
                         <button class="btn btn-secondary btn-icon-square" id="btn-drive-new-folder"
                             title="New folder" aria-label="New folder">
@@ -7620,19 +8512,105 @@
                         </button>
                     </div>
                 </div>
-                <div class="drive-breadcrumbs" id="drive-breadcrumbs"></div>
+                <h3 class="drive-subsection-title">Folders</h3>
                 <div class="drive-folder-grid" id="drive-folders"></div>
+                <h3 class="drive-subsection-title">Notebooks</h3>
                 <div class="drive-file-grid" id="drive-folder-files"></div>
                 <div class="drive-empty hidden" id="drive-folder-empty">No PDFs found in this folder.</div>
             </section>
-            <section class="drive-section">
-                <div class="drive-section-header">
-                    <div class="drive-section-title">Shared docs</div>
-                </div>
-                <div class="drive-recents" id="drive-shared"></div>
-                <div class="drive-empty hidden" id="drive-shared-empty">No shared docs.</div>
-            </section>
         </div>
+        <!-- An opened folder: it fills the content area in the folder's own colour. -->
+        <section class="drive-folder-view hidden" id="drive-folder-view" aria-label="Folder">
+            <span class="drive-folder-view-tab" aria-hidden="true"></span>
+            <div class="drive-folder-view-scroll" id="drive-folder-view-scroll">
+                <div class="drive-folder-view-inner">
+                    <div class="drive-folder-view-head">
+                        <button class="drive-folder-view-btn" id="btn-folder-view-back" type="button"
+                            title="Close folder" aria-label="Close folder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="m15 6-6 6 6 6" />
+                            </svg>
+                        </button>
+                        <div class="drive-folder-view-heading">
+                            <h2 id="drive-folder-view-title">Folder</h2>
+                            <nav class="drive-breadcrumbs" id="drive-breadcrumbs" aria-label="Folder path"></nav>
+                        </div>
+                        <button class="drive-folder-view-btn" id="btn-folder-view-new-folder" type="button"
+                            title="New folder" aria-label="New folder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path
+                                    d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                                <line x1="12" y1="10" x2="12" y2="16" />
+                                <line x1="9" y1="13" x2="15" y2="13" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="drive-folder-grid" id="drive-view-folders"></div>
+                    <div class="drive-sheet-grid">
+                        <div class="drive-sheet-grid-items" id="drive-view-files"></div>
+                        <button class="drive-new-sheet" id="btn-folder-view-new-pdf" type="button">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" aria-hidden="true">
+                                <path d="M12 5v14M5 12h14" />
+                            </svg>
+                            <span>New PDF here</span>
+                        </button>
+                    </div>
+                    <div class="drive-empty hidden" id="drive-view-empty">This folder is empty.</div>
+                </div>
+            </div>
+        </section>
+        <!-- Bottom navigation: same measurements as the inhouse photos floating navigation. -->
+        <nav class="home-nav" id="home-nav" aria-label="Sections">
+            <div class="home-nav-capsule" role="tablist">
+                <button class="home-nav-tab is-active" type="button" role="tab" aria-selected="true"
+                    data-home-tab="home" title="Home" style="--home-nav-flex:4">
+                    <span class="home-nav-pill">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path fill="currentColor"
+                                d="M11.3 3.3a1 1 0 0 1 1.4 0l8.2 7.9c.6.6.2 1.7-.7 1.7H19v6.6a1.5 1.5 0 0 1-1.5 1.5h-3v-5.5h-5V21h-3A1.5 1.5 0 0 1 5 19.5v-6.6H3.8c-.9 0-1.3-1.1-.7-1.7z" />
+                        </svg>
+                        <span>Home</span>
+                    </span>
+                </button>
+                <button class="home-nav-tab" type="button" role="tab" aria-selected="false" data-home-tab="starred"
+                    title="Starred" style="--home-nav-flex:7">
+                    <span class="home-nav-pill">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path fill="currentColor"
+                                d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.7-5.2-2.8-5.2 2.8 1-5.7-4.2-4.1 5.8-.8z" />
+                        </svg>
+                        <span>Starred</span>
+                    </span>
+                </button>
+                <button class="home-nav-tab" type="button" role="tab" aria-selected="false" data-home-tab="shared"
+                    title="Shared" style="--home-nav-flex:6">
+                    <span class="home-nav-pill">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="9" cy="8" r="3.4" fill="currentColor" />
+                            <path fill="currentColor"
+                                d="M2.8 19.5c.6-3.4 3-5.7 6.2-5.7s5.6 2.3 6.2 5.7c.1.6-.3 1-.9 1H3.7c-.6 0-1-.4-.9-1z" />
+                            <circle cx="17.2" cy="8.6" r="2.6" fill="currentColor" />
+                            <path fill="currentColor"
+                                d="M16.6 13.4c2.6.2 4.3 2.3 4.7 5.3.1.5-.3.9-.8.9h-3.2c-.3-2.5-1.2-4.6-2.7-6 .6-.1 1.3-.2 2-.2z" />
+                        </svg>
+                        <span>Shared</span>
+                    </span>
+                </button>
+                <button class="home-nav-tab" type="button" role="tab" aria-selected="false" data-home-tab="files"
+                    title="Files" style="--home-nav-flex:5">
+                    <span class="home-nav-pill">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path fill="currentColor"
+                                d="M3 6.5A2.5 2.5 0 0 1 5.5 4H9l2 2.2h7.5A2.5 2.5 0 0 1 21 8.7v8.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" />
+                        </svg>
+                        <span>Files</span>
+                    </span>
+                </button>
+            </div>
+        </nav>
     </div>
 
 
@@ -8563,19 +9541,19 @@
     <script defer src="vendor/jspdf/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script defer src="vendor/pdfjs/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script defer src="vendor/pdf-lib/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script defer src="collaboration-core-v5.js?v=5.12.3"></script>
-    <script defer src="live-collaboration-v5.js?v=5.12.3"></script>
-    <script defer src="runtime-core-v5.js?v=5.12.3"></script>
-    <script defer src="security-core-v5.js?v=5.12.3"></script>
-    <script defer src="timeline-core-v5.js?v=5.12.3"></script>
-    <script defer src="document-processing-v5.js?v=5.12.3"></script>
+    <script defer src="collaboration-core-v5.js?v=5.13.0"></script>
+    <script defer src="live-collaboration-v5.js?v=5.13.0"></script>
+    <script defer src="runtime-core-v5.js?v=5.13.0"></script>
+    <script defer src="security-core-v5.js?v=5.13.0"></script>
+    <script defer src="timeline-core-v5.js?v=5.13.0"></script>
+    <script defer src="document-processing-v5.js?v=5.13.0"></script>
     <script defer src="shared/inhouse-services-updater/updater.js?v=1.2.3"></script>
-    <script defer src="bullet-template.js?v=5.12.3"></script>
-    <script defer src="offline-store-v5.js?v=5.12.3"></script>
-    <script defer src="offline-sync-v5.js?v=5.12.3"></script>
-    <script defer src="offline-library-v5.js?v=5.12.3"></script>
-    <script defer src="offline-app-v5.js?v=5.12.3"></script>
-    <script defer src="app-v5.js?v=5.12.3"></script>
+    <script defer src="bullet-template.js?v=5.13.0"></script>
+    <script defer src="offline-store-v5.js?v=5.13.0"></script>
+    <script defer src="offline-sync-v5.js?v=5.13.0"></script>
+    <script defer src="offline-library-v5.js?v=5.13.0"></script>
+    <script defer src="offline-app-v5.js?v=5.13.0"></script>
+    <script defer src="app-v5.js?v=5.13.0"></script>
 
 </body>
 
