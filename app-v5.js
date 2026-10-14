@@ -9161,8 +9161,7 @@
         function createDriveFolderCard(folder) {
             const card = document.createElement('div');
             card.className = 'drive-folder-card';
-            card.appendChild(createDriveFolderArt(folder));
-            card.appendChild(createDriveCardInfo(folder, isSharedDriveDoc(folder) ? 'Shared folder' : 'Folder', 'Folder'));
+            card.appendChild(createDriveFolderArt(folder, { menu: true }));
             bindDriveCardActivation(card, () => openDriveFolderFromCard(folder, card));
             return card;
         }
@@ -9407,11 +9406,15 @@
             el.style.setProperty('--folder-line', darkInk ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.55)');
         }
 
-        function createDriveFolderArt(folder) {
+        // The name, its kind and the ⋮ menu are printed on the front of the
+        // cover, so they swing away with it when the folder opens.
+        function createDriveFolderArt(folder, options = {}) {
             const art = document.createElement('div');
             art.className = 'drive-folder-art';
-            art.setAttribute('aria-hidden', 'true');
-            art.innerHTML = '<span class="drive-folder-back"></span><span class="drive-folder-sheets"></span><span class="drive-folder-cover"><span class="drive-folder-cover-face"></span><span class="drive-folder-cover-inside"></span></span>';
+            art.innerHTML = '<span class="drive-folder-back" aria-hidden="true"></span><span class="drive-folder-sheets" aria-hidden="true"></span><span class="drive-folder-cover"><span class="drive-folder-cover-face"><span class="drive-folder-print"><span class="drive-card-title"></span><span class="drive-folder-rule" aria-hidden="true"></span><span class="drive-card-sub"></span></span><span class="drive-folder-imprint" aria-hidden="true"><svg viewBox="0 0 40 24" fill="none"><path d="M4 22 L20 6 L36 22" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/></svg>inhouse notes</span></span><span class="drive-folder-cover-inside" aria-hidden="true"></span></span>';
+            applyDriveTitleWithSharedIcon(art.querySelector('.drive-card-title'), folder, 'Folder');
+            art.querySelector('.drive-card-sub').textContent = options.sub || (isSharedDriveDoc(folder) ? 'Shared folder' : 'Folder');
+            if (options.menu) art.querySelector('.drive-folder-cover-face').appendChild(createDriveItemMenu(folder));
             applyDriveFolderPalette(art, resolveDriveFolderColor(folder));
             return art;
         }
@@ -9460,8 +9463,8 @@
             };
         }
 
-        function createDriveFolderGhost(art, rect, fallbackColor) {
-            const ghost = art ? art.cloneNode(true) : createDriveFolderArt({ folderColorRgb: fallbackColor });
+        function createDriveFolderGhost(art, rect, fallbackColor, fallbackName = 'Folder') {
+            const ghost = art ? art.cloneNode(true) : createDriveFolderArt({ name: fallbackName, folderColorRgb: fallbackColor });
             ghost.classList.add('drive-folder-ghost');
             ghost.removeAttribute('style');
             applyDriveFolderPalette(ghost, art ? (art.style.getPropertyValue('--folder-color') || fallbackColor) : fallbackColor);
@@ -9540,7 +9543,7 @@
             };
             if (!rect.width || !rect.height) return;
             const flight = computeDriveFolderFlight(rect, target);
-            const ghost = createDriveFolderGhost(art, rect, entry?.color || DRIVE_DEFAULT_FOLDER_COLOR);
+            const ghost = createDriveFolderGhost(art, rect, entry?.color || DRIVE_DEFAULT_FOLDER_COLOR, entry?.name);
             const cover = ghost.querySelector('.drive-folder-cover');
             const sheets = ghost.querySelector('.drive-folder-sheets');
             ghost.style.transform = flight.end;
@@ -9584,6 +9587,10 @@
             driveFolderViewEl.classList.remove('hidden');
             driveFolderViewEl.classList.remove('is-switching');
             if (driveHome) driveHome.classList.add('folder-open');
+            const active = document.activeElement;
+            if (!active || active === document.body || (driveMain && driveMain.contains(active)) || driveFolderViewEl.contains(active)) {
+                document.getElementById('btn-folder-view-back')?.focus({ preventScroll: true });
+            }
         }
 
         function hideDriveFolderView() {
@@ -9634,9 +9641,14 @@
             driveCurrentFolderId = 'root';
             driveFolderViewOriginId = null;
             renderDriveBreadcrumbs();
+            const focusWasInView = !!(driveFolderViewEl && driveFolderViewEl.contains(document.activeElement));
             const art = animate ? findVisibleDriveFolderArt(originId) : null;
             hideDriveFolderView();
             if (animate) playDriveFolderClose(art, closing);
+            if (focusWasInView) {
+                const originCard = (art || findVisibleDriveFolderArt(originId))?.closest('.drive-folder-card');
+                if (originCard) originCard.focus({ preventScroll: true });
+            }
             refreshDriveFolderContents({ silent: true });
         }
 

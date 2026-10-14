@@ -7520,6 +7520,11 @@
             margin-top: 38px;
         }
 
+        .drive-subsection-title:has(+ .drive-folder-grid:empty),
+        .drive-subsection-title:has(+ .drive-file-grid:empty) {
+            display: none;
+        }
+
         .drive-section-link {
             margin-left: auto;
             display: inline-flex;
@@ -7921,8 +7926,91 @@
 
         @media (hover: hover) and (pointer: fine) {
             #drive-home .drive-folder-card:hover .drive-folder-cover {
-                transform: rotateY(-18deg);
+                transform: rotateY(-12deg);
             }
+        }
+
+        /* Printed on the cover: name, kind, a rule, the ⋮ menu and a small imprint */
+        .drive-folder-print {
+            position: absolute;
+            top: 9%;
+            right: 9%;
+            left: 16%;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            color: var(--folder-ink);
+        }
+
+        #drive-home .drive-folder-print .drive-card-title {
+            -webkit-line-clamp: 3;
+            font-family: 'Comfortaa', cursive;
+            font-size: 0.86rem;
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            color: inherit;
+            overflow-wrap: break-word;
+        }
+
+        #drive-home .drive-folder-print .drive-card-title-text {
+            -webkit-line-clamp: 3;
+        }
+
+        .drive-folder-rule {
+            display: block;
+            height: 1px;
+            background: currentColor;
+            opacity: 0.35;
+        }
+
+        #drive-home .drive-folder-print .drive-card-sub {
+            margin: 0;
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+            color: inherit;
+            opacity: 0.72;
+        }
+
+        .drive-folder-imprint {
+            position: absolute;
+            bottom: 8%;
+            left: 16%;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-family: 'Comfortaa', cursive;
+            font-size: 0.55rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: var(--folder-ink);
+            opacity: 0.5;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .drive-folder-imprint svg {
+            width: 13px;
+            height: 8px;
+        }
+
+        #drive-home .drive-folder-cover-face .drive-card-menu {
+            position: absolute;
+            right: 4px;
+            bottom: 4px;
+            margin: 0;
+        }
+
+        #drive-home .drive-folder-cover-face .drive-card-more {
+            width: 30px;
+            height: 30px;
+            color: var(--folder-ink);
+        }
+
+        #drive-home .drive-folder-cover-face .drive-card-more:hover {
+            background: var(--folder-hl);
         }
 
         .drive-folder-ghost {
@@ -8116,7 +8204,7 @@
         }
 
         .drive-folder-view .drive-folder-grid:not(:empty) {
-            margin-bottom: 40px;
+            margin-bottom: 56px;
         }
 
         .drive-folder-view .drive-empty {
@@ -8271,8 +8359,8 @@
             }
 
             #drive-home .drive-folder-grid {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-                gap: 24px 16px;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 22px 18px;
             }
 
             #drive-home .drive-card-title {
