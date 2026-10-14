@@ -1,5 +1,6 @@
 //! Numeric pixel kernels only. Geometry validation, cancellation and persistence
 //! remain with the host. All dimensions/pointers are supplied by the private JS adapter.
+mod surface;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 
@@ -177,7 +178,9 @@ pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width
                 if let Some(values)=drawing {let upper=values[iy*fw+ix] as f64*(1.0-mx)+values[iy*fw+nx] as f64*mx;
                     let lower=values[ny*fw+ix] as f64*(1.0-mx)+values[ny*fw+nx] as f64*mx;draw=(upper*(1.0-my)+lower*my)/255.0;}
             }
-            let colored=sat>0.18||(sat>0.105&&local-lum>6.0_f64.max(local*0.035));
+            let deficit=local-lum;
+            let has_ink=!observed||deficit>(p[3]*1.5).max(local*0.025);
+            let colored=has_ink&&(sat>0.18||(sat>0.105&&deficit>6.0_f64.max(local*0.035)));
             if observed&&!colored&&lum>=local-p[3].max(local*0.0075) {out[i]=255;out[i+1]=255;out[i+2]=255;continue;}
             let neutral=observed&&!colored;let black=neutral&&(lum<local*0.16||(draw>0.85&&lum<local*0.26));
             let automatic=if neutral {[0.0;3]} else {[(r*p[4]).clamp(0.0,255.0),(g*p[5]).clamp(0.0,255.0),(b*p[6]).clamp(0.0,255.0)]};
@@ -197,9 +200,11 @@ pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width
             if observed&&colored {
                 let strongest=rgb[0].max(rgb[1]).max(rgb[2]);let weakest=rgb[0].min(rgb[1]).min(rgb[2]);
                 let dilution=1.0-((strongest-weakest)/strongest.max(1.0)).clamp(0.0,1.0);
-                let vibrance=1.0+0.6*(1.0-draw)*dilution;let tone=rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722;
+                let edge=((deficit/local.max(40.0)-0.025)/0.16).clamp(0.0,1.0);
+                let edge_strength=edge*edge*(3.0-2.0*edge);
+                let vibrance=1.0+0.6*(1.0-draw)*dilution*edge_strength;let tone=rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722;
                 for c in 0..3 {rgb[c]=tone+(rgb[c]-tone)*vibrance;}
-                let coverage=1.0+0.38*(1.0-draw)*((rgb[0].min(rgb[1]).min(rgb[2])-40.0)/90.0).clamp(0.0,1.0);for c in 0..3 {rgb[c]=p[11]-(p[11]-rgb[c])*coverage;}}
+                let coverage=1.0+0.38*(1.0-draw)*edge_strength*((rgb[0].min(rgb[1]).min(rgb[2])-40.0)/90.0).clamp(0.0,1.0);for c in 0..3 {rgb[c]=p[11]-(p[11]-rgb[c])*coverage;}}
             if colored&&max<100.0&&lum<80.0&&r>g&&g>b&&g>=r*0.35 {
                 let limit=(automatic[0]*0.2126+automatic[1]*0.7152+automatic[2]*0.0722)*1.1+3.0;
                 let mapped=rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722;

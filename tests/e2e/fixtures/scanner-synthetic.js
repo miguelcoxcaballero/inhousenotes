@@ -13,7 +13,9 @@
   };
   const INK_SWATCHES = [
     { name: 'red', x0: 2.7, x1: 4.3, y: 25.15, colour: '#d42b29', target: [232, 16, 16] },
-    { name: 'black', x0: 6.4, x1: 8, y: 25.15, colour: '#272727', target: [77, 77, 77] },
+    // Compare handwriting with its original pigment, not the old RGB 77
+    // calibration target which rewarded lifting dark writing to grey.
+    { name: 'black', x0: 6.4, x1: 8, y: 25.15, colour: '#272727', target: [39, 39, 39] },
     { name: 'blue', x0: 10.9, x1: 12.5, y: 25.15, colour: '#174fca', target: [0, 47, 217] },
     { name: 'green', x0: 15.1, x1: 16.7, y: 25.15, colour: '#51a933', target: [110, 255, 18] }
   ];

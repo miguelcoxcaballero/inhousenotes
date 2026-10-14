@@ -50,7 +50,7 @@ async function captureThree(page) {
       });
     };
     // Keep all captures manual so this tests the batch independently of the
-    // autofocus and five-frame auto-capture stability policy.
+    // automatic focus validation.
     const detect = ScannerPro.LiveDetection.detect;
     ScannerPro.LiveDetection.detect = (...args) => {
       const result = detect(...args);
@@ -77,8 +77,8 @@ async function previewColor(page) {
 test('all three photos run concurrently and the best corrected result wins regardless of completion order', async ({ page }) => {
   await captureThree(page);
   await page.evaluate(() => { parallelReview.finish(0, 'invalid'); parallelReview.finish(2); });
-  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'processing');
-  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
   await page.evaluate(() => parallelReview.finish(1));
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#liveAlternatives button').nth(2)).toHaveAttribute('aria-pressed', 'true');
@@ -143,7 +143,7 @@ test('choosing a thumbnail keeps that choice while other corrections finish and 
   await page.locator('#liveAlternatives button').nth(1).click();
   await page.evaluate(() => parallelReview.finish(1));
   await expect.poll(async () => (await previewColor(page))[0]).toBeGreaterThan(200);
-  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
   await page.evaluate(() => { parallelReview.finish(2); parallelReview.finish(0, 'original'); });
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#liveAlternatives button').nth(1)).toHaveAttribute('aria-pressed', 'true');

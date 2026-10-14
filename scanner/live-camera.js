@@ -578,7 +578,7 @@
       image.alt = '';
       button.append(image);
       button.onclick = () => {
-        if (!submitting) { explicitSelection = true; reviewCandidate(index, generation); }
+        if (!submitting && !button.disabled) { explicitSelection = true; reviewCandidate(index, generation); }
       };
       $('liveAlternatives').append(button);
     });
@@ -893,9 +893,15 @@
           pendingCandidates--;
           const image = $('liveAlternatives').children[index]?.querySelector('img');
           if (image && candidate.resultUrl) image.src = candidate.resultUrl;
+          const alternative = $('liveAlternatives').children[index];
+          if (alternative) {
+            alternative.disabled = !candidate.result?.corrected;
+            alternative.setAttribute('aria-label', candidate.result?.corrected ? `Review frame ${index + 1}` : 'Photo could not be corrected');
+          }
           const processingUrl = candidate.processingPreviewUrl;
           candidate.processingPreviewUrl = '';
-          if (!explicitSelection) {
+          if (!explicitSelection || (batch[selectedIndex]?.processingComplete && !batch[selectedIndex]?.result?.corrected)) {
+            explicitSelection = false;
             const ready = batch.map((value, i) => ({ value, i })).filter(({ value }) => value.processingComplete && value.result?.corrected);
             if (ready.length) selectedIndex = ready.reduce((best, next) => candidateRank(next.value) > candidateRank(best.value) ? next : best).i;
           }

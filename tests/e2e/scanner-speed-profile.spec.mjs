@@ -9,7 +9,8 @@ test('scan processing profile keeps geometry and reports measured stage timings'
     const blob = await new Promise(resolve => source.toBlob(resolve, 'image/jpeg', .94));
     source.width = source.height = 0;
     const scan = await ScannerPro.Lightweight.processPageAsync(blob, { previewProgress: true });
-    return { corrected: scan.corrected, timings: scan.timings, surface: scan.detection.frame?.metricSurface?.diagnostics, width: scan.width, height: scan.height };
+    return { corrected: scan.corrected, timings: scan.timings, detection:scan.detection.analysisTimings,
+      surface: scan.detection.frame?.metricSurface?.diagnostics, width: scan.width, height: scan.height };
   });
   console.log('SCAN_PROFILE', JSON.stringify(profile));
   expect(profile.corrected).toBe(true);

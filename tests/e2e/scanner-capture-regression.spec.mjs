@@ -175,6 +175,11 @@ test('retaking during correction cancels the old result and keeps the new previe
   await expect(page.locator('#liveCameraView')).toBeVisible();
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 20_000 });
   await expectDecodedPreview(page);
+  // Review now becomes available after the first verified photo. Let the
+  // current backups finish before checking that stale prior results do not
+  // change it; a better current backup may legitimately become the preview.
+  await expect.poll(() => page.evaluate(() => __captureRegression.completedResults.filter(call => call > 3).length),
+    {timeout:20000}).toBe(3);
   const before = await page.locator('#livePreview').getAttribute('src');
   await page.evaluate(() => __captureRegression.releaseResults());
   await expect.poll(() => page.evaluate(() => __captureRegression.completedResults.length)).toBe(6);

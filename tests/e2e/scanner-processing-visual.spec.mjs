@@ -195,3 +195,20 @@ test('the automatically selected frame shows its finished scan while the remaini
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review');
   await expect(page.locator('#liveAddBtn')).toBeEnabled();
 });
+
+test('a selected backup that fails correction cannot replace a successful scan',async({page})=>{
+  await prepare(page,true);
+  await page.locator('#liveAlternatives button').nth(1).click();
+  await page.evaluate(()=>{
+    processingVisual.calls[1].resolve({blob:processingVisual.calls[1].blob,corrected:false,
+      detection:{quality:{valid:false,reason:'live-contour-not-observed'}}});
+    processingVisual.finish(0);
+  });
+  await expect(page.locator('#liveAlternatives button').first()).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#liveAlternatives button').nth(1)).toBeDisabled();
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Scan ready. Checking the other photos…');
+  await page.evaluate(()=>processingVisual.calls[2].resolve({blob:processingVisual.calls[2].blob,corrected:false}));
+  await expect(page.locator('#liveReviewStatus')).toHaveText('Check the scan.');
+  await expect(page.locator('#liveAddBtn')).toBeEnabled();
+});
