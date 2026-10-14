@@ -87,9 +87,9 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.13.1';</script>
-    <script src="boot-v5.js?v=5.13.1"></script>
-    <link rel="stylesheet" href="offline-v5.css?v=5.13.1">
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.13.2';</script>
+    <script src="boot-v5.js?v=5.13.2"></script>
+    <link rel="stylesheet" href="offline-v5.css?v=5.13.2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -7618,8 +7618,8 @@
 
         #drive-home .drive-folder-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-            gap: 32px 28px;
+            grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+            gap: 40px 28px;
             margin-bottom: 0;
         }
 
@@ -7674,9 +7674,21 @@
             border-radius: 4px;
         }
 
+        /* Every sheet sits in an A4 slot so the grid keeps its rhythm. A PDF
+           with another shape (--sheet-ratio, width / height, set once its
+           thumbnail loads) keeps the slot's width and gets shorter, or keeps
+           its height and gets narrower, with the difference taken up by
+           margins. Percent margins resolve against the card's width. */
+        #drive-home .drive-card {
+            --sheet-ratio: 0.7071;
+            --sheet-inset-block: max(0%, (141.42% - 100% / var(--sheet-ratio)) / 2);
+            --sheet-inset-inline: max(0%, (100% - 141.42% * var(--sheet-ratio)) / 2);
+        }
+
         #drive-home .drive-card-preview {
-            aspect-ratio: 210 / 297;
-            width: 100%;
+            aspect-ratio: var(--sheet-ratio);
+            width: min(100%, 141.42% * var(--sheet-ratio));
+            margin: var(--sheet-inset-block) var(--sheet-inset-inline);
             border-radius: 2px;
             background: #fff;
             box-shadow:
@@ -7709,8 +7721,9 @@
 
         .drive-sheet-flag {
             position: absolute;
-            top: -7px;
-            right: 14px;
+            top: 0;
+            right: calc(14px + var(--sheet-inset-inline, 0%));
+            margin-top: calc(var(--sheet-inset-block, 0%) - 7px);
             z-index: 2;
             width: 13px;
             height: 24px;
@@ -7800,7 +7813,8 @@
         /* Quick actions over a sheet, like a selection in the editor */
         .drive-card-tools {
             position: absolute;
-            top: -20px;
+            top: 0;
+            margin-top: calc(var(--sheet-inset-block, 0%) - 20px);
             left: 50%;
             z-index: 6;
             display: flex;
@@ -7882,10 +7896,12 @@
             border-radius: 6px;
         }
 
+        /* Same footprint as an A4 sheet; the tab sticks out into the gap
+           the way the stacked pages do on a sheet. */
         .drive-folder-art {
             position: relative;
-            width: calc(100% - 8px);
-            aspect-ratio: 3 / 4;
+            width: 100%;
+            aspect-ratio: 210 / 297;
             perspective: 1100px;
             perspective-origin: 0 50%;
             container-type: inline-size;
@@ -8068,11 +8084,11 @@
         }
 
         #drive-home .drive-folder-card-skeleton .skeleton-icon {
-            width: calc(100% - 8px);
+            width: 100%;
             min-width: 0;
             height: auto;
             min-height: 0;
-            aspect-ratio: 3 / 4;
+            aspect-ratio: 210 / 297;
             border-radius: 3px 10px 10px 3px;
         }
 
@@ -8382,8 +8398,8 @@
             }
 
             #drive-home .drive-folder-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 22px 18px;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 28px 16px;
             }
 
             #drive-home .drive-card-title {
@@ -9657,19 +9673,19 @@
     <script defer src="vendor/jspdf/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script defer src="vendor/pdfjs/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script defer src="vendor/pdf-lib/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script defer src="collaboration-core-v5.js?v=5.13.1"></script>
-    <script defer src="live-collaboration-v5.js?v=5.13.1"></script>
-    <script defer src="runtime-core-v5.js?v=5.13.1"></script>
-    <script defer src="security-core-v5.js?v=5.13.1"></script>
-    <script defer src="timeline-core-v5.js?v=5.13.1"></script>
-    <script defer src="document-processing-v5.js?v=5.13.1"></script>
+    <script defer src="collaboration-core-v5.js?v=5.13.2"></script>
+    <script defer src="live-collaboration-v5.js?v=5.13.2"></script>
+    <script defer src="runtime-core-v5.js?v=5.13.2"></script>
+    <script defer src="security-core-v5.js?v=5.13.2"></script>
+    <script defer src="timeline-core-v5.js?v=5.13.2"></script>
+    <script defer src="document-processing-v5.js?v=5.13.2"></script>
     <script defer src="shared/inhouse-services-updater/updater.js?v=1.2.3"></script>
-    <script defer src="bullet-template.js?v=5.13.1"></script>
-    <script defer src="offline-store-v5.js?v=5.13.1"></script>
-    <script defer src="offline-sync-v5.js?v=5.13.1"></script>
-    <script defer src="offline-library-v5.js?v=5.13.1"></script>
-    <script defer src="offline-app-v5.js?v=5.13.1"></script>
-    <script defer src="app-v5.js?v=5.13.1"></script>
+    <script defer src="bullet-template.js?v=5.13.2"></script>
+    <script defer src="offline-store-v5.js?v=5.13.2"></script>
+    <script defer src="offline-sync-v5.js?v=5.13.2"></script>
+    <script defer src="offline-library-v5.js?v=5.13.2"></script>
+    <script defer src="offline-app-v5.js?v=5.13.2"></script>
+    <script defer src="app-v5.js?v=5.13.2"></script>
 
 </body>
 

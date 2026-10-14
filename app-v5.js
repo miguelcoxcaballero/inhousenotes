@@ -8684,6 +8684,16 @@
             return resized.includes('=s') ? resized : `${resized}&sz=w312-h440`;
         }
 
+        // Width / height of a PDF's first page from its thumbnail, or '' when it
+        // is close enough to A4 (thumbnails round their size by a pixel or two)
+        // to keep the plain A4 sheet. Extreme shapes are capped so a receipt or
+        // a banner still reads as a sheet.
+        function getDriveSheetRatio(width, height) {
+            if (!width || !height) return '';
+            const ratio = Math.min(2.2, Math.max(0.35, width / height));
+            return Math.abs(ratio - 0.7071) < 0.012 ? '' : ratio.toFixed(4);
+        }
+
         function createDrivePreview(file) {
             const preview = document.createElement('div');
             preview.className = 'drive-card-preview';
@@ -8707,6 +8717,7 @@
                 const showFallback = () => {
                     if (settled) return;
                     settled = true;
+                    preview.closest('.drive-card')?.style.removeProperty('--sheet-ratio');
                     preview.classList.remove('is-loading', 'is-loaded');
                     preview.replaceChildren(icon);
                 };
@@ -8726,7 +8737,12 @@
                         return;
                     }
                     settled = true;
+                    const ratio = getDriveSheetRatio(img.naturalWidth, img.naturalHeight);
                     requestAnimationFrame(() => {
+                        // The card's A4 slot shapes the sheet to the PDF (see --sheet-ratio).
+                        const card = preview.closest('.drive-card');
+                        if (card && ratio) card.style.setProperty('--sheet-ratio', ratio);
+                        else if (card) card.style.removeProperty('--sheet-ratio');
                         preview.classList.remove('is-loading');
                         preview.classList.add('is-loaded');
                     });
