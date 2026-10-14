@@ -21,12 +21,12 @@ test('headless processor merges real PDFs after all foreground pages close',asyn
   localStorage.setItem('drive-token-v1',JSON.stringify({token:'test',expiry:Date.now()+600000,scopeVersion:'drive-calendar-v2',grantedScopes}));
  });
  await page.close();
- let uploads=0;
+ let uploads=0,downloads=0;
  const meta={id:'worker-doc',version:'2',headRevisionId:'h2',modifiedTime:'2026-10-14T12:00:00.000Z',name:'Offline.pdf',capabilities:{canEdit:true},parents:['root']};
  await context.route('https://www.googleapis.com/**',async route=>{
   const url=new URL(route.request().url());
   if(url.pathname.endsWith('/about'))return route.fulfill({json:{user:{emailAddress:'worker@example.test'}}});
-  if(url.searchParams.get('alt')==='media')return route.fulfill({contentType:'application/pdf',body:Buffer.from(remote)});
+  if(url.searchParams.get('alt')==='media'){downloads++;return route.fulfill({contentType:'application/pdf',body:Buffer.from(remote)});}
   if(url.pathname.includes('/upload/')&&route.request().method()==='PATCH'){
    expect(route.request().headers()['if-match']).toBe('"h2"');uploads++;
    return route.fulfill({json:{...meta,version:'3',headRevisionId:'h3'}});
@@ -50,7 +50,7 @@ test('headless processor merges real PDFs after all foreground pages close',asyn
   const pages=await decodeEmbeddedStrokesFromPdfKeywords(keywords);await pdf.destroy();
   return {summary:window.result,dirty:stored.dirty,ids:pages.flatMap(p=>p.strokes.map(s=>s.id)),recoveries:(await InhouseOfflineStore.list('recoveries','worker@example.test')).length};
  });
- expect(result.summary.errors).toEqual([]);expect(result.dirty).toBe(false);expect(uploads).toBe(1);
+ expect(result.summary.errors).toEqual([]);expect(result.dirty).toBe(false);expect(uploads).toBe(1);expect(downloads).toBe(1);
  for(let i=0;i<3;i++)expect(result.ids).toEqual(expect.arrayContaining([`first-${i}`,`remote-${i}`]));
  expect(result.ids).not.toContain('base-1-0');expect(result.recoveries).toBe(1);
  await worker.close();

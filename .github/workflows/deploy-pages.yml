@@ -79,3 +79,6 @@ jobs:
           publish_dir: ${{ runner.temp }}/pages-site
           publish_branch: gh-pages
           force_orphan: true
+
+      - name: Verify uncached public version and release files
+        run: python3 .github/scripts/verify_live_release.py

@@ -26347,10 +26347,14 @@
             try {
                 const hintHasMeta = !!(remoteMetaHint && (remoteMetaHint.headRevisionId || remoteMetaHint.modifiedTime));
                 let metaBefore = hintHasMeta ? remoteMetaHint : null;
-                const stableSnapshot = await fetchStableDrivePdfSnapshot(
-                    fileIdAtStart,
-                    metaBefore
-                );
+                // The durable outbox already downloaded and archived this PDF.
+                // Reuse its exact bytes; the normal metadata check at the apply
+                // boundary and conditional upload still reject a newer revision.
+                const downloaded = options.downloadedSnapshot;
+                const stableSnapshot = downloaded?.fileId === fileIdAtStart
+                    && downloaded.blob instanceof Blob && downloaded.meta
+                    ? downloaded
+                    : await fetchStableDrivePdfSnapshot(fileIdAtStart, metaBefore);
                 if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileIdAtStart) {
                     return { changed: false, hasLocalMerges: false, stale: true };
                 }
