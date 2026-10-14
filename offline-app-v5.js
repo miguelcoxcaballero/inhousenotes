@@ -1,0 +1,209 @@
+/* Integration with the existing editor and its tested collaboration merge. */
+(function (root) {
+    'use strict';
+    const S=root.InhouseOfflineStore, L=root.InhouseOfflineLibrary;
+    function currentId() {return state.offlineLocalId || state.driveFileId || '';}
+    function metadata() {return {id:state.driveFileId,headRevisionId:state.driveHeadRevisionId,version:state.driveRevisionVersion,
+        modifiedTime:state.driveLastKnownModified?new Date(state.driveLastKnownModified).toISOString():null};}
+    async function capture() {
+        const id=currentId();
+        if(!id || !state.pages.length || driveOpenInProgress || state.driveCanEdit===false)return null;
+        const token=getDocumentSessionToken(),version=driveContentVersion;
+        const pages=[];
+        for(let i=0;i<state.pages.length;i++)pages.push(await loadPageDataForExport(i));
+        if(token!==getDocumentSessionToken()||version!==driveContentVersion)throw createAbortError('Document changed during offline checkpoint');
+        const snapshot={pages:buildTimelineSnapshotFromPages(pages),collabStructure:getCollabStructureSnapshot(),collabFields:getCollabFieldSnapshot(),
+            calendarPageConfig:state.calendarPageConfig,exportName:state.exportName,versionHistory:state.versionHistory,
+            baseline:[...lastSyncedStrokeIds].map(([index,ids])=>[index,[...ids]]),baselinePages:[...lastSyncedPageIds]};
+        const pendingExit=readPendingExitUpload();
+        return {id,snapshot,baseMeta:metadata(),contentVersion:version,session:token,
+            dirty:driveContentVersion!==driveUploadedContentVersion || driveDirty || state.driveFileId?.startsWith('local-') || pendingExit?.fileId===state.driveFileId,
+            entry:{id,name:state.driveFileName||`${state.exportName||'Untitled'}.pdf`,mimeType:'application/pdf',parents:state.driveParentIds?.length?state.driveParentIds:['root'],ownedByMe:state.driveOwnedByMe,pending:true},
+            details:{fileName:state.driveFileName,parentIds:state.driveParentIds,canEdit:state.driveCanEdit,ownedByMe:state.driveOwnedByMe,resourceKey:state.driveResourceKey},
+            originalBlob:state.cleanOriginalPdfBytes?.byteLength?new Blob([state.cleanOriginalPdfBytes],{type:'application/pdf'}):undefined};
+    }
+    function renderHome() {
+        if(!L.ready())return;
+        const cached=L.home();
+        if(navigator.onLine===false || !driveAccessToken) {
+            renderDriveRecents(cached.recents);renderDriveStarred(cached.starred);renderDriveShared(cached.shared);
+            renderFolder();
+            if(driveStatusEl)driveStatusEl.textContent=navigator.onLine===false?'Offline · changes stay on this device':'Connecting to Drive…';
+        }
+        updateDriveAuthUI();
+    }
+    function renderFolder() {
+        const items=L.folder(driveCurrentFolderId,driveSearchInput?.value?.trim()||'');
+        driveFolderCache={folders:items.filter(e=>e.mimeType==='application/vnd.google-apps.folder'),files:items.filter(e=>e.mimeType==='application/pdf')};
+        renderDriveFolderContents(driveFolderCache.folders,driveFolderCache.files);renderDriveBreadcrumbs();
+    }
+    async function restore(doc,render=true) {
+        const token=beginDocumentSession();
+        resetPdfState();
+        state.offlineLocalId=doc.id.startsWith('local-')?doc.id:null;
+        state.driveFileId=doc.remoteId||doc.id;
+        state.driveFileName=doc.entry?.name||doc.details?.fileName||'Untitled.pdf';
+        state.driveParentIds=doc.entry?.parents||doc.details?.parentIds||['root'];
+        state.driveFolderId=state.driveParentIds[0];
+        state.driveCanEdit=doc.details?.canEdit!==false;
+        state.driveOwnedByMe=doc.details?.ownedByMe!==false;
+        state.driveResourceKey=doc.details?.resourceKey||'';
+        state.driveAutosave=false;
+        if(doc.blob) {
+            await importPDFData(URL.createObjectURL(doc.blob),true,{sourceBlob:doc.blob,sessionToken:token,driveFileId:state.driveFileId,strictCollabMetadata:true});
+            if(cleanOriginalRecoveryPromise){startCleanOriginalRecovery?.();await cleanOriginalRecoveryPromise;}
+        }
+        if(doc.originalBlob?.size) {
+            const bytes=await doc.originalBlob.arrayBuffer();
+            state.cleanOriginalPdfBytes=bytes;
+            if(doc.snapshot?.pages.some(p=>p.pdfPageIndex)) {
+                if(activePdfDocument)await activePdfDocument.destroy().catch(()=>{});
+                activePdfDocument=await loadSecurePdfDocument({data:bytes.slice(0),cMapUrl:PDFJS_CMAP_URL,cMapPacked:true,standardFontDataUrl:PDFJS_STANDARD_FONT_URL});
+            }
+        }
+        if(doc.snapshot) {
+            if(!await clearPageStore())throw new Error('Could not restore the offline document');
+            state.pages=doc.snapshot.pages.map((p,i)=>normalizeLegacyPage(p,i));
+            state.collabStructure=ihnNormalizeStructureMeta(doc.snapshot.collabStructure,state.pages.map(p=>p.pageId));
+            state.collabFields=ihnNormalizeFieldMeta(doc.snapshot.collabFields);
+            state.calendarPageConfig=doc.snapshot.calendarPageConfig||null;
+            state.exportName=doc.snapshot.exportName||state.driveFileName.replace(/\.pdf$/i,'');
+            state.versionHistory=doc.snapshot.versionHistory||[];
+            pageDirty.clear();pageDirtyMode.clear();
+            for(let i=0;i<state.pages.length;i++){pageDirty.add(i);pageDirtyMode.set(i,'full');}
+            if(!await flushDirtyPages({force:true}))throw new Error('Could not checkpoint the restored pages');
+            lastSyncedStrokeIds.clear();
+            for(const [index,ids] of doc.snapshot.baseline||[])lastSyncedStrokeIds.set(index,new Set(ids));
+            lastSyncedPageIds.clear();for(const id of doc.snapshot.baselinePages||[])lastSyncedPageIds.add(id);
+        } else updateSyncBaseline();
+        state.driveHeadRevisionId=doc.baseMeta?.headRevisionId||null;
+        state.driveRevisionVersion=normalizeDriveVersion(doc.baseMeta?.version)||null;
+        state.driveLastKnownModified=typeof doc.baseMeta?.modifiedTime==='number'?doc.baseMeta.modifiedTime:(Date.parse(doc.baseMeta?.modifiedTime||'')||null);
+        state.driveAutosave=!L.isWorker&&state.driveCanEdit;
+        markDriveHydrated(state.driveFileId);
+        resetDriveContentSyncVersion();
+        if(doc.dirty){driveContentVersion=1;driveUploadedContentVersion=0;driveDirty=true;}
+        else {driveDirty=false;clearPendingExitUpload(state.driveFileId);if(doc.id!==state.driveFileId)clearPendingExitUpload(doc.id);}
+        if(render) {
+            state.zoom=1;state.panX=0;state.panY=0;state.overscrollY=0;
+            renderAllPages();showEditorView();centerViewOnTop();setReadOnlyMode(!state.driveCanEdit,{force:true});
+            updateDocTitle();saveDriveSession();await saveToIndexedDb(buildMetaPayload(Date.now()),Date.now());
+            hideLoading();showStatus(doc.dirty?'Saved on this device · waiting to sync':'Available offline',{preserveState:true});
+            refreshSaveIndicatorState();
+        }
+        return token;
+    }
+    async function reconcileStartup() {
+        if(!L.ready()||!currentId())return;
+        const doc=await S.read('documents',L.account(),currentId());
+        const marker=readPendingExitUpload();
+        if(doc&&!doc.dirty&&doc.lastUploadedAt>(state.lastSavedAt||0)
+            &&(!marker||marker.fileId===state.driveFileId&&marker.contentVersion<=doc.contentVersion))await restore(doc,false);
+    }
+    async function refreshed() {
+        const doc=L.record(currentId());
+        if(doc&&!doc.dirty&&doc.lastUploadedAt&&doc.session===getDocumentSessionToken()
+            &&doc.contentVersion===driveContentVersion&&driveDirty&&!hasSmoothInteraction()) {
+            const readOnly=state.isReadOnly;
+            await restore(doc,true);setReadOnlyMode(readOnly,{force:true});
+        }
+        renderHome();
+    }
+    async function workerBuild(doc) {
+        await restore(doc,false);
+        return buildPdfBlob({sessionToken:getDocumentSessionToken(),...DRIVE_UPLOAD_PDF_OPTIONS});
+    }
+    async function merge(doc,meta) {
+        // Called after local PDF construction, so this isolated editor contains
+        // the exact local snapshot plus its persisted baseline and tombstones.
+        const result=await pullRemoteChanges(meta,{allowWhileLocalPending:true,preserveLocalUnsynced:true,visualSync:false});
+        if(!result || result.error || result.busy || result.deferred || result.stale)throw new Error('Concurrent changes could not be merged yet');
+        return buildPdfBlob({sessionToken:getDocumentSessionToken(),...DRIVE_UPLOAD_PDF_OPTIONS});
+    }
+    async function authorizeBackground() {
+        const account=L.account(); if(!account || driveSignedOut)return;
+        await S.put('settings','__session__','active',{accountId:account,enabled:true});
+        await S.put('settings',account,'background-auth',{token:driveAccessToken,expiry:driveTokenExpiry,
+            refreshToken:useAndroidPkceFlow()?localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY):null,clientId:useAndroidPkceFlow()?ANDROID_OAUTH_CLIENT_ID:null});
+    }
+    async function initialize() {
+        await L.init({version:APP_VERSION,currentId,busy:()=>hasSmoothInteraction()||driveOpenInProgress,
+            identity:()=>({id:currentId(),version:driveContentVersion,session:getDocumentSessionToken()}),
+            capture,fetch:driveFetch,status:text=>showStatus(text,{preserveState:true}),error:error=>{if(error?.name!=='AbortError')showStatus('Offline copy could not be saved. Keep this document open.',{error:true});},
+            download:async file=>{
+                const response=await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?fields=id,name,headRevisionId,version,modifiedTime,capabilities(canEdit)`);
+                return fetchStableDrivePdfSnapshot(file.id,await response.json());
+            },downloadBlob:(blob,name)=>{const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);},
+            refreshed:()=>refreshed().catch(()=>{})});
+        if(L.isWorker)return;
+        const heartbeat=()=>{
+            const account=L.account();if(!account)return;
+            return S.put('leases',account,'editor',{documentId:currentId(),expires:document.visibilityState==='visible'&&editorView&&!editorView.classList.contains('hidden')?Date.now()+20000:0});
+        };
+        setInterval(()=>{heartbeat();if(navigator.onLine!==false)L.kick();},10000);
+        document.addEventListener('visibilitychange',()=>{heartbeat();if(document.hidden)L.capture().then(()=>L.scheduleBackground()).catch(()=>{});});
+        window.addEventListener('online',()=>{if(state.driveAutosave&&driveDirty)queueDriveSave(true);});
+        await heartbeat();
+        if(driveAccessToken)await authorizeBackground();
+    }
+    async function worker() {
+        let result;
+        try {
+            await initialize();
+            const account=L.account();if(!account)throw new Error('No saved account');
+            loadDriveTokenFromStorage();
+            if(!driveAccessToken && !useAndroidPkceFlow())throw new Error('Sign in to renew background access');
+            await ensureDriveToken(false);
+            const profile=await (await driveFetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json();
+            if(profile.user?.emailAddress?.toLowerCase()!==account)throw new Error('Background account changed');
+            const editor=await S.read('leases',account,'editor');
+            result=await root.InhouseOfflineSync.run(account,{fetch:driveFetch,build:workerBuild,merge:async(doc,meta)=>{await restore(doc,false);return merge(doc,meta);},
+                skip:id=>editor?.documentId===id&&editor.expires>Date.now()});
+        } catch(error) {result={pending:1,errors:[{message:error.message}]};}
+        finally {
+            root.parent?.postMessage({type:'ihn-offline-complete',result},location.origin);
+            try {root.InhouseBackground?.complete?.(JSON.stringify(result));}catch(_){}
+        }
+        return result;
+    }
+    async function newDocument() {
+        const id=`local-${crypto.randomUUID()}`;
+        state.offlineLocalId=id;state.driveFileId=id;state.driveAutosave=true;
+        state.driveHeadRevisionId=null;state.driveRevisionVersion=null;state.driveLastKnownModified=null;
+        markDriveHydrated(id);driveDirty=true;
+        await L.capture();saveDriveSession();L.kick();
+        return id;
+    }
+    async function confirmed(fileId,blob,meta,version,session) {
+        if(!L.account()||L.isWorker)return;
+        const id=currentId();if((state.driveFileId!==fileId&&id!==fileId)||getDocumentSessionToken()!==session)return;
+        const doc=await S.read('documents',L.account(),id);
+        if(doc?.contentVersion===version&&doc.session===session)await S.acknowledge(L.account(),id,doc.generation,meta,blob);
+    }
+    async function queueSave(force,options,normal) {
+        if(L.isWorker)return;
+        if(!L.ready())return normal(force,options);
+        await L.capture();
+        if(navigator.onLine===false){refreshSaveIndicatorState();return;}
+        const pending=await S.read('documents',L.account(),currentId());
+        if(state.driveFileId?.startsWith('local-') || pending?.offlineEdited) {
+            const id=currentId(),session=getDocumentSessionToken(),version=driveContentVersion;
+            const result=await root.InhouseOfflineSync.run(L.account(),{fetch:driveFetch,skip:other=>other!==id,
+                build:()=>buildPdfBlob({sessionToken:session,...DRIVE_UPLOAD_PDF_OPTIONS}),merge,
+                saved:async(localId,meta,blob)=>{
+                    if(getDocumentSessionToken()!==session)return;
+                    state.driveFileId=meta.id;state.driveHeadRevisionId=meta.headRevisionId;state.driveRevisionVersion=normalizeDriveVersion(meta.version);
+                    state.driveLastKnownModified=Date.parse(meta.modifiedTime)||Date.now();markDriveHydrated(meta.id);
+                    markDriveContentUploaded(version);if(version===driveContentVersion){driveDirty=false;updateSyncBaseline();}
+                    saveDriveSession();updateDocTitle();refreshSaveIndicatorState();
+                }});
+            if(result?.errors?.length)showStatus('Saved on this device · sync pending',{preserveState:true});
+            return result;
+        }
+        const session=getDocumentSessionToken();
+        const result=await S.withLease(L.account(),'sync',()=>normal(force,options));
+        if(result?.busy)setTimeout(()=>{if(session===getDocumentSessionToken()&&driveDirty)queueDriveSave(force,options);},1000);
+        return result;
+    }
+    root.InhouseOfflineApp=Object.freeze({authorizeBackground,initialize,reconcileStartup,worker,restore,newDocument,confirmed,queueSave,renderHome,renderFolder,currentId});
+})(window);

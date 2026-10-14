@@ -29,6 +29,13 @@ jobs:
       - name: Install release test dependencies
         run: npm ci
 
+      - name: Verify reproducible Rust and offline assets
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal --target wasm32-unknown-unknown
+          npm run build:rust
+          npm run build:offline
+          git diff --exit-code -- wasm/inhouse_notes_core.wasm offline-assets.js
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 

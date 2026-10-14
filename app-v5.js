@@ -68,6 +68,7 @@
         const appVersionMatch = appVersionSource.match(/APP_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]/);
         if (!appVersionMatch) throw new Error('The public app version is missing from index.html');
         const APP_VERSION = appVersionMatch[1];
+        const OFFLINE_WORKER = new URLSearchParams(location.search).has('offline-worker');
         document.querySelectorAll('[data-app-version]').forEach(element => {
             element.textContent = `v${APP_VERSION}`;
         });
@@ -84,8 +85,8 @@
             });
         }
         const PDFJS_VERSION = '3.11.174';
-        const PDFJS_WORKER_URL = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
-        const PDFJS_ASSETS_BASE_URL = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}`;
+        const PDFJS_WORKER_URL = new URL('vendor/pdfjs/pdf.worker.min.js',location.href).href;
+        const PDFJS_ASSETS_BASE_URL = new URL('vendor/pdfjs',location.href).href;
         const PDFJS_CMAP_URL = `${PDFJS_ASSETS_BASE_URL}/cmaps/`;
         const PDFJS_STANDARD_FONT_URL = `${PDFJS_ASSETS_BASE_URL}/standard_fonts/`;
         pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
@@ -310,7 +311,7 @@
         const LIVE_PREVIEW_POINTS = 6;
         const FINALIZE_STEP_POINTS = 6;
         const MIN_PAGE_VISIBLE = 5;
-        const VIEW_STORAGE_KEY = 'notebook-view-v1';
+        const VIEW_STORAGE_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-view-v1';
         const VIEW_SAVE_DELAY = 250;
         const LOCAL_BACKUP_MIN_INTERVAL = 3000;
         const PEN_DOUBLE_TAP_MS = 320;
@@ -374,8 +375,8 @@
         const SCANNER_MAX_TOTAL_BYTES = 120 * 1024 * 1024;
         const DRIVE_TOKEN_KEY = 'drive-token-v1';
         const DRIVE_REMEMBER_KEY = 'drive-remember-v1';
-        const DRIVE_SESSION_KEY = 'drive-session-v1';
-        const PENDING_EXIT_UPLOAD_KEY = 'drive-pending-exit-upload-v1';
+        const DRIVE_SESSION_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'drive-session-v1';
+        const PENDING_EXIT_UPLOAD_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'drive-pending-exit-upload-v1';
         const DRIVE_REFRESH_TOKEN_KEY = 'drive-refresh-token-v1';
         const DRIVE_PKCE_VERIFIER_KEY = 'drive-pkce-verifier-v1';
         const GOOGLE_SCOPE_VERSION_KEY = 'google-scope-version-v1';
@@ -393,9 +394,9 @@
         const useAndroidPkceFlow = () => isInhouseApp && !!ANDROID_OAUTH_CLIENT_ID;
         const THEME_KEY = 'inhouse-theme';
         const VIEW_MODE_KEY = 'notebook-view-mode-v1';
-        const DATA_STORAGE_KEY = 'notebook-data-v3';
+        const DATA_STORAGE_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-data-v3';
         const LEGACY_DATA_KEYS = ['notebook-data-v2'];
-        const DB_NAME = 'notebook-data-db-v1';
+        const DB_NAME = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-data-db-v1';
         const DB_VERSION = 4;
         const DB_STORE = 'snapshots';
         const DB_KEY = 'latest';
@@ -508,7 +509,7 @@
                 try {
                     const tx = db.transaction(ORIG_PDF_STORE, 'readonly');
                     const req = tx.objectStore(ORIG_PDF_STORE).get(key);
-                    req.onsuccess = () => resolve(req.result || null);
+                    req.onsuccess = () => resolve(req.result?.account === window.InhouseOfflineLibrary?.account() ? req.result : null);
                     req.onerror = () => resolve(null);
                 } catch (err) {
                     resolve(null);
@@ -603,24 +604,20 @@
             };
         }
 
-        async function trimDriveOpenCache(maxEntries = 6) {
+        async function trimDriveOpenCache() {
+            const account = window.InhouseOfflineLibrary?.account();
+            const days = account ? (await window.InhouseOfflineStore.settings(account)).retentionDays : 14;
+            const pinned = account ? new Set((await window.InhouseOfflineStore.list('documents',account)).filter(d=>d.pinned||d.dirty).map(d=>d.id)) : new Set();
             const db = await openOriginalPdfDb();
-            if (!db || !db.objectStoreNames.contains(DRIVE_OPEN_CACHE_STORE)) return;
+            if (!db) return;
             try {
-                const tx = db.transaction(DRIVE_OPEN_CACHE_STORE, 'readwrite');
-                const store = tx.objectStore(DRIVE_OPEN_CACHE_STORE);
-                const index = store.index('cachedAt');
-                const keys = [];
-                index.openKeyCursor().onsuccess = event => {
-                    const cursor = event.target.result;
-                    if (cursor) {
-                        keys.push(cursor.primaryKey);
-                        cursor.continue();
-                        return;
-                    }
-                    keys.slice(0, Math.max(0, keys.length - maxEntries)).forEach(key => store.delete(key));
-                };
-            } catch (err) { /* best-effort cache cleanup */ }
+            const tx = db.transaction(DRIVE_OPEN_CACHE_STORE,'readwrite');
+            tx.objectStore(DRIVE_OPEN_CACHE_STORE).openCursor().onsuccess = event => {
+                const cursor=event.target.result;if(!cursor)return;
+                if(cursor.key!==state.driveFileId&&!pinned.has(cursor.key)&&cursor.value.cachedAt<Date.now()-days*86400000)cursor.delete();
+                cursor.continue();
+            };
+            } catch (_) { /* A concurrent tab may have closed the cache. */ }
         }
 
         async function saveDriveOpenCache(fileId, blob, meta = {}, analysis = null, details = {}) {
@@ -629,6 +626,7 @@
             if (!db || !db.objectStoreNames.contains(DRIVE_OPEN_CACHE_STORE)) return false;
             const record = {
                 fileId,
+                account: window.InhouseOfflineLibrary?.account(),
                 blob,
                 meta: normalizeDriveOpenCacheMeta(meta),
                 analysis: analysis && typeof analysis.keywords === 'string'
@@ -666,7 +664,10 @@
                     resolve(false);
                 }
             });
-            if (saved) setTimeout(() => trimDriveOpenCache().catch(() => {}), 0);
+            if (saved) {
+                await window.InhouseOfflineLibrary?.cache(fileId,blob,meta,analysis,details);
+                setTimeout(() => trimDriveOpenCache().catch(() => {}), 0);
+            }
             return saved;
         }
 
@@ -2119,7 +2120,8 @@
                     const raw = localStorage.getItem(DRIVE_TOKEN_KEY);
                     const token = raw ? JSON.parse(raw) : null;
                     const hasToken = !!(token && token.token && token.expiry && Date.now() < token.expiry - 60000);
-                    return hasToken || !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY);
+                    return hasToken || !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY)
+                        || window.__INHOUSE_BOOT_SIGNED_IN__ === true;
                 } catch (e) {
                     return false;
                 }
@@ -2141,12 +2143,15 @@
             loadDriveSession();
             updateDriveProfileUI(null);
             showFastInitialView();
+            const offlineLibraryReady = window.InhouseOfflineApp.initialize();
             initDriveAuth();
             setupMobileHomePullToRefresh();
             document.documentElement.dataset.appReady = 'true';
             // The Drive file ID is part of deterministic legacy page/item IDs.
             // Restore it before migrating any old local payload.
-            await loadFromStorage();
+            await Promise.all([loadFromStorage(), offlineLibraryReady]);
+            await window.InhouseOfflineApp.reconcileStartup();
+            await window.InhouseOfflineLibrary.resume();
             bakeLegacyEraserAreaStrokes();
             const editorVisibleAtBoot = !!(editorView && !editorView.classList.contains('hidden'));
             if (editorVisibleAtBoot) {
@@ -2197,7 +2202,7 @@
                 try { return !!localStorage.getItem(DRIVE_REFRESH_TOKEN_KEY); }
                 catch (e) { return false; }
             })();
-            const isSignedInAtBoot = !!driveAccessToken || hasStoredDriveToken || hasStoredRefreshToken;
+            const isSignedInAtBoot = !!driveAccessToken || hasStoredDriveToken || hasStoredRefreshToken || window.__INHOUSE_BOOT_SIGNED_IN__ === true || window.InhouseOfflineLibrary?.ready();
             if (window.pendingSharedDriveId) {
                 // Honour the deep-link share regardless of where the user was
                 // last time — they explicitly opened a shared link.
@@ -6221,17 +6226,19 @@
         };
 
         function updateDriveAuthUI() {
+            if (OFFLINE_WORKER) return;
+            const localLibrary = window.InhouseOfflineLibrary?.ready();
             const signedIn = !!driveAccessToken;
             const reconnecting = !!driveAuthNeedsReconnect && !!state.driveFileId && !driveSignedOut;
-            const connectedOrRecoverable = signedIn || reconnecting;
+            const connectedOrRecoverable = signedIn || reconnecting || localLibrary || !!window.__INHOUSE_BOOT_SIGNED_IN__;
             const hasPendingShared = !!window.pendingSharedDriveId;
             const pendingSharedOpenFailed = hasPendingShared && sharedLinkSignInPrompted;
-            if (driveLoginBtn) driveLoginBtn.style.display = signedIn ? 'none' : 'inline-flex';
+            if (driveLoginBtn) driveLoginBtn.style.display = connectedOrRecoverable ? 'none' : 'inline-flex';
             if (driveProfileWrap) driveProfileWrap.classList.toggle('hidden', !connectedOrRecoverable);
             if (driveProfileWrapEditor) driveProfileWrapEditor.classList.toggle('hidden', !connectedOrRecoverable);
-            if (driveSearchInput) driveSearchInput.disabled = !signedIn;
-            if (driveNewBtn) driveNewBtn.disabled = !signedIn;
-            if (driveNewFolderBtn) driveNewFolderBtn.disabled = !signedIn;
+            if (driveSearchInput) driveSearchInput.disabled = !signedIn && !localLibrary;
+            if (driveNewBtn) driveNewBtn.disabled = !signedIn && !localLibrary;
+            if (driveNewFolderBtn) driveNewFolderBtn.disabled = !signedIn && !localLibrary;
             if (driveBinBtn) driveBinBtn.disabled = !signedIn;
             if (driveBackBtn) driveBackBtn.disabled = !signedIn || driveFolderStack.length <= 1;
             if (driveStatusEl) {
@@ -6503,6 +6510,11 @@
         }
 
         function signOutDrive() {
+            window.InhouseOfflineStore?.put('settings','__session__','active',{enabled:false}).catch(()=>{});
+            const offlineAccount=window.InhouseOfflineLibrary?.account();
+            if(offlineAccount)window.InhouseOfflineStore?.put('settings',offlineAccount,'background-auth',{}).catch(()=>{});
+            window.InhouseOfflineLibrary?.logout();
+            window.__INHOUSE_BOOT_SIGNED_IN__ = false;
             driveSignedOut = true;
             driveAuthNeedsReconnect = false;
             driveTokenRequestGeneration += 1;
@@ -6641,6 +6653,8 @@
                 if (driveUserProfile.email) {
                     try { localStorage.setItem('drive-hint-email', driveUserProfile.email); } catch (e) { }
                 }
+                await window.InhouseOfflineLibrary?.useAccount(driveUserProfile.email);
+                await window.InhouseOfflineApp?.authorizeBackground();
                 updateDriveProfileUI(driveUserProfile);
             } catch (err) {
                 console.error('Failed to load Drive profile:', err);
@@ -8411,6 +8425,7 @@
         // behavior of allowing duplicate folder names is expected (the user
         // is explicitly asking for a new one, not reusing an existing one).
         async function createDriveFolder(parentId, name) {
+            if (navigator.onLine === false || parentId?.startsWith('local-')) return window.InhouseOfflineLibrary.createFolder(parentId,name);
             const metadata = {
                 name,
                 mimeType: 'application/vnd.google-apps.folder',
@@ -8425,7 +8440,7 @@
         }
 
         function openNewFolderModal() {
-            if (!driveAccessToken) return;
+            if (!driveAccessToken && !window.InhouseOfflineLibrary?.ready()) return;
             const modal = document.getElementById('modal-new-folder');
             const input = document.getElementById('new-folder-name');
             if (!modal || !input) return;
@@ -8445,7 +8460,7 @@
             if (!name) return;
             closeNewFolderModal();
             try {
-                await ensureDriveToken(false);
+                if (navigator.onLine !== false) await ensureDriveToken(false);
                 await createDriveFolder(driveCurrentFolderId, name);
                 showStatus('Folder created', { preserveState: true });
                 refreshDriveFolderContents();
@@ -8456,6 +8471,8 @@
         }
 
         async function findDrivePdfInFolder(folderId, fileBaseName, options = {}) {
+            await window.InhouseOfflineLibrary?.capture();
+            state.offlineLocalId = null;
             const safeBase = normalizeDocTitleInput(fileBaseName || 'Untitled');
             const nameQuery = [`${safeBase}.pdf`, safeBase]
                 .map(name => `name='${escapeDriveQueryValue(name)}'`)
@@ -8745,6 +8762,7 @@
             card.appendChild(createDrivePreview(file));
 
             card.appendChild(createDriveItemMenu(file));
+            window.InhouseOfflineLibrary?.decorate(card,file.id);
 
             card.addEventListener('click', (e) => {
                 if (e.target.closest('.drive-card-menu')) return;
@@ -8791,6 +8809,7 @@
                     </svg>
                     <span>${starLabel}</span>
                 </button>
+                ${!isFolder ? `<button type="button" data-action="offline"><span>${window.InhouseOfflineLibrary?.record(item.id)?.pinned ? 'Unpin offline copy' : 'Save offline'}</span></button>` : ''}
                 ${isFolder ? `
                 <button type="button" data-action="color">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -8837,7 +8856,9 @@
                 }
 
                 closeDriveCardMenu();
-                if (action === 'star') {
+                if (action === 'offline') {
+                    window.InhouseOfflineLibrary.pin(item).catch(error=>showStatus(error.message,{error:true}));
+                } else if (action === 'star') {
                     const nextStar = !item?.starred;
                     updateDriveStarStatus(item, nextStar);
                 } else if (action === 'move') {
@@ -9130,6 +9151,7 @@
                 if (!newCard) return;
                 newCard.dataset.driveItemId = id;
                 newCard.dataset.driveItemFp = fp;
+                if(item.mimeType!=='application/vnd.google-apps.folder')window.InhouseOfflineLibrary?.decorate(newCard,id);
                 if (card) {
                     container.replaceChild(newCard, card);
                     existing.delete(id);
@@ -9266,6 +9288,7 @@
             driveRecentsCache = (data.files || [])
                 .filter(file => !isQuickAccessDriveFile(file))
                 .slice(0, 12);
+            await window.InhouseOfflineLibrary?.observed(driveRecentsCache);
             renderDriveRecents(driveRecentsCache);
         }
 
@@ -9275,6 +9298,7 @@
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=12&fields=${fields}`);
             const data = await res.json();
             driveStarredCache = data.files || [];
+            await window.InhouseOfflineLibrary?.observed(driveStarredCache);
             renderDriveStarred(driveStarredCache);
         }
 
@@ -9294,10 +9318,12 @@
             const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=modifiedTime desc&pageSize=24&fields=${fields}`);
             const data = await res.json();
             driveSharedCache = (data.files || []).filter(file => file && file.ownedByMe === false);
+            await window.InhouseOfflineLibrary?.observed(driveSharedCache);
             renderDriveShared(driveSharedCache);
         }
 
         async function refreshDriveFolderContents(options = {}) {
+            if (navigator.onLine === false && window.InhouseOfflineLibrary?.ready()) {window.InhouseOfflineApp.renderFolder();return;}
             try {
                 const search = driveSearchInput ? driveSearchInput.value.trim() : '';
                 const baseParts = [
@@ -9325,6 +9351,7 @@
                     folders: foldersData.files || [],
                     files: filesData.files || []
                 };
+                await window.InhouseOfflineLibrary?.observed([...driveFolderCache.folders,...driveFolderCache.files],driveCurrentFolderId);
                 renderDriveFolderContents(driveFolderCache.folders, driveFolderCache.files);
                 updateDriveStatusCounts();
             } catch (err) {
@@ -9393,6 +9420,10 @@
         }
 
         async function refreshDriveFiles() {
+            if (OFFLINE_WORKER) return;
+            if (navigator.onLine === false && window.InhouseOfflineLibrary?.ready()) {
+                window.InhouseOfflineApp.renderHome(); return;
+            }
             if (!driveStatusEl) return;
             if (!driveAccessToken) {
                 updateDriveAuthUI();
@@ -9737,6 +9768,15 @@
 
         async function openDriveFile(file) {
             if (!file || !file.id) return;
+            if (window.InhouseOfflineLibrary?.ready()) {
+                try {
+                    await window.InhouseOfflineLibrary.capture();
+                    const local = await window.InhouseOfflineLibrary.openRecord(file);
+                    if (local) {await window.InhouseOfflineApp.restore(local);return;}
+                    if (navigator.onLine === false) {showStatus('Connect to download this document',{preserveState:true});return;}
+                } catch(error) {showStatus('Could not open the offline copy. Your changes are retained.',{error:true});return;}
+            }
+            state.offlineLocalId = null;
             if (driveOpenInProgress) return;
             closeDriveCardMenu();
             driveOpenInProgress = true;
@@ -10245,6 +10285,10 @@
 
             try {
                 showLoading('Creating PDF...');
+                if (navigator.onLine === false || folderId?.startsWith('local-')) {
+                    await window.InhouseOfflineApp.newDocument();
+                    showStatus('Created on this device',{preserveState:true});return true;
+                }
                 await ensureDriveToken(false);
                 if (!isDocumentSessionTokenValid(sessionToken)) {
                     throw createAbortError('Document creation superseded');
@@ -10350,7 +10394,7 @@
         }
 
         function openFolderPicker(mode, file = null) {
-            if (!driveAccessToken) return;
+            if (!driveAccessToken && !window.InhouseOfflineLibrary?.ready()) return;
             folderPickerMode = mode;
             folderPickerTargetFile = file;
             if (driveFolderStack && driveFolderStack.length > 0) {
@@ -10474,6 +10518,9 @@
         }
 
         async function refreshFolderPickerFolders() {
+            if (navigator.onLine === false && window.InhouseOfflineLibrary?.ready()) {
+                renderFolderPickerList(window.InhouseOfflineLibrary.folder(folderPickerCurrentFolderId).filter(e=>e.mimeType==='application/vnd.google-apps.folder'));return;
+            }
             if (!driveAccessToken || !folderPickerList) return;
             try {
                 const q = encodeURIComponent(`'${folderPickerCurrentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
@@ -20061,6 +20108,7 @@
             try {
                 const payload = {
                     fileId: state.driveFileId,
+                    offlineLocalId: state.offlineLocalId || null,
                     fileName: state.driveFileName,
                     folderId: state.driveFolderId || null,
                     parentIds: Array.isArray(state.driveParentIds) ? state.driveParentIds : [],
@@ -20167,6 +20215,7 @@
                 noteLocalSaveFailure('checkpoint');
                 throw new Error('Could not create a durable local save checkpoint');
             }
+            await window.InhouseOfflineLibrary.capture();
             confirmLocalSave(savedAt);
             state.lastSavedAt = savedAt;
             saveDriveSession();
@@ -20302,6 +20351,7 @@
                 if (!parsed) return;
                 resetDriveHydrationState();
                 state.driveFileId = parsed.fileId || null;
+                state.offlineLocalId = parsed.offlineLocalId || null;
                 state.driveFileName = parsed.fileName || null;
                 state.driveFolderId = parsed.folderId || null;
                 state.driveParentIds = Array.isArray(parsed.parentIds) ? parsed.parentIds : [];
@@ -23409,6 +23459,7 @@
                     if (isDocumentSessionTokenValid(sessionToken)
                         && driveContentVersion === versionAtBuildStart) {
                         preparedDrivePdf = result;
+                        window.InhouseOfflineLibrary?.prepared(window.InhouseOfflineApp.currentId(),blob,versionAtBuildStart,sessionToken).catch(()=>{});
                     }
                     return result;
                 } finally {
@@ -23434,6 +23485,7 @@
         }
 
         function bumpDriveContentVersion() {
+            window.InhouseOfflineLibrary?.scheduleCapture();
             clearDriveSaveBlocked();
             driveContentVersion += 1;
             invalidatePreparedDrivePdf();
@@ -24161,6 +24213,7 @@
         }
 
         function scheduleDriveSync() {
+            if (OFFLINE_WORKER) return;
             if (!state.driveAutosave) return;
             if (driveSaveBlockedReason) {
                 showStatus(driveSaveBlockedReason, { error: true });
@@ -24517,6 +24570,10 @@
         }
 
         async function queueDriveSave(force = false, options = {}) {
+            return window.InhouseOfflineApp.queueSave(force, options, queueDriveSaveOnline);
+        }
+
+        async function queueDriveSaveOnline(force = false, options = {}) {
             if (!state.driveAutosave) return;
             // The local "read-only" toggle is a UI mode (the user disabled the
             // pen to scroll comfortably). It must not block an explicit force
@@ -24740,6 +24797,7 @@
                     rememberOwnDriveWrite(updateRes || {});
                     saveDriveSession();
                 }
+                await window.InhouseOfflineApp.confirmed(fileId,pdfBlob,{id:fileId,headRevisionId:state.driveHeadRevisionId,version:state.driveRevisionVersion,modifiedTime:state.driveLastKnownModified?new Date(state.driveLastKnownModified).toISOString():null},uploadedContentVersion,sessionToken);
                 markDriveContentUploaded(uploadedContentVersion);
                 if (uploadedContentHash) {
                     driveConfirmedContentHash = uploadedContentHash;
@@ -30319,7 +30377,7 @@
         function getPdfWorker() {
             if (_pdfWorker) return _pdfWorker;
             const workerCode = `
-                importScripts('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+                importScripts('${new URL('vendor/jspdf/jspdf.umd.min.js',location.href).href}');
                 self.onmessage = function(e) {
                     const { id, pages, metadata, metaPrefix } = e.data;
                     try {
@@ -31111,6 +31169,7 @@
         // the user's strokes/images on top as a transparent PNG overlay per page.
         // Falls back to the raster pipeline (caller's responsibility) on any error
         // or when prerequisites are missing.
+        const pdfCompactStrokeCache = new WeakMap();
         async function buildPdfBlobWithPdfLib(options = {}) {
             let PDFLib = window.PDFLib;
             if (!PDFLib) throw new Error('pdf-lib not loaded');
@@ -31346,10 +31405,14 @@
                         return true;
                     });
                 }
-                const compactStrokes = [];
+                const compactCached = pdfCompactStrokeCache.get(pageData);
+                const compactGeneration = pageDirtyGeneration.get(i) || 0;
+                const reuseCompact = compactCached?.generation === compactGeneration
+                    && compactCached.session === sessionToken && compactCached.strokes === pageData.strokes;
+                const compactStrokes = reuseCompact ? compactCached.compact : [];
                 let compactStrokeCounter = 0;
                 let compactPointCounter = 0;
-                for (const stroke of exportStrokes) {
+                if (!reuseCompact) for (const stroke of exportStrokes) {
                     const compactStroke = {
                         ...stroke,
                         points: []
@@ -31377,6 +31440,7 @@
                         await yieldToUI();
                     }
                 }
+                if (!reuseCompact) pdfCompactStrokeCache.set(pageData, {generation:compactGeneration,session:sessionToken,strokes:pageData.strokes,compact:compactStrokes});
                 if (!pageData.pageId) pageData.pageId = generatePageId();
                 const pageStrokeEntry = {
                     pageId: pageData.pageId,
@@ -32980,5 +33044,5 @@
         }
 
         // Start
-        const appInitializationPromise = init();
+        const appInitializationPromise = OFFLINE_WORKER ? window.InhouseOfflineApp.worker() : init();
         installLocalE2ETestApi(appInitializationPromise);

@@ -55,7 +55,8 @@
             const hasRefresh = hasCurrentScopes
                 && hasCalendarScope
                 && !!localStorage.getItem('drive-refresh-token-v1');
-            root.__INHOUSE_BOOT_SIGNED_IN__ = hasToken || hasRefresh;
+            const returning = localStorage.getItem('drive-remember-v1') === '1' || !!localStorage.getItem('drive-hint-email');
+            root.__INHOUSE_BOOT_SIGNED_IN__ = hasToken || hasRefresh || returning;
         } catch (error) {
             root.__INHOUSE_BOOT_SIGNED_IN__ = false;
         }
@@ -96,11 +97,22 @@
         }
     }
 
+    if (root.InhouseBackgroundChannel?.postMessage) {
+        const send = (type, result) => root.InhouseBackgroundChannel.postMessage(JSON.stringify({type,result}));
+        root.InhouseBackground = Object.freeze({schedule:()=>send('schedule'),cancel:()=>send('cancel'),complete:value=>send('complete',JSON.parse(value))});
+    }
     applySavedTheme();
     handleOAuthCallback();
     selectBootDestination();
     if (documentRef.readyState === 'loading') {
-        documentRef.addEventListener('DOMContentLoaded', revealInitialView, { once: true });
+        let revealed = false;
+        const observer = new MutationObserver(() => {
+            if (!revealed && documentRef.getElementById('drive-folder-files')) {
+                revealed = true; revealInitialView(); observer.disconnect();
+            }
+        });
+        observer.observe(documentRef.documentElement,{childList:true,subtree:true});
+        documentRef.addEventListener('DOMContentLoaded', () => { observer.disconnect(); if (!revealed) revealInitialView(); }, { once: true });
     } else {
         revealInitialView();
     }
