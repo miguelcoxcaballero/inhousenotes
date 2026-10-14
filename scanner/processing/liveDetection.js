@@ -111,7 +111,140 @@
     return result;
   }
 
-  function estimateIllumination(imageData, region = null) {
+  // Colour references are identified independently of yellow ink. Their order,
+  // spacing, local white paper and black neighbour distinguish the footer from
+  // handwriting and coloured objects. Work stays bounded at preview resolution.
+  function findColourReferences(imageData) {
+    const scale = Math.min(1, 480 / Math.max(imageData.width, imageData.height));
+    const width = Math.max(1, Math.round(imageData.width * scale));
+    const height = Math.max(1, Math.round(imageData.height * scale));
+    const length = width * height, labels = new Uint8Array(length);
+    const pixels = scale === 1 ? imageData.data : new Uint8ClampedArray(length * 4);
+    if (scale !== 1) {
+      for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+        const from = (Math.min(imageData.height - 1, Math.floor((y + .5) / scale)) * imageData.width
+          + Math.min(imageData.width - 1, Math.floor((x + .5) / scale))) * 4;
+        const to = (y * width + x) * 4;
+        pixels[to] = imageData.data[from]; pixels[to + 1] = imageData.data[from + 1]; pixels[to + 2] = imageData.data[from + 2];
+      }
+    }
+    const whiteReach = Math.max(4, Math.round(Math.min(width, height) * .017));
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const i = y * width + x, at = i * 4;
+      let wr = pixels[at], wg = pixels[at + 1], wb = pixels[at + 2];
+      // Ratios to surrounding material retain primary marker colours under a
+      // strong cast; raw RGB dominance would classify the entire paper as blue
+      // or red and merge the tiny reference circle into that huge component.
+      const left = (y * width + Math.max(0, x - whiteReach)) * 4;
+      const right = (y * width + Math.min(width - 1, x + whiteReach)) * 4;
+      const up = (Math.max(0, y - whiteReach) * width + x) * 4;
+      const down = (Math.min(height - 1, y + whiteReach) * width + x) * 4;
+      wr = Math.max(wr, pixels[left], pixels[right], pixels[up], pixels[down]);
+      wg = Math.max(wg, pixels[left + 1], pixels[right + 1], pixels[up + 1], pixels[down + 1]);
+      wb = Math.max(wb, pixels[left + 2], pixels[right + 2], pixels[up + 2], pixels[down + 2]);
+      if (Math.min(wr, wg, wb) < 15) continue;
+      const r = pixels[at] / wr, g = pixels[at + 1] / wg, b = pixels[at + 2] / wb;
+      const peak = Math.max(r, g, b), low = Math.min(r, g, b);
+      if (peak < .12 || peak - low < .24) continue;
+      if (r > g * 1.3 && r > b * 1.3) labels[i] = 1;
+      else if (b > r * 1.3 && b > g * 1.2) labels[i] = 2;
+      else if (g > r * 1.25 && g > b * 1.25) labels[i] = 3;
+    }
+    const groups = [[], [], []], queue = new Int32Array(length);
+    const maxDiameter = Math.max(5, Math.min(width, height) * .025);
+    for (let seed = 0; seed < length; seed += 1) {
+      const label = labels[seed];
+      if (!label) continue;
+      labels[seed] = 0; queue[0] = seed;
+      let read = 0, count = 1, sx = 0, sy = 0, minX = width, maxX = 0, minY = height, maxY = 0;
+      while (read < count) {
+        const index = queue[read++], x = index % width, y = Math.floor(index / width);
+        sx += x; sy += y; minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+          if ((!dx && !dy) || x + dx < 0 || x + dx >= width || y + dy < 0 || y + dy >= height) continue;
+          const next = index + dy * width + dx;
+          if (labels[next] === label) { labels[next] = 0; queue[count++] = next; }
+        }
+      }
+      const spanX = maxX - minX + 1, spanY = maxY - minY + 1;
+      if (count < 2 || Math.max(spanX, spanY) > maxDiameter || Math.max(spanX, spanY) > Math.min(spanX, spanY) * 3) continue;
+      groups[label - 1].push({ x: sx / count, y: sy / count, count, compactness: count / (spanX * spanY) });
+    }
+    for (const group of groups) group.sort((a, b) => b.compactness * b.count - a.compactness * a.count).splice(32);
+    const rgb = point => {
+      const at = (clamp(Math.round(point.y), 0, height - 1) * width + clamp(Math.round(point.x), 0, width - 1)) * 4;
+      return [pixels[at], pixels[at + 1], pixels[at + 2]];
+    };
+    const light = colour => colour[0] * .2126 + colour[1] * .7152 + colour[2] * .0722;
+    let best = null;
+    for (const red of groups[0]) for (const blue of groups[1]) {
+      const span = distance(red, blue), pitch = span / 2;
+      if (pitch < 1.4 || pitch > Math.min(width, height) * .025) continue;
+      const axis = { x: (blue.x - red.x) / span, y: (blue.y - red.y) / span };
+      const normal = { x: -axis.y, y: axis.x }, expectedGreen = mix(red, blue, 1.5);
+      for (const green of groups[2]) {
+        const error = distance(green, expectedGreen) / pitch;
+        if (error > .6 || [red, blue, green].some(point => point.count > pitch * pitch * 2.4)) continue;
+        const center = mix(red, blue, .75), whiteSamples = [];
+        for (let across = -7; across <= 7; across += 1) for (const away of [-4, -3, 3, 4]) {
+          const p = { x: center.x + axis.x * pitch * across + normal.x * pitch * away,
+            y: center.y + axis.y * pitch * across + normal.y * pitch * away };
+          if (p.x < 1 || p.y < 1 || p.x >= width - 1 || p.y >= height - 1) continue;
+          const colour = rgb(p);
+          if (Math.min(...colour) < Math.max(...colour) * .14) continue;
+          whiteSamples.push(colour);
+        }
+        whiteSamples.sort((a, b) => light(b) - light(a));
+        if (whiteSamples.length < 24) continue;
+        const white = [0, 0, 0], whites = whiteSamples.slice(0, Math.ceil(whiteSamples.length * .5));
+        for (const colour of whites) colour.forEach((value, channel) => { white[channel] += value / whites.length; });
+        if (light(white) < 32 || Math.min(...white) < 15) continue;
+        const whiteSpread = whites.reduce((sum, colour) => sum + Math.abs(light(colour) - light(white)), 0) / whites.length;
+        if (whiteSpread > light(white) * .13) continue;
+        // The four dots sit at the centre of a broad sheet, not along its side.
+        // Verify paper extending to BOTH sides of the row and well into one
+        // page interior (the red-to-green order fixes its side). Small coloured UI icons on a laptop can otherwise imitate
+        // the same ordered four pixels beside the real page.
+        let hits = 0, endHits = 0;
+        for (const across of [-24, -12, 0, 12, 24]) for (const away of [8, 20, 36]) {
+          const p = { x: center.x + axis.x * pitch * across - normal.x * pitch * away,
+            y: center.y + axis.y * pitch * across - normal.y * pitch * away };
+          if (p.x < 2 || p.y < 2 || p.x >= width - 2 || p.y >= height - 2) continue;
+          const colour = rgb(p), level = light(colour) / light(white);
+          const redRatio = colour[0] / Math.max(1, colour[1]) / (white[0] / white[1]);
+          const blueRatio = colour[2] / Math.max(1, colour[1]) / (white[2] / white[1]);
+          if (level < .5 || level > 1.65 || Math.abs(Math.log(redRatio)) > .25 || Math.abs(Math.log(blueRatio)) > .25) continue;
+          hits += 1; if (Math.abs(across) === 24) endHits += 1;
+        }
+        const paperSupport = endHits >= 4 ? hits / 15 : 0;
+        if (paperSupport < .67) continue;
+        const expectedBlack = mix(red, blue, .5), reach = Math.max(1, Math.floor(pitch * .35));
+        let black = null, blackPoint = null;
+        for (let dy = -reach; dy <= reach; dy += 1) for (let dx = -reach; dx <= reach; dx += 1) {
+          const p = { x: expectedBlack.x + dx, y: expectedBlack.y + dy }, colour = rgb(p);
+          if (!black || light(colour) < light(black)) { black = colour; blackPoint = p; }
+        }
+        if (light(black) > light(white) * .45 || black.some((value, channel) => value > white[channel] * .65)) continue;
+        const observed = [rgb(red), rgb(blue), rgb(green)];
+        const primaryChannels = [0, 2, 1];
+        let valid = true;
+        for (let i = 0; i < observed.length; i += 1) {
+          const normalized = observed[i].map((value, channel) => (value - black[channel]) / Math.max(12, white[channel] - black[channel]));
+          const primary = normalized[primaryChannels[i]], other = Math.max(...normalized.filter((_, channel) => channel !== primaryChannels[i]));
+          if (primary < .18 || primary - other < .12) valid = false;
+        }
+        if (!valid) continue;
+        const score = (red.compactness + blue.compactness + green.compactness) - error + Math.min(1, pitch / 4);
+        if (best && score <= best.score) continue;
+        best = { score, points: [red, blackPoint, blue, green].map(point => ({ x: point.x / scale, y: point.y / scale })),
+          white, black, pitch: pitch / scale, error, paperSupport };
+      }
+    }
+    if (best) delete best.score;
+    return best;
+  }
+
+  function estimateIllumination(imageData, region = null, colourReferences = null) {
     const { width, height, data } = imageData;
     // Rectified scans may have synthetic white margins. Their caller can use
     // the known physical page interior as the illuminant reference, while live
@@ -136,7 +269,9 @@
       for (let x = x0; x < x1; x += stride) {
         const at = (y * width + x) * 4, r = data[at], g = data[at + 1], b = data[at + 2];
         const light = r * .2126 + g * .7152 + b * .0722;
-        if (light < 75 || Math.min(r, g, b) < 38 || Math.min(r, g, b) < Math.max(r, g, b) * .36) continue;
+        const anchored = bounded || colourReferences;
+        if (light < (anchored ? 32 : 75) || Math.min(r, g, b) < (anchored ? 15 : 38)
+          || Math.min(r, g, b) < Math.max(r, g, b) * (anchored ? .18 : .36)) continue;
         let gradient = 0;
         for (let channel = 0; channel < 3; channel += 1) gradient += Math.abs(data[at + channel - 4] - data[at + channel + 4])
           + Math.abs(data[at + channel - width * 4] - data[at + channel + width * 4]);
@@ -155,6 +290,10 @@
         for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) weight += histogram[(y + dy) * bins + x + dx];
         if (weight > peak) { peak = weight; peakX = x; peakY = y; }
       }
+    }
+    if (colourReferences) {
+      peakX = colourReferences.white[0] / colourReferences.white[1] * 24;
+      peakY = colourReferences.white[2] / colourReferences.white[1] * 24;
     }
     let red = 0, blue = 0, weight = 0, count = 0, selectedLight = 0;
     let neutralCount = 0, neutralLight = 0;
@@ -179,7 +318,7 @@
     // independently brighter neutral material is stronger white evidence than
     // that dominant background colour; do not tint a correctly exposed page.
     // Tiny white logos/highlights cannot veto an otherwise measured cast.
-    if (neutralCount >= referenceArea / (stride * stride) * .08
+    if (!colourReferences && neutralCount >= referenceArea / (stride * stride) * .08
       && neutralLight / neutralCount > selectedLight / count + 12) return null;
     const columns = Math.max(2, Math.ceil(width / 48)), rows = Math.max(2, Math.ceil(height / 48));
     const fieldRed = new Float64Array(columns * rows), fieldBlue = new Float64Array(columns * rows);
@@ -210,7 +349,7 @@
       }
     }
     return { columns, rows, whiteRed, whiteBlue,
-      illumination: { red, blue, coverage: count * stride * stride / referenceArea } };
+      illumination: { red, blue, coverage: count * stride * stride / referenceArea, reference: colourReferences ? 'colour-markers' : 'paper' } };
   }
 
   function applyIlluminationRows(imageData, estimate, corrected, from, to) {
@@ -237,21 +376,21 @@
   const illuminationResult = (imageData, estimate, corrected) => ({ width: imageData.width, height: imageData.height,
     data: corrected, luminanceData: imageData.luminanceData || imageData.data, illumination: estimate.illumination });
 
-  function normalizeIllumination(imageData, { region } = {}) {
-    const estimate = estimateIllumination(imageData, region);
+  function normalizeIllumination(imageData, { region, colourReferences = findColourReferences(imageData) } = {}) {
+    const estimate = estimateIllumination(imageData, region, colourReferences);
     if (!estimate) return imageData;
     const corrected = new Uint8ClampedArray(imageData.data.length);
     applyIlluminationRows(imageData, estimate, corrected, 0, imageData.height);
     return illuminationResult(imageData, estimate, corrected);
   }
 
-  async function normalizeIlluminationAsync(imageData, { signal, region } = {}) {
+  async function normalizeIlluminationAsync(imageData, { signal, region, colourReferences } = {}) {
     const checkCancelled = () => {
       if (!signal?.aborted) return;
       const error = new Error('Scan cancelled'); error.name = 'AbortError'; throw error;
     };
     checkCancelled();
-    const estimate = estimateIllumination(imageData, region);
+    const estimate = estimateIllumination(imageData, region, colourReferences === undefined ? findColourReferences(imageData) : colourReferences);
     if (!estimate) return imageData;
     const corrected = new Uint8ClampedArray(imageData.data.length);
     for (let row = 0; row < imageData.height; row += 48) {
@@ -269,13 +408,17 @@
   }
 
   function analyse(imageData) {
-    imageData = normalizeIllumination(imageData);
+    const colourReferences = findColourReferences(imageData);
+    imageData = normalizeIllumination(imageData, { colourReferences });
     const { width, height, data } = imageData;
     const original = imageData.luminanceData || data;
     const length = width * height;
     const yellow = new Uint8Array(length), neutral = new Uint8Array(length);
     const luminance = new Float32Array(length), chroma = new Float32Array(length);
     const histogram = new Uint32Array(256);
+    const referenceLight = colourReferences ? colourReferences.white[0] * .2126
+      + colourReferences.white[1] * .7152 + colourReferences.white[2] * .0722 : 255;
+    const chromaGain = colourReferences ? Math.min(3, 255 / Math.max(50, referenceLight)) : 1;
     let yellowCount = 0;
     for (let i = 0; i < length; i += 1) {
       const offset = i * 4, r = data[offset], g = data[offset + 1], b = data[offset + 2];
@@ -284,11 +427,18 @@
       const light = original[offset] * .2126 + original[offset + 1] * .7152 + original[offset + 2] * .0722;
       luminance[i] = light;
       histogram[Math.round(light)] += 1;
-      chroma[i] = (r + g) * .5 - b - Math.abs(r - g) * .34;
-      neutral[i] = saturation < .28 ? 1 : 0;
+      chroma[i] = ((r + g) * .5 - b - Math.abs(r - g) * .34) * chromaGain;
+      const paperRatioError = colourReferences ? Math.max(
+        Math.abs(Math.log((original[offset] + 1) / (original[offset + 1] + 1)
+          / (colourReferences.white[0] / colourReferences.white[1]))),
+        Math.abs(Math.log((original[offset + 2] + 1) / (original[offset + 1] + 1)
+          / (colourReferences.white[2] / colourReferences.white[1])))) : 0;
+      // Clipping a corrected coloured desk can accidentally reduce its
+      // saturation. Verify the unmodified RGB ratios before calling it paper.
+      neutral[i] = saturation < .28 && paperRatioError < .35 ? 1 : 0;
       // A broad hue gate retains the thin, antialiased printed rails. The
       // later two-sided ridge test rejects yellow desks and filled objects.
-      if (maximum > 65 && g >= r * .70 && r >= g * .82 && b < g * .94
+      if (maximum > (colourReferences ? 25 : 65) && g >= r * .70 && r >= g * .82 && b < g * .94
         && chroma[i] > 10 && saturation > .055) { yellow[i] = 1; yellowCount += 1; }
     }
     let cumulative = 0, bright = 255;
@@ -297,7 +447,9 @@
       if (cumulative >= length * .84) { bright = i; break; }
     }
     return { width, height, yellow, neutral, luminance, chroma, yellowCount,
-      illumination: imageData.illumination || null, paperThreshold: Math.max(95, bright - 38) };
+      colourReferences, illumination: imageData.illumination || null, paperThreshold: colourReferences ? Math.max(32, referenceLight * .72) : Math.max(95, bright - 38),
+      paperCeiling: colourReferences ? Math.min(255, referenceLight * 1.5) : 255,
+      scenePaperThreshold: Math.min(250, Math.max(95, bright - 12)) };
   }
 
   const sample = (map, state, point) => map[
@@ -423,6 +575,10 @@
             if (separation === 6 && Math.min(ink - before, ink - after) > 1) narrow[row * bands + band] = 1;
           }
         }
+        // A white desk can become yellow after correcting the page's cool
+        // illuminant. Do not let its one-sided boundary outscore a thin printed
+        // rail, then discover the invalid width only after the path was chosen.
+        if (outer && state.colourReferences && state.illumination && !narrow[row * bands + band]) contrast = 0;
         evidence[row * bands + band] = Math.max(0, contrast);
         const signal = Math.min(3, Math.max(0, contrast) / 12);
         // Use the chord as a weak prior, not as a constraint on bent paper.
@@ -627,8 +783,12 @@
       if (groups.length > 1) candidates.push({ quad: corners(groups.flatMap(group => group.points)), source: 'yellow' });
     }
     const paperMask = new Uint8Array(width * height);
-    for (const threshold of [state.paperThreshold, Math.min(250, state.paperThreshold + 26)]) {
-      for (let i = 0; i < paperMask.length; i += 1) paperMask[i] = state.neutral[i] && state.luminance[i] >= threshold ? 1 : 0;
+    const paperThresholds = [state.paperThreshold, Math.min(250, state.paperThreshold + 26)];
+    // Keep the ordinary high-exposure seed as well: when bright paper is partly
+    // clipped, its measured white can otherwise group it with a bright desk.
+    if (state.colourReferences && state.scenePaperThreshold > paperThresholds[1] + 8) paperThresholds.push(state.scenePaperThreshold);
+    for (const threshold of paperThresholds) {
+      for (let i = 0; i < paperMask.length; i += 1) paperMask[i] = state.neutral[i] && state.luminance[i] >= threshold && state.luminance[i] <= state.paperCeiling ? 1 : 0;
       for (const group of components(paperMask, width, height, width * height * .12)) {
         const quad = corners(group.points);
         if (!plausible(quad, width, height)) continue;
@@ -648,7 +808,7 @@
       const source = candidate.source;
       if (!plausible(quad, width, height)) continue;
       const quality = paperEvidence(state, quad);
-      if (quality.neutral < .64 || quality.yellow > .2 || quality.brightness < 75) continue;
+      if (quality.neutral < .64 || quality.yellow > .2 || quality.brightness < (state.colourReferences ? 32 : 75)) continue;
       let frameEdges = null, frameEdgeSupport = [], markerEdges = [];
       let edgeSupport = 0, geometryPenalty = 0;
       let confidence, markers = [], markerSupport = 0, pageQuad = candidate.paper || quad;
@@ -700,6 +860,7 @@
         if (boundary.support < .65 || boundary.contrast < 15) continue;
         confidence = clamp(.38 + boundary.support * .21 + quality.neutral * .09, 0, .69);
       }
+      if (quality.brightness < 75) confidence = Math.min(confidence, .76);
       const coverage = area(quad) / (width * height);
       const score = confidence + Math.min(.04, coverage * .06) - geometryPenalty * 2;
       if (best && best.score >= score) continue;
@@ -725,5 +886,5 @@
 
   // Intentionally synchronous and independent of OpenCV/full-resolution scan
   // processing. Feed a <=480px ImageData at a throttled preview cadence.
-  SP.LiveDetection = { detect, normalizeIllumination, normalizeIlluminationAsync };
+  SP.LiveDetection = { detect, normalizeIllumination, normalizeIlluminationAsync, findColourReferences };
 })();
