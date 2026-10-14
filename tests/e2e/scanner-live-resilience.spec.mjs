@@ -1,12 +1,13 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 
-const fixtures = fs.readFileSync(new URL('./fixtures/scanner-synthetic.js', import.meta.url), 'utf8');
+const fixtures = ['scanner-synthetic.js', 'scanner-developable.js']
+  .map(name => fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')).join('\n');
 
 async function camera(page, mode) {
   await page.addInitScript({ content: fixtures });
   await page.addInitScript(mode => {
-    const fixture = window.liveResilience = { constraints: [], observed: 0, missed: 0, retained: 0, focus: [], draws: [], measurements: [] };
+    const fixture = window.liveResilience = { constraints: [], observed: 0, missed: 0, retained: 0, focus: [], draws: [], measurements: [], readiness: [], encodings: [] };
     if (mode.startsWith('visual-')) {
       // Record the actual rendered frame path, independently of detector events.
       const paths = new WeakMap();
@@ -32,7 +33,12 @@ async function camera(page, mode) {
     }
     navigator.mediaDevices.getUserMedia = async () => {
       fixture.opened = (fixture.opened || 0) + 1;
-      const canvas = ScannerSyntheticFixtures.renderCase(ScannerSyntheticFixtures.CASES[0]).source;
+      // The camera pipeline now verifies a physically straightenable lattice.
+      // Use an independently projected real sheet; the old Coons fixture
+      // stretches paper and legitimately fails the stricter physical fit.
+      const canvas = mode.startsWith('visual-')
+        ? ScannerSyntheticFixtures.renderCase(ScannerSyntheticFixtures.CASES[0]).source
+        : ScannerDevelopableFixtures.render({ radius: 0, axis: 0, pitch: .1, yaw: .1 }).source;
       const context = canvas.getContext('2d');
       if (mode.startsWith('blank-')) {
         canvas.width = 900;
@@ -53,6 +59,15 @@ async function camera(page, mode) {
             context.lineTo(135 + (start + column) * px, 145 + 27.93 * px);
             context.stroke();
           }
+        }
+        if (mode === 'blank-markers') {
+          ['#ff0000', '#000000', '#0000ff', '#6eff12'].forEach((colour, index) => {
+            context.fillStyle = colour;
+            context.beginPath();
+            context.arc(135 + (10.125 + index * .25) * px, 145 + 27.68 * px, .125 * px, 0, Math.PI * 2);
+            context.fill();
+            context.stroke();
+          });
         }
         if (mode === 'blank-blurred') {
           const copy = document.createElement('canvas');
@@ -79,6 +94,19 @@ async function camera(page, mode) {
   }, mode);
   await page.goto('/scanner/index.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(mode => {
+    if (mode === 'pending-readiness') {
+      const inspect = ScannerPro.CaptureQuality.inspectReadinessAsync;
+      const gate = new Promise(resolve => { liveResilience.releaseReadiness = resolve; });
+      ScannerPro.CaptureQuality.inspectReadinessAsync = async (...args) => {
+        const result = await inspect(...args);
+        liveResilience.pendingReadiness = (liveResilience.pendingReadiness || 0) + 1;
+        // Simulate a late completed worker response, including one whose
+        // wrapper ignores cancellation, so the controller must reject it.
+        await gate;
+        liveResilience.releasedReadiness = (liveResilience.releasedReadiness || 0) + 1;
+        return result;
+      };
+    }
     if (mode === 'invalid-review') {
       // Exercise the supported main-thread fallback explicitly: the normal
       // pipeline now runs detection and warp in dedicated workers.
@@ -95,20 +123,17 @@ async function camera(page, mode) {
         return warp(...args);
       };
     }
-    if (mode === 'single-clear' || mode === 'slow-encoding') {
-      const toBlob = HTMLCanvasElement.prototype.toBlob;
-      liveResilience.encodings = [];
-      HTMLCanvasElement.prototype.toBlob = function(callback, ...args) {
-        if (args[0] === 'image/jpeg' && document.getElementById('liveScanner').dataset.state === 'capturing') {
-          liveResilience.encodings.push({ startedAt: performance.now() });
-          const entry = liveResilience.encodings.at(-1);
-          return toBlob.call(this, blob => setTimeout(() => {
-            entry.finishedAt = performance.now(); callback(blob);
-          }, 450), ...args);
-        }
-        return toBlob.call(this, callback, ...args);
-      };
-    }
+    const toBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function(callback, ...args) {
+      if (args[0] === 'image/jpeg' && document.getElementById('liveScanner').dataset.state === 'capturing') {
+        const entry = { startedAt: performance.now() };
+        liveResilience.encodings.push(entry);
+        return toBlob.call(this, blob => setTimeout(() => {
+          entry.finishedAt = performance.now(); callback(blob);
+        }, mode === 'slow-encoding' ? 450 : 0), ...args);
+      }
+      return toBlob.call(this, callback, ...args);
+    };
     const original = ScannerPro.LiveDetection.detect;
     ScannerPro.LiveDetection.detect = (...args) => {
       const detection = original(...args);
@@ -134,7 +159,7 @@ async function camera(page, mode) {
         fixture.measurements.push({ at, dx, first: shifted.contour[0], mid: shifted.contour[16] });
         return shifted;
       }
-      if (mode === 'single-clear' && fixture.firstQualifiedAt) return null;
+      if (mode === 'single-clear' && fixture.readiness.some(sample => sample.valid)) return null;
       if (['single-clear', 'slow-encoding'].includes(mode) && detection?.source === 'yellow'
           && detection.confidence >= .78 && Math.max(detection.sharpness / 32, detection.edgeSharpness / 160) >= 1) {
         fixture.firstQualifiedAt ||= performance.now();
@@ -146,7 +171,9 @@ async function camera(page, mode) {
       }
       if (mode === 'soft-focus' && detection?.source === 'yellow') {
         fixture.observed++;
-        if (fixture.observed % 3 === 0) return { ...detection, sharpness: 8, edgeSharpness: 8 };
+        // Autofocus initially hunts, then settles. A permanently soft frame
+        // every third observation should not satisfy sustained sharpness.
+        if (fixture.observed <= 6 && fixture.observed % 3 === 0) return { ...detection, sharpness: 8, edgeSharpness: 8 };
       }
       if (mode === 'gone') {
         if (++fixture.observed > 2) return null;
@@ -155,6 +182,9 @@ async function camera(page, mode) {
       return detection;
     };
     addEventListener('scanner-capture-quality', event => { liveResilience.lastPhotoQuality = event.detail; });
+    addEventListener('scanner-capture-readiness', event => {
+      liveResilience.readiness.push({ at: performance.now(), ...event.detail });
+    });
     addEventListener('scanner-live-detection', event => {
       if (event.detail?.source === 'yellow') liveResilience.focus.push({
         interior: event.detail.sharpness, edge: event.detail.edgeSharpness
@@ -176,8 +206,10 @@ for (const mode of ['brief-loss', 'soft-focus']) {
     expect(await page.locator('#livePreview').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
     const recorded = await page.evaluate(() => liveResilience);
     expect(recorded.observed).toBeGreaterThanOrEqual(1);
+    expect(recorded.readiness.find(sample => sample.ready)?.samples).toBeGreaterThanOrEqual(3);
     if (mode === 'brief-loss') {
-      // The first clear observation now captures before later tracking misses.
+      // Tracking may survive a brief miss; retained geometry alone must not
+      // authorize the shutter, which still needs fresh sharp, gridded frames.
       expect(recorded.retained).toBe(recorded.missed);
     }
     expect(recorded.constraints).toEqual([{ advanced: [{ focusMode: 'continuous', exposureMode: 'continuous' }] }]);
@@ -193,7 +225,7 @@ test('a document that leaves the feed is cleared and never captured from retaine
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'searching');
 });
 
-test('the first clear frame survives a detection miss during the backup burst', async ({ page }) => {
+test('a verified clear frame survives a detection miss during the backup burst', async ({ page }) => {
   await camera(page, 'burst-loss');
   await expect(page.locator('#liveReview')).toBeVisible({ timeout: 6500 });
   await expect(page.locator('#liveAddBtn')).toBeEnabled({ timeout: 15000 });
@@ -201,16 +233,25 @@ test('the first clear frame survives a detection miss during the backup burst', 
   await expect(page.locator('#liveAlternatives')).toBeEmpty();
 });
 
-test('a crisp blank template captures using measured border focus despite its empty interior', async ({ page }) => {
-  await camera(page, 'blank-crisp');
-  try { await expect(page.locator('#liveReview')).toBeVisible({ timeout: 6500 }); } catch(error) { console.log('BLANK_FOCUS',await page.evaluate(()=>({quality:liveResilience.lastPhotoQuality,focus:liveResilience.focus.at(-1)}))); throw error; }
-  await expect(page.locator('#liveAddBtn')).toBeEnabled({ timeout: 20000 });
-  const focus = await page.evaluate(() => liveResilience.focus);
-  expect(focus.length).toBeGreaterThanOrEqual(1);
-  expect(Math.max(...focus.map(sample => sample.interior))).toBeLessThan(32);
-  expect(Math.min(...focus.map(sample => sample.edge))).toBeGreaterThanOrEqual(160);
-  expect(await page.locator('#livePreview').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
-});
+for (const mode of ['blank-crisp', 'blank-markers']) {
+  test(`a crisp ${mode} page never captures without a measured bullet lattice`, async ({ page }) => {
+    await camera(page, mode);
+    await page.waitForFunction(() => liveResilience.readiness.length >= 3);
+    await expect(page.locator('#liveReview')).toBeHidden();
+    await expect(page.locator('#liveAddBtn')).toBeDisabled();
+    const measured = await page.evaluate(() => liveResilience);
+    expect(measured.encodings).toEqual([]);
+    expect(measured.focus.length).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...measured.focus.map(sample => sample.interior))).toBeLessThan(32);
+    expect(Math.min(...measured.focus.map(sample => sample.edge))).toBeGreaterThanOrEqual(160);
+    expect(measured.readiness.every(sample => !sample.valid && !sample.ready && !sample.grid.valid)).toBe(true);
+    expect(measured.readiness.some(sample => sample.reason === 'grid-not-found')).toBe(true);
+    // The explicit shutter must not bypass the same failed photo evidence.
+    await page.locator('#liveCaptureBtn').click();
+    await expect(page.locator('#liveReview')).toBeHidden();
+    expect(await page.evaluate(() => liveResilience.encodings)).toEqual([]);
+  });
+}
 
 test('a blurred blank template remains in the live feed instead of passing border focus', async ({ page }) => {
   await camera(page, 'blank-blurred');
@@ -267,25 +308,49 @@ test('invalid page geometry cannot be inserted and automatically returns to the 
   expect(await page.evaluate(() => liveResilience.warpCalls)).toBe(0);
 });
 
-test('one clear video frame is frozen immediately and survives loss of the page during slow JPEG encoding', async ({ page }) => {
+test('one clear video frame cannot trigger a capture after the page disappears', async ({ page }) => {
   await camera(page, 'single-clear');
-  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 15000 });
-  await expect(page.locator('#liveAddBtn')).toBeEnabled();
+  await page.waitForFunction(() => liveResilience.readiness.some(sample => sample.valid));
+  await page.waitForTimeout(1600);
+  await expect(page.locator('#liveReview')).toBeHidden();
+  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  await expect(page.locator('#liveOverlay')).toHaveAttribute('data-detected', 'false');
   const measured = await page.evaluate(() => liveResilience);
-  expect(measured.encodings).toHaveLength(1);
-  expect(measured.encodings[0].startedAt - measured.firstQualifiedAt).toBeLessThan(150);
-  expect(measured.encodings[0].finishedAt - measured.encodings[0].startedAt).toBeGreaterThanOrEqual(450);
-  expect(await page.locator('#livePreview').evaluate(image => image.complete && image.naturalWidth > 100)).toBe(true);
-  await expect(page.locator('#liveReviewStatus')).not.toContainText('Original photo ready');
+  expect(measured.encodings).toEqual([]);
+  expect(measured.readiness.filter(sample => sample.valid)).toHaveLength(1);
+  expect(measured.readiness.some(sample => sample.ready)).toBe(false);
 });
 
-test('three fresh photos freeze before the first slow JPEG finishes, without an extra hold period', async ({ page }) => {
+test('a late readiness result cannot capture or reopen a closed camera', async ({ page }) => {
+  await camera(page, 'pending-readiness');
+  await page.waitForFunction(() => liveResilience.pendingReadiness > 0);
+  await page.evaluate(() => { ScannerPro.LiveCamera.close(); liveResilience.releaseReadiness(); });
+  await page.waitForFunction(() => liveResilience.releasedReadiness > 0);
+  await page.waitForTimeout(250);
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'closed');
+  await expect(page.locator('#liveScanner')).toBeHidden();
+  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  const measured = await page.evaluate(() => ({ encodings: liveResilience.encodings, opened: liveResilience.opened }));
+  expect(measured.encodings).toEqual([]);
+  expect(measured.opened).toBe(1);
+});
+
+test('sustained sharp grid evidence precedes a burst that freezes before slow JPEG encoding finishes', async ({ page }) => {
   await camera(page, 'slow-encoding');
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 15000 });
   const measured = await page.evaluate(() => liveResilience);
   expect(measured.encodings).toHaveLength(3);
-  expect(measured.encodings[0].startedAt - measured.firstQualifiedAt).toBeLessThan(150);
+  const ready = measured.readiness.find(sample => sample.ready);
+  expect(ready).toBeTruthy();
+  expect(ready.valid).toBe(true);
+  expect(ready.grid.valid).toBe(true);
+  expect(ready.samples).toBeGreaterThanOrEqual(3);
+  expect(ready.elapsedMs).toBeGreaterThanOrEqual(300);
+  expect(measured.encodings[0].startedAt).toBeGreaterThanOrEqual(ready.at);
+  expect(measured.encodings[0].startedAt - ready.at).toBeLessThan(150);
+  expect(measured.encodings[0].startedAt - measured.firstQualifiedAt).toBeLessThan(3000);
   expect(measured.encodings[2].startedAt).toBeLessThan(measured.encodings[0].finishedAt);
+  expect(measured.encodings[0].finishedAt - measured.encodings[0].startedAt).toBeGreaterThanOrEqual(450);
   expect(await page.locator('#liveAlternatives button').count()).toBe(3);
-  await test.info().attach('capture-timing', { body: JSON.stringify({ qualifiedAt: measured.firstQualifiedAt, encodings: measured.encodings }), contentType: 'application/json' });
+  await test.info().attach('capture-timing', { body: JSON.stringify({ qualifiedAt: measured.firstQualifiedAt, readiness: measured.readiness, encodings: measured.encodings }), contentType: 'application/json' });
 });

@@ -49,6 +49,7 @@ async function prepare(page, camera = false) {
     });
     probe.progress = (index, stage, detail = probe.geometry) => probe.calls[index].options.onProgress(stage, detail);
     probe.finish = index => probe.calls[index].resolve({ blob: probe.warp, corrected: true,
+      dotAlignment: { status: 'verified' },
       detection: { quality: { valid: true }, confidence: .9 } });
     const detect = ScannerPro.LiveDetection.detect;
     ScannerPro.LiveDetection.detect = (...args) => {

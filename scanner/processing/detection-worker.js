@@ -11,7 +11,7 @@ importScripts(`../../rust-core-v5.js${self.location.search}`, `../../ink-palette
   `metric-surface.js${self.location.search}`, `scan-template.js${self.location.search}`, `lightweight.js${self.location.search}`);
 self.onmessage = async event => {
   const { operation, bitmap, blob, config, liveDetection, maxDimension, timeoutMs,
-    previewProgress, reportProgress, surfaceBudgetMs } = event.data;
+    previewProgress, reportProgress, surfaceBudgetMs, requireGrid } = event.data;
   try {
     self.ScannerPro.Config = config;
     // Module loading starts at import time; don't begin the synchronous 3D
@@ -24,7 +24,7 @@ self.onmessage = async event => {
         return;
       }
       const result = await self.ScannerPro.Lightweight.processPageAsync(blob, {
-        liveDetection, maxDimension, timeoutMs, previewProgress,
+        liveDetection, maxDimension, timeoutMs, previewProgress, requireGrid,
         onProgress: (progress, detail) => self.postMessage({ progress, detail })
       });
       self.postMessage({ result });

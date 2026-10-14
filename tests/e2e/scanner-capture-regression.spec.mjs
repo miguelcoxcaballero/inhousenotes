@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 
 const fixtureSource = fs.readFileSync(new URL('./fixtures/scanner-synthetic.js', import.meta.url), 'utf8');
+const physicalFixtureSource = fs.readFileSync(new URL('./fixtures/scanner-developable.js', import.meta.url), 'utf8');
 
 function installCaptureCamera(options = {}) {
   window.__captureRegression = { streams: [], invalidOutputs: 0 };
@@ -9,7 +10,10 @@ function installCaptureCamera(options = {}) {
     configurable: true,
     value: async () => {
       if (options.denied) throw new DOMException('Permission denied by fixture', 'NotAllowedError');
-      const canvas = ScannerSyntheticFixtures.renderCase(ScannerSyntheticFixtures.CASES[0]).source;
+      // Camera capture now requires an independently validated physical grid.
+      // The legacy Coons fixture bends two axes without a developable paper
+      // surface; retain it below for ordinary photo-import compatibility only.
+      const canvas = ScannerDevelopableFixtures.render({ radius: 0, axis: 0, pitch: .1, yaw: .1 }).source;
       const stream = canvas.captureStream(20);
       const track = stream.getVideoTracks()[0];
       const context = canvas.getContext('2d');
@@ -27,7 +31,7 @@ function installCaptureCamera(options = {}) {
 }
 
 async function installFixture(page, options = {}) {
-  await page.addInitScript({ content: `${fixtureSource}\n;(${installCaptureCamera.toString()})(${JSON.stringify(options)});` });
+  await page.addInitScript({ content: `${fixtureSource}\n${physicalFixtureSource}\n;(${installCaptureCamera.toString()})(${JSON.stringify(options)});` });
 }
 
 async function holdFirstBatch(frame) {
