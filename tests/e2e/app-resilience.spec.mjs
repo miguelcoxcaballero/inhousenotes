@@ -558,7 +558,7 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
     canvas.height = 1188;
     const context = canvas.getContext('2d');
     const pxPerCm = canvas.width / 21;
-    context.fillStyle = 'rgb(218,213,205)';
+    context.fillStyle = '#ffffff';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
     // The photographed template has a repeated half-centimetre dot grid.
@@ -574,29 +574,29 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
       }
     }
 
-    const yellow = 'rgb(195,170,55)';
+    const yellow = '#f0db4c';
     context.strokeStyle = yellow;
     context.lineWidth = 5;
     context.strokeRect(1.5 * pxPerCm, 1.43 * pxPerCm, 18 * pxPerCm, 27 * pxPerCm);
 
     const references = [
-      [10.125, 'rgb(165,55,50)'],
-      [10.375, 'rgb(42,42,42)'],
-      [10.625, 'rgb(45,70,160)'],
-      [10.875, 'rgb(75,145,55)']
+      [10.125, '#ff0000'],
+      [10.375, '#000000'],
+      [10.625, '#0000ff'],
+      [10.875, '#6eff12']
     ];
     for (const [x, colour] of references) {
       context.fillStyle = colour;
       context.beginPath();
-      context.arc(x * pxPerCm, 27.68 * pxPerCm, pxPerCm * 0.1, 0, Math.PI * 2);
+      context.arc(x * pxPerCm, 27.68 * pxPerCm, pxPerCm * 0.125, 0, Math.PI * 2);
       context.fill();
     }
 
     const swatches = {
-      red: ['rgb(165,55,50)', 5],
-      black: ['rgb(42,42,42)', 8],
-      blue: ['rgb(45,70,160)', 11],
-      green: ['rgb(75,145,55)', 14],
+      red: ['#ff0000', 5],
+      black: ['#000000', 8],
+      blue: ['#0000ff', 11],
+      green: ['#6eff12', 14],
       yellow: [yellow, 17]
     };
     for (const [colour, x] of Object.values(swatches)) {
@@ -626,6 +626,19 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
     context.lineTo(3.75 * pxPerCm, 2.43 * pxPerCm);
     context.stroke();
 
+    // Apply one physically coherent camera response to the complete page.
+    // The former independently chosen RGB values implied a different camera
+    // transform for yellow, which the four-disc consistency check rejects.
+    const photographed = context.getImageData(0, 0, canvas.width, canvas.height);
+    const paper = [218, 213, 205], flare = 42;
+    for (let index = 0; index < photographed.data.length; index += 4) {
+      for (let channel = 0; channel < 3; channel++) {
+        photographed.data[index + channel] = flare
+          + photographed.data[index + channel] / 255 * (paper[channel] - flare);
+      }
+    }
+    context.putImageData(photographed, 0, 0);
+
     const cleanupControl = document.createElement('canvas');
     cleanupControl.width = canvas.width;
     cleanupControl.height = canvas.height;
@@ -644,6 +657,8 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
     ).data.slice(0, 3));
     return {
       calibrated: correction.calibrated,
+      calibration: correction.calibration,
+      references: correction.references,
       samples: correction.samples,
       paper: sample(10.5, 9),
       red: sample(5.5, 12.5),
@@ -664,11 +679,20 @@ test('scanner calibrates paper and ink from the four dots and yellow frame', asy
   expect(result.calibrated).toBe(true);
   expect(result.samples).toBe(4);
   expect(result.paper.every(channel => channel >= 250)).toBe(true);
-  expect(result.red).toEqual([232, 16, 16]);
-  expect(result.black).toEqual([77, 77, 77]);
-  expect(result.blue).toEqual([0, 47, 217]);
-  expect(result.green).toEqual([110, 255, 18]);
-  expect(result.yellow).toEqual([255, 222, 0]);
+  expect(result.calibration.references).toEqual(['red', 'black', 'blue', 'green', 'yellow', 'paper']);
+  expect(result.calibration.matrix).not.toBeNull();
+  expect(result.calibration.matrixError).toBeLessThan(.02);
+  for (const colour of ['red', 'black', 'blue', 'green', 'yellow']) {
+    expect(result.references[colour].valid, `${colour} independently measured`).toBe(true);
+  }
+  // This stage restores photographed pigments; the subsequent ink vectorizer
+  // maps handwriting to the exact editor pen palette. Do not demand the old
+  // palette snapping here, especially its lifting of black ink to RGB 77.
+  const pigments = {red:[255,0,0],black:[0,0,0],blue:[0,0,255],green:[110,255,18],yellow:[240,219,76]};
+  for (const [colour, target] of Object.entries(pigments)) {
+    expect(Math.max(...result[colour].map((value, channel) => Math.abs(value-target[channel]))),
+      `${colour} recovered pigment`).toBeLessThan(25);
+  }
   expect(Math.min(...result.originalDot)).toBeGreaterThanOrEqual(250);
   expect(Math.max(...result.crossingInk)).toBeLessThan(110);
   expect(Math.max(...result.crossingFaintInkWithoutCleanup)).toBeLessThan(235);

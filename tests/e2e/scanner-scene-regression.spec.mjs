@@ -114,7 +114,7 @@ test('live camera review preserves the writing of the sheet lying on a pale book
 });
 
 
-test('a faint scene is either reconstructed correctly or explicitly kept as the original', async ({ page }, testInfo) => {
+test('a faint scene is either reconstructed correctly or rejected without enabling insertion', async ({ page }, testInfo) => {
   test.setTimeout(45_000);
   await page.addInitScript(() => {
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
@@ -131,6 +131,7 @@ test('a faint scene is either reconstructed correctly or explicitly kept as the 
     ScannerPro.Lightweight.processPageAsync = async function (...args) {
       const result = await process.apply(this, args);
       window.__faintDetection = result.detection;
+      window.__faintCorrected = result.corrected;
       return result;
     };
     return __faintScene.source.toDataURL('image/png').split(',')[1];
@@ -139,7 +140,6 @@ test('a faint scene is either reconstructed correctly or explicitly kept as the 
     name: 'synthetic-faint-scene.png', mimeType: 'image/png', buffer: Buffer.from(input, 'base64')
   });
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state', 'review', { timeout: 25_000 });
-  await expect(page.locator('#liveAddBtn')).toBeEnabled();
   const result = await page.evaluate(async () => {
     const image = document.getElementById('livePreview');
     await image.decode();
@@ -147,7 +147,7 @@ test('a faint scene is either reconstructed correctly or explicitly kept as the 
     canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
     canvas.getContext('2d').drawImage(image, 0, 0);
     const detection = __faintDetection;
-    const rejected = detection.quality?.valid === false;
+    const rejected = !__faintCorrected;
     let foreignInteriorRatio = null, unchangedOriginal = false;
     if (rejected) {
       const response = await fetch(image.src);
@@ -172,9 +172,11 @@ test('a faint scene is either reconstructed correctly or explicitly kept as the 
   delete result.png;
   console.log('faint-scene-review', JSON.stringify(result));
   if (result.rejected) {
-    expect(result.status).toMatch(/original/i);
+    await expect(page.locator('#liveAddBtn')).toBeDisabled();
+    expect(result.status).toMatch(/correct|verified|try again/i);
     expect(result.unchangedOriginal, 'rejected geometry keeps the exact imported photograph').toBe(true);
   } else {
+    await expect(page.locator('#liveAddBtn')).toBeEnabled();
     expect(result.aspect).toBeCloseTo(21 / 29.7, 2);
     expect(result.foreignInteriorRatio, 'accepted output excludes surrounding book and table').toBeLessThan(.005);
     expect(result.lines.maximum).toBeLessThan(.012);
