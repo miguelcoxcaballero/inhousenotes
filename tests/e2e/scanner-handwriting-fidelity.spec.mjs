@@ -69,16 +69,16 @@ test('photographed cursive keeps the shape of small letters, hooks and counters'
   for (const result of report.results) {
     // F1 penalizes both lost ink and invented/thickened ink. A centre-line
     // recall test alone would accept filled counters and oversized letters.
-    const minimumF1 = [.70, .83, .88, .80], maximumMissing = [.007, .008, .03, .07];
+    const minimumF1 = [.73, .85, .92, .93], maximumMissing = [.005, .003, .008, .008];
     result.rows.forEach((row, i) => {
       expect(row.f1, `${result.backend}, pen ${i}: silhouette`).toBeGreaterThan(minimumF1[i]);
       expect(row.missing, `${result.backend}, pen ${i}: missing ink`).toBeLessThan(maximumMissing[i]);
     });
-    // Keep the original bound on traced branches. Source-supported discs
-    // recover varying widths as separate native pens, with their own budget.
+    // Keep the original bounds on pen counts. The envelope follows the full
+    // silhouette, so it uses more points than isolated two-point repairs.
     expect(result.strokes - result.repairCount, 'no explosion of traced branches').toBeLessThan(550);
     expect(result.repairCount, 'bounded repairs for 48 handwritten glyphs').toBeLessThan(48 * 16);
     expect(result.strokes).toBeLessThan(550 + 48 * 16);
-    expect(result.points, 'native editing stays compact').toBeLessThan(15000);
+    expect(result.points, 'full envelopes remain bounded for native editing').toBeLessThan(20000);
   }
 });

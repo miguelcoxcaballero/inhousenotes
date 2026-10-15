@@ -3,7 +3,6 @@
   'use strict';
   const SP = root.ScannerPro = root.ScannerPro || {};
   const palette = root.InhouseInkPalette;
-  const nativeInkRGB = [[77,77,77],[0,47,217],[232,16,16]];
   const yieldTask = () => new Promise(resolve => setTimeout(resolve, 0));
   function check(signal) { if (signal?.aborted) throw new DOMException('Scan cancelled', 'AbortError'); }
   function colour(r, g, b, alpha) {
@@ -60,11 +59,13 @@
     const core=new Uint8Array(n);
     for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
       const i=y*width+x;if(!initial[i])continue;
-      const alpha=alphaAt(i);let peak=alpha;
+      const alpha=alphaAt(i);let peak=alpha,sum=0,samples=0;
       for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
-        peak=Math.max(peak,alphaAt(yy*width+xx));
+        const value=alphaAt(yy*width+xx);peak=Math.max(peak,value);sum+=value;samples++;
       }
-      if(alpha*100>=peak*(coverage?65:60))core[i]=1;
+      // A darker crossing must not erase the lighter continuation beside it.
+      const threshold=coverage?Math.max(peak*.55,Math.min(peak*.65,sum/samples+peak*.05)):peak*.6;
+      if(alpha>=threshold)core[i]=1;
       else if(!transverse(x,y,alpha))mask[i]=0;
     }
     await yieldTask();check(signal);
@@ -496,90 +497,87 @@
     }
     return strokes;
   }
-  // Keep the pen axes editable, then recover substantial photographed lobes
-  // which one constant width cannot express. Every repair is an ordinary
-  // short pen, contained in the measured silhouette; it never invents ink in
-  // a letter counter or uses the photograph to make a second colour decision.
-  function nativeLabel(rgba,at) {
-    if(rgba[at+3]<=200)return 0;
-    const colours=nativeInkRGB;
-    let best=32*32,label=0;
-    for(let k=0;k<3;k++){
-      const c=colours[k],error=(rgba[at]-c[0])**2+(rgba[at+1]-c[1])**2+(rgba[at+2]-c[2])**2;
-      if(error<best){best=error;label=k+1;}
-    }
-    return label;
-  }
-  async function repairDiscs(rgba,radii,coverage,width,height,capacity,signal) {
-    const scale=width/794,n=width*height,candidates=[];
-    const offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
-    for(let i=width+1;i<n-width-1;i++){
-      if(i%32768===0){await yieldTask();check(signal);}
-      if(radii[i]<6)continue;
-      // A contained disc adds no geometry. Keeping maximal discs also bounds
-      // the work for a large filled shape to its medial region, not its area.
-      if(offsets.some((d,k)=>radii[i+d]>=radii[i]+(k%2?4:3)))continue;
-      candidates.push(i);
-      if(candidates.length>250000)return [];
-    }
-    candidates.sort((a,b)=>radii[b]-radii[a]||coverage[b]-coverage[a]||a-b);
-    const discs=[],paletteRgb=nativeInkRGB;
-    const scratchSide=Math.ceil(scale*4.25)*2+3;
-    const seen=new Uint8Array(scratchSide*scratchSide),queue=new Uint32Array(scratchSide*scratchSide);
-    for(let k=0;k<candidates.length;k++){
-      if(k%2048===0){await yieldTask();check(signal);}
-      const i=candidates[k],x=i%width,y=Math.floor(i/width);
-      let radius=Math.min(scale*1.25,Math.max(.6,radii[i]/3-.5));
-      const reach=Math.ceil(radius+1);
-      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
-        if(!radii[yy*width+xx])radius=Math.min(radius,Math.max(.6,Math.hypot(xx-x,yy-y)-.5));
-      }
-      if(radius<Math.max(1.25,scale*.6))continue;
-      radius=Math.floor(radius*1024)/1024;
-      let missing=0;
-      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
-        if((xx-x)**2+(yy-y)**2<=(radius-.1)**2&&rgba[(yy*width+xx)*4+3]<100)missing++;
-      }
-      if(missing<Math.max(2,scale*scale*.4))continue;
-      // Search through photographed ink only. A nearby red line on the other
-      // side of white paper cannot lend its colour to this black letter.
-      const voteReach=Math.ceil(radius+scale*3),side=voteReach*2+1;
-      seen.fill(0);queue[0]=i;seen[voteReach*side+voteReach]=1;
-      let head=0,tail=1,label=0;
-      while(head<tail&&!label){
-        const node=queue[head++];label=nativeLabel(rgba,node*4);if(label)break;
-        const cx=node%width,cy=Math.floor(node/width);
-        for(const d of offsets){
-          const j=node+d,jx=j%width,jy=Math.floor(j/width);
-          if(j<0||j>=n||Math.abs(jx-cx)>1||Math.abs(jy-cy)>1||Math.abs(jx-x)>voteReach||Math.abs(jy-y)>voteReach||!radii[j])continue;
-          const at=(jy-y+voteReach)*side+jx-x+voteReach;
-          if(!seen[at]){seen[at]=1;queue[tail++]=j;}
+  // Join opposite pieces of the same pen at an existing junction. Keep both
+  // copies of the junction point: the editor's midpoint renderer then draws
+  // exactly the same end segments, without rounding a corner or bridging ink.
+  function joinBranches(strokes,scale) {
+    const ends=new Map(),links=strokes.map(()=>[null,null]);
+    strokes.forEach((stroke,index)=>{
+      for(const end of [0,1]){
+        const points=stroke.points,start=end?points.length-1:0,step=end?-1:1,p=points[start];
+        let q=p,distance=0,previous=p;
+        for(let k=start+step;k>=0&&k<points.length;k+=step){
+          q=points[k];distance+=Math.hypot(q.x-previous.x,q.y-previous.y);previous=q;
+          if(distance>=scale*3)break;
         }
+        const length=Math.hypot(q.x-p.x,q.y-p.y);if(length<scale)continue;
+        const key=`${stroke.color}:${stroke.width}:${p.x}:${p.y}`,list=ends.get(key)||[];
+        list.push({index,end,x:(q.x-p.x)/length,y:(q.y-p.y)/length});ends.set(key,list);
       }
-      if(!label)continue;
-      let crossesColour=false;
-      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
-        if((xx-x)**2+(yy-y)**2>(radius+.25)**2)continue;
-        const other=nativeLabel(rgba,(yy*width+xx)*4);
-        if(other&&other!==label)crossesColour=true;
-      }
-      if(crossesColour)continue;
-      discs.push(i,radius,label);
-      const rgb=paletteRgb[label-1];
-      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
-        if((xx-x)**2+(yy-y)**2<=(radius+.25)**2){const at=(yy*width+xx)*4;rgba[at]=rgb[0];rgba[at+1]=rgb[1];rgba[at+2]=rgb[2];rgba[at+3]=255;}
-      }
-      if(discs.length/3>=capacity)break;
+    });
+    for(const entries of ends.values()){
+      const best=entries.map((a,i)=>{
+        let selected=-1,dot=-.94;
+        entries.forEach((b,j)=>{const d=a.x*b.x+a.y*b.y;
+          if(i!==j&&a.index!==b.index&&d<dot){dot=d;selected=j;}});
+        return selected;
+      });
+      best.forEach((j,i)=>{if(j>i&&best[j]===i){
+        const a=entries[i],b=entries[j];links[a.index][a.end]=b;links[b.index][b.end]=a;
+      }});
     }
-    return discs;
+    const seen=new Uint8Array(strokes.length),joined=[];
+    // Open chains first, then closed chains. Starting inside a chain would
+    // leave half of a pen unused even though its geometry is continuous.
+    for(const loops of [false,true])for(let i=0;i<strokes.length;i++){
+      if(seen[i]||(!loops&&links[i][0]&&links[i][1]))continue;
+      const points=[];let index=i,end=links[i][0]&&!links[i][1]?1:0;
+      while(!seen[index]){
+        seen[index]=1;const source=strokes[index].points;
+        if(end)for(let k=source.length-1;k>=0;k--)points.push(source[k]);
+        else for(const p of source)points.push(p);
+        const next=links[index][1-end];if(!next)break;
+        index=next.index;end=next.end;
+      }
+      joined.push({...strokes[i],points});
+    }
+    return joined;
   }
+  // Reconstruct the measured ink envelope instead of replacing a whole
+  // handwritten branch by its median width. Nested offset curves and the
+  // thin topology guide are ordinary opaque editor pens, including counters.
+  // Nothing photographic or a new, partially editable stroke type is stored.
   async function restoreSilhouette(strokes,axes,pixels,options) {
     if(!options.coverage||!strokes.length)return {count:0,backend:'none'};
-    const {width,height}=pixels;
-    const points=strokes.reduce((sum,stroke)=>sum+stroke.points.length,0);
-    const capacity=Math.min(12000,60000-strokes.length,Math.floor((500000-points)/2));
-    if(capacity<=0)return {count:0,backend:'none'};
-    check(options.signal);
+    const {width,height}=pixels,{radii}=axes,n=radii.length,scale=width/794;
+    const step=Math.max(1,Math.min(1.5,scale*.665)),brush=step*1.47;
+    const levelStep=step*3,offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
+    const labels=new Uint8Array(n);let active=0;
+    for(let i=0;i<n;i++)if(radii[i])active++;
+    const queue=new Uint32Array(active);let tail=0;
+    for(const stroke of strokes){
+      const label=palette.indexOf(stroke.color)+1;let supported=0,measured=0;
+      for(const p of stroke.points){
+        const x=Math.floor(p.x),y=Math.floor(p.y),i=y*width+x;
+        if(x<1||x>=width-1||y<1||y>=height-1||!radii[i])continue;
+        measured++;if(radii[i]/3-.5>=stroke.width*.5-.35)supported++;
+        if(!labels[i]){labels[i]=label;queue[tail++]=i;}
+      }
+      // Retain a standard-width pen when the photograph supports it. A
+      // variable lobe or narrow counter uses the measured envelope instead.
+      if(supported<measured*.9)stroke.width=Math.min(stroke.width,step*1.33);
+    }
+    const joined=joinBranches(strokes,scale);strokes.length=0;
+    for(const stroke of joined)strokes.push(stroke);
+    for(let head=0;head<tail;head++){
+      const i=queue[head];
+      for(const d of offsets){const j=i+d;
+        if(j>=0&&j<n&&Math.abs(j%width-i%width)<=1&&radii[j]&&!labels[j]){
+          labels[j]=labels[i];queue[tail++]=j;
+        }
+      }
+      if(head%8192===0){await yieldTask();check(options.signal);}
+    }
     const canvas=typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(width,height):root.document?.createElement('canvas');
     if(!canvas)return {count:0,backend:'none'};
     let rendered;
@@ -588,18 +586,75 @@
       const context=canvas.getContext('2d',{willReadFrequently:true});
       render(context,{strokes});rendered=context.getImageData(0,0,width,height).data;
     }finally{canvas.width=canvas.height=0;}
-    check(options.signal);await yieldTask();check(options.signal);
-    const native=!options.forceJavaScript&&root.InhouseRust?.inkRepair?.(rendered,axes.radii,options.coverage,width,height,capacity);
-    const discs=native?.discs||await repairDiscs(rendered,axes.radii,options.coverage,width,height,capacity,options.signal);
-    check(options.signal);
-    for(let k=0;k<discs.length;k+=3){
-      const i=discs[k],x=i%width+.5,y=Math.floor(i/width)+.5;
-      // PDF coordinates are rounded to .01 editor pixels. A .05-pixel
-      // centred segment keeps the round cap after saving and reopening.
-      const halfSegment=width/794*.025;
-      strokes.push({tool:'pen',color:palette[discs[k+2]-1],width:discs[k+1]*2,points:[{x:x-halfSegment,y},{x:x+halfSegment,y}]});
+    const nodes=new Map();
+    const edge=(a,b,level)=>{
+      if(a>b)[a,b]=[b,a];
+      const key=level*(n*2)+a*2+(b-a===width?1:0);
+      let node=nodes.get(key);if(node)return node;
+      const threshold=level*levelStep-.001,t=(threshold-radii[a])/(radii[b]-radii[a]);
+      const x=a%width+.5+(b-a===1?t:0),y=Math.floor(a/width)+.5+(b-a===width?t:0);
+      const i=radii[a]>=threshold?a:b;
+      node={x,y,label:labels[i]||0,links:[],used:false};nodes.set(key,node);
+      if(nodes.size>500000)throw new Error('This scan contains too much detail. Try a clearer photo.');
+      return node;
+    };
+    const link=(a,b)=>{a.links.push(b);b.links.push(a);};
+    for(let y=0;y<height-1;y++){
+      for(let x=0;x<width-1;x++){
+        const a=y*width+x,b=a+1,c=b+width,d=a+width;
+        const low=Math.min(radii[a],radii[b],radii[c],radii[d]),high=Math.max(radii[a],radii[b],radii[c],radii[d]);
+        if(high<levelStep-.001||low===high)continue;
+        for(let level=Math.max(1,Math.floor((low+.001)/levelStep)+1);level<=Math.floor((high+.001)/levelStep);level++){
+          const threshold=level*levelStep-.001,edges=[];
+          if((radii[a]>=threshold)!==(radii[b]>=threshold))edges.push(edge(a,b,level));
+          if((radii[b]>=threshold)!==(radii[c]>=threshold))edges.push(edge(b,c,level));
+          if((radii[d]>=threshold)!==(radii[c]>=threshold))edges.push(edge(d,c,level));
+          if((radii[a]>=threshold)!==(radii[d]>=threshold))edges.push(edge(a,d,level));
+          if(edges.length===2)link(edges[0],edges[1]);
+          else if(edges.length===4){
+            const inside=(radii[a]+radii[b]+radii[c]+radii[d])/4>=threshold;
+            if((radii[a]>=threshold)===inside){link(edges[0],edges[1]);link(edges[2],edges[3]);}
+            else{link(edges[0],edges[3]);link(edges[1],edges[2]);}
+          }
+        }
+      }
+      if(y%64===0){await yieldTask();check(options.signal);}
     }
-    return {count:discs.length/3,backend:native?'rust':'javascript'};
+    let pointsUsed=strokes.reduce((sum,s)=>sum+s.points.length,0),count=0,work=0;
+    const append=(path,label)=>{
+      if(!label||path.length<2)return;
+      const reduced=simplify(path,Math.min(.8,scale*.28)),points=[{x:reduced[0].x,y:reduced[0].y}];
+      const spacing=Math.max(1,Math.min(3.5,scale*1.4));
+      for(let k=1;k<reduced.length;k++){
+        const a=reduced[k-1],b=reduced[k],steps=Math.max(1,Math.ceil(Math.hypot(a.x-b.x,a.y-b.y)/spacing));
+        for(let j=1;j<=steps;j++)points.push({x:a.x+(b.x-a.x)*j/steps,y:a.y+(b.y-a.y)*j/steps});
+      }
+      pointsUsed+=points.length;
+      if(strokes.length>=60000||pointsUsed>500000)throw new Error('This scan contains too much detail. Try a clearer photo.');
+      strokes.push({tool:'pen',color:palette[label-1],width:brush,points});count++;
+    };
+    for(const first of nodes.values()){
+      if(first.used)continue;
+      const path=[];let node=first,previous=null,missing=0;
+      do{
+        node.used=true;path.push(node);
+        if(rendered[(Math.floor(node.y)*width+Math.floor(node.x))*4+3]<180)missing++;
+        const next=node.links.find(p=>p!==previous);previous=node;node=next;
+      }while(node&&!node.used);
+      if(node===first)path.push(first);
+      if(path.length<2||missing<2)continue;
+      // A colour boundary is a boundary between native pens, even if the
+      // photographed inks touch. Never colour an entire connected outline
+      // by its majority hue (a short black cross would become blue).
+      let start=0;
+      for(let end=1;end<path.length;end++)if(path[end].label!==path[start].label){
+        append(path.slice(Math.max(0,start-1),end),path[start].label);start=end;
+      }
+      append(path.slice(Math.max(0,start-1)),path[start].label);
+      if(++work%256===0){await yieldTask();check(options.signal);}
+    }
+    check(options.signal);
+    return {count,backend:'javascript',method:'measured-envelope'};
   }
   async function fromPixels(pixels,options={}) {
     const {width,height,data}=pixels;
@@ -613,7 +668,15 @@
     check(options.signal);
     const strokes=await trace(axes,width,height,options.signal,data,options.coverage);
     const repair=await restoreSilhouette(strokes,axes,pixels,options);
-    return {version:1,width,height,strokes,backend:axes.backend,repairCount:repair.count,repairBackend:repair.backend};
+    // Hundredths of a scan pixel are far below camera precision. Avoid
+    // serializing floating-point interpolation tails for every native point.
+    if(options.coverage)for(const stroke of strokes){
+      for(const p of stroke.points){p.x=Math.round(p.x*100)/100;p.y=Math.round(p.y*100)/100;}
+      const first=stroke.points[0];
+      // Keep punctuation visible after PDF's .01-editor-pixel rounding too.
+      if(stroke.points.every(p=>p.x===first.x&&p.y===first.y))stroke.points.at(-1).x+=width/794*.05;
+    }
+    return {version:1,width,height,strokes,backend:axes.backend,repairCount:repair.count,repairBackend:repair.backend,reconstruction:repair.method||'centreline'};
   }
   // Exactly the editor's opaque pen path, also used for the scan preview.
   function render(context,ink) {

@@ -138,6 +138,9 @@ test('a cached core without measured coverage or neutral calibration requests th
     exports.correct_scan_rows=function(a,b,c,d,e,f,g,h,i,j,k,l){};
     assert.equal(legacy.InhouseRust.scanColors(pixels,pixels,2,2,new Float32Array(4),null,2,2,new Float64Array(61),coverage,new Float32Array(4)),null);
     assert.equal(legacy.InhouseRust.inkAxes(pixels,2,2,coverage),null);
+    // Six-argument kernels predate the adaptive silhouette contract too.
+    exports.ink_axes=function(a,b,c,d,e,f){};
+    assert.equal(legacy.InhouseRust.inkAxes(pixels,2,2,coverage),null);
     assert.equal(legacy.InhouseRust.balancePaper(pixels,2,2,new Float32Array(8),2,2,new Float32Array(16)),null);
     assert.equal(legacy.InhouseRust.inkRepair(pixels,new Uint16Array(4),coverage,2,2),null);
     assert.equal(allocations,0);

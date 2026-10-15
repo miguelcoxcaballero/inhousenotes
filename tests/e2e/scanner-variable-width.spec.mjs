@@ -113,14 +113,14 @@ test('photographed variable-width letters retain their silhouette, tapers and op
   for(const report of reports)for(const row of report.metrics){
     // Half an editor pixel allows antialiasing, subpixel alignment and the
     // requested gentle width normalisation, not missing loops or fat blobs.
-    expect(row.recall,`${report.backend} row${row.row}: missing handwritten ink`).toBeGreaterThan(.92);
+    expect(row.recall,`${report.backend} row${row.row}: missing handwritten ink`).toBeGreaterThan(.98);
     expect(row.precision,`${report.backend} row${row.row}: enlarged ink silhouette`).toBeGreaterThan(.90);
     expect(row.f1,`${report.backend} row${row.row}: letter silhouette`).toBeGreaterThan(.91);
     expect(row.open,`${report.backend} row${row.row}: counters`).toBe(8);
     expect(row.tips,`${report.backend} row${row.row}: thin ascender ends`).toBe(8);
     for(const glyph of row.individual){
-      expect(glyph.recall,`${report.backend} row${row.row}: individual letter`).toBeGreaterThan(.88);
-      expect(glyph.f1,`${report.backend} row${row.row}: individual silhouette`).toBeGreaterThan(.88);
+      expect(glyph.recall,`${report.backend} row${row.row}: individual letter`).toBeGreaterThan(.97);
+      expect(glyph.f1,`${report.backend} row${row.row}: individual silhouette`).toBeGreaterThan(.95);
     }
   }
   expect(reports[0].metrics).toEqual(reports[1].metrics);

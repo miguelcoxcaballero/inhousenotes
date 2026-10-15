@@ -73,6 +73,9 @@ fn transverse_ink(
     false
 }
 
+#[no_mangle]
+pub extern "C" fn ink_geometry_version() -> u32 { 2 }
+
 /// All buffers belong to the private host adapter; dimensions are checked there
 /// and here. Zero means invalid, one complete (including a blank page), two
 /// means the ink complexity exceeded the bounded processing budget.
@@ -133,12 +136,18 @@ pub unsafe extern "C" fn ink_axes(
             }
             let alpha = alpha_at(i) as u32;
             let mut peak = alpha;
+            let (mut sum, mut samples) = (0u32, 0u32);
             for yy in y.saturating_sub(reach)..=(y + reach).min(height - 1) {
                 for xx in x.saturating_sub(reach)..=(x + reach).min(width - 1) {
-                    peak = peak.max(alpha_at(yy * width + xx) as u32);
+                    let value = alpha_at(yy * width + xx) as u32;
+                    peak = peak.max(value); sum += value; samples += 1;
                 }
             }
-            if alpha * 100 >= peak * if geometry.is_some() { 65 } else { 60 } {
+            // Preserve lighter ink beside a darker crossing.
+            let threshold = if geometry.is_some() {
+                (peak as f64 * 0.55).max((peak as f64 * 0.65).min(sum as f64 / samples as f64 + peak as f64 * 0.05))
+            } else { peak as f64 * 0.6 };
+            if alpha as f64 >= threshold {
                 core[i] = true;
             } else if !transverse_ink(x, y, width, height, reach, alpha as f64, &alpha_at) {
                 mask[i] = 0;
