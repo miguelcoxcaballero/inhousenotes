@@ -1964,11 +1964,12 @@
         // Home tabs, manila folders and the folder view (§ 4.15b)
         const DRIVE_HOME_TABS = ['home', 'starred', 'shared', 'files'];
         const DRIVE_DEFAULT_FOLDER_COLOR = '#e3c58e';
-        const DRIVE_FOLDER_OPEN_MS = 980;
-        const DRIVE_FOLDER_CLOSE_MS = 860;
+        const DRIVE_FOLDER_OPEN_MS = 320;
+        const DRIVE_FOLDER_CLOSE_MS = 240;
         let driveHomeTab = 'home';
         let driveFolderViewOriginId = null;
         let driveFolderAnimation = null;
+        let driveFolderNavigationId = 0;
         const driveReducedMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
         const DRIVE_TOOL_ICONS = {
             star: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.7-5.2-2.8-5.2 2.8 1-5.7-4.2-4.1 5.8-.8z"/>',
@@ -9421,6 +9422,10 @@
                 // Need a new card (data changed or didn't exist before).
                 const newCard = builderForItem(item);
                 if (!newCard) return;
+                if ((container === driveViewFoldersEl || container === driveViewFilesEl) && !prefersReducedHomeMotion()) {
+                    newCard.classList.add('drive-folder-item-arriving');
+                    newCard.addEventListener('animationend', () => newCard.classList.remove('drive-folder-item-arriving'), { once: true });
+                }
                 newCard.dataset.driveItemId = id;
                 newCard.dataset.driveItemFp = fp;
                 if(item.mimeType!=='application/vnd.google-apps.folder')window.InhouseOfflineLibrary?.decorate(newCard,id);
@@ -9515,11 +9520,9 @@
         }
 
         // ── § 4.15b  Home tabs and manila folders ───────────────────────────
-        // Folders are vertical manila folders. Opening one plays a literal
-        // book opening: the cover swings open on its left hinge while the
-        // folder zooms in until its inside fills the content area, which then
-        // becomes the folder view in the folder's own colour. Closing plays
-        // the same motion backwards into the folder it came from.
+        // Fold the cover locally and crossfade the contents. Only transform
+        // and opacity animate: no full-screen texture enlargement, filters or
+        // per-frame colour painting. The browser compositor owns the frames.
 
         function prefersReducedHomeMotion() {
             return !!driveReducedMotionQuery?.matches;
@@ -9695,19 +9698,26 @@
             return top;
         }
 
-        function getDriveFolderViewRect() {
-            const top = positionDriveFolderView();
-            const homeRect = driveHome.getBoundingClientRect();
-            return { left: homeRect.left, top: homeRect.top + top, width: homeRect.width, height: Math.max(1, homeRect.height - top) };
-        }
-
         function prepareDriveFolderViewContent(entry) {
             const name = entry?.name || 'Folder';
             if (driveFolderViewTitleEl) driveFolderViewTitleEl.textContent = name;
             if (driveFolderViewEl) driveFolderViewEl.setAttribute('aria-label', `${name} folder`);
-            if (driveViewFoldersEl) driveViewFoldersEl.innerHTML = '';
-            if (driveViewFilesEl) fillSkeletons(driveViewFilesEl, 4, buildDriveCardSkeleton);
-            if (driveViewEmptyEl) driveViewEmptyEl.classList.add('hidden');
+            // Paint the saved directory immediately, even online. Drive can
+            // reconcile it in the background without a skeleton on every visit.
+            const library = window.InhouseOfflineLibrary;
+            const cached = library?.ready() ? library.folder(entry.id, driveSearchInput?.value?.trim() || '') : [];
+            if (driveViewFoldersEl) driveViewFoldersEl.replaceChildren();
+            if (driveViewFilesEl) driveViewFilesEl.replaceChildren();
+            if (cached.length || navigator.onLine === false) {
+                driveFolderCache = {
+                    folders: cached.filter(item => item.mimeType === 'application/vnd.google-apps.folder'),
+                    files: cached.filter(item => item.mimeType === 'application/pdf')
+                };
+                renderDriveFolderContents(driveFolderCache.folders, driveFolderCache.files);
+            } else {
+                if (driveViewFilesEl) fillSkeletons(driveViewFilesEl, 4, buildDriveCardSkeleton);
+                if (driveViewEmptyEl) driveViewEmptyEl.classList.add('hidden');
+            }
             if (driveFolderViewScrollEl) driveFolderViewScrollEl.scrollTop = 0;
         }
 
@@ -9715,161 +9725,126 @@
             if (driveFolderAnimation) driveFolderAnimation.finish();
         }
 
-        // Geometry shared by opening and closing: the folder flies to the
-        // centre with its left hinge on the vertical midline (so the open
-        // book is centred), then grows until its inside covers the view.
-        function computeDriveFolderFlight(rect, target) {
-            const midScale = Math.min(2.6, Math.max(1.1, (target.height * 0.56) / rect.height));
-            const endScale = Math.max(target.width / rect.width, target.height / rect.height) * 1.22;
-            return {
-                mid: `translate(${target.left + target.width / 2 - rect.left}px, ${target.top + target.height / 2 - (rect.height * midScale) / 2 - rect.top}px) scale(${midScale})`,
-                end: `translate(${target.left - rect.width * endScale * 0.04 - rect.left}px, ${target.top + target.height / 2 - (rect.height * endScale) / 2 - rect.top}px) scale(${endScale})`
-            };
-        }
-
-        function createDriveFolderGhost(art, rect, fallbackColor, fallbackName = 'Folder') {
-            const ghost = art ? art.cloneNode(true) : createDriveFolderArt({ name: fallbackName, folderColorRgb: fallbackColor });
+        function createDriveFolderGhost(art) {
+            // Read before replacing any folder contents; a detached card has
+            // a zero rect and used to silently skip nested-folder animations.
+            const rect = art?.getBoundingClientRect();
+            if (!rect?.width || !rect.height || !driveHome) return null;
+            const ghost = art.cloneNode(true);
             ghost.classList.add('drive-folder-ghost');
-            ghost.removeAttribute('style');
-            const nameSize = art?.style.getPropertyValue('--folder-name-size');
-            if (nameSize) ghost.style.setProperty('--folder-name-size', nameSize);
-            applyDriveFolderPalette(ghost, art?.dataset.folderColor || fallbackColor);
+            ghost.setAttribute('aria-hidden', 'true');
+            ghost.inert = true;
             Object.assign(ghost.style, {
-                left: `${rect.left}px`,
-                top: `${rect.top}px`,
-                width: `${rect.width}px`,
-                height: `${rect.height}px`
+                left: `${rect.left}px`, top: `${rect.top}px`,
+                width: `${rect.width}px`, height: `${rect.height}px`, visibility: ''
             });
             driveHome.appendChild(ghost);
             return ghost;
         }
 
-        function fadeDriveFolderGhostColour(ghost, from, to, timing) {
-            const back = ghost.querySelector('.drive-folder-back');
-            const inside = ghost.querySelector('.drive-folder-cover-inside');
-            const folderTint = (tint) => (tint.inside ? tint : {
-                bg: ghost.style.getPropertyValue('--folder-color') || tint,
-                inside: ghost.style.getPropertyValue('--folder-inside') || tint
-            });
-            const fromTint = folderTint(from);
-            const toTint = folderTint(to);
-            const midOffset = (timing.start + timing.end) / 2;
-            const fade = (a, b) => [
-                { backgroundColor: a },
-                { backgroundColor: a, offset: timing.start },
-                { backgroundColor: midDriveFolderColor(a, b), offset: midOffset },
-                { backgroundColor: b, offset: timing.end },
-                { backgroundColor: b }
-            ];
-            back?.animate(fade(fromTint.bg, toTint.bg), { duration: timing.duration, easing: 'ease-in-out', fill: 'forwards' });
-            inside?.animate(fade(fromTint.inside, toTint.inside), { duration: timing.duration, easing: 'ease-in-out', fill: 'forwards' });
-        }
-
-        // Halfway colour of a fade. A straight RGB blend from a yellow to a
-        // dark tone passes through mustard brown, so the midpoint is taken in
-        // HSL with the saturation dipped: the fade goes through a soft taupe.
-        function midDriveFolderColor(a, b) {
-            const [ha, sa, la] = driveHexToHsl(a);
-            const [hb, sb, lb] = driveHexToHsl(b);
-            let h = sa < 5 ? hb : (sb < 5 ? ha : ha + ((((hb - ha) % 360) + 540) % 360 - 180) / 2);
-            h = (h + 360) % 360;
-            return driveHslToHex(h, Math.min(sa, sb) * (Math.min(la, lb) < 25 ? 0.6 : 0.85), (la + lb) / 2);
-        }
-
-        function playDriveFolderOpen(art, entry, onReveal) {
-            const rect = art.getBoundingClientRect();
-            if (!rect.width || !rect.height || !driveHome) {
+        function playDriveFolderOpen(art, entry, onReveal, backwards = false) {
+            if (prefersReducedHomeMotion() || !driveFolderViewEl?.animate) {
                 onReveal();
                 return;
             }
-            const target = getDriveFolderViewRect();
-            const flight = computeDriveFolderFlight(rect, target);
-            const restingCover = getComputedStyle(art.querySelector('.drive-folder-cover')).transform;
-            const ghost = createDriveFolderGhost(art, rect, DRIVE_DEFAULT_FOLDER_COLOR);
-            const cover = ghost.querySelector('.drive-folder-cover');
-            const sheets = ghost.querySelector('.drive-folder-sheets');
-            art.style.visibility = 'hidden';
-            ghost.animate([
-                { transform: 'translate(0px, 0px) scale(1)' },
-                { transform: flight.mid, offset: 0.45 },
-                { transform: flight.end }
-            ], { duration: DRIVE_FOLDER_OPEN_MS, easing: 'cubic-bezier(0.55, 0, 0.25, 1)', fill: 'forwards' });
-            cover.animate([
-                { transform: restingCover && restingCover !== 'none' ? restingCover : 'rotateY(0deg)' },
-                { transform: 'rotateY(-172deg)' }
-            ], { duration: 560, delay: 140, easing: 'cubic-bezier(0.45, 0.05, 0.3, 1)', fill: 'forwards' });
-            sheets.animate([{ opacity: 1 }, { opacity: 1, offset: 0.3 }, { opacity: 0, offset: 0.5 }, { opacity: 0 }], { duration: DRIVE_FOLDER_OPEN_MS, fill: 'forwards' });
-            const folderColor = entry?.color || DRIVE_DEFAULT_FOLDER_COLOR;
-            fadeDriveFolderGhostColour(ghost, folderColor, getDriveFolderViewTint(folderColor), { start: 0.3, end: 0.85, duration: DRIVE_FOLDER_OPEN_MS });
-
+            const wasOpen = isDriveFolderViewOpen();
+            const inner = driveFolderViewEl.querySelector('.drive-folder-view-inner');
+            const ghost = createDriveFolderGhost(art);
+            const animations = [];
             let revealed = false;
             let done = false;
-            const reveal = () => {
+            const animate = (el, frames, timing) => {
+                const animation = el.animate(frames, { fill: 'both', easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)', ...timing });
+                animations.push(animation);
+                return animation;
+            };
+            const reveal = (withMotion = true) => {
                 if (revealed) return;
                 revealed = true;
                 onReveal();
+                if (!withMotion) return;
+                const arrival = animate(wasOpen ? inner : driveFolderViewEl, [
+                    { opacity: 0, transform: `translateY(${backwards ? -6 : 8}px)` },
+                    { opacity: 1, transform: 'translateY(0)' }
+                ], { duration: 200, delay: wasOpen ? 0 : 40 });
+                if (!ghost) arrival.onfinish = cleanup;
             };
             const cleanup = () => {
                 if (done) return;
                 done = true;
-                revealTimer.cancel();
-                reveal();
-                ghost.remove();
-                art.style.visibility = '';
+                // A second navigation completes the pending reveal once,
+                // then cancels every old effect before starting the next one.
+                reveal(false);
+                animations.forEach(animation => animation.cancel());
+                ghost?.remove();
+                if (art) art.style.visibility = '';
                 if (driveFolderAnimation === handle) driveFolderAnimation = null;
-            };
-            // Timed on the animation timeline (not setTimeout) so the view
-            // appears exactly when the zoom has covered the screen.
-            const revealTimer = ghost.animate([{ visibility: 'visible' }, { visibility: 'visible' }], { duration: DRIVE_FOLDER_OPEN_MS - 180 });
-            revealTimer.onfinish = () => {
-                if (done) return;
-                reveal();
-                ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-out', fill: 'forwards' }).onfinish = cleanup;
             };
             const handle = { finish: cleanup };
             driveFolderAnimation = handle;
+            if (ghost) {
+                art.style.visibility = 'hidden';
+                animate(ghost.querySelector('.drive-folder-cover'), [
+                    { transform: 'rotateY(0deg)' }, { transform: 'rotateY(-150deg)' }
+                ], { duration: 240 });
+                animate(ghost, [
+                    { opacity: 1, transform: 'translateY(0) scale(1)' },
+                    { opacity: 0.85, transform: 'translateY(-5px) scale(1.04)', offset: 0.35 },
+                    { opacity: 0, transform: 'translateY(-12px) scale(1.12)' }
+                ], { duration: DRIVE_FOLDER_OPEN_MS }).onfinish = cleanup;
+            }
+            if (wasOpen && inner) {
+                animate(inner, [{ opacity: 1 }, { opacity: 0 }], { duration: 70 }).onfinish = () => {
+                    if (!done) {
+                        // Remove the outgoing effect before attaching the fade in.
+                        animations[animations.length - 1].cancel();
+                        reveal();
+                    }
+                };
+            } else {
+                reveal();
+            }
         }
 
-        // Plays the open motion backwards. With no visible folder to land on,
-        // the folder shrinks into the middle of the screen and fades.
-        function playDriveFolderClose(art, entry) {
-            if (!driveHome) return;
-            const target = getDriveFolderViewRect();
-            const rect = art ? art.getBoundingClientRect() : {
-                left: target.left + target.width / 2 - 60,
-                top: target.top + target.height / 2 - 80,
-                width: 120,
-                height: 160
-            };
-            if (!rect.width || !rect.height) return;
-            const flight = computeDriveFolderFlight(rect, target);
-            const ghost = createDriveFolderGhost(art, rect, entry?.color || DRIVE_DEFAULT_FOLDER_COLOR, entry?.name);
-            const cover = ghost.querySelector('.drive-folder-cover');
-            const sheets = ghost.querySelector('.drive-folder-sheets');
-            ghost.style.transform = flight.end;
-            cover.style.transform = 'rotateY(-172deg)';
-            sheets.style.opacity = '0';
-            const folderColor = entry?.color || DRIVE_DEFAULT_FOLDER_COLOR;
-            fadeDriveFolderGhostColour(ghost, getDriveFolderViewTint(folderColor), folderColor, { start: 0.1, end: 0.6, duration: DRIVE_FOLDER_CLOSE_MS });
-            if (art) art.style.visibility = 'hidden';
-            const flightAnimation = ghost.animate([
-                { transform: flight.end, opacity: 1 },
-                { transform: flight.mid, opacity: 1, offset: 0.55 },
-                { transform: 'translate(0px, 0px) scale(1)', opacity: art ? 1 : 0 }
-            ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
-            cover.animate([{ transform: 'rotateY(-172deg)' }, { transform: 'rotateY(0deg)' }], { duration: 520, delay: 300, easing: 'cubic-bezier(0.45, 0.05, 0.3, 1)', fill: 'forwards' });
-            sheets.animate([{ opacity: 0 }, { opacity: 0, offset: 0.45 }, { opacity: 1, offset: 0.7 }, { opacity: 1 }], { duration: DRIVE_FOLDER_CLOSE_MS, fill: 'forwards' });
+        function playDriveFolderClose(art, entry, onHide) {
+            if (prefersReducedHomeMotion() || !driveFolderViewEl?.animate) {
+                onHide();
+                return;
+            }
+            const ghost = createDriveFolderGhost(art);
+            const animations = [];
             let done = false;
             const cleanup = () => {
                 if (done) return;
                 done = true;
-                ghost.remove();
+                animations.forEach(animation => animation.cancel());
+                ghost?.remove();
                 if (art) art.style.visibility = '';
                 if (driveFolderAnimation === handle) driveFolderAnimation = null;
+                onHide();
             };
-            flightAnimation.onfinish = cleanup;
             const handle = { finish: cleanup };
             driveFolderAnimation = handle;
+            driveFolderViewEl.classList.add('is-leaving');
+            driveFolderViewEl.inert = true;
+            // Keep the actual contents visible during the exit, instead of
+            // hiding them first and playing a folder over an empty screen.
+            const departure = driveFolderViewEl.animate([
+                { opacity: 1, transform: 'translateY(0)' },
+                { opacity: 0, transform: 'translateY(6px)' }
+            ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'ease-out', fill: 'both' });
+            animations.push(departure);
+            departure.onfinish = cleanup;
+            if (ghost) {
+                art.style.visibility = 'hidden';
+                animations.push(ghost.animate([
+                    { opacity: 0, transform: 'translateY(-10px) scale(1.1)' },
+                    { opacity: 1, transform: 'translateY(0) scale(1)' }
+                ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'ease-out', fill: 'both' }));
+                animations.push(ghost.querySelector('.drive-folder-cover').animate([
+                    { transform: 'rotateY(-150deg)' }, { transform: 'rotateY(0deg)' }
+                ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)', fill: 'both' }));
+            }
         }
 
         function findVisibleDriveFolderArt(folderId) {
@@ -9887,7 +9862,8 @@
             if (!driveFolderViewEl) return;
             applyDriveFolderViewPalette(entry?.color || DRIVE_DEFAULT_FOLDER_COLOR);
             driveFolderViewEl.classList.remove('hidden');
-            driveFolderViewEl.classList.remove('is-switching');
+            driveFolderViewEl.classList.remove('is-switching', 'is-leaving');
+            driveFolderViewEl.inert = false;
             if (driveHome) driveHome.classList.add('folder-open');
             const active = document.activeElement;
             if (!active || active === document.body || (driveMain && driveMain.contains(active)) || driveFolderViewEl.contains(active)) {
@@ -9899,7 +9875,8 @@
             finishDriveFolderAnimation();
             if (driveFolderViewEl) {
                 driveFolderViewEl.classList.add('hidden');
-                driveFolderViewEl.classList.remove('is-switching');
+                driveFolderViewEl.classList.remove('is-switching', 'is-leaving');
+                driveFolderViewEl.inert = false;
             }
             if (driveHome) driveHome.classList.remove('folder-open');
         }
@@ -9919,34 +9896,32 @@
             }
             driveCurrentFolderId = folder.id;
             const art = card ? card.querySelector('.drive-folder-art') : null;
-            const wasOpen = isDriveFolderViewOpen();
+            driveFolderNavigationId++;
             positionDriveFolderView();
-            prepareDriveFolderViewContent(entry);
-            if (wasOpen) driveFolderViewEl.classList.add('is-switching');
-            renderDriveBreadcrumbs();
-            if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
-            if (art && !prefersReducedHomeMotion()) {
-                playDriveFolderOpen(art, entry, () => revealDriveFolderView(entry));
-            } else {
+            playDriveFolderOpen(art, entry, () => {
+                prepareDriveFolderViewContent(entry);
                 revealDriveFolderView(entry);
-            }
-            refreshDriveFolderContents();
+                renderDriveBreadcrumbs();
+                if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
+                refreshDriveFolderContents();
+            });
         }
 
         function closeDriveFolderView(options = {}) {
             if (!isDriveFolderViewOpen() && driveFolderStack.length <= 1) return;
             finishDriveFolderAnimation();
             const closing = driveFolderStack[driveFolderStack.length - 1];
+            const focusWasInView = !!driveFolderViewEl?.contains(document.activeElement);
             const originId = driveFolderViewOriginId || closing?.id;
             const animate = options.animate !== false && isDriveFolderViewOpen() && !prefersReducedHomeMotion();
             driveFolderStack = [{ id: 'root', name: 'My Drive' }];
             driveCurrentFolderId = 'root';
             driveFolderViewOriginId = null;
+            driveFolderNavigationId++;
             renderDriveBreadcrumbs();
-            const focusWasInView = !!(driveFolderViewEl && driveFolderViewEl.contains(document.activeElement));
             const art = animate ? findVisibleDriveFolderArt(originId) : null;
-            hideDriveFolderView();
-            if (animate) playDriveFolderClose(art, closing);
+            if (animate) playDriveFolderClose(art, closing, hideDriveFolderView);
+            else hideDriveFolderView();
             if (focusWasInView) {
                 const originCard = (art || findVisibleDriveFolderArt(originId))?.closest('.drive-folder-card');
                 if (originCard) originCard.focus({ preventScroll: true });
@@ -9969,16 +9944,17 @@
             }
             if (index >= driveFolderStack.length - 1) return;
             finishDriveFolderAnimation();
-            const closing = driveFolderStack[driveFolderStack.length - 1];
             driveFolderStack = driveFolderStack.slice(0, index + 1);
             const entry = driveFolderStack[index];
             driveCurrentFolderId = entry.id;
-            prepareDriveFolderViewContent(entry);
-            revealDriveFolderView(entry);
-            if (!prefersReducedHomeMotion()) playDriveFolderClose(null, closing);
-            renderDriveBreadcrumbs();
-            if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
-            refreshDriveFolderContents();
+            driveFolderNavigationId++;
+            playDriveFolderOpen(null, entry, () => {
+                prepareDriveFolderViewContent(entry);
+                revealDriveFolderView(entry);
+                renderDriveBreadcrumbs();
+                if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
+                refreshDriveFolderContents();
+            }, true);
         }
 
         function setDriveHomeTab(tab, options = {}) {
@@ -10050,8 +10026,9 @@
 
         async function refreshDriveFolderContents(options = {}) {
             const requestedFolderId = driveCurrentFolderId;
+            const navigationId = driveFolderNavigationId;
             const remoteFolderId=window.InhouseOfflineLibrary?.ready()?await window.InhouseOfflineStore.resolveId(window.InhouseOfflineLibrary.account(),driveCurrentFolderId):driveCurrentFolderId;
-            if (requestedFolderId !== driveCurrentFolderId) return;
+            if (requestedFolderId !== driveCurrentFolderId || navigationId !== driveFolderNavigationId) return;
             if ((navigator.onLine === false || !remoteFolderId) && window.InhouseOfflineLibrary?.ready()) {window.InhouseOfflineApp.renderFolder();return;}
             try {
                 const search = driveSearchInput ? driveSearchInput.value.trim() : '';
@@ -10076,13 +10053,13 @@
 
                 const foldersData = await folderRes.json();
                 const filesData = await fileRes.json();
-                if (requestedFolderId !== driveCurrentFolderId) return;
+                if (requestedFolderId !== driveCurrentFolderId || navigationId !== driveFolderNavigationId) return;
                 driveFolderCache = {
                     folders: foldersData.files || [],
                     files: filesData.files || []
                 };
                 await window.InhouseOfflineLibrary?.observed([...driveFolderCache.folders,...driveFolderCache.files],requestedFolderId);
-                if (requestedFolderId !== driveCurrentFolderId) return;
+                if (requestedFolderId !== driveCurrentFolderId || navigationId !== driveFolderNavigationId) return;
                 if(window.InhouseOfflineLibrary?.ready()) {
                     const combined=window.InhouseOfflineLibrary.combine([...driveFolderCache.folders,...driveFolderCache.files],driveCurrentFolderId,search);
                     driveFolderCache={folders:combined.filter(e=>e.mimeType==='application/vnd.google-apps.folder'),files:combined.filter(e=>e.mimeType==='application/pdf')};
@@ -10090,6 +10067,7 @@
                 renderDriveFolderContents(driveFolderCache.folders, driveFolderCache.files);
                 updateDriveStatusCounts();
             } catch (err) {
+                if (requestedFolderId !== driveCurrentFolderId || navigationId !== driveFolderNavigationId) return;
                 if (!options.silent && driveStatusEl) driveStatusEl.textContent = 'Unable to load this folder.';
             }
         }
