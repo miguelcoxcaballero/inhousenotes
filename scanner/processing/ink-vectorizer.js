@@ -17,22 +17,27 @@
   }
   // Same bounded algorithm for browsers that cannot instantiate WebAssembly.
   // Yield between passes so cancellation and the camera controls still work.
-  async function fallback(rgba, width, height, signal) {
+  async function fallback(rgba, width, height, signal, coverage) {
+    const alphaAt=i=>rgba[i*4+3]<16?0:(coverage?.[i]??rgba[i*4+3]);
+    const reach=Math.max(3,Math.min(8,Math.ceil(width/794*2.5)));
     const n=width*height, mask=new Uint8Array(n), radii=new Uint16Array(n);
     const offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
     for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
       const i=y*width+x;
-      if(rgba[i*4+3]>=16)mask[i]=colour(rgba[i*4],rgba[i*4+1],rgba[i*4+2],rgba[i*4+3]);
+      if(alphaAt(i)>=(coverage?8:16))mask[i]=colour(rgba[i*4],rgba[i*4+1],rgba[i*4+2],rgba[i*4+3]);
     }
     await yieldTask();check(signal);
+    // The window follows page scale: a fixed 7px box becomes narrower than
+    // a blurred letter in an enlarged scan. Retain the measured core instead
+    // of closing small counters with the colour/JPEG fringe.
     const initial=mask.slice();
     for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
       const i=y*width+x;if(!initial[i])continue;
-      const alpha=rgba[i*4+3];let peak=alpha;
-      for(let yy=Math.max(0,y-3);yy<=Math.min(height-1,y+3);yy++)for(let xx=Math.max(0,x-3);xx<=Math.min(width-1,x+3);xx++){
-        peak=Math.max(peak,rgba[(yy*width+xx)*4+3]);
+      const alpha=alphaAt(i);let peak=alpha;
+      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
+        peak=Math.max(peak,alphaAt(yy*width+xx));
       }
-      if(alpha*100<peak*35)mask[i]=0;
+      if(alpha*100<peak*(coverage?65:60))mask[i]=0;
     }
     await yieldTask();check(signal);
     const seen=new Uint8Array(n), queue=[],anchors=[];let active=[];
@@ -216,7 +221,7 @@
     }
     return {colours:paths.map((_,i)=>labels.get(find(i))),groups:paths.map((_,i)=>find(i))};
   }
-  async function trace(axes,width,height,signal,rgba) {
+  async function trace(axes,width,height,signal,rgba,coverage) {
     const {mask,radii}=axes,used=new Uint8Array(mask.length),strokes=[];
     const offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
     const nodes=[],paths=[];let totalPoints=0;
@@ -236,7 +241,7 @@
           const dx=b%width-a%width,dy=Math.floor(b/width)-Math.floor(a/width),length=Math.hypot(dx,dy);
           if(!length)return Math.max(1,radii[i]*2/3-1);
           const nx=-dy/length,ny=dx/length,x=i%width+.5,y=Math.floor(i/width)+.5;
-          let coverage=rgba[i*4+3],peak=coverage;
+          let mass=coverage?.[i]??rgba[i*4+3],peak=mass;
           // Very short junction branches can point across the main axis.
           // Limit the cross-section by the inscribed radius, never by the
           // length of a coincident neighbouring stroke.
@@ -244,9 +249,9 @@
           for(const sign of [-1,1])for(let d=.5;d<=limit;d+=.5){
             const xx=Math.floor(x+nx*d*sign),yy=Math.floor(y+ny*d*sign);
             if(xx<0||xx>=width||yy<0||yy>=height||!radii[yy*width+xx])break;
-            const alpha=rgba[(yy*width+xx)*4+3];coverage+=alpha;peak=Math.max(peak,alpha);
+            const alpha=coverage?.[yy*width+xx]??rgba[(yy*width+xx)*4+3];mass+=alpha;peak=Math.max(peak,alpha);
           }
-          return Math.min(radii[i]*2/3+1,coverage/Math.max(1,peak)*.5);
+          return Math.min(radii[i]*2/3+1,mass/Math.max(1,peak)*.5);
         });
     const emit=(path,label,fixedWidth)=>{
       // Split only sustained width changes; never force a thick crossing's
@@ -330,10 +335,11 @@
     }
     check(signal);
     const {colours,groups}=coherentPathColours(paths,mask,width,height,rgba,radii);
-    const widthsByGroup=new Map();
+    const widthsByGroup=new Map(),pathWidths=[];
     for(let i=0;i<paths.length;i++){
       const widths=widthsByGroup.get(groups[i])||[];
-      for(const value of measureWidths(paths[i]))widths.push(value);
+      const measured=measureWidths(paths[i]);pathWidths.push(measured);
+      for(const value of measured)widths.push(value);
       widthsByGroup.set(groups[i],widths);
       if(i%500===499){await yieldTask();check(signal);}
     }
@@ -346,8 +352,41 @@
       const close=widths.filter(w=>w>=standard*.65&&w<=standard*1.65).length;
       if(median>=standard*.75&&median<=standard*1.6&&close>=widths.length*.72)standardGroups.add(id);
     }
+    // A short branch at a letter junction has no reliable normal: measuring
+    // across it can mistake a loop or crossing for a fat pen. Borrow only its
+    // connected same-colour pen's long, measurable sections. Standalone dots,
+    // genuinely thick strokes and differently coloured crossings keep theirs.
+    const parents=paths.map((_,i)=>i),ends=new Map();
+    const find=i=>{while(parents[i]!==i){parents[i]=parents[parents[i]];i=parents[i];}return i;};
+    paths.forEach((path,i)=>{
+      if(!colours[i])return;
+      for(const node of [path[0],path.at(-1)]){
+        const key=node*4+colours[i],other=ends.get(key);
+        if(other!==undefined)parents[find(i)]=find(other);else ends.set(key,i);
+      }
+    });
+    const reliable=new Map();
+    paths.forEach((path,i)=>{
+      if(path.length<Math.max(8,standard*4))return;
+      const id=find(i),samples=reliable.get(id)||[];
+      for(let k=3;k<path.length-3;k++)samples.push(pathWidths[i][k]);
+      reliable.set(id,samples);
+    });
+    const typical=new Map();
+    for(const [id,samples] of reliable){
+      samples.sort((a,b)=>a-b);
+      const value=samples[Math.floor(samples.length*.3)];
+      typical.set(id,value>=standard*.75&&value<=standard*1.6?standard:value);
+    }
     for(let i=0;i<paths.length;i++){
-      emitColours(paths[i],colours[i],standardGroups.has(groups[i])?standard:0);
+      let fixedWidth=standardGroups.has(groups[i])?standard:0;
+      const path=paths[i],reference=typical.get(find(i));
+      if(!fixedWidth&&reference&&path.length<standard*4
+        &&(count(edges(path[0]))>=3||count(edges(path.at(-1)))>=3)){
+        const samples=pathWidths[i].slice().sort((a,b)=>a-b);
+        if(samples[Math.floor(samples.length/2)]>reference*1.4)fixedWidth=reference;
+      }
+      emitColours(path,colours[i],fixedWidth);
       if(i%500===499){await yieldTask();check(signal);}
     }
     return strokes;
@@ -356,12 +395,13 @@
     const {width,height,data}=pixels;
     if(!palette||!Number.isInteger(width)||!Number.isInteger(height)||width<2||height<2
       ||width>4096||height>4096||width*height>12000000||data?.length!==width*height*4)throw new Error('Invalid scan ink dimensions');
+    if(options.coverage && (!(options.coverage instanceof Uint8Array)||options.coverage.length!==width*height))throw new Error('Invalid ink coverage dimensions');
     check(options.signal);await root.InhouseRust?.ready;check(options.signal);
-    const axes=(!options.forceJavaScript&&root.InhouseRust?.inkAxes?.(data,width,height))
-      ||await fallback(data,width,height,options.signal);
+    const axes=(!options.forceJavaScript&&root.InhouseRust?.inkAxes?.(data,width,height,options.coverage))
+      ||await fallback(data,width,height,options.signal,options.coverage);
     if(axes.rejected)throw new Error('Ink could not be separated. Try a clearer photo.');
     check(options.signal);
-    const strokes=await trace(axes,width,height,options.signal,data);
+    const strokes=await trace(axes,width,height,options.signal,data,options.coverage);
     return {version:1,width,height,strokes,backend:axes.backend};
   }
   // Exactly the editor's opaque pen path, also used for the scan preview.

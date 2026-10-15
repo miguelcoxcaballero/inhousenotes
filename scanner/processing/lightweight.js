@@ -3856,7 +3856,7 @@
         progress("colors");
         const colorsStarted = performance.now();
         const colors = await Light.correctColors(output, { useStencil: true, preciseStencil: true,
-          dotObservations: correctedDots?.points, signal: options.signal });
+          dotObservations: correctedDots?.points, signal: options.signal, captureInkGeometry: true });
         timings.colors = colors?.pixelProcessing;
         stencilCleanup = colors?.stencilCleanup;
         outputQuality = colors?.outputQuality;
@@ -3866,7 +3866,7 @@
         const vectorStarted = performance.now();
         const inkContext = output.getContext("2d", { willReadFrequently: true });
         editableInk = await SP.InkVectorizer.fromPixels(inkContext.getImageData(0, 0, output.width, output.height),
-          { signal: options.signal });
+          { signal: options.signal, coverage: colors.inkCoverage });
         // Review exactly the same opaque native pens that will be inserted.
         // The photograph is never left behind underneath editable strokes.
         inkContext.clearRect(0, 0, output.width, output.height);
@@ -5380,9 +5380,12 @@
     });
     await globalThis.InhouseRust?.ready;
     checkProcessingCancelled(settings);
+    // Geometry comes from measured paper-relative luminance BEFORE pigment
+    // enhancement. Saturating blue/red must never expand their silhouette.
+    const inkCoverage = settings.captureInkGeometry ? new Uint8Array(canvas.width * canvas.height) : null;
     const pixelsStarted = performance.now();
     const rustColors = settings.disableRust ? null : globalThis.InhouseRust?.scanColors?.(data, original, canvas.width, canvas.height,
-      illumination, observedIllumination?.drawing, illuminationWidth, illuminationHeight, colorParameters);
+      illumination, observedIllumination?.drawing, illuminationWidth, illuminationHeight, colorParameters, inkCoverage);
     if (rustColors) {
       try {
         for (let from = 0; from < canvas.height; from += processingWorker ? canvas.height : 96) {
@@ -5467,6 +5470,7 @@
         // reference projection and three discarded channel gains for the
         // millions of neutral pixels making up most scanned pages.
         const inkDeficit = localBright - luminance;
+        if (inkCoverage) inkCoverage[offset / 4] = Math.round(clamp(255 * inkDeficit / Math.max(40, localBright), 0, 255));
         // Camera JPEG chroma spreads beyond the sharp luminance edge. Colour
         // alone must not turn those otherwise paper-bright pixels into ink.
         const hasInkContrast = !observedIllumination
@@ -5625,6 +5629,7 @@
     illuminationCanvas.height = 0;
     return {
       canvas,
+      inkCoverage,
       pixelProcessing: { backend: rustColors ? "rust" : "javascript", pixelsMs, cleanupMs: performance.now() - cleanupStarted },
       calibrated: canCalibrate,
       calibration: { method: calibratedMatrix ? (yellowVerified ? "paper-relative-six-reference" : "paper-relative-four-markers") : "bounded-reference-fallback", matrixError, yellowError, matrix: calibratedMatrix, sourcePaper: profile.sourcePaper, normalizedReferences, references: normalizedReferences.map(sample => sample.name) },

@@ -56,20 +56,24 @@
         } catch (_) { return null; }
         finally { release(input); release(rgb); release(alpha); }
     }
-    function scanColors(rgba, original, width, height, field, mask, fw, fh, parameters) {
-        if (!core?.correct_scan_rows || ![width,height,fw,fh].every(value => Number.isSafeInteger(value) && value > 0)
+    function scanColors(rgba, original, width, height, field, mask, fw, fh, parameters, coverage = null) {
+        // An older cached core cannot produce the optional geometry plane.
+        // Use the JS fallback instead of returning an all-zero ink mask.
+        if (!core?.correct_scan_rows || (coverage && core.correct_scan_rows.length < 12)
+            || ![width,height,fw,fh].every(value => Number.isSafeInteger(value) && value > 0)
             || width > 16384 || height > 16384 || rgba.length !== width * height * 4 || original.length !== rgba.length || field.length !== fw * fh
-            || parameters.length !== 61 || (mask && mask.length !== fw * fh)) return null;
+            || parameters.length !== 61 || (mask && mask.length !== fw * fh) || (coverage && coverage.length !== width * height)) return null;
         const blocks = [];
         const copy = array => { const block = allocation(array.byteLength); blocks.push(block);
             view(block).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)); return block; };
         try {
             const data = copy(rgba), raw = copy(original), light = copy(field), drawing = mask ? copy(mask) : null, params = copy(parameters);
+            const geometry = coverage ? copy(coverage) : null;
             let disposed = false;
             return {
                 rows(from, to) { if (!disposed) core.correct_scan_rows(data.pointer, raw.pointer, width, height,
-                    light.pointer, drawing?.pointer || 0, fw, fh, params.pointer, from, to); },
-                copyTo(destination) { if (!disposed) destination.set(view(data)); },
+                    light.pointer, drawing?.pointer || 0, fw, fh, params.pointer, from, to, geometry?.pointer || 0); },
+                copyTo(destination) { if (!disposed) { destination.set(view(data)); if (geometry) coverage.set(view(geometry)); } },
                 dispose() { if (!disposed) { disposed = true; blocks.forEach(release); } }
             };
         } catch (_) { blocks.forEach(release); return null; }
@@ -136,20 +140,22 @@
             };
         } catch (_) { if (context) core.surface_fit_drop(context); blocks.forEach(release); return null; }
     }
-    function inkAxes(rgba, width, height) {
-        if (!core?.ink_axes || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+    function inkAxes(rgba, width, height, coverage = null) {
+        if (!core?.ink_axes || (coverage && core.ink_axes.length < 6)
+            || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
             || width < 2 || height < 2 || width > 4096 || height > 4096 || width*height > 12000000
-            || rgba?.length !== width*height*4) return null;
-        let pixels, mask, radii;
+            || rgba?.length !== width*height*4 || (coverage && coverage.length !== width*height)) return null;
+        let pixels, mask, radii, geometry;
         try {
             pixels=allocation(rgba.length); mask=allocation(width*height); radii=allocation(width*height*2);
             view(pixels).set(rgba);
-            const status=core.ink_axes(pixels.pointer,width,height,mask.pointer,radii.pointer);
+            if (coverage) { geometry=allocation(coverage.length); view(geometry).set(coverage); }
+            const status=core.ink_axes(pixels.pointer,width,height,mask.pointer,radii.pointer,geometry?.pointer || 0);
             if (status===2) return {rejected:true};
             if (status!==1) return null;
             return {mask:view(mask).slice(), radii:new Uint16Array(core.memory.buffer,radii.pointer,width*height).slice(), backend:'rust'};
         } catch (_) { return null; }
-        finally { release(pixels); release(mask); release(radii); }
+        finally { release(pixels); release(mask); release(radii); release(geometry); }
     }
     root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, available: () => !!core });
 })(globalThis);
