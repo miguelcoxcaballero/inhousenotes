@@ -87,9 +87,9 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.15.6';</script>
-    <script src="boot-v5.js?v=5.15.6"></script>
-    <link rel="stylesheet" href="offline-v5.css?v=5.15.6">
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.15.7';</script>
+    <script src="boot-v5.js?v=5.15.7"></script>
+    <link rel="stylesheet" href="offline-v5.css?v=5.15.7">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
@@ -8066,7 +8066,7 @@
             width: 100%;
             transform-origin: 0 50%;
             transform-style: preserve-3d;
-            transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+            transition: transform 0.18s cubic-bezier(0.3, 0.7, 0.2, 1);
         }
 
         .drive-folder-cover-face,
@@ -8106,12 +8106,13 @@
            and the ⋮ menu in the bottom corner. */
         .drive-folder-print {
             position: absolute;
-            top: 7%;
+            bottom: 8%;
             right: 8%;
             left: 14%;
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 7px;
+            padding-bottom: 34px;
             color: var(--folder-ink);
         }
 
@@ -8149,8 +8150,8 @@
         }
 
         #drive-home .drive-folder-cover-face .drive-card-more {
-            width: 30px;
-            height: 30px;
+            width: 40px;
+            height: 40px;
             color: var(--folder-ink);
         }
 
@@ -8163,8 +8164,13 @@
             z-index: 70;
             margin: 0;
             pointer-events: none;
-            transform-origin: 0 0;
-            will-change: transform;
+            transform-origin: 0 50%;
+            will-change: transform, opacity;
+            --folder-grain: none;
+        }
+
+        .drive-folder-ghost .drive-folder-back {
+            filter: none;
         }
 
         .drive-folder-ghost .drive-folder-cover {
@@ -8232,7 +8238,6 @@
             background: var(--folder-color, #e3c58e);
             color: var(--folder-ink, #1f1a14);
             --sheet-shadow: 0 2px 4px rgba(0, 0, 0, 0.14), 0 12px 28px rgba(0, 0, 0, 0.2);
-            transition: background-color 0.35s ease, color 0.35s ease;
         }
 
         #drive-home .drive-folder-view.hidden {
@@ -8263,11 +8268,19 @@
         .drive-folder-view-inner {
             max-width: 1080px;
             margin: 0 auto;
-            transition: opacity 0.22s ease;
         }
 
-        .drive-folder-view.is-switching .drive-folder-view-inner {
-            opacity: 0;
+        .drive-folder-view.is-leaving {
+            pointer-events: none;
+        }
+
+        .drive-folder-item-arriving {
+            animation: drive-folder-item-in 180ms ease-out both;
+        }
+
+        @keyframes drive-folder-item-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
 
         .drive-folder-view-head {
@@ -8336,10 +8349,6 @@
         .drive-folder-view .drive-card-title,
         .drive-folder-view .drive-card-sub,
         .drive-folder-view .drive-card-more {
-            color: inherit;
-        }
-
-        #drive-home .drive-folder-view .drive-card-title {
             color: inherit;
         }
 
@@ -8540,6 +8549,7 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
+            .drive-folder-item-arriving { animation: none; }
             .drive-folder-cover,
             #drive-home .drive-card-preview,
             .drive-sheet-flag,
@@ -9787,20 +9797,20 @@
     <script defer src="vendor/jspdf/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script defer src="vendor/pdfjs/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script defer src="vendor/pdf-lib/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script defer src="collaboration-core-v5.js?v=5.15.6"></script>
-    <script defer src="live-collaboration-v5.js?v=5.15.6"></script>
-    <script defer src="runtime-core-v5.js?v=5.15.6"></script>
-    <script defer src="security-core-v5.js?v=5.15.6"></script>
-    <script defer src="timeline-core-v5.js?v=5.15.6"></script>
-    <script defer src="document-processing-v5.js?v=5.15.6"></script>
+    <script defer src="collaboration-core-v5.js?v=5.15.7"></script>
+    <script defer src="live-collaboration-v5.js?v=5.15.7"></script>
+    <script defer src="runtime-core-v5.js?v=5.15.7"></script>
+    <script defer src="security-core-v5.js?v=5.15.7"></script>
+    <script defer src="timeline-core-v5.js?v=5.15.7"></script>
+    <script defer src="document-processing-v5.js?v=5.15.7"></script>
     <script defer src="shared/inhouse-services-updater/updater.js?v=1.2.3"></script>
-    <script defer src="bullet-template.js?v=5.15.6"></script>
-    <script defer src="offline-store-v5.js?v=5.15.6"></script>
-    <script defer src="offline-sync-v5.js?v=5.15.6"></script>
-    <script defer src="offline-library-v5.js?v=5.15.6"></script>
-    <script defer src="offline-app-v5.js?v=5.15.6"></script>
-    <script defer src="ink-palette.js?v=5.15.6"></script>
-    <script defer src="app-v5.js?v=5.15.6"></script>
+    <script defer src="bullet-template.js?v=5.15.7"></script>
+    <script defer src="offline-store-v5.js?v=5.15.7"></script>
+    <script defer src="offline-sync-v5.js?v=5.15.7"></script>
+    <script defer src="offline-library-v5.js?v=5.15.7"></script>
+    <script defer src="offline-app-v5.js?v=5.15.7"></script>
+    <script defer src="ink-palette.js?v=5.15.7"></script>
+    <script defer src="app-v5.js?v=5.15.7"></script>
 
 </body>
 
