@@ -148,3 +148,32 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
     await expect(page.locator('#drive-view-files')).not.toContainText('Obsolete');
     await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
 });
+
+test('folder lid stays visible while opening and the interior covers the view before content fades in', async ({ page, context }) => {
+    await setup(page, context);
+    const frames = await page.evaluate(async () => {
+        const home = document.getElementById('drive-home').getBoundingClientRect();
+        const top = document.querySelector('#drive-home .drive-topbar').getBoundingClientRect().bottom;
+        document.querySelector('#drive-folders [data-drive-item-id="projects"]').click();
+        const frames = [];
+        await new Promise(resolve => {
+            const sample = () => {
+                const ghost = document.querySelector('.drive-folder-ghost');
+                const view = document.getElementById('drive-folder-view');
+                if (ghost) {
+                    const r = ghost.getBoundingClientRect();
+                    const cover = new DOMMatrixReadOnly(getComputedStyle(ghost.querySelector('.drive-folder-cover')).transform);
+                    frames.push({ opacity: Number(getComputedStyle(ghost).opacity), turned: cover.m11 < -.5,
+                        revealed: !view.classList.contains('hidden'),
+                        covers: r.left <= home.left + 1 && r.right >= home.right - 1 && r.top <= top + 1 && r.bottom >= home.bottom - 1 });
+                }
+                if (driveFolderAnimation) requestAnimationFrame(sample); else resolve();
+            };requestAnimationFrame(sample);
+        });
+        return frames;
+    });
+    expect(frames.some(frame => frame.turned && !frame.revealed && frame.opacity > .99)).toBe(true);
+    expect(frames.some(frame => frame.covers && frame.opacity > .95)).toBe(true);
+    expect(frames.filter(frame => frame.revealed).every(frame => frame.covers)).toBe(true);
+    await expect(page.locator('#drive-view-files')).toContainText('Proyecto');
+});

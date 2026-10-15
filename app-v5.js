@@ -1964,8 +1964,8 @@
         // Home tabs, manila folders and the folder view (§ 4.15b)
         const DRIVE_HOME_TABS = ['home', 'starred', 'shared', 'files'];
         const DRIVE_DEFAULT_FOLDER_COLOR = '#e3c58e';
-        const DRIVE_FOLDER_OPEN_MS = 320;
-        const DRIVE_FOLDER_CLOSE_MS = 240;
+        const DRIVE_FOLDER_OPEN_MS = 520;
+        const DRIVE_FOLDER_CLOSE_MS = 380;
         let driveHomeTab = 'home';
         let driveFolderViewOriginId = null;
         let driveFolderAnimation = null;
@@ -8756,19 +8756,8 @@
                 };
                 const luminance = relativeLuminance(rgb);
                 const darkInk = (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05);
-                // The sampled tint remains slightly translucent. Near the
-                // black/white contrast crossover, a tiny tonal adjustment
-                // protects the label even over an opposing-colour photo detail.
-                for (let adjustment = 0; adjustment < 16; adjustment++) {
-                    const blended = relativeLuminance(rgb.map(value => value * 0.94 + (darkInk ? 0 : 255 * 0.06)));
-                    const contrast = darkInk ? (blended + 0.05) / 0.05 : 1.05 / (blended + 0.05);
-                    if (contrast >= 4.6) break;
-                    for (let channel = 0; channel < 3; channel++) {
-                        rgb[channel] = Math.max(0, Math.min(255, rgb[channel] + (darkInk ? 1 : -1)));
-                    }
-                }
                 return { rgb: rgb.join(', '), ink: darkInk ? '#000' : '#fff',
-                    inkRgb: darkInk ? '0, 0, 0' : '255, 255, 255', tone: darkInk ? 'light' : 'dark' };
+                    inkRgb: darkInk ? '0, 0, 0' : '255, 255, 255', shadowRgb: darkInk ? '255, 255, 255' : '0, 0, 0', tone: darkInk ? 'light' : 'dark' };
             } catch (_) {
                 // Private Drive thumbnails can display without allowing pixel
                 // access. Keep their original image and the legible CSS fallback.
@@ -8837,6 +8826,7 @@
                 preview.style.setProperty('--sheet-label-rgb', tone.rgb);
                 preview.style.setProperty('--sheet-label-ink', tone.ink);
                 preview.style.setProperty('--sheet-label-ink-rgb', tone.inkRgb);
+                preview.style.setProperty('--sheet-label-shadow-rgb', tone.shadowRgb);
                 preview.dataset.labelTone = tone.tone;
             });
         }
@@ -9520,9 +9510,9 @@
         }
 
         // ── § 4.15b  Home tabs and manila folders ───────────────────────────
-        // Fold the cover locally and crossfade the contents. Only transform
-        // and opacity animate: no full-screen texture enlargement, filters or
-        // per-frame colour painting. The browser compositor owns the frames.
+        // Show the cover opening, then zoom its flat interior over the view.
+        // Only reveal the contents once that interior covers the screen.
+        // Transform/opacity stay on the compositor; no animated paint effects.
 
         function prefersReducedHomeMotion() {
             return !!driveReducedMotionQuery?.matches;
@@ -9742,6 +9732,25 @@
             return ghost;
         }
 
+        function getDriveFolderFlight(ghost) {
+            const rect = ghost.getBoundingClientRect();
+            const home = driveHome.getBoundingClientRect();
+            const top = positionDriveFolderView();
+            const height = Math.max(1, home.height - top);
+            const middle = Math.min(2.1, Math.max(1.15, height * 0.48 / rect.height));
+            const scale = Math.max(home.width / rect.width, height / rect.height) * 1.08;
+            return {
+                mid: `translate(${home.left + home.width / 2 - rect.left}px, ${home.top + top + height / 2 - rect.top - rect.height * middle / 2}px) scale(${middle})`,
+                end: `translate(${home.left - rect.left - rect.width * scale * 0.03}px, ${home.top + top + height / 2 - rect.top - rect.height * scale / 2}px) scale(${scale})`
+            };
+        }
+
+        function prepareDriveFolderGhostInterior(ghost, entry) {
+            const tint = getDriveFolderViewTint(entry?.color || DRIVE_DEFAULT_FOLDER_COLOR);
+            ghost.querySelector('.drive-folder-back').style.backgroundColor = tint.bg;
+            ghost.style.setProperty('--folder-inside', tint.inside);
+        }
+
         function playDriveFolderOpen(art, entry, onReveal, backwards = false) {
             if (prefersReducedHomeMotion() || !driveFolderViewEl?.animate) {
                 onReveal();
@@ -9749,6 +9758,7 @@
             }
             const wasOpen = isDriveFolderViewOpen();
             const inner = driveFolderViewEl.querySelector('.drive-folder-view-inner');
+            const restingCover = art ? getComputedStyle(art.querySelector('.drive-folder-cover')).transform : '';
             const ghost = createDriveFolderGhost(art);
             const animations = [];
             let revealed = false;
@@ -9761,19 +9771,18 @@
             const reveal = (withMotion = true) => {
                 if (revealed) return;
                 revealed = true;
+                if (outgoing) outgoing.cancel();
                 onReveal();
                 if (!withMotion) return;
-                const arrival = animate(wasOpen ? inner : driveFolderViewEl, [
-                    { opacity: 0, transform: `translateY(${backwards ? -6 : 8}px)` },
+                const arrival = animate(inner, [
+                    { opacity: 0, transform: `translateY(${backwards ? -6 : 6}px)` },
                     { opacity: 1, transform: 'translateY(0)' }
-                ], { duration: 200, delay: wasOpen ? 0 : 40 });
+                ], { duration: ghost ? 104 : 180 });
                 if (!ghost) arrival.onfinish = cleanup;
             };
             const cleanup = () => {
                 if (done) return;
                 done = true;
-                // A second navigation completes the pending reveal once,
-                // then cancels every old effect before starting the next one.
                 reveal(false);
                 animations.forEach(animation => animation.cancel());
                 ghost?.remove();
@@ -9782,25 +9791,33 @@
             };
             const handle = { finish: cleanup };
             driveFolderAnimation = handle;
+            const outgoing = wasOpen && inner
+                ? animate(inner, [{ opacity: 1 }, { opacity: 0 }], { duration: 70 }) : null;
             if (ghost) {
+                const flight = getDriveFolderFlight(ghost);
+                prepareDriveFolderGhostInterior(ghost, entry);
                 art.style.visibility = 'hidden';
                 animate(ghost.querySelector('.drive-folder-cover'), [
-                    { transform: 'rotateY(0deg)' }, { transform: 'rotateY(-150deg)' }
+                    { transform: restingCover && restingCover !== 'none' ? restingCover : 'rotateY(0deg)' },
+                    { transform: 'rotateY(-166deg)' }
                 ], { duration: 240 });
-                animate(ghost, [
-                    { opacity: 1, transform: 'translateY(0) scale(1)' },
-                    { opacity: 0.85, transform: 'translateY(-5px) scale(1.04)', offset: 0.35 },
-                    { opacity: 0, transform: 'translateY(-12px) scale(1.12)' }
-                ], { duration: DRIVE_FOLDER_OPEN_MS }).onfinish = cleanup;
-            }
-            if (wasOpen && inner) {
-                animate(inner, [{ opacity: 1 }, { opacity: 0 }], { duration: 70 }).onfinish = () => {
-                    if (!done) {
-                        // Remove the outgoing effect before attaching the fade in.
-                        animations[animations.length - 1].cancel();
-                        reveal();
-                    }
+                animate(ghost.querySelector('.drive-folder-sheets'), [{ opacity: 1 }, { opacity: 0 }], { duration: 240, delay: 80 });
+                const flightAnimation = animate(ghost, [
+                    { transform: 'translate(0, 0) scale(1)' },
+                    { transform: flight.mid, offset: 0.5 },
+                    { transform: flight.end }
+                ], { duration: DRIVE_FOLDER_OPEN_MS * 0.8, easing: 'linear' });
+                // Chain off the *actual transform*, not a separate timer:
+                // compositor animations can start later than a main-thread
+                // timer on Android while their layers are being prepared.
+                flightAnimation.onfinish = () => {
+                    if (done) return;
+                    reveal();
+                    animate(ghost, [{ opacity: 1 }, { opacity: 0 }],
+                        { duration: DRIVE_FOLDER_OPEN_MS * 0.2, easing: 'ease-out' }).onfinish = cleanup;
                 };
+            } else if (outgoing) {
+                outgoing.onfinish = () => { if (!done) reveal(); };
             } else {
                 reveal();
             }
@@ -9827,24 +9844,23 @@
             driveFolderAnimation = handle;
             driveFolderViewEl.classList.add('is-leaving');
             driveFolderViewEl.inert = true;
-            // Keep the actual contents visible during the exit, instead of
-            // hiding them first and playing a folder over an empty screen.
-            const departure = driveFolderViewEl.animate([
-                { opacity: 1, transform: 'translateY(0)' },
-                { opacity: 0, transform: 'translateY(6px)' }
-            ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'ease-out', fill: 'both' });
+            const departure = driveFolderViewEl.animate([{ opacity: 1 }, { opacity: 0 }],
+                { duration: ghost ? 100 : 220, easing: 'ease-out', fill: 'both' });
             animations.push(departure);
-            departure.onfinish = cleanup;
-            if (ghost) {
-                art.style.visibility = 'hidden';
-                animations.push(ghost.animate([
-                    { opacity: 0, transform: 'translateY(-10px) scale(1.1)' },
-                    { opacity: 1, transform: 'translateY(0) scale(1)' }
-                ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'ease-out', fill: 'both' }));
-                animations.push(ghost.querySelector('.drive-folder-cover').animate([
-                    { transform: 'rotateY(-150deg)' }, { transform: 'rotateY(0deg)' }
-                ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)', fill: 'both' }));
-            }
+            if (!ghost) { departure.onfinish = cleanup; return; }
+            const flight = getDriveFolderFlight(ghost);
+            prepareDriveFolderGhostInterior(ghost, entry);
+            art.style.visibility = 'hidden';
+            animations.push(ghost.animate([
+                { opacity: 0, transform: flight.end },
+                { opacity: 1, transform: flight.end, offset: 0.23 },
+                { opacity: 1, transform: flight.mid, offset: 0.62 },
+                { opacity: 1, transform: 'translate(0, 0) scale(1)' }
+            ], { duration: DRIVE_FOLDER_CLOSE_MS, easing: 'linear', fill: 'both' }));
+            animations.at(-1).onfinish = cleanup;
+            animations.push(ghost.querySelector('.drive-folder-cover').animate([
+                { transform: 'rotateY(-166deg)' }, { transform: 'rotateY(0deg)' }
+            ], { duration: 240, delay: 140, easing: 'cubic-bezier(0.2, 0.7, 0.2, 1)', fill: 'both' }));
         }
 
         function findVisibleDriveFolderArt(folderId) {
