@@ -112,7 +112,7 @@
       focal: Math.exp(p[6]),
     };
   }
-  function project(model, u, v) {
+  function projectPhysical(model, u, v) {
     const { p, cb, sb, length, xs, zs, rotation: r } = model;
     const x = (u - 0.5) * W,
       y = (v - 0.5) * H,
@@ -132,6 +132,12 @@
       x: model.width / 2 + (model.focal * X) / Z,
       y: model.height / 2 + (model.focal * Y) / Z,
     };
+    return point;
+  }
+  function project(model, u, v) {
+    const point = model.paths
+      ? coons(model.paths, (u * W - 15) / 180, (v * H - 14.3) / 270, true)
+      : projectPhysical(model, u, v);
     if (model.refinement) {
       const correction = refinementAt(model.refinement, u, v);
       point.x += correction[0];
@@ -140,6 +146,42 @@
     if (model.registration) {
       const correction = registrationAt(model.registration, u, v);
       point.x += correction[0]; point.y += correction[1];
+    }
+    return point;
+  }
+  function preserveLatticePerimeter(model, u, v, point) {
+    if (model.paths && model.refinement) {
+      // The measured rail constrains normal motion, not the parameter along
+      // it. Keep its contour while allowing the lattice to slide tangentially.
+      // Fade across the blank half-cell; measured dot centres stay untouched.
+      // At corners, two independently observed rails must not pull one vertex
+      // in conflicting tangential directions. Taper their corrections there.
+      const boundaries = [
+        ["left", u * W, 15, 20, 0], ["right", W - u * W, 15, 20, 0],
+        ["top", v * H, 14.3, 19.3, 0], ["bottom", H - v * H, 12.7, 27.7, 0]
+      ];
+      for (const [name, coordinate, edge, inner, outer] of boundaries) {
+        const normalWeight = coordinate < edge ? (coordinate - outer) / (edge - outer)
+          : (inner - coordinate) / (inner - edge);
+        const along = name === "left" || name === "right" ? (v * H - 14.3) / 270 : (u * W - 15) / 180;
+        const taper = clamp(Math.min(along, 1 - along) / .12, 0, 1);
+        const weight = normalWeight * taper * taper * (3 - 2 * taper);
+        if (weight <= 0) continue;
+        const eu = name === "left" ? 15 / W : name === "right" ? 195 / W : u,
+          ev = name === "top" ? 14.3 / H : name === "bottom" ? 284.3 / H : v,
+          edgePoint = coons(model.paths, (eu * W - 15) / 180, (ev * H - 14.3) / 270, true),
+          correction = refinementAt(model.refinement, eu, ev);
+        edgePoint.x += correction[0]; edgePoint.y += correction[1];
+        const path = model.paths[name];
+        let nearest, distance = Infinity;
+        for (let i = 1; i < path.length; i++) {
+          const a = path[i - 1], b = path[i], dx = b.x - a.x, dy = b.y - a.y;
+          const t = clamp(((edgePoint.x - a.x) * dx + (edgePoint.y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+          const q = { x: a.x + t * dx, y: a.y + t * dy }, d = Math.hypot(q.x - edgePoint.x, q.y - edgePoint.y);
+          if (d < distance) { nearest = q; distance = d; }
+        }
+        if (nearest) { point.x += (nearest.x - edgePoint.x) * weight; point.y += (nearest.y - edgePoint.y) * weight; }
+      }
     }
     return point;
   }
@@ -292,10 +334,10 @@
     }
     return result;
   }
-  function coons(paths, u, v) {
+  function coons(paths, u, v, extrapolate = false) {
     const sample = (path, t) => {
-      const at = clamp(t, 0, 1) * (path.length - 1),
-        i = Math.min(path.length - 2, Math.floor(at)),
+      const at = (extrapolate ? t : clamp(t, 0, 1)) * (path.length - 1),
+        i = clamp(Math.floor(at), 0, path.length - 2),
         f = at - i;
       return {
         x: path[i].x + (path[i + 1].x - path[i].x) * f,
@@ -323,6 +365,11 @@
   }
   function observe(source, frame, diagnostics = {}, faint = false) {
     if (!frame?.paths) return null;
+    const recoverFaintDots = reason => {
+      if (faint) return null;
+      diagnostics.faintRecoveryReason = reason;
+      return observe(source, frame, diagnostics, true);
+    };
     const scale = Math.min(1, 1000 / Math.max(source.width, source.height)),
       width = Math.round(source.width * scale),
       height = Math.round(source.height * scale),
@@ -553,7 +600,7 @@
     // Camera antialiasing and warm exposure can reduce small printed dots to
     // a few intensity levels. Recover them only when the normal pass lacks
     // evidence; the lattice graph, holdouts and raster gate remain unchanged.
-    if (points.length < 350 && !faint) return observe(source, frame, diagnostics, true);
+    if (points.length < 350 && !faint) return recoverFaintDots("insufficient-dot-count");
     if (points.length < 350 || points.length > 4500) return null;
     let measuredRaster = null;
     if (faint) {
@@ -741,7 +788,7 @@
       best.queue.length < 350 ||
       best.conflicts.size > best.queue.length * 0.06
     )
-      return null;
+      return recoverFaintDots("incomplete-lattice-component");
     const entries = best.queue
       .filter((i) => !best.conflicts.has(i))
       .map((i) => ({
@@ -754,16 +801,18 @@
       minR = Math.min(...entries.map((p) => p.row)),
       maxR = Math.max(...entries.map((p) => p.row));
     diagnostics.extent = [minC, maxC, minR, maxR];
+    if (!faint && (maxC - minC < 31 || maxR - minR < 46))
+      return recoverFaintDots("incomplete-lattice-extent");
     if (
       maxC - minC < 31 ||
-      maxR - minR < 46 ||
+      maxR - minR < 40 ||
       maxC - minC > 39 ||
       maxR - minR > 56
     )
-      return null;
+      return recoverFaintDots("incomplete-lattice-extent");
     const phases = [];
     for (let c0 = minC - 3; c0 <= minC + 3; c0++)
-      for (let r0 = minR - 3; r0 <= minR + 3; r0++) {
+      for (let r0 = minR - Math.max(3, 50 - (maxR - minR)); r0 <= minR + 3; r0++) {
         const selected = entries.filter(
           (p) =>
             p.col >= c0 && p.col < c0 + 35 && p.row >= r0 && p.row < r0 + 51,
@@ -801,21 +850,27 @@
         }
         diagnostics.maximumBoundaryEvidence ||= [0,0,0,0];
         boundary.forEach((side,i) => diagnostics.maximumBoundaryEvidence[i] = Math.max(diagnostics.maximumBoundaryEvidence[i], side.length));
-        if (boundary.some((side) => side.length < (faint ? 3 : 12))
+        // A few washed-out rows at the top do not erase the measured lattice.
+        // Both lateral borders and at least one horizontal border must still
+        // anchor its absolute phase; two sides alone leave the indices vague.
+        const minimumSide = faint ? 3 : 12;
+        const supportedBoundary = boundary.filter(side => side.length >= minimumSide);
+        if (boundary[0].length < minimumSide || boundary[1].length < minimumSide
+          || supportedBoundary.length < (maxR - minR < 46 ? 3 : 4)
           || boundary.reduce((total, side) => total + side.length, 0) < 80) continue;
         phases.push({
           c0,
           r0,
           selected,
           score:
-            boundary.reduce((sum, side) => sum + median(side), 0) / 4 +
+            supportedBoundary.reduce((sum, side) => sum + median(side), 0) / supportedBoundary.length +
             (entries.length - selected.length) /
               Math.max(30, entries.length * 0.08),
         });
       }
     phases.sort((a, b) => a.score - b.score);
     const phase = phases[0];
-    if (!phase && !faint) return observe(source, frame, diagnostics, true);
+    if (!phase && !faint) return recoverFaintDots("unanchored-lattice");
     diagnostics.phases = phases.slice(0, 3).map((p) => ({
       c: p.c0,
       r: p.r0,
@@ -1406,11 +1461,11 @@
     }
     return [x, y];
   }
-  function fitMeasuredRefinement(model, training, pitch, frame) {
+  function fitMeasuredRefinement(model, training, pitch, frame, recovery = false) {
     // A low-dimensional smooth residual accounts for lens/print error and
-    // small local departures from a single developable bend. It never fits
-    // held-out dots and cannot rescue a physically rejected sheet.
-    const field = { cols: 9, rows: 13 }, count = field.cols * field.rows,
+    // small local departures from a single developable bend. Recovery uses
+    // a separate measured-lattice model; both reserve independent holdouts.
+    const field = recovery ? { cols: 13, rows: 19 } : { cols: 9, rows: 13 }, count = field.cols * field.rows,
       matrix = Array.from({ length: count }, () => Array(count).fill(0)),
       bx = Array(count).fill(0), by = Array(count).fill(0);
     const penalty = (terms, weight) => {
@@ -1434,10 +1489,10 @@
       // must not pull the dot field into an unobserved corner.
       if (nearest && distance <= pitch * 0.22) anchors.push({ ...nearest, u, v, weight: 0.4 });
     }
-    for (const point of [...training, ...anchors]) {
+    for (const point of [...training, ...(recovery ? [] : anchors)]) {
       const q = project(model, point.u, point.v),
         rx = point.x - q.x, ry = point.y - q.y,
-        weight = (point.weight || 1) * Math.min(1, pitch * 0.08 / Math.max(1e-6, Math.hypot(rx, ry))),
+        weight = (point.weight || 1) * Math.min(1, pitch * (recovery ? 0.6 : 0.08) / Math.max(1e-6, Math.hypot(rx, ry))),
         basis = refinementBasis(field, point.u, point.v);
       for (const [i, a] of basis) {
         bx[i] += a * rx * weight;
@@ -1447,15 +1502,15 @@
     }
     for (let y = 0; y < field.rows; y++) for (let x = 0; x < field.cols; x++) {
       const i = y * field.cols + x;
-      matrix[i][i] += x === 0 || x === field.cols - 1 || y === 0 || y === field.rows - 1 ? 0.5 : 0.025;
-      if (x && x < field.cols - 1) penalty([[i - 1, 1], [i, -2], [i + 1, 1]], 0.12);
-      if (y && y < field.rows - 1) penalty([[i - field.cols, 1], [i, -2], [i + field.cols, 1]], 0.12);
+      matrix[i][i] += x === 0 || x === field.cols - 1 || y === 0 || y === field.rows - 1 ? 0.5 : recovery ? 0.001 : 0.025;
+      if (x && x < field.cols - 1) penalty([[i - 1, 1], [i, -2], [i + 1, 1]], recovery ? 0.03 : 0.12);
+      if (y && y < field.rows - 1) penalty([[i - field.cols, 1], [i, -2], [i + field.cols, 1]], recovery ? 0.03 : 0.12);
     }
     field.dx = solve(matrix, bx);
     field.dy = solve(matrix, by);
     return field.dx && field.dy ? field : null;
   }
-  function boundRefinement(model, refined, pitch) {
+  function boundRefinement(model, refined, pitch, recovery = false) {
     // Derive a single conservative gain from displacement and local scale,
     // without consulting any held-out dots. Back off the whole smooth field
     // rather than clipping individual control points or loosening a bound.
@@ -1471,8 +1526,8 @@
           Math.hypot((b.x - q.x) - (a.x - p.x), (b.y - q.y) - (a.y - p.y)) / Math.max(1e-9, length));
       }
     }
-    const scale = Math.min(1, pitch * 0.22 / Math.max(1e-9, maximumDisplacement),
-      0.08 / Math.max(1e-9, maximumDerivative));
+    const scale = Math.min(1, pitch * (recovery ? 3 : 0.22) / Math.max(1e-9, maximumDisplacement),
+      (recovery ? 0.8 : 0.08) / Math.max(1e-9, maximumDerivative));
     if (!Number.isFinite(scale) || scale < 0.35) return null;
     if (scale < 1) {
       refined.refinement.dx = refined.refinement.dx.map(v => v * scale);
@@ -1642,6 +1697,7 @@
     }
     return null;
   }
+  const observedFrames = new WeakMap();
   function fit(source, detection, options = {}) {
     const diagnostics = options.diagnostics || {};
     const started = performance.now(),
@@ -1649,6 +1705,7 @@
       frame = detection?.frame;
     if (!frame?.paths || frame.confidence < 0.65) return null;
     const observed = observe(source, frame, diagnostics);
+    observedFrames.set(frame, { source, observed });
     if (!observed) return null;
     if (typeof options.onObservations === "function")
       options.onObservations(observationDetail(observed, source));
@@ -1875,6 +1932,7 @@
     }
     if (registration && typeof options.onRegistration === "function")
       options.onRegistration(observationDetail({ ...observed, points: registration.anchors }, source));
+    observedFrames.delete(frame);
     return {
       type: "developable-pinhole",
       parameters: best.p,
@@ -1911,6 +1969,90 @@
       },
     };
   }
+  // A crease can depart from the single ruling direction of the 3D model.
+  // Recover its flat paper coordinates from the measured lattice instead of
+  // pretending that another cylindrical pose explains it. Held-out dots and
+  // the final raster certificate still decide whether this map is usable.
+  function fitLattice(source, detection, options = {}) {
+    const started = performance.now(), frame = detection?.frame;
+    if (!frame?.paths || frame.confidence < 0.65) return null;
+    const cached = observedFrames.get(frame);
+    const observed = cached?.source === source ? cached.observed : observe(source, frame, options.diagnostics || {});
+    observedFrames.delete(frame);
+    if (!observed || observed.points.length < 500) return null;
+    const { points, pitch } = observed;
+    const training = points.filter(p => p.row % 4 === 1 || p.col % 4 === 2);
+    const validation = points.filter(p => p.row % 4 !== 1 && p.col % 4 !== 2);
+    if (training.length < 200 || validation.length < 300) return null;
+    const base = { paths: frame.paths, width: source.width, height: source.height };
+    const refinement = fitMeasuredRefinement(base, training, pitch, frame, true);
+    if (!refinement) return null;
+    let model = { ...base, refinement };
+    const bounds = boundRefinement(base, model, pitch, true);
+    if (!bounds) return null;
+    const errors = surfaceErrors(model, validation, frame);
+    const guides = traceParallels(validation, pitch).samples;
+    const tangents = guides.map(guide => {
+      const a = project(model, guide.u - guide.du * .5, guide.v - guide.dv * .5);
+      const b = project(model, guide.u + guide.du * .5, guide.v + guide.dv * .5);
+      return Math.hypot(b.x - a.x - guide.tx, b.y - a.y - guide.ty);
+    });
+    const tangentP90 = tangents.length ? percentile(tangents, .9) : Infinity;
+    Object.assign(options.diagnostics || {}, { recovery: { ...errors, ...bounds, tangentP90 } });
+    if (!validErrors(errors, pitch) || tangentP90 > pitch * .22) return null;
+    // Revisit faint spots near the validated model's predicted cells. Offset
+    // seeds let the source-centroid check find a real spot beyond its compact
+    // window; the recovered centre must stay well inside the same lattice cell.
+    // Registration below still rejects inconsistent neighbours and folded cells.
+    const present = new Set(points.map(point => `${point.row},${point.col}`)), missing = [];
+    for (let row = 0; row < 51; row++) for (let col = 0; col < 35; col++) {
+      if (present.has(`${row},${col}`)) continue;
+      const u = (20 + col * 5) / W, v = (19.3 + row * 5) / H, expected = project(model, u, v);
+      for (const dy of [-.18, 0, .18]) for (const dx of [-.18, 0, .18])
+        missing.push({ x: expected.x + dx * pitch, y: expected.y + dy * pitch, u, v, row, col });
+    }
+    const typicalContrast = median(points.map(point => point.dotContrast)), recovered = new Map();
+    for (const point of refineDotCenters(source, missing, pitch, {}, observed.raster)) {
+      if (!point.centerRefined || point.dotContrast > typicalContrast * 2.3) continue;
+      const expected = project(model, point.u, point.v), distance = Math.hypot(point.x - expected.x, point.y - expected.y);
+      if (distance > pitch * .28) continue;
+      const key = `${point.row},${point.col}`, prior = recovered.get(key);
+      if (!prior || distance < prior.distance) recovered.set(key, { ...point, distance });
+    }
+    const completePoints = [...points, ...recovered.values()];
+    // As with exact dot registration below, the final map can use all measured
+    // anchors after the held-out model check. Refit the smooth field first so
+    // registration need not bend individual cells to compensate for a crease.
+    // The independent final-raster check is still mandatory for insertion.
+    const complete = fitMeasuredRefinement(base, completePoints, pitch, frame, true);
+    let refit = null;
+    if (complete) {
+      const fitted = { ...base, refinement: complete };
+      const completeBounds = boundRefinement(base, fitted, pitch, true);
+      const completeErrors = completeBounds && surfaceErrors(fitted, completePoints, frame);
+      if (completeErrors && validErrors(completeErrors, pitch) && completeErrors.rms <= errors.rms) {
+        model = fitted;
+        refit = { ...completeErrors, ...completeBounds, observations: completePoints.length };
+      }
+    }
+    const registrationPoints = refineProjectedCenters(source, model, completePoints, observed.raster);
+    const registration = registerMeasuredDots(model, registrationPoints, pitch);
+    if (!registration) return null;
+    registration.diagnostics.recovered = registration.anchors.filter(point => !present.has(`${point.row},${point.col}`)).length;
+    registration.field.points = registration.anchors;
+    options.onRegistration?.(observationDetail({ ...observed, points: registration.anchors }, source));
+    return {
+      type: 'measured-lattice', paths: frame.paths, refinement: model.refinement,
+      registration: registration.field, width: source.width, height: source.height,
+      diagnostics: { ...errors, pitch, observations: points.length, training: training.length,
+        validation: validation.length, coverage: observed.coverage, phaseScore: observed.phaseScore,
+        parallelValidation: { samples: guides.length, tangentP90 },
+        measuredRefinement: { ...bounds, controls: refinement.cols * refinement.rows },
+        refit,
+        registration: registration.diagnostics, elapsedMs: performance.now() - started }
+    };
+  }
+
   // Independently inspect photographed dots in the actual warped raster. A
   // good yellow border alone cannot certify the interior of a curved page.
   // This is a read-only alignment gate, not another source of warp anchors:
@@ -2182,7 +2324,9 @@
     }
     const data = image.data, pitch = surface.diagnostics.pitch,
       field = { ...original, dx: [...original.dx], dy: [...original.dy] },
-      model = prepare(surface.parameters, surface.width, surface.height);
+      model = surface.type === 'measured-lattice'
+        ? { paths: surface.paths, width: surface.width, height: surface.height }
+        : prepare(surface.parameters, surface.width, surface.height);
     if (surface.refinement) model.refinement = surface.refinement;
     const coefficients = [0.2126, 0.7152, 0.0722];
     const luma = (x, y) => {
@@ -2202,7 +2346,7 @@
       vs = options.mesh?.vs || fractions(80,[14.3/H,274.3/H,279.3/H,284.3/H,...field.rowPositions]),
       nodes = new Map(),
       node = (x,y) => { const key=y*us.length+x; let p=nodes.get(key);
-        if(!p){p=project(model,us[x],vs[y]);nodes.set(key,p);} return p; },
+        if(!p){p=preserveLatticePerimeter(model,us[x],vs[y],project(model,us[x],vs[y]));nodes.set(key,p);} return p; },
       interval = (values,t) => {let low=0,high=values.length-1;while(high-low>1){const m=(low+high)>>1;if(values[m]<=t)low=m;else high=m;}return low;},
       baseAt = (u,v) => {const x=interval(us,u),y=interval(vs,v),s=(u-us[x])/(us[x+1]-us[x]),t=(v-vs[y])/(vs[y+1]-vs[y]),
         a=node(x,y),b=node(x+1,y),c=node(x,y+1),d=node(x+1,y+1);
@@ -2301,12 +2445,14 @@
   function map(surface, u, v) {
     let model = cache.get(surface);
     if (!model) {
-      model = prepare(surface.parameters, surface.width, surface.height);
+      model = surface.type === 'measured-lattice'
+        ? { paths: surface.paths, width: surface.width, height: surface.height }
+        : prepare(surface.parameters, surface.width, surface.height);
       if (surface.refinement) model.refinement = surface.refinement;
       if (surface.registration) model.registration = surface.registration;
       cache.set(surface, model);
     }
-    return project(model, u, v);
+    return preserveLatticePerimeter(model, u, v, project(model, u, v));
   }
-  SP.MetricSurface = { fit, map, observe, refineForRaster, certifyRaster };
+  SP.MetricSurface = { fit, fitLattice, map, observe, refineForRaster, certifyRaster };
 })();

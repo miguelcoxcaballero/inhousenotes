@@ -3472,7 +3472,7 @@
       needsDetailedPass = false;
       quick.scaleSelection = {resolution:ANALYSIS_MAX,reason:'raster-recovery'};
     }
-    const finalize = selected => {
+    const finalize = (selected, allowLattice = true) => {
       let detection = refineObservedFrame(source, selected);
       detection = SP.SurfaceParameterization?.refine(source, detection) || detection;
       if (detection.frame && options.liveDetection?.detectionMode === 'layout') detection.frame.detectionMode = 'layout';
@@ -3491,7 +3491,7 @@
       }
       if (detection.quality?.valid && detection.frame && SP.MetricSurface?.fit) {
         const surfaceDiagnostics = {};
-        const surface = SP.MetricSurface.fit(source, detection, {
+        const surfaceOptions = {
           diagnostics: surfaceDiagnostics,
           budgetMs: options.surfaceBudgetMs,
           onObservations: detail => {
@@ -3499,7 +3499,13 @@
             options.onProgress?.('surface', { fitting:true });
           },
           onRegistration: detail => options.onProgress?.('surface', { ...detail, space:'source', registered:true })
-        });
+        };
+        // The finer retry is the same saved photo whose first surface failed.
+        // Try its measured lattice before repeating an expensive physical fit.
+        const recoveryFirst = allowLattice && options.forceDetailed;
+        const surface = (recoveryFirst && SP.MetricSurface.fitLattice?.(source, detection, surfaceOptions))
+          || SP.MetricSurface.fit(source, detection, surfaceOptions)
+          || (allowLattice && !recoveryFirst && SP.MetricSurface.fitLattice?.(source, detection, surfaceOptions));
         if (surface) detection.frame.metricSurface = surface;
         else detection.frame.surfaceDiagnostics = surfaceDiagnostics;
       }
@@ -3512,7 +3518,7 @@
       // The finer border pass is a recovery path. If the smaller analysis
       // already explains the independently measured full-source dots and
       // perimeter with a validated 3D surface, don't repeat the whole search.
-      const candidate = finalize(JSON.parse(JSON.stringify(quick)));
+      const candidate = finalize(JSON.parse(JSON.stringify(quick)), false);
       if (candidate.frame?.metricSurface) {
         completed = candidate;
         completed.scaleSelection = {resolution:ANALYSIS_FAST_MAX,reason:'verified-full-source-surface'};
@@ -3783,12 +3789,23 @@
         const surface = detection.frame?.metricSurface;
         // Camera capture promises a readable bullet page. A good perimeter
         // alone is not evidence that its interior can be straightened: the
-        // physical fit must have observed a complete, ordered dot lattice and
-        // validated it against held-out source points. Imports keep accepting
+        // surface must have observed an ordered dot lattice spanning the page
+        // and validated its map against held-out source points. Imports keep accepting
         // ordinary bordered paper when this explicit requirement is absent.
-        if (!precise || surface?.type !== "developable-pinhole"
+        if (!precise || !["developable-pinhole", "measured-lattice"].includes(surface?.type)
           || !(surface.diagnostics?.observations >= 350)
           || !(surface.diagnostics?.validation > 0)) {
+          if (precise && !options.forceDetailed && detection.scaleSelection?.resolution !== ANALYSIS_MAX
+            && detection.frame?.surfaceDiagnostics?.candidates >= 500) {
+            // Plenty of photographed dots with a failed coarse fit warrants
+            // a finer observation of this saved photo, not a new camera shot.
+            const recoveryMs = performance.now() - started;
+            source.width = source.height = 0; source = null;
+            progress('detection', { retry: true });
+            const recovered = await processScanBlob(blob, { ...options, forceDetailed: true });
+            recovered.timings = { ...recovered.timings, recoveryMs, totalMs: performance.now() - started };
+            return recovered;
+          }
           detection.quality = { ...detection.quality, valid: false, reason: "page-dot-grid-unverified" };
           timings.totalMs = performance.now() - started;
           return { blob, width, height, corrected: false, templateApplied: false, detection, timings,
