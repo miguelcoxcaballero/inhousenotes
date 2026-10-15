@@ -2689,8 +2689,22 @@
           const center = chromaAt(x, y);
           const contrast = center - Math.max(chromaAt(x + nx * 3.5, y + ny * 3.5),
             chromaAt(x - nx * 3.5, y - ny * 3.5));
-          if (center < 9 || contrast < 3) continue;
-          const score = contrast - Math.abs(offset) * 0.65;
+          let evidence = center >= 9 && contrast >= 3 ? contrast : 0;
+          if (seed.detectionMode === "layout") {
+            // The live layout can survive a non-yellow rail. Independently
+            // remeasure that same thin, two-sided luminance ridge on the still;
+            // the subsequent box/grid fit must also pass before insertion.
+            const lightAt = (xx, yy) => {
+              if (xx < 1 || yy < 1 || xx >= width-1 || yy >= height-1) return 0;
+              const at=(Math.round(yy)*width+Math.round(xx))*4;
+              return pixels[at]*.2126+pixels[at+1]*.7152+pixels[at+2]*.0722;
+            };
+            const a=lightAt(x+nx*3.5,y+ny*3.5),b=lightAt(x-nx*3.5,y-ny*3.5);
+            const ridge=Math.min(a,b)-lightAt(x,y);
+            if (ridge >= Math.max(2.5,Math.min(a,b)*.012)) evidence=Math.max(evidence,ridge);
+          }
+          if (!evidence) continue;
+          const score = evidence - Math.abs(offset) * 0.65;
           if (!best || score > best.score) best = { x, y, score };
         }
         if (best) hits += 1;
@@ -3418,6 +3432,7 @@
     const finalize = selected => {
       let detection = refineObservedFrame(source, selected);
       detection = SP.SurfaceParameterization?.refine(source, detection) || detection;
+      if (detection.frame && options.liveDetection?.detectionMode === 'layout') detection.frame.detectionMode = 'layout';
       if (detection.quality?.valid && options.liveDetection?.frameEdges?.length === 4) {
         const width = source.naturalWidth || source.videoWidth || source.width;
         const height = source.naturalHeight || source.videoHeight || source.height;

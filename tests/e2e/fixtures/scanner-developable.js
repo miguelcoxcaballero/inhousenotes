@@ -121,7 +121,7 @@
         ctx.fill();
       }
     }
-    ctx.strokeStyle = "#f0db4c";
+    ctx.strokeStyle = definition.stencilColor || "#f0db4c";
     ctx.lineWidth = 0.85;
     ctx.strokeRect(15, 14.3, 180, 270);
     for (const left of [20, 110]) {

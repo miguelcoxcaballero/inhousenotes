@@ -406,3 +406,32 @@ test('a small ordered row of laptop icons at the image edge is not page calibrat
     'red-to-green orientation would place the actual sheet beyond the right image edge');
   assert.equal(detect({ width, height, data }), null);
 });
+
+test('identifies the printed layout when the rails are grey or shifted away from yellow', () => {
+  for (const ink of [[211,214,215],[224,219,229],[212,228,228],[238,239,238]]) {
+    for(const bowX of [0,18]) {
+      const photo=frame({ink,colourMarkers:true,bowX});
+      const result=detect(photo);
+      assert.equal(result?.source,'yellow',JSON.stringify({ink,bowX,result}));
+      assert.equal(result.detectionMode,'layout');
+      assert.ok(result.confidence>.86,JSON.stringify({ink,bowX,confidence:result.confidence}));
+      assert.equal(result.markers.length,2);
+      assert.ok(result.markerSupport>=.65);
+      assert.ok(Math.min(...result.frameEdgeSupport)>.6);
+      const moved=detect(frame({ink,colourMarkers:true,bowX,quad:[[105,29],[353,38],[380,459],[78,451]]}),result);
+      assert.equal(moved?.detectionMode,'layout');
+      assert.ok(moved.confidence>.86);
+      assert.equal(detect(frame({yellow:false,colourMarkers:true}),result)?.source,'paper');
+    }
+  }
+});
+
+test('layout recovery requires the measured box strips and matching four-circle footer', () => {
+  for (const options of [
+    {colourMarkers:false},{markers:false},{yellow:false},
+    {colourMarkers:[[0,0,255],[0,0,0],[255,0,0],[110,255,18]]}
+  ]) {
+    const result=detect(frame({ink:[215,215,215],colourMarkers:true,...options}));
+    assert.ok(!result||result.source==='paper'||result.confidence<.78,JSON.stringify(result));
+  }
+});
