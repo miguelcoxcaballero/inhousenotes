@@ -42,7 +42,7 @@ test('recovering pen lobes cannot borrow a nearby different ink colour',async({p
       wrong:reports.map(r=>r.wrong),parity:JSON.stringify(reports[0].strokes)===JSON.stringify(reports[1].strokes)};
   });
   expect(reports.backends).toEqual(['rust','javascript']);
-  expect(reports.repairBackends).toEqual(['rust','javascript']);
+  expect(reports.repairBackends).toEqual(['javascript','javascript']);
   for(const compared of reports.compared)for(const count of compared)expect(count).toBeGreaterThan(520);
   expect(reports.wrong).toEqual([[0,0,0],[0,0,0]]);
   expect(reports.parity).toBe(true);
@@ -76,10 +76,10 @@ test('a large filled drawing keeps its hole without generating thousands of repa
     return reports;
   });
   expect(reports.map(r=>r.backend)).toEqual(['rust','javascript']);
-  expect(reports.map(r=>r.repairBackend)).toEqual(['rust','javascript']);
+  expect(reports.map(r=>r.repairBackend)).toEqual(['javascript','javascript']);
   for(const report of reports){
     expect(report.strokes).toBeLessThan(1000);
-    expect(report.points).toBeLessThan(50000);
+    expect(report.points).toBeLessThan(60000);
     expect(report.hole).toBe(0);
     expect(report.ink).toBeGreaterThan(230);
     // A generous watchdog catches unbounded candidate work, rather than

@@ -1,4 +1,5 @@
 import {expect,test} from '@playwright/test';
+import {isDeepStrictEqual} from 'node:util';
 
 // The short line/circle bridge fixture misses the thousands of branches in a
 // handwritten page. Generate a camera-like raster, then let the real scanner
@@ -46,6 +47,14 @@ async function denseScan(page) {
 
 // Collaborative undo intentionally advances syncStamp; the stored pen ID,
 // colour, width, pressure and every coordinate must still be lossless.
+// Compare every coordinate, but report only the first changed stroke. A
+// whole-page deep diff can exhaust the runner while formatting 180k points.
+function equalStrokes(actual,expected){
+  expect(actual.length).toBe(expected.length);
+  for(let i=0;i<actual.length;i++)if(!isDeepStrictEqual(actual[i],expected[i])){
+    expect(actual[i],`stroke ${i}: ${actual[i].id||'scan'}`).toEqual(expected[i]);
+  }
+}
 const ordered=strokes=>strokes.map(({syncStamp,...stroke})=>stroke).sort((a,b)=>a.id.localeCompare(b.id));
 
 test('a dense scanned page stays editable and preserves native pens through input, undo and reload',async({page,context})=>{
@@ -56,10 +65,12 @@ test('a dense scanned page stays editable and preserves native pens through inpu
     vectorMs:scan.vectorMs,bytes:scan.bytes,backend:scan.ink.backend,repairCount:scan.ink.repairCount,repairBackend:scan.ink.repairBackend}));
   // Bound data growth, rather than imposing a machine-dependent CPU deadline.
   expect(scan.ink.backend).toBe('rust');
-  expect(scan.ink.repairBackend).toBe('rust');expect(scan.ink.repairCount).toBeGreaterThan(0);
+  expect(scan.ink.reconstruction).toBe('measured-envelope');expect(scan.ink.repairBackend).toBe('javascript');expect(scan.ink.repairCount).toBeGreaterThan(0);
   expect(scan.ink.strokes.length).toBeGreaterThan(scan.glyphs);
   expect(scan.ink.strokes.length).toBeLessThan(scan.glyphs*12);
-  expect(scan.points).toBeLessThan(scan.glyphs*140);
+  // Full editable envelopes replace isolated repair discs. Keep the same
+  // pen and serialized-byte budgets; allow their longer, continuous paths.
+  expect(scan.points).toBeLessThan(scan.glyphs*220);
   expect(scan.bytes).toBeLessThan(scan.glyphs*6000);
   await page.goto('/?e2e=1',{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>window.__IHN_TEST_API__);
@@ -87,7 +98,7 @@ test('a dense scanned page stays editable and preserves native pens through inpu
   const sx=794/scan.ink.width,sy=1123/scan.ink.height;
   const expected=scan.ink.strokes.map(stroke=>({...stroke,width:stroke.width*Math.sqrt(sx*sy),
     points:stroke.points.map(p=>({x:p.x*sx,y:p.y*sy}))}));
-  expect(initial.strokes.map(({tool,color,width,points})=>({tool,color,width,points:points.map(({x,y})=>({x,y}))}))).toEqual(expected);
+  equalStrokes(initial.strokes.map(({tool,color,width,points})=>({tool,color,width,points:points.map(({x,y})=>({x,y}))})),expected);
   const repairIds=new Set(initial.strokes.slice(-scan.ink.repairCount).map(s=>s.id));
 
   const canvas=page.locator('canvas.page-canvas[data-page="1"]');
@@ -113,18 +124,18 @@ test('a dense scanned page stays editable and preserves native pens through inpu
   expect(changed.length).toBeGreaterThan(10);
   expect(changed.every(s=>s.color==='#E81010'&&s.points.every(p=>p.y<170))).toBe(true);
   await page.locator('#btn-undo').click();
-  expect(ordered((await snapshot()).strokes)).toEqual(ordered(initial.strokes));
+  equalStrokes(ordered((await snapshot()).strokes),ordered(initial.strokes));
 
   await page.locator('#btn-eraser').click();
   await page.evaluate(()=>{const toggle=document.getElementById('eraser-stroke-toggle');
     if(toggle.checked){toggle.checked=false;toggle.dispatchEvent(new Event('change',{bubbles:true}));}});
   await gesture([[183,149],[183,157],[183,165]]);
   const erased=await snapshot();
-  expect(ordered(erased.strokes)).not.toEqual(ordered(initial.strokes));
+  expect(JSON.stringify(ordered(erased.strokes))===JSON.stringify(ordered(initial.strokes))).toBe(false);
   const untouched=strokes=>ordered(strokes.filter(s=>s.points.every(p=>p.y>190)));
-  expect(untouched(erased.strokes)).toEqual(untouched(initial.strokes));
+  equalStrokes(untouched(erased.strokes),untouched(initial.strokes));
   await page.locator('#btn-undo').click();
-  expect(ordered((await snapshot()).strokes)).toEqual(ordered(initial.strokes));
+  equalStrokes(ordered((await snapshot()).strokes),ordered(initial.strokes));
 
   // Dispatch the burst captured by a real stylus: rendering must batch it,
   // while retaining its curves and release tail on this scanned page.
@@ -155,7 +166,7 @@ test('a dense scanned page stays editable and preserves native pens through inpu
   expect(input.beforeFrame).toBe(0);expect(input.frameCalls).toBeGreaterThan(0);expect(input.frameCalls).toBeLessThanOrEqual(3);
   const edited=await snapshot(),originalIds=new Set(initial.strokes.map(s=>s.id));
   const added=edited.strokes.filter(s=>!originalIds.has(s.id));expect(added).toHaveLength(1);
-  expect(ordered(edited.strokes.filter(s=>originalIds.has(s.id)))).toEqual(ordered(initial.strokes));
+  equalStrokes(ordered(edited.strokes.filter(s=>originalIds.has(s.id))),ordered(initial.strokes));
   expect(added[0].points.length).toBeGreaterThan(120);
   expect(added[0].points.at(-1).x).toBeCloseTo(420,3);
   expect(Math.min(...added[0].points.map(p=>p.y))).toBeLessThan(89);
@@ -163,20 +174,20 @@ test('a dense scanned page stays editable and preserves native pens through inpu
   await page.evaluate(()=>__IHN_TEST_API__.checkpointBeforeLeaving());
   await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.__IHN_TEST_API__);
   await page.evaluate(async()=>{await __IHN_TEST_API__.ready();await __IHN_TEST_API__.loadPage(1);});
-  expect(ordered((await snapshot()).strokes)).toEqual(ordered(edited.strokes));
+  equalStrokes(ordered((await snapshot()).strokes),ordered(edited.strokes));
   const pdf=await page.evaluate(()=>__IHN_TEST_API__.buildPdfBlobForTest({includeBytes:true}));
   expect(pdf.ok).toBe(true);
   await page.evaluate(bytes=>__IHN_TEST_API__.importPdfBlobForTest(bytes),pdf.bytes);
   await page.evaluate(()=>__IHN_TEST_API__.loadPage(1));
   const reopened=await snapshot();
   // PDF metadata stores coordinates at 0.01 editor pixels; that must not
-  // discard the short native pens which recover photographed letter lobes.
+  // discard the native contours which recover photographed letter lobes.
   const rounded=strokes=>ordered(strokes).map(s=>({...s,points:s.points.map(p=>({...p,
     x:Math.round(p.x*100)/100,y:Math.round(p.y*100)/100}))}));
-  expect(rounded(reopened.strokes)).toEqual(rounded(edited.strokes));
+  equalStrokes(rounded(reopened.strokes),rounded(edited.strokes));
   const reopenedRepairs=reopened.strokes.filter(s=>repairIds.has(s.id));
   expect(reopenedRepairs).toHaveLength(scan.ink.repairCount);
-  expect(reopenedRepairs.every(s=>s.points.length===2&&Math.hypot(s.points[1].x-s.points[0].x,s.points[1].y-s.points[0].y)>.02)).toBe(true);
+  expect(reopenedRepairs.every(s=>s.points.length>=2&&s.points.some(p=>Math.hypot(p.x-s.points[0].x,p.y-s.points[0].y)>.02))).toBe(true);
   expect(reopened.images).toEqual([]);expect(reopened.backgroundImage).toBeNull();
   console.log('DENSE_SCAN_NATIVE',JSON.stringify({glyphs:scan.glyphs,pens:scan.ink.strokes.length,points:scan.points,
     vectorMs:scan.vectorMs,insertionMs,bytes:scan.bytes,backend:scan.ink.backend,repairCount:scan.ink.repairCount,

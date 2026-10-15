@@ -144,7 +144,7 @@
         } catch (_) { if (context) core.surface_fit_drop(context); blocks.forEach(release); return null; }
     }
     function inkAxes(rgba, width, height, coverage = null) {
-        if (!core?.ink_axes || (coverage && core.ink_axes.length < 6)
+        if (!core?.ink_axes || (coverage && (core.ink_axes.length < 6 || core.ink_geometry_version?.() !== 2))
             || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
             || width < 2 || height < 2 || width > 4096 || height > 4096 || width*height > 12000000
             || rgba?.length !== width*height*4 || (coverage && coverage.length !== width*height)) return null;
