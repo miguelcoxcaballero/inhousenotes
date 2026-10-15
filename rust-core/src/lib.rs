@@ -117,15 +117,18 @@ fn yellow(r:f64,g:f64,b:f64)->bool {
 
 /// Correct a spatially varying illuminant from paper rings surrounding verified
 /// bullet dots. Preserve paper exposure; the colour references still determine
-/// pigment calibration in correct_scan_rows. Field planes are R/G and B/G.
+/// pigment calibration in correct_scan_rows. White planes are R/G and B/G;
+/// optional neutral planes are paper-to-dot absorption gains R/G/B and paper.
+/// Correcting that second neutral level removes coloured additive flare.
 #[no_mangle]
 pub unsafe extern "C" fn balance_paper_rows(data:*mut u8,width:usize,height:usize,
-    white:*const f32,fw:usize,fh:usize,from:usize,to:usize) {
+    white:*const f32,fw:usize,fh:usize,from:usize,to:usize,neutral:*const f32) {
     if data.is_null() || white.is_null() || width==0 || height==0 || fw==0 || fh==0
         || width>16384 || height>16384 || fw>16384 || fh>16384 {return;}
     let out=std::slice::from_raw_parts_mut(data,width*height*4);
     let n=fw*fh;
     let field=std::slice::from_raw_parts(white,n*2);
+    let neutral=if neutral.is_null(){None}else{Some(std::slice::from_raw_parts(neutral,n*4))};
     let columns:Vec<_>=(0..width).map(|x|{
         let fx=((x as f64+0.5)*fw as f64/width as f64-0.5).clamp(0.0,(fw-1) as f64);
         let ix=fx.floor() as usize;(ix,(ix+1).min(fw-1),fx-ix as f64)
@@ -142,9 +145,27 @@ pub unsafe extern "C" fn balance_paper_rows(data:*mut u8,width:usize,height:usiz
             let r=sample(0);let b=sample(n);
             if !r.is_finite() || !b.is_finite() || r<=0.0 || b<=0.0 {continue;}
             let level=r*0.2126+0.7152+b*0.0722;let i=(y*width+x)*4;
-            out[i]=clamp_byte(out[i] as f64*level/r);
-            out[i+1]=clamp_byte(out[i+1] as f64*level);
-            out[i+2]=clamp_byte(out[i+2] as f64*level/b);
+            let mut rgb=[out[i] as f64*level/r,out[i+1] as f64*level,out[i+2] as f64*level/b];
+            if let Some(values)=neutral {
+                let at=|offset:usize| {
+                    (values[offset+iy*fw+ix] as f64*(1.0-mx)+values[offset+iy*fw+nx] as f64*mx)*(1.0-my)
+                      +(values[offset+ny*fw+ix] as f64*(1.0-mx)+values[offset+ny*fw+nx] as f64*mx)*my
+                };
+                let paper=at(n*3);let luminance=(rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722).clamp(0.0,255.0);
+                for c in 0..3 {rgb[c]=paper-(paper-rgb[c])*at(c*n);}
+                let preserve=luminance-(rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722);
+                for c in 0..3 {rgb[c]+=preserve;}
+                // Project chroma into gamut at fixed luminance: clipping
+                // channels independently would corrupt measured ink coverage.
+                let mut gamut=1.0_f64;
+                for value in rgb {
+                    let amount=if value>255.0 {(255.0-luminance)/(value-luminance)}
+                        else if value<0.0 {-luminance/(value-luminance)} else {1.0};
+                    gamut=gamut.min(amount);
+                }
+                for c in 0..3 {rgb[c]=luminance+(rgb[c]-luminance)*gamut;}
+            }
+            for c in 0..3 {out[i+c]=clamp_byte(rgb[c]);}
         }
     }
 }
@@ -169,13 +190,14 @@ fn reference_map(rgb:[f64;3],p:&[f64],kind:usize)->Option<([f64;3],f64)> {
 /// exact stencil geometry. Row ranges keep main-thread fallback cancellable.
 #[no_mangle]
 pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width:usize,height:usize,
-    field:*const f32,mask:*const u8,fw:usize,fh:usize,parameters:*const f64,from:usize,to:usize,coverage:*mut u8) {
+    field:*const f32,mask:*const u8,fw:usize,fh:usize,parameters:*const f64,from:usize,to:usize,coverage:*mut u8,neutral_support:*const f32) {
     if data.is_null()||original.is_null()||field.is_null()||parameters.is_null()||width==0||height==0||fw==0||fh==0||width>16384||height>16384{return;}
     let out=std::slice::from_raw_parts_mut(data,width*height*4);
     let raw=std::slice::from_raw_parts(original,width*height*4);
     let light=std::slice::from_raw_parts(field,fw*fh);let p=std::slice::from_raw_parts(parameters,61);
     let mut geometry=if coverage.is_null(){None}else{Some(std::slice::from_raw_parts_mut(coverage,width*height))};
     let drawing=if mask.is_null(){None}else{Some(std::slice::from_raw_parts(mask,fw*fh))};
+    let neutral_support=if neutral_support.is_null(){None}else{Some(std::slice::from_raw_parts(neutral_support,fw*fh))};
     let precise=p[0]!=0.0;let stencil=p[1]!=0.0;let observed=p[2]!=0.0;let px=width as f64/21.0;let band=px*0.12;
     let columns:Vec<(usize,usize,f64,u8)>= (0..width).map(|x| {
         let xx=x as f64;let fx=if observed {((xx+0.5)*fw as f64/width as f64-0.5).clamp(0.0,(fw-1) as f64)} else {(xx*((fw-1) as f64/(width-1).max(1) as f64)).round()};
@@ -209,11 +231,12 @@ pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width
                 ||(stencil&&(((outer||calibration_row)&&yellow(r,g,b))||(rail&&warm)||(marker&&sat>0.24))) {
                 out[i]=p[11].round() as u8;out[i+1]=out[i];out[i+2]=out[i];continue;
             }
-            let mut local=light[iy*fw+ix] as f64;let mut draw=0.0;
+            let mut local=light[iy*fw+ix] as f64;let mut draw=0.0;let mut neutral_confidence=0.0;
             if observed {
                 let sample=|values:&[f32]|{let upper=values[iy*fw+ix] as f64*(1.0-mx)+values[iy*fw+nx] as f64*mx;
                     let lower=values[ny*fw+ix] as f64*(1.0-mx)+values[ny*fw+nx] as f64*mx;upper*(1.0-my)+lower*my};
                 local=sample(light);
+                if let Some(values)=neutral_support {neutral_confidence=sample(values);}
                 if let Some(values)=drawing {let upper=values[iy*fw+ix] as f64*(1.0-mx)+values[iy*fw+nx] as f64*mx;
                     let lower=values[ny*fw+ix] as f64*(1.0-mx)+values[ny*fw+nx] as f64*mx;draw=(upper*(1.0-my)+lower*my)/255.0;}
             }
@@ -223,8 +246,10 @@ pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width
             // Saturation alone makes a small additive lamp/sensor bias on
             // dark black ink look blue or red. Require selective absorption
             // relative to the measured paper-to-ink contrast, before pigment
-            // calibration can amplify that bias.
-            let colored=has_ink&&(max-min)>(p[3]*2.0).max(deficit*0.22)
+            // calibration can amplify that bias. Where neighbouring neutral
+            // dots independently measured and removed the bias, retain weak
+            // navy/red absorption instead of imposing the conservative cutoff.
+            let colored=has_ink&&(max-min)>(p[3]*2.0).max(deficit*(0.22-0.12*neutral_confidence))
                 &&(sat>0.18||(sat>0.105&&deficit>6.0_f64.max(local*0.035)));
             if observed&&!colored&&lum>=local-p[3].max(local*0.0075) {out[i]=255;out[i+1]=255;out[i+2]=255;continue;}
             let neutral=observed&&!colored;let black=neutral&&(lum<local*0.16||(draw>0.85&&lum<local*0.26));

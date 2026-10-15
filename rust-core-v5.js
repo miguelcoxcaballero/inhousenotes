@@ -56,43 +56,46 @@
         } catch (_) { return null; }
         finally { release(input); release(rgb); release(alpha); }
     }
-    function scanColors(rgba, original, width, height, field, mask, fw, fh, parameters, coverage = null) {
+    function scanColors(rgba, original, width, height, field, mask, fw, fh, parameters, coverage = null, neutralSupport = null) {
         // An older cached core cannot produce the optional geometry plane.
         // Use the JS fallback instead of returning an all-zero ink mask.
-        if (!core?.correct_scan_rows || (coverage && core.correct_scan_rows.length < 12)
+        if (!core?.correct_scan_rows || (coverage && core.correct_scan_rows.length < 12) || (neutralSupport && core.correct_scan_rows.length < 13)
             || ![width,height,fw,fh].every(value => Number.isSafeInteger(value) && value > 0)
             || width > 16384 || height > 16384 || rgba.length !== width * height * 4 || original.length !== rgba.length || field.length !== fw * fh
-            || parameters.length !== 61 || (mask && mask.length !== fw * fh) || (coverage && coverage.length !== width * height)) return null;
+            || parameters.length !== 61 || (mask && mask.length !== fw * fh) || (coverage && coverage.length !== width * height)
+            || (neutralSupport && (!(neutralSupport instanceof Float32Array) || neutralSupport.length !== fw*fh))) return null;
         const blocks = [];
         const copy = array => { const block = allocation(array.byteLength); blocks.push(block);
             view(block).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)); return block; };
         try {
             const data = copy(rgba), raw = copy(original), light = copy(field), drawing = mask ? copy(mask) : null, params = copy(parameters);
-            const geometry = coverage ? copy(coverage) : null;
+            const geometry = coverage ? copy(coverage) : null, support = neutralSupport ? copy(neutralSupport) : null;
             let disposed = false;
             return {
                 rows(from, to) { if (!disposed) core.correct_scan_rows(data.pointer, raw.pointer, width, height,
-                    light.pointer, drawing?.pointer || 0, fw, fh, params.pointer, from, to, geometry?.pointer || 0); },
+                    light.pointer, drawing?.pointer || 0, fw, fh, params.pointer, from, to, geometry?.pointer || 0, support?.pointer || 0); },
                 copyTo(destination) { if (!disposed) { destination.set(view(data)); if (geometry) coverage.set(view(geometry)); } },
                 dispose() { if (!disposed) { disposed = true; blocks.forEach(release); } }
             };
         } catch (_) { blocks.forEach(release); return null; }
     }
-    function balancePaper(rgba, width, height, white, fw, fh) {
-        if (!core?.balance_paper_rows || ![width,height,fw,fh].every(v => Number.isSafeInteger(v) && v > 0)
+    function balancePaper(rgba, width, height, white, fw, fh, neutral = null) {
+        if (!core?.balance_paper_rows || (neutral && core.balance_paper_rows.length < 9) || ![width,height,fw,fh].every(v => Number.isSafeInteger(v) && v > 0)
             || width > 16384 || height > 16384 || rgba.length !== width*height*4
-            || !(white instanceof Float32Array) || white.length !== fw*fh*2) return null;
-        let data, field;
+            || !(white instanceof Float32Array) || white.length !== fw*fh*2
+            || (neutral && (!(neutral instanceof Float32Array) || neutral.length !== fw*fh*4))) return null;
+        let data, field, grey;
         try {
             data = allocation(rgba.byteLength); field = allocation(white.byteLength);
             view(data).set(rgba); view(field).set(new Uint8Array(white.buffer,white.byteOffset,white.byteLength));
+            if (neutral) { grey=allocation(neutral.byteLength); view(grey).set(new Uint8Array(neutral.buffer,neutral.byteOffset,neutral.byteLength)); }
             let disposed = false;
             return {
-                rows(from,to) { if (!disposed) core.balance_paper_rows(data.pointer,width,height,field.pointer,fw,fh,from,to); },
+                rows(from,to) { if (!disposed) core.balance_paper_rows(data.pointer,width,height,field.pointer,fw,fh,from,to,grey?.pointer || 0); },
                 copyTo(destination) { if (!disposed) destination.set(view(data)); },
-                dispose() { if (!disposed) { disposed=true; release(data); release(field); } }
+                dispose() { if (!disposed) { disposed=true; release(data); release(field); release(grey); } }
             };
-        } catch (_) { release(data); release(field); return null; }
+        } catch (_) { release(data); release(field); release(grey); return null; }
     }
     function separateInk(rgba) {
         if (!core?.separate_ink || !rgba?.length || rgba.length % 4) return false;
