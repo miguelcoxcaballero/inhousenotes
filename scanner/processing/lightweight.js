@@ -4955,6 +4955,8 @@
   function observedPaperIllumination(canvas, data, observations) {
     const anchors = new Float32Array(35 * 51);
     const redAnchors = new Float32Array(anchors.length), blueAnchors = new Float32Array(anchors.length);
+    const neutralAnchors = Array.from({ length: 3 }, () => new Float32Array(anchors.length));
+    let measuredNeutral = null;
     let measuredWhite = [1, 1];
     const paperPoints = [];
     const paperNoise = [];
@@ -5015,7 +5017,41 @@
         const ratios = paperColours.map(c => c[channel] / c.g).sort((a,b) => a-b);
         return ratios[Math.floor(ratios.length / 2)];
       });
-      return samples[Math.floor(samples.length * 0.8)];
+      const paper = samples[Math.floor(samples.length * 0.8)];
+      measuredNeutral = null;
+      // White alone cannot distinguish a channel gain from coloured flare.
+      // The printed grey bullet supplies a second neutral level at this exact
+      // location. Measure paper-to-dot absorption, not the dot's RGB hue.
+      const paperRGB = ['r','g','b'].map(channel => {
+        const values = paperColours.map(c => c[channel]).sort((a,b) => a-b);
+        return values[Math.floor(values.length / 2)];
+      });
+      const cx = Math.round(point.x - .5), cy = Math.round(point.y - .5);
+      const radius = Math.max(0, Math.round(pxPerMM * .12));
+      const center = [0,0,0]; let centerWeight = 0;
+      for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx, y = cy + dy;
+        if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
+        const weight = 1 / (1 + dx*dx + dy*dy), offset = (y*canvas.width+x)*4;
+        for (let channel = 0; channel < 3; channel++) center[channel] += data[offset+channel]*weight;
+        centerWeight += weight;
+      }
+      if (centerWeight) {
+        for (let channel = 0; channel < 3; channel++) center[channel] /= centerWeight;
+        const differences = paperRGB.map((value, channel) => value - center[channel]);
+        const contrast = differences[0]*.2126 + differences[1]*.7152 + differences[2]*.0722;
+        const ringP10 = samples[Math.floor(samples.length * .1)];
+        if (contrast > Math.max(8, paper*.035) && contrast < paper*.55
+          && ringP10 > paper - contrast*.4 && Math.min(...differences) > contrast*.4
+          && Math.max(...differences) < contrast*2.2) {
+          const level = measuredWhite[0]*.2126 + .7152 + measuredWhite[1]*.0722;
+          const whiteGains = [level/measuredWhite[0],level,level/measuredWhite[1]];
+          const balanced = differences.map((value, channel) => value*whiteGains[channel]);
+          const average = balanced[0]*.2126 + balanced[1]*.7152 + balanced[2]*.0722;
+          measuredNeutral = balanced.map(value => clamp(average/value,.55,1.85));
+        }
+      }
+      return paper;
     };
     for (const point of Array.isArray(observations) ? observations : []) {
       const column = point.col ?? point.column, row = point.row;
@@ -5028,6 +5064,7 @@
       if (!paper) continue;
       anchors[index] = paper;
       redAnchors[index] = measuredWhite[0]; blueAnchors[index] = measuredWhite[1];
+      if (measuredNeutral) measuredNeutral.forEach((value, channel) => { neutralAnchors[channel][index] = value; });
       paperPoints.push({ x: point.x, y: point.y, col: column, row });
       count += 1; supplied += 1;
     }
@@ -5078,6 +5115,7 @@
       if (!paper) continue;
       anchors[index] = paper;
       redAnchors[index] = measuredWhite[0]; blueAnchors[index] = measuredWhite[1];
+      if (measuredNeutral) measuredNeutral.forEach((value, channel) => { neutralAnchors[channel][index] = value; });
       paperPoints.push({ x: best.x, y: best.y, col: column, row });
       count += 1; recovered += 1;
     }
@@ -5117,6 +5155,27 @@
       filled[index] = weighted / weight;
       filledRed[index] = red / weight; filledBlue[index] = blue / weight;
     }
+    // A coloured pen crossing one bullet must never calibrate the whole page.
+    // Require a local majority of isolated dots and robustly combine their
+    // absorption ratios. Unsupported regions keep the paper-only correction.
+    const neutralGrids = Array.from({ length: 3 }, () => new Float32Array(anchors.length).fill(1));
+    const neutralSupport = new Float32Array(anchors.length);
+    let neutralCount = 0;
+    for (let column = 0; column < 35; column++) for (let row = 0; row < 51; row++) {
+      const ratios = [[],[],[]];
+      for (let dc = -2; dc <= 2; dc++) for (let dr = -2; dr <= 2; dr++) {
+        const c = column+dc, r = row+dr;
+        if (c < 0 || c >= 35 || r < 0 || r >= 51 || !neutralAnchors[0][c*51+r]) continue;
+        for (let channel = 0; channel < 3; channel++) ratios[channel].push(neutralAnchors[channel][c*51+r]);
+      }
+      if (ratios[0].length < 6) continue;
+      const medians = ratios.map(values => values.slice().sort((a,b) => a-b)[Math.floor(values.length/2)]);
+      const consistent = ratios[0].filter((value,index) => ratios.every((values,channel) => Math.abs(values[index]-medians[channel]) < .14)).length;
+      if (consistent < ratios[0].length*.65) continue;
+      for (let channel = 0; channel < 3; channel++) neutralGrids[channel][column*51+row] = medians[channel];
+      neutralSupport[column*51+row] = 1;
+      neutralCount++;
+    }
     const minimums = new Float32Array(anchors.length);
     for (let column = 0; column < 35; column += 1) for (let row = 0; row < 51; row += 1) {
       let minimum = Infinity;
@@ -5143,6 +5202,8 @@
     const field = new Float32Array(fine.length);
     const drawing = new Uint8Array(fine.length);
     const white = new Float32Array(fine.length * 2);
+    const neutral = neutralCount >= 80 ? new Float32Array(fine.length * 4) : null;
+    const neutralConfidence = neutral ? new Float32Array(fine.length) : null;
     let maximumCast = 0;
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
       const column = clamp(((x + 0.5) / width * 210 - 20) / 5, 0, 34);
@@ -5163,19 +5224,24 @@
       const protectDrawing = clamp((minimum - local - 6) / 10, 0, 1);
       field[y * width + x] = local * (1 - protectDrawing) + paper * protectDrawing;
       drawing[y * width + x] = Math.round(protectDrawing * 255);
+      if (neutral) {
+        for (let channel = 0; channel < 3; channel++) neutral[channel*fine.length+y*width+x] = interpolate(neutralGrids[channel]);
+        neutral[3*fine.length+y*width+x] = paper;
+        neutralConfidence[y*width+x] = interpolate(neutralSupport);
+      }
     }
     reduced.width = reduced.height = 0;
     paperNoise.sort((a, b) => a - b);
     const noiseSigma = paperNoise.length >= 32 ? paperNoise[Math.floor(paperNoise.length / 2)] : 0;
-    return { values: field, drawing, white: maximumCast > .085 ? white : null, width, height, anchors: count, supplied, recovered, paperPoints,
+    return { values: field, drawing, white: maximumCast > .085 || neutral ? white : null, neutral, neutralConfidence, neutralAnchors: neutralCount, width, height, anchors: count, supplied, recovered, paperPoints,
       noiseSigma, noiseFloor: clamp(noiseSigma * 2.2, 2, 6) };
   }
 
 
   async function balanceObservedPaper(data, width, height, field, settings) {
-    const {white, width: fw, height: fh} = field, n=fw*fh;
+    const {white, neutral, width: fw, height: fh} = field, n=fw*fh;
     await globalThis.InhouseRust?.ready;
-    const rust = settings.disableRust ? null : globalThis.InhouseRust?.balancePaper?.(data,width,height,white,fw,fh);
+    const rust = settings.disableRust ? null : globalThis.InhouseRust?.balancePaper?.(data,width,height,white,fw,fh,neutral);
     try {
       for (let from=0; from<height; from+=processingWorker?height:96) {
         checkProcessingCancelled(settings);
@@ -5188,7 +5254,24 @@
             const sample=offset=>(white[offset+y0*fw+x0]*(1-mx)+white[offset+y0*fw+x1]*mx)*(1-my)
               +(white[offset+y1*fw+x0]*(1-mx)+white[offset+y1*fw+x1]*mx)*my;
             const r=sample(0), b=sample(n), level=r*.2126+.7152+b*.0722, i=(y*width+x)*4;
-            data[i]=data[i]*level/r; data[i+1]=data[i+1]*level; data[i+2]=data[i+2]*level/b;
+            let red=data[i]*level/r, green=data[i+1]*level, blue=data[i+2]*level/b;
+            if (neutral) {
+              const sampleNeutral=offset=>(neutral[offset+y0*fw+x0]*(1-mx)+neutral[offset+y0*fw+x1]*mx)*(1-my)
+                +(neutral[offset+y1*fw+x0]*(1-mx)+neutral[offset+y1*fw+x1]*mx)*my;
+              const paper=sampleNeutral(n*3), luminance=clamp(red*.2126+green*.7152+blue*.0722,0,255);
+              red=paper-(paper-red)*sampleNeutral(0); green=paper-(paper-green)*sampleNeutral(n); blue=paper-(paper-blue)*sampleNeutral(n*2);
+              const preserve=luminance-(red*.2126+green*.7152+blue*.0722);
+              red+=preserve; green+=preserve; blue+=preserve;
+              // Fit chroma inside RGB gamut around the measured luminance.
+              // Independent channel clipping would change ink coverage and
+              // expand or erase strokes even though only colour was adjusted.
+              const gamut=Math.min(1,
+                red>255?(255-luminance)/(red-luminance):red<0?-luminance/(red-luminance):1,
+                green>255?(255-luminance)/(green-luminance):green<0?-luminance/(green-luminance):1,
+                blue>255?(255-luminance)/(blue-luminance):blue<0?-luminance/(blue-luminance):1);
+              red=luminance+(red-luminance)*gamut; green=luminance+(green-luminance)*gamut; blue=luminance+(blue-luminance)*gamut;
+            }
+            data[i]=red; data[i+1]=green; data[i+2]=blue;
           }
         }
         if(!processingWorker)await yieldToBrowser();
@@ -5402,7 +5485,7 @@
     const inkCoverage = settings.captureInkGeometry ? new Uint8Array(canvas.width * canvas.height) : null;
     const pixelsStarted = performance.now();
     const rustColors = settings.disableRust ? null : globalThis.InhouseRust?.scanColors?.(data, original, canvas.width, canvas.height,
-      illumination, observedIllumination?.drawing, illuminationWidth, illuminationHeight, colorParameters, inkCoverage);
+      illumination, observedIllumination?.drawing, illuminationWidth, illuminationHeight, colorParameters, inkCoverage, observedIllumination?.neutralConfidence);
     if (rustColors) {
       try {
         for (let from = 0; from < canvas.height; from += processingWorker ? canvas.height : 96) {
@@ -5470,7 +5553,7 @@
         }
         const fieldColumn = illuminationColumns[x];
         let localBright = illumination[illuminationRow + fieldColumn];
-        let localDrawing = 0;
+        let localDrawing = 0, neutralConfidence = 0;
         if (observedIllumination) {
           const mix = illuminationColumnMix[x], next = Math.min(illuminationWidth - 1, fieldColumn + 1);
           const upper = localBright * (1 - mix) + illumination[illuminationRow + next] * mix;
@@ -5482,6 +5565,9 @@
           const lowerDrawing = mask[illuminationNextRow + fieldColumn] * (1 - mix)
             + mask[illuminationNextRow + next] * mix;
           localDrawing = (upperDrawing * (1 - illuminationRowMix) + lowerDrawing * illuminationRowMix) / 255;
+          const support = observedIllumination.neutralConfidence;
+          if (support) neutralConfidence = (support[illuminationRow + fieldColumn]*(1-mix)+support[illuminationRow+next]*mix)*(1-illuminationRowMix)
+            +(support[illuminationNextRow+fieldColumn]*(1-mix)+support[illuminationNextRow+next]*mix)*illuminationRowMix;
         }
         // Measured neutral paper uses only relative luminance. Avoid colour
         // reference projection and three discarded channel gains for the
@@ -5495,11 +5581,12 @@
         // Dark neutral ink can have high RGB saturation from a small additive
         // reflection or sensor black-level offset. Compare pigment chroma to
         // the measured paper-to-ink contrast before calibration amplifies it.
-        // Real navy/red ink has sustained selective absorption; a blue/red
-        // lamp reflected off black ink does not.
+        // Where neighbouring grey dots measured and removed that reflection,
+        // retain weaker navy/red absorption. Unsupported regions retain the
+        // conservative threshold instead of inventing neutral calibration.
         const pigmentContrast = max - min;
         const colouredStroke = hasInkContrast
-          && pigmentContrast > Math.max((observedIllumination?.noiseFloor || 2) * 2, inkDeficit * .22)
+          && pigmentContrast > Math.max((observedIllumination?.noiseFloor || 2) * 2, inkDeficit * (.22 - .12 * neutralConfidence))
           && (saturation > 0.18 || (saturation > 0.105
             && inkDeficit > Math.max(6, localBright * 0.035)));
         const measuredNeutral = !!observedIllumination && !colouredStroke;
@@ -5662,6 +5749,7 @@
       outputQuality,
       illumination: observedIllumination ? { method: "observed-paper", anchors: observedIllumination.anchors,
         supplied: observedIllumination.supplied, recovered: observedIllumination.recovered,
+        neutralAnchors: observedIllumination.neutralAnchors,
         noiseSigma: observedIllumination.noiseSigma, noiseFloor: observedIllumination.noiseFloor } : { method: "local-paper" },
       samples: validMarkerSamples.length,
       paper: Math.round(profile.paperLuminance),
