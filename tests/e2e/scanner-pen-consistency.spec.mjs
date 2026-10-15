@@ -85,3 +85,42 @@ test('light smoothing removes raster zigzags at either resolution, retaining end
     expect(r.strokes).toBeLessThan(10);expect(r.points).toBeLessThan(1500);
   }
 });
+
+test('a shaded near-standard pen keeps one width and smooth axis while a cold black remains black',async({page})=>{
+  await page.goto('/scanner/index.html?embed=1&session=pen-width-coherence');
+  const reports=await page.evaluate(async()=>{
+    const reports=[];
+    for(const scale of [1,2]){
+      const c=document.createElement('canvas');c.width=794*scale;c.height=1123*scale;
+      const x=c.getContext('2d');x.scale(scale,scale);x.lineCap=x.lineJoin='round';
+      for(const [row,colour] of [[200,'#203daf'],[400,'#b52a30'],[600,'#18212c']]){
+        for(let px=60;px<650;px++){
+          const y=dx=>row+10*Math.sin((dx-60)/45)+.35*Math.sin(dx*2);
+          x.strokeStyle=px>280&&px<340?'#303030':colour;
+          x.lineWidth=2.1+.5*Math.sin(px/26);
+          x.beginPath();x.moveTo(px,y(px));x.lineTo(px+1,y(px+1));x.stroke();
+        }
+      }
+      const pixels=x.getImageData(0,0,c.width,c.height);
+      const ink=await ScannerPro.InkVectorizer.fromPixels(pixels);
+      const js=await ScannerPro.InkVectorizer.fromPixels(pixels,{forceJavaScript:true});
+      reports.push({scale,parity:JSON.stringify(ink.strokes)===JSON.stringify(js.strokes),
+        strokes:ink.strokes.map(s=>({...s,width:s.width/scale,points:s.points.map(p=>({x:p.x/scale,y:p.y/scale}))}))});
+    }
+    return reports;
+  });
+  for(const report of reports){
+    expect(report.parity).toBe(true);
+    for(const [row,colour] of [[200,'#002FD9'],[400,'#E81010'],[600,'#4D4D4D']]){
+      const pens=report.strokes.filter(s=>s.points.some(p=>Math.abs(p.y-row)<15));
+      expect(pens.length).toBeGreaterThan(0);expect(pens.length).toBeLessThan(8);
+      expect(new Set(pens.map(s=>s.color))).toEqual(new Set([colour]));
+      expect(new Set(pens.map(s=>s.width))).toEqual(new Set([2]));
+      const points=pens.flatMap(s=>s.points);
+      expect(Math.min(...points.map(p=>p.x))).toBeLessThan(63);
+      expect(Math.max(...points.map(p=>p.x))).toBeGreaterThan(647);
+      const rms=Math.sqrt(points.reduce((sum,p)=>sum+(p.y-(row+10*Math.sin((p.x-60)/45)))**2,0)/points.length);
+      expect(rms).toBeLessThan(.65);
+    }
+  }
+});

@@ -145,7 +145,7 @@
   // Join only opposite branches at a junction. A blue line crossing a black
   // line remains two colour decisions; a shaded half of the same line can
   // borrow reliable colour from its continuation instead of becoming black.
-  function coherentPathColours(paths, mask, width) {
+  function coherentPathColours(paths, mask, width, height, rgba, radii) {
     const scale=width/794,parents=paths.map((_,i)=>i),ends=new Map();
     const find=i=>{while(parents[i]!==i){parents[i]=parents[parents[i]];i=parents[i];}return i;};
     const tangent=(path,atStart)=>{
@@ -178,26 +178,43 @@
     }
     const groups=new Map();
     paths.forEach((path,index)=>{
-      const id=find(index),group=groups.get(id)||{votes:[0,0,0,0],longest:[0,0,0,0]};
+      const id=find(index),group=groups.get(id)||{votes:[0,0,0,0],longest:[0,0,0,0],strong:[0,0,0,0]};
       let previous=0,run=0;
       for(const node of path){
         const label=mask[node];group.votes[label]++;
+        if(label>1){
+          // Require pigment in the covered cross-section, not a tiny cold
+          // bias which hue normalization can turn into saturated blue. Vote
+          // across the axis to retain a red/blue pen with a dark centre.
+          const x=node%width,y=Math.floor(node/width),reach=Math.min(4,Math.max(2,Math.ceil(radii[node]/3)));
+          let r=0,g=0,b=0,alpha=0,total=0;
+          for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
+            const at=(yy*width+xx)*4,a=rgba[at+3],weight=a*a/(1+(xx-x)**2+(yy-y)**2);
+            r+=rgba[at]*weight;g+=rgba[at+1]*weight;b+=rgba[at+2]*weight;alpha+=a*weight;total+=weight;
+          }
+          if(total){
+            r/=total;g/=total;b/=total;alpha/=total;
+            const hi=Math.max(r,g,b),chroma=hi-Math.min(r,g,b);
+            if(chroma>=24 && (chroma>=45 || chroma>=hi*.28) && chroma*alpha>=255*14
+              &&colour(r,g,b,alpha)===label)group.strong[label]++;
+          }
+        }
         run=previous===label?run+1:1;previous=label;
         group.longest[label]=Math.max(group.longest[label],run);
       }
       groups.set(id,group);
     });
     const labels=new Map();
-    for(const [id,{votes,longest}] of groups){
+    for(const [id,{votes,longest,strong}] of groups){
       const total=votes[1]+votes[2]+votes[3];
       const supported=label=>votes[label]>=total*.24
-        &&longest[label]>=Math.min(total,Math.max(3,scale*3));
+        &&longest[label]>=Math.min(total,Math.max(3,scale*3)) && strong[label]>=Math.max(1,total*.08);
       const blue=supported(2),red=supported(3);
       // Sustained *different hues* can still be separate inks touching end to
       // end. Neutral camera patches alone never split a coherent coloured pen.
       labels.set(id,blue&&red?0:blue?2:red?3:1);
     }
-    return paths.map((_,i)=>labels.get(find(i)));
+    return {colours:paths.map((_,i)=>labels.get(find(i))),groups:paths.map((_,i)=>find(i))};
   }
   async function trace(axes,width,height,signal,rgba) {
     const {mask,radii}=axes,used=new Uint8Array(mask.length),strokes=[];
@@ -214,19 +231,7 @@
     for(let i=0;i<mask.length;i++)if(mask[i])nodes.push(i);
     const defaults=root.InhouseInkDefaults;
     const standard=defaults.width*Math.sqrt(width/defaults.pageWidth*height/defaults.pageHeight);
-    const emit=(path,label)=>{
-      // Split only sustained width changes; never force a thick crossing's
-      // local radius onto the entire handwritten line.
-      const chunks=[];let begin=0;
-      for(let k=3;k<path.length-3;k++){
-        const base=radii[path[begin+Math.floor((k-begin)/2)]],next=radii[path[k+2]];
-        if(Math.abs(base-next)>=6&&Math.max(base,next)>Math.min(base,next)*1.8&&k-begin>=12){chunks.push(path.slice(begin,k+1));begin=k;}
-      }
-      chunks.push(path.slice(begin));
-      for(const chunk of chunks){
-        // Measure both sides across the axis. A one-sided distance transform
-        // underestimates every even-width pen by one pixel (2px became 1px).
-        const widths=chunk.map((i,k)=>{
+    const measureWidths=chunk=>chunk.map((i,k)=>{
           const a=chunk[Math.max(0,k-3)],b=chunk[Math.min(chunk.length-1,k+3)];
           const dx=b%width-a%width,dy=Math.floor(b/width)-Math.floor(a/width),length=Math.hypot(dx,dy);
           if(!length)return Math.max(1,radii[i]*2/3-1);
@@ -242,9 +247,22 @@
             const alpha=rgba[(yy*width+xx)*4+3];coverage+=alpha;peak=Math.max(peak,alpha);
           }
           return Math.min(radii[i]*2/3+1,coverage/Math.max(1,peak)*.5);
-        }).sort((a,b)=>a-b);
-        const measured=Math.max(1,widths[Math.floor(widths.length/2)]);
-        const penWidth=measured>=standard*.75&&measured<=standard*1.35?standard:measured;
+        });
+    const emit=(path,label,fixedWidth)=>{
+      // Split only sustained width changes; never force a thick crossing's
+      // local radius onto the entire handwritten line.
+      const chunks=[];let begin=0;
+      for(let k=3;!fixedWidth&&k<path.length-3;k++){
+        const base=radii[path[begin+Math.floor((k-begin)/2)]],next=radii[path[k+2]];
+        if(Math.abs(base-next)>=6&&Math.max(base,next)>Math.min(base,next)*1.8&&k-begin>=12){chunks.push(path.slice(begin,k+1));begin=k;}
+      }
+      chunks.push(path.slice(begin));
+      for(const chunk of chunks){
+        // Measure both sides across the axis. A one-sided distance transform
+        // underestimates every even-width pen by one pixel (2px became 1px).
+        const widths=fixedWidth ? null : measureWidths(chunk).sort((a,b)=>a-b);
+        const measured=fixedWidth || Math.max(1,widths[Math.floor(widths.length/2)]);
+        const penWidth=fixedWidth || (measured>=standard*.75&&measured<=standard*1.6?standard:measured);
         const reduced=simplify(smoothAxis(chunk.map(i=>({x:i%width+.5,y:Math.floor(i/width)+.5})),width/794,penWidth),.18*width/794);
         const points=[reduced[0]],step=Math.max(1,width/397);
         // Native partial erasing splits sampled pens. Keep at most two logical
@@ -259,8 +277,8 @@
         strokes.push({tool:'pen',color:palette[label-1],width:penWidth,points});
       }
     };
-    const emitColours=(path,coherentColour)=>{
-      if(coherentColour){emit(path,coherentColour);return;}
+    const emitColours=(path,coherentColour,fixedWidth)=>{
+      if(coherentColour){emit(path,coherentColour,fixedWidth);return;}
       // Only genuinely mixed red/blue paths need local colour runs.
       const radius=Math.max(2,Math.round(width/794*2));
       const labels=path.map((_,index)=>{
@@ -284,7 +302,7 @@
       for(let k=0;k<runs.length;k++){
         const run=runs[k];let end=run.end;
         while(k+1<runs.length&&runs[k+1].label===run.label)end=runs[++k].end;
-        emit(path.slice(run.start,Math.min(path.length,end+1)),run.label);
+        emit(path.slice(run.start,Math.min(path.length,end+1)),run.label,fixedWidth);
       }
     };
     const walk=(start,direction)=>{
@@ -311,9 +329,25 @@
       }
     }
     check(signal);
-    const colours=coherentPathColours(paths,mask,width);
+    const {colours,groups}=coherentPathColours(paths,mask,width,height,rgba,radii);
+    const widthsByGroup=new Map();
     for(let i=0;i<paths.length;i++){
-      emitColours(paths[i],colours[i]);
+      const widths=widthsByGroup.get(groups[i])||[];
+      for(const value of measureWidths(paths[i]))widths.push(value);
+      widthsByGroup.set(groups[i],widths);
+      if(i%500===499){await yieldTask();check(signal);}
+    }
+    const standardGroups=new Set();
+    for(const [id,widths] of widthsByGroup){
+      widths.sort((a,b)=>a-b);
+      const median=widths[Math.floor(widths.length/2)];
+      // Decide for the whole continuous pen, then smooth that same axis.
+      // Shaded thin patches and junctions cannot create alternating widths.
+      const close=widths.filter(w=>w>=standard*.65&&w<=standard*1.65).length;
+      if(median>=standard*.75&&median<=standard*1.6&&close>=widths.length*.72)standardGroups.add(id);
+    }
+    for(let i=0;i<paths.length;i++){
+      emitColours(paths[i],colours[i],standardGroups.has(groups[i])?standard:0);
       if(i%500===499){await yieldTask();check(signal);}
     }
     return strokes;

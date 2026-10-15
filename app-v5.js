@@ -864,40 +864,28 @@
             return strokes.map(cloneStroke);
         }
 
-        // Douglas-Peucker line simplification algorithm
-        function perpendicularDistance(point, lineStart, lineEnd) {
-            const dx = lineEnd.x - lineStart.x;
-            const dy = lineEnd.y - lineStart.y;
-            const mag = Math.hypot(dx, dy);
-            if (mag === 0) return Math.hypot(point.x - lineStart.x, point.y - lineStart.y);
-            const u = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (mag * mag);
-            const closestX = lineStart.x + u * dx;
-            const closestY = lineStart.y + u * dy;
-            return Math.hypot(point.x - closestX, point.y - closestY);
-        }
-
+        // Iterative, bounded simplification: pen-up must not recurse/copy
+        // thousands of temporary arrays or stall on a long detailed scribble.
         function simplifyPoints(points, epsilon = 0.5) {
             if (!points || points.length < 3) return points;
-
-            let maxDist = 0;
-            let maxIndex = 0;
-            const end = points.length - 1;
-
-            for (let i = 1; i < end; i++) {
-                const dist = perpendicularDistance(points[i], points[0], points[end]);
-                if (dist > maxDist) {
-                    maxDist = dist;
-                    maxIndex = i;
+            const keep = new Uint8Array(points.length);
+            keep[0] = keep[points.length - 1] = 1;
+            const stack = [0, points.length - 1];
+            let work = 0;
+            const budget = Math.min(250000, points.length * 40);
+            while (stack.length) {
+                const end = stack.pop(), start = stack.pop(), a = points[start], b = points[end];
+                const dx = b.x-a.x, dy = b.y-a.y, length = dx*dx+dy*dy;
+                let maximum = epsilon*epsilon, index = -1;
+                for (let i=start+1;i<end;i++) {
+                    if (++work > budget) return points; // Preserve all detail on overflow.
+                    const p=points[i],t=length?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/length)):0;
+                    const error=(p.x-a.x-t*dx)**2+(p.y-a.y-t*dy)**2;
+                    if (error>maximum) {maximum=error;index=i;}
                 }
+                if (index>=0) {keep[index]=1;stack.push(start,index,index,end);}
             }
-
-            if (maxDist > epsilon) {
-                const left = simplifyPoints(points.slice(0, maxIndex + 1), epsilon);
-                const right = simplifyPoints(points.slice(maxIndex), epsilon);
-                return left.slice(0, -1).concat(right);
-            }
-
-            return [points[0], points[end]];
+            return points.filter((_,index)=>keep[index]);
         }
 
         // Simplify stroke points to reduce memory
@@ -1904,6 +1892,19 @@
         let lastPointerClientX = 0;
         let lastPointerClientY = 0;
         let isPenWriting = false;
+        const activeDrawingPointers = new Map();
+        function hasDrawingPointerDown() {
+            for (const canvas of activeDrawingPointers.keys()) {
+                if (!canvas.isConnected) activeDrawingPointers.delete(canvas);
+            }
+            return activeDrawingPointers.size > 0;
+        }
+        window.addEventListener('blur', () => {
+            // Commit the partial pen before losing the capture/foreground.
+            for (const [canvas, pointerId] of activeDrawingPointers) {
+                canvas.dispatchEvent(new PointerEvent('pointercancel', { pointerId, pointerType: 'pen' }));
+            }
+        });
         let isGestureInteracting = false;
         let penWritingIdleTimer = null;
         let penWritingIdleDeadline = 0;
@@ -4106,6 +4107,9 @@
         // Also handles eraser preview and gesture-to-eraser switching.
         function setupCanvasEvents(canvas, pageIndex) {
             let isDrawing = false;
+            let activePointerId = null;
+            let paintFrame = 0;
+            let lastSampleTime = -Infinity;
             let currentStroke = null;
             // pageId captured at pointerdown so the finalized stroke can be
             // routed to the correct page even after a concurrent remote sync
@@ -4224,7 +4228,44 @@
                 return changed;
             };
 
+            const samplesForEvent = event => {
+                let samples = [];
+                try { samples = Array.from(event.getCoalescedEvents?.() || []); } catch (_) { }
+                // Empty coalesced lists occur on Android/WebView and synthetic
+                // input. The dispatched event still contains a real sample.
+                const last = samples.at(-1);
+                if (!last || last.clientX !== event.clientX || last.clientY !== event.clientY
+                    || last.timeStamp < event.timeStamp) samples.push(event);
+                return samples;
+            };
+            const appendPenSamples = event => {
+                if (!currentStroke) return;
+                for (const sample of samplesForEvent(event)) {
+                    if (Number.isFinite(sample.pointerId) && sample.pointerId !== activePointerId) continue;
+                    if (sample.timeStamp < lastSampleTime) continue;
+                    const pos = getCanvasPointerPos(sample), last = currentStroke.points.at(-1);
+                    if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+                    lastSampleTime = Math.max(lastSampleTime, sample.timeStamp);
+                    // rawupdate and pointermove can deliver the same samples.
+                    // Retain every distinct position, even at the same time.
+                    const distance = Math.hypot(pos.x-last.x,pos.y-last.y);
+                    if (distance < .001 || (currentStroke.tool === 'highlighter'
+                        && distance < Math.max(.6,currentStroke.width*.12))) continue;
+                    currentStroke.points.push({x:pos.x,y:pos.y,p:sample.pressure || last.p || .5});
+                }
+            };
+            const schedulePenPaint = () => {
+                if (paintFrame) return;
+                paintFrame = requestAnimationFrame(() => {
+                    paintFrame = 0;
+                    if (!isDrawing || !currentStroke) return;
+                    updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
+                    if (typeof publishLiveStrokePreview === 'function') publishLiveStrokePreview(currentStrokePageId,currentStroke);
+                });
+            };
+
             canvas.addEventListener('pointerdown', (e) => {
+                if (activePointerId !== null) return;
                 if (state.isReadOnly || localPageStructureMutationToken || remotePageStructureApplyInProgress) return;
                 state.activePageIndex = pageIndex;
                 const activePage = state.pages[pageIndex];
@@ -4237,6 +4278,7 @@
                     if (!lassoCanvas) return;
                     refreshDrawGeometry();
                     noteInteractionActivity();
+                    activePointerId = e.pointerId;
                     isLassoing = true;
                     lassoPoints = [];
                     clearSelection();
@@ -4261,6 +4303,9 @@
                 const pos = getCanvasPointerPos(e);
                 const pressure = e.pressure || 0.5;
 
+                activePointerId = e.pointerId;
+                activeDrawingPointers.set(canvas, e.pointerId);
+                lastSampleTime = e.timeStamp;
                 isDrawing = true;
                 erasedStrokes = [];
                 notePenActivity();
@@ -4332,8 +4377,9 @@
                 }
             });
 
-            canvas.addEventListener('pointermove', (e) => {
-                if (state.isReadOnly) return;
+            const moveDrawing = (e) => {
+                if (state.isReadOnly || e.pointerId !== activePointerId) return;
+                if (e.type === 'pointerrawupdate' && (!currentStroke || e.pointerType !== 'pen')) return;
                 if (isLassoing) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -4350,7 +4396,7 @@
 
                 notePenActivity();
 
-                const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+                const events = samplesForEvent(e);
 
                 if (state.currentTool === 'eraser-stroke' || state.currentTool === 'eraser-area') {
                     const positions = collectEraserPositions(events);
@@ -4362,24 +4408,21 @@
                     return;
                 }
 
-                events.forEach(ev => {
-                    const pos = getCanvasPointerPos(ev);
-                    const pressure = ev.pressure || 0.5;
-                    if (currentStroke.tool === 'highlighter') {
-                        const lastPoint = currentStroke.points[currentStroke.points.length - 1];
-                        const minDist = Math.max(0.6, currentStroke.width * 0.12);
-                        const dist = Math.hypot(pos.x - lastPoint.x, pos.y - lastPoint.y);
-                        if (dist < minDist) return;
-                    }
-                    currentStroke.points.push({ x: pos.x, y: pos.y, p: pressure });
-                });
-                updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
-                if (typeof publishLiveStrokePreview === 'function') {
-                    publishLiveStrokePreview(currentStrokePageId, currentStroke);
-                }
-            });
+                appendPenSamples(e);
+                schedulePenPaint();
+            };
+            canvas.addEventListener('pointermove', moveDrawing);
+            canvas.addEventListener('pointerrawupdate', moveDrawing);
 
             const endDrawing = (e) => {
+                if (activePointerId === null || e.pointerId !== activePointerId) return;
+                if (e.type === 'pointerleave' && canvas.hasPointerCapture?.(e.pointerId)) return;
+                if (e.type === 'pointerup' && !state.isReadOnly) appendPenSamples(e);
+                if (paintFrame) { cancelAnimationFrame(paintFrame); paintFrame = 0; }
+                activePointerId = null;
+                activeDrawingPointers.delete(canvas);
+                if (isDrawing) armPenWritingIdleTimer(detectDeviceType() === 'pc' ? 120 : 220);
+                if (canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
                 if (state.isReadOnly) {
                     if (currentStroke && typeof publishLiveStrokePreview === 'function') {
                         publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
@@ -4468,14 +4511,6 @@
                     }
                     clearEraserPreview(pageIndex);
                 } else if (currentStroke && currentStroke.points.length > 0) {
-                    if (e && e.type === 'pointerup' && typeof e.clientX === 'number' && typeof e.clientY === 'number') {
-                        const pos = getCanvasPointerPos(e);
-                        const last = currentStroke.points[currentStroke.points.length - 1];
-                        const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
-                        if (dist > 0.5) {
-                            currentStroke.points.push({ x: pos.x, y: pos.y, p: e.pressure || last.p || 0.5 });
-                        }
-                    }
                     // Resolve the target page by pageId captured when the stroke
                     // started — if a remote sync reordered the document while the
                     // user was drawing, the closure's pageIndex is stale and
@@ -4558,6 +4593,7 @@
             canvas.addEventListener('pointerup', endDrawing);
             canvas.addEventListener('pointercancel', endDrawing);
             canvas.addEventListener('pointerleave', endDrawing);
+            canvas.addEventListener('lostpointercapture', endDrawing);
         }
 
         function clearLassoCanvas(pageIndex) {
@@ -4603,6 +4639,8 @@
             setStrokeCaps(ctx, stroke.tool);
             ctx.lineWidth = getStrokeWidth(stroke);
 
+            ctx.beginPath();
+            if (stroke.lastMid) ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
             let localMid = stroke.lastMid;
             let i = startIndex;
 
@@ -4612,10 +4650,8 @@
                         x: (points[0].x + points[1].x) / 2,
                         y: (points[0].y + points[1].y) / 2
                     };
-                    ctx.beginPath();
                     ctx.moveTo(points[0].x, points[0].y);
                     ctx.lineTo(mid0.x, mid0.y);
-                    ctx.stroke();
                     localMid = mid0;
                     i = 1;
                 } else {
@@ -4625,10 +4661,8 @@
                         x: (prev.x + curr.x) / 2,
                         y: (prev.y + curr.y) / 2
                     };
-                    ctx.beginPath();
                     ctx.moveTo(prev.x, prev.y);
                     ctx.lineTo(midPrev.x, midPrev.y);
-                    ctx.stroke();
                     localMid = midPrev;
                 }
             }
@@ -4639,16 +4673,11 @@
                     x: (points[i].x + next.x) / 2,
                     y: (points[i].y + next.y) / 2
                 };
-                ctx.beginPath();
-                ctx.moveTo(localMid.x, localMid.y);
                 ctx.quadraticCurveTo(points[i].x, points[i].y, mid.x, mid.y);
-                ctx.stroke();
                 localMid = mid;
             }
 
             const last = points[points.length - 1];
-            ctx.beginPath();
-            ctx.moveTo(localMid.x, localMid.y);
             ctx.lineTo(last.x, last.y);
             ctx.stroke();
         }
@@ -4802,16 +4831,16 @@
             setStrokeCaps(ctx, stroke.tool);
             ctx.lineWidth = getStrokeWidth(stroke);
 
+            ctx.beginPath();
+            if (stroke.lastMid) ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
             let startIndex = stroke.finalizedIndex + 1;
             if (startIndex === 0) {
                 const mid0 = {
                     x: (points[0].x + points[1].x) / 2,
                     y: (points[0].y + points[1].y) / 2
                 };
-                ctx.beginPath();
                 ctx.moveTo(points[0].x, points[0].y);
                 ctx.lineTo(mid0.x, mid0.y);
-                ctx.stroke();
                 stroke.lastMid = mid0;
                 stroke.finalizedIndex = 0;
                 startIndex = 1;
@@ -4823,13 +4852,11 @@
                     x: (points[i].x + next.x) / 2,
                     y: (points[i].y + next.y) / 2
                 };
-                ctx.beginPath();
-                ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
                 ctx.quadraticCurveTo(points[i].x, points[i].y, mid.x, mid.y);
-                ctx.stroke();
                 stroke.lastMid = mid;
                 stroke.finalizedIndex = i;
             }
+            ctx.stroke();
         }
 
         function updateLiveStroke(pageIndex, canvas, stroke, previewCanvas = null, metrics = null) {
@@ -12971,6 +12998,22 @@
 
             const previousPaint = pendingPageRepaints.get(canvas);
             if (previousPaint) previousPaint.cancelled = true;
+            if (!options.duringErase && isPenWriting) {
+                page.needsRedraw = true;
+                const job = {cancelled:false};
+                pendingPageRepaints.set(canvas,job);
+                const resume = () => {
+                    if (job.cancelled || !canvas.isConnected || state.pages[pageIndex] !== page) {
+                        if (pendingPageRepaints.get(canvas) === job) pendingPageRepaints.delete(canvas);
+                        return;
+                    }
+                    if (isPenWriting) { setTimeout(resume,40); return; }
+                    pendingPageRepaints.delete(canvas);
+                    redrawPage(pageIndex,options);
+                };
+                setTimeout(resume,40);
+                return;
+            }
             const staged = (page.strokes?.length || 0) > 128;
             const target = staged ? createProcessingCanvas(canvas.width, canvas.height) : canvas;
             const ctx = target.getContext('2d');
@@ -21546,7 +21589,8 @@
             };
         }
 
-        async function cloneSanitizedPageForStorage(page) {
+        async function cloneSanitizedPageForStorage(page, sessionToken) {
+            if (!await waitForHotInteractionToSettle({sessionToken,windowMs:0})) return null;
             const sanitized = sanitizePageForStorage(page);
             const clone = value => typeof structuredClone === 'function'
                 ? structuredClone(value) : JSON.parse(JSON.stringify(value));
@@ -21562,6 +21606,7 @@
                     result[key].push(clone(stroke));
                     if (performance.now() - sliceStart >= 4) {
                         await yieldProcessingForUi();
+                        if (!await waitForHotInteractionToSettle({sessionToken,windowMs:0})) return null;
                         sliceStart = performance.now();
                     }
                 }
@@ -21640,12 +21685,11 @@
             }
             // Snapshot in short slices. The captured generation below rejects
             // any edit that arrives during cloning or the IndexedDB commit.
-            const storedPageRecord = {
-                ...await cloneSanitizedPageForStorage(page),
-                __sessionId: sessionToken
-            };
+            const snapshot = await cloneSanitizedPageForStorage(page,sessionToken);
+            if (!snapshot || !isDocumentSessionTokenValid(sessionToken)) return false;
+            const storedPageRecord = { ...snapshot, __sessionId: sessionToken };
             const db = await openNotebookDb();
-            if (!db) return false;
+            if (!db || !await waitForHotInteractionToSettle({sessionToken,windowMs:0})) return false;
             const currentPageMatches = state.pages[pageIndex] === page
                 || (!!pageId && state.pages[pageIndex]?.pageId === pageId);
             if (!isDocumentSessionTokenValid(sessionToken)
@@ -24074,6 +24118,10 @@
 
         function finishPenWritingIdle() {
             penWritingIdleTimer = null;
+            if (hasDrawingPointerDown() && !forceFlushingForExit) {
+                armPenWritingIdleTimer(80);
+                return;
+            }
             isPenWriting = false;
             flushStrokeOpsQueue();
             pendingStrokeOps.forEach((ops, pageIndex) => {
@@ -33384,6 +33432,10 @@
                     setReadOnlyMode(false, { force: true });
                     showEditorView();
                     renderAllPages();
+                },
+                saveDensePageForTest() {
+                    markPageDirty(0, 'full');
+                    return savePageToIndexedDb(0, state.pages[0]);
                 },
                 redrawDensePageForTest() {
                     const start = performance.now();
