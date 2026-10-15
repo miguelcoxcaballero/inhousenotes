@@ -458,7 +458,7 @@
 
   function ridge(state, point, normal, radius) {
     let best = 0;
-    const gap = Math.max(3, radius * .8);
+    const gap = state.layout ? 3 : Math.max(3, radius * .8);
     for (let offset = -radius; offset <= radius; offset += 1) {
       const p = { x: point.x + normal.x * offset, y: point.y + normal.y * offset };
       if (!sample(state.yellow, state, p)) continue;
@@ -568,19 +568,19 @@
         let contrast = 0;
         if (sample(state.yellow, state, point)) {
           const ink = sample(state.chroma, state, point);
-          for (const separation of [gap, gap + 3]) {
+          for (const separation of (state.layout ? [2,3,4,6] : [gap,gap+3])) {
             const before = sample(state.chroma, state, { x: point.x - normal.x * separation, y: point.y - normal.y * separation });
             const after = sample(state.chroma, state, { x: point.x + normal.x * separation, y: point.y + normal.y * separation });
             contrast = Math.max(contrast, ink - (before + after) * .5);
-            if (separation === 6 && Math.min(ink - before, ink - after) > 1) narrow[row * bands + band] = 1;
+            if ((separation === 6 || state.layout) && Math.min(ink - before, ink - after) > 1) narrow[row * bands + band] = 1;
           }
         }
         // A white desk can become yellow after correcting the page's cool
         // illuminant. Do not let its one-sided boundary outscore a thin printed
         // rail, then discover the invalid width only after the path was chosen.
-        if (outer && state.colourReferences && state.illumination && !narrow[row * bands + band]) contrast = 0;
+        if (outer && (state.layout || (state.colourReferences && state.illumination)) && !narrow[row * bands + band]) contrast = 0;
         evidence[row * bands + band] = Math.max(0, contrast);
-        const signal = Math.min(3, Math.max(0, contrast) / 12);
+        const signal = state.layout ? Math.min(1.5, Math.max(0, contrast) / 6) : Math.min(3, Math.max(0, contrast) / 12);
         // Use the chord as a weak prior, not as a constraint on bent paper.
         const observation = signal - Math.abs(offset) / reach * .16 - (outer ? offset * .015 : 0);
         let best = 0, parent = band;
@@ -688,19 +688,33 @@
     for (let orientation = 0; orientation < 4; orientation += 1) {
       const oriented = rotate(frame, orientation);
       const edges = frameEdges && rotate(frameEdges, orientation);
+      const offset=state.layout && frameEdges ? footerOffset(state,frame,frameEdges,orientation) : null;
+      if(state.layout && !offset)continue;
+      const onSurface=(u,v)=>{
+        const p=surfacePoint(oriented,edges,u,v);
+        return offset?{x:p.x+offset.x,y:p.y+offset.y}:p;
+      };
       const measured = [[.5 / 18, 8.5 / 18], [9.5 / 18, 17.5 / 18]].map(([x0, x1]) => {
-        const top = [surfacePoint(oriented, edges, x0, 26 / 27), surfacePoint(oriented, edges, x1, 26 / 27)];
-        const bottom = [surfacePoint(oriented, edges, x0, 26.5 / 27), surfacePoint(oriented, edges, x1, 26.5 / 27)];
+        const top = [onSurface(x0, 26 / 27), onSurface(x1, 26 / 27)];
+        const bottom = [onSurface(x0, 26.5 / 27), onSurface(x1, 26.5 / 27)];
         const height = distance(mix(top[0], top[1], .5), mix(bottom[0], bottom[1], .5));
         const reach = Math.min(radius, Math.max(1, height * .38));
-        const topGuide = Array.from({ length: 17 }, (_, index) => surfacePoint(oriented, edges, x0 + (x1 - x0) * index / 16, 26 / 27));
-        const bottomGuide = Array.from({ length: 17 }, (_, index) => surfacePoint(oriented, edges, x0 + (x1 - x0) * index / 16, 26.5 / 27));
-        const first = traceEdge(state, top[0], top[1], reach, 17, topGuide);
-        const second = traceEdge(state, bottom[0], bottom[1], reach, 17, bottomGuide);
+        // Seventeen samples land on all sixteen vertical cell dividers.
+        // With grey printing their crossings can pull both horizontal rails
+        // inward. A coprime interval count observes the spaces between teeth.
+        const samples=state.layout?34:17;
+        const topGuide = Array.from({ length: samples }, (_, index) => onSurface(x0 + (x1 - x0) * index / (samples-1), 26 / 27));
+        const bottomGuide = Array.from({ length: samples }, (_, index) => onSurface(x0 + (x1 - x0) * index / (samples-1), 26.5 / 27));
+        const first = traceEdge(state, top[0], top[1], reach, samples, topGuide);
+        const second = traceEdge(state, bottom[0], bottom[1], reach, samples, bottomGuide);
         const separation = distance(along(first.points, .5), along(second.points, .5));
         const expectedSeparation = distance(mix(top[0], top[1], .5), mix(bottom[0], bottom[1], .5));
         // One rail cannot count twice as the two edges of a calibration strip.
-        const distinct = separation >= Math.max(1.3, expectedSeparation * .45);
+        const below=along(second.points,.5);
+        const frameBelow=edges && surfacePoint(oriented,edges,(x0+x1)*.5,1);
+        const frameGap=frameBelow?distance(below,frameBelow):Infinity;
+        const distinct = separation >= Math.max(1.3, expectedSeparation * .45)
+          && (!state.layout || frameGap>=Math.max(1.5,separation*.7));
         return {
           support: distinct ? Math.min(first.support, second.support) : 0,
           box: [first.points[0], first.points.at(-1), second.points.at(-1), second.points[0]],
@@ -757,11 +771,54 @@
     return { contrast: contrast / total, support: hits / total };
   }
 
-  function detect(imageData, previous = null) {
-    if (!imageData || !Number.isInteger(imageData.width) || !Number.isInteger(imageData.height)
-      || imageData.width < 40 || imageData.height < 40
-      || !imageData.data || imageData.data.length !== imageData.width * imageData.height * 4) return null;
-    const state = analyse(imageData), { width, height } = state;
+  // A desaturated or colour-shifted printed frame is still a thin ridge.
+  // Only try this colour-independent search with the independently observed
+  // four-circle footer. Its geometry and both box strips must agree below.
+  function layoutState(state) {
+    const {width,height,luminance}=state, length=width*height;
+    const yellow=new Uint8Array(length),chroma=new Float32Array(length);
+    const reference=state.colourReferences.white;
+    const referenceLight=reference[0]*.2126+reference[1]*.7152+reference[2]*.0722;
+    const gain=Math.min(4,255/Math.max(40,referenceLight));
+    let yellowCount=0;
+    for(let i=0;i<length;i++)chroma[i]=(255-luminance[i])*gain*1.5;
+    for(let y=6;y<height-6;y++)for(let x=6;x<width-6;x++){
+      const i=y*width+x,ink=chroma[i];
+      // The faded print is a pale line on paper. Dark writing and the desk
+      // are stronger luminance ridges but are not interchangeable with it.
+      if(!state.neutral[i] || luminance[i] < referenceLight*.55)continue;
+      for(const gap of [2,3,4,6]){
+        if(ink-Math.max(chroma[i-gap],chroma[i+gap])>3
+          ||ink-Math.max(chroma[i-gap*width],chroma[i+gap*width])>3){yellow[i]=1;yellowCount++;break;}
+      }
+    }
+    return {...state,yellow,chroma,yellowCount,layout:true};
+  }
+
+  function footerOffset(state,frame,edges,rotation) {
+    const refs=state.colourReferences;
+    if(!refs)return null;
+    const oriented=rotate(frame,rotation),curves=rotate(edges,rotation);
+    const offsets=refs.points.map((p,i)=>{
+      const expected=surfacePoint(oriented,curves,(8.625+i*.25)/18,26.25/27);
+      return {x:p.x-expected.x,y:p.y-expected.y};
+    });
+    const offset=offsets.reduce((sum,p)=>({x:sum.x+p.x/4,y:sum.y+p.y/4}),{x:0,y:0});
+    // Foreshortening/curl changes the parametric distance to the footer.
+    // Accept a small common shift, never an arbitrary scale/order mismatch.
+    if(Math.hypot(offset.x,offset.y)>refs.pitch*3
+      ||offsets.some(p=>distance(p,offset)>Math.max(1.5,refs.pitch*.7)))return null;
+    const centre=refs.points.reduce((sum,p)=>({x:sum.x+p.x/4,y:sum.y+p.y/4}),{x:0,y:0});
+    const bottom=along(curves[2],.5);
+    const axis={x:refs.points[3].x-refs.points[0].x,y:refs.points[3].y-refs.points[0].y};
+    const span=Math.hypot(axis.x,axis.y);
+    const gap=((bottom.x-centre.x)*-axis.y+(bottom.y-centre.y)*axis.x)/span;
+    if(gap<refs.pitch*.65 || gap>refs.pitch*5)return null;
+    return offset;
+  }
+
+  function detectState(state, previous) {
+    const {width,height}=state;
     // A sheet can bow several pixels between its corners. Search around the
     // chord, but still require a narrow colour ridge at every accepted sample.
     const radius = Math.max(3, Math.min(width, height) * .065);
@@ -818,8 +875,8 @@
         const preliminary = edgeEvidence(state, quad, radius);
         if (preliminary.filter(value => value >= .4).length < 3 || Math.max(...preliminary) < .7) continue;
         let traces = quad.map((point, side) => traceEdge(state, point, quad[(side + 1) % 4], radius, 33,
-          candidate.guides?.[side] || null, true, !candidate.tracking));
-        if (candidate.tracking) {
+          candidate.guides?.[side] || null, true, !candidate.tracking && !state.layout));
+        if (candidate.tracking || state.layout) {
           const currentQuad = trackedCorners(quad, traces, radius);
           if (!plausible(currentQuad, width, height)) continue;
           quad = currentQuad;
@@ -839,6 +896,8 @@
         markers = calibrationResult.markers;
         markerEdges = calibrationResult.markerEdges;
         markerSupport = calibrationResult.support;
+        if(state.layout && (markerSupport < .65 || Math.min(...frameEdgeSupport)<.45
+          || !footerOffset(state,quad,frameEdges,calibrationResult.rotation)))continue;
         const oriented = rotate(quad, calibrationResult.rotation);
         // Use a visible sheet perimeter where available. Otherwise extrapolate
         // the known printed A4 inset for capture, keeping the overlay on the ink.
@@ -874,14 +933,38 @@
         markers: markers.map(normalize), markerEdges: markerEdges.map(edges => edges.map(normalize)), confidence, source,
         frameEdges: frameEdges ? frameEdges.map(normalize) : null,
         contour: frameEdges ? normalize(frameEdges.flat()) : normalize(quad),
-        frameEdgeSupport, tracking: !!candidate.tracking,
+        frameEdgeSupport, tracking: !!candidate.tracking, detectionMode: state.layout ? 'layout' : 'colour',
         sharpness: quality.sharpness, edgeSharpness: railSharpness(state, frameEdges), brightness: quality.brightness,
         coverage, edgeSupport, markerSupport
       };
       if (state.illumination) best.illumination = state.illumination;
+      // A freshly remeasured tracked frame with independent footer evidence
+      // need not retrace every paper-seeded hypothesis on each video tick.
+      if(state.layout && candidate.tracking && confidence>=.94 && edgeSupport>=.9 && markerSupport>=.85) {
+        delete best.score;
+        return best;
+      }
     }
     if (best) delete best.score;
     return best;
+  }
+
+  function detect(imageData, previous = null) {
+    if (!imageData || !Number.isInteger(imageData.width) || !Number.isInteger(imageData.height)
+      || imageData.width < 40 || imageData.height < 40
+      || !imageData.data || imageData.data.length !== imageData.width * imageData.height * 4) return null;
+    const state=analyse(imageData);
+    // Reuse the previous *mode*, never its evidence: each new image must
+    // independently explain the rails and footer again.
+    let layout;
+    if(previous?.detectionMode==='layout' && state.colourReferences) {
+      layout=detectState(layoutState(state),previous);
+      if(layout?.source==='yellow' && layout.confidence>=.86)return layout;
+    }
+    const best=detectState(state,previous);
+    if(best?.confidence>=.86 || !state.colourReferences)return best;
+    if(layout===undefined)layout=detectState(layoutState(state),previous);
+    return layout?.source==='yellow' && layout.confidence>(best?.confidence||0)?layout:best;
   }
 
   // Intentionally synchronous and independent of OpenCV/full-resolution scan

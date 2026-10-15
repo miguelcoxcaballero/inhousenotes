@@ -374,7 +374,17 @@
             pixel(point.x - nx * 4, point.y - ny * 4, c)) /
           2,
       );
+      const light=(x,y)=>pixel(x,y,0)*.2126+pixel(x,y,1)*.7152+pixel(x,y,2)*.0722;
+      const paper=frame.detectionMode === 'layout'
+        ? Math.min(light(point.x+nx*4,point.y+ny*4),light(point.x-nx*4,point.y-ny*4)) : 0;
       for (let offset = -2; offset <= 2; offset++) {
+        // A layout-verified grey rail still bounds the bullet lattice. If we
+        // discard it merely for lacking yellow, the lower box corners become
+        // spurious extra dot rows and prevent an otherwise sound 3D fit.
+        if(frame.detectionMode === 'layout') {
+          const ink=light(point.x+nx*offset,point.y+ny*offset);
+          if(ink>paper*.4 && paper-ink>Math.max(3,paper*.015))return true;
+        }
         const darkness = background.map(
           (value, c) =>
             (value - pixel(point.x + nx * offset, point.y + ny * offset, c)) /

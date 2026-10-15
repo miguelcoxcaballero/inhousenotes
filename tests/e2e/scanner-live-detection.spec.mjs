@@ -58,12 +58,9 @@ test('live detector follows printed rails through perspective, rotation, curl an
     };
   }));
   for (const report of reports) {
-    // This fixture deliberately removes measurable yellow hue. Keeping the
-    // manual capture path is safer than claiming a coloured frame was seen.
-    if (report.name === 'faded-yellow') {
-      expect(report.detection?.confidence || 0).toBeLessThan(.78);
-      continue;
-    }
+    // A faded rail remains measurable in contrast. The independent footer
+    // now permits layout recovery without claiming yellow hue was observed.
+    if (report.name === 'faded-yellow') expect(report.detection?.detectionMode).toBe('layout');
     expect(report.detection, report.name).toBeTruthy();
     expect(report.detection.source, report.name).toBe('yellow');
     expect(report.detection.confidence, report.name).toBeGreaterThan(.85);
