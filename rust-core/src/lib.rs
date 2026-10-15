@@ -5,7 +5,7 @@ mod ink;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 
-#[no_mangle]
+#[cfg_attr(target_arch = "wasm32", no_mangle)]
 pub extern "C" fn alloc(len: usize) -> *mut u8 {
     if len == 0 || len > 128 * 1024 * 1024 { return std::ptr::null_mut(); }
     // The same host buffers also carry f32 paper fields and f64 calibration
@@ -20,7 +20,8 @@ pub extern "C" fn alloc(len: usize) -> *mut u8 {
 }
 
 /// Pointer/length must be the pair returned by alloc, freed exactly once.
-#[no_mangle]
+// Native tests must not override libc's one-argument free with this WASM ABI.
+#[cfg_attr(target_arch = "wasm32", no_mangle)]
 pub unsafe extern "C" fn free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 && len <= 128 * 1024 * 1024 {
         std::alloc::dealloc(ptr, std::alloc::Layout::from_size_align(len, 8).unwrap());
@@ -112,6 +113,40 @@ fn yellow(r:f64,g:f64,b:f64)->bool {
     let hue=if max==r {60.0*((g-b)/delta%6.0)} else if max==g {60.0*((b-r)/delta+2.0)} else {60.0*((r-g)/delta+4.0)};
     let hue=if hue<0.0{hue+360.0}else{hue};
     (39.0..=68.0).contains(&hue)&&delta/max>=0.16&&g/r.max(1.0)>=0.70&&b/g.max(1.0)<=0.84&&(r+g)*0.5-b>=20.0
+}
+
+/// Correct a spatially varying illuminant from paper rings surrounding verified
+/// bullet dots. Preserve paper exposure; the colour references still determine
+/// pigment calibration in correct_scan_rows. Field planes are R/G and B/G.
+#[no_mangle]
+pub unsafe extern "C" fn balance_paper_rows(data:*mut u8,width:usize,height:usize,
+    white:*const f32,fw:usize,fh:usize,from:usize,to:usize) {
+    if data.is_null() || white.is_null() || width==0 || height==0 || fw==0 || fh==0
+        || width>16384 || height>16384 || fw>16384 || fh>16384 {return;}
+    let out=std::slice::from_raw_parts_mut(data,width*height*4);
+    let n=fw*fh;
+    let field=std::slice::from_raw_parts(white,n*2);
+    let columns:Vec<_>=(0..width).map(|x|{
+        let fx=((x as f64+0.5)*fw as f64/width as f64-0.5).clamp(0.0,(fw-1) as f64);
+        let ix=fx.floor() as usize;(ix,(ix+1).min(fw-1),fx-ix as f64)
+    }).collect();
+    for y in from.min(height)..to.min(height) {
+        let fy=((y as f64+0.5)*fh as f64/height as f64-0.5).clamp(0.0,(fh-1) as f64);
+        let iy=fy.floor() as usize;let ny=(iy+1).min(fh-1);let my=fy-iy as f64;
+        for x in 0..width {
+            let (ix,nx,mx)=columns[x];
+            let sample=|offset:usize| {
+                (field[offset+iy*fw+ix] as f64*(1.0-mx)+field[offset+iy*fw+nx] as f64*mx)*(1.0-my)
+                    +(field[offset+ny*fw+ix] as f64*(1.0-mx)+field[offset+ny*fw+nx] as f64*mx)*my
+            };
+            let r=sample(0);let b=sample(n);
+            if !r.is_finite() || !b.is_finite() || r<=0.0 || b<=0.0 {continue;}
+            let level=r*0.2126+0.7152+b*0.0722;let i=(y*width+x)*4;
+            out[i]=clamp_byte(out[i] as f64*level/r);
+            out[i+1]=clamp_byte(out[i+1] as f64*level);
+            out[i+2]=clamp_byte(out[i+2] as f64*level/b);
+        }
+    }
 }
 fn reference_kind(r:f64,g:f64,b:f64,l:f64,s:f64,paper:f64,local:f64)->Option<usize> {
     if yellow(r,g,b){Some(4)}else if r>48.0&&r>g*1.18&&r>b*1.14 {Some(0)}

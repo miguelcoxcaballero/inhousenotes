@@ -74,6 +74,22 @@
             };
         } catch (_) { blocks.forEach(release); return null; }
     }
+    function balancePaper(rgba, width, height, white, fw, fh) {
+        if (!core?.balance_paper_rows || ![width,height,fw,fh].every(v => Number.isSafeInteger(v) && v > 0)
+            || width > 16384 || height > 16384 || rgba.length !== width*height*4
+            || !(white instanceof Float32Array) || white.length !== fw*fh*2) return null;
+        let data, field;
+        try {
+            data = allocation(rgba.byteLength); field = allocation(white.byteLength);
+            view(data).set(rgba); view(field).set(new Uint8Array(white.buffer,white.byteOffset,white.byteLength));
+            let disposed = false;
+            return {
+                rows(from,to) { if (!disposed) core.balance_paper_rows(data.pointer,width,height,field.pointer,fw,fh,from,to); },
+                copyTo(destination) { if (!disposed) destination.set(view(data)); },
+                dispose() { if (!disposed) { disposed=true; release(data); release(field); } }
+            };
+        } catch (_) { release(data); release(field); return null; }
+    }
     function separateInk(rgba) {
         if (!core?.separate_ink || !rgba?.length || rgba.length % 4) return false;
         let pixels;
@@ -135,5 +151,5 @@
         } catch (_) { return null; }
         finally { release(pixels); release(mask); release(radii); }
     }
-    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, separateInk, surfaceFit, inkAxes, available: () => !!core });
+    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, available: () => !!core });
 })(globalThis);

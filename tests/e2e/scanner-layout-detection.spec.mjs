@@ -45,3 +45,52 @@ test('a grey-frame camera scan retains full photo and output dot-grid verificati
   expect(result.mode).toBe('layout');expect(result.corrected,JSON.stringify(result)).toBe(true);
   expect(result.metric).toBe('developable-pinhole');expect(result.alignment).toBe('verified');expect(result.strokes).toBeGreaterThan(0);
 });
+
+
+test('still-photo frame verification survives a lamp change after the live detection', async ({page}) => {
+  test.setTimeout(90000);
+  await page.goto('/scanner/index.html');
+  await page.addScriptTag({url:'/tests/e2e/fixtures/scanner-developable.js'});
+  const rows = await page.evaluate(async () => {
+    const f=ScannerDevelopableFixtures, rows=[];
+    const previewOf=source=>{
+      const p=document.createElement('canvas'),scale=480/Math.max(source.width,source.height);
+      p.width=Math.round(source.width*scale);p.height=Math.round(source.height*scale);
+      const c=p.getContext('2d');c.drawImage(source,0,0,p.width,p.height);
+      const pixels=c.getImageData(0,0,p.width,p.height);
+      return {...ScannerPro.LiveDetection.detect(pixels),hasColourReferences:!!ScannerPro.LiveDetection.findColourReferences(pixels)};
+    };
+    for (const mode of ['faded-after-capture','mixed-cool','mixed-warm','missing-frame']) {
+      const definition={...f.CASES[2],dotColor:'#a8a8a8'};
+      const live=previewOf(f.render(definition).source);
+      const {source}=f.render({...definition,...(mode==='faded-after-capture'?{stencilColor:'#d2d5d8'}:mode==='missing-frame'?{stencilColor:'#fff'}:{})});
+      if (mode.startsWith('mixed-')) {
+        const ctx=source.getContext('2d'),im=ctx.getImageData(0,0,source.width,source.height);
+        const gains=mode==='mixed-cool'?[.48,.7,1]:[1,.65,.4];
+        for(let y=0;y<source.height;y++)for(let x=0;x<source.width;x++)for(let c=0;c<3;c++){
+          const mix=Math.exp(-(((y/source.height-.43)/.28)**4)),i=(y*source.width+x)*4+c;
+          im.data[i]*=1+(gains[c]-1)*mix;
+        }
+        ctx.putImageData(im,0,0);
+      }
+      const detection=ScannerPro.Lightweight.detectPage(source,{liveDetection:live});
+      const changedLive=previewOf(source);
+      let scan;
+      if(mode==='mixed-warm') {
+        const blob=await new Promise(resolve=>source.toBlob(resolve,'image/png'));
+        const result=await ScannerPro.Lightweight.processPageAsync(blob,{liveDetection:changedLive,requireGrid:true,maxDimension:1200});
+        scan={corrected:result.corrected,alignment:result.dotAlignment?.status,reason:result.failureReason};
+      }
+      rows.push({mode,scan,changedLive:changedLive?.confidence,changedMode:changedLive?.detectionMode,changedRefs:changedLive?.hasColourReferences,seed:live?.detectionMode,quality:detection.quality,method:detection.method,confidence:detection.confidence});
+    }
+    return rows;
+  });
+  console.log('STILL_LIGHT_CHANGE',JSON.stringify(rows));
+  for(const row of rows) {
+    expect(row.quality?.valid,JSON.stringify(row)).toBe(row.mode!=='missing-frame');
+    if(row.mode!=='missing-frame')expect(row.changedLive,JSON.stringify(row)).toBeGreaterThan(.86);
+  }
+  const warm=rows.find(r=>r.mode==='mixed-warm');
+  expect(warm.scan.corrected,JSON.stringify(warm)).toBe(true);
+  expect(warm.scan.alignment).toBe('verified');
+});

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 const bytes=await readFile(new URL('../wasm/inhouse_notes_core.wasm',import.meta.url));
-const scope={WebAssembly,Uint8Array,URL,location:new URL('https://notes.test/'),fetch:async()=>new Response(bytes),console,AbortSignal,AbortController,setTimeout,clearTimeout};
+const scope={WebAssembly,Uint8Array,Float32Array,URL,location:new URL('https://notes.test/'),fetch:async()=>new Response(bytes),console,AbortSignal,AbortController,setTimeout,clearTimeout};
 vm.createContext(scope);vm.runInContext(await readFile(new URL('../rust-core-v5.js',import.meta.url),'utf8'),scope);
 await scope.InhouseRust.ready;
 test('Rust core loads with no host imports',async()=>{
@@ -101,4 +101,23 @@ test('Rust scan axes reject malformed and unbounded image allocations',()=>{
         [new Uint8Array(16),2.5,2],[new Uint8Array(16),1,4],[new Uint8Array(4),4097,4097]]){
         assert.equal(scope.InhouseRust.inkAxes(data,width,height),null);
     }
+});
+
+
+test('local paper balance removes a measured cast without changing coverage or neighbouring pigment',()=>{
+    const width=4,height=2,white=Float32Array.from([1,.5,.7,1, 1,2,1.4,1]);
+    const input=Uint8ClampedArray.from([80,80,80,255, 40,80,160,255, 56,80,112,17, 0,40,200,255,
+      40,40,40,255, 20,40,80,255, 28,40,56,255, 200,20,0,255]);
+    const before=input.slice(),out=input.slice();
+    const job=scope.InhouseRust.balancePaper(input,width,height,white,4,1);
+    assert.ok(job); job.rows(0,1); job.rows(1,2); job.copyTo(out); job.dispose(); job.dispose();
+    assert.deepEqual(input,before);
+    for(let y=0;y<2;y++)for(let x=0;x<3;x++){
+      const i=(y*width+x)*4;
+      assert.ok(Math.max(...out.slice(i,i+3))-Math.min(...out.slice(i,i+3))<=1);
+      assert.equal(out[i+3],input[i+3]);
+    }
+    assert.deepEqual([...out.slice(12,16)],[...input.slice(12,16)]);
+    assert.deepEqual([...out.slice(28,32)],[...input.slice(28,32)]);
+    assert.equal(scope.InhouseRust.balancePaper(input,width,height,new Float32Array(4),4,1),null);
 });
