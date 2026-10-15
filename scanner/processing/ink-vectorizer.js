@@ -103,24 +103,84 @@
       const x=Math.round(i%width+dx/length*distance),y=Math.round(Math.floor(i/width)+dy/length*distance);
       if(x>0&&x<width-1&&y>0&&y<height-1&&alphaAt(y*width+x)>=alphaAt(i)*.5)seen[i]=1;
     }
-    const p=new Uint8Array(8),remove=[];let work=0;
-    for(;;){let changed=false;
-      for(let phase=0;phase<2;phase++){
-        work+=active.length;if(work>40000000)throw new Error('Ink could not be separated. Try a clearer photo.');
-        remove.length=0;
-        for(const i of active){const label=mask[i];if(!label||seen[i])continue;
-          let count=0,changes=0;
-          for(let k=0;k<8;k++){p[k]=+(mask[i+offsets[k]]!==0);count+=p[k];}
-          if(count<2||count>6)continue;
-          for(let k=0;k<8;k++)changes+=+(p[k]===0&&p[(k+1)%8]===1);
-          if(changes!==1)continue;
-          // Explicit products keep the topology test identical to Rust.
-          if(phase===0?(p[0]*p[2]*p[4]===0&&p[2]*p[4]*p[6]===0):(p[0]*p[2]*p[6]===0&&p[0]*p[4]*p[6]===0))remove.push(i);
+    // Only measured, pre-enhancement coverage can refine the ink ridge.
+    // Generic RGBA input keeps its topology guide: opaque colour is not a
+    // measurement of the pen's cross-section.
+    // Follow the photographed ink ridge, not the centre of a binary blob.
+    // Delete weaker boundary pixels first, one at a time, only if local
+    // connectivity and letter counters survive. Parallel binary erosion can
+    // shift a cursive bend toward the blurred outside of the letter.
+    // Preserve the endpoints of the topology guide while fitting the
+    // interior axis to measured ink; a two-pixel faint branch must not peel
+    // back to its next dark crossing during ordered thinning.
+    {
+      const silhouette=coverage?mask.slice():null;let guideActive=active.slice();
+      const p=new Uint8Array(8),remove=[];let work=0;
+      for(;;){let changed=false;
+        for(let phase=0;phase<2;phase++){
+          work+=guideActive.length;if(work>40000000)throw new Error('Ink could not be separated. Try a clearer photo.');
+          remove.length=0;
+          for(const i of guideActive){const label=mask[i];if(!label||seen[i])continue;
+            let count=0,changes=0;
+            for(let k=0;k<8;k++){p[k]=+(mask[i+offsets[k]]!==0);count+=p[k];}
+            if(count<2||count>6)continue;
+            for(let k=0;k<8;k++)changes+=+(p[k]===0&&p[(k+1)%8]===1);
+            if(changes!==1)continue;
+            // Explicit products keep the topology test identical to Rust.
+            if(phase===0?(p[0]*p[2]*p[4]===0&&p[2]*p[4]*p[6]===0):(p[0]*p[2]*p[6]===0&&p[0]*p[4]*p[6]===0))remove.push(i);
+          }
+          if(remove.length){changed=true;for(const i of remove)mask[i]=0;}
         }
-        if(remove.length){changed=true;for(const i of remove)mask[i]=0;}
+        if(!changed)break;
+        guideActive=guideActive.filter(i=>mask[i]);await yieldTask();check(signal);
       }
-      if(!changed)break;
-      active=active.filter(i=>mask[i]);await yieldTask();check(signal);
+      if(coverage)for(const i of guideActive)if(mask[i]){
+        let degree=0;
+        for(let k=0;k<8;k++){
+          if(!mask[i+offsets[k]])continue;
+          if(k%2&&(mask[i+offsets[(k+7)%8]]||mask[i+offsets[(k+1)%8]]))continue;
+          degree++;
+        }
+        if(degree<=1)seen[i]=1;
+      }
+      if(coverage)mask.set(silhouette);
+    }
+    if(coverage){
+      const queued=new Uint8Array(n),heap=[];
+      // Radius centres flat cores; coverage guides the ambiguous ink ridge.
+      const priority=i=>radii[i]*4+alphaAt(i);
+      const less=(a,b)=>priority(a)<priority(b)||(priority(a)===priority(b)&&a<b);
+      const push=i=>{
+        if(!mask[i]||seen[i]||queued[i])return;
+        queued[i]=1;let at=heap.length;heap.push(i);
+        while(at){const p=(at-1)>>1;if(!less(i,heap[p]))break;heap[at]=heap[p];at=p;}
+        heap[at]=i;
+      };
+      const pop=()=>{
+        const first=heap[0],last=heap.pop();
+        if(heap.length){
+          let at=0;
+          while(at*2+1<heap.length){
+            let c=at*2+1;if(c+1<heap.length&&less(heap[c+1],heap[c]))c++;
+            if(!less(heap[c],last))break;
+            heap[at]=heap[c];at=c;
+          }
+          heap[at]=last;
+        }
+        queued[first]=0;return first;
+      };
+      for(const i of active)if(offsets.some(d=>!mask[i+d]))push(i);
+      const p=new Uint8Array(8);let work=0;
+      while(heap.length){
+        if(++work>40000000)throw new Error('Ink could not be separated. Try a clearer photo.');
+        if(work%8192===0){await yieldTask();check(signal);}
+        const i=pop();if(!mask[i]||seen[i])continue;let count=0,changes=0;
+        for(let k=0;k<8;k++){p[k]=+(mask[i+offsets[k]]!==0);count+=p[k];}
+        if(count<2||count>7)continue;
+        for(let k=0;k<8;k++)changes+=+(p[k]===0&&p[(k+1)%8]===1);
+        if(changes!==1)continue;
+        mask[i]=0;for(const d of offsets)push(i+d);
+      }
     }
     for(const i of active){
       if(!mask[i])continue;

@@ -243,9 +243,8 @@ pub unsafe extern "C" fn ink_axes(
             }
         }
     }
-    // Thin the whole ink silhouette once. Colour boundaries are not pen edges:
-    // thinning each hue separately creates the rainbow outlines of a scan.
-    let mut remove = Vec::new();
+    // All colours share one ink silhouette. Colour boundaries are not pen
+    // edges: thinning each hue separately creates rainbow scan outlines.
     // Anchor supported tips in the measured silhouette before thinning can
     // consume diagonal caps. Do not anchor new corners created by thinning.
     for &i in &active {
@@ -271,49 +270,107 @@ pub unsafe extern "C" fn ink_axes(
             seen[i] = true;
         }
     }
-    let mut work = 0usize;
-    loop {
-        let mut changed = false;
-        for phase in 0..2 {
-            work += active.len();
-            if work > 40_000_000 {
-                return 2;
+    // Intensity-ordered homotopic thinning follows the measured ink ridge.
+    // A single deletion must preserve connectivity and counters. Ordering
+    // by the unenhanced coverage avoids colour-dependent letter shapes.
+    // Keep the guide's endpoints. Ordered thinning must not peel a faint
+    // two-pixel branch all the way back to its next darker crossing.
+    {
+        let silhouette = mask.to_vec();
+        let mut guide_active = active.clone();
+        let mut remove = Vec::new();
+        let mut work = 0usize;
+        loop {
+            let mut changed = false;
+            for phase in 0..2 {
+                work += guide_active.len();
+                if work > 40_000_000 {
+                    return 2;
+                }
+                remove.clear();
+                for &i in &guide_active {
+                    let label = mask[i];
+                    if label == 0 || seen[i] {
+                        continue;
+                    }
+                    let p = offsets.map(|delta| (mask[(i as isize + delta) as usize] != 0) as u8);
+                    let count: u8 = p.iter().sum();
+                    if !(2..=6).contains(&count) {
+                        continue;
+                    }
+                    let changes = (0..8).filter(|&k| p[k] == 0 && p[(k + 1) % 8] == 1).count();
+                    if changes != 1 {
+                        continue;
+                    }
+                    let safe = if phase == 0 {
+                        p[0] * p[2] * p[4] == 0 && p[2] * p[4] * p[6] == 0
+                    } else {
+                        p[0] * p[2] * p[6] == 0 && p[0] * p[4] * p[6] == 0
+                    };
+                    if safe {
+                        remove.push(i);
+                    }
+                }
+                if !remove.is_empty() {
+                    changed = true;
+                    for &i in &remove {
+                        mask[i] = 0;
+                    }
+                }
             }
-            remove.clear();
-            for &i in &active {
-                let label = mask[i];
-                if label == 0 || seen[i] {
-                    continue;
-                }
-                let p = offsets.map(|delta| (mask[(i as isize + delta) as usize] != 0) as u8);
-                let count: u8 = p.iter().sum();
-                if !(2..=6).contains(&count) {
-                    continue;
-                }
-                let changes = (0..8).filter(|&k| p[k] == 0 && p[(k + 1) % 8] == 1).count();
-                if changes != 1 {
-                    continue;
-                }
-                let safe = if phase == 0 {
-                    p[0] * p[2] * p[4] == 0 && p[2] * p[4] * p[6] == 0
-                } else {
-                    p[0] * p[2] * p[6] == 0 && p[0] * p[4] * p[6] == 0
-                };
-                if safe {
-                    remove.push(i);
-                }
+            if !changed {
+                break;
             }
-            if !remove.is_empty() {
-                changed = true;
-                for &i in &remove {
-                    mask[i] = 0;
+            guide_active.retain(|&i| mask[i] != 0);
+        }
+        if geometry.is_some() {
+            for &i in &guide_active {
+                if mask[i] == 0 { continue; }
+                let mut degree = 0;
+                for k in 0..8 {
+                    if mask[(i as isize + offsets[k]) as usize] == 0 { continue; }
+                    if k % 2 != 0 && (mask[(i as isize + offsets[(k + 7) % 8]) as usize] != 0
+                        || mask[(i as isize + offsets[(k + 1) % 8]) as usize] != 0) { continue; }
+                    degree += 1;
+                }
+                if degree <= 1 { seen[i] = true; }
+            }
+            mask.copy_from_slice(&silhouette);
+        }
+    }
+    if geometry.is_some() {
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+        let mut queued = vec![false; n];
+        let mut heap = BinaryHeap::new();
+        // The radius term centres flat opaque cores; measured coverage guides
+        // ambiguous ridges. Use the same stable ordering in the JS fallback.
+        for &i in &active {
+            if !seen[i] && offsets.iter().any(|&d| mask[(i as isize + d) as usize] == 0) {
+                heap.push(Reverse((dist[i] as u32 * 4 + alpha_at(i) as u32, i)));
+                queued[i] = true;
+            }
+        }
+        let mut work = 0usize;
+        while let Some(Reverse((_, i))) = heap.pop() {
+            queued[i] = false;
+            work += 1;
+            if work > 40_000_000 { return 2; }
+            if mask[i] == 0 || seen[i] { continue; }
+            let p = offsets.map(|delta| (mask[(i as isize + delta) as usize] != 0) as u8);
+            let count: u8 = p.iter().sum();
+            if !(2..=7).contains(&count) { continue; }
+            let changes = (0..8).filter(|&k| p[k] == 0 && p[(k + 1) % 8] == 1).count();
+            if changes != 1 { continue; }
+            mask[i] = 0;
+            for delta in offsets {
+                let j = (i as isize + delta) as usize;
+                if mask[j] != 0 && !seen[j] && !queued[j] {
+                    heap.push(Reverse((dist[j] as u32 * 4 + alpha_at(j) as u32, j)));
+                    queued[j] = true;
                 }
             }
         }
-        if !changed {
-            break;
-        }
-        active.retain(|&i| mask[i] != 0);
     }
     // Classify only the surviving medial axis, using the covered ink across
     // its width. A dark core can belong to a coloured pen; weak chromatic JPEG

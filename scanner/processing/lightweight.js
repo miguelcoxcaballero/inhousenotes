@@ -5492,8 +5492,16 @@
         // alone must not turn those otherwise paper-bright pixels into ink.
         const hasInkContrast = !observedIllumination
           || inkDeficit > Math.max(observedIllumination.noiseFloor * 1.5,localBright * .025);
-        const colouredStroke = hasInkContrast && (saturation > 0.18 || (saturation > 0.105
-          && inkDeficit > Math.max(6, localBright * 0.035)));
+        // Dark neutral ink can have high RGB saturation from a small additive
+        // reflection or sensor black-level offset. Compare pigment chroma to
+        // the measured paper-to-ink contrast before calibration amplifies it.
+        // Real navy/red ink has sustained selective absorption; a blue/red
+        // lamp reflected off black ink does not.
+        const pigmentContrast = max - min;
+        const colouredStroke = hasInkContrast
+          && pigmentContrast > Math.max((observedIllumination?.noiseFloor || 2) * 2, inkDeficit * .22)
+          && (saturation > 0.18 || (saturation > 0.105
+            && inkDeficit > Math.max(6, localBright * 0.035)));
         const measuredNeutral = !!observedIllumination && !colouredStroke;
         const measuredBlack = measuredNeutral && (luminance < localBright * 0.16
           || (localDrawing > 0.85 && luminance < localBright * 0.26));

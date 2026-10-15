@@ -30,8 +30,9 @@ async function measure(page, cases) {
         context.fillStyle = camera.corruptMarker || '#fff';
         context.beginPath(); context.arc(10.625 * 40, 27.68 * 40, 5.5, 0, Math.PI * 2); context.fill();
       }
-      for (const [colour, y] of [['#d52b36', 290], ['#254acb', 440], ['#414141', 590], ['#aaa', 740]]) {
-        context.fillStyle = colour; context.fillRect(140, y, 210, 12);
+      for (const [index, y] of [290, 440, 590, 740].entries()) {
+        context.fillStyle = (camera.inks || ['#d52b36', '#254acb', '#414141', '#aaa'])[index];
+        context.fillRect(140, y, 210, camera.penWidth || 12);
       }
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
       const gains = camera.gains || [1, 1, 1];
@@ -47,25 +48,31 @@ async function measure(page, cases) {
           pixels.data[offset + channel] = exposure * shade * gains[channel] * localGain
             * (flare + (camera.matrix
               ? camera.matrix[channel].reduce((sum, gain, c) => sum + gain * source[c], 0)
-              : source[channel]) * (1 - flare / 255));
+              : source[channel]) * (1 - flare / 255))
+            + (camera.localFlare?.[channel] || 0) * Math.exp(-(((y - 580) / 290) ** 4));
         }
       }
       context.putImageData(pixels, 0, 0);
+      if (camera.jpeg) {
+        const bitmap = await createImageBitmap(await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .86)));
+        context.drawImage(bitmap, 0, 0); bitmap.close();
+      }
       const started = performance.now();
       const colors = await ScannerPro.Lightweight.correctColors(canvas, { useStencil: true, preciseStencil: true, disableRust: camera.disableRust });
       const elapsedMs = performance.now() - started;
       const result = context.getImageData(0, 0, canvas.width, canvas.height).data;
       const rgb = (x, y) => Array.from(result.slice((y * canvas.width + x) * 4, (y * canvas.width + x) * 4 + 3));
       const pens={};
-      if(camera.localGains) for(const [name,y] of [['red',290],['blue',440],['black',590],['pencil',740]]) {
+      if(camera.localGains || camera.localFlare) for(const [name,y] of [['red',290],['blue',440],['black',590],['pencil',740]]) {
         const crop=context.getImageData(125,y-3,240,18);
         InhouseRust.separateInk(crop.data);
         const ink=await ScannerPro.InkVectorizer.fromPixels(crop,{forceJavaScript:camera.disableRust});
         pens[name]=[...new Set(ink.strokes.map(s=>s.color))];
       }
+      const centre = Math.floor((camera.penWidth || 12) / 2);
       rows.push({ name: camera.name, pens, calibrated: colors.calibrated, calibration: colors.calibration,
         references: colors.references, elapsedMs, backend: colors.pixelProcessing.backend,
-        red: rgb(240, 296), blue: rgb(240, 446), black: rgb(240, 596), pencil: rgb(240, 746),
+        red: rgb(240, 290 + centre), blue: rgb(240, 440 + centre), black: rgb(240, 590 + centre), pencil: rgb(240, 740 + centre),
         paper: rgb(280, 370), outsideRed: rgb(247, 287), outsideBlue: rgb(247, 437) });
     }
     return rows;
@@ -114,6 +121,41 @@ test('four measured footer colours calibrate recoverable green, magenta, tungste
     for (const colour of ['red', 'blue']) for (let c = 0; c < 3; c++) {
       expect(Math.abs(row[colour][c] - rows[0][colour][c]), `${row.name}: ${colour} consistency`).toBeLessThan(42);
     }
+  }
+});
+
+test('local coloured flare on black ink is not mistaken for a coloured pen', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.goto('/scanner/index.html', { waitUntil: 'domcontentloaded' });
+  const rows = await measure(page, [
+    { name: 'blue-reflection', localFlare: [0, 4, 26], exposure: .8 },
+    { name: 'red-reflection', localFlare: [26, 4, 0], exposure: .8 },
+    { name: 'blue-reflection-js', localFlare: [0, 4, 26], exposure: .8, disableRust: true },
+    { name: 'red-reflection-js', localFlare: [26, 4, 0], exposure: .8, disableRust: true }
+  ]);
+  console.log('LOCAL_FLARE', JSON.stringify(rows.map(diagnostics)));
+  for (const row of rows) {
+    expectWriting(row);
+    expect(row.pens.black, row.name).toEqual(['#4D4D4D']);
+    expect(row.pens.pencil, row.name).toEqual(['#4D4D4D']);
+    expect(row.pens.blue, row.name).toEqual(['#002FD9']);
+    expect(row.pens.red, row.name).toEqual(['#E81010']);
+  }
+});
+
+test('thin JPEG pens retain navy and dark red without colouring black under local reflections', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.goto('/scanner/index.html', { waitUntil: 'domcontentloaded' });
+  const rows = await measure(page, [false, true].flatMap(disableRust => [
+    { name: `thin-cold-${disableRust}`, localFlare: [0, 4, 26], exposure: .8, disableRust },
+    { name: `thin-warm-${disableRust}`, localFlare: [26, 4, 0], exposure: .8, disableRust }
+  ]).map(camera => ({ ...camera, jpeg: true, penWidth: 3, inks: ['#651520', '#122b60', '#333333', '#aaa'] })));
+  console.log('THIN_PEN_COLOURS', JSON.stringify(rows.map(diagnostics)));
+  for (const row of rows) {
+    expect(row.pens.black, row.name).toEqual(['#4D4D4D']);
+    expect(row.pens.pencil, row.name).toEqual(['#4D4D4D']);
+    expect(row.pens.blue, row.name).toEqual(['#002FD9']);
+    expect(row.pens.red, row.name).toEqual(['#E81010']);
   }
 });
 
