@@ -7,7 +7,9 @@ fn colour(r: u8, g: u8, b: u8, alpha: u8) -> u8 {
     let lo = r.min(g).min(b);
     // Unpremultiplication amplifies tiny JPEG colour errors on pale paper.
     // Require chroma in the original, covered pixel as well as a clear hue.
-    if hi - lo < 36.0 || hi - lo < hi * 0.2 || (hi - lo) * (alpha as f32) < 255.0 * 12.0 {
+    // Navy ink can have low absolute chroma in a shadow while still being
+    // strongly saturated. Keep the relative and covered-pixel requirements.
+    if hi - lo < 18.0 || hi - lo < hi * 0.2 || (hi - lo) * (alpha as f32) < 255.0 * 12.0 {
         return 1;
     }
     let scale = 225.0 / (hi - lo);

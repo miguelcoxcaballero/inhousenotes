@@ -7,7 +7,7 @@
   function check(signal) { if (signal?.aborted) throw new DOMException('Scan cancelled', 'AbortError'); }
   function colour(r, g, b, alpha) {
     const hi=Math.max(r,g,b), lo=Math.min(r,g,b);
-    if (hi-lo<36 || hi-lo<hi*.2 || (hi-lo)*alpha<255*12) return 1;
+    if (hi-lo<18 || hi-lo<hi*.2 || (hi-lo)*alpha<255*12) return 1;
     const scale=225/(hi-lo), c=[(r-lo)*scale,(g-lo)*scale,(b-lo)*scale];
     const targets=[[0,0,0],[0,49,225],[225,0,0]];
     let best=Infinity, label=1;
@@ -105,10 +105,104 @@
     }
     return points.filter((_,index)=>keep[index]);
   }
+  // Smooth raster stair-steps before simplifying/resampling the native pen.
+  // The radius is in page units, so a 2x scan gets the same light treatment.
+  // Endpoints and sharp intentional turns stay put; loops wrap at their seam.
+  function smoothAxis(points, scale, penWidth) {
+    if(points.length<5)return points;
+    const closed=points[0].x===points.at(-1).x&&points[0].y===points.at(-1).y;
+    const count=points.length-(closed?1:0);
+    const sigma=Math.max(.65*scale,Math.min(scale,penWidth*.4));
+    const radius=Math.ceil(sigma*2.5),cornerSpan=Math.max(2,Math.round(scale*3));
+    const maximumMove=Math.min(.55*scale,penWidth*.3);
+    const pointAt=i=>points[closed?(i%count+count)%count:Math.max(0,Math.min(count-1,i))];
+    const smoothed=points.slice(0,count).map((p,i)=>{
+      if(!closed&&(i===0||i===count-1))return p;
+      const before=pointAt(i-cornerSpan),after=pointAt(i+cornerSpan);
+      const ax=p.x-before.x,ay=p.y-before.y,bx=after.x-p.x,by=after.y-p.y;
+      const lengths=Math.hypot(ax,ay)*Math.hypot(bx,by);
+      // Keep corners of letters/checkmarks, including tight reversals.
+      if(lengths&&ax*bx+ay*by<lengths*.5)return p;
+      let x=p.x,y=p.y,weight=1;
+      for(const sign of [-1,1]){
+        let distance=0,previous=p;
+        for(let k=1;k<=radius;k++){
+          if(!closed&&(i+sign*k<0||i+sign*k>=count))break;
+          const q=pointAt(i+sign*k);
+          distance+=Math.hypot(q.x-previous.x,q.y-previous.y);previous=q;
+          const w=Math.exp(-distance*distance/(2*sigma*sigma));
+          x+=q.x*w;y+=q.y*w;weight+=w;
+        }
+      }
+      const dx=x/weight-p.x,dy=y/weight-p.y,distance=Math.hypot(dx,dy);
+      const blend=distance?Math.min(1,maximumMove/distance):0;
+      return {x:p.x+dx*blend,y:p.y+dy*blend};
+    });
+    if(closed)smoothed.push({...smoothed[0]});
+    return smoothed;
+  }
+
+  // Join only opposite branches at a junction. A blue line crossing a black
+  // line remains two colour decisions; a shaded half of the same line can
+  // borrow reliable colour from its continuation instead of becoming black.
+  function coherentPathColours(paths, mask, width) {
+    const scale=width/794,parents=paths.map((_,i)=>i),ends=new Map();
+    const find=i=>{while(parents[i]!==i){parents[i]=parents[parents[i]];i=parents[i];}return i;};
+    const tangent=(path,atStart)=>{
+      const start=atStart?0:path.length-1,step=atStart?1:-1,p=path[start];
+      let q=p,distance=0,previous=p;
+      for(let k=start+step;k>=0&&k<path.length;k+=step){
+        q=path[k];distance+=Math.hypot(q%width-previous%width,Math.floor(q/width)-Math.floor(previous/width));
+        previous=q;if(distance>=Math.max(3,scale*6))break;
+      }
+      const dx=q%width-p%width,dy=Math.floor(q/width)-Math.floor(p/width),length=Math.hypot(dx,dy);
+      return {x:length?dx/length:0,y:length?dy/length:0};
+    };
+    paths.forEach((path,index)=>{
+      if(path.length<2)return;
+      for(const atStart of [true,false]){
+        const node=atStart?path[0]:path.at(-1),list=ends.get(node)||[];
+        list.push({index,...tangent(path,atStart)});ends.set(node,list);
+      }
+    });
+    for(const branches of ends.values()){
+      if(branches.length<2)continue;
+      const best=branches.map((a,i)=>{
+        let chosen=-1,dot=-.82;
+        branches.forEach((b,j)=>{
+          const score=a.x*b.x+a.y*b.y;
+          if(i!==j&&a.index!==b.index&&score<dot){dot=score;chosen=j;}
+        });return chosen;
+      });
+      best.forEach((j,i)=>{if(j>i&&best[j]===i)parents[find(branches[j].index)]=find(branches[i].index);});
+    }
+    const groups=new Map();
+    paths.forEach((path,index)=>{
+      const id=find(index),group=groups.get(id)||{votes:[0,0,0,0],longest:[0,0,0,0]};
+      let previous=0,run=0;
+      for(const node of path){
+        const label=mask[node];group.votes[label]++;
+        run=previous===label?run+1:1;previous=label;
+        group.longest[label]=Math.max(group.longest[label],run);
+      }
+      groups.set(id,group);
+    });
+    const labels=new Map();
+    for(const [id,{votes,longest}] of groups){
+      const total=votes[1]+votes[2]+votes[3];
+      const supported=label=>votes[label]>=total*.24
+        &&longest[label]>=Math.min(total,Math.max(3,scale*3));
+      const blue=supported(2),red=supported(3);
+      // Sustained *different hues* can still be separate inks touching end to
+      // end. Neutral camera patches alone never split a coherent coloured pen.
+      labels.set(id,blue&&red?0:blue?2:red?3:1);
+    }
+    return paths.map((_,i)=>labels.get(find(i)));
+  }
   async function trace(axes,width,height,signal,rgba) {
     const {mask,radii}=axes,used=new Uint8Array(mask.length),strokes=[];
     const offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
-    const nodes=[];let totalPoints=0;
+    const nodes=[],paths=[];let totalPoints=0;
     const edges=i=>{let bits=0;for(let k=0;k<8;k++){
       if(!mask[i+offsets[k]])continue;
       // A diagonal beside a cardinal edge is the same junction, not a tiny
@@ -151,7 +245,7 @@
         }).sort((a,b)=>a-b);
         const measured=Math.max(1,widths[Math.floor(widths.length/2)]);
         const penWidth=measured>=standard*.75&&measured<=standard*1.35?standard:measured;
-        const reduced=simplify(chunk.map(i=>({x:i%width+.5,y:Math.floor(i/width)+.5})));
+        const reduced=simplify(smoothAxis(chunk.map(i=>({x:i%width+.5,y:Math.floor(i/width)+.5})),width/794,penWidth),.18*width/794);
         const points=[reduced[0]],step=Math.max(1,width/397);
         // Native partial erasing splits sampled pens. Keep at most two logical
         // editor pixels between points, even on a perfectly straight line.
@@ -165,9 +259,9 @@
         strokes.push({tool:'pen',color:palette[label-1],width:penWidth,points});
       }
     };
-    const emitColours=path=>{
-      // Short changes along a pen are camera noise, not separate coloured
-      // contours. Smooth the axis only; crossings still split into branches.
+    const emitColours=(path,coherentColour)=>{
+      if(coherentColour){emit(path,coherentColour);return;}
+      // Only genuinely mixed red/blue paths need local colour runs.
       const radius=Math.max(2,Math.round(width/794*2));
       const labels=path.map((_,index)=>{
         const votes=[0,0,0,0];
@@ -201,16 +295,26 @@
         if(count(adjacent)!==2||!available)break;
         i=next;k=0;while(!(available&(1<<k)))k++;
       }
-      emitColours(path);
+      if(paths.length>=60000)throw new Error('This scan contains too much detail. Try a clearer photo.');
+      paths.push(path);
     };
     for(const loops of [false,true]){
       let work=0;
       for(const i of nodes){const adjacent=edges(i);
         if(!loops&&count(adjacent)===2)continue;
-        if(!loops&&!adjacent){emitColours([i]);continue;}
+        if(!loops&&!adjacent){
+          if(paths.length>=60000)throw new Error('This scan contains too much detail. Try a clearer photo.');
+          paths.push([i]);continue;
+        }
         for(let k=0;k<8;k++)if((adjacent&~used[i])&(1<<k))walk(i,k);
         if(++work%2000===0){await yieldTask();check(signal);}
       }
+    }
+    check(signal);
+    const colours=coherentPathColours(paths,mask,width);
+    for(let i=0;i<paths.length;i++){
+      emitColours(paths[i],colours[i]);
+      if(i%500===499){await yieldTask();check(signal);}
     }
     return strokes;
   }
