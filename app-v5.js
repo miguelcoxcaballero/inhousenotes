@@ -8710,6 +8710,136 @@
             return Math.abs(ratio - 0.7071) < 0.012 ? '' : ratio.toFixed(4);
         }
 
+        const drivePreviewToneCache = new Map();
+        const drivePreviewToneQueue = [];
+        let drivePreviewToneActive = 0;
+
+        function sampleDrivePreviewTone(img) {
+            if (!img.naturalWidth || !img.naturalHeight) return null;
+            const canvas = document.createElement('canvas');
+            canvas.width = 24;
+            canvas.height = 16;
+            try {
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                if (!ctx) return null;
+                // Match the image's top-centred cover crop before sampling the
+                // lower part of the sheet. A dominant colour rejects thin ink
+                // lines and the page border without reading a full-size raster.
+                const ratio = Number(getDriveSheetRatio(img.naturalWidth, img.naturalHeight)) || 0.7071;
+                const sourceWidth = Math.min(img.naturalWidth, img.naturalHeight * ratio);
+                const sourceHeight = Math.min(img.naturalHeight, img.naturalWidth / ratio);
+                const left = (img.naturalWidth - sourceWidth) / 2;
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, 24, 16);
+                ctx.drawImage(img, left + sourceWidth * 0.04, sourceHeight * 0.66,
+                    sourceWidth * 0.92, sourceHeight * 0.3, 0, 0, 24, 16);
+                const pixels = ctx.getImageData(0, 0, 24, 16).data;
+                const bins = new Map();
+                let dominant = null;
+                for (let i = 0; i < pixels.length; i += 4) {
+                    const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+                    const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+                    let bin = bins.get(key);
+                    if (!bin) { bin = [0, 0, 0, 0]; bins.set(key, bin); }
+                    bin[0]++; bin[1] += r; bin[2] += g; bin[3] += b;
+                    if (!dominant || bin[0] > dominant[0]) dominant = bin;
+                }
+                if (!dominant) return null;
+                const rgb = dominant.slice(1).map(value => Math.round(value / dominant[0]));
+                const relativeLuminance = channels => {
+                    const linear = channels.map(value => {
+                        const srgb = value / 255;
+                        return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+                    });
+                    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+                };
+                const luminance = relativeLuminance(rgb);
+                const darkInk = (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05);
+                // The sampled tint remains slightly translucent. Near the
+                // black/white contrast crossover, a tiny tonal adjustment
+                // protects the label even over an opposing-colour photo detail.
+                for (let adjustment = 0; adjustment < 16; adjustment++) {
+                    const blended = relativeLuminance(rgb.map(value => value * 0.94 + (darkInk ? 0 : 255 * 0.06)));
+                    const contrast = darkInk ? (blended + 0.05) / 0.05 : 1.05 / (blended + 0.05);
+                    if (contrast >= 4.6) break;
+                    for (let channel = 0; channel < 3; channel++) {
+                        rgb[channel] = Math.max(0, Math.min(255, rgb[channel] + (darkInk ? 1 : -1)));
+                    }
+                }
+                return { rgb: rgb.join(', '), ink: darkInk ? '#000' : '#fff',
+                    inkRgb: darkInk ? '0, 0, 0' : '255, 255, 255', tone: darkInk ? 'light' : 'dark' };
+            } catch (_) {
+                // Private Drive thumbnails can display without allowing pixel
+                // access. Keep their original image and the legible CSS fallback.
+                return null;
+            } finally {
+                canvas.width = canvas.height = 0;
+            }
+        }
+
+        function drainDrivePreviewToneQueue() {
+            while (drivePreviewToneActive < 2 && drivePreviewToneQueue.length) {
+                const { url, resolve } = drivePreviewToneQueue.shift();
+                drivePreviewToneActive++;
+                const probe = new Image();
+                let completed = false;
+                let timer;
+                const finish = tone => {
+                    if (completed) return;
+                    completed = true;
+                    clearTimeout(timer);
+                    probe.onload = probe.onerror = null;
+                    probe.removeAttribute('src');
+                    drivePreviewToneActive--;
+                    resolve(tone);
+                    drainDrivePreviewToneQueue();
+                };
+                probe.crossOrigin = 'anonymous';
+                probe.referrerPolicy = 'no-referrer';
+                probe.decoding = 'async';
+                probe.onload = async () => {
+                    if (typeof probe.decode === 'function') {
+                        try { await probe.decode(); } catch (_) {}
+                    }
+                    if (!completed) finish(sampleDrivePreviewTone(probe));
+                };
+                probe.onerror = () => finish(null);
+                timer = setTimeout(() => finish(null), 2000);
+                probe.src = url;
+            }
+        }
+
+        function applyDrivePreviewTone(preview, img, url) {
+            let pending = drivePreviewToneCache.get(url);
+            if (!pending) {
+                const sampled = sampleDrivePreviewTone(img);
+                if (sampled) pending = Promise.resolve(sampled);
+                else {
+                    // Never change crossOrigin on the displayed image: private
+                    // thumbnails must still load when a CORS-only probe cannot.
+                    let canProbe = false;
+                    try { canProbe = /^https?:$/.test(new URL(url, location.href).protocol); } catch (_) {}
+                    pending = canProbe && drivePreviewToneQueue.length < 24
+                        ? new Promise(resolve => {
+                            drivePreviewToneQueue.push({ url, resolve });
+                            drainDrivePreviewToneQueue();
+                        })
+                        : Promise.resolve(null);
+                }
+                drivePreviewToneCache.set(url, pending);
+                if (drivePreviewToneCache.size > 64) {
+                    drivePreviewToneCache.delete(drivePreviewToneCache.keys().next().value);
+                }
+            }
+            pending.then(tone => {
+                if (!tone || !preview.isConnected || !preview.contains(img)) return;
+                preview.style.setProperty('--sheet-label-rgb', tone.rgb);
+                preview.style.setProperty('--sheet-label-ink', tone.ink);
+                preview.style.setProperty('--sheet-label-ink-rgb', tone.inkRgb);
+                preview.dataset.labelTone = tone.tone;
+            });
+        }
+
         function createDrivePreview(file) {
             const preview = document.createElement('div');
             preview.className = 'drive-card-preview';
@@ -8764,6 +8894,7 @@
                         preview.classList.remove('is-loading');
                         preview.classList.add('is-loaded');
                         preview.classList.toggle('is-landscape', img.naturalWidth > img.naturalHeight);
+                        applyDrivePreviewTone(preview, img, thumb);
                     });
                 };
 
