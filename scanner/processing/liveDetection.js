@@ -213,7 +213,23 @@
           const colour = rgb(p), level = light(colour) / light(white);
           const redRatio = colour[0] / Math.max(1, colour[1]) / (white[0] / white[1]);
           const blueRatio = colour[2] / Math.max(1, colour[1]) / (white[2] / white[1]);
-          if (level < .5 || level > 1.65 || Math.abs(Math.log(redRatio)) > .25 || Math.abs(Math.log(blueRatio)) > .25) continue;
+          const cast = Math.max(Math.abs(Math.log(redRatio)), Math.abs(Math.log(blueRatio)));
+          if (level < .5 || level > 1.65 || cast > .8) continue;
+          if (cast > .25) {
+            // A second lamp may tint the upper paper differently from the
+            // footer. Require a locally smooth patch, not the footer's hue,
+            // while retaining the broad two-sided paper/orientation checks.
+            let smooth = true;
+            for (const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+              const q = {x:p.x+dx*pitch*1.5,y:p.y+dy*pitch*1.5};
+              if(q.x<1 || q.y<1 || q.x>=width-1 || q.y>=height-1){smooth=false;break;}
+              const neighbour=rgb(q);
+              if(Math.abs(light(neighbour)/Math.max(1,light(colour))-1)>.18
+                || Math.abs(Math.log((neighbour[0]+1)/(neighbour[1]+1)/((colour[0]+1)/(colour[1]+1))))>.12
+                || Math.abs(Math.log((neighbour[2]+1)/(neighbour[1]+1)/((colour[2]+1)/(colour[1]+1))))>.12){smooth=false;break;}
+            }
+            if(!smooth)continue;
+          }
           hits += 1; if (Math.abs(across) === 24) endHits += 1;
         }
         const paperSupport = endHits >= 4 ? hits / 15 : 0;
@@ -776,23 +792,30 @@
   // four-circle footer. Its geometry and both box strips must agree below.
   function layoutState(state) {
     const {width,height,luminance}=state, length=width*height;
-    const yellow=new Uint8Array(length),chroma=new Float32Array(length);
+    const yellow=new Uint8Array(length),neutral=new Uint8Array(length),chroma=new Float32Array(length);
     const reference=state.colourReferences.white;
     const referenceLight=reference[0]*.2126+reference[1]*.7152+reference[2]*.0722;
     const gain=Math.min(4,255/Math.max(40,referenceLight));
     let yellowCount=0;
-    for(let i=0;i<length;i++)chroma[i]=(255-luminance[i])*gain*1.5;
+    for(let i=0;i<length;i++){
+      chroma[i]=(255-luminance[i])*gain*1.5;
+      // In this strictly footer/rail-verified mode paper can have another hue.
+      neutral[i]=+(luminance[i]>=referenceLight*.5 && luminance[i]<=referenceLight*1.65);
+    }
     for(let y=6;y<height-6;y++)for(let x=6;x<width-6;x++){
       const i=y*width+x,ink=chroma[i];
       // The faded print is a pale line on paper. Dark writing and the desk
       // are stronger luminance ridges but are not interchangeable with it.
-      if(!state.neutral[i] || luminance[i] < referenceLight*.55)continue;
+      // Mixed lighting can make a real rail orange/blue even though the
+      // footer's local paper is neutral. This mode is certified by all four
+      // footer discs, both box strips and four measured sides, not a hue.
+      if(luminance[i] < referenceLight*.42)continue;
       for(const gap of [2,3,4,6]){
         if(ink-Math.max(chroma[i-gap],chroma[i+gap])>3
           ||ink-Math.max(chroma[i-gap*width],chroma[i+gap*width])>3){yellow[i]=1;yellowCount++;break;}
       }
     }
-    return {...state,yellow,chroma,yellowCount,layout:true};
+    return {...state,yellow,neutral,chroma,yellowCount,layout:true};
   }
 
   function footerOffset(state,frame,edges,rotation) {

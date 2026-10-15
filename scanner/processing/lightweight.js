@@ -2690,9 +2690,9 @@
           const contrast = center - Math.max(chromaAt(x + nx * 3.5, y + ny * 3.5),
             chromaAt(x - nx * 3.5, y - ny * 3.5));
           let evidence = center >= 9 && contrast >= 3 ? contrast : 0;
-          if (seed.detectionMode === "layout") {
-            // The live layout can survive a non-yellow rail. Independently
-            // remeasure that same thin, two-sided luminance ridge on the still;
+          {
+            // Auto white balance/exposure can change between preview and
+            // still. Remeasure the thin two-sided ridge in every live mode;
             // the subsequent box/grid fit must also pass before insertion.
             const lightAt = (xx, yy) => {
               if (xx < 1 || yy < 1 || xx >= width-1 || yy >= height-1) return 0;
@@ -2780,6 +2780,49 @@
           traceMask[p] = strength;
         }
         yellowPixels += 1;
+      }
+    }
+
+    // A photo may use a different white balance from the video. The contour
+    // above was remeasured on this photo, so retain its actual narrow ridges
+    // even when their hue is no longer yellow. Do not draw the seed into the
+    // mask: each admitted pixel needs bright paper on both sides again.
+    if (liveFrame && options.liveDetection?.detectionMode !== 'layout') {
+      const lightAt = (x,y) => {
+        if(x<1 || y<1 || x>=width-1 || y>=height-1)return 0;
+        const at=(Math.round(y)*width+Math.round(x))*4;
+        return pixels[at]*.2126+pixels[at+1]*.7152+pixels[at+2]*.0722;
+      };
+      const missingColourEdges = liveFrame.edges.filter(edge => {
+        let hits=0;
+        for(const p of edge) {
+          const x=Math.round(p.x),y=Math.round(p.y);
+          let found=false;
+          for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++) {
+            if(x+dx>=0 && x+dx<width && y+dy>=0 && y+dy<height && mask[(y+dy)*width+x+dx])found=true;
+          }
+          if(found)hits++;
+        }
+        return hits/edge.length < .7;
+      });
+      for (const edge of missingColourEdges) for (let i=1;i<edge.length;i++) {
+        const a=edge[i-1],b=edge[i],length=Math.hypot(b.x-a.x,b.y-a.y);
+        if(!length)continue;
+        const nx=-(b.y-a.y)/length,ny=(b.x-a.x)/length,steps=Math.ceil(length*2);
+        for(let j=0;j<=steps;j++)for(let shift=-2;shift<=2;shift+=.5) {
+          const x=Math.round(a.x+(b.x-a.x)*j/steps+nx*shift);
+          const y=Math.round(a.y+(b.y-a.y)*j/steps+ny*shift);
+          if(x<5 || y<5 || x>=width-5 || y>=height-5)continue;
+          const first=lightAt(x+nx*3.5,y+ny*3.5),second=lightAt(x-nx*3.5,y-ny*3.5),center=lightAt(x,y);
+          const paper=Math.min(first,second);
+          if(paper-center<Math.max(2.5,paper*.012) || center<paper*.35
+            || Math.abs(first-second)>Math.max(28,paper*.2))continue;
+          const at=y*width+x;
+          if(!mask[at])yellowPixels++;
+          // Healthy colour evidence keeps its original weight and fitting path.
+          if(!mask[at])mask[at]=3;
+          if(!traceMask[at])traceMask[at]=3;
+        }
       }
     }
 
@@ -4894,6 +4937,8 @@
 
   function observedPaperIllumination(canvas, data, observations) {
     const anchors = new Float32Array(35 * 51);
+    const redAnchors = new Float32Array(anchors.length), blueAnchors = new Float32Array(anchors.length);
+    let measuredWhite = [1, 1];
     const paperPoints = [];
     const paperNoise = [];
     let count = 0, supplied = 0, recovered = 0;
@@ -4904,7 +4949,7 @@
       offsets.push([Math.cos(angle) * radius * pxPerMM, Math.sin(angle) * radius * pxPerMM]);
     }
     const measurePaper = point => {
-      const samples = [];
+      const samples = [], colours = [];
       const positions = count % 4 === 0 ? [] : null;
       for (const sampleOffset of offsets) {
         const [dx, dy] = sampleOffset;
@@ -4914,8 +4959,11 @@
         const offset = (y * canvas.width + x) * 4;
         const r = data[offset], g = data[offset + 1], b = data[offset + 2];
         const maximum = Math.max(r, g, b), minimum = Math.min(r, g, b);
-        if (maximum - minimum > maximum * 0.24) continue;
+        // A verified dot and its paper ring establish the material. Requiring
+        // neutral RGB here discarded the very regions lit by a different lamp.
+        if (minimum < 12 || minimum < maximum * .16) continue;
         samples.push(r * 0.2126 + g * 0.7152 + b * 0.0722);
+        colours.push({r, g, b, light: samples.at(-1)});
         positions?.push(sampleOffset);
       }
       if (samples.length < 16) return 0;
@@ -4943,6 +4991,13 @@
         paperNoise.push(deviations[Math.floor(deviations.length / 2)] * 1.4826);
       }
       samples.sort((a, b) => a - b);
+      // Use the lighter half of the ring so handwriting crossing one side
+      // cannot supply the illuminant. Both ratios come from measured paper.
+      const paperColours = colours.filter(c => c.light >= samples[Math.floor(samples.length * .5)]);
+      measuredWhite = ['r','b'].map(channel => {
+        const ratios = paperColours.map(c => c[channel] / c.g).sort((a,b) => a-b);
+        return ratios[Math.floor(ratios.length / 2)];
+      });
       return samples[Math.floor(samples.length * 0.8)];
     };
     for (const point of Array.isArray(observations) ? observations : []) {
@@ -4955,6 +5010,7 @@
       const paper = measurePaper(point);
       if (!paper) continue;
       anchors[index] = paper;
+      redAnchors[index] = measuredWhite[0]; blueAnchors[index] = measuredWhite[1];
       paperPoints.push({ x: point.x, y: point.y, col: column, row });
       count += 1; supplied += 1;
     }
@@ -5004,6 +5060,7 @@
       const paper = measurePaper(best);
       if (!paper) continue;
       anchors[index] = paper;
+      redAnchors[index] = measuredWhite[0]; blueAnchors[index] = measuredWhite[1];
       paperPoints.push({ x: best.x, y: best.y, col: column, row });
       count += 1; recovered += 1;
     }
@@ -5014,15 +5071,17 @@
     // opaque drawing hides those dots; continue neighbouring paper across the
     // resulting gap instead of mistaking the drawing's grey fill for a lamp.
     const filled = new Float32Array(anchors);
+    const filledRed = redAnchors.slice(), filledBlue = blueAnchors.slice();
     for (let column = 0; column < 35; column += 1) for (let row = 0; row < 51; row += 1) {
       const index = column * 51 + row;
       if (filled[index]) continue;
-      let weighted = 0, weight = 0;
+      let weighted = 0, weight = 0, red = 0, blue = 0;
       for (let dc = -5; dc <= 5; dc += 1) for (let dr = -5; dr <= 5; dr += 1) {
         const c = column + dc, r = row + dr;
         if (c < 0 || c >= 35 || r < 0 || r >= 51 || !anchors[c * 51 + r]) continue;
         const amount = 1 / (0.5 + dc * dc + dr * dr);
         weighted += anchors[c * 51 + r] * amount; weight += amount;
+        red += redAnchors[c * 51 + r] * amount; blue += blueAnchors[c * 51 + r] * amount;
       }
       if (!weight) {
         // Detection can miss an entire blurred corner. Never substitute an
@@ -5035,9 +5094,11 @@
           const distanceSquared = (c - column) ** 2 + (r - row) ** 2;
           const amount = 1 / (distanceSquared * distanceSquared);
           weighted += sample * amount; weight += amount;
+          red += redAnchors[c * 51 + r] * amount; blue += blueAnchors[c * 51 + r] * amount;
         }
       }
       filled[index] = weighted / weight;
+      filledRed[index] = red / weight; filledBlue[index] = blue / weight;
     }
     const minimums = new Float32Array(anchors.length);
     for (let column = 0; column < 35; column += 1) for (let row = 0; row < 51; row += 1) {
@@ -5064,12 +5125,19 @@
     const fine = smoothPaperIllumination(values, width, height, { radius: 2, blurRadius: 0 });
     const field = new Float32Array(fine.length);
     const drawing = new Uint8Array(fine.length);
+    const white = new Float32Array(fine.length * 2);
+    let maximumCast = 0;
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
       const column = clamp(((x + 0.5) / width * 210 - 20) / 5, 0, 34);
       const row = clamp(((y + 0.5) / height * 297 - 19.3) / 5, 0, 50);
       const c0 = Math.floor(column), c1 = Math.min(34, c0 + 1);
       const r0 = Math.floor(row), r1 = Math.min(50, r0 + 1);
       const cx = column - c0, ry = row - r0;
+      const interpolate = values => (values[c0 * 51 + r0] * (1-cx) + values[c1 * 51 + r0] * cx) * (1-ry)
+        + (values[c0 * 51 + r1] * (1-cx) + values[c1 * 51 + r1] * cx) * ry;
+      const red = interpolate(filledRed), blue = interpolate(filledBlue);
+      white[y*width+x] = red; white[fine.length+y*width+x] = blue;
+      maximumCast = Math.max(maximumCast, Math.abs(red-1), Math.abs(blue-1));
       const paper = (filled[c0 * 51 + r0] * (1 - cx) + filled[c1 * 51 + r0] * cx) * (1 - ry)
         + (filled[c0 * 51 + r1] * (1 - cx) + filled[c1 * 51 + r1] * cx) * ry;
       let minimum = minimums[Math.round(column) * 51 + Math.round(row)];
@@ -5082,8 +5150,34 @@
     reduced.width = reduced.height = 0;
     paperNoise.sort((a, b) => a - b);
     const noiseSigma = paperNoise.length >= 32 ? paperNoise[Math.floor(paperNoise.length / 2)] : 0;
-    return { values: field, drawing, width, height, anchors: count, supplied, recovered, paperPoints,
+    return { values: field, drawing, white: maximumCast > .085 ? white : null, width, height, anchors: count, supplied, recovered, paperPoints,
       noiseSigma, noiseFloor: clamp(noiseSigma * 2.2, 2, 6) };
+  }
+
+
+  async function balanceObservedPaper(data, width, height, field, settings) {
+    const {white, width: fw, height: fh} = field, n=fw*fh;
+    await globalThis.InhouseRust?.ready;
+    const rust = settings.disableRust ? null : globalThis.InhouseRust?.balancePaper?.(data,width,height,white,fw,fh);
+    try {
+      for (let from=0; from<height; from+=processingWorker?height:96) {
+        checkProcessingCancelled(settings);
+        const to=Math.min(height,from+(processingWorker?height:96));
+        if (rust) rust.rows(from,to);
+        else for(let y=from;y<to;y++) {
+          const fy=clamp((y+.5)*fh/height-.5,0,fh-1), y0=Math.floor(fy), y1=Math.min(fh-1,y0+1), my=fy-y0;
+          for(let x=0;x<width;x++) {
+            const fx=clamp((x+.5)*fw/width-.5,0,fw-1), x0=Math.floor(fx), x1=Math.min(fw-1,x0+1), mx=fx-x0;
+            const sample=offset=>(white[offset+y0*fw+x0]*(1-mx)+white[offset+y0*fw+x1]*mx)*(1-my)
+              +(white[offset+y1*fw+x0]*(1-mx)+white[offset+y1*fw+x1]*mx)*my;
+            const r=sample(0), b=sample(n), level=r*.2126+.7152+b*.0722, i=(y*width+x)*4;
+            data[i]=data[i]*level/r; data[i+1]=data[i+1]*level; data[i+2]=data[i+2]*level/b;
+          }
+        }
+        if(!processingWorker)await yieldToBrowser();
+      }
+      rust?.copyTo(data);
+    } finally { rust?.dispose(); }
   }
 
   Light.correctColors = async function correctColors(canvas, options = {}) {
@@ -5110,9 +5204,13 @@
     const balanced = !processingWorker && SP.LiveDetection?.normalizeIlluminationAsync
       ? await SP.LiveDetection.normalizeIlluminationAsync(image, balanceOptions)
       : SP.LiveDetection?.normalizeIllumination?.(image, balanceOptions);
-    const data = balanced?.data || original;
+    let data = balanced?.data || original;
     const observedIllumination = preciseStencil
       ? observedPaperIllumination(canvas, data, settings.dotObservations) : null;
+    if (observedIllumination?.white) {
+      if (data === original) data = data.slice();
+      await balanceObservedPaper(data, canvas.width, canvas.height, observedIllumination, settings);
+    }
     // Without enough visible dots, a small closing still estimates smooth
     // paper behind thin ink. Reliable observed paper uses the finer field
     // directly; avoid computing and discarding this fallback for every scan.

@@ -43,7 +43,8 @@ async function measure(page, cases) {
           * (camera.footerShadow && y > 1000 ? .48 : 1);
         const source = [pixels.data[offset], pixels.data[offset + 1], pixels.data[offset + 2]];
         for (let channel = 0; channel < 3; channel++) {
-          pixels.data[offset + channel] = exposure * shade * gains[channel]
+          const localGain = camera.localGains ? 1 + (camera.localGains[channel] - 1) * Math.exp(-(((y - 580) / 290) ** 4)) : 1;
+          pixels.data[offset + channel] = exposure * shade * gains[channel] * localGain
             * (flare + (camera.matrix
               ? camera.matrix[channel].reduce((sum, gain, c) => sum + gain * source[c], 0)
               : source[channel]) * (1 - flare / 255));
@@ -51,11 +52,18 @@ async function measure(page, cases) {
       }
       context.putImageData(pixels, 0, 0);
       const started = performance.now();
-      const colors = await ScannerPro.Lightweight.correctColors(canvas, { useStencil: true, preciseStencil: true });
+      const colors = await ScannerPro.Lightweight.correctColors(canvas, { useStencil: true, preciseStencil: true, disableRust: camera.disableRust });
       const elapsedMs = performance.now() - started;
       const result = context.getImageData(0, 0, canvas.width, canvas.height).data;
       const rgb = (x, y) => Array.from(result.slice((y * canvas.width + x) * 4, (y * canvas.width + x) * 4 + 3));
-      rows.push({ name: camera.name, calibrated: colors.calibrated, calibration: colors.calibration,
+      const pens={};
+      if(camera.localGains) for(const [name,y] of [['red',290],['blue',440],['black',590],['pencil',740]]) {
+        const crop=context.getImageData(125,y-3,240,18);
+        InhouseRust.separateInk(crop.data);
+        const ink=await ScannerPro.InkVectorizer.fromPixels(crop,{forceJavaScript:camera.disableRust});
+        pens[name]=[...new Set(ink.strokes.map(s=>s.color))];
+      }
+      rows.push({ name: camera.name, pens, calibrated: colors.calibrated, calibration: colors.calibration,
         references: colors.references, elapsedMs, backend: colors.pixelProcessing.backend,
         red: rgb(240, 296), blue: rgb(240, 446), black: rgb(240, 596), pencil: rgb(240, 746),
         paper: rgb(280, 370), outsideRed: rgb(247, 287), outsideBlue: rgb(247, 437) });
@@ -149,4 +157,26 @@ test('neutral frame ridges cannot override the four measured colour pigments', a
   expect(row.calibration.matrixError).toBeLessThan(.06);
   expect(row.references.yellow.valid, 'a grey geometric ridge is not a yellow colour reference').toBe(false);
   expectWriting(row);
+});
+
+
+test('mixed ambient light keeps black neutral without erasing blue and red ink', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.goto('/scanner/index.html', { waitUntil: 'domcontentloaded' });
+  const rows = await measure(page, [
+    { name: 'local-blue-lamp', localGains: [.5, .72, 1], flare: 14 },
+    { name: 'local-warm-lamp', localGains: [1, .65, .4], flare: 14 },
+    { name: 'local-magenta-lamp', localGains: [1, .6, .9], flare: 14 },
+    { name: 'local-blue-lamp-js', localGains: [.5, .72, 1], flare: 14, disableRust: true }
+  ]);
+  console.log('MIXED_LIGHT', JSON.stringify(rows.map(diagnostics)));
+  for (const row of rows) {
+    expectWriting(row);
+    expect(row.pens.black,row.name).toEqual(['#4D4D4D']);
+    expect(row.pens.pencil,row.name).toEqual(['#4D4D4D']);
+    expect(row.pens.blue,row.name).toEqual(['#002FD9']);
+    expect(row.pens.red,row.name).toEqual(['#E81010']);
+  }
+  expect(rows[0].backend).toBe('rust'); expect(rows.at(-1).backend).toBe('javascript');
+  for(const colour of ['red','blue','black','pencil'])expect(rows[0][colour]).toEqual(rows.at(-1)[colour]);
 });
