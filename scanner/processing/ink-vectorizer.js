@@ -32,21 +32,26 @@
     // of closing small counters with the colour/JPEG fringe.
     const initial=mask.slice();
     const cross=Math.max(1,Math.round(width/794*.75));
+    // Probe equal physical distances in oblique directions as well. Otherwise
+    // faint cursive bends disappear beside a darker pen or crossing.
+    const normals = [[1,0],[0,1],[1,1],[1,-1],[2,1],[2,-1],[1,2],[1,-2]];
     const transverse=(x,y,alpha)=>{
-      for(const [dx,dy] of [[1,0],[0,1],[1,1],[1,-1]]){
+      for(const [vx,vy] of normals){
+        const length=Math.hypot(vx,vy),dx=vx/length,dy=vy/length;
+        const sample=(a,b)=>alphaAt(Math.round(b)*width+Math.round(a));
         if(x-reach*Math.abs(dx)-cross*Math.abs(dy)<1||x+reach*Math.abs(dx)+cross*Math.abs(dy)>=width-1
           ||y-reach*Math.abs(dy)-cross*Math.abs(dx)<1||y+reach*Math.abs(dy)+cross*Math.abs(dx)>=height-1)continue;
         // Ink must continue along the tangent, not form a lone JPEG bump.
-        const before=alphaAt((y-dx*cross)*width+x+dy*cross),after=alphaAt((y+dx*cross)*width+x-dy*cross);
+        const before=sample(x+dy*cross,y-dx*cross),after=sample(x-dy*cross,y+dx*cross);
         if(Math.min(before,after)<alpha*.4)continue;
         let peak=alpha,at=0;
         for(let d=-cross;d<=cross;d++){
-          const v=alphaAt((y+dy*d)*width+x+dx*d);if(v>peak){peak=v;at=d;}
+          const v=sample(x+dx*d,y+dy*d);if(v>peak){peak=v;at=d;}
         }
         if(alpha*100<peak*65)continue;
         let left=peak,right=peak;
-        for(let d=at-1;d>=-reach;d--){const v=alphaAt((y+dy*d)*width+x+dx*d);if(v>left+2)break;left=Math.min(left,v);}
-        for(let d=at+1;d<=reach;d++){const v=alphaAt((y+dy*d)*width+x+dx*d);if(v>right+2)break;right=Math.min(right,v);}
+        for(let d=at-1;d>=-reach;d--){const v=sample(x+dx*d,y+dy*d);if(v>left+2)break;left=Math.min(left,v);}
+        for(let d=at+1;d<=reach;d++){const v=sample(x+dx*d,y+dy*d);if(v>right+2)break;right=Math.min(right,v);}
         if(Math.max(left,right)<peak*.45&&peak-Math.max(left,right)>=6)return true;
       }
       return false;

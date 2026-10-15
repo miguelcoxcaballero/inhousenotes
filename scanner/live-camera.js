@@ -42,7 +42,6 @@
   let startingAt = 0;
   let resumeAfterPermission = false;
   let previousFocus = null;
-  let automaticCapture = false;
   let readinessSamples = 0;
   let readinessStartedAt = 0;
   let readinessCompletedAt = 0;
@@ -571,7 +570,6 @@
     if (!prepared) { void checkReadiness(triggerDetection || lastDetection, token, automatic); return; }
     let frozenFirst = prepared.canvas;
     const frozenFirstQuality = prepared.quality;
-    automaticCapture = automatic;
     const anchor = (triggerDetection || lastDetection)?.quad;
     const encodings = [];
     let captureError;
@@ -872,19 +870,19 @@
     const bounded = value => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
     const surface = candidate.analysis?.frame?.metricSurface;
     const diagnostics = surface?.diagnostics;
-    const physical = candidate.analysis?.quality?.valid === true
-      && surface?.type === 'developable-pinhole' && diagnostics?.validation > 0
+    const verifiedGeometry = candidate.analysis?.quality?.valid === true
+      && ['developable-pinhole', 'measured-lattice'].includes(surface?.type) && diagnostics?.validation > 0
       && Number.isFinite(diagnostics.pitch) && diagnostics.pitch > 0
       && [['rms', .14], ['p90', .22], ['p99', .4], ['borderP95', 1.15]].every(([key, limit]) =>
         Number.isFinite(diagnostics[key]) && diagnostics[key] >= 0 && diagnostics[key] <= diagnostics.pitch * limit);
     const registration = diagnostics?.rasterRegistration || diagnostics?.registration;
-    const registered = physical && !!surface.registration && registration?.anchors >= 350
+    const registered = verifiedGeometry && !!surface.registration && registration?.anchors >= 350
       && Number.isFinite(registration.maximumAnchorError) && registration.maximumAnchorError < .01;
-    // Physical validation remains a prerequisite. Within verified photos,
+    // Measured geometry validation remains a prerequisite. Within verified photos,
     // compare the cleaned output too: exact anchor interpolation alone says
     // nothing about the grey shadows that survived colour correction.
-    const tier = physical ? 2 : 1;
-    const geometry = physical
+    const tier = verifiedGeometry ? 2 : 1;
+    const geometry = verifiedGeometry
       ? 1 - .45 * bounded(diagnostics.rms / diagnostics.pitch / .14)
         - .25 * bounded(diagnostics.p99 / diagnostics.pitch / .4)
         - .3 * bounded(diagnostics.borderP95 / diagnostics.pitch / 1.15)
@@ -947,6 +945,7 @@
           inkLayer: processed.inkLayer === true, templateKind: processed.templateKind,
           editableInk: processed.editableInk };
         candidate.analysis = processed.detection;
+        candidate.error = processed.corrected ? '' : processed.failureReason || 'Couldn’t correct this photo. Try again.';
         candidate.outputQuality = processed.outputQuality;
         candidate.resultUrl = outputUrl;
         outputUrl = '';
@@ -991,11 +990,9 @@
     }
     reviewCandidate(selectedIndex, token);
     processingController = null;
-    if (automaticCapture && !batch.some(candidate => candidate.result?.corrected)) {
-      $('liveAddBtn').disabled = true;
-      $('liveReviewStatus').textContent = 'Looking for a clearer scan…';
-      timer = setTimeout(() => { if (token === generation && !root.hidden && !document.hidden && !submitting) void open(); }, 350);
-    }
+    // Keep the captured photos and their failure reason available for review.
+    // Reopening automatically discards the batch and can loop forever on the
+    // same lighting or geometry. Only the explicit Retake action opens it.
   }
   async function importPhoto(file) {
     if (!file || submitting) return;
@@ -1003,7 +1000,6 @@
     stopCamera();
     clearReview();
     if (!file.type.startsWith('image/')) { cameraError(); return; }
-    automaticCapture = false;
     candidates = [{ blob: file, url: URL.createObjectURL(file), detection: null, score: 0 }];
     await reviewCandidates(token);
   }

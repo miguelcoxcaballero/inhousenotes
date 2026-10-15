@@ -58,8 +58,8 @@ async function holdFirstBatch(frame) {
   });
 }
 
-async function invalidateFirstBatch(frame) {
-  await frame.evaluate(() => {
+async function invalidateFirstBatch(frame, failure) {
+  await frame.evaluate(failure => {
     const original = ScannerPro.Lightweight.processPageAsync;
     let calls = 0;
     ScannerPro.Lightweight.processPageAsync = async function (...args) {
@@ -67,9 +67,11 @@ async function invalidateFirstBatch(frame) {
       const processed = await original.apply(this, args);
       if (call > 3) return processed;
       __captureRegression.invalidOutputs++;
+      if (failure === 'unverified') return { ...processed, corrected: false,
+        failureReason: 'The page dots could not be verified. Try more light.' };
       return { ...processed, blob: new Blob(['invalid encoded image'], { type: 'image/jpeg' }) };
     };
-  });
+  }, failure);
 }
 
 async function expectDecodedPreview(frame) {
@@ -134,13 +136,23 @@ test('capture shows a decoded photo while correction is pending, then inserts on
   expect(errors).toEqual([]);
 });
 
-test('undecodable corrected images cannot be added and an automatic fresh capture recovers', async ({ page }) => {
+for (const failure of ['undecodable', 'unverified']) test(`${failure} captures stay available until an explicit retake`, async ({ page }) => {
   test.setTimeout(60000);
   await openStandalone(page);
-  await invalidateFirstBatch(page);
+  await invalidateFirstBatch(page, failure);
   await page.waitForFunction(() => __captureRegression.invalidOutputs === 3, null, {timeout:25000});
   await expect(page.locator('#liveAddBtn')).toBeDisabled();
   await expect(page.locator('#liveScanner')).toHaveAttribute('data-state','review',{timeout:25000});
+  await expectDecodedPreview(page);
+  const retained = await page.locator('#livePreview').getAttribute('src');
+  if (failure === 'unverified') await expect(page.locator('#liveReviewStatus')).toContainText('Try more light');
+  // The old 350 ms restart discarded the captured image and its error.
+  await page.waitForTimeout(900);
+  await expect(page.locator('#liveScanner')).toHaveAttribute('data-state','review');
+  await expect(page.locator('#livePreview')).toHaveAttribute('src', retained);
+  await expect(page.locator('#liveAddBtn')).toBeDisabled();
+  expect(await page.evaluate(() => __captureRegression.streams.length)).toBe(1);
+  await page.locator('#liveRetakeBtn').click();
   await expect(page.locator('#liveAddBtn')).toBeEnabled({timeout:20000});
   await expectDecodedPreview(page);
   await expect(page.locator('#liveReviewStatus')).not.toContainText('Original photo ready');

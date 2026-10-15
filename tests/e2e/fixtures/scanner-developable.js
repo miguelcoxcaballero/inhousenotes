@@ -51,10 +51,11 @@
       crossSection = [{ x: 0, z: 0 }];
     for (let i = 1; i <= count; i++) {
       const s = -length + ((i - 0.5) * 2 * length) / count;
-      const theta = definition.radius
+      const theta = (definition.radius
         ? s / definition.radius
         : (definition.sBend || 0) *
-          Math.cos(((definition.bendFrequency || 1) * Math.PI * s) / length);
+          Math.cos(((definition.bendFrequency || 1) * Math.PI * s) / length)) +
+        (definition.crease ? definition.crease.angle * Math.tanh((s - definition.crease.at) / definition.crease.width) : 0);
       crossSection.push({
         x: crossSection[i - 1].x + (Math.cos(theta) * 2 * length) / count,
         z: crossSection[i - 1].z + (Math.sin(theta) * 2 * length) / count,
@@ -110,6 +111,7 @@
       for (let y = 19.3; y <= 269.3; y += 5) {
         const col = Math.round((x - 20) / 5),
           row = Math.round((y - 19.3) / 5);
+        if (definition.dotColorAt) ctx.fillStyle = definition.dotColorAt(row, col);
         if (
           definition.missingGrid &&
           ((col * 17 + row * 7) % 13 < 2 ||

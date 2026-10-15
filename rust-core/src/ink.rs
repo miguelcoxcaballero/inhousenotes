@@ -34,30 +34,37 @@ fn transverse_ink(
 ) -> bool {
     let (x, y, w, h, r) = (x as isize, y as isize, width as isize, height as isize, reach as isize);
     let cross = (width as f64 / 794.0 * 0.75).round().max(1.0) as isize;
-    for (dx, dy) in [(1isize, 0isize), (0, 1), (1, 1), (1, -1)] {
-        if x - r * dx.abs() - cross * dy.abs() < 1 || x + r * dx.abs() + cross * dy.abs() >= w - 1
-            || y - r * dy.abs() - cross * dx.abs() < 1 || y + r * dy.abs() + cross * dx.abs() >= h - 1 {
+    // A diagonal must have the same physical support as a horizontal pen.
+    // Normalized oblique probes keep faint cursive bends near dark crossings;
+    // four integer directions skipped those bends or looked beyond the pen.
+    for (vx, vy) in [(1.0f64, 0.0f64), (0.0, 1.0), (1.0, 1.0), (1.0, -1.0),
+        (2.0, 1.0), (2.0, -1.0), (1.0, 2.0), (1.0, -2.0)] {
+        let length = vx.hypot(vy);
+        let (dx, dy) = (vx / length, vy / length);
+        let (x, y, r, cross) = (x as f64, y as f64, r as f64, cross as f64);
+        if x - r * dx.abs() - cross * dy.abs() < 1.0 || x + r * dx.abs() + cross * dy.abs() >= (w - 1) as f64
+            || y - r * dy.abs() - cross * dx.abs() < 1.0 || y + r * dy.abs() + cross * dx.abs() >= (h - 1) as f64 {
             continue;
         }
-        let at = |xx: isize, yy: isize| sample((yy * w + xx) as usize) as f64;
+        let at = |xx: f64, yy: f64| sample(yy.round() as usize * width + xx.round() as usize) as f64;
         let before = at(x + dy * cross, y - dx * cross);
         let after = at(x - dy * cross, y + dx * cross);
         if before.min(after) < alpha * 0.4 { continue; }
         let mut peak = alpha;
         let mut centre = 0;
-        for d in -cross..=cross {
-            let value = at(x + dx * d, y + dy * d);
+        for d in -(cross as isize)..=cross as isize {
+            let value = at(x + dx * d as f64, y + dy * d as f64);
             if value > peak { peak = value; centre = d; }
         }
         if alpha * 100.0 < peak * 65.0 { continue; }
         let (mut left, mut right) = (peak, peak);
-        for d in (-r..centre).rev() {
-            let value = at(x + dx * d, y + dy * d);
+        for d in (-(r as isize)..centre).rev() {
+            let value = at(x + dx * d as f64, y + dy * d as f64);
             if value > left + 2.0 { break; }
             left = left.min(value);
         }
-        for d in centre + 1..=r {
-            let value = at(x + dx * d, y + dy * d);
+        for d in centre + 1..=r as isize {
+            let value = at(x + dx * d as f64, y + dy * d as f64);
             if value > right + 2.0 { break; }
             right = right.min(value);
         }
