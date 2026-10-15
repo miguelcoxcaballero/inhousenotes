@@ -18,7 +18,7 @@ test('oblique cursive curves survive darker crossings without changing Rust/JS g
   const im=ctx.getImageData(0,0,w,h),coverage=new Uint8Array(w*h);for(let i=0;i<coverage.length;i++){let a=im.data[i*4+3];coverage[i]=a;im.data.set([0,49,225,Math.min(255,a*2)],i*4);}
   const ink=await ScannerPro.InkVectorizer.fromPixels(im,{coverage,forceJavaScript});ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,w,h);ScannerPro.InkVectorizer.render(ctx,ink);const pixels=ctx.getImageData(0,0,w,h).data;
   const covered=p=>{for(let dy=-.4;dy<=.4;dy+=.4)for(let dx=-.4;dx<=.4;dx+=.4)if(pixels[(Math.floor((p.y+dy)*scale)*w+Math.floor((p.x+dx)*scale))*4+3]>100)return true;return false;};
-  return {strokes:ink.strokes.length,recalls:truth.map(c=>c.filter(covered).length/c.length),shape:JSON.stringify(ink.strokes)};
+  return {strokes:ink.strokes.length,repairCount:ink.repairCount,recalls:truth.map(c=>c.filter(covered).length/c.length),shape:JSON.stringify(ink.strokes)};
   },forceJavaScript));
   expect(results[0].shape).toEqual(results[1].shape);
   for(const result of results){
@@ -26,7 +26,10 @@ test('oblique cursive curves survive darker crossings without changing Rust/JS g
     console.log('OBLIQUE_INK',JSON.stringify({mean,minimum:Math.min(...result.recalls),strokes:result.strokes}));
     expect(mean).toBeGreaterThan(.99);
     expect(Math.min(...result.recalls)).toBeGreaterThan(.92);
-    // More samples must not become thousands of artificial short branches.
-    expect(result.strokes).toBeLessThan(1500);
+    // Keep the original limit on traced branches. Source-supported repair
+    // discs are separate native pens, so bound those explicitly as well.
+    expect(result.strokes-result.repairCount).toBeLessThan(1500);
+    expect(result.repairCount).toBeLessThan(512);
+    expect(result.strokes).toBeLessThan(2000);
   }
 });

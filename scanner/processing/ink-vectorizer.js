@@ -3,6 +3,7 @@
   'use strict';
   const SP = root.ScannerPro = root.ScannerPro || {};
   const palette = root.InhouseInkPalette;
+  const nativeInkRGB = [[77,77,77],[0,47,217],[232,16,16]];
   const yieldTask = () => new Promise(resolve => setTimeout(resolve, 0));
   function check(signal) { if (signal?.aborted) throw new DOMException('Scan cancelled', 'AbortError'); }
   function colour(r, g, b, alpha) {
@@ -495,6 +496,111 @@
     }
     return strokes;
   }
+  // Keep the pen axes editable, then recover substantial photographed lobes
+  // which one constant width cannot express. Every repair is an ordinary
+  // short pen, contained in the measured silhouette; it never invents ink in
+  // a letter counter or uses the photograph to make a second colour decision.
+  function nativeLabel(rgba,at) {
+    if(rgba[at+3]<=200)return 0;
+    const colours=nativeInkRGB;
+    let best=32*32,label=0;
+    for(let k=0;k<3;k++){
+      const c=colours[k],error=(rgba[at]-c[0])**2+(rgba[at+1]-c[1])**2+(rgba[at+2]-c[2])**2;
+      if(error<best){best=error;label=k+1;}
+    }
+    return label;
+  }
+  async function repairDiscs(rgba,radii,coverage,width,height,capacity,signal) {
+    const scale=width/794,n=width*height,candidates=[];
+    const offsets=[-width,1-width,1,1+width,width,width-1,-1,-width-1];
+    for(let i=width+1;i<n-width-1;i++){
+      if(i%32768===0){await yieldTask();check(signal);}
+      if(radii[i]<6)continue;
+      // A contained disc adds no geometry. Keeping maximal discs also bounds
+      // the work for a large filled shape to its medial region, not its area.
+      if(offsets.some((d,k)=>radii[i+d]>=radii[i]+(k%2?4:3)))continue;
+      candidates.push(i);
+      if(candidates.length>250000)return [];
+    }
+    candidates.sort((a,b)=>radii[b]-radii[a]||coverage[b]-coverage[a]||a-b);
+    const discs=[],paletteRgb=nativeInkRGB;
+    const scratchSide=Math.ceil(scale*4.25)*2+3;
+    const seen=new Uint8Array(scratchSide*scratchSide),queue=new Uint32Array(scratchSide*scratchSide);
+    for(let k=0;k<candidates.length;k++){
+      if(k%2048===0){await yieldTask();check(signal);}
+      const i=candidates[k],x=i%width,y=Math.floor(i/width);
+      let radius=Math.min(scale*1.25,Math.max(.6,radii[i]/3-.5));
+      const reach=Math.ceil(radius+1);
+      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
+        if(!radii[yy*width+xx])radius=Math.min(radius,Math.max(.6,Math.hypot(xx-x,yy-y)-.5));
+      }
+      if(radius<Math.max(1.25,scale*.6))continue;
+      radius=Math.floor(radius*1024)/1024;
+      let missing=0;
+      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
+        if((xx-x)**2+(yy-y)**2<=(radius-.1)**2&&rgba[(yy*width+xx)*4+3]<100)missing++;
+      }
+      if(missing<Math.max(2,scale*scale*.4))continue;
+      // Search through photographed ink only. A nearby red line on the other
+      // side of white paper cannot lend its colour to this black letter.
+      const voteReach=Math.ceil(radius+scale*3),side=voteReach*2+1;
+      seen.fill(0);queue[0]=i;seen[voteReach*side+voteReach]=1;
+      let head=0,tail=1,label=0;
+      while(head<tail&&!label){
+        const node=queue[head++];label=nativeLabel(rgba,node*4);if(label)break;
+        const cx=node%width,cy=Math.floor(node/width);
+        for(const d of offsets){
+          const j=node+d,jx=j%width,jy=Math.floor(j/width);
+          if(j<0||j>=n||Math.abs(jx-cx)>1||Math.abs(jy-cy)>1||Math.abs(jx-x)>voteReach||Math.abs(jy-y)>voteReach||!radii[j])continue;
+          const at=(jy-y+voteReach)*side+jx-x+voteReach;
+          if(!seen[at]){seen[at]=1;queue[tail++]=j;}
+        }
+      }
+      if(!label)continue;
+      let crossesColour=false;
+      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
+        if((xx-x)**2+(yy-y)**2>(radius+.25)**2)continue;
+        const other=nativeLabel(rgba,(yy*width+xx)*4);
+        if(other&&other!==label)crossesColour=true;
+      }
+      if(crossesColour)continue;
+      discs.push(i,radius,label);
+      const rgb=paletteRgb[label-1];
+      for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
+        if((xx-x)**2+(yy-y)**2<=(radius+.25)**2){const at=(yy*width+xx)*4;rgba[at]=rgb[0];rgba[at+1]=rgb[1];rgba[at+2]=rgb[2];rgba[at+3]=255;}
+      }
+      if(discs.length/3>=capacity)break;
+    }
+    return discs;
+  }
+  async function restoreSilhouette(strokes,axes,pixels,options) {
+    if(!options.coverage||!strokes.length)return {count:0,backend:'none'};
+    const {width,height}=pixels;
+    const points=strokes.reduce((sum,stroke)=>sum+stroke.points.length,0);
+    const capacity=Math.min(12000,60000-strokes.length,Math.floor((500000-points)/2));
+    if(capacity<=0)return {count:0,backend:'none'};
+    check(options.signal);
+    const canvas=typeof OffscreenCanvas!=='undefined'?new OffscreenCanvas(width,height):root.document?.createElement('canvas');
+    if(!canvas)return {count:0,backend:'none'};
+    let rendered;
+    try{
+      canvas.width=width;canvas.height=height;
+      const context=canvas.getContext('2d',{willReadFrequently:true});
+      render(context,{strokes});rendered=context.getImageData(0,0,width,height).data;
+    }finally{canvas.width=canvas.height=0;}
+    check(options.signal);await yieldTask();check(options.signal);
+    const native=!options.forceJavaScript&&root.InhouseRust?.inkRepair?.(rendered,axes.radii,options.coverage,width,height,capacity);
+    const discs=native?.discs||await repairDiscs(rendered,axes.radii,options.coverage,width,height,capacity,options.signal);
+    check(options.signal);
+    for(let k=0;k<discs.length;k+=3){
+      const i=discs[k],x=i%width+.5,y=Math.floor(i/width)+.5;
+      // PDF coordinates are rounded to .01 editor pixels. A .05-pixel
+      // centred segment keeps the round cap after saving and reopening.
+      const halfSegment=width/794*.025;
+      strokes.push({tool:'pen',color:palette[discs[k+2]-1],width:discs[k+1]*2,points:[{x:x-halfSegment,y},{x:x+halfSegment,y}]});
+    }
+    return {count:discs.length/3,backend:native?'rust':'javascript'};
+  }
   async function fromPixels(pixels,options={}) {
     const {width,height,data}=pixels;
     if(!palette||!Number.isInteger(width)||!Number.isInteger(height)||width<2||height<2
@@ -506,7 +612,8 @@
     if(axes.rejected)throw new Error('Ink could not be separated. Try a clearer photo.');
     check(options.signal);
     const strokes=await trace(axes,width,height,options.signal,data,options.coverage);
-    return {version:1,width,height,strokes,backend:axes.backend};
+    const repair=await restoreSilhouette(strokes,axes,pixels,options);
+    return {version:1,width,height,strokes,backend:axes.backend,repairCount:repair.count,repairBackend:repair.backend};
   }
   // Exactly the editor's opaque pen path, also used for the scan preview.
   function render(context,ink) {

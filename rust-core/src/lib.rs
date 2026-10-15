@@ -2,6 +2,7 @@
 //! remain with the host. All dimensions/pointers are supplied by the private JS adapter.
 mod surface;
 mod ink;
+mod ink_repair;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 

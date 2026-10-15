@@ -160,5 +160,25 @@
         } catch (_) { return null; }
         finally { release(pixels); release(mask); release(radii); release(geometry); }
     }
-    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, available: () => !!core });
+    function inkRepair(rendered, radii, coverage, width, height, capacity = 12000) {
+        if (!core?.ink_repair_discs || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+            || width < 2 || height < 2 || width > 4096 || height > 4096 || width*height > 12000000
+            || !Number.isSafeInteger(capacity) || capacity < 0 || capacity > 12000
+            || rendered?.length !== width*height*4 || rendered.byteLength !== width*height*4 || !(radii instanceof Uint16Array) || radii.length !== width*height
+            || !(coverage instanceof Uint8Array) || coverage.length !== width*height) return null;
+        if (!capacity) return {discs: new Float64Array(0), backend:'rust'};
+        let pixels, distance, measured, output;
+        try {
+            pixels=allocation(rendered.byteLength); distance=allocation(radii.byteLength);
+            measured=allocation(coverage.byteLength); output=allocation(capacity*3*8);
+            view(pixels).set(rendered);
+            view(distance).set(new Uint8Array(radii.buffer,radii.byteOffset,radii.byteLength));
+            view(measured).set(coverage);
+            const count=core.ink_repair_discs(pixels.pointer,distance.pointer,measured.pointer,width,height,output.pointer,capacity);
+            if (count<0 || count>capacity) return null;
+            return {discs:new Float64Array(core.memory.buffer,output.pointer,count*3).slice(),backend:'rust'};
+        } catch (_) { return null; }
+        finally { release(pixels); release(distance); release(measured); release(output); }
+    }
+    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair, available: () => !!core });
 })(globalThis);

@@ -58,7 +58,7 @@ test('photographed cursive keeps the shape of small letters, hooks and counters'
         }
         rows.push({ f1: 2 * intersection / (2 * intersection + extra + absent), missing: missed / total });
       }
-      results.push({ backend: ink.backend, elapsedMs, rows, strokes: ink.strokes.length, shape: JSON.stringify(ink.strokes) });
+      results.push({ backend: ink.backend, elapsedMs, rows, strokes: ink.strokes.length, repairCount: ink.repairCount, repairBackend: ink.repairBackend, points: ink.strokes.reduce((sum, stroke) => sum + stroke.points.length, 0), shape: JSON.stringify(ink.strokes) });
     }
     const parity = results[0].shape === results[1].shape;
     for (const result of results) delete result.shape;
@@ -74,6 +74,11 @@ test('photographed cursive keeps the shape of small letters, hooks and counters'
       expect(row.f1, `${result.backend}, pen ${i}: silhouette`).toBeGreaterThan(minimumF1[i]);
       expect(row.missing, `${result.backend}, pen ${i}: missing ink`).toBeLessThan(maximumMissing[i]);
     });
-    expect(result.strokes, 'no explosion of tiny artificial pens').toBeLessThan(550);
+    // Keep the original bound on traced branches. Source-supported discs
+    // recover varying widths as separate native pens, with their own budget.
+    expect(result.strokes - result.repairCount, 'no explosion of traced branches').toBeLessThan(550);
+    expect(result.repairCount, 'bounded repairs for 48 handwritten glyphs').toBeLessThan(48 * 16);
+    expect(result.strokes).toBeLessThan(550 + 48 * 16);
+    expect(result.points, 'native editing stays compact').toBeLessThan(15000);
   }
 });

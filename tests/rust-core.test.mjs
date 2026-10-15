@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 const bytes=await readFile(new URL('../wasm/inhouse_notes_core.wasm',import.meta.url));
-const scope={WebAssembly,Uint8Array,Float32Array,URL,location:new URL('https://notes.test/'),fetch:async()=>new Response(bytes),console,AbortSignal,AbortController,setTimeout,clearTimeout};
+const scope={WebAssembly,Uint8Array,Uint16Array,Float32Array,URL,location:new URL('https://notes.test/'),fetch:async()=>new Response(bytes),console,AbortSignal,AbortController,setTimeout,clearTimeout};
 vm.createContext(scope);vm.runInContext(await readFile(new URL('../rust-core-v5.js',import.meta.url),'utf8'),scope);
 await scope.InhouseRust.ready;
 test('Rust core loads with no host imports',async()=>{
@@ -139,5 +139,6 @@ test('a cached core without measured coverage or neutral calibration requests th
     assert.equal(legacy.InhouseRust.scanColors(pixels,pixels,2,2,new Float32Array(4),null,2,2,new Float64Array(61),coverage,new Float32Array(4)),null);
     assert.equal(legacy.InhouseRust.inkAxes(pixels,2,2,coverage),null);
     assert.equal(legacy.InhouseRust.balancePaper(pixels,2,2,new Float32Array(8),2,2,new Float32Array(16)),null);
+    assert.equal(legacy.InhouseRust.inkRepair(pixels,new Uint16Array(4),coverage,2,2),null);
     assert.equal(allocations,0);
 });
