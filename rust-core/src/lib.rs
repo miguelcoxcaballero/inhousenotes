@@ -220,7 +220,12 @@ pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width
             let deficit=local-lum;
             if let Some(values)=geometry.as_mut() { values[y*width+x]=(255.0*deficit/local.max(40.0)).clamp(0.0,255.0).round() as u8; }
             let has_ink=!observed||deficit>(p[3]*1.5).max(local*0.025);
-            let colored=has_ink&&(sat>0.18||(sat>0.105&&deficit>6.0_f64.max(local*0.035)));
+            // Saturation alone makes a small additive lamp/sensor bias on
+            // dark black ink look blue or red. Require selective absorption
+            // relative to the measured paper-to-ink contrast, before pigment
+            // calibration can amplify that bias.
+            let colored=has_ink&&(max-min)>(p[3]*2.0).max(deficit*0.22)
+                &&(sat>0.18||(sat>0.105&&deficit>6.0_f64.max(local*0.035)));
             if observed&&!colored&&lum>=local-p[3].max(local*0.0075) {out[i]=255;out[i+1]=255;out[i+2]=255;continue;}
             let neutral=observed&&!colored;let black=neutral&&(lum<local*0.16||(draw>0.85&&lum<local*0.26));
             let automatic=if neutral {[0.0;3]} else {[(r*p[4]).clamp(0.0,255.0),(g*p[5]).clamp(0.0,255.0),(b*p[6]).clamp(0.0,255.0)]};
