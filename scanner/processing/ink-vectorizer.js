@@ -31,23 +31,46 @@
     // a blurred letter in an enlarged scan. Retain the measured core instead
     // of closing small counters with the colour/JPEG fringe.
     const initial=mask.slice();
+    const cross=Math.max(1,Math.round(width/794*.75));
+    const transverse=(x,y,alpha)=>{
+      for(const [dx,dy] of [[1,0],[0,1],[1,1],[1,-1]]){
+        if(x-reach*Math.abs(dx)-cross*Math.abs(dy)<1||x+reach*Math.abs(dx)+cross*Math.abs(dy)>=width-1
+          ||y-reach*Math.abs(dy)-cross*Math.abs(dx)<1||y+reach*Math.abs(dy)+cross*Math.abs(dx)>=height-1)continue;
+        // Ink must continue along the tangent, not form a lone JPEG bump.
+        const before=alphaAt((y-dx*cross)*width+x+dy*cross),after=alphaAt((y+dx*cross)*width+x-dy*cross);
+        if(Math.min(before,after)<alpha*.4)continue;
+        let peak=alpha,at=0;
+        for(let d=-cross;d<=cross;d++){
+          const v=alphaAt((y+dy*d)*width+x+dx*d);if(v>peak){peak=v;at=d;}
+        }
+        if(alpha*100<peak*65)continue;
+        let left=peak,right=peak;
+        for(let d=at-1;d>=-reach;d--){const v=alphaAt((y+dy*d)*width+x+dx*d);if(v>left+2)break;left=Math.min(left,v);}
+        for(let d=at+1;d<=reach;d++){const v=alphaAt((y+dy*d)*width+x+dx*d);if(v>right+2)break;right=Math.min(right,v);}
+        if(Math.max(left,right)<peak*.45&&peak-Math.max(left,right)>=6)return true;
+      }
+      return false;
+    };
+    const core=new Uint8Array(n);
     for(let y=1;y<height-1;y++)for(let x=1;x<width-1;x++){
       const i=y*width+x;if(!initial[i])continue;
       const alpha=alphaAt(i);let peak=alpha;
       for(let yy=Math.max(0,y-reach);yy<=Math.min(height-1,y+reach);yy++)for(let xx=Math.max(0,x-reach);xx<=Math.min(width-1,x+reach);xx++){
         peak=Math.max(peak,alphaAt(yy*width+xx));
       }
-      if(alpha*100<peak*(coverage?65:60))mask[i]=0;
+      if(alpha*100>=peak*(coverage?65:60))core[i]=1;
+      else if(!transverse(x,y,alpha))mask[i]=0;
     }
     await yieldTask();check(signal);
     const seen=new Uint8Array(n), queue=[],anchors=[];let active=[];
     for(let start=0;start<n;start++){
       if(!mask[start]||seen[start])continue;
       queue.length=0;queue.push(start);seen[start]=1;
-      let head=0,peak=0;
-      while(head<queue.length){const i=queue[head++];peak=Math.max(peak,rgba[i*4+3]);
+      let head=0,peak=0,anchored=false,minX=width,maxX=0,minY=height,maxY=0;
+      while(head<queue.length){const i=queue[head++];peak=Math.max(peak,rgba[i*4+3]);anchored ||= !!core[i];
+        minX=Math.min(minX,i%width);maxX=Math.max(maxX,i%width);minY=Math.min(minY,Math.floor(i/width));maxY=Math.max(maxY,Math.floor(i/width));
         for(const delta of offsets){const j=i+delta;if(!seen[j]&&mask[j]!==0){seen[j]=1;queue.push(j);}}}
-      if(peak<24||(queue.length===1&&peak<90)){for(const i of queue)mask[i]=0;}
+      if(peak<24||(queue.length===1&&peak<90)||(!anchored&&Math.max(maxX-minX,maxY-minY)<Math.max(4,width/794*3))){for(const i of queue)mask[i]=0;}
       else {
         for(const i of queue){active.push(i);radii[i]=12000;}
         if(queue.length<=32){
@@ -64,6 +87,17 @@
       const j=i+delta;radii[i]=Math.min(radii[i],mask[j]!==0?radii[j]+cost:cost);}
     for(let i=n-1;i>=0;i--)if(mask[i])for(const [delta,cost] of [[1,3],[width,3],[width+1,4],[width-1,4]]){
       const j=i+delta;radii[i]=Math.min(radii[i],mask[j]!==0?radii[j]+cost:cost);}
+    // Anchor supported tips before thinning can consume diagonal caps. New
+    // corners created during thinning must remain free to collapse.
+    for(const i of active){
+      let count=0,peak=0,dx=0,dy=0;
+      for(const delta of offsets)if(mask[i+delta]){const j=i+delta;count++;peak=Math.max(peak,alphaAt(j));dx+=j%width-i%width;dy+=Math.floor(j/width)-Math.floor(i/width);}
+      if(count!==2||alphaAt(i)<peak)continue;
+      const length=Math.hypot(dx,dy),distance=Math.max(2,width/794*2);
+      if(!length)continue;
+      const x=Math.round(i%width+dx/length*distance),y=Math.round(Math.floor(i/width)+dy/length*distance);
+      if(x>0&&x<width-1&&y>0&&y<height-1&&alphaAt(y*width+x)>=alphaAt(i)*.5)seen[i]=1;
+    }
     const p=new Uint8Array(8),remove=[];let work=0;
     for(;;){let changed=false;
       for(let phase=0;phase<2;phase++){
@@ -117,9 +151,9 @@
     if(points.length<5)return points;
     const closed=points[0].x===points.at(-1).x&&points[0].y===points.at(-1).y;
     const count=points.length-(closed?1:0);
-    const sigma=Math.max(.65*scale,Math.min(scale,penWidth*.4));
+    const sigma=Math.max(.35*scale,Math.min(.55*scale,penWidth*.25));
     const radius=Math.ceil(sigma*2.5),cornerSpan=Math.max(2,Math.round(scale*3));
-    const maximumMove=Math.min(.55*scale,penWidth*.3);
+    const maximumMove=Math.min(.25*scale,penWidth*.15);
     const pointAt=i=>points[closed?(i%count+count)%count:Math.max(0,Math.min(count-1,i))];
     const smoothed=points.slice(0,count).map((p,i)=>{
       if(!closed&&(i===0||i===count-1))return p;
@@ -253,7 +287,7 @@
           }
           return Math.min(radii[i]*2/3+1,mass/Math.max(1,peak)*.5);
         });
-    const emit=(path,label,fixedWidth)=>{
+    const emit=(path,label,fixedWidth,reference)=>{
       // Split only sustained width changes; never force a thick crossing's
       // local radius onto the entire handwritten line.
       const chunks=[];let begin=0;
@@ -267,11 +301,16 @@
         // underestimates every even-width pen by one pixel (2px became 1px).
         const widths=fixedWidth ? null : measureWidths(chunk).sort((a,b)=>a-b);
         const measured=fixedWidth || Math.max(1,widths[Math.floor(widths.length/2)]);
-        const penWidth=fixedWidth || (measured>=standard*.75&&measured<=standard*1.6?standard:measured);
-        const reduced=simplify(smoothAxis(chunk.map(i=>({x:i%width+.5,y:Math.floor(i/width)+.5})),width/794,penWidth),.18*width/794);
-        const points=[reduced[0]],step=Math.max(1,width/397);
-        // Native partial erasing splits sampled pens. Keep at most two logical
-        // editor pixels between points, even on a perfectly straight line.
+        let penWidth=fixedWidth || (measured>=standard*.75&&measured<=standard*1.6?standard:measured);
+        // Width changes can split a long pen right at a junction. Apply the
+        // same connected-pen reference to that short chunk, not only to the
+        // unsplit path, whose median can conceal an oversized final segment.
+        if(!fixedWidth&&reference&&chunk.length<standard*4&&penWidth>reference*1.4
+          &&(count(edges(chunk[0]))>=3||count(edges(chunk.at(-1)))>=3))penWidth=reference;
+        const reduced=simplify(smoothAxis(chunk.map(i=>({x:i%width+.5,y:Math.floor(i/width)+.5})),width/794,penWidth),.08*width/794);
+        const points=[reduced[0]],step=Math.max(.5,Math.min(width/794,penWidth*.6));
+        // Native rendering and partial erasing use these samples. Keep about
+        // one editor pixel between them, with finer spacing for thin pens.
         for(let j=1;j<reduced.length;j++){
           const a=reduced[j-1],b=reduced[j],n=Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/step);
           for(let k=1;k<=n;k++)points.push({x:a.x+(b.x-a.x)*k/n,y:a.y+(b.y-a.y)*k/n});
@@ -282,8 +321,8 @@
         strokes.push({tool:'pen',color:palette[label-1],width:penWidth,points});
       }
     };
-    const emitColours=(path,coherentColour,fixedWidth)=>{
-      if(coherentColour){emit(path,coherentColour,fixedWidth);return;}
+    const emitColours=(path,coherentColour,fixedWidth,reference)=>{
+      if(coherentColour){emit(path,coherentColour,fixedWidth,reference);return;}
       // Only genuinely mixed red/blue paths need local colour runs.
       const radius=Math.max(2,Math.round(width/794*2));
       const labels=path.map((_,index)=>{
@@ -307,7 +346,7 @@
       for(let k=0;k<runs.length;k++){
         const run=runs[k];let end=run.end;
         while(k+1<runs.length&&runs[k+1].label===run.label)end=runs[++k].end;
-        emit(path.slice(run.start,Math.min(path.length,end+1)),run.label,fixedWidth);
+        emit(path.slice(run.start,Math.min(path.length,end+1)),run.label,fixedWidth,reference);
       }
     };
     const walk=(start,direction)=>{
@@ -386,7 +425,7 @@
         const samples=pathWidths[i].slice().sort((a,b)=>a-b);
         if(samples[Math.floor(samples.length/2)]>reference*1.4)fixedWidth=reference;
       }
-      emitColours(path,colours[i],fixedWidth);
+      emitColours(path,colours[i],fixedWidth,reference);
       if(i%500===499){await yieldTask();check(signal);}
     }
     return strokes;

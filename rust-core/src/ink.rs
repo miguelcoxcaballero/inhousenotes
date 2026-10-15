@@ -25,6 +25,47 @@ fn colour(r: u8, g: u8, b: u8, alpha: u8) -> u8 {
     best.1
 }
 
+// A faint continuation uses its transverse contrast, not the darkest
+// neighbouring letter. Stop at the first valley so the opposite side of a
+// counter cannot be mistaken for background beyond a second stroke.
+fn transverse_ink(
+    x: usize, y: usize, width: usize, height: usize, reach: usize,
+    alpha: f64, sample: &impl Fn(usize) -> u8,
+) -> bool {
+    let (x, y, w, h, r) = (x as isize, y as isize, width as isize, height as isize, reach as isize);
+    let cross = (width as f64 / 794.0 * 0.75).round().max(1.0) as isize;
+    for (dx, dy) in [(1isize, 0isize), (0, 1), (1, 1), (1, -1)] {
+        if x - r * dx.abs() - cross * dy.abs() < 1 || x + r * dx.abs() + cross * dy.abs() >= w - 1
+            || y - r * dy.abs() - cross * dx.abs() < 1 || y + r * dy.abs() + cross * dx.abs() >= h - 1 {
+            continue;
+        }
+        let at = |xx: isize, yy: isize| sample((yy * w + xx) as usize) as f64;
+        let before = at(x + dy * cross, y - dx * cross);
+        let after = at(x - dy * cross, y + dx * cross);
+        if before.min(after) < alpha * 0.4 { continue; }
+        let mut peak = alpha;
+        let mut centre = 0;
+        for d in -cross..=cross {
+            let value = at(x + dx * d, y + dy * d);
+            if value > peak { peak = value; centre = d; }
+        }
+        if alpha * 100.0 < peak * 65.0 { continue; }
+        let (mut left, mut right) = (peak, peak);
+        for d in (-r..centre).rev() {
+            let value = at(x + dx * d, y + dy * d);
+            if value > left + 2.0 { break; }
+            left = left.min(value);
+        }
+        for d in centre + 1..=r {
+            let value = at(x + dx * d, y + dy * d);
+            if value > right + 2.0 { break; }
+            right = right.min(value);
+        }
+        if left.max(right) < peak * 0.45 && peak - left.max(right) >= 6.0 { return true; }
+    }
+    false
+}
+
 /// All buffers belong to the private host adapter; dimensions are checked there
 /// and here. Zero means invalid, one complete (including a blank page), two
 /// means the ink complexity exceeded the bounded processing budget.
@@ -76,6 +117,7 @@ pub unsafe extern "C" fn ink_axes(
     // Page-scaled support and a measured core preserve small letter counters.
     // A fixed 7px window was smaller than the blur in an enlarged photograph.
     let initial = mask.to_vec();
+    let mut core = vec![false; n];
     for y in 1..height - 1 {
         for x in 1..width - 1 {
             let i = y * width + x;
@@ -89,7 +131,9 @@ pub unsafe extern "C" fn ink_axes(
                     peak = peak.max(alpha_at(yy * width + xx) as u32);
                 }
             }
-            if alpha * 100 < peak * if geometry.is_some() { 65 } else { 60 } {
+            if alpha * 100 >= peak * if geometry.is_some() { 65 } else { 60 } {
+                core[i] = true;
+            } else if !transverse_ink(x, y, width, height, reach, alpha as f64, &alpha_at) {
                 mask[i] = 0;
             }
         }
@@ -117,10 +161,15 @@ pub unsafe extern "C" fn ink_axes(
         seen[start] = true;
         let mut head = 0;
         let mut peak = 0;
+        let mut anchored = false;
+        let (mut min_x, mut max_x, mut min_y, mut max_y) = (width, 0, height, 0);
         while head < queue.len() {
             let i = queue[head];
             head += 1;
             peak = peak.max(rgba[i * 4 + 3]);
+            anchored |= core[i];
+            min_x = min_x.min(i % width); max_x = max_x.max(i % width);
+            min_y = min_y.min(i / width); max_y = max_y.max(i / width);
             for delta in offsets {
                 let j = (i as isize + delta) as usize;
                 if !seen[j] && mask[j] != 0 {
@@ -130,7 +179,8 @@ pub unsafe extern "C" fn ink_axes(
             }
         }
         // Retain punctuation and faint pencil; isolated JPEG dust has no core.
-        if peak < 24 || (queue.len() == 1 && peak < 90) {
+        if peak < 24 || (queue.len() == 1 && peak < 90)
+            || (!anchored && ((max_x - min_x).max(max_y - min_y) as f64) < 4.0_f64.max(width as f64 / 794.0 * 3.0)) {
             for &i in &queue {
                 mask[i] = 0;
             }
@@ -189,6 +239,31 @@ pub unsafe extern "C" fn ink_axes(
     // Thin the whole ink silhouette once. Colour boundaries are not pen edges:
     // thinning each hue separately creates the rainbow outlines of a scan.
     let mut remove = Vec::new();
+    // Anchor supported tips in the measured silhouette before thinning can
+    // consume diagonal caps. Do not anchor new corners created by thinning.
+    for &i in &active {
+        let (mut count, mut peak) = (0, 0);
+        let (mut dx, mut dy) = (0isize, 0isize);
+        for delta in offsets {
+            let j = (i as isize + delta) as usize;
+            if mask[j] != 0 {
+                count += 1; peak = peak.max(alpha_at(j));
+                dx += (j % width) as isize - (i % width) as isize;
+                dy += (j / width) as isize - (i / width) as isize;
+            }
+        }
+        if count != 2 || alpha_at(i) < peak { continue; }
+        let length = (dx as f64).hypot(dy as f64);
+        let distance = (width as f64 / 794.0 * 2.0).max(2.0);
+        if length == 0.0 { continue; }
+        let x = (i % width) as f64 + dx as f64 / length * distance;
+        let y = (i / width) as f64 + dy as f64 / length * distance;
+        let (x, y) = (x.round() as isize, y.round() as isize);
+        if x > 0 && x < width as isize - 1 && y > 0 && y < height as isize - 1
+            && alpha_at(y as usize * width + x as usize) as f64 >= alpha_at(i) as f64 * 0.5 {
+            seen[i] = true;
+        }
+    }
     let mut work = 0usize;
     loop {
         let mut changed = false;
