@@ -35,6 +35,7 @@ pub unsafe extern "C" fn ink_axes(
     height: usize,
     output: *mut u8,
     radii: *mut u16,
+    coverage: *const u8,
 ) -> u32 {
     if input.is_null()
         || output.is_null()
@@ -49,6 +50,9 @@ pub unsafe extern "C" fn ink_axes(
     }
     let n = width * height;
     let rgba = std::slice::from_raw_parts(input, n * 4);
+    let geometry = if coverage.is_null() { None } else { Some(std::slice::from_raw_parts(coverage, n)) };
+    let alpha_at = |i: usize| if rgba[i*4+3] < 16 { 0 } else { geometry.map_or(rgba[i*4+3], |values| values[i]) };
+    let reach = ((width as f64 / 794.0 * 2.5).ceil() as usize).clamp(3, 8);
     let mask = std::slice::from_raw_parts_mut(output, n);
     let dist = std::slice::from_raw_parts_mut(radii, n);
     mask.fill(0);
@@ -57,7 +61,7 @@ pub unsafe extern "C" fn ink_axes(
     for y in 1..height - 1 {
         for x in 1..width - 1 {
             let i = y * width + x;
-            if rgba[i * 4 + 3] >= 16 {
+            if alpha_at(i) >= if geometry.is_some() { 8 } else { 16 } {
                 mask[i] = colour(
                     rgba[i * 4],
                     rgba[i * 4 + 1],
@@ -69,6 +73,8 @@ pub unsafe extern "C" fn ink_axes(
     }
     // Use local coverage rather than an absolute dark threshold: faint pencil
     // survives, while low-coverage JPEG fringes cannot become extra black pens.
+    // Page-scaled support and a measured core preserve small letter counters.
+    // A fixed 7px window was smaller than the blur in an enlarged photograph.
     let initial = mask.to_vec();
     for y in 1..height - 1 {
         for x in 1..width - 1 {
@@ -76,14 +82,14 @@ pub unsafe extern "C" fn ink_axes(
             if initial[i] == 0 {
                 continue;
             }
-            let alpha = rgba[i * 4 + 3] as u32;
+            let alpha = alpha_at(i) as u32;
             let mut peak = alpha;
-            for yy in y.saturating_sub(3)..=(y + 3).min(height - 1) {
-                for xx in x.saturating_sub(3)..=(x + 3).min(width - 1) {
-                    peak = peak.max(rgba[(yy * width + xx) * 4 + 3] as u32);
+            for yy in y.saturating_sub(reach)..=(y + reach).min(height - 1) {
+                for xx in x.saturating_sub(reach)..=(x + reach).min(width - 1) {
+                    peak = peak.max(alpha_at(yy * width + xx) as u32);
                 }
             }
-            if alpha * 100 < peak * 35 {
+            if alpha * 100 < peak * if geometry.is_some() { 65 } else { 60 } {
                 mask[i] = 0;
             }
         }

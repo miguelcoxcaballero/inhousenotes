@@ -169,11 +169,12 @@ fn reference_map(rgb:[f64;3],p:&[f64],kind:usize)->Option<([f64;3],f64)> {
 /// exact stencil geometry. Row ranges keep main-thread fallback cancellable.
 #[no_mangle]
 pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width:usize,height:usize,
-    field:*const f32,mask:*const u8,fw:usize,fh:usize,parameters:*const f64,from:usize,to:usize) {
+    field:*const f32,mask:*const u8,fw:usize,fh:usize,parameters:*const f64,from:usize,to:usize,coverage:*mut u8) {
     if data.is_null()||original.is_null()||field.is_null()||parameters.is_null()||width==0||height==0||fw==0||fh==0||width>16384||height>16384{return;}
     let out=std::slice::from_raw_parts_mut(data,width*height*4);
     let raw=std::slice::from_raw_parts(original,width*height*4);
     let light=std::slice::from_raw_parts(field,fw*fh);let p=std::slice::from_raw_parts(parameters,61);
+    let mut geometry=if coverage.is_null(){None}else{Some(std::slice::from_raw_parts_mut(coverage,width*height))};
     let drawing=if mask.is_null(){None}else{Some(std::slice::from_raw_parts(mask,fw*fh))};
     let precise=p[0]!=0.0;let stencil=p[1]!=0.0;let observed=p[2]!=0.0;let px=width as f64/21.0;let band=px*0.12;
     let columns:Vec<(usize,usize,f64,u8)>= (0..width).map(|x| {
@@ -193,7 +194,9 @@ pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width
         let fy=if observed {((yy+0.5)*fh as f64/height as f64-0.5).clamp(0.0,(fh-1) as f64)} else {(yy*(fh-1) as f64/(height-1).max(1) as f64).round()};
         let iy=fy.floor() as usize;let ny=(iy+1).min(fh-1);let my=fy-iy as f64;
         for x in 0..width {
-            let i=(y*width+x)*4;let r=out[i] as f64;let g=out[i+1] as f64;let b=out[i+2] as f64;let (ix,nx,mx,flags)=columns[x];
+            let i=(y*width+x)*4;
+            if let Some(values)=geometry.as_mut() { values[y*width+x]=0; }
+            let r=out[i] as f64;let g=out[i+1] as f64;let b=out[i+2] as f64;let (ix,nx,mx,flags)=columns[x];
             let max=r.max(g).max(b);let min=r.min(g).min(b);let sat=if max>0.0{(max-min)/max}else{0.0};let lum=r*0.2126+g*0.7152+b*0.0722;
             let outer=flags&1!=0||outer_row;
             let margin=flags&2!=0||margin_row;
@@ -215,6 +218,7 @@ pub unsafe extern "C" fn correct_scan_rows(data:*mut u8,original:*const u8,width
                     let lower=values[ny*fw+ix] as f64*(1.0-mx)+values[ny*fw+nx] as f64*mx;draw=(upper*(1.0-my)+lower*my)/255.0;}
             }
             let deficit=local-lum;
+            if let Some(values)=geometry.as_mut() { values[y*width+x]=(255.0*deficit/local.max(40.0)).clamp(0.0,255.0).round() as u8; }
             let has_ink=!observed||deficit>(p[3]*1.5).max(local*0.025);
             let colored=has_ink&&(sat>0.18||(sat>0.105&&deficit>6.0_f64.max(local*0.035)));
             if observed&&!colored&&lum>=local-p[3].max(local*0.0075) {out[i]=255;out[i+1]=255;out[i+2]=255;continue;}

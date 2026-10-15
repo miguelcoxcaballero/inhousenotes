@@ -121,3 +121,17 @@ test('local paper balance removes a measured cast without changing coverage or n
     assert.deepEqual([...out.slice(28,32)],[...input.slice(28,32)]);
     assert.equal(scope.InhouseRust.balancePaper(input,width,height,new Float32Array(4),4,1),null);
 });
+
+test('a cached core without measured coverage requests the safe JS fallback',async()=>{
+    let allocations=0;
+    const exports={core_abi_version:()=>1,alloc(){allocations++;throw new Error('Legacy core cannot measure ink');}};
+    exports.correct_scan_rows=function(a,b,c,d,e,f,g,h,i,j,k){};
+    exports.ink_axes=function(a,b,c,d,e){};
+    const legacy={...scope,WebAssembly:{instantiate:async()=>({instance:{exports}})}};
+    vm.createContext(legacy);vm.runInContext(await readFile(new URL('../rust-core-v5.js',import.meta.url),'utf8'),legacy);
+    await legacy.InhouseRust.ready;
+    const pixels=new Uint8Array(16),coverage=new Uint8Array(4);
+    assert.equal(legacy.InhouseRust.scanColors(pixels,pixels,2,2,new Float32Array(4),null,2,2,new Float64Array(61),coverage),null);
+    assert.equal(legacy.InhouseRust.inkAxes(pixels,2,2,coverage),null);
+    assert.equal(allocations,0);
+});
