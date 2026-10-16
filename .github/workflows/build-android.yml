@@ -62,36 +62,44 @@ jobs:
 
       - name: Verify APK exists
         run: |
-          test -s inhouse-notes-release-v1.0.20.apk
-          ls -lh inhouse-notes-release-v1.0.20.apk
+          test -s inhouse-notes-release-v1.0.21.apk
+          ls -lh inhouse-notes-release-v1.0.21.apk
 
       - name: Verify signed APK and signing continuity
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/previous-apk"
-          gh release download android-v1.0.19 --pattern inhouse-notes-release-v1.0.19.apk --dir "$RUNNER_TEMP/previous-apk"
-          python .github/scripts/verify_release_apk.py inhouse-notes-release-v1.0.20.apk "$RUNNER_TEMP/previous-apk/inhouse-notes-release-v1.0.19.apk"
+          gh release download android-v1.0.20 --pattern inhouse-notes-release-v1.0.20.apk --dir "$RUNNER_TEMP/previous-apk"
+          python .github/scripts/verify_release_apk.py inhouse-notes-release-v1.0.21.apk "$RUNNER_TEMP/previous-apk/inhouse-notes-release-v1.0.20.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: inhouse-notes-android-v1.0.20
-          path: inhouse-notes-release-v1.0.20.apk
+          name: inhouse-notes-android-v1.0.21
+          path: inhouse-notes-release-v1.0.21.apk
           if-no-files-found: error
 
+
+      - name: Require passing shared Android installation tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          updater_revision="$(python -c 'import json; print(json.load(open("inhouse-updater.lock.json"))["revision"])')"
+          passed="$(gh api "repos/miguelcoxcaballero/inhouse-services-updater/actions/workflows/android-session.yml/runs?head_sha=$updater_revision&status=success&per_page=1" --jq '.total_count')"
+          test "$passed" -gt 0
 
       - name: Publish versioned APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.20 >/dev/null 2>&1; then
+          if gh release view android-v1.0.21 >/dev/null 2>&1; then
             echo "La versión ya está publicada; incrementa versionName/versionCode antes de generar otra APK."
             exit 1
           else
-            gh release create android-v1.0.20 inhouse-notes-release-v1.0.20.apk \
+            gh release create android-v1.0.21 inhouse-notes-release-v1.0.21.apk \
               --target "$GITHUB_SHA" \
-              --title "Inhouse Notes Android 1.0.20" \
+              --title "Inhouse Notes Android 1.0.21" \
               --notes "Reliable in-app Android installation." \
               --prerelease --latest=false
           fi
@@ -101,9 +109,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/public-apk"
-          gh release download android-v1.0.20 --pattern inhouse-notes-release-v1.0.20.apk --dir "$RUNNER_TEMP/public-apk"
-          cmp inhouse-notes-release-v1.0.20.apk "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.20.apk"
-          python .github/scripts/verify_release_apk.py "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.20.apk" "$RUNNER_TEMP/previous-apk/inhouse-notes-release-v1.0.19.apk"
+          gh release download android-v1.0.21 --pattern inhouse-notes-release-v1.0.21.apk --dir "$RUNNER_TEMP/public-apk"
+          cmp inhouse-notes-release-v1.0.21.apk "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.21.apk"
+          python .github/scripts/verify_release_apk.py "$RUNNER_TEMP/public-apk/inhouse-notes-release-v1.0.21.apk" "$RUNNER_TEMP/previous-apk/inhouse-notes-release-v1.0.20.apk"
 
       # Catalogs are committed with the next visible web version only after the
       # exact public APK is verified. Never create an unversioned main commit.
