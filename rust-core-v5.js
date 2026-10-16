@@ -1,0 +1,186 @@
+/* Small, optional Rust/WASM adapter. No document or network state enters Rust. */
+(function (root) {
+    'use strict';
+    const scriptUrl = typeof document !== 'undefined' && document.currentScript?.src;
+    const base = scriptUrl || new URL(root.location.pathname.includes('/scanner/') ? '../../rust-core-v5.js' : 'rust-core-v5.js', root.location.href).href;
+    const url = new URL('wasm/inhouse_notes_core.wasm', base);
+    url.search = new URL(scriptUrl || root.location.href).search;
+    url.searchParams.delete('native');
+    if(root.InhouseAssetUrl)url.search=new URL(root.InhouseAssetUrl(url.href)).search;
+    let core = null;
+    const ready = (async () => {
+        try {
+            if (typeof WebAssembly === 'undefined') return false;
+            const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+            if (!response.ok) return false;
+            const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), {});
+            if (instance.exports.core_abi_version() !== 1) return false;
+            core = instance.exports;
+            return true;
+        } catch (_) { return false; }
+    })();
+    function allocation(bytes) {
+        if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > 128 * 1024 * 1024) throw new RangeError('Pixel allocation too large');
+        const pointer = core.alloc(bytes);
+        if (!pointer) throw new Error('Pixel allocation failed');
+        return { pointer, bytes };
+    }
+    function view(block) { return new Uint8Array(core.memory.buffer, block.pointer, block.bytes); }
+    function release(block) { if (block) core.free(block.pointer, block.bytes); }
+    function warp(input, width, height) {
+        if (!core || !input?.data || input.width < 2 || input.height < 2) return null;
+        let source, output;
+        try {
+            source = allocation(input.data.length);
+            output = allocation(width * height * 4);
+            view(source).set(input.data);
+        } catch (_) { release(source); release(output); return null; }
+        let disposed = false;
+        return {
+            cell(left, right, top, bottom, tl, tr, bl, br) {
+                if (disposed) throw new Error('Pixel buffer released');
+                core.warp_cell(source.pointer, input.width, input.height, output.pointer, width, height,
+                    left, right, top, bottom, tl.x, tl.y, tr.x, tr.y, bl.x, bl.y, br.x, br.y);
+            },
+            copyTo(destination) { if (!disposed) destination.set(view(output)); },
+            dispose() { if (!disposed) { disposed = true; release(source); release(output); } }
+        };
+    }
+    function splitRgba(rgba) {
+        if (!core || !rgba?.length || rgba.length % 4) return null;
+        let input, rgb, alpha;
+        try {
+            const pixels = rgba.length / 4;
+            input = allocation(rgba.length); rgb = allocation(pixels * 3); alpha = allocation(pixels);
+            view(input).set(rgba);
+            const transparent = core.split_rgba(input.pointer, rgb.pointer, alpha.pointer, pixels) === 1;
+            return { rgb: view(rgb).slice(), alpha: transparent ? view(alpha).slice() : null, transparent };
+        } catch (_) { return null; }
+        finally { release(input); release(rgb); release(alpha); }
+    }
+    function scanColors(rgba, original, width, height, field, mask, fw, fh, parameters, coverage = null, neutralSupport = null) {
+        // An older cached core cannot produce the optional geometry plane.
+        // Use the JS fallback instead of returning an all-zero ink mask.
+        if (!core?.correct_scan_rows || (coverage && core.correct_scan_rows.length < 12) || (neutralSupport && core.correct_scan_rows.length < 13)
+            || ![width,height,fw,fh].every(value => Number.isSafeInteger(value) && value > 0)
+            || width > 16384 || height > 16384 || rgba.length !== width * height * 4 || original.length !== rgba.length || field.length !== fw * fh
+            || parameters.length !== 61 || (mask && mask.length !== fw * fh) || (coverage && coverage.length !== width * height)
+            || (neutralSupport && (!(neutralSupport instanceof Float32Array) || neutralSupport.length !== fw*fh))) return null;
+        const blocks = [];
+        const copy = array => { const block = allocation(array.byteLength); blocks.push(block);
+            view(block).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)); return block; };
+        try {
+            const data = copy(rgba), raw = copy(original), light = copy(field), drawing = mask ? copy(mask) : null, params = copy(parameters);
+            const geometry = coverage ? copy(coverage) : null, support = neutralSupport ? copy(neutralSupport) : null;
+            let disposed = false;
+            return {
+                rows(from, to) { if (!disposed) core.correct_scan_rows(data.pointer, raw.pointer, width, height,
+                    light.pointer, drawing?.pointer || 0, fw, fh, params.pointer, from, to, geometry?.pointer || 0, support?.pointer || 0); },
+                copyTo(destination) { if (!disposed) { destination.set(view(data)); if (geometry) coverage.set(view(geometry)); } },
+                dispose() { if (!disposed) { disposed = true; blocks.forEach(release); } }
+            };
+        } catch (_) { blocks.forEach(release); return null; }
+    }
+    function balancePaper(rgba, width, height, white, fw, fh, neutral = null) {
+        if (!core?.balance_paper_rows || (neutral && core.balance_paper_rows.length < 9) || ![width,height,fw,fh].every(v => Number.isSafeInteger(v) && v > 0)
+            || width > 16384 || height > 16384 || rgba.length !== width*height*4
+            || !(white instanceof Float32Array) || white.length !== fw*fh*2
+            || (neutral && (!(neutral instanceof Float32Array) || neutral.length !== fw*fh*4))) return null;
+        let data, field, grey;
+        try {
+            data = allocation(rgba.byteLength); field = allocation(white.byteLength);
+            view(data).set(rgba); view(field).set(new Uint8Array(white.buffer,white.byteOffset,white.byteLength));
+            if (neutral) { grey=allocation(neutral.byteLength); view(grey).set(new Uint8Array(neutral.buffer,neutral.byteOffset,neutral.byteLength)); }
+            let disposed = false;
+            return {
+                rows(from,to) { if (!disposed) core.balance_paper_rows(data.pointer,width,height,field.pointer,fw,fh,from,to,grey?.pointer || 0); },
+                copyTo(destination) { if (!disposed) destination.set(view(data)); },
+                dispose() { if (!disposed) { disposed=true; release(data); release(field); release(grey); } }
+            };
+        } catch (_) { release(data); release(field); release(grey); return null; }
+    }
+    function separateInk(rgba) {
+        if (!core?.separate_ink || !rgba?.length || rgba.length % 4) return false;
+        let pixels;
+        try { pixels = allocation(rgba.length); view(pixels).set(rgba);
+            core.separate_ink(pixels.pointer, rgba.length / 4); rgba.set(view(pixels)); return true;
+        } catch (_) { return false; }
+        finally { release(pixels); }
+    }
+    function surfaceFit(parameters, points, width, height, frame, guides = [], preserveEnds = false) {
+        if (!core?.surface_fit_new || parameters.length < 10 || parameters.length > 32 || (parameters.length - 8) % 2
+            || points.length > 4500 || guides.length > 160 || !Number.isFinite(width) || !Number.isFinite(height)
+            || width <= 0 || height <= 0) return null;
+        const paths = [], offsets = [0];
+        if (frame) for (const name of ['top','right','bottom','left']) {
+            const path = frame.paths?.[name];
+            if (!path || path.length < 2 || path.length > 1024) return null;
+            path.forEach(point => paths.push(point.x, point.y)); offsets.push(paths.length / 2);
+        }
+        else offsets.push(0,0,0,0);
+        const inputs = [new Float64Array(parameters), new Float64Array(points.flatMap(point => [point.u,point.v,point.x,point.y])),
+            new Float64Array(paths), new Uint32Array(offsets),
+            new Float64Array(guides.flatMap(guide => [guide.u,guide.v,guide.x,guide.y,guide.du,guide.dv,guide.tx,guide.ty]))];
+        if (inputs.some(array => !array.every(Number.isFinite))) return null;
+        const blocks = []; let context = 0;
+        try {
+            for (const input of inputs) {
+                const block = allocation(Math.max(8,input.byteLength)); blocks.push(block);
+                view(block).set(new Uint8Array(input.buffer,input.byteOffset,input.byteLength));
+            }
+            const info = allocation(16); blocks.push(info);
+            context = core.surface_fit_new(blocks[0].pointer,parameters.length,blocks[1].pointer,points.length,
+                blocks[2].pointer,paths.length/2,blocks[3].pointer,blocks[4].pointer,guides.length,width,height,+preserveEnds);
+            if (!context) throw new Error('Surface input rejected');
+            let disposed = false;
+            return {
+                step() { return !disposed && core.surface_fit_step(context,1) === 1; },
+                result() {
+                    if (disposed) return null;
+                    core.surface_fit_result(context,blocks[0].pointer,info.pointer);
+                    const values = new Float64Array(core.memory.buffer,info.pointer,2);
+                    return {p:Array.from(new Float64Array(core.memory.buffer,blocks[0].pointer,parameters.length)),cost:values[0],iterations:values[1],backend:'rust'};
+                },
+                dispose() { if (!disposed) { disposed=true; core.surface_fit_drop(context); blocks.forEach(release); } }
+            };
+        } catch (_) { if (context) core.surface_fit_drop(context); blocks.forEach(release); return null; }
+    }
+    function inkAxes(rgba, width, height, coverage = null) {
+        if (!core?.ink_axes || (coverage && (core.ink_axes.length < 6 || core.ink_geometry_version?.() !== 2))
+            || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+            || width < 2 || height < 2 || width > 4096 || height > 4096 || width*height > 12000000
+            || rgba?.length !== width*height*4 || (coverage && coverage.length !== width*height)) return null;
+        let pixels, mask, radii, geometry;
+        try {
+            pixels=allocation(rgba.length); mask=allocation(width*height); radii=allocation(width*height*2);
+            view(pixels).set(rgba);
+            if (coverage) { geometry=allocation(coverage.length); view(geometry).set(coverage); }
+            const status=core.ink_axes(pixels.pointer,width,height,mask.pointer,radii.pointer,geometry?.pointer || 0);
+            if (status===2) return {rejected:true};
+            if (status!==1) return null;
+            return {mask:view(mask).slice(), radii:new Uint16Array(core.memory.buffer,radii.pointer,width*height).slice(), backend:'rust'};
+        } catch (_) { return null; }
+        finally { release(pixels); release(mask); release(radii); release(geometry); }
+    }
+    function inkRepair(rendered, radii, coverage, width, height, capacity = 12000) {
+        if (!core?.ink_repair_discs || !Number.isSafeInteger(width) || !Number.isSafeInteger(height)
+            || width < 2 || height < 2 || width > 4096 || height > 4096 || width*height > 12000000
+            || !Number.isSafeInteger(capacity) || capacity < 0 || capacity > 12000
+            || rendered?.length !== width*height*4 || rendered.byteLength !== width*height*4 || !(radii instanceof Uint16Array) || radii.length !== width*height
+            || !(coverage instanceof Uint8Array) || coverage.length !== width*height) return null;
+        if (!capacity) return {discs: new Float64Array(0), backend:'rust'};
+        let pixels, distance, measured, output;
+        try {
+            pixels=allocation(rendered.byteLength); distance=allocation(radii.byteLength);
+            measured=allocation(coverage.byteLength); output=allocation(capacity*3*8);
+            view(pixels).set(rendered);
+            view(distance).set(new Uint8Array(radii.buffer,radii.byteOffset,radii.byteLength));
+            view(measured).set(coverage);
+            const count=core.ink_repair_discs(pixels.pointer,distance.pointer,measured.pointer,width,height,output.pointer,capacity);
+            if (count<0 || count>capacity) return null;
+            return {discs:new Float64Array(core.memory.buffer,output.pointer,count*3).slice(),backend:'rust'};
+        } catch (_) { return null; }
+        finally { release(pixels); release(distance); release(measured); release(output); }
+    }
+    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair, available: () => !!core });
+})(globalThis);

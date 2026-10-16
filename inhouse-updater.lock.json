@@ -1,0 +1,104 @@
+{
+  "repository": "miguelcoxcaballero/inhouse-services-updater",
+  "revision": "a69e52320f9c5f3c6e817282a317d8e0c9a83f1e",
+  "version": "1.2.4",
+  "appId": "notes",
+  "files": {
+    "vendor/inhouse-services-updater/web/host.css": {
+      "source": "web/host.css",
+      "sha256": "954f3217a97bf5a311786b94f996eecbd1b9bd06f05999924dea2925991d9cd3"
+    },
+    "vendor/inhouse-services-updater/web/host.js": {
+      "source": "web/host.js",
+      "sha256": "a89bddc0d8980665d23c01329a40a3e82aaf72b2b94d5059d2acc8bd96018afd"
+    },
+    "vendor/inhouse-services-updater/web/index.html": {
+      "source": "web/index.html",
+      "sha256": "c27f38b2369d59ec9eaf1ff9277d5d4eae677e18ad3adb10682747a75a43ebd9"
+    },
+    "vendor/inhouse-services-updater/web/updater.css": {
+      "source": "web/updater.css",
+      "sha256": "a3959ab6232eb24b7cfa325836c6baee2954de0602a6e784cc13cf52a1f5a82a"
+    },
+    "vendor/inhouse-services-updater/web/updater.js": {
+      "source": "web/updater.js",
+      "sha256": "4f7dd2cb73feaf3261fd874bae2b4b2f7a6a15a2a995f9b5813a196527d7d76a"
+    },
+    "vendor/inhouse-services-updater/android/InstallActivity.java": {
+      "source": "android/InstallActivity.java",
+      "sha256": "1e99f42249db81227261a9f41fe2be6bad48b43e00a230bae1d2db3fcfa960d0"
+    },
+    "vendor/inhouse-services-updater/android/InstallReceiver.java": {
+      "source": "android/InstallReceiver.java",
+      "sha256": "e96ddd9d27dd723479f9de253523e55f4d7ef966c4cf6543e937ad92fbf33a4f"
+    },
+    "vendor/inhouse-services-updater/android/InstallResultPolicy.java": {
+      "source": "android/InstallResultPolicy.java",
+      "sha256": "252a55707ed7cd859434c93bf0edeecd0ba0b1ae402c358d9ab34232b2124e80"
+    },
+    "vendor/inhouse-services-updater/android/InstallState.java": {
+      "source": "android/InstallState.java",
+      "sha256": "f9f308818e31175651fe30552ffd045e25cdbc85a94e037b47a7cc752dc391dc"
+    },
+    "vendor/inhouse-services-updater/android/NativeUpdates.java": {
+      "source": "android/NativeUpdates.java",
+      "sha256": "055a2650ec5df123a50c1946df07c1b91c3f2c6d90d3ebe8a60f4dc45ce24589"
+    },
+    "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt": {
+      "source": "android/PhotosUpdateInstaller.kt",
+      "sha256": "a0ea48a3af1d0b7334c0ff77181e828deecd32fdcf2762372f2042136d56e4ed"
+    },
+    "vendor/inhouse-services-updater/android/UpdateActivity.java": {
+      "source": "android/UpdateActivity.java",
+      "sha256": "5233ec0e4e907ca05c5e637c16052ac50c2fec60bd4a3d4e31d02644cb5834b1"
+    },
+    "vendor/inhouse-services-updater/android/UpdateAssetClient.java": {
+      "source": "android/UpdateAssetClient.java",
+      "sha256": "a0cc200625ae7c9c5cb1f849bb6d656e943204a1c15067ffd6f819b8b78ba4e0"
+    },
+    "vendor/inhouse-services-updater/android/UpdateState.java": {
+      "source": "android/UpdateState.java",
+      "sha256": "27d50ff3ba969991b175da60ce2a7003b343958a9c2b469946466a906704f0fb"
+    },
+    "vendor/inhouse-services-updater/verify.py": {
+      "source": "tools/verify.py",
+      "sha256": "0f18c8bb365d9427ae7ade9111ddace96d2ffe09a394a2384f05d93d2d723724"
+    },
+    "vendor/inhouse-services-updater/catalog.py": {
+      "source": "tools/catalog.py",
+      "sha256": "048c4d00c125474783a88739f4ccc05ab4140669720d1a70fc95a4dda088ab7f"
+    },
+    "vendor/inhouse-services-updater/register_android.py": {
+      "source": "tools/register_android.py",
+      "sha256": "26fdd25d74d24447a46fab33f91e9f581f6c11fb6e9c8ad8e141a559bbac9bbf"
+    },
+    "vendor/inhouse-services-updater/tests/browser.py": {
+      "source": "tests/browser.py",
+      "sha256": "7ca854dadf57b2ce778e0c7488f3d5ed394f198be417ed9df90c61d7ecf3dae5"
+    },
+    "vendor/inhouse-services-updater/AGENTS.md": {
+      "source": "AGENTS.md",
+      "sha256": "08be875d6ce4cf8a51d43c98d5dc0213ead57d701316e6808d8671bcb1d03eb0"
+    },
+    "vendor/inhouse-services-updater/README.md": {
+      "source": "README.md",
+      "sha256": "8c4b3408113e364b022c82be1b97eea5ba866950511cfc71999ef577fed3ad8f"
+    },
+    "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
+      "source": "docs/PROTOCOL.md",
+      "sha256": "cf8b9b00cdfb3cd2401899bf028f41a92465bcd1aa4b38d5bea17f922648495f"
+    },
+    "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
+      "source": "docs/PROVENANCE.md",
+      "sha256": "304bef012d2dc4c914811908bc6c6b7607548f09fe81df2698f235cc7d5dc2da"
+    },
+    "shared/inhouse-services-updater/updater.js": {
+      "source": "web/updater.js",
+      "sha256": "4f7dd2cb73feaf3261fd874bae2b4b2f7a6a15a2a995f9b5813a196527d7d76a"
+    },
+    "shared/inhouse-services-updater/updater.css": {
+      "source": "web/updater.css",
+      "sha256": "a3959ab6232eb24b7cfa325836c6baee2954de0602a6e784cc13cf52a1f5a82a"
+    }
+  }
+}

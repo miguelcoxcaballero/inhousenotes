@@ -1,0 +1,10 @@
+{
+  "version": "1.0.21",
+  "versionCode": 22,
+  "required": true,
+  "apkSizeBytes": 6798264,
+  "apkSha256": "190ef811a74cafee4041b34a30cacb406258b29c2939be31e744a29bd1d63509",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.21/inhouse-notes-release-v1.0.21.apk",
+  "publishedAppVersion": "5.16.4",
+  "releaseNotes": "Reliable in-app Android installation."
+}
