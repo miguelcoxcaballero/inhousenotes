@@ -2,17 +2,37 @@
     'use strict';
     const S=root.InhouseOfflineStore;
     let host, account='', entries=[], documents=new Map(), captureTimer, capturePromise, syncFrame;
-    let initialized=false, resumed=false, cataloguePromise=null;
+    let initialized=false, loaded=false, resumed=false, cataloguePromise=null;
+    let savedViews={};
     const isWorker=new URLSearchParams(location.search).has('offline-worker');
     const folderType='application/vnd.google-apps.folder';
-    const offline=()=>navigator.onLine===false;
+    let disconnected=false;
+    try {disconnected=sessionStorage.getItem('ihn-network-offline')==='1';}catch(_){}
+    const offline=()=>navigator.onLine===false||disconnected;
+    function connectivity(value) {
+        const changed=disconnected!==!value;disconnected=!value;
+        try {sessionStorage.setItem('ihn-network-offline',disconnected?'1':'0');}catch(_){}
+        if(changed)host?.connectionChanged?.(value);
+        if(changed&&loaded) {reload().then(()=>host.refreshed?.()).catch(()=>{});if(value){kick();catalogue().catch(()=>{});}}
+    }
+    let probing=false;
+    async function probeConnection() {
+        if(probing||navigator.onLine===false)return;
+        probing=true;
+        try {
+            // Android can report Wi-Fi as online even when it has no internet.
+            // This tiny uncached request must never hold up the local library.
+            const response=await fetch(`/service-worker.js?connectivity=${Date.now()}`,{cache:'no-store',signal:AbortSignal.timeout(5000)});
+            connectivity(response.ok);
+        }catch(_){connectivity(false);}finally{probing=false;}
+    }
     function knownAccount() {
         try {return (localStorage.getItem('drive-hint-email')||'').trim().toLowerCase();} catch(_){return '';}
     }
     async function reload() {
         if (!account) return;
         const requestedAccount=account;
-        const [items,docs,driveRoot]=await Promise.all([S.list('entries',requestedAccount),S.list('documents',requestedAccount),S.read('settings',requestedAccount,'drive-root')]);
+        const [items,docs,driveRoot,views]=await Promise.all([S.list('entries',requestedAccount),S.list('document-index',requestedAccount),S.read('settings',requestedAccount,'drive-root'),S.read('settings',requestedAccount,'home-views')]);
         if(account!==requestedAccount)return;
         const aliases=new Map(items.filter(e=>e.remoteId && e.remoteId!==e.id).map(e=>[e.remoteId,e.id]));
         if(driveRoot?.remoteId)aliases.set(driveRoot.remoteId,'root');
@@ -23,12 +43,13 @@
             return {...item,parents:(item.parents||['root']).map(p=>aliases.get(p)||p)};
         });
         documents=new Map(docs.map(doc=>[doc.id,doc]));
+        savedViews=views||{};loaded=true;
         document.querySelectorAll('[data-drive-item-id]').forEach(card=>decorate(card,card.dataset.driveItemId));
     }
     function record(id) {return documents.get(id)||[...documents.values()].find(doc=>doc.remoteId===id);}
     function decorate(card,id) {
         if(entries.some(e=>e.id===id&&e.mimeType===folderType))return;
-        const available=!!record(id)?.blob || !!record(id)?.snapshot;
+        const available=!!record(id)?.available;
         card.classList.toggle('offline-unavailable',offline()&&!available);
         if (offline()&&!available) {card.setAttribute('aria-disabled','true');card.title='Connect to download this document';}
         else {card.removeAttribute('aria-disabled');card.removeAttribute('title');}
@@ -37,7 +58,8 @@
     }
     function folder(id, search='') {
         const needle=search.toLowerCase();
-        return entries.filter(e=>!e.trashed && (e.parents||[]).includes(id||'root') && (!needle||e.name?.toLowerCase().includes(needle)));
+        return entries.filter(e=>!e.trashed && (e.parents||[]).includes(id||'root') && (!needle||e.name?.toLowerCase().includes(needle)))
+            .sort((a,b)=>a.mimeType===folderType&&b.mimeType===folderType ? (a.name||'').localeCompare(b.name||'') : (Date.parse(b.modifiedTime)||0)-(Date.parse(a.modifiedTime)||0));
     }
     function combine(remote,parent,search='') {
         const local=folder(parent,search).filter(e=>e.pending||e.id.startsWith('local-'));
@@ -45,20 +67,29 @@
         return [...local,...remote.filter(e=>!ids.has(e.id))];
     }
     function home() {
-        const files=entries.filter(e=>!e.trashed&&e.mimeType==='application/pdf');
-        return {recents:files.sort((a,b)=>(documents.get(b.id)?.lastOpenedAt||Date.parse(b.modifiedTime)||0)-(documents.get(a.id)?.lastOpenedAt||Date.parse(a.modifiedTime)||0)).slice(0,12),
-            starred:entries.filter(e=>e.starred&&!e.trashed),shared:entries.filter(e=>e.ownedByMe===false&&!e.trashed)};
+        const active=entries.filter(e=>!e.trashed);
+        const ordered=list=>list.sort((a,b)=>(Date.parse(b.modifiedTime)||0)-(Date.parse(a.modifiedTime)||0));
+        const view=(name,fallback)=>Array.isArray(savedViews[name])
+            ? savedViews[name].map(id=>active.find(e=>e.id===id||e.remoteId===id)).filter(Boolean) : fallback;
+        const files=active.filter(e=>e.mimeType==='application/pdf'&&!host.quickAccess?.(e));
+        const pending=files.filter(e=>e.pending||e.id.startsWith('local-'));
+        const recents=view('recents',ordered(files).slice(0,12));
+        return {recents:[...pending.filter(e=>!recents.some(r=>r.id===e.id)),...recents].slice(0,12),
+            starred:view('starred',ordered(active.filter(e=>e.starred)).slice(0,12)),
+            shared:view('shared',ordered(active.filter(e=>e.ownedByMe===false)).slice(0,24))};
     }
-    async function observed(items,parent) {
+    async function observed(items,parent,view) {
         if (!account) return;
-        await S.cacheEntries(account,items.map(e=>({...e,...(!e.parents&&parent?{parents:[parent]}:{})})));
+        const observedAccount=account;
+        await S.cacheEntries(observedAccount,items.map(e=>({...e,...(!e.parents&&parent?{parents:[parent]}:{})})));
+        if(view)await S.patch('settings',observedAccount,'home-views',old=>({...old,[view]:items.map(e=>e.id)}));
         await reload();
     }
     async function cache(fileId,blob,meta,analysis,details={}) {
         if (!account || isWorker) return;
         const old=await S.read('documents',account,fileId);
         if (old?.dirty) return; // A downloaded baseline must not replace an offline draft.
-        await S.checkpoint(account,fileId,{blob,baseMeta:meta,analysis,details,
+        await S.checkpoint(account,fileId,{blob,baseMeta:meta,analysis,details,snapshot:null,originalBlob:null,preparedBlob:null,
             entry:{id:fileId,name:details.fileName||'Untitled.pdf',mimeType:'application/pdf',parents:details.parentIds||['root'],modifiedTime:meta.modifiedTime,ownedByMe:details.ownedByMe!==false},lastOpenedAt:old?.lastOpenedAt||Date.now()},false);
         await reload();
     }
@@ -75,9 +106,7 @@
             if (!value?.id || !value.snapshot || account!==captureAccount) return;
             const previous=await S.read('documents',captureAccount,value.id);
             if(account!==captureAccount)return;
-            if (!value.dirty && previous?.blob) {
-                await S.patch('documents',account,value.id,old=>({...old,lastOpenedAt:Date.now()}));return;
-            }
+
             if (previous?.contentVersion===value.contentVersion && previous?.session===value.session) return;
             await S.checkpoint(account,value.id,{...value,offlineEdited:offline()||previous?.offlineEdited||false,lastOpenedAt:Date.now()},value.dirty);
             await scheduleBackground();
@@ -108,8 +137,7 @@
         const doc=await S.read('documents',account,id);
         if (!doc) return null;
         await S.patch('documents',account,id,old=>({...old,lastOpenedAt:Date.now()}));
-        if (doc.dirty || id.startsWith('local-') || offline()) return doc;
-        return null;
+        return doc.blob?.size || doc.snapshot?.pages?.length ? doc : null;
     }
     async function pin(file) {
         if (!account) return;
@@ -146,7 +174,7 @@
             let pageToken='';const found=new Set();
             do {
                 const params=new URLSearchParams({q:"trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')",
-                    pageSize:'1000',fields:'nextPageToken,files(id,name,mimeType,parents,modifiedTime,starred,ownedByMe,resourceKey,folderColorRgb)',...(pageToken?{pageToken}:{})});
+                    pageSize:'1000',fields:'nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,thumbnailLink,starred,ownedByMe,resourceKey,folderColorRgb)',...(pageToken?{pageToken}:{})});
                 const response=await host.fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
                 if(!response.ok)throw new Error('Could not read Drive folders');
                 if(account!==catalogAccount)throw new Error('Account changed');
@@ -215,11 +243,14 @@
                 navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.type==='ihn-offline-updated')reload().then(()=>host.refreshed?.());});
             }
             document.querySelectorAll('[data-offline-settings]').forEach(button=>button.addEventListener('click',()=>showSettings().catch(host.error)));
-            window.addEventListener('offline',()=>reload().then(()=>host.refreshed?.()));
-            window.addEventListener('online',()=>{reload().then(()=>host.refreshed?.());kick();catalogue().catch(()=>{});});
+            window.addEventListener('offline',()=>connectivity(false));
+            window.addEventListener('online',()=>probeConnection());
+            document.addEventListener('visibilitychange',()=>{if(!document.hidden)probeConnection();});
+            setInterval(()=>{if(offline())probeConnection();},30000);
+            void probeConnection();
             window.addEventListener('message',event=>{if(event.origin===location.origin&&event.data?.type==='ihn-offline-dirty')reload();});
         }
-        if (account) {await reload();if(!isWorker){await S.prune(account,Date.now(),[host.currentId()]);host.refreshed?.();}}
+        if (account) {await reload();if(!isWorker){await S.put('settings','__session__','active',{accountId:account,enabled:true});host.refreshed?.();setTimeout(()=>S.prune(account,Date.now(),[host.currentId()]).then(()=>reload()).catch(()=>{}),2000);}}
         
     }
     async function resume() {
@@ -229,10 +260,10 @@
     async function useAccount(email) {
         const next=String(email||'').trim().toLowerCase();
         if(!next||next===account)return;
-        account=next;await reload();host.refreshed?.();kick();catalogue().catch(()=>{});
+        account=next;loaded=false;await reload();host.refreshed?.();kick();catalogue().catch(()=>{});
     }
     function disable() {initialized=false;resumed=false;}
-    function logout() {account='';entries=[];documents.clear();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
-    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&!!account,folder,combine,home,observed,cache,capture,scheduleCapture,prepared,
+    function logout() {account='';loaded=false;savedViews={};entries=[];documents.clear();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
+    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&loaded&&!!account,folder,combine,home,observed,cache,capture,scheduleCapture,prepared,
         openRecord,pin,createFolder,catalogue,kick,scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
 })(window);

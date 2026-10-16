@@ -2,28 +2,41 @@
 (function (root) {
     'use strict';
     const DB_NAME = 'inhouse-offline-v1';
-    const stores = ['entries', 'documents', 'outbox', 'settings', 'leases', 'recoveries'];
+    const stores = ['entries', 'documents', 'outbox', 'settings', 'leases', 'recoveries', 'document-index'];
     let opening;
     function open() {
         if (!opening) opening = new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, 1);
-            request.onupgradeneeded = () => stores.forEach(name => {
-                const store = request.result.createObjectStore(name, { keyPath: 'key' });
-                store.createIndex('account', 'account');
-            });
+            const request = indexedDB.open(DB_NAME, 2);
+            request.onupgradeneeded = () => {
+                for (const name of stores) {
+                    if (request.result.objectStoreNames.contains(name)) continue;
+                    const store=request.result.createObjectStore(name,{keyPath:'key'});
+                    store.createIndex('account','account');
+                }
+                const tx=request.transaction;
+                tx.objectStore('documents').openCursor().onsuccess=event=>{
+                    const cursor=event.target.result;if(!cursor)return;
+                    tx.objectStore('document-index').put(documentInfo(cursor.value));cursor.continue();
+                };
+            };
             request.onerror = () => { opening = null; reject(request.error); };
             request.onblocked = () => { opening = null; reject(new Error('Offline storage is blocked by another window')); };
             request.onsuccess = () => { request.result.onversionchange = () => { request.result.close(); opening = null; }; resolve(request.result); };
         });
         return opening;
     }
+    // List metadata without cloning every PDF and every stroke into the home UI.
+    function documentInfo(doc) {
+        const {blob,snapshot,originalBlob,preparedBlob,analysis,...info}=doc;
+        return {...info,available:!!(blob?.size||snapshot?.pages?.length)};
+    }
     const key = (account, id) => `${account}\u0000${id}`;
     async function transaction(names, mode, work) {
         const db = await open();
         return new Promise((resolve, reject) => {
-            const tx = db.transaction(names, mode);
+            const tx = db.transaction(names.includes('documents')&&!names.includes('document-index')?[...names,'document-index']:names, mode);
             let result;
-            const api = Object.fromEntries(names.map(name => [name, tx.objectStore(name)]));
+            const api = Object.fromEntries([...tx.objectStoreNames].map(name => [name, tx.objectStore(name)]));
             tx.oncomplete = () => resolve(result);
             tx.onabort = tx.onerror = () => reject(tx.error || new Error('Offline transaction failed'));
             try { work(api, value => { result = value; }, tx); } catch (error) { tx.abort(); reject(error); }
@@ -36,7 +49,7 @@
         s[store].index('account').getAll(account).onsuccess = e => done(e.target.result);
     });
     const put = (store, account, id, value) => transaction([store], 'readwrite', (s, done) => {
-        const record = { ...value, account, id, key:key(account,id) }; s[store].put(record); done(record);
+        const record = { ...value, account, id, key:key(account,id) }; s[store].put(record); if(store==='documents')s['document-index'].put(documentInfo(record)); done(record);
     });
     async function patch(store, account, id, update) {
         return transaction([store], 'readwrite', (s, done) => {
@@ -44,6 +57,7 @@
                 const previous = event.target.result || { account,id,key:key(account,id) };
                 const next = update(previous);
                 if (next) s[store].put(next); else s[store].delete(previous.key);
+                if(store==='documents'){if(next)s['document-index'].put(documentInfo(next));else s['document-index'].delete(previous.key);}
                 done(next);
             };
         });
@@ -65,8 +79,9 @@
                     updatedAt:Date.now(), lastOpenedAt:value.lastOpenedAt || old.lastOpenedAt || Date.now(),
                     pinned: value.pinned ?? old.pinned ?? false, dirty:dirty || old.dirty || false };
                 s.documents.put(record);
+                s['document-index'].put(documentInfo(record));
                 if (dirty) s.outbox.put({ account,id,key:record.key,generation,kind:'document',createdAt:old.createdAt || Date.now() });
-                if (value.entry) s.entries.put({ ...value.entry, account,id,key:record.key });
+                if (value.entry) s.entries.get(record.key).onsuccess=entryEvent=>s.entries.put({...entryEvent.target.result,...value.entry,account,id,key:record.key});
                 done(record);
             };
         });
@@ -80,8 +95,9 @@
                 const settled = doc.generation === generation;
                 const next = {...doc,remoteId:meta.id || doc.remoteId || id,lastUploadMeta:meta,lastUploadedAt:Date.now()};
                 if (settled) next.baseMeta=meta;
-                if (settled) { next.dirty=false; next.offlineEdited=false; next.snapshot=null; next.preparedBlob=null; next.preparedGeneration=null; next.blob=blob || doc.blob; s.outbox.delete(doc.key); }
+                if (settled) { next.dirty=false; next.offlineEdited=false; next.snapshot=null; next.analysis=null; next.originalBlob=null; next.preparedBlob=null; next.preparedGeneration=null; next.blob=blob || doc.blob; s.outbox.delete(doc.key); }
                 s.documents.put(next);
+                s['document-index'].put(documentInfo(next));
                 s.entries.get(doc.key).onsuccess = entryEvent => {
                     const entry = entryEvent.target.result;
                     if (entry) s.entries.put({...entry,...meta,id,key:doc.key,account,pending:!settled});
@@ -107,7 +123,8 @@
                 const entryKey=key(account,entry.id);
                 s.entries.get(entryKey).onsuccess = e => {
                     const previous=e.target.result || {};
-                    s.entries.put({...previous,...entry,account,key:entryKey});
+                    const newer=!previous.pending&&Date.parse(entry.modifiedTime||'')>Date.parse(previous.modifiedTime||'');
+                    s.entries.put({...previous,...entry,...(newer?{localPreview:null}:{}),account,key:entryKey});
                 };
             }
         });
@@ -135,7 +152,7 @@
                 if (!cursor) {done(removed); return;}
                 const doc=cursor.value;
                 if (!doc.pinned && !doc.dirty && !protectedIds.includes(doc.id) && doc.lastOpenedAt<cutoff) {
-                    s.outbox.get(doc.key).onsuccess = e => { if (!e.target.result) {s.documents.delete(doc.key); removed++;} cursor.continue(); };
+                    s.outbox.get(doc.key).onsuccess = e => { if (!e.target.result) {s.documents.delete(doc.key); s['document-index'].delete(doc.key); removed++;} cursor.continue(); };
                 } else cursor.continue();
             };
         });
