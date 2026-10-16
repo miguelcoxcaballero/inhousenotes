@@ -12,6 +12,8 @@ version = re.search(r"const APP_VERSION = '([^']+)'", (root / 'index.html').read
 revision = os.environ['GITHUB_SHA']
 expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
             for name in ('app-v5.js', 'service-worker.js', 'updates/A.json', 'updates/B.json',
+                         'offline-store-v5.js', 'offline-library-v5.js', 'offline-app-v5.js', 'offline-media-v5.js',
+                         'offline-assets.js', 'vendor/fonts/ui.css',
                          'rust-core-v5.js', 'wasm/inhouse_notes_core.wasm', 'ink-palette.js',
                          'scanner/processing/ink-vectorizer.js',
                          'scanner/index.html', 'scanner/configLoader.js', 'scanner/live-camera.js', 'scanner/live-camera.css',

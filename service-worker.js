@@ -1,5 +1,5 @@
 'use strict';
-const VERSION='5.15.20';
+const VERSION='5.15.21';
 const CACHE=`inhouse-shell-${VERSION}`;
 importScripts('offline-assets.js', 'offline-store-v5.js', 'offline-sync-v5.js');
 self.addEventListener('install',event=>event.waitUntil((async()=>{
@@ -16,6 +16,14 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
 })()));
 self.addEventListener('fetch',event=>{
     const url=new URL(event.request.url);
+    if(event.request.method==='GET'&&event.request.destination==='image'&&url.origin===self.location.origin&&url.pathname.startsWith('/__offline-media__/')) {
+        event.respondWith((async()=>{
+            const session=await self.InhouseOfflineStore.read('settings','__session__','active');
+            if(!session?.enabled||!session.accountId)return new Response('',{status:404});
+            const media=await caches.open(`inhouse-media-${encodeURIComponent(session.accountId)}`);
+            return (await media.match(url.href))||new Response('',{status:404});
+        })());return;
+    }
     // Never cache authenticated Drive responses, OAuth, arbitrary external URLs or mutations.
     if(event.request.method!=='GET'||url.origin!==self.location.origin)return;
     if(url.pathname.startsWith('/oauth-callback')||url.searchParams.has('oauth_callback'))return;
@@ -23,7 +31,7 @@ self.addEventListener('fetch',event=>{
     if(!self.INHOUSE_OFFLINE_ASSETS.includes(path))return;
     const requestedVersion=url.searchParams.get('v');
     if(requestedVersion&&/^\d+\.\d+\.\d+$/.test(requestedVersion)&&requestedVersion!==VERSION)return;
-    event.respondWith(path.endsWith('.html')?freshPage(event.request,path):(async()=>{
+    event.respondWith(path.endsWith('.html')?freshPage(event.request,path,event):(async()=>{
         const cache=await caches.open(CACHE);
         const cached=await cache.match(path);
         if(cached)return cached;
@@ -32,22 +40,17 @@ self.addEventListener('fetch',event=>{
         return response;
     })());
 });
-// Pages go to the network first (revalidating the HTTP cache) so a reload
-// always gets the published release; the cached copy is only for offline or
-// a network that has not answered within a few seconds. A page from a newer
-// release is passed through but not cached here: its versioned assets belong
-// to the next worker's cache.
-async function freshPage(request,path){
+// A complete versioned shell is immediately usable. Revalidate in the
+// background; boot-v5 checks published versions and reloads only outside editing.
+async function freshPage(request,path,event){
     const cache=await caches.open(CACHE);
+    const cached=await cache.match(path);
     const network=fetch(request,{cache:'no-cache'}).then(async response=>{
         if(response.ok&&(await response.clone().text()).includes(`v=${VERSION}`))await cache.put(path,response.clone());
         return response;
     });
-    network.catch(()=>{});
-    const cached=await cache.match(path);
-    if(!cached)return network;
-    const timeout=new Promise(resolve=>setTimeout(()=>resolve(null),4000));
-    try{return (await Promise.race([network,timeout]))||cached;}catch(_){return cached;}
+    event.waitUntil(network.then(()=>{},()=>{}));
+    return cached||network;
 }
 async function backgroundSync() {
     const S=self.InhouseOfflineStore;

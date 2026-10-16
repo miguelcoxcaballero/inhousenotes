@@ -81,19 +81,16 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://unpkg.com; img-src 'self' data: blob: https://*.googleusercontent.com https://www.googleapis.com https://drive.google.com; connect-src 'self' https://raw.githubusercontent.com https://api.github.com blob: https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://drive.google.com https://drive.usercontent.google.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdnjs.cloudflare.com https://unpkg.com stun: turn:; worker-src 'self' blob: https://cdnjs.cloudflare.com; child-src 'self' blob: https://accounts.google.com https://drive.google.com; frame-src 'self' https://accounts.google.com https://drive.google.com; form-action 'self' https://accounts.google.com; manifest-src 'self'; media-src 'self' blob: data:; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://unpkg.com; img-src 'self' data: blob: https://*.googleusercontent.com https://www.googleapis.com https://drive.google.com; connect-src 'self' https://*.googleusercontent.com https://raw.githubusercontent.com https://api.github.com blob: https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://drive.google.com https://drive.usercontent.google.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdnjs.cloudflare.com https://unpkg.com stun: turn:; worker-src 'self' blob: https://cdnjs.cloudflare.com; child-src 'self' blob: https://accounts.google.com https://drive.google.com; frame-src 'self' https://accounts.google.com https://drive.google.com; form-action 'self' https://accounts.google.com; manifest-src 'self'; media-src 'self' blob: data:; upgrade-insecure-requests">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" id="app-theme-color" content="#f5f5f0">
     <title>inhouse notes</title>
-    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.15.20';</script>
-    <script src="boot-v5.js?v=5.15.20"></script>
-    <link rel="stylesheet" href="offline-v5.css?v=5.15.20">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap"></noscript>
+    <script type="application/x-inhouse-config" id="inhouse-app-version">const APP_VERSION = '5.15.21';</script>
+    <script src="boot-v5.js?v=5.15.21"></script>
+    <link rel="stylesheet" href="offline-v5.css?v=5.15.21">
+    <link rel="stylesheet" href="vendor/fonts/ui.css">
     <script src="https://accounts.google.com/gsi/client" async defer data-auto_prompt="false"></script>
     <style>
         /*
@@ -9798,20 +9795,21 @@
     <script defer src="vendor/jspdf/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <script defer src="vendor/pdfjs/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
     <script defer src="vendor/pdf-lib/pdf-lib.min.js" integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI" crossorigin="anonymous"></script>
-    <script defer src="collaboration-core-v5.js?v=5.15.20"></script>
-    <script defer src="live-collaboration-v5.js?v=5.15.20"></script>
-    <script defer src="runtime-core-v5.js?v=5.15.20"></script>
-    <script defer src="security-core-v5.js?v=5.15.20"></script>
-    <script defer src="timeline-core-v5.js?v=5.15.20"></script>
-    <script defer src="document-processing-v5.js?v=5.15.20"></script>
+    <script defer src="collaboration-core-v5.js?v=5.15.21"></script>
+    <script defer src="live-collaboration-v5.js?v=5.15.21"></script>
+    <script defer src="runtime-core-v5.js?v=5.15.21"></script>
+    <script defer src="security-core-v5.js?v=5.15.21"></script>
+    <script defer src="timeline-core-v5.js?v=5.15.21"></script>
+    <script defer src="document-processing-v5.js?v=5.15.21"></script>
     <script defer src="shared/inhouse-services-updater/updater.js?v=1.2.3"></script>
-    <script defer src="bullet-template.js?v=5.15.20"></script>
-    <script defer src="offline-store-v5.js?v=5.15.20"></script>
-    <script defer src="offline-sync-v5.js?v=5.15.20"></script>
-    <script defer src="offline-library-v5.js?v=5.15.20"></script>
-    <script defer src="offline-app-v5.js?v=5.15.20"></script>
-    <script defer src="ink-palette.js?v=5.15.20"></script>
-    <script defer src="app-v5.js?v=5.15.20"></script>
+    <script defer src="bullet-template.js?v=5.15.21"></script>
+    <script defer src="offline-store-v5.js?v=5.15.21"></script>
+    <script defer src="offline-sync-v5.js?v=5.15.21"></script>
+    <script defer src="offline-library-v5.js?v=5.15.21"></script>
+    <script defer src="offline-media-v5.js?v=5.15.21"></script>
+    <script defer src="offline-app-v5.js?v=5.15.21"></script>
+    <script defer src="ink-palette.js?v=5.15.21"></script>
+    <script defer src="app-v5.js?v=5.15.21"></script>
 
 </body>
 
