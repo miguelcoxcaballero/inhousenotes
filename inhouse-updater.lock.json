@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "c336573a3f75256bdbdd5d2659bbc682a2229823",
+  "revision": "a69e52320f9c5f3c6e817282a317d8e0c9a83f1e",
   "version": "1.2.4",
   "appId": "notes",
   "files": {
@@ -26,7 +26,7 @@
     },
     "vendor/inhouse-services-updater/android/InstallActivity.java": {
       "source": "android/InstallActivity.java",
-      "sha256": "0834970eaba2e8e6d35718c679505a057287b260ccf0874baa1ed6094f3992af"
+      "sha256": "1e99f42249db81227261a9f41fe2be6bad48b43e00a230bae1d2db3fcfa960d0"
     },
     "vendor/inhouse-services-updater/android/InstallReceiver.java": {
       "source": "android/InstallReceiver.java",
@@ -86,7 +86,7 @@
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "ca5e1c40a8d9fb347f070db853f4eddf35f3d6ed2e2578f1b62ce2d72ad24456"
+      "sha256": "cf8b9b00cdfb3cd2401899bf028f41a92465bcd1aa4b38d5bea17f922648495f"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",

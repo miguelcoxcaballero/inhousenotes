@@ -78,7 +78,12 @@ public final class InstallActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
-        attemptId = getIntent().getStringExtra("installId");
+        // Changing REQUEST_INSTALL_PACKAGES kills the app process on Android 11.
+        // A retry updates this Activity's in-memory Intent, but Android restores
+        // the original launch Intent after death. Recover the current attempt.
+        attemptId = saved != null ? saved.getString("installId", getIntent().getStringExtra("installId"))
+            : getIntent().getStringExtra("installId");
+        getIntent().putExtra("installId", attemptId);
         long expected = getIntent().getLongExtra("versionCode", 0);
         Uri uri = getIntent().getData();
         if (attemptId == null || expected <= 0 || uri == null || !"content".equals(uri.getScheme())
@@ -211,8 +216,11 @@ public final class InstallActivity extends Activity {
         retry.setVisibility(android.view.View.VISIBLE);
     }
     private void continueInstallation() {
-        if (launched || returned || isFinishing() || permissionWaiting) return;
-        if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+        if (launched || returned || isFinishing()) return;
+        boolean allowed = Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls();
+        if (allowed) permissionWaiting = false; // The result callback may be lost with the old process.
+        if (permissionWaiting) return;
+        if (!allowed) {
             if (permissionOpened) {
                 complete("error", "Allow updates from this app in Android settings, then try again."); return;
             }
@@ -223,6 +231,9 @@ public final class InstallActivity extends Activity {
             catch (Exception error) { permissionWaiting = false; complete("error", "Android could not open installation settings. Try again."); }
             return;
         }
+        // Rebind durable state to this process after returning from Settings.
+        try { InstallState.begin(this, attemptId, getIntent().getLongExtra("versionCode", 0), getIntent().getStringExtra("versionName")); }
+        catch (RuntimeException error) { complete("error", "Could not save installation state. Check available storage."); return; }
         stage();
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
@@ -251,6 +262,7 @@ public final class InstallActivity extends Activity {
         returned = true; finish();
     }
     @Override protected void onSaveInstanceState(Bundle out) {
+        out.putString("installId", attemptId);
         out.putBoolean("launched", launched); out.putInt("sessionId", sessionId);
         out.putBoolean("permissionOpened", permissionOpened); out.putBoolean("permissionWaiting", permissionWaiting);
         out.putLong("waitingSince", waitingSince);
