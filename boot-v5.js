@@ -1,6 +1,14 @@
 (function bootInhouseNotes(root, documentRef) {
     'use strict';
 
+    let nativeAssets={};
+    try {nativeAssets=JSON.parse(documentRef.getElementById('inhouse-native-assets')?.textContent||'{}');}catch(_){}
+    root.InhouseAssetUrl=path=>{
+        const url=new URL(path,root.location.href),digest=nativeAssets[url.pathname];
+        if(url.origin===root.location.origin&&digest)url.searchParams.set('native',digest);
+        return url.href;
+    };
+
     function applySavedTheme() {
         let dark = false;
         try {

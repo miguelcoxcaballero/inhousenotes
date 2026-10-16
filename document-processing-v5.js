@@ -2,8 +2,9 @@
     'use strict';
     let worker = null;
     let sequence = 0;
-    const processorUrl = new URL('document-processing-worker-v5.js', document.baseURI);
-    processorUrl.search = new URL(document.currentScript.src, document.baseURI).search;
+    const processorUrl = new URL(root.InhouseAssetUrl('document-processing-worker-v5.js'));
+    const processorVersion=new URL(document.currentScript.src,document.baseURI).searchParams.get('v');
+    if(processorVersion)processorUrl.searchParams.set('v',processorVersion);
     const pending = new Map();
     function reset(error = new Error('Document processor stopped')) {
         worker?.terminate();

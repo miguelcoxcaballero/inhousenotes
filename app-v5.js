@@ -85,7 +85,7 @@
             });
         }
         const PDFJS_VERSION = '3.11.174';
-        const PDFJS_WORKER_URL = new URL('vendor/pdfjs/pdf.worker.min.js',location.href).href;
+        const PDFJS_WORKER_URL = window.InhouseAssetUrl('vendor/pdfjs/pdf.worker.min.js');
         const PDFJS_ASSETS_BASE_URL = new URL('vendor/pdfjs',location.href).href;
         const PDFJS_CMAP_URL = `${PDFJS_ASSETS_BASE_URL}/cmaps/`;
         const PDFJS_STANDARD_FONT_URL = `${PDFJS_ASSETS_BASE_URL}/standard_fonts/`;
@@ -351,7 +351,7 @@
         const DRIVE_POST_SAVE_CHECK_TIMEOUT = 3500;
         const DRIVE_REMOTE_META_SKEW_MS = 250;
         const DRIVE_OWN_WRITE_ECHO_WINDOW_MS = 12000;
-        const DRIVE_HOME_AUTO_REFRESH_MS = 5000;
+        const DRIVE_HOME_AUTO_REFRESH_MS = 30000;
         const DRIVE_UPLOAD_PDF_OPTIONS = Object.freeze({
             highQuality: false,
             optimizeForUpload: true
@@ -8885,72 +8885,42 @@
             preview.className = 'drive-card-preview';
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             icon.setAttribute('viewBox', '0 0 24 24');
-            icon.setAttribute('fill', 'none');
-            icon.setAttribute('stroke', 'currentColor');
-            icon.setAttribute('stroke-width', '1.8');
+            icon.setAttribute('fill', 'none');icon.setAttribute('stroke', 'currentColor');icon.setAttribute('stroke-width', '1.8');
             icon.classList.add('drive-card-icon');
             icon.innerHTML = '<path d="M6 2h8l4 4v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M14 2v6h6"/>';
-
-            const thumb = file.localPreview || normalizeDriveThumbnail(file.thumbnailLink || '');
-            if (thumb || window.InhouseOfflineLibrary?.ready()) {
-                const img = new Image();
-                img.alt = `${file.name} preview`;
-                img.loading = 'lazy';
-                img.decoding = 'async';
-                preview.classList.add('is-loading');
-                let settled = false;
-
-                const showFallback = () => {
-                    if (settled) return;
-                    settled = true;
-                    preview.closest('.drive-card')?.style.removeProperty('--sheet-ratio');
-                    preview.classList.remove('is-loading', 'is-loaded', 'is-landscape');
-                    // Keep the title and actions over the sheet when its image fails.
-                    img.remove();
-                    preview.prepend(icon);
-                };
-
-                const revealImage = async () => {
-                    if (settled) return;
-                    if (typeof img.decode === 'function') {
-                        try {
-                            await img.decode();
-                        } catch (_) {
-                            // Some browsers reject decode() for an otherwise usable image.
-                        }
-                    }
-                    if (settled) return;
-                    if (!img.naturalWidth || !img.naturalHeight) {
-                        showFallback();
-                        return;
-                    }
-                    settled = true;
-                    const ratio = getDriveSheetRatio(img.naturalWidth, img.naturalHeight);
-                    requestAnimationFrame(() => {
-                        // The card's A4 slot shapes the sheet to the PDF (see --sheet-ratio).
-                        const card = preview.closest('.drive-card');
-                        if (card && ratio) card.style.setProperty('--sheet-ratio', ratio);
-                        else if (card) card.style.removeProperty('--sheet-ratio');
-                        preview.classList.remove('is-loading');
-                        preview.classList.add('is-loaded');
-                        preview.classList.toggle('is-landscape', img.naturalWidth > img.naturalHeight);
-                        applyDrivePreviewTone(preview, img, thumb);
-                    });
-                };
-
-                img.addEventListener('load', () => { void revealImage(); }, { once: true });
-                img.addEventListener('error', showFallback, { once: true });
-                preview.appendChild(img);
-                const previewAccount=window.InhouseOfflineLibrary?.account();
-                window.InhouseOfflineMedia.url(previewAccount,`preview:${file.id}`,thumb,file.modifiedTime||'').then(source=>{
-                    if(previewAccount!==window.InhouseOfflineLibrary?.account())return;
-                    if(!source){showFallback();return;}
-                    img.src=source;
-                    if(img.complete&&img.naturalWidth)void revealImage();
-                });
-                return preview;
-            }
+            const img=new Image();img.decoding='async';
             preview.appendChild(icon);
+            let revision, localPreview, generation=0, loaded=false;
+            preview.refreshFile=async current=>{
+                const nextRevision=current.modifiedTime||'',nextLocal=current.localPreview||'';
+                // Drive thumbnail URLs are temporary and rotate even without edits.
+                if(revision===nextRevision&&localPreview===nextLocal)return;
+                revision=nextRevision;localPreview=nextLocal;
+                const ticket=++generation,account=window.InhouseOfflineLibrary?.account();
+                const source=nextLocal||normalizeDriveThumbnail(current.thumbnailLink||'');
+                if(!loaded)preview.classList.add('is-loading');
+                try {
+                    const url=await window.InhouseOfflineMedia.url(account,`preview:${current.id}`,source,nextRevision);
+                    if(!url){revision=undefined;return;}
+                    const decoded=new Image();decoded.decoding='async';decoded.src=url;
+                    await decoded.decode();
+                    if(ticket!==generation||account!==window.InhouseOfflineLibrary?.account())return;
+                    if(!decoded.naturalWidth||!decoded.naturalHeight)return;
+                    // Decode offscreen. Never remove the displayed image or re-run
+                    // its entrance animation while a replacement is downloading.
+                    img.alt=`${current.name} preview`;
+                    if(img.src!==url)img.src=url;
+                    if(!loaded){icon.remove();preview.prepend(img);preview.classList.add('is-loaded');loaded=true;}
+                    const ratio=getDriveSheetRatio(decoded.naturalWidth,decoded.naturalHeight);
+                    const card=preview.closest('.drive-card');
+                    if(card&&ratio)card.style.setProperty('--sheet-ratio', ratio);
+                    else card?.style.removeProperty('--sheet-ratio');
+                    preview.classList.toggle('is-landscape',decoded.naturalWidth>decoded.naturalHeight);
+                    applyDrivePreviewTone(preview,decoded,url);
+                }catch(_) { if(ticket===generation)revision=undefined; /* Retry later, retaining the last good image. */ }
+                finally {if(ticket===generation)preview.classList.remove('is-loading');}
+            };
+            void preview.refreshFile(file);
             return preview;
         }
 
@@ -9129,7 +9099,8 @@
             info.querySelector('.drive-card-sub').dataset.fileSub = 'true';
             preview.appendChild(info);
             window.InhouseOfflineLibrary?.decorate(card,file.id);
-            bindDriveCardActivation(card, () => openDriveFile(file));
+            card.driveFile=file;
+            bindDriveCardActivation(card, () => openDriveFile(card.driveFile));
             return card;
         }
 
@@ -9418,7 +9389,6 @@
                 item.id || '',
                 item.name || '',
                 item.starred ? 1 : 0,
-                item.thumbnailLink || item.localPreview || '',
                 item.folderColorRgb || '',
                 item.mimeType || ''
             ].join('|');
@@ -9447,6 +9417,9 @@
                 const fp = driveItemFingerprint(item);
                 let card = existing.get(id);
                 if (card && card.dataset.driveItemFp === fp) {
+                    card.driveFile=item;
+                    void card.querySelector('.drive-card-preview')?.refreshFile?.(item);
+                    window.InhouseOfflineLibrary?.decorate(card,id);
                     existing.delete(id);
                     const sub = card.querySelector('.drive-card-sub[data-file-sub]');
                     if (sub) {
@@ -10418,7 +10391,8 @@
             if (!isDriveHomeVisible()) return true;
             if (!driveAccessToken || driveSignedOut || driveAuthNeedsReconnect) return true;
             if (document.visibilityState === 'hidden') return true;
-            if (driveOpenInProgress || driveQuickAccessInProgress) return true;
+            if (driveOpenInProgress || offlineOpenInProgress || driveQuickAccessInProgress || driveIsOffline()) return true;
+            if(driveFolderAnimation || hasSmoothInteraction())return true;
             if (activeDriveCardMenu || activeColorPopup) return true;
             if (folderPickerModal && folderPickerModal.classList.contains('visible')) return true;
             if (driveBinModal && driveBinModal.classList.contains('visible')) return true;
@@ -31280,7 +31254,7 @@
         function getPdfWorker() {
             if (_pdfWorker) return _pdfWorker;
             const workerCode = `
-                importScripts('${new URL('vendor/jspdf/jspdf.umd.min.js',location.href).href}');
+                importScripts('${window.InhouseAssetUrl('vendor/jspdf/jspdf.umd.min.js')}');
                 self.onmessage = function(e) {
                     const { id, pages, metadata, metaPrefix } = e.data;
                     try {

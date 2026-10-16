@@ -14,11 +14,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android app" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android app" / "Inhouse Notes Logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.18.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-notes-release-v1.0.19.apk"
 APP_NAME = "Inhouse Notes"
 PACKAGE_ID = "com.local.inhousenotes"
-ANDROID_VERSION_NAME = "1.0.18"
-ANDROID_VERSION_CODE = 19
+ANDROID_VERSION_NAME = "1.0.19"
+ANDROID_VERSION_CODE = 20
 
 
 class Value:
@@ -81,6 +81,8 @@ def main() -> None:
     builder.patch_android_dependencies(project_dir)
     from install_background_sync import install as install_background_sync
     install_background_sync(project_dir, REPO_ROOT)
+    from install_native_assets import install as install_native_assets
+    install_native_assets(project_dir, REPO_ROOT)
     builder.write_gradle_properties(project_dir)
     builder.apply_launcher_icon(project_dir, ICON_PATH)
     builder.write_signing_properties(project_dir)

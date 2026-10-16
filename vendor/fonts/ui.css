@@ -3,47 +3,47 @@
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url(ui-0.ttf) format('truetype');
+  src: url(ui-0.ttf?native=c5633dc8323c788158d456e461bacc78d251f713e33228527765a1f3fa84ec03) format('truetype');
 }
 @font-face {
   font-family: 'Comfortaa';
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url(ui-1.ttf) format('truetype');
+  src: url(ui-1.ttf?native=9e526c661ee58581a44aea8c7c4dd3c87600d3cf491c89bfe269dd15775ccf5b) format('truetype');
 }
 @font-face {
   font-family: 'Comfortaa';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url(ui-2.ttf) format('truetype');
+  src: url(ui-2.ttf?native=3f9fce2197b5dd79d13e4c3c1c49068e303798d98ff99ada055f5a6eaa34a5aa) format('truetype');
 }
 @font-face {
   font-family: 'Comfortaa';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url(ui-3.ttf) format('truetype');
+  src: url(ui-3.ttf?native=990742fd8ec75da91f4eabcce954f36316de713e1ff0140eeefda0db1c44f91f) format('truetype');
 }
 @font-face {
   font-family: 'DM Sans';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url(ui-4.ttf) format('truetype');
+  src: url(ui-4.ttf?native=b0ae3e89a7d3ef2b1838bb4b1ceb0b17cc3435af061eee809d76aa623ff116e9) format('truetype');
 }
 @font-face {
   font-family: 'DM Sans';
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url(ui-5.ttf) format('truetype');
+  src: url(ui-5.ttf?native=376427b5322148d8de1e03f263bcca4935a2d60ba71d9f94f4947ab664c711ae) format('truetype');
 }
 @font-face {
   font-family: 'DM Sans';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url(ui-6.ttf) format('truetype');
+  src: url(ui-6.ttf?native=b79a2ea7a38f33fd96a282fadb9ce97626bb0724a44d21075859f0e50239993a) format('truetype');
 }
