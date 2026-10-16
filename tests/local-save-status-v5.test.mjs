@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
+import { createRequire } from 'node:module';
+const runtime = createRequire(import.meta.url)('../runtime-core-v5.js');
 
 const app = readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
 const section = (start, end) => app.slice(app.indexOf(start), app.indexOf(end, app.indexOf(start)));
 const source = [
   section('        function getLocalSaveStatus()', '        function isDriveSyncPending()'),
   section('        function hasPendingLocalSave()', '        function hasPendingDriveSave()'),
-  section('        async function queueSave()', '        function flushOnClose()'),
+  section('        const localCheckpointQueue =', '        function flushOnClose()'),
   section('        async function runStrokeOpsQueueFlush(', '        async function flushStrokeOpsQueue(')
 ].join('\n');
 
@@ -17,6 +19,7 @@ function harness() {
   let nextTimer = 0;
   const context = vm.createContext({
     console: { error() {} },
+    window: { InhouseRuntimeCore: runtime },
     state: { isReadOnly: false, lastSavedAt: null },
     session: 1,
     saveInProgress: false,
@@ -54,7 +57,7 @@ function harness() {
     yieldToMainThread: async () => {},
     flushStrokeOpsQueue() {}
   });
-  context.captureDocumentPersistenceContext = () => ({ session: context.session });
+  context.captureDocumentPersistenceContext = () => ({ session: context.session, sessionToken: context.session });
   context.isDocumentPersistenceContextCurrent = captured => captured.session === context.session;
   context.getDocumentSessionToken = () => context.session;
   context.isDocumentSessionTokenValid = token => token === context.session;
@@ -176,10 +179,11 @@ test('a new document save queued behind an old attempt still completes', async (
   context.saveQueued = false; // beginDocumentSession drops the previous queue.
   context.state.isReadOnly = true;
   context.pageDirty.add(0);
-  await context.queueSave();
+  const newSave = context.queueSave();
   assert.equal(context.saveQueued, true);
   completeOld({ ok: false });
   await oldSave;
+  await newSave;
   assert.equal(attempts, 2);
   assert.equal(context.getLocalSaveStatus().savedAt, 900);
   assert.equal(context.getLocalSaveStatus().error, '');

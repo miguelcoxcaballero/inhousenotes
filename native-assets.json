@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "985658812e941e30ea5568cab28cb4b983fd38d534c9123770a2441d5b9c8c2a",
-      "size": 1855822,
+      "sha256": "c9af00428ae28cf8b1e155fcffa06170aa76be8cdd1ee92e23de9acaebfc2750",
+      "size": 1857632,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -22,13 +22,13 @@
       "mime": "application/javascript"
     },
     "/document-processing-v5.js": {
-      "sha256": "51191b95baefe54de78d88bec135311e87d240d5f370ceff3417c7cefa50c5cb",
-      "size": 4325,
+      "sha256": "1ca656fd813c3cf4c49c94a6796af40bed66f95e5bb17dbeeac08391deb60b5e",
+      "size": 4114,
       "mime": "application/javascript"
     },
     "/document-processing-worker-v5.js": {
-      "sha256": "10557d1ac20d8a1a44566bd29f4a30056a33ca36ff96659cbec7985f59701718",
-      "size": 14602,
+      "sha256": "a3f8d9a374e162d959c703729b64b9d7f974dba85af1162694bf6be7542047a7",
+      "size": 15191,
       "mime": "application/javascript"
     },
     "/ink-palette.js": {
@@ -37,18 +37,18 @@
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
-      "sha256": "a46d1ee2d132aa62de2bcd683f17094d6eccb23c2b5a2a8eadd60a467a387b68",
-      "size": 178944,
+      "sha256": "5e23d6b4b5dda74d51f904226090d233d260b515cb8728548f492a988b6c8e57",
+      "size": 176120,
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "8e5d659c6746ea063466ea9d1d329bbc7c09af21c8e071d1ad8c16bdc810057b",
-      "size": 17260,
+      "sha256": "41b0942ccb9a4016c3b7c68d1ac8c0cd57980bf50ca129811669eb993223409d",
+      "size": 17573,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
-      "sha256": "9cf546fe99afce215abc69284080ed40e5ac11b12878efd8ed9d8983900887e7",
-      "size": 17849,
+      "sha256": "a2c84919532c160d8cee309d6e83e882c9bec33245d831ec69b3bfd448bc24bc",
+      "size": 18161,
       "mime": "application/javascript"
     },
     "/offline-media-v5.js": {
@@ -71,9 +71,14 @@
       "size": 1142,
       "mime": "text/css"
     },
+    "/peer-transport-v5.js": {
+      "sha256": "fbdc091bee695e5806fe6b178cb53a202a48ecfc494d71c42fa40c773c755254",
+      "size": 6182,
+      "mime": "application/javascript"
+    },
     "/runtime-core-v5.js": {
-      "sha256": "d3d8ee67f8c8c3b622f84d2cd5a042cbeb43fe58cda7d8114b07bc7dcd9d4c24",
-      "size": 3683,
+      "sha256": "245882d9f86f296784e07df1e8527b8b9ea1d7bc652f6901e590d97876d77dad",
+      "size": 9545,
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {

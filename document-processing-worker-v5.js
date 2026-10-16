@@ -32,6 +32,11 @@ function remember(value, owner) {
     objects.set(id, { value, owner });
     return id;
 }
+function objectFor(id, owner) {
+    const object = objects.get(id);
+    if (!object || object.owner !== owner) throw new Error('PDF object belongs to another or expired document');
+    return object.value;
+}
 function disposeDocument(id) {
     documents.delete(id);
     for (const [key, object] of objects) if (object.owner === id) objects.delete(key);
@@ -184,23 +189,26 @@ async function processTask(type, data) {
         if (!self.PDFLib) importScripts('vendor/pdf-lib/pdf-lib.min.js');
         if (type === 'pdfReady') return true;
         if (type === 'pdfLoad' || type === 'pdfCreate') {
-            if (type === 'pdfLoad') {
-                for (const [id, item] of documents) if (item.source) disposeDocument(id);
-            }
+            if (documents.size >= 32) throw new Error('Too many open processing documents; dispose completed PDFs');
             const doc = type === 'pdfLoad'
                 ? await PDFLib.PDFDocument.load(data.bytes, data.options)
                 : await PDFLib.PDFDocument.create();
             const id = ++nextObject;
-            documents.set(id, { doc, source: type === 'pdfLoad' });
+            documents.set(id, { doc });
             return { id, pageCount: doc.getPageCount() };
         }
         if (type === 'pdfDispose') { disposeDocument(data.id); return true; }
         const doc = documents.get(data.id)?.doc;
         if (!doc) throw new Error('PDF processing document expired');
         const pageInfo = page => ({ id: remember(page, data.id), size: page.getSize() });
-        if (type === 'pdfCopyPages') return (await doc.copyPages(documents.get(data.source).doc, data.indices)).map(pageInfo);
-        if (type === 'pdfAddPage') return pageInfo(doc.addPage(data.page ? objects.get(data.page).value : data.size));
+        if (type === 'pdfCopyPages') {
+            const source = documents.get(data.source)?.doc;
+            if (!source) throw new Error('Source PDF processing document expired');
+            return (await doc.copyPages(source, data.indices)).map(pageInfo);
+        }
+        if (type === 'pdfAddPage') return pageInfo(doc.addPage(data.page ? objectFor(data.page, data.id) : data.size));
         if (type === 'pdfEmbed') {
+            if (!['embedPng', 'embedJpg'].includes(data.kind)) throw new Error('Unsupported image format');
             let raster = data.bytes?.pdfRaster ? data.bytes : null;
             if (!raster && data.kind === 'embedPng') {
                 // Imported PNG backgrounds use exactly pdf-lib's decoder, but
@@ -212,8 +220,8 @@ async function processTask(type, data) {
             return { id: remember(image, data.id), ref: { objectNumber: image.ref.objectNumber } };
         }
         if (type === 'pdfDrawImage') {
-            const page = objects.get(data.page).value;
-            const image = objects.get(data.image).value;
+            const page = objectFor(data.page, data.id);
+            const image = objectFor(data.image, data.id);
             page.drawImage(image, data.options);
             const xobjects = page.node.lookup(PDFLib.PDFName.of('Resources')).lookup(PDFLib.PDFName.of('XObject'));
             for (const [name, ref] of xobjects.entries()) {
@@ -221,8 +229,9 @@ async function processTask(type, data) {
             }
             return null;
         }
-        if (type === 'pdfRectangle') { objects.get(data.page).value.drawRectangle(data.options); return true; }
+        if (type === 'pdfRectangle') { objectFor(data.page, data.id).drawRectangle(data.options); return true; }
         if (type === 'pdfMetadata') {
+            if (!['setKeywords', 'setTitle', 'setSubject', 'setCreator'].includes(data.method)) throw new Error('Unsupported metadata field');
             const keywords = data.method === 'setKeywords' && Array.isArray(data.value) ? data.value.join(' ') : null;
             if (keywords !== null && /^[A-Za-z0-9+/=;:_,.\- ]*$/.test(keywords)) {
                 // Our compressed/base64 metadata is ASCII. pdf-lib's public
@@ -269,6 +278,6 @@ self.onmessage = async ({ data: { id, type, data } }) => {
             : value?.pdfRaster ? [value.colorBytes.buffer, ...(value.alphaBytes ? [value.alphaBytes.buffer] : [])] : [];
         self.postMessage({ id, value }, transfers);
     } catch (error) {
-        self.postMessage({ id, error: error?.message || String(error) });
+        self.postMessage({ id, error: error?.message || String(error), errorName: error?.name || 'Error' });
     }
 };

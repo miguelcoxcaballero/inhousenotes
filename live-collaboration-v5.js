@@ -10,11 +10,8 @@ const IHN_LIVE_RENDEZVOUS_REFRESH_MS = 15_000;
 const IHN_LIVE_RENDEZVOUS_SEARCH_MS = 1500;
 const IHN_LIVE_PEER_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const IHN_LIVE_PEER_CACHE_LIMIT = 12;
-const IHN_LIVE_CHUNK = 16_000;
 const IHN_LIVE_BULK_HIGH_WATER = 64_000;
 const IHN_LIVE_REALTIME_CHANNEL = 'inhousenotes-interactive-v1';
-const IHN_LIVE_MAX_CHUNKS = 5000;
-const IHN_LIVE_MAX_CHARS = 50_000_000;
 const IHN_LIVE_LEADER_TTL = 7000;
 const IHN_LIVE_LEADER_STALE_MS = 2500;
 const IHN_LIVE_SUPERVISOR_MS = 250;
@@ -137,7 +134,7 @@ const ihnLiveKnownPeers = new Map();
 const ihnLiveRetryState = new Map();
 const ihnLiveSeen = new Map();
 const ihnLiveAppliedHashes = new Map();
-const ihnLiveChunks = new Map();
+const ihnLiveReceiver = new window.InhousePeerTransport.Receiver({ now: () => Date.now() });
 const ihnLiveProcessedOffers = new Map();
 const ihnLiveOffersInFlight = new Set();
 const ihnLiveFailedSignals = new Map();
@@ -1374,6 +1371,7 @@ function ihnClosePeer(peerId, reason = '', options = {}) {
     }
     if (peer.closing) return;
     peer.closing = true;
+    ihnLiveReceiver.dropPeer(JSON.stringify([peerId, peer.sessionId || '']));
     ihnLivePeers.delete(peerId);
     clearTimeout(peer.directSignalPollTimer);
     peer.directSignalPollTimer = null;
@@ -3137,7 +3135,7 @@ function stopLiveCollaboration() {
     ihnLiveBroadcastTargets.clear(); ihnLiveBroadcastExclusions.clear();
     ihnLiveBroadcastRetryAttempt = 0;
     [...ihnLivePeers.keys()].forEach(peerId => ihnClosePeer(peerId, 'document closed', { retry: false }));
-    ihnLiveChunks.clear(); ihnLiveSeen.clear(); ihnLiveAppliedHashes.clear(); ihnLiveProcessedOffers.clear();
+    ihnLiveReceiver.clear(); ihnLiveSeen.clear(); ihnLiveAppliedHashes.clear(); ihnLiveProcessedOffers.clear();
     ihnLiveOffersInFlight.clear();
     ihnLiveFailedSignals.clear();
     ihnLiveStrokeSends.forEach(record => clearTimeout(record.timer));
@@ -3420,48 +3418,9 @@ async function ihnBroadcastDocument() {
     }
 }
 
-function ihnWaitForBackpressure(channel) {
-    if (channel.bufferedAmount < IHN_LIVE_BULK_HIGH_WATER) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-        let done = false;
-        const finish = error => {
-            if (done) return;
-            done = true;
-            clearTimeout(timer);
-            channel.removeEventListener('bufferedamountlow', drained);
-            channel.removeEventListener('close', closed);
-            if (error) reject(error); else resolve();
-        };
-        const drained = () => { if (channel.bufferedAmount < IHN_LIVE_BULK_HIGH_WATER) finish(); };
-        const closed = () => finish(new Error('Live bulk channel closed'));
-        const timer = setTimeout(() => finish(new Error('Live bulk channel remained congested')), 15_000);
-        channel.addEventListener('bufferedamountlow', drained);
-        channel.addEventListener('close', closed, { once: true });
-        if (channel.readyState !== 'open') closed(); else drained();
-    });
-}
-
-async function ihnSendPayload(channel, payload, operation = null) {
-    if (operation) ihnAssertLiveOperationContext(operation);
-    if (channel?.readyState !== 'open') return false;
-    const raw = JSON.stringify(payload);
-    if (raw.length > IHN_LIVE_MAX_CHARS) return false;
-    const id = `x${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    const total = Math.ceil(raw.length / IHN_LIVE_CHUNK);
-    if (!total || total > IHN_LIVE_MAX_CHUNKS) return false;
-    if (operation) ihnAssertLiveOperationContext(operation);
-    channel.send(JSON.stringify({ t: 'start', id, total, chars: raw.length }));
-    for (let index = 0; index < total; index += 1) {
-        await ihnWaitForBackpressure(channel);
-        if (operation) ihnAssertLiveOperationContext(operation);
-        if (channel.readyState !== 'open') return false;
-        channel.send(JSON.stringify({ t: 'chunk', id, index, data: raw.slice(index * IHN_LIVE_CHUNK, (index + 1) * IHN_LIVE_CHUNK) }));
-    }
-    if (operation) ihnAssertLiveOperationContext(operation);
-    return true;
-}
-
 function ihnQueuePeerPayload(peerId, peer, payload, operation, options = {}) {
+    if (!peer || (peer.pendingSendCount || 0) >= 4) return Promise.reject(new Error('Peer send queue is full'));
+    peer.pendingSendCount = (peer.pendingSendCount || 0) + 1;
     const previous = peer?.sendQueue || Promise.resolve();
     const delivery = previous.catch(() => false).then(async () => {
         ihnAssertLiveOperationContext(operation);
@@ -3479,7 +3438,7 @@ function ihnQueuePeerPayload(peerId, peer, payload, operation, options = {}) {
         let sent;
         peer.snapshotSendInProgress = true;
         try {
-            sent = await ihnSendPayload(peer.channel, payload, operation);
+            sent = await window.InhousePeerTransport.send(peer.channel, payload, { assertCurrent: () => ihnAssertLiveOperationContext(operation) });
         } catch (error) {
             if (trackedHash && peer.pendingAckHash === trackedHash) peer.pendingAckHash = '';
             throw error;
@@ -3498,8 +3457,9 @@ function ihnQueuePeerPayload(peerId, peer, payload, operation, options = {}) {
         }
         return true;
     });
-    peer.sendQueue = delivery.catch(() => false);
-    return delivery;
+    const completion = delivery.finally(() => { peer.pendingSendCount--; });
+    peer.sendQueue = completion.catch(() => false);
+    return completion;
 }
 
 async function ihnHandleWireMessage(
@@ -3509,7 +3469,7 @@ async function ihnHandleWireMessage(
     expectedChannel = null,
     operation = null
 ) {
-    if (typeof raw !== 'string') return;
+    if (typeof raw !== 'string' || raw.length > 2 * 1024 * 1024) return;
     const peer = expectedPeer || ihnLivePeers.get(peerId);
     const messageOperation = operation || ihnCaptureLiveOperationContext(peer?.fileId);
     const peerContextIsCurrent = () => !!peer
@@ -3519,10 +3479,6 @@ async function ihnHandleWireMessage(
         && ihnLiveOperationContextIsCurrent(messageOperation);
     if (!peerContextIsCurrent()) return;
     peer.lastReceivedAt = Date.now();
-    const staleBefore = Date.now() - 60_000;
-    ihnLiveChunks.forEach((assembly, chunkKey) => {
-        if (Number(assembly.createdAt || 0) < staleBefore) ihnLiveChunks.delete(chunkKey);
-    });
     let message; try { message = JSON.parse(raw); } catch (error) { return; }
     if (!peerContextIsCurrent()) return;
     ihnTouchKnownPeerFromChannel(peerId);
@@ -3638,22 +3594,8 @@ async function ihnHandleWireMessage(
         ihnHandleRealtimeErasePacket(message, 'webrtc', peerId);
         return;
     }
-    const key = `${peerId}:${peer.sessionId || ''}:${message?.id || ''}`;
-    if (message?.t === 'start') {
-        const total = Number(message.total), chars = Number(message.chars);
-        if (!message.id || total <= 0 || total > IHN_LIVE_MAX_CHUNKS || chars <= 0 || chars > IHN_LIVE_MAX_CHARS) return;
-        ihnLiveChunks.set(key, { total, chars, chunks: new Array(total), received: 0, createdAt: Date.now() }); return;
-    }
-    if (message?.t !== 'chunk') return;
-    const assembly = ihnLiveChunks.get(key), index = Number(message.index);
-    if (!assembly || !Number.isInteger(index) || index < 0 || index >= assembly.total || typeof message.data !== 'string') return;
-    if (assembly.chunks[index] === undefined) { assembly.chunks[index] = message.data; assembly.received += 1; }
-    if (assembly.received !== assembly.total) return;
-    ihnLiveChunks.delete(key);
-    const combined = assembly.chunks.join('');
-    if (combined.length === assembly.chars) {
-        let envelope;
-        try { envelope = JSON.parse(combined); } catch (error) { return; }
+    const envelope = ihnLiveReceiver.accept(JSON.stringify([peerId, peer.sessionId || '']), message);
+    if (envelope) {
         if (!peerContextIsCurrent()) return;
         if (envelope?.v === 1
             && envelope?.type === 'document-snapshot'
