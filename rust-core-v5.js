@@ -5,6 +5,8 @@
     const base = scriptUrl || new URL(root.location.pathname.includes('/scanner/') ? '../../rust-core-v5.js' : 'rust-core-v5.js', root.location.href).href;
     const url = new URL('wasm/inhouse_notes_core.wasm', base);
     url.search = new URL(scriptUrl || root.location.href).search;
+    url.searchParams.delete('native');
+    if(root.InhouseAssetUrl)url.search=new URL(root.InhouseAssetUrl(url.href)).search;
     let core = null;
     const ready = (async () => {
         try {

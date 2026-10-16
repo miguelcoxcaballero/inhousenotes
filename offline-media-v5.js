@@ -6,9 +6,10 @@
     const key=id=>new URL(`/__offline-media__/${encodeURIComponent(id)}`,location.origin).href;
     async function url(account,id,source='',revision='') {
         if(!account||source.startsWith('data:'))return source;
-        const identity=`${account}\0${id}\0${revision}`;
-        if(memory.has(identity))return memory.get(identity);
-        if(pending.has(identity))return pending.get(identity);
+        const identity=`${account}\0${id}`,requestKey=`${identity}\0${revision}`;
+        const remembered=memory.get(identity);
+        if(remembered?.revision===revision)return remembered.url;
+        if(pending.has(requestKey))return pending.get(requestKey);
         const task=(async()=>{
             try {
                 const cache=await caches.open(cacheName(account));
@@ -26,14 +27,18 @@
                     const result=response.type==='opaque'
                         ? (navigator.serviceWorker?.controller?key(id):source)
                         : URL.createObjectURL(await response.blob());
-                    if(result)memory.set(identity,result);
+                    if(result){
+                        const previous=memory.get(identity);memory.delete(identity);memory.set(identity,{revision,url:result});
+                        if(previous?.url.startsWith('blob:')&&previous.url!==result)setTimeout(()=>URL.revokeObjectURL(previous.url),60000);
+                        if(memory.size>128){const oldest=memory.keys().next().value,entry=memory.get(oldest);memory.delete(oldest);if(entry.url.startsWith('blob:'))setTimeout(()=>URL.revokeObjectURL(entry.url),60000);}
+                    }
                     return result;
                 }
             }catch(_){} // A failed preview never prevents opening the document.
             return source;
-        })().finally(()=>pending.delete(identity));
-        pending.set(identity,task);return task;
+        })().finally(()=>pending.delete(requestKey));
+        pending.set(requestKey,task);return task;
     }
-    function clear(){for(const value of memory.values())if(value.startsWith('blob:'))URL.revokeObjectURL(value);memory.clear();}
+    function clear(){for(const value of memory.values())if(value.url.startsWith('blob:'))URL.revokeObjectURL(value.url);memory.clear();}
     root.InhouseOfflineMedia=Object.freeze({url,clear});
 })(window);

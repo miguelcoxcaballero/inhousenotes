@@ -113,8 +113,11 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
         if (parent === 'travel' && !isFolder) files.push({ id: 'new-online', name: 'Online.pdf', mimeType: 'application/pdf', parents: ['travel'] });
         return route.fulfill({ json: { files } });
     });
+    await page.route('https://www.googleapis.com/drive/v3/about?*', route => route.fulfill({json:{user:{displayName:'Folders',emailAddress:'folders@example.test'}}}));
+    await page.route('https://www.googleapis.com/drive/v3/files/root?*', route => route.fulfill({json:{id:'root'}}));
     await context.setOffline(false);
     await page.evaluate(() => { stopDriveHomeAutoRefresh(); driveAccessToken = 'test'; driveTokenExpiry = Date.now() + 3600000; });
+    await page.waitForFunction(() => !InhouseOfflineLibrary.offline());
     await openFolder(page, 'projects');
     await expect(page.locator('#drive-view-files')).toContainText('Proyecto');
     await expect.poll(() => pending.length).toBe(2);
