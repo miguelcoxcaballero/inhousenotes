@@ -28,7 +28,8 @@ def certificate(path):
 
 assert certificate(apk) == certificate(previous), "Signing key changed"
 badging = subprocess.check_output([str(build_tools / "aapt"), "dump", "badging", str(apk)], text=True)
-assert "package: name='com.local.inhousenotes' versionCode='20' versionName='1.0.19'" in badging, "APK identity/version mismatch"
+assert "package: name='com.local.inhousenotes' versionCode='21' versionName='1.0.20'" in badging, "APK identity/version mismatch"
+assert "uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'" in badging, "APK cannot request updates"
 assert "uses-permission: name='android.permission.CAMERA'" in badging, "APK cannot request a live camera"
 assert "uses-feature: name='android.hardware.camera'" not in badging, "Camera must remain optional for photo import"
 manifest = subprocess.check_output([str(build_tools / "aapt"), "dump", "xmltree", str(apk), "AndroidManifest.xml"], text=True)
@@ -36,11 +37,11 @@ assert 'com.inhouse.services.updater.InstallActivity' in manifest, "Installer re
 assert 'com.inhouse.services.updater.InstallReceiver' in manifest, 'Session receiver is not registered'
 with ZipFile(apk) as archive:
     dex = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.dex'))
-    for symbol in (b'InstallActivity', b'InstallReceiver', b'android/content/pm/PackageInstaller', b'InstallState', b'InstallResultPolicy', b'getInstallState', b'InhouseSyncWorker', b'InhouseBackgroundSync', b'InhouseLocalAssets'):
+    for symbol in (b'InstallActivity', b'requestConfirmation', b'InstallReceiver', b'android/content/pm/PackageInstaller', b'InstallState', b'InstallResultPolicy', b'getInstallState', b'InhouseSyncWorker', b'InhouseBackgroundSync', b'InhouseLocalAssets'):
         assert symbol in dex, f"Installer result implementation missing: {symbol!r}"
     native=json.loads(archive.read('assets/inhouse-native/native-assets.json'))
     assert len(native['assets'])>200, 'Native resources are missing'
     for path,info in native['assets'].items():
         data=archive.read('assets/inhouse-native'+path)
         assert len(data)==info['size'] and hashlib.sha256(data).hexdigest()==info['sha256'], f'Invalid APK resource: {path}'
-print("APK verified: com.local.inhousenotes 1.0.19 / 20; signing key unchanged.")
+print("APK verified: com.local.inhousenotes 1.0.20 / 21; signing key unchanged.")

@@ -191,7 +191,7 @@ test('Notes restart reports a persisted successful installation and Done dismiss
 });
 
 
-test('the installed 1.0.16 shell escapes its broken installer through the versioned GitHub page', async ({ page }) => {
+test('older installed shells keep Update inside the native bridge without navigating to GitHub', async ({ page }) => {
   let nativeCalls = 0;
   await page.exposeFunction('recordNativeInstall', () => { nativeCalls++; });
   await page.addInitScript(() => {
@@ -210,6 +210,7 @@ test('the installed 1.0.16 shell escapes its broken installer through the versio
   await page.route(releasePage, route => route.fulfill({ contentType: 'text/html', body: '<h1>Release assets</h1>' }));
   await page.goto('/?e2e=1&inhouse_app=1');
   await page.getByRole('button', { name: 'Update', exact: true }).click();
-  await expect(page).toHaveURL(releasePage);
-  expect(nativeCalls).toBe(0);
+  await expect.poll(() => nativeCalls).toBe(1);
+  await expect(page).toHaveURL(/127\.0\.0\.1:4173/);
+  await expect(page.getByRole('heading', { name: 'Update available', exact: true })).toBeVisible();
 });
