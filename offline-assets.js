@@ -15,6 +15,7 @@ self.INHOUSE_OFFLINE_ASSETS=[
   "/offline-store-v5.js",
   "/offline-sync-v5.js",
   "/offline-v5.css",
+  "/peer-transport-v5.js",
   "/runtime-core-v5.js",
   "/rust-core-v5.js",
   "/scanner/configLoader.js",

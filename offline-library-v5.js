@@ -1,7 +1,7 @@
 (function (root) {
     'use strict';
     const S=root.InhouseOfflineStore;
-    let host, account='', entries=[], documents=new Map(), captureTimer, capturePromise, syncFrame;
+    let host, account='', entries=[], documents=new Map(), captureTimer, syncFrame;
     let initialized=false, loaded=false, resumed=false, cataloguePromise=null;
     let savedViews={};
     const isWorker=new URLSearchParams(location.search).has('offline-worker');
@@ -93,27 +93,27 @@
             entry:{id:fileId,name:details.fileName||'Untitled.pdf',mimeType:'application/pdf',parents:details.parentIds||['root'],modifiedTime:meta.modifiedTime,ownedByMe:details.ownedByMe!==false},lastOpenedAt:old?.lastOpenedAt||Date.now()},false);
         await reload();
     }
+    const captureQueue = new root.InhouseRuntimeCore.CoalescingQueue(async request => {
+        const captureAccount = request.account;
+        const identity = host.identity?.();
+        if (account !== captureAccount || identity?.id !== request.identity?.id || identity?.session !== request.identity?.session) return;
+        const known = identity?.id ? documents.get(identity.id) : null;
+        if (known && known.contentVersion === identity.version && known.session === identity.session) return;
+        const value = await host.capture();
+        if (!value?.id || !value.snapshot || account !== captureAccount) return;
+        const previous = await S.read('documents', captureAccount, value.id);
+        const current = host.identity?.();
+        if (account !== captureAccount || (current && (current.id !== value.id || current.session !== value.session || current.version !== value.contentVersion))) return;
+        if (previous?.contentVersion === value.contentVersion && previous?.session === value.session) return;
+        await S.checkpoint(captureAccount, value.id, { ...value, offlineEdited: offline() || previous?.offlineEdited || false, lastOpenedAt: Date.now() }, value.dirty);
+        await scheduleBackground();
+        await reload();
+    });
     async function capture() {
         clearTimeout(captureTimer);
         if (isWorker || !initialized || !host || !account) return;
-        if (capturePromise) {await capturePromise;return capture();}
-        const captureAccount=account;
-        const task=(async()=>{
-            const identity=host.identity?.();
-            const known=identity?.id?documents.get(identity.id):null;
-            if(known&&known.contentVersion===identity.version&&known.session===identity.session)return;
-            const value=await host.capture();
-            if (!value?.id || !value.snapshot || account!==captureAccount) return;
-            const previous=await S.read('documents',captureAccount,value.id);
-            if(account!==captureAccount)return;
-
-            if (previous?.contentVersion===value.contentVersion && previous?.session===value.session) return;
-            await S.checkpoint(account,value.id,{...value,offlineEdited:offline()||previous?.offlineEdited||false,lastOpenedAt:Date.now()},value.dirty);
-            await scheduleBackground();
-        })();
-        const complete=task.then(()=>reload()).finally(()=>{if(capturePromise===complete)capturePromise=null;});
-        capturePromise=complete;
-        return complete;
+        const identity = host.identity?.();
+        return captureQueue.request(JSON.stringify([account, identity?.session, identity?.id]), { account, identity });
     }
     function scheduleCapture() {
         if (isWorker || !initialized || !host || !account) return;

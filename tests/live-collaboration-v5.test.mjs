@@ -6,6 +6,7 @@ import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
 const core = require('../collaboration-core-v5.js');
+const transportSource = fs.readFileSync(new URL('../peer-transport-v5.js', import.meta.url), 'utf8');
 const liveSource = fs.readFileSync(new URL('../live-collaboration-v5.js', import.meta.url), 'utf8');
 
 function simpleHash(value) {
@@ -215,6 +216,8 @@ function createHarness(overrides = {}) {
     ...overrides
   });
 
+  vm.runInContext(transportSource, context);
+  context.window.InhousePeerTransport = context.InhousePeerTransport;
   vm.runInContext(`${liveSource}
 globalThis.__liveTest = {
   addPeer(id, peer) { ihnLivePeers.set(id, peer); },
@@ -223,7 +226,7 @@ globalThis.__liveTest = {
   configureChannel: ihnConfigureChannel,
   configureRealtime: ihnConfigureRealtimeChannel,
   sendControl: ihnSendControl,
-  waitBackpressure: ihnWaitForBackpressure,
+  waitBackpressure: window.InhousePeerTransport.waitForCapacity,
   start: startLiveCollaboration,
   prewarm: prewarmLiveCollaboration,
   readSignalKey: ihnReadSignalKeyProperty,

@@ -208,9 +208,12 @@
     async function queueSave(force,options,normal) {
         if(L.isWorker)return;
         if(!L.ready())return normal(force,options);
+        const requestContext=captureDocumentPersistenceContext();
         await L.capture();
+        if(!isDocumentPersistenceContextCurrent(requestContext))return {cancelled:true};
         if(L.offline()){refreshSaveIndicatorState();return;}
         const pending=await S.read('documents',L.account(),currentId());
+        if(!isDocumentPersistenceContextCurrent(requestContext))return {cancelled:true};
         if(state.driveFileId?.startsWith('local-') || pending?.offlineEdited) {
             const id=currentId(),session=getDocumentSessionToken(),version=driveContentVersion;
             const result=await root.InhouseOfflineSync.run(L.account(),{fetch:driveFetch,skip:other=>other!==id,
@@ -226,7 +229,7 @@
             return result;
         }
         const session=getDocumentSessionToken();
-        const result=await S.withLease(L.account(),'sync',()=>normal(force,options));
+        const result=await S.withLease(L.account(),'sync',()=>isDocumentPersistenceContextCurrent(requestContext)?normal(force,options):{cancelled:true});
         if(result?.busy)setTimeout(()=>{if(session===getDocumentSessionToken()&&driveDirty)queueDriveSave(force,options);},1000);
         return result;
     }

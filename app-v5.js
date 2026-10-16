@@ -1845,8 +1845,6 @@
         let driveUploadProgress = null;
         const driveResumableSessions = new Map();
         let driveSaveQueued = false;
-        let driveSaveQueuedForce = false;
-        let driveSaveQueuedKeepalive = false;
         let driveDirty = false;
         let driveSaveBlockedReason = '';
         // Some legacy app PDFs carry their clean source as an embedded attachment.
@@ -3114,6 +3112,7 @@
             state.cleanOriginalPdfBytes = null;
             state.cleanOriginalPageSizes = null;
             // Drop the parsed pdf-lib document cached against the previous bytes.
+            releasePdfSource(_pdfLibOriginalCache.doc);
             _pdfLibOriginalCache.bytesRef = null;
             _pdfLibOriginalCache.doc = null;
         }
@@ -6627,8 +6626,6 @@
             }
             driveSaveInProgress = false;
             driveSaveQueued = false;
-            driveSaveQueuedForce = false;
-            driveSaveQueuedKeepalive = false;
             driveDirty = false;
             deferredDriveSave = false;
             saveQueued = false;
@@ -23888,8 +23885,6 @@
             driveDirty = false;
             deferredDriveSave = false;
             driveSaveQueued = false;
-            driveSaveQueuedForce = false;
-            driveSaveQueuedKeepalive = false;
             driveSaveBlockedReason = '';
             driveSavePhase = 'idle';
             driveUploadProgress = null;
@@ -24382,8 +24377,6 @@
                 deferredDriveSaveRetryTimer = null;
             }
             driveSaveQueued = false;
-            driveSaveQueuedForce = false;
-            driveSaveQueuedKeepalive = false;
             deferredDriveSave = false;
             setPresenceSavePhase('');
             recordSaveDebug(driveSaveBlockedReason, { phase: 'error' });
@@ -24923,18 +24916,20 @@
             scheduleDriveSync();
         }
 
+        const localCheckpointQueue = new window.InhouseRuntimeCore.CoalescingQueue(runLocalCheckpoint);
         async function queueSave() {
+            const context = captureDocumentPersistenceContext();
+            if (saveInProgress) saveQueued = true;
+            return localCheckpointQueue.request(context.sessionToken, context);
+        }
+
+        async function runLocalCheckpoint(persistenceContext) {
+            if (!isDocumentPersistenceContextCurrent(persistenceContext)) return { cancelled: true };
             // Read mode prevents new edits, not checkpointing edits already made.
             if (state.isReadOnly && !hasPendingLocalSave() && !localSaveError) return;
-            if (saveInProgress) {
-                saveQueued = true;
-                recordSaveDebug('Local save queued');
-                return;
-            }
             saveQueued = false;
             clearTimeout(localSaveRetryTimer);
             localSaveRetryTimer = null;
-            const persistenceContext = captureDocumentPersistenceContext();
             saveInProgress = true;
             recordSaveDebug('Local save started');
             const controller = { aborted: false };
@@ -24958,7 +24953,7 @@
                 // beginDocumentSession clears the old queue. A request queued
                 // since then belongs to the current document and still needs a
                 // checkpoint once this old attempt releases the writer.
-                if (saveQueued && !hasSmoothInteraction()) return queueSave();
+                if (saveQueued && !hasSmoothInteraction()) void queueSave();
                 return;
             }
             if (result.cancelled) {
@@ -24985,10 +24980,11 @@
                 }
                 saveQueued = false;
                 showStatus('Saving...', true);
-                queueSave();
+                void queueSave();
             } else if (result.ok && !isDriveSyncPending()) {
                 reconcileSavedIndicator();
             }
+            return result;
         }
 
         function flushOnClose() {
@@ -25441,8 +25437,19 @@
             return mergeResult || { changed: false, hasLocalMerges: false };
         }
 
+        const driveCheckpointQueue = new window.InhouseRuntimeCore.CoalescingQueue(
+            async request => {
+                if (!isDocumentPersistenceContextCurrent(request.context)) return { cancelled: true };
+                return window.InhouseOfflineApp.queueSave(request.force, request.options, queueDriveSaveOnline);
+            },
+            (previous, next) => ({ ...next, force: previous.force || next.force,
+                options: { ...previous.options, ...next.options,
+                    keepalive: !!(previous.options.keepalive || next.options.keepalive),
+                    forceUpload: !!(previous.options.forceUpload || next.options.forceUpload) } })
+        );
         async function queueDriveSave(force = false, options = {}) {
-            return window.InhouseOfflineApp.queueSave(force, options, queueDriveSaveOnline);
+            const context = captureDocumentPersistenceContext();
+            return driveCheckpointQueue.request(context.sessionToken, { context, force, options });
         }
 
         async function queueDriveSaveOnline(force = false, options = {}) {
@@ -25481,6 +25488,7 @@
             if (state.driveFileId && !isDriveHydratedForCurrentFile()) {
                 driveSavePhase = 'verifying';
                 const hydrated = await ensureDriveHydratedBeforeUpload();
+                if (!isDocumentSessionTokenValid(sessionToken)) return;
                 if (!hydrated) {
                     driveDirty = true;
                     deferredDriveSave = true;
@@ -25492,15 +25500,10 @@
                     return;
                 }
             }
-            if (driveSaveInProgress) {
-                driveSaveQueued = true;
-                driveSaveQueuedForce = driveSaveQueuedForce || force;
-                driveSaveQueuedKeepalive = driveSaveQueuedKeepalive || !!options.keepalive;
-                recordSaveDebug('Drive save queued');
-                scheduleDeferredDriveSaveRetry(Math.max(DRIVE_SYNC_IDLE_DELAY + 120, 320));
-                return;
-            }
             const controller = new AbortController();
+            const assertCurrent = () => {
+                if (!isDocumentSessionTokenValid(sessionToken) || controller.signal.aborted) throw createAbortError('Save session expired');
+            };
             activeDriveSaveController = controller;
             driveSaveInProgress = true;
             driveSavePhase = 'preparing';
@@ -25524,6 +25527,7 @@
                     try {
                         recordSaveDebug('Merging pending remote changes');
                         const flushed = await flushDeferredRemotePull({ allowWhileLocalPending: true });
+                        assertCurrent();
                         if (flushed?.error || flushed?.busy || flushed?.deferred) {
                             throw new Error('Pending remote merge failed');
                         }
@@ -25549,6 +25553,7 @@
                     driveSavePhase = 'restoring';
                     recordSaveDebug('Restoring PDF backgrounds');
                     await restorePdfBackgroundsIfNeeded();
+                    assertCurrent();
                 }
                 if (needsPdf && !activePdfDocument) {
                     showStatus('Waiting for PDF...', { preserveState: true });
@@ -25586,6 +25591,7 @@
                         sessionToken,
                         status: true
                     });
+                    assertCurrent();
                     pdfBlob = prepared.blob;
                     uploadedContentVersion = prepared.version;
                     uploadedContentHash = prepared.contentHash;
@@ -25596,6 +25602,7 @@
                     ...driveOptions,
                     initialPdfBlob: pdfBlob
                 });
+                assertCurrent();
                 const fileId = typeof ensureResult === 'string' ? ensureResult : ensureResult.fileId;
                 const wasCreated = typeof ensureResult === 'object' && !!ensureResult.created;
                 if (controller.signal.aborted) {
@@ -25607,6 +25614,7 @@
                     // so concurrent edits are still merged instead of overwritten.
                     if (!mergedRemoteBeforeBuild && hasRemoteActiveSaveSignal()) {
                         await mergeLatestRemoteBeforeDriveUpload(fileId, controller, 'Checking remote revision');
+                        assertCurrent();
                         mergedRemoteBeforeBuild = true;
                     }
                     if (controller.signal.aborted) {
@@ -25623,6 +25631,7 @@
                                 sessionToken,
                                 status: true
                             });
+                            assertCurrent();
                             pdfBlob = prepared.blob;
                             uploadedContentVersion = prepared.version;
                             uploadedContentHash = prepared.contentHash;
@@ -25631,6 +25640,7 @@
                             throw new Error('Drive save aborted');
                         }
                         await waitForRemoteSaveQuietBeforeUpload(fileId, controller);
+                        assertCurrent();
                         const latestMerge = await mergeLatestRemoteBeforeDriveUpload(
                             fileId,
                             controller,
@@ -25638,6 +25648,7 @@
                                 ? 'Rechecking remote revision before upload'
                                 : 'Final remote revision check'
                         );
+                        assertCurrent();
                         if (!(latestMerge?.changed || latestMerge?.hasLocalMerges)) break;
                         finalRemoteCheckAttempts += 1;
                         if (finalRemoteCheckAttempts > 3) {
@@ -25657,6 +25668,7 @@
                     setPresenceSavePhase('uploading');
                     recordSaveDebug(`Uploading PDF (${Math.round((pdfBlob?.size || 0) / 1024)} KB)`);
                     const updateRes = await updateDriveFile(fileId, pdfBlob, driveOptions);
+                    assertCurrent();
                     if (updateRes.headRevisionId) {
                         state.driveHeadRevisionId = updateRes.headRevisionId;
                     }
@@ -25670,6 +25682,7 @@
                     saveDriveSession();
                 }
                 await window.InhouseOfflineApp.confirmed(fileId,pdfBlob,{id:fileId,headRevisionId:state.driveHeadRevisionId,version:state.driveRevisionVersion,modifiedTime:state.driveLastKnownModified?new Date(state.driveLastKnownModified).toISOString():null},uploadedContentVersion,sessionToken);
+                assertCurrent();
                 markDriveContentUploaded(uploadedContentVersion);
                 if (uploadedContentHash) {
                     driveConfirmedContentHash = uploadedContentHash;
@@ -25718,6 +25731,7 @@
                 driveSaveSucceeded = true;
                 }
             } catch (err) {
+                if (!isDocumentSessionTokenValid(sessionToken)) return { cancelled: true };
                 if (driveSignedOut || !state.driveAutosave) {
                     recordSaveDebug('Drive save stopped after sign out', { phase: 'saved' });
                     setPresenceSavePhase('');
@@ -25772,16 +25786,16 @@
                         driveDirty = true;
                         deferredDriveSave = true;
                         driveSaveQueued = false;
-                        driveSaveQueuedForce = false;
-                        driveSaveQueuedKeepalive = false;
                         driveSaveFailedThisRun = true;
                         scheduleDeferredDriveSaveRetry(1800);
                     }
                 }
                 }
+            } finally {
+                if (activeDriveSaveController === controller) activeDriveSaveController = null;
+                driveSaveInProgress = false;
             }
-            activeDriveSaveController = null;
-            driveSaveInProgress = false;
+            if (!isDocumentSessionTokenValid(sessionToken)) return { cancelled: true };
             if (driveSaveSucceeded) {
                 driveSavePhase = 'idle';
                 driveUploadProgress = null;
@@ -25813,12 +25827,8 @@
                 }
             }
             if (driveSaveQueued) {
-                const queuedForce = driveSaveQueuedForce;
-                const queuedKeepalive = driveSaveQueuedKeepalive;
                 driveSaveQueued = false;
-                driveSaveQueuedForce = false;
-                driveSaveQueuedKeepalive = false;
-                await queueDriveSave(queuedForce, queuedKeepalive ? { keepalive: true } : {});
+                void queueDriveSave();
                 return;
             }
             if (driveContentVersion !== driveUploadedContentVersion && (driveDirty || driveSaveQueued || deferredDriveSave)) {
@@ -31926,6 +31936,19 @@
         // avoids re-parsing the source PDF on every autosave (saves hundreds of
         // ms per save for typical documents).
         const _pdfLibOriginalCache = { bytesRef: null, doc: null };
+        const pdfSourceOwners = new WeakMap();
+        function retainPdfSource(doc) {
+            if (doc) pdfSourceOwners.set(doc, (pdfSourceOwners.get(doc) || 0) + 1);
+        }
+        function releasePdfSource(doc) {
+            if (!doc) return;
+            const count = (pdfSourceOwners.get(doc) || 1) - 1;
+            if (count > 0) pdfSourceOwners.set(doc, count);
+            else {
+                pdfSourceOwners.delete(doc);
+                void doc.dispose?.().catch(() => {});
+            }
+        }
 
         async function fetchBytesAsImage(srcUrl) {
             // Returns { bytes: ArrayBuffer, kind: 'png'|'jpg' } or null.
@@ -32131,13 +32154,20 @@
                     ignoreEncryption: true,
                     updateMetadata: false
                 });
-                _pdfLibOriginalCache.bytesRef = state.cleanOriginalPdfBytes;
+                const previousSource = _pdfLibOriginalCache.doc;
+                if (previousSource !== originalDoc) {
+                    retainPdfSource(originalDoc); // The cache owns one reference.
+                    releasePdfSource(previousSource);
+                }
+                _pdfLibOriginalCache.bytesRef = cleanOriginalBytes;
                 _pdfLibOriginalCache.backend = PDFLib;
                 _pdfLibOriginalCache.doc = originalDoc;
             }
-            await yieldToUI();
-            const outDoc = await PDFLib.PDFDocument.create();
+            retainPdfSource(originalDoc); // An export pins its source across cache replacement.
+            let outDoc = null;
             try {
+            await yieldToUI();
+            outDoc = await PDFLib.PDFDocument.create();
 
             // Plan which original pages to copy (batch copy is much faster than per-page).
             const sourceIndices = [];
@@ -32627,7 +32657,8 @@
             }
             return blob;
             } finally {
-                if (outDoc.dispose) await outDoc.dispose();
+                try { if (outDoc?.dispose) await outDoc.dispose(); }
+                finally { releasePdfSource(originalDoc); }
             }
         }
 
