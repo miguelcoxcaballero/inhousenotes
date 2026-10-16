@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
-import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.BufferedInputStream
 import java.io.File
@@ -26,19 +25,10 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
   interface Listener { fun progress(downloadedBytes: Long, totalBytes: Long); fun stage(value: String) }
   interface Result { fun success(value: String); fun error(code: String, message: String?, details: Any?) }
   fun installUpdate(url: String, expectedSha256: String?, result: Result) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.packageManager.canRequestPackageInstalls()) {
-      activity.runOnUiThread {
-        try {
-          activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            Uri.parse("package:${activity.packageName}")))
-          result.success("permission_required")
-        } catch (error: Exception) {
-          result.error("permission_unavailable", "Open Android settings to allow updates from this app, then try again.", null)
-        }
-      }
+    if (expectedSha256 == null || !expectedSha256.matches(Regex("[0-9a-fA-F]{64}"))) {
+      result.error("invalid_checksum", "The update is missing a trusted checksum. Check for updates again.", null)
       return
     }
-
     if (!downloadRunning.compareAndSet(false, true)) {
       result.success("downloading")
       return
@@ -96,6 +86,7 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
               putExtra("installId", UUID.randomUUID().toString())
               putExtra("versionCode", getVersionCode(verified))
               putExtra("versionName", verified.versionName ?: "")
+              putExtra("sha256", expectedSha256)
               addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(installIntent)

@@ -142,17 +142,8 @@
                 appId: 'notes', appName: 'Inhouse Notes', repository: 'miguelcoxcaballero/inhousenotes',
                 installedVersion: '1.0.2',
                 install: release => {
-                    // Host compatibility: pre-1.0.18 shells contain the failing
-                    // native handoff. Their web UI can recover without first
-                    // installing the very APK that repairs that handoff.
-                    const installedCode = Number(window.InhouseNative?.getAppVersionCode?.() || 0);
-                    if (release.versionCode >= 19 && installedCode < 19) {
-                        const download = document.querySelector('[data-isu-recovery] a');
-                        if (!download) throw new Error('Use Download APK to open this release on GitHub.');
-                        updates.result({ status: 'unconfirmed', message: 'Choose the APK under Assets on GitHub, then open the download to update.' });
-                        download.click();
-                        return;
-                    }
+                    // Update stays inside the Android installer. GitHub is an
+                    // explicit recovery option, never an automatic redirect.
                     if (window.InhouseNative?.installInhouseUpdate) window.InhouseNative.installInhouseUpdate(release.apkUrl, release.apkSha256);
                     else if (window.InhouseNative?.installAppUpdate) window.InhouseNative.installAppUpdate(release.apkUrl);
                     else throw new Error('Abre la app Android para instalar.');

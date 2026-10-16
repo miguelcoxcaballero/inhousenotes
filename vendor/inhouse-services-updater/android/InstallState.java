@@ -72,6 +72,11 @@ public final class InstallState {
         return id != null && id.equals(attempt.optString("id")) ? attempt.optString("status") : "";
     }
 
+    public static synchronized String message(Context context, String id) {
+        JSONObject attempt = load(context);
+        return id != null && id.equals(attempt.optString("id")) ? attempt.optString("message") : "Try again.";
+    }
+
     public static synchronized void finish(Context context, String id, String status, String message) {
         JSONObject attempt = load(context);
         // A late callback from an older Activity must not overwrite a new retry.

@@ -425,6 +425,7 @@
         saveInstall(null); return true;
       }
       if (confirmed && relevantPending) { result({ status: 'installed' }); return true; }
+      if (nativeState?.status === 'installing' && Number(nativeState.expectedVersionCode) >= requestedCode) return false;
       if (relevantPending && pending.awaitingResult && !pending.reported) {
         const message = 'Installation has not been confirmed. You can try again.';
         if (dialog?.querySelector('[data-isu-install]')) result({ status: 'unconfirmed', message });

@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "c9af00428ae28cf8b1e155fcffa06170aa76be8cdd1ee92e23de9acaebfc2750",
-      "size": 1857632,
+      "sha256": "9e3522d9906f7cc157604bb116a28b848a22b4cdd3ddbc4858e004ac0351dc8d",
+      "size": 1856935,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -212,8 +212,8 @@
       "mime": "text/css"
     },
     "/shared/inhouse-services-updater/updater.js": {
-      "sha256": "8c241150b90f634c6ff37be6a9e5ad50496f2d363103e0d712c99f78a9a0741c",
-      "size": 37187,
+      "sha256": "4f7dd2cb73feaf3261fd874bae2b4b2f7a6a15a2a995f9b5813a196527d7d76a",
+      "size": 37309,
       "mime": "application/javascript"
     },
     "/timeline-core-v5.js": {
