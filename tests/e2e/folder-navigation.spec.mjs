@@ -159,47 +159,153 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
     await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
 });
 
-async function sampleFolderMotion(page, selector) {
-    return page.evaluate(async selector => {
-        document.querySelector(selector).click();
-        const frames = [];
-        await new Promise(resolve => {
-            const sample = () => {
-                const ghost = document.querySelector('.drive-folder-ghost');
-                if (ghost) {
-                    const rect = ghost.getBoundingClientRect();
-                    const cover = new DOMMatrixReadOnly(getComputedStyle(ghost.querySelector('.drive-folder-cover')).transform);
-                    frames.push({ opacity: Number(getComputedStyle(ghost).opacity), turn: cover.m11,
-                        direction: ghost.dataset.direction, width: rect.width,
-                        originalWidth: parseFloat(ghost.style.width) });
-                }
-                if (driveFolderAnimation) requestAnimationFrame(sample); else resolve();
-            };requestAnimationFrame(sample);
+async function sampleFolderMotion(page, selector, returnCardSelector = null) {
+    return page.evaluate(async ({ selector, returnCardSelector }) => {
+        // Pause the actual zoom at creation. On close it starts after the short
+        // cover crossfade; observing its creation avoids racing that phase.
+        const nativeAnimate = Element.prototype.animate;
+        const startedInsideFolder = !document.getElementById('drive-folder-view').classList.contains('hidden');
+        let zoom = null;
+        Element.prototype.animate = function (frames, timing) {
+            const animation = nativeAnimate.call(this, frames, timing);
+            if (this.classList.contains('drive-folder-ghost')
+                && Array.isArray(frames) && frames.some(frame => frame.transform)) {
+                zoom = animation;
+                zoom.pause();
+            }
+            return animation;
+        };
+        try {
+            document.querySelector(selector).click();
+            await new Promise((resolve, reject) => {
+                const deadline = performance.now() + 1200;
+                const waitForZoom = () => {
+                    if (zoom) return resolve();
+                    if (!driveFolderAnimation || performance.now() > deadline) return reject(new Error('No visible folder zoom started'));
+                    requestAnimationFrame(waitForZoom);
+                };
+                waitForZoom();
+            });
+        } finally {
+            Element.prototype.animate = nativeAnimate;
+        }
+        const ghost = document.querySelector('.drive-folder-ghost');
+        if (!ghost || !driveFolderAnimation) return [];
+        // Seek the actual compositor effects instead of racing a 300ms
+        // animation on a loaded CI worker. Finishing below still exercises the
+        // production transition's content swap and cleanup.
+        const animations = document.getAnimations().filter(animation => {
+            const target = animation.effect?.target;
+            return target === ghost || ghost.contains(target)
+                || document.getElementById('drive-folder-view').contains(target);
         });
+        const offsets = animations.map(animation => (animation.currentTime || 0) - (zoom.currentTime || 0));
+        animations.forEach(animation => animation.pause());
+        const duration = zoom.effect.getComputedTiming().endTime;
+        const home = document.getElementById('drive-home').getBoundingClientRect();
+        const top = document.querySelector('#drive-home .drive-topbar').getBoundingClientRect().bottom;
+        const target = { left: home.left, top, right: home.right, bottom: home.bottom,
+            width: home.width, height: home.bottom - top };
+        const destination = returnCardSelector ? document.querySelector(`${returnCardSelector} .drive-folder-art`) : null;
+        const destinationHidden = returnCardSelector ? !!destination && getComputedStyle(destination).visibility === 'hidden' : undefined;
+        const destinationRect = destination?.getBoundingClientRect().toJSON();
+        const sourceInert = document.getElementById('drive-folder-view').inert;
+        const frames = [];
+        for (const progress of [0, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .999]) {
+            for (let i = 0; i < animations.length; i++) animations[i].currentTime = offsets[i] + duration * progress;
+            const rect = ghost.getBoundingClientRect();
+            const cover = new DOMMatrixReadOnly(getComputedStyle(ghost.querySelector('.drive-folder-cover')).transform);
+            frames.push({ progress, duration, target, destinationHidden, destinationRect, startedInsideFolder, sourceInert,
+                opacity: Number(getComputedStyle(ghost).opacity) * Number(getComputedStyle(ghost.parentElement).opacity),
+                coverOpacity: Number(getComputedStyle(ghost.querySelector('.drive-folder-cover')).opacity), turn: cover.m11,
+                direction: ghost.dataset.direction,
+                left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
+                width: rect.width, height: rect.height,
+                centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2,
+                originalWidth: parseFloat(ghost.style.width) });
+        }
+        driveFolderAnimation.finish();
         return frames;
-    }, selector);
+    }, { selector, returnCardSelector });
+}
+
+function expectDirectFolderZoom(frames, direction) {
+    expect(frames.length).toBeGreaterThan(5);
+    expect(frames.every(frame => frame.direction === direction)).toBe(true);
+    if (direction === 'open' && frames[0].startedInsideFolder) expect(frames[0].sourceInert).toBe(true);
+    if (direction === 'close' && frames[0].destinationHidden !== undefined) {
+        expect(frames[0].destinationHidden).toBe(true);
+        const final = frames.at(-1);
+        for (const field of ['left', 'top', 'width', 'height']) {
+            expect(Math.abs(final[field] - final.destinationRect[field]), `${field}: closing must land on the real card`).toBeLessThan(1.5);
+        }
+    }
+    expect(frames[0].duration).toBeGreaterThanOrEqual(200);
+    expect(frames[0].duration).toBeLessThanOrEqual(420);
+    const ordered = direction === 'open' ? frames : [...frames].reverse();
+    const start = ordered[0], end = ordered.at(-1);
+    expect(end.width).toBeGreaterThan(start.width * 1.3);
+    const widthTravel = Math.abs(frames.at(-1).width - frames[0].width);
+    const initialTravel = Math.abs(frames.find(frame => frame.progress === .1).width - frames[0].width) / widthTravel;
+    const finalTravel = Math.abs(frames.at(-1).width - frames.find(frame => frame.progress === .9).width) / widthTravel;
+    // Restrained ease-in/out: neither end can spend a large fraction of the
+    // journey in just a tenth of the animation.
+    expect(initialTravel).toBeLessThan(.2);
+    expect(finalTravel).toBeLessThan(.2);
+    expect(end.left).toBeLessThanOrEqual(end.target.left + 2);
+    expect(end.top).toBeLessThanOrEqual(end.target.top + 2);
+    expect(end.right).toBeGreaterThanOrEqual(end.target.right - 2);
+    expect(end.bottom).toBeGreaterThanOrEqual(end.target.bottom - 2);
+    // A single eased zoom may travel from the card to the viewport centre,
+    // but cannot sway sideways, overshoot, or shrink again on the way there.
+    for (const field of ['width', 'height', 'centerX', 'centerY']) {
+        const sign = end[field] >= start[field] ? 1 : -1;
+        for (let i = 1; i < ordered.length; i++) {
+            expect((ordered[i][field] - ordered[i - 1][field]) * sign,
+                `${direction}: ${field} reverses at ${ordered[i].progress}`).toBeGreaterThanOrEqual(-.75);
+        }
+    }
+    expect(frames.some(frame => frame.progress >= .2 && frame.progress <= .8
+        && frame.opacity > .5 && frame.width > start.width * 1.2)).toBe(true);
+    // The folder lid itself still opens/closes; a content-only fade must not
+    // accidentally replace the visual again.
+    expect(frames.some(frame => frame.opacity > .5 && frame.coverOpacity > .4 && frame.turn < .95)).toBe(true);
 }
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
-    test(`lid is visible in both directions at every nesting level without full-screen zoom (${viewport.width}px)`, async ({ page, context }) => {
+    test(`folder zoom fills the content viewport directly in both directions at every nesting level (${viewport.width}px)`, async ({ page, context }) => {
         await page.setViewportSize(viewport);
         await setup(page, context);
-        for (const [selector, direction, title] of [
+        for (const [selector, direction, title, returnCard] of [
             ['#drive-folders [data-drive-item-id="projects"]', 'open', 'Proyectos'],
             ['#drive-view-folders [data-drive-item-id="drafts"]', 'open', 'Borradores'],
             ['#drive-view-folders [data-drive-item-id="deep"]', 'open', 'Dentro'],
-            ['#btn-folder-view-back', 'close', 'Borradores'],
-            ['#btn-folder-view-back', 'close', 'Proyectos'],
-            ['#btn-folder-view-back', 'close', null]
+            ['#btn-folder-view-back', 'close', 'Borradores', '#drive-view-folders [data-drive-item-id="deep"]'],
+            ['#btn-folder-view-back', 'close', 'Proyectos', '#drive-view-folders [data-drive-item-id="drafts"]'],
+            ['#btn-folder-view-back', 'close', null, '#drive-folders [data-drive-item-id="projects"]']
         ]) {
-            const frames = await sampleFolderMotion(page, selector);
-            expect(frames.some(frame => frame.direction === direction && frame.opacity > .9 && frame.turn < .94 && frame.turn > .5)).toBe(true);
-            expect(frames.every(frame => frame.width <= frame.originalWidth * 1.03)).toBe(true);
+            const frames = await sampleFolderMotion(page, selector, returnCard);
+            expectDirectFolderZoom(frames, direction);
             if (title) await expect(page.locator('#drive-folder-view-title')).toHaveText(title);
             else await expect(page.locator('#drive-folder-view')).toBeHidden();
             await expect(page.locator('.drive-folder-ghost')).toHaveCount(0);
             expect(await page.locator('#drive-folder-view').evaluate(el => el.inert)).toBe(false);
         }
+    });
+
+    test(`breadcrumb jumps zoom back to the ancestor card without losing navigation (${viewport.width}px)`, async ({ page, context }) => {
+        await page.setViewportSize(viewport);
+        await setup(page, context);
+        for (const [id, container] of [['projects', '#drive-folders'], ['drafts', '#drive-view-folders'], ['deep', '#drive-view-folders']]) {
+            await openFolder(page, id, container);
+            await settle(page);
+        }
+        expectDirectFolderZoom(await sampleFolderMotion(page, '#drive-breadcrumbs button:nth-of-type(2)', '#drive-view-folders [data-drive-item-id="drafts"]'), 'close');
+        await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
+        await expect(page.locator('#drive-view-folders [data-drive-item-id="drafts"]')).toBeVisible();
+        expectDirectFolderZoom(await sampleFolderMotion(page, '#drive-breadcrumbs button:first-of-type', '#drive-folders [data-drive-item-id="projects"]'), 'close');
+        await expect(page.locator('#drive-folder-view')).toBeHidden();
+        await expect(page.locator('.drive-folder-ghost')).toHaveCount(0);
     });
 }
 
@@ -216,16 +322,16 @@ test('returning from a scrolled nested folder restores its card and position; re
     const before = await page.locator('#drive-folder-view-scroll').evaluate(el => el.scrollTop);
     expect(before).toBeGreaterThan(0);
     await openFolder(page, 'drafts', '#drive-view-folders');await settle(page);
-    const frames = await sampleFolderMotion(page, '#btn-folder-view-back');
-    expect(frames.some(frame => frame.direction === 'close' && frame.opacity > .9)).toBe(true);
-    await expect.poll(() => page.locator('#drive-folder-view-scroll').evaluate(el => el.scrollTop)).toBe(before);
+    // The browser can adjust scroll to expose the click target; restore the
+    // position captured at activation, after that adjustment.
+    const activatedAt = await page.evaluate(() => driveFolderStack.at(-1).origin.scrollTop);
+    expect(activatedAt).toBeGreaterThan(0);
+    const frames = await sampleFolderMotion(page, '#btn-folder-view-back', '#drive-view-folders [data-drive-item-id="drafts"]');
+    expectDirectFolderZoom(frames, 'close');
+    await expect.poll(() => page.locator('#drive-folder-view-scroll').evaluate(el => el.scrollTop)).toBe(activatedAt);
     await openFolder(page, 'drafts', '#drive-view-folders');await settle(page);
     await page.setViewportSize({ width: 844, height: 390 });
-    const state = await page.evaluate(() => {
-        document.getElementById('btn-folder-view-back').click();
-        return { active: !!driveFolderAnimation, effects: document.getElementById('drive-folder-view').getAnimations({ subtree: true }).length };
-    });
-    expect(state.active).toBe(true);expect(state.effects).toBeGreaterThan(0);
+    expectDirectFolderZoom(await sampleFolderMotion(page, '#btn-folder-view-back', '#drive-view-folders [data-drive-item-id="drafts"]'), 'close');
     await settle(page);
     await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
     await expect(page.locator('.drive-folder-ghost')).toHaveCount(0);
