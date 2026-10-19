@@ -9823,8 +9823,9 @@
                 left: `${rect.left - bounds.left}px`, top: `${rect.top - bounds.top}px`,
                 width: `${rect.width}px`, height: `${rect.height}px`, visibility: ''
             });
-            // Labels belong to the resting cover, never to the enlarged lid.
-            ghost.querySelectorAll('.drive-folder-print, .drive-card-menu').forEach(el => el.remove());
+            // The printed name rides on the lid and fades as it turns; only
+            // the menu button never belongs to the moving scene.
+            ghost.querySelectorAll('.drive-card-menu').forEach(el => el.remove());
             // Transparent on purpose: the folder board and its sheets stay
             // visible underneath until the interior has faded in over them.
             const surface = document.createElement('div');
@@ -9944,7 +9945,7 @@
                 const { scale, finalLeft, finalTop } = geometry();
                 const scrollTop = backwards ? previous.scrollTop : driveFolderViewScrollEl.scrollTop;
                 Object.assign(interior.style, {
-                    top: `${-(finalTop + rect.height * 0.06 * scale)}px`,
+                    top: `${-finalTop}px`,
                     left: `${-finalLeft}px`, right: 'auto', bottom: 'auto',
                     width: `${bounds.width}px`, height: `${bounds.height}px`,
                     transformOrigin: '0 0', transform: 'none',
@@ -10009,35 +10010,35 @@
                     }
                     mountInterior(interior);
                     // The folder colour and its sheets crossfade into the
-                    // interior background as the lid opens, and back again as
-                    // it closes. Opacity on this composited layer is free.
+                    // interior background for most of the zoom, and back again
+                    // while closing. Opacity on this composited layer is free.
                     fade = animate(interior, backwards
-                        ? [{ opacity: 1 }, { opacity: 1, offset: .55 }, { opacity: 0 }]
-                        : [{ opacity: 0 }, { opacity: 1, offset: .45 }, { opacity: 1 }], { easing: 'linear' });
+                        ? [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }]
+                        : [{ opacity: 0 }, { opacity: 1, offset: .7 }, { opacity: 1 }], { easing: 'linear' });
                 }
                 zoom.effect.setKeyframes(zoomFrames());
             };
             // Opacity would flatten the opaque lid's two 3D faces. Animate
             // transform only; the browser compositor owns every motion frame.
-            // The lid and the zoom are one movement on one timeline. The lid
-            // leads slightly (it starts turning as the folder begins to grow)
-            // and is fully open well before the zoom lands, with the same
-            // smooth acceleration as the enlargement itself.
+            // The lid and the zoom are one movement on one timeline: the lid
+            // turns for the whole duration of the zoom, leading slightly at
+            // the start and settling together with the enlargement.
             const zoom = animate(ghost, zoomFrames());
-            const hinge = animate(cover, backwards ? [
-                { transform: opened },
-                { transform: opened, offset: .2, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
-                { transform: closed }
-            ] : [
-                { transform: closed, easing: 'cubic-bezier(0.2, 0, 0.2, 1)' },
-                { transform: opened, offset: .8 },
-                { transform: opened }
-            ], { easing: 'linear' });
+            const hinge = animate(cover, backwards
+                ? [{ transform: opened }, { transform: closed }]
+                : [{ transform: closed }, { transform: opened }],
+                { easing: backwards ? 'cubic-bezier(0.4, 0, 0.2, 1)' : 'cubic-bezier(0.2, 0, 0.2, 1)' });
+            // The name printed on the lid stays legible while the lid starts
+            // to turn, then fades before it would become enlarged text.
+            const print = cover.querySelector('.drive-folder-print');
+            const label = print ? animate(print, backwards
+                ? [{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }]
+                : [{ opacity: 1 }, { opacity: 0, offset: .4 }, { opacity: 0 }], { easing: 'linear' }) : null;
             const startMotion = () => {
                 if (done) return;
                 handle.phase = 'animating';
                 const start = document.timeline.currentTime;
-                [zoom, hinge, fade].filter(Boolean).forEach(animation => {
+                [zoom, hinge, label, fade].filter(Boolean).forEach(animation => {
                     animation.play();
                     // Every effect shares one native timeline, including on
                     // high-refresh displays; no JS clock or frame-rate cap.
