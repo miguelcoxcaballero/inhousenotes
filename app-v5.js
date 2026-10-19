@@ -9837,7 +9837,6 @@
             driveHome.appendChild(layer);
             const closed = resting && resting !== 'none' ? resting : 'rotateY(0deg)';
             const opened = 'rotateY(-112deg)';
-            const small = 'translate(0px, 0px) scale(1)';
             const animations = [];
             const focusBefore = document.activeElement;
             let done = false, destinationArt = null, restoreLiveView = null;
@@ -9855,7 +9854,7 @@
                 if (done) return;
                 prepareScene();
                 done = true;
-                cancelAnimationFrame(playbackFrame);
+                handle.phase = 'complete';
                 cancelAnimationFrame(prepareFrame);
                 if (driveFolderAnimation === handle) driveFolderAnimation = null;
                 restoreLiveView?.();
@@ -9883,7 +9882,7 @@
             };
             const resized = () => { cleanup(); positionDriveFolderView(); };
             const visibilityChanged = () => { if (document.hidden) cleanup(); };
-            const handle = { finish: cleanup, prepared: false };
+            const handle = { finish: cleanup, prepared: false, phase: 'preparing' };
             driveFolderAnimation = handle;
             ghost.dataset.direction = backwards ? 'close' : 'open';
             if (art) art.style.visibility = 'hidden';
@@ -9894,8 +9893,7 @@
             // restored underneath. Snapshot IDs never compete with live UI.
             // Closing starts with the outgoing viewport already in the
             // scene. Opening can paint just the lightweight lid first.
-            let playbackFrame = 0, prepareFrame = 0, elapsed = 0;
-            let lastFrame = performance.now();
+            let prepareFrame = 0;
             const geometry = () => {
                 const scale = Math.max((bounds.width + 4) / rect.width, (bounds.height + 4) / (rect.height * 0.94));
                 const finalLeft = (bounds.width - rect.width * scale) / 2;
@@ -9903,23 +9901,34 @@
                 return { scale, finalLeft, finalTop,
                     dx: finalLeft - (rect.left - bounds.left), dy: finalTop - (rect.top - bounds.top) };
             };
+            const sizeGhost = () => {
+                const { scale } = geometry();
+                // Rasterise at the final size, then shrink to the card. Growing
+                // a card-sized DOM surface required a second large raster job
+                // just as its zoom started, even with native animations.
+                Object.assign(ghost.style, {
+                    left: `${rect.left - bounds.left}px`, top: `${rect.top - bounds.top}px`,
+                    width: `${rect.width * scale}px`, height: `${rect.height * scale}px`,
+                    perspective: `${1100 * scale}px`
+                });
+            };
             const zoomFrames = () => {
                 const { scale, dx, dy } = geometry();
-                const at = amount => `translate(${dx * amount}px, ${dy * amount}px) scale(${1 + (scale - 1) * amount})`;
-                // Let the hinge read clearly before the main enlargement.
+                const at = amount => `translate(${dx * amount}px, ${dy * amount}px) scale(${(1 + (scale - 1) * amount) / scale})`;
                 return backwards
-                    ? [{ transform: at(1) }, { transform: at(.035), offset: .8 }, { transform: small }]
-                    : [{ transform: small }, { transform: at(.035), offset: .2 }, { transform: at(1) }];
+                    ? [{ transform: at(1) }, { transform: at(0) }]
+                    : [{ transform: at(0) }, { transform: at(1) }];
             };
+            sizeGhost();
             const mountInterior = interior => {
                 if (!interior) return;
                 const { scale, finalLeft, finalTop } = geometry();
                 const scrollTop = backwards ? previous.scrollTop : driveFolderViewScrollEl.scrollTop;
                 Object.assign(interior.style, {
-                    top: `${-(finalTop + rect.height * 0.06 * scale) / scale}px`,
-                    left: `${-finalLeft / scale}px`, right: 'auto', bottom: 'auto',
+                    top: `${-(finalTop + rect.height * 0.06 * scale)}px`,
+                    left: `${-finalLeft}px`, right: 'auto', bottom: 'auto',
                     width: `${bounds.width}px`, height: `${bounds.height}px`,
-                    transformOrigin: '0 0', transform: `scale(${1 / scale})`
+                    transformOrigin: '0 0', transform: 'none'
                 });
                 surface.appendChild(interior);
                 // A fresh snapshot already starts at zero. Assigning zero
@@ -9935,7 +9944,7 @@
                     previous.view.classList.add('drive-folder-transition-backdrop');
                     Object.assign(previous.view.style, { top: '0px', left: '0px', right: '0px', bottom: '0px' });
                     layer.insertBefore(previous.view, ghost);
-                    previous.view.querySelector('.drive-folder-view-scroll').scrollTop = previous.scrollTop;
+                    if (previous.scrollTop) previous.view.querySelector('.drive-folder-view-scroll').scrollTop = previous.scrollTop;
                 }
                 handle.preparing = true;
                 onSwap();
@@ -9947,19 +9956,16 @@
                     const destination = captureDriveFolderOrigin(destinationArt);
                     if (destination) {
                         Object.assign(rect, destination.rect);
-                        Object.assign(ghost.style, {
-                            left: `${rect.left - bounds.left}px`, top: `${rect.top - bounds.top}px`,
-                            width: `${rect.width}px`, height: `${rect.height}px`
-                        });
+                        sizeGhost();
                         destinationArt.style.visibility = 'hidden';
                     }
                 }
                 driveFolderViewEl.inert = true;
                 driveFolderViewEl.classList.add('is-leaving');
 
-                // Uniform zoom, with the interior inverse-scaled once to its final
-                // viewport layout. At the last frame its pixels already occupy the
-                // exact live-view coordinates; restoring its DOM needs no fade.
+                // The interior keeps its final viewport layout and raster size.
+                // Only the outer surface shrinks; at the endpoint restoring the
+                // live DOM preserves these exact coordinates without a fade.
                 const interior = backwards ? previous?.view : driveFolderViewEl;
                 if (interior) {
                     const properties = ['top', 'left', 'right', 'bottom', 'width', 'height', 'transform', 'transform-origin'];
@@ -9976,46 +9982,64 @@
                             marker.replaceWith(interior);
                             saved.forEach(([name, value, priority]) => value
                                 ? interior.style.setProperty(name, value, priority) : interior.style.removeProperty(name));
-                            driveFolderViewScrollEl.scrollTop = scrollTop;
+                            if (scrollTop) driveFolderViewScrollEl.scrollTop = scrollTop;
                         };
                     }
                     mountInterior(interior);
                 }
                 zoom.effect.setKeyframes(zoomFrames());
             };
-            // Opacity on the cover would flatten preserve-3d and make both
-            // faces paint over each other. Swing an opaque lid past edge-on.
+            // Opacity would flatten the opaque lid's two 3D faces. Animate
+            // transform only; the browser compositor owns every motion frame.
             const zoom = animate(ghost, zoomFrames());
-            animate(cover, backwards ? [
+            const hinge = animate(cover, backwards ? [
                 { transform: opened },
-                { transform: opened, offset: 0.2 },
+                { transform: opened, offset: .2 },
                 { transform: closed }
             ] : [
-                { transform: closed },
-                { transform: 'rotateY(-45deg)', offset: .12 },
-                { transform: opened, offset: 0.72 },
+                { transform: 'rotateY(-45deg)' },
+                { transform: opened, offset: .75 },
                 { transform: opened }
             ], { easing: 'linear' });
-            // A wall-clock animation can finish while Android is still
-            // rasterising its first frames. Share a frame-paced clock for
-            // lid and zoom so a stall never spends the unseen motion.
-            const tick = () => {
+            const introDuration = backwards ? 0 : Math.round(duration * .2);
+            let intro = null;
+            let introFinished = Promise.resolve();
+            if (!backwards) {
+                // Respond before building the catalogue. This small native
+                // hinge animation continues even while main-thread setup runs.
+                intro = cover.animate([{ transform: closed }, { transform: 'rotateY(-45deg)' }], {
+                    duration: introDuration, fill: 'both', easing: 'ease-out'
+                });
+                animations.push(intro);
+                introFinished = intro.finished.catch(() => {});
+            }
+            const startMotion = () => {
                 if (done) return;
-                const timestamp = performance.now();
-                elapsed += Math.min(32, Math.max(0, timestamp - lastFrame));
-                lastFrame = timestamp;
-                elapsed = Math.min(duration, elapsed);
-                animations.forEach(animation => { animation.currentTime = elapsed; });
-                if (elapsed >= duration) { cleanup(); return; }
-                playbackFrame = requestAnimationFrame(tick);
+                handle.phase = 'animating';
+                intro?.cancel();
+                const start = document.timeline.currentTime;
+                [zoom, hinge].forEach(animation => {
+                    animation.effect.updateTiming({ duration: duration - introDuration });
+                    animation.play();
+                    // Both transforms share one native timeline, including on
+                    // high-refresh displays; no JS clock or frame-rate cap.
+                    animation.startTime = start;
+                });
+                zoom.finished.then(cleanup).catch(() => {});
             };
-            playbackFrame = requestAnimationFrame(tick);
-            // Paint the lid AND its first moving frame before building the
-            // interior. A single initial paint only shows the closed cover;
-            // doing catalogue work on the next frame delayed visible motion.
+            // Let the initial lid reach the compositor before building the
+            // interior. Commit its final-size raster before starting the zoom:
+            // setup time must not spend any of that visible enlargement.
             prepareFrame = requestAnimationFrame(() => {
                 prepareFrame = requestAnimationFrame(() => {
-                    prepareFrame = requestAnimationFrame(() => { if (!done) prepareScene(); });
+                    if (done) return;
+                    prepareScene();
+                    handle.phase = 'priming';
+                    prepareFrame = requestAnimationFrame(() => {
+                        prepareFrame = requestAnimationFrame(() => {
+                            if (!done) void introFinished.then(startMotion);
+                        });
+                    });
                 });
             });
             window.addEventListener('resize', resized);

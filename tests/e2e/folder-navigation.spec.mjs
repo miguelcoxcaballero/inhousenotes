@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, chromium } from '@playwright/test';
+import { createHash } from 'node:crypto';
 
 const folderType = 'application/vnd.google-apps.folder';
 const entries = [
@@ -179,8 +180,8 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
 
 async function sampleFolderMotion(page, selector, returnCardSelector = null, childId = null, sampleHandoff = false) {
     return page.evaluate(async ({ selector, returnCardSelector, childId, sampleHandoff }) => {
-        // Pause the actual zoom at creation, avoiding races with a short
-        // compositor animation on a loaded CI worker.
+        // Let the native lid intro and deferred scene preparation finish.
+        // The principal zoom is sampled synchronously once it starts.
         const nativeAnimate = Element.prototype.animate;
         const startedInsideFolder = !document.getElementById('drive-folder-view').classList.contains('hidden');
         let zoom = null;
@@ -189,7 +190,6 @@ async function sampleFolderMotion(page, selector, returnCardSelector = null, chi
             if (this.classList.contains('drive-folder-ghost')
                 && Array.isArray(frames) && frames.some(frame => frame.transform)) {
                 zoom = animation;
-                zoom.pause();
             }
             return animation;
         };
@@ -198,7 +198,7 @@ async function sampleFolderMotion(page, selector, returnCardSelector = null, chi
             await new Promise((resolve, reject) => {
                 const deadline = performance.now() + 1200;
                 const waitForZoom = () => {
-                    if (zoom && driveFolderAnimation?.prepared) return resolve();
+                    if (zoom && driveFolderAnimation?.phase === 'animating') return resolve();
                     if (!driveFolderAnimation || performance.now() > deadline) return reject(new Error('No visible folder zoom started'));
                     requestAnimationFrame(waitForZoom);
                 };
@@ -212,8 +212,8 @@ async function sampleFolderMotion(page, selector, returnCardSelector = null, chi
         const layer = ghost.closest('.drive-folder-transition');
         const contents = ghost.querySelector(':scope > .drive-folder-contents');
         const lid = ghost.querySelector(':scope > .drive-folder-cover');
-        // Seek the actual effects after the deferred interior is prepared,
-        // without racing the visible-time clock. Finishing below exercises the
+        // Seek the actual main effects after the interior has been prepared
+        // and rasterised. Finishing below exercises the
         // production transition's content swap and cleanup.
         const animations = document.getAnimations().filter(animation => {
             const target = animation.effect?.target;
@@ -591,74 +591,95 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
     }
 });
 
-test('initial rendering and mid-animation stalls cannot consume the visible folder motion', async ({ page, context }) => {
+test('native folder transforms keep presenting frames while the main thread is blocked', async ({ page, context }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await setup(page, context);
-    for (const [selector, direction] of [
-        ['#drive-folders [data-drive-item-id="projects"]', 'open'],
-        ['#drive-view-folders [data-drive-item-id="drafts"]', 'open'],
-        ['#btn-folder-view-back', 'close'],
-        ['#btn-folder-view-back', 'close']
-    ]) {
-        const result = await page.evaluate(async selector => {
-            const nativeAnimate = Element.prototype.animate;
-            let zoom = null, ghost = null, stalledAt = -1;
-            const frames = [];
-            const started = performance.now();
-            const block = ms => {
-                const deadline = performance.now() + ms;
-                while (performance.now() < deadline) { /* Deliberately block the main thread. */ }
-            };
-            Element.prototype.animate = function (keyframes, timing) {
-                const animation = nativeAnimate.call(this, keyframes, timing);
-                if (this.classList.contains('drive-folder-ghost')) { zoom = animation; ghost = this; }
-                return animation;
-            };
-            try {
-                document.querySelector(selector).click();
-                // This task blocks before the browser can present the initial
-                // scene. It must not spend 220ms of the visible animation.
-                block(220);
-                await new Promise((resolve, reject) => {
-                    const sample = () => {
-                        const progress = zoom?.effect.getComputedTiming().progress ?? null;
-                        const scale = ghost?.isConnected ? new DOMMatrixReadOnly(getComputedStyle(ghost).transform).m11 : null;
-                        frames.push({ ms: performance.now() - started, progress, scale });
-                        if (stalledAt < 0 && progress >= .28 && progress < .65) {
-                            stalledAt = frames.length - 1;
-                            // The following RAF samples after the production
-                            // clock has had an opportunity to account for lag.
-                            block(210);
-                        }
-                        if (zoom && !driveFolderAnimation) return resolve();
-                        if (performance.now() - started > 6_000) return reject(new Error('Folder motion did not finish after a stall'));
-                        requestAnimationFrame(sample);
-                    };
-                    requestAnimationFrame(sample);
+    const cdp = await context.newCDPSession(page);
+    const presented = [];
+    cdp.on('Page.screencastFrame', event => {
+        presented.push({ timestamp: event.metadata.timestamp * 1000,
+            hash: createHash('sha256').update(event.data).digest('hex') });
+        void cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
+    });
+    await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
+    try {
+        for (const [selector, direction] of [
+            ['#drive-folders [data-drive-item-id="projects"]', 'open'],
+            ['#drive-view-folders [data-drive-item-id="drafts"]', 'open'],
+            ['#btn-folder-view-back', 'close'],
+            ['#btn-folder-view-back', 'close']
+        ]) {
+            const result = await page.evaluate(async selector => {
+                const nativeAnimate = Element.prototype.animate;
+                const descriptor = Object.getOwnPropertyDescriptor(Animation.prototype, 'currentTime');
+                let zoom = null, writes = 0;
+                Element.prototype.animate = function (frames, timing) {
+                    const animation = nativeAnimate.call(this, frames, timing);
+                    if (this.classList.contains('drive-folder-ghost')) zoom = animation;
+                    return animation;
+                };
+                Object.defineProperty(Animation.prototype, 'currentTime', {
+                    ...descriptor,
+                    set(value) {
+                        if (this.effect?.target?.closest('.drive-folder-transition')) writes++;
+                        descriptor.set.call(this, value);
+                    }
                 });
-                return { frames, stalledAt, duration: zoom.effect.getComputedTiming().endTime };
-            } finally {
-                Element.prototype.animate = nativeAnimate;
-            }
-        }, selector);
-        const animated = result.frames.filter(frame => frame.progress !== null);
-        const afterStall = result.frames.slice(result.stalledAt + 1).filter(frame => frame.progress !== null);
-        const diagnostics = JSON.stringify({ direction, stalledAt: result.stalledAt,
-            frames: result.frames.map(frame => [Math.round(frame.ms), frame.progress]) });
-        expect(result.duration).toBeGreaterThanOrEqual(direction === 'open' ? 690 : 530);
-        expect(result.duration).toBeLessThanOrEqual(direction === 'open' ? 760 : 600);
-        expect(animated[0].progress, diagnostics).toBeLessThan(.08);
-        expect(result.stalledAt, diagnostics).toBeGreaterThan(0);
-        expect(new Set(afterStall.map(frame => Math.round(frame.progress * 1000))).size, diagnostics).toBeGreaterThanOrEqual(10);
-        expect(afterStall[0].progress - result.frames[result.stalledAt].progress, diagnostics).toBeLessThan(.13);
-        for (let index = 1; index < animated.length; index++) {
-            expect(animated[index].progress - animated[index - 1].progress, diagnostics).toBeGreaterThanOrEqual(-.002);
-            const scaleDelta = animated[index].scale - animated[index - 1].scale;
-            expect(scaleDelta * (direction === 'open' ? 1 : -1), diagnostics).toBeGreaterThanOrEqual(-.005);
+                const block = ms => {
+                    const deadline = performance.now() + ms;
+                    while (performance.now() < deadline) { /* Deliberate main-thread stall. */ }
+                };
+                try {
+                    document.querySelector(selector).click();
+                    // Setup must not consume the principal native zoom before
+                    // the first opportunity to commit its scene.
+                    block(220);
+                    const initial = zoom.currentTime;
+                    await new Promise((resolve, reject) => {
+                        const deadline = performance.now() + 4_000;
+                        const ready = () => {
+                            if (driveFolderAnimation?.phase === 'animating'
+                                && zoom.effect.getComputedTiming().progress >= .22) return resolve();
+                            if (performance.now() > deadline) return reject(new Error('Native folder motion did not start'));
+                            requestAnimationFrame(ready);
+                        };
+                        requestAnimationFrame(ready);
+                    });
+                    const before = { time: zoom.currentTime, writes, state: zoom.playState };
+                    const blockStart = performance.timeOrigin + performance.now();
+                    block(210);
+                    const blockEnd = performance.timeOrigin + performance.now();
+                    await new Promise(requestAnimationFrame);
+                    const after = { time: zoom.currentTime, writes, state: zoom.playState };
+                    await new Promise(resolve => {
+                        const finished = () => !driveFolderAnimation ? resolve() : requestAnimationFrame(finished);
+                        finished();
+                    });
+                    return { initial, before, after, blockStart, blockEnd,
+                        duration: zoom.effect.getComputedTiming().endTime, finalWrites: writes };
+                } finally {
+                    Element.prototype.animate = nativeAnimate;
+                    Object.defineProperty(Animation.prototype, 'currentTime', descriptor);
+                }
+            }, selector);
+            const duringBlock = presented.filter(frame => frame.timestamp > result.blockStart && frame.timestamp < result.blockEnd);
+            const diagnostics = JSON.stringify({ direction, ...result, presentedDuringBlock: duringBlock.length });
+            expect(result.initial, diagnostics).toBe(0);
+            expect(result.duration).toBeGreaterThanOrEqual(direction === 'open' ? 540 : 530);
+            expect(result.duration).toBeLessThanOrEqual(direction === 'open' ? 620 : 600);
+            expect(result.before.state, diagnostics).toBe('running');
+            expect(result.after.time - result.before.time, diagnostics).toBeGreaterThanOrEqual(160);
+            expect(result.finalWrites - result.before.writes, diagnostics).toBe(0);
+            // A timeline advancing alone does not prove smooth output. These
+            // are actual compositor images delivered while JS could not run.
+            expect(new Set(duringBlock.map(frame => frame.hash)).size, diagnostics).toBeGreaterThanOrEqual(4);
+            await expect(page.locator('.drive-folder-transition')).toHaveCount(0);
         }
-        await expect(page.locator('.drive-folder-transition')).toHaveCount(0);
+        await expect(page.locator('#drive-folder-view')).toBeHidden();
+    } finally {
+        await cdp.send('Page.stopScreencast');
+        await cdp.detach();
     }
-    await expect(page.locator('#drive-folder-view')).toBeHidden();
 });
 
 test('interrupting folder warmup prepares once and cannot cancel the next navigation', async ({ page, context }) => {
@@ -697,7 +718,15 @@ test('interrupting folder warmup prepares once and cannot cancel the next naviga
                 // could run. They must neither prepare twice nor finish this one.
                 document.querySelector('#drive-view-folders [data-drive-item-id="drafts"]').click();
                 const successor = driveFolderAnimation;
-                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                await new Promise((resolve, reject) => {
+                    const deadline = performance.now() + 1_200;
+                    const ready = () => {
+                        if (successor.prepared) return resolve();
+                        if (performance.now() > deadline) return reject(new Error('Successor did not prepare'));
+                        requestAnimationFrame(ready);
+                    };
+                    requestAnimationFrame(ready);
+                });
                 const next = {
                     sameHandle: !!successor && driveFolderAnimation === successor,
                     prepared: [...prepared],
@@ -725,5 +754,122 @@ test('interrupting folder warmup prepares once and cannot cancel the next naviga
         expect(result.finalPrepared, interruption).toEqual(['projects', 'drafts']);
         expect(result.finalGhosts, interruption).toBe(0);
         expect(result.finalActive, interruption).toBe(false);
+    }
+});
+
+
+// Reproduce actual scene DOM/styles/keyframes on a controlled display source.
+// The full-app screencast test above covers live navigation and JS stalls;
+// this test isolates interpolation at 120Hz from browser boot and real vsync.
+test('real folder scenes interpolate at 120 Hz on accelerated compositor layers', async ({ page, context }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setup(page, context);
+    const scenes = [];
+    for (const selector of [
+        '#drive-folders [data-drive-item-id="projects"]',
+        '#drive-view-folders [data-drive-item-id="drafts"]',
+        '#btn-folder-view-back', '#btn-folder-view-back'
+    ]) {
+        scenes.push(await page.evaluate(async selector => {
+            document.querySelector(selector).click();
+            await new Promise(resolve => {
+                const ready = () => driveFolderAnimation?.phase === 'animating'
+                    ? resolve() : requestAnimationFrame(ready);
+                requestAnimationFrame(ready);
+            });
+            const layer = document.querySelector('.drive-folder-transition');
+            const targets = ['.drive-folder-ghost', '.drive-folder-ghost > .drive-folder-cover'];
+            const effects = targets.map(selector => {
+                const animation = layer.querySelector(selector).getAnimations()[0];
+                return { selector, frames: animation.effect.getKeyframes(), timing: animation.effect.getTiming() };
+            });
+            const wrapper = document.getElementById('drive-home').cloneNode(false);
+            wrapper.appendChild(layer.cloneNode(true));
+            const body = document.body.cloneNode(false);
+            body.appendChild(wrapper);
+            const css = [...document.styleSheets].flatMap(sheet => {
+                try { return [...sheet.cssRules].filter(rule => rule.type !== CSSRule.FONT_FACE_RULE).map(rule => rule.cssText); }
+                catch { return []; }
+            }).join('\n');
+            const scene = { html: body.outerHTML, css, effects,
+                htmlClass: document.documentElement.className, direction: layer.querySelector('.drive-folder-ghost').dataset.direction };
+            driveFolderAnimation.finish();
+            return scene;
+        }, selector));
+    }
+    const browser = await chromium.launch({ args: [
+        '--enable-begin-frame-control', '--run-all-compositor-stages-before-draw'
+    ] });
+    try {
+        for (const scene of scenes) {
+            const replay = await browser.newPage({ viewport: { width: 390, height: 844 } });
+            // The runner's trace screencast drives extra 60Hz frames. Keep a
+            // trace without its screenshot stream for this controlled display.
+            await replay.context().tracing.stop();
+            await replay.context().tracing.start({ screenshots: false, snapshots: false });
+            const cdp = await replay.context().newCDPSession(replay);
+            let layers = [];
+            await cdp.send('Performance.enable');
+            await cdp.send('DOM.enable');
+            await cdp.send('LayerTree.enable');
+            cdp.on('LayerTree.layerTreeDidChange', event => { layers = event.layers || []; });
+            await replay.setContent(`<html class="${scene.htmlClass}"><head><style>${scene.css}</style></head>${scene.html}</html>`);
+            await replay.evaluate(effects => {
+                window.replayedFolderEffects = effects.map(({ selector, frames, timing }) =>
+                    document.querySelector(selector).animate(frames, timing));
+                // Keep the document timeline observable at each injected
+                // display tick too. This never seeks a native animation.
+                const observeDisplayTick = () => requestAnimationFrame(observeDisplayTick);
+                requestAnimationFrame(observeDisplayTick);
+            }, scene.effects);
+            const { metrics } = await cdp.send('Performance.getMetrics');
+            const start = metrics.find(metric => metric.name === 'Timestamp').value * 1000;
+            const { root } = await cdp.send('DOM.getDocument');
+            const samples = [], images = [], accelerated = new Set();
+            for (let index = 0; index < 40; index++) {
+                let frameTimeout;
+                const frame = await Promise.race([
+                    cdp.send('HeadlessExperimental.beginFrame', {
+                        frameTimeTicks: start + index * 1000 / 120, interval: 1000 / 120,
+                        screenshot: { format: 'png' }
+                    }),
+                    new Promise((_, reject) => {
+                        frameTimeout = setTimeout(() => reject(new Error(`Controlled display frame ${index} did not present`)), 2_000);
+                    })
+                ]).finally(() => clearTimeout(frameTimeout));
+                images.push(createHash('sha256').update(frame.screenshotData || '').digest('hex'));
+                samples.push(await replay.evaluate(() => replayedFolderEffects.map(animation => ({
+                    time: animation.currentTime, state: animation.playState
+                }))));
+                if (index === 8) {
+                    for (const { selector } of scene.effects) {
+                        const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+                        const { node } = await cdp.send('DOM.describeNode', { nodeId });
+                        for (const layer of layers.filter(layer => layer.backendNodeId === node.backendNodeId)) {
+                            const reasons = await cdp.send('LayerTree.compositingReasons', { layerId: layer.layerId });
+                            if (reasons.compositingReasonIds.includes('ActiveTransformAnimation')) accelerated.add(selector);
+                        }
+                    }
+                }
+            }
+            const diagnostics = JSON.stringify({ direction: scene.direction, accelerated: [...accelerated],
+                uniqueImages: new Set(images).size, times: samples.map(sample => sample[0].time) });
+            expect(accelerated.size, diagnostics).toBe(2);
+            expect(new Set(images).size, diagnostics).toBeGreaterThanOrEqual(35);
+            for (let index = 1; index < samples.length; index++) {
+                for (let effect = 0; effect < 2; effect++) {
+                    expect(samples[index][effect].state, diagnostics).toBe('running');
+                    const step = samples[index][effect].time - samples[index - 1][effect].time;
+                    // A 60Hz JS driver would duplicate poses or jump 16.67ms.
+                    expect(step, diagnostics).toBeGreaterThan(8.1);
+                    expect(step, diagnostics).toBeLessThan(8.6);
+                }
+            }
+            await cdp.detach();
+            await replay.close();
+        }
+    } finally {
+        await browser.close();
     }
 });
