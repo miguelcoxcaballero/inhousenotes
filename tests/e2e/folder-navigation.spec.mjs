@@ -346,8 +346,13 @@ function expectFolderContentsDuringZoom(frames) {
     expect(frames.every(frame => frame.coverOpacity > .99), 'The lid must open rather than fade away').toBe(true);
     expect(frames.some(frame => frame.progress >= .2 && frame.progress <= .8
         && frame.lidDepth > .65 && frame.coverOpacity > .95), 'The visible lid must rotate in 3D').toBe(true);
-    expect(frames.filter(frame => frame.progress >= .2).every(frame => frame.labelOpacity < .05),
+    // The printed name rides on the lid while the folder is still small, and
+    // must be gone by the time the lid would show it as enlarged text.
+    const enlarged = frames.filter(frame => frame.direction === 'open' ? frame.progress >= .5 : frame.progress <= .5);
+    expect(enlarged.every(frame => frame.labelOpacity < .05),
         'The cover label must disappear before it becomes enlarged text').toBe(true);
+    expect(frames[0].direction === 'open' ? frames[0].labelOpacity : frames.at(-1).labelOpacity,
+        'The cover label is visible while the folder rests on its card').toBeGreaterThan(.9);
     const visible = frames.filter(frame => frame.progress >= .3 && frame.progress <= .8)
         .flatMap(frame => frame.childVisibility.filter(child => child.opacity > .1 && child.area > 200));
     expect(visible.length, 'Real folder children must appear before the zoom completes').toBeGreaterThan(1);
