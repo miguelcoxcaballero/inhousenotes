@@ -56,9 +56,11 @@ test('cached folders appear during opening; nested navigation and closing retain
         document.getElementById('btn-folder-view-back').click();
         const ghost = document.querySelector('.drive-folder-ghost');
         const contents = ghost?.querySelector(':scope > .drive-folder-contents');
+        const liveView = document.getElementById('drive-folder-view');
+        const visibleContent = contents?.textContent.trim() ? contents : liveView;
         return {
-            visible: !!contents && getComputedStyle(contents).display !== 'none',
-            text: contents?.textContent,
+            visible: !!visibleContent && getComputedStyle(visibleContent).display !== 'none',
+            text: visibleContent?.textContent,
             effects: ghost?.getAnimations({ subtree: true }).length || 0
         };
     });
@@ -196,7 +198,7 @@ async function sampleFolderMotion(page, selector, returnCardSelector = null, chi
             await new Promise((resolve, reject) => {
                 const deadline = performance.now() + 1200;
                 const waitForZoom = () => {
-                    if (zoom) return resolve();
+                    if (zoom && driveFolderAnimation?.prepared) return resolve();
                     if (!driveFolderAnimation || performance.now() > deadline) return reject(new Error('No visible folder zoom started'));
                     requestAnimationFrame(waitForZoom);
                 };
@@ -210,8 +212,8 @@ async function sampleFolderMotion(page, selector, returnCardSelector = null, chi
         const layer = ghost.closest('.drive-folder-transition');
         const contents = ghost.querySelector(':scope > .drive-folder-contents');
         const lid = ghost.querySelector(':scope > .drive-folder-cover');
-        // Seek the actual compositor effects instead of racing a 300ms
-        // animation on a loaded CI worker. Finishing below still exercises the
+        // Seek the actual effects after the deferred interior is prepared,
+        // without racing the visible-time clock. Finishing below exercises the
         // production transition's content swap and cleanup.
         const animations = document.getAnimations().filter(animation => {
             const target = animation.effect?.target;
@@ -301,8 +303,8 @@ function expectDirectFolderZoom(frames, direction) {
             expect(Math.abs(final[field] - final.destinationRect[field]), `${field}: closing must land on the real card`).toBeLessThan(1.5);
         }
     }
-    expect(frames[0].duration).toBeGreaterThanOrEqual(200);
-    expect(frames[0].duration).toBeLessThanOrEqual(420);
+    expect(frames[0].duration).toBeGreaterThanOrEqual(500);
+    expect(frames[0].duration).toBeLessThanOrEqual(800);
     const ordered = direction === 'open' ? frames : [...frames].reverse();
     const start = ordered[0], end = ordered.at(-1);
     expect(end.width).toBeGreaterThan(start.width * 1.3);
@@ -313,6 +315,10 @@ function expectDirectFolderZoom(frames, direction) {
     // journey in just a tenth of the animation.
     expect(initialTravel).toBeLessThan(.2);
     expect(finalTravel).toBeLessThan(.2);
+    if (direction === 'open') {
+        expect(initialTravel, 'The lid opens before the large zoom begins').toBeLessThan(.08);
+        expect(frames.find(frame => frame.progress === .1).lidDepth).toBeGreaterThan(.1);
+    }
     expect(end.left).toBeLessThanOrEqual(end.target.left + 2);
     expect(end.top).toBeLessThanOrEqual(end.target.top + 2);
     expect(end.right).toBeGreaterThanOrEqual(end.target.right - 2);
@@ -548,9 +554,10 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
             // Initial raster/upload has its own startup budget below. Once
             // movement begins, no long main-thread job may consume the zoom.
             const maxGap = Math.max(...moving.slice(1).map((frame, i) => frame.ms - moving[i].ms));
-            const diagnostics = JSON.stringify({ selector, clickMs: motion.clickMs,
+            const diagnostics = JSON.stringify({ selector, destination: expectedFolder || 'root', clickMs: motion.clickMs,
                 firstMotionMs: moving[0]?.ms, firstProgress: firstAnimated?.progress, intermediateFrames: moving.length, maxGap });
             expect(motion.finished, diagnostics).toBe(true);
+            expect(motion.clickMs, diagnostics).toBeLessThan(100);
             expect(firstAnimated?.progress, diagnostics).toBeLessThan(.2);
             expect(moving.length, diagnostics).toBeGreaterThanOrEqual(6);
             expect(moving[0]?.ms, diagnostics).toBeLessThan(900);
@@ -559,9 +566,21 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
             if (expectedFolder) {
                 await expect(page.locator('#drive-folder-view-title')).toHaveText(expectedFolder);
                 await expect(page.locator('#drive-view-folders [data-drive-item-id]')).toHaveCount(150);
+                expect(await page.locator('#drive-view-folders .drive-card-deferred').count(),
+                    'Offscreen cards must remain deferred until needed').toBeGreaterThan(100);
+                // Focusing an offscreen placeholder must hydrate the same card
+                // and preserve its keyboard handler, without a lost first action.
+                await page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"]`).focus();
+                await expect(page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"]`)).toBeFocused();
                 await page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"]`).scrollIntoViewIfNeeded();
                 await expect(page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"]`)).toBeInViewport();
                 await expect(page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"] .drive-card-title`)).toHaveText('Z 148');
+                await page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"]`).press('Enter');
+                await settle(page);
+                await expect(page.locator('#drive-folder-view-title')).toHaveText('Z 148');
+                await page.locator('#btn-folder-view-back').click();
+                await settle(page);
+                await expect(page.locator('#drive-folder-view-title')).toHaveText(expectedFolder);
                 await page.locator('#drive-folder-view-scroll').evaluate(el => { el.scrollTop = 0; });
                 await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
             } else await expect(page.locator('#drive-folder-view')).toBeHidden();
@@ -569,5 +588,142 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
     } finally {
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 });
         await cpu.detach();
+    }
+});
+
+test('initial rendering and mid-animation stalls cannot consume the visible folder motion', async ({ page, context }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setup(page, context);
+    for (const [selector, direction] of [
+        ['#drive-folders [data-drive-item-id="projects"]', 'open'],
+        ['#drive-view-folders [data-drive-item-id="drafts"]', 'open'],
+        ['#btn-folder-view-back', 'close'],
+        ['#btn-folder-view-back', 'close']
+    ]) {
+        const result = await page.evaluate(async selector => {
+            const nativeAnimate = Element.prototype.animate;
+            let zoom = null, ghost = null, stalledAt = -1;
+            const frames = [];
+            const started = performance.now();
+            const block = ms => {
+                const deadline = performance.now() + ms;
+                while (performance.now() < deadline) { /* Deliberately block the main thread. */ }
+            };
+            Element.prototype.animate = function (keyframes, timing) {
+                const animation = nativeAnimate.call(this, keyframes, timing);
+                if (this.classList.contains('drive-folder-ghost')) { zoom = animation; ghost = this; }
+                return animation;
+            };
+            try {
+                document.querySelector(selector).click();
+                // This task blocks before the browser can present the initial
+                // scene. It must not spend 220ms of the visible animation.
+                block(220);
+                await new Promise((resolve, reject) => {
+                    const sample = () => {
+                        const progress = zoom?.effect.getComputedTiming().progress ?? null;
+                        const scale = ghost?.isConnected ? new DOMMatrixReadOnly(getComputedStyle(ghost).transform).m11 : null;
+                        frames.push({ ms: performance.now() - started, progress, scale });
+                        if (stalledAt < 0 && progress >= .28 && progress < .65) {
+                            stalledAt = frames.length - 1;
+                            // The following RAF samples after the production
+                            // clock has had an opportunity to account for lag.
+                            block(210);
+                        }
+                        if (zoom && !driveFolderAnimation) return resolve();
+                        if (performance.now() - started > 6_000) return reject(new Error('Folder motion did not finish after a stall'));
+                        requestAnimationFrame(sample);
+                    };
+                    requestAnimationFrame(sample);
+                });
+                return { frames, stalledAt, duration: zoom.effect.getComputedTiming().endTime };
+            } finally {
+                Element.prototype.animate = nativeAnimate;
+            }
+        }, selector);
+        const animated = result.frames.filter(frame => frame.progress !== null);
+        const afterStall = result.frames.slice(result.stalledAt + 1).filter(frame => frame.progress !== null);
+        const diagnostics = JSON.stringify({ direction, stalledAt: result.stalledAt,
+            frames: result.frames.map(frame => [Math.round(frame.ms), frame.progress]) });
+        expect(result.duration).toBeGreaterThanOrEqual(direction === 'open' ? 690 : 530);
+        expect(result.duration).toBeLessThanOrEqual(direction === 'open' ? 760 : 600);
+        expect(animated[0].progress, diagnostics).toBeLessThan(.08);
+        expect(result.stalledAt, diagnostics).toBeGreaterThan(0);
+        expect(new Set(afterStall.map(frame => Math.round(frame.progress * 1000))).size, diagnostics).toBeGreaterThanOrEqual(10);
+        expect(afterStall[0].progress - result.frames[result.stalledAt].progress, diagnostics).toBeLessThan(.13);
+        for (let index = 1; index < animated.length; index++) {
+            expect(animated[index].progress - animated[index - 1].progress, diagnostics).toBeGreaterThanOrEqual(-.002);
+            const scaleDelta = animated[index].scale - animated[index - 1].scale;
+            expect(scaleDelta * (direction === 'open' ? 1 : -1), diagnostics).toBeGreaterThanOrEqual(-.005);
+        }
+        await expect(page.locator('.drive-folder-transition')).toHaveCount(0);
+    }
+    await expect(page.locator('#drive-folder-view')).toBeHidden();
+});
+
+test('interrupting folder warmup prepares once and cannot cancel the next navigation', async ({ page, context }) => {
+    await setup(page, context);
+    for (const interruption of ['finish', 'resize', 'hide']) {
+        const result = await page.evaluate(async interruption => {
+            const originalPrepare = prepareDriveFolderViewContent;
+            const hiddenDescriptor = Object.getOwnPropertyDescriptor(document, 'hidden');
+            const prepared = [];
+            prepareDriveFolderViewContent = (...args) => {
+                prepared.push(args[0]?.id);
+                return originalPrepare(...args);
+            };
+            const restoreVisibility = () => {
+                if (hiddenDescriptor) Object.defineProperty(document, 'hidden', hiddenDescriptor);
+                else delete document.hidden;
+            };
+            try {
+                document.querySelector('#drive-folders [data-drive-item-id="projects"]').click();
+                const pending = driveFolderAnimation;
+                const wasPending = !!pending && !pending.prepared;
+                if (interruption === 'finish') pending.finish();
+                else if (interruption === 'resize') window.dispatchEvent(new Event('resize'));
+                else {
+                    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+                    document.dispatchEvent(new Event('visibilitychange'));
+                    restoreVisibility();
+                }
+                const afterInterrupt = {
+                    prepared: [...prepared], active: !!driveFolderAnimation,
+                    ghosts: document.querySelectorAll('.drive-folder-transition').length,
+                    title: document.getElementById('drive-folder-view-title').textContent,
+                    inert: document.getElementById('drive-folder-view').inert
+                };
+                // Start another transition before the abandoned warmup's RAFs
+                // could run. They must neither prepare twice nor finish this one.
+                document.querySelector('#drive-view-folders [data-drive-item-id="drafts"]').click();
+                const successor = driveFolderAnimation;
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+                const next = {
+                    sameHandle: !!successor && driveFolderAnimation === successor,
+                    prepared: [...prepared],
+                    ghosts: document.querySelectorAll('.drive-folder-transition').length,
+                    title: document.getElementById('drive-folder-view-title').textContent
+                };
+                successor.finish();
+                closeDriveFolderView({ animate: false });
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                return { wasPending, afterInterrupt, next, finalPrepared: prepared,
+                    finalGhosts: document.querySelectorAll('.drive-folder-transition').length,
+                    finalActive: !!driveFolderAnimation };
+            } finally {
+                prepareDriveFolderViewContent = originalPrepare;
+                restoreVisibility();
+            }
+        }, interruption);
+        expect(result.wasPending, interruption).toBe(true);
+        expect(result.afterInterrupt, interruption).toEqual({
+            prepared: ['projects'], active: false, ghosts: 0, title: 'Proyectos', inert: false
+        });
+        expect(result.next, interruption).toEqual({
+            sameHandle: true, prepared: ['projects', 'drafts'], ghosts: 1, title: 'Borradores'
+        });
+        expect(result.finalPrepared, interruption).toEqual(['projects', 'drafts']);
+        expect(result.finalGhosts, interruption).toBe(0);
+        expect(result.finalActive, interruption).toBe(false);
     }
 });
