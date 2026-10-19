@@ -9825,9 +9825,10 @@
             });
             // Labels belong to the resting cover, never to the enlarged lid.
             ghost.querySelectorAll('.drive-folder-print, .drive-card-menu').forEach(el => el.remove());
+            // Transparent on purpose: the folder board and its sheets stay
+            // visible underneath until the interior has faded in over them.
             const surface = document.createElement('div');
             surface.className = 'drive-folder-contents';
-            surface.style.background = getDriveFolderViewTint(entry?.color || DRIVE_DEFAULT_FOLDER_COLOR).bg;
             ghost.insertBefore(surface, ghost.querySelector('.drive-folder-cover'));
             layer.appendChild(ghost);
             return { ghost, layer, surface, rect, bounds };
@@ -9852,6 +9853,7 @@
             const closed = resting && resting !== 'none' ? resting : 'rotateY(0deg)';
             const opened = 'rotateY(-112deg)';
             const animations = [];
+            let fade = null;
             const focusBefore = document.activeElement;
             let done = false, destinationArt = null, restoreLiveView = null;
             let focusAfter = null;
@@ -9945,7 +9947,10 @@
                     top: `${-(finalTop + rect.height * 0.06 * scale)}px`,
                     left: `${-finalLeft}px`, right: 'auto', bottom: 'auto',
                     width: `${bounds.width}px`, height: `${bounds.height}px`,
-                    transformOrigin: '0 0', transform: 'none'
+                    transformOrigin: '0 0', transform: 'none',
+                    // Opening starts on the folder's own board and sheets; the
+                    // interior must not pop in while the lid is still turning.
+                    opacity: backwards ? '' : '0'
                 });
                 surface.appendChild(interior);
                 // A fresh snapshot already starts at zero. Assigning zero
@@ -9985,7 +9990,7 @@
                 // live DOM preserves these exact coordinates without a fade.
                 const interior = backwards ? previous?.view : driveFolderViewEl;
                 if (interior) {
-                    const properties = ['top', 'left', 'right', 'bottom', 'width', 'height', 'transform', 'transform-origin'];
+                    const properties = ['top', 'left', 'right', 'bottom', 'width', 'height', 'transform', 'transform-origin', 'opacity'];
                     if (!backwards) {
                         const marker = document.createComment('folder-view-home');
                         const saved = properties.map(name => [name, interior.style.getPropertyValue(name), interior.style.getPropertyPriority(name)]);
@@ -10003,6 +10008,12 @@
                         };
                     }
                     mountInterior(interior);
+                    // The folder colour and its sheets crossfade into the
+                    // interior background as the lid opens, and back again as
+                    // it closes. Opacity on this composited layer is free.
+                    fade = animate(interior, backwards
+                        ? [{ opacity: 1 }, { opacity: 1, offset: .55 }, { opacity: 0 }]
+                        : [{ opacity: 0 }, { opacity: 1, offset: .45 }, { opacity: 1 }], { easing: 'linear' });
                 }
                 zoom.effect.setKeyframes(zoomFrames());
             };
@@ -10035,7 +10046,7 @@
                 handle.phase = 'animating';
                 intro?.cancel();
                 const start = document.timeline.currentTime;
-                [zoom, hinge].forEach(animation => {
+                [zoom, hinge, fade].filter(Boolean).forEach(animation => {
                     animation.effect.updateTiming({ duration: duration - introDuration });
                     animation.play();
                     // Both transforms share one native timeline, including on
