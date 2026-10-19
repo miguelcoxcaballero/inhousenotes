@@ -1962,12 +1962,12 @@
         let driveFolderNavigationId = 0;
         const driveReducedMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
         const DRIVE_TOOL_ICONS = {
+            color: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" opacity="0.3"/>',
             star: '<path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.7-5.2-2.8-5.2 2.8 1-5.7-4.2-4.1 5.8-.8z"/>',
             offline: '<path d="M7 18.5h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 9.6 4.5 4.5 0 0 0 7 18.5z"/><path d="M12 10.5v6m-2.5-2.5 2.5 2.5 2.5-2.5"/>',
             offlineOn: '<path d="M7 18.5h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.2 9.6 4.5 4.5 0 0 0 7 18.5z"/><path d="m9.5 13.8 2 2 3.6-3.6"/>',
             move: '<path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H9l2 2.2h7.5A2.5 2.5 0 0 1 21 8.7v8.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M9.5 13.2h6m-2.4-2.4 2.4 2.4-2.4 2.4"/>',
             trash: '<path d="M4 7h16"/><path d="M18 7v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>',
-            more: '<circle cx="12" cy="5.5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.6" fill="currentColor" stroke="none"/>'
         };
         let driveHomeAutoRefreshTimer = null;
         let driveHomeAutoRefreshInProgress = false;
@@ -6443,7 +6443,8 @@
             }
             clearDriveTokenStorage();
             stopPresencePing();
-            if (state.driveAutosave && state.driveFileId) {
+            if (state.driveAutosave && state.driveFileId
+                && (driveDirty || driveContentVersion !== driveUploadedContentVersion)) {
                 deferredDriveSave = true;
                 if (driveContentVersion !== driveUploadedContentVersion) driveDirty = true;
             }
@@ -8990,58 +8991,6 @@
             return date ? `Edited ${date}` : 'PDF';
         }
 
-        // Hover toolbar over a sheet (desktop): the same actions as the ⋮ menu.
-        function createDriveQuickActions(item) {
-            const bar = document.createElement('div');
-            bar.className = 'drive-card-tools';
-            bar.setAttribute('role', 'toolbar');
-            bar.setAttribute('aria-label', 'Quick actions');
-            const pinned = !!window.InhouseOfflineLibrary?.record(item?.id)?.pinned;
-            const actions = [
-                ['star', item?.starred ? 'Remove from favorites' : 'Add to favorites', !!item?.starred],
-                window.InhouseOfflineLibrary ? ['offline', pinned ? 'Unpin offline copy' : 'Save offline', pinned] : null,
-                ['move', 'Move', false],
-                ['trash', 'Move to bin', false],
-                ['more', 'More actions', false]
-            ].filter(Boolean);
-            actions.forEach(([action, label, on]) => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.dataset.toolAction = action;
-                btn.title = label;
-                btn.setAttribute('aria-label', label);
-                btn.classList.toggle('is-on', on);
-                const icon = action === 'offline' && on ? 'offlineOn' : action;
-                const fill = action === 'star' && on ? 'currentColor' : 'none';
-                btn.innerHTML = `<svg viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DRIVE_TOOL_ICONS[icon]}</svg>`;
-                bar.appendChild(btn);
-            });
-            bar.addEventListener('click', (e) => {
-                const btn = e.target.closest('button[data-tool-action]');
-                if (!btn) return;
-                e.stopPropagation();
-                const action = btn.dataset.toolAction;
-                if (action === 'more') {
-                    const more = btn.closest('.drive-card')?.querySelector('.drive-card-more');
-                    if (more) more.click();
-                    return;
-                }
-                closeDriveCardMenu();
-                if (action === 'star') {
-                    updateDriveStarStatus(item, !item?.starred);
-                } else if (action === 'offline') {
-                    window.InhouseOfflineLibrary?.pin(item)
-                        .then(() => btn.classList.toggle('is-on', !!window.InhouseOfflineLibrary?.record(item.id)?.pinned))
-                        .catch(error => showStatus(error.message, { error: true }));
-                } else if (action === 'move') {
-                    openFolderPicker('move', item);
-                } else if (action === 'trash') {
-                    openTrashModal(item);
-                }
-            });
-            return bar;
-        }
-
         function createDriveCardInfo(item, subText, fallbackName) {
             const info = document.createElement('div');
             info.className = 'drive-card-info';
@@ -9061,7 +9010,7 @@
         function bindDriveCardActivation(card, open) {
             card.tabIndex = 0;
             card.addEventListener('click', (e) => {
-                if (e.target.closest('.drive-card-menu, .drive-card-tools')) return;
+                if (e.target.closest('.drive-card-menu')) return;
                 open();
             });
             card.addEventListener('keydown', (e) => {
@@ -9074,7 +9023,6 @@
         function createDriveFileCard(file) {
             const card = document.createElement('div');
             card.className = 'drive-card';
-            card.appendChild(createDriveQuickActions(file));
             const preview = createDrivePreview(file);
             card.appendChild(preview);
             if (file?.starred) {
@@ -9121,43 +9069,27 @@
             const isFolder = item?.mimeType === 'application/vnd.google-apps.folder';
             const menu = document.createElement('div');
             menu.className = 'drive-card-dropdown hidden';
-            const isStarred = !!item?.starred;
-            const starLabel = isStarred ? 'Remove from favorites' : 'Add to favorites';
-            menu.innerHTML = `
-                <button type="button" data-action="star">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.7-5.2-2.8-5.2 2.8 1-5.7-4.2-4.1 5.8-.8z"/>
-                    </svg>
-                    <span>${starLabel}</span>
-                </button>
-                ${!isFolder ? `<button type="button" data-action="offline"><span>${window.InhouseOfflineLibrary?.record(item.id)?.pinned ? 'Unpin offline copy' : 'Save offline'}</span></button>` : ''}
-                ${isFolder ? `
-                <button type="button" data-action="color">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <circle cx="12" cy="12" r="9"/>
-                        <circle cx="12" cy="12" r="3.5" fill="currentColor" opacity="0.3"/>
-                    </svg>
-                    <span>Change color</span>
-                </button>
-                ` : ''}
-                <button type="button" data-action="move">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path d="M3 6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                    </svg>
-                    <span>Move</span>
-                </button>
-                <button type="button" class="danger" data-action="trash">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    </svg>
-                    <span>Move to bin</span>
-                </button>
-            `;
+            const renderActions = () => {
+                const pinned = !!window.InhouseOfflineLibrary?.record(item.id)?.pinned;
+                const actions = [
+                    ['star', item.starred ? 'Remove from favorites' : 'Add to favorites', 'star'],
+                    !isFolder ? ['offline', pinned ? 'Unpin offline copy' : 'Save offline', pinned ? 'offlineOn' : 'offline'] : null,
+                    isFolder ? ['color', 'Change color', 'color'] : null,
+                    ['move', 'Move', 'move'],
+                    ['trash', 'Move to bin', 'trash']
+                ].filter(Boolean);
+                menu.innerHTML = actions.map(([action, label, icon]) => `
+                    <button type="button" data-action="${action}"${action === 'trash' ? ' class="danger"' : ''}>
+                        <svg viewBox="0 0 24 24" fill="${action === 'star' && item.starred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${DRIVE_TOOL_ICONS[icon]}</svg>
+                        <span>${label}</span>
+                    </button>`).join('');
+            };
+            renderActions();
 
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 closeColorPopup();
+                renderActions();
                 toggleDriveCardMenu(menu);
             });
 
@@ -15136,185 +15068,63 @@
             }
             if (driveHomeBtn) {
                 let goHomeInProgress = false;
-                const waitForDriveSaveCompletion = async (timeoutMs = 30000) => {
-                    const start = Date.now();
-                    while ((driveSaveInProgress || driveSaveQueued) && (Date.now() - start < timeoutMs)) {
-                        await new Promise(r => setTimeout(r, 32));
-                    }
-                    return !(driveSaveInProgress || driveSaveQueued);
-                };
-                // True when the doc is fully persisted to Drive: nothing in
-                // flight, nothing queued, no dirty marker, and the uploaded
-                // content version matches the live content version (i.e. no
-                // edit landed during the save we'd otherwise miss).
-                const isDriveFullySaved = () => {
-                    if (driveSaveInProgress || driveSaveQueued) return false;
-                    if (driveDirty || deferredDriveSave) return false;
-                    if (typeof driveContentVersion === 'number'
-                        && typeof driveUploadedContentVersion === 'number'
-                        && driveContentVersion !== driveUploadedContentVersion) {
-                        return false;
-                    }
-                    return true;
-                };
-                const saveLatestDriveState = async () => {
-                    if (!state.driveAutosave) return true;
-                    clearDriveSyncTimers();
-                    const maxAttempts = 3;
-                    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-                        if (!(await waitForDriveSaveCompletion(30000))) continue;
-                        if (isDriveFullySaved()) return true;
-
-                        // This explicit save supersedes any delayed autosave.
-                        // queueDriveSave reuses the already prepared PDF when
-                        // its content version is current, which makes the
-                        // normal Home transition only an upload round-trip.
-                        deferredDriveSave = false;
-                        driveDirty = true;
-                        await queueDriveSave(true);
-                        if ((await waitForDriveSaveCompletion(30000)) && isDriveFullySaved()) {
-                            return true;
-                        }
-                        if (attempt + 1 < maxAttempts) {
-                            await new Promise(resolve => setTimeout(resolve, 120));
-                        }
-                    }
-                    return isDriveFullySaved();
-                };
                 const goHome = async () => {
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
-                    // Tell the rest of the codebase: "user has chosen to leave,
-                    // please don't abort or pause the save for incidental
-                    // input events". interruptProcessingForUserInput,
-                    // pauseSavesDuringInteraction and hasHotUserInteraction
-                    // all honour this flag.
                     forceFlushingForExit = true;
+                    const context = captureDocumentPersistenceContext();
+                    const exitingFileId = state.driveFileId || null;
                     try {
                         isPenWriting = false;
                         isGestureInteracting = false;
                         penWritingIdleDeadline = 0;
-                        if (penWritingIdleTimer) { clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null; }
-                        if (gestureInteractionIdleTimer) { clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null; }
-
-                        const inheritedExitSaves = [lifecycleExitSavePromise, backgroundExitSavePromise]
-                            .filter(Boolean);
-                        const pendingExitMarker = readPendingExitUpload();
-                        const hasCurrentExitMarker = !!(
-                            pendingExitMarker?.fileId
-                            && pendingExitMarker.fileId === state.driveFileId
-                        );
-                        const needsSave = hasPendingLocalSave()
-                            || hasPendingDriveSave()
-                            || driveDirty
-                            || inheritedExitSaves.length > 0
-                            || hasCurrentExitMarker;
-                        if (!needsSave && isDriveFullySaved()) {
-                            backgroundExitSaveFailed = false;
-                            backgroundExitSaveFileId = null;
-                            clearPendingExitUpload(state.driveFileId || '');
-                            void clearPresence();
-                            showDriveHome();
-                            void refreshDriveFiles();
-                            return;
+                        clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null;
+                        clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null;
+                        const needsCheckpoint = hasPendingLocalSave({ includeMigration: false })
+                            || localSaveError || hasPendingDriveSave();
+                        clearTimeout(state.saveTimeout); state.saveTimeout = null;
+                        if (needsCheckpoint) {
+                            showHomeSaveLoading('Saving on this device…');
+                            // Drain the local writer before committing the complete offline
+                            // snapshot. Network/auth/peer delays must never hold Home hostage.
+                            await queueSave();
+                            await persistExitLocalCheckpoint(exitingFileId);
                         }
-
-                        showHomeSaveLoading(state.driveAutosave
-                            ? 'Saving changes to Drive...'
-                            : 'Saving changes...');
-                        // visibilitychange/pagehide may already have started a
-                        // lifecycle save. Absorb it into this Home transition
-                        // before creating the final checkpoint, so no save task
-                        // can leak into Home and block the next document open.
-                        if (inheritedExitSaves.length > 0) {
-                            await Promise.allSettled(inheritedExitSaves);
-                            // A detached background task may clear this flag in
-                            // its own finally block. Home still owns the final
-                            // checkpoint from this point until it is complete.
-                            forceFlushingForExit = true;
-                            if (isDriveFullySaved()) {
-                                backgroundExitSaveFailed = false;
-                                backgroundExitSaveFileId = null;
-                                clearPendingExitUpload(state.driveFileId || '');
-                                void clearPresence();
-                                showDriveHome();
-                                if (driveStatusEl) {
-                                    driveStatusEl.textContent = state.driveAutosave
-                                        ? 'All changes saved to Drive.'
-                                        : 'Changes saved locally.';
-                                }
-                                void refreshDriveFiles();
-                                await new Promise(resolve => requestAnimationFrame(resolve));
-                                return;
+                        if (!isDocumentPersistenceContextCurrent(context)) return;
+                        const pendingDrive = hasPendingDriveSave();
+                        if (pendingDrive) {
+                            const copy = window.InhouseOfflineLibrary?.record(state.offlineLocalId || exitingFileId);
+                            if (!copy?.available || copy.session !== context.sessionToken
+                                || copy.contentVersion !== driveContentVersion) {
+                                throw new Error('The latest document snapshot is not durable yet');
                             }
                         }
-                        clearTimeout(state.saveTimeout);
-                        state.saveTimeout = null;
-                        const exitingFileId = state.driveFileId || null;
-                        // Local durability, auth refresh and the final peer
-                        // flush begin together. Starting these independent
-                        // operations in parallel keeps the transition short.
-                        const localCheckpoint = persistExitLocalCheckpoint(exitingFileId);
-                        const liveExitFlush = typeof flushLiveCollaborationBeforeExit === 'function'
-                            ? flushLiveCollaborationBeforeExit(650).catch(() => false)
-                            : Promise.resolve(true);
-                        const driveRenameReady = pendingDriveRenamePromise || Promise.resolve(null);
-                        const driveTokenReady = state.driveAutosave
-                            ? driveRenameReady.then(() => ensureDriveToken(false))
-                            : Promise.resolve(null);
-
-                        backgroundExitSaveFileId = exitingFileId;
+                        if (!pendingDrive) clearPendingExitUpload(exitingFileId || '');
                         backgroundExitSaveFailed = false;
-                        const exitSaveTask = (async () => {
-                            await Promise.all([localCheckpoint, driveTokenReady, driveRenameReady]);
-                            const [driveSaved] = await Promise.all([
-                                saveLatestDriveState(),
-                                liveExitFlush
-                            ]);
-                            return driveSaved;
-                        })();
-                        backgroundExitSavePromise = exitSaveTask
-                            .then(success => {
-                                backgroundExitSaveFailed = !success;
-                                if (success) clearPendingExitUpload(exitingFileId);
-                                return success;
-                            })
-                            .catch(err => {
-                                console.warn('Save before Home failed:', err);
-                                backgroundExitSaveFailed = true;
-                                return false;
-                            })
-                            .finally(() => {
-                                backgroundExitSavePromise = null;
-                                if (!backgroundExitSaveFailed) {
-                                    backgroundExitSaveFileId = null;
-                                }
-                            });
-
-                        const saveCompleted = await backgroundExitSavePromise;
-                        if (!saveCompleted || backgroundExitSaveFailed) {
-                            showStatus('Could not finish saving. The document is still open; please try Home again.', { error: true });
-                            return;
+                        backgroundExitSaveFileId = null;
+                        if (pendingDrive && typeof flushLiveCollaborationBeforeExit === 'function') {
+                            void flushLiveCollaborationBeforeExit(650).catch(() => false);
                         }
-
-                        // The editor remains visible beneath the save screen
-                        // until Drive has confirmed the exact latest content
-                        // version. Only then do we reveal the real Home view.
                         void clearPresence();
                         showDriveHome();
-                        if (driveStatusEl) {
-                            driveStatusEl.textContent = state.driveAutosave
-                                ? 'All changes saved to Drive.'
-                                : 'Changes saved locally.';
+                        if (driveStatusEl) driveStatusEl.textContent = pendingDrive
+                            ? 'Saved on this device · waiting to sync'
+                            : 'All changes saved.';
+                        // The account-scoped outbox survives switching documents and
+                        // process death. Existing merge/conditional-write rules still apply.
+                        window.InhouseOfflineLibrary?.kick();
+                        if (pendingDrive && !driveIsOffline()) {
+                            startLifecycleExitSave(exitingFileId, Promise.resolve(true));
                         }
                         void refreshDriveFiles();
-                        await new Promise(resolve => requestAnimationFrame(resolve));
-                        return;
+                    } catch (error) {
+                        if (!isDocumentPersistenceContextCurrent(context)) return;
+                        console.warn('Local save before Home failed:', error);
+                        noteLocalSaveFailure('checkpoint');
+                        showStatus('Could not finish saving. The document is still open; please try Home again.', { error: true });
                     } finally {
                         hideLoading();
-                        if (!backgroundExitSavePromise) {
-                            forceFlushingForExit = false;
-                        }
+                        forceFlushingForExit = false;
                         goHomeInProgress = false;
                     }
                 };
@@ -21002,7 +20812,7 @@
 
         async function persistExitLocalCheckpoint(fileId = state.driveFileId) {
             const persistenceContext = captureDocumentPersistenceContext();
-            const marker = persistPendingExitUploadMarker(fileId);
+            const marker = hasPendingDriveSave() ? persistPendingExitUploadMarker(fileId) : null;
             const waitStartedAt = Date.now();
             while (strokeOpsFlushInProgress && Date.now() - waitStartedAt < 5000) {
                 await new Promise(resolve => setTimeout(resolve, 20));
@@ -21096,7 +20906,8 @@
                     || !driveAccessToken) {
                     return false;
                 }
-                if (!await waitForLifecycleDriveSave()) return false;
+                if (!await waitForLifecycleDriveSave()
+                    || !isDocumentPersistenceContextCurrent(persistenceContext)) return false;
                 if (isDriveUploadFullySettled()) {
                     clearPendingExitUpload(fileId);
                     return true;
@@ -21104,7 +20915,8 @@
                 driveDirty = true;
                 deferredDriveSave = false;
                 await queueDriveSave(true);
-                if (!await waitForLifecycleDriveSave()) return false;
+                if (!await waitForLifecycleDriveSave()
+                    || !isDocumentPersistenceContextCurrent(persistenceContext)) return false;
                 const success = isDriveUploadFullySettled();
                 if (success) clearPendingExitUpload(fileId);
                 return success;
@@ -21129,6 +20941,7 @@
                 || backgroundExitSavePromise || lifecycleExitSavePromise
                 || forceFlushingForExit) return;
             if (!state.driveFileId || state.driveFileId !== marker.fileId || !state.driveAutosave) return;
+            const persistenceContext = captureDocumentPersistenceContext();
             pendingExitResumeInProgress = true;
             forceFlushingForExit = true;
             backgroundExitSaveFileId = marker.fileId;
@@ -21137,10 +20950,12 @@
             driveDirty = true;
             deferredDriveSave = false;
             backgroundExitSavePromise = (async () => {
-                if (!await waitForLifecycleDriveSave(30000)) return false;
+                if (!await waitForLifecycleDriveSave(30000)
+                    || !isDocumentPersistenceContextCurrent(persistenceContext)) return false;
                 if (isDriveUploadFullySettled()) return true;
                 await queueDriveSave(true);
-                if (!await waitForLifecycleDriveSave(30000)) return false;
+                if (!await waitForLifecycleDriveSave(30000)
+                    || !isDocumentPersistenceContextCurrent(persistenceContext)) return false;
                 return isDriveUploadFullySettled();
             })()
                 .then(success => {
@@ -22769,6 +22584,12 @@
                 || !isDocumentPersistenceContextCurrent(persistenceContext)) {
                 return { ok: false, savedAt: null, cancelled: true };
             }
+            if (hasPendingLegacyPageMigration()) {
+                const migrated = await flushLegacyPagesCacheForCheckpoint();
+                if (!migrated || !isDocumentPersistenceContextCurrent(persistenceContext)) {
+                    return { ok: false, savedAt: null, cancelled: !isDocumentPersistenceContextCurrent(persistenceContext) };
+                }
+            }
             // Commit page bodies before publishing metadata that describes them.
             // If a page transaction fails, the previous complete checkpoint stays
             // authoritative instead of pointing at partially-written content.
@@ -23667,7 +23488,7 @@
 
         function getLocalSaveStatus() {
             return {
-                pending: hasPendingLocalSave(),
+                pending: hasPendingLocalSave({ includeMigration: false }),
                 error: localSaveError,
                 savedAt: lastLocalSaveAt
             };
@@ -24152,7 +23973,7 @@
             queueDriveSave(true);
         }
 
-        function hasPendingLocalSave() {
+        function hasPendingLocalSave({ includeMigration = true } = {}) {
             return !!(
                 saveInProgress
                 || saveQueued
@@ -24161,7 +23982,7 @@
                 || strokeOpsFlushInProgress
                 || strokeOpsQueue.length > 0
                 || pageDirty.size > 0
-                || hasPendingLegacyPageMigration()
+                || (includeMigration && hasPendingLegacyPageMigration())
             );
         }
 
@@ -29629,7 +29450,7 @@
             else if (local.pending) phase = 'saving';
             else if (driveSaveInProgress) phase = 'uploading';
             else if (collabPullInProgress) phase = 'syncing';
-            else if (pendingDrive || reconnect) phase = 'paused';
+            else if (pendingDrive) phase = 'paused';
 
             let driveLabel = 'Saved';
             let driveDetail = 'Latest changes saved in Google Drive.';

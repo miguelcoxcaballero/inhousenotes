@@ -60,3 +60,12 @@ Browser tests cover two simultaneous source PDFs, foreign/stale handles, exact
 rendered pixels, metadata, cached exports, offline conditional uploads and merging
 in the Android headless worker. Speed measurements from a desktop test runner are
 not Android-device latency guarantees.
+
+## Leaving the editor
+
+Home requires local durability for actual changes, including the account-scoped
+per-document snapshot used by the outbox. It does not wait for Drive authentication,
+network uploads or peer acknowledgements. Storage failure keeps the editor open.
+Exit jobs recheck their document session after waiting so they cannot save the next
+document. An unchanged cached document can leave immediately; cache materialization
+and an expired Drive token alone do not indicate unsaved content.
