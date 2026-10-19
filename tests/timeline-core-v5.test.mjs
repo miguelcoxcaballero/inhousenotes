@@ -110,3 +110,35 @@ test('archive bounds reject resource-exhaustion payloads', () => {
   );
   assert.equal(core.materializeArchive({ schema: 'other', schemaVersion: 3, entries: [] }), null);
 });
+
+test('direct JSON encoder preserves every archive byte through edits, reorders, deletions and tombstones', () => {
+  const history = makeHistory();
+  history[3].pages[0].deletedStrokeIds = ['erased-stroke'];
+  history[3].pages[0].deletedStrokeStamps = { 'erased-stroke': { actor: 'device-b', clock: 8 } };
+  history[5].pages[1].strokes[0].points.push({ p: 0.3, y: -0, x: 1.25 });
+  history[8].pages[0] = Object.fromEntries(Object.entries(history[8].pages[0]).reverse());
+  history[9].exportName = 'Notas 📝 / capítulo 1';
+  const before = clone(history);
+  const encoded = core.encodeArchiveJson(history);
+  assert.equal(encoded, JSON.stringify(core.createArchive(history)));
+  assert.deepEqual(clone(history), before, 'encoding does not mutate inputs');
+  assert.deepEqual(clone(core.materializeArchive(JSON.parse(encoded))), before);
+  history[history.length - 1].pages[0].strokes[0].points[0].x += 1;
+  history[history.length - 1].pages[0].deletedStrokeStamps['erased-stroke'] = { actor: 'device-b', clock: 9 };
+  assert.equal(core.encodeArchiveJson(history), JSON.stringify(core.createArchive(history)));
+  assert.notEqual(core.encodeArchiveJson(history), encoded, 'previous output cannot change with its source');
+});
+
+test('fast point normalization keeps legacy hashes, unknown keys and nonfinite JSON semantics', () => {
+  const history = JSON.parse('[{"id":"special","ts":1,"exportName":"á😀","pages":[null,{"pageId":"p","__proto__":{"danger":1},"constructor":9,"prototype":4,"strokes":[{"id":"s","points":[{"x":1,"p":null,"y":2}]}]}]}]');
+  const baseline = core.createArchive(history);
+  // Captured from the old implementation, including a surrogate pair.
+  assert.equal(baseline.entries[0].hash, '0pkv6lo');
+  assert.equal(core.encodeArchiveJson(history), JSON.stringify(baseline));
+  history[0].pages[1].strokes[0].points.push(
+    { y: -0, p: 0.3, x: 1.25 }, { x: Infinity, p: NaN, y: -Infinity },
+    { y: 2, x: 1, pressure: 0.5 }, { x: 1, y: 2, p: 0.5, extra: { key: true } },
+    { x: 1, y: 2 }, { x: '1', y: 2, p: null }
+  );
+  assert.equal(core.encodeArchiveJson(history), JSON.stringify(core.createArchive(history)));
+});

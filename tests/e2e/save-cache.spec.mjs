@@ -49,3 +49,48 @@ test('cached PNG processing preserves exact pixels across documents and changes'
  console.log('PNG_CACHE_BENCHMARK',JSON.stringify(result));
  expect(result.first.pixel).toEqual([18,52,86,255]);expect(result.repeat.pixel).toEqual(result.first.pixel);expect(result.changed.pixel).toEqual([254,220,186,255]);
 });
+
+test('combined metadata preparation preserves compression and multi-device sync identity', async ({ page }) => {
+ await page.goto('/?e2e=1'); await page.evaluate(() => __IHN_TEST_API__.ready());
+ const result = await page.evaluate(async () => {
+  const payload = {
+   json: JSON.stringify([{pageId:'metadata-page',strokes:[{id:'ink',tool:'pen',color:'#102030',width:3,
+    points:[{x:10,y:20,p:0.5},{x:40,y:60,p:0.7}]}],images:[],deletedStrokeIds:['erased'],
+    deletedStrokeStamps:{erased:{clock:4,actor:'other'}},backgroundSource:'template',templateKind:'default'}]),
+   structure:{pages:{'metadata-page':{rank:1024,orderStamp:{clock:3,actor:'editor'}}}},
+   fields:{},calendar:null,name:'Notas · áß文'
+  };
+  const processor = InhouseDocumentProcessing;
+  const combined = await processor.run('prepareMetadata', payload);
+  const encoded = await processor.run('compress', {json:payload.json});
+  const hash = await processor.run('contentHash', payload);
+  const changed = await processor.run('prepareMetadata', {...payload,name:'Renamed'});
+  const bytes = Uint8Array.from(atob(combined.encoded), c => c.charCodeAt(0));
+  const restored = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))).text();
+  return {sameBytes:combined.encoded===encoded,sameHash:combined.contentHash===hash,
+   complete:restored===payload.json,renamedHashChanged:changed.contentHash!==hash};
+ });
+ expect(result).toEqual({sameBytes:true,sameHash:true,complete:true,renamedHashChanged:true});
+});
+
+test('ready Drive PDFs are handed to subsequent saves without another export', async ({ page }) => {
+ test.setTimeout(120000);
+ await page.goto('/?e2e=1'); await page.evaluate(() => __IHN_TEST_API__.ready());
+ const result = await page.evaluate(async () => {
+  await __IHN_TEST_API__.seedDensePageForTest(800,60);
+  const start = performance.now();
+  const first = await prepareDrivePdfBlob({status:false});
+  const cold = performance.now()-start;
+  const original = buildPdfBlob;
+  let builds = 0;
+  buildPdfBlob = async options => { builds++; return original(options); };
+  try {
+   const hitStart = performance.now();
+   const hits = await Promise.all(Array.from({length:10},()=>prepareDrivePdfBlob({status:false})));
+   return {cold,tenCacheHits:performance.now()-hitStart,builds,
+    reused:hits.every(hit=>hit.blob===first.blob),size:first.blob.size};
+  } finally { buildPdfBlob = original; }
+ });
+ console.log('DRIVE_PREPARED_BENCHMARK',JSON.stringify(result));
+ expect(result.builds).toBe(0);expect(result.reused).toBe(true);expect(result.size).toBeGreaterThan(0);
+});

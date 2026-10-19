@@ -20,26 +20,39 @@
         }
     }
 
-    function normalizeForStableJson(value, seen = new Set()) {
+    function normalizeForStableJson(value, seen = new Set(), jsonInput = false) {
         if (value === null || typeof value !== 'object') return value;
+        // The encoder receives JSON values, so numeric point objects cannot
+        // hide getters, toJSON methods or cycles. Preserve the same sorted key
+        // order without sorting/reallocating every coordinate recursively.
+        if (jsonInput && !Array.isArray(value)) {
+            const keys = Object.keys(value);
+            if (typeof value.x === 'number' && typeof value.y === 'number'
+                && keys.includes('x') && keys.includes('y')) {
+                if (keys.length === 2) return { x: value.x, y: value.y };
+                if (keys.length === 3 && keys.includes('p') && typeof value.p === 'number') {
+                    return { p: value.p, x: value.x, y: value.y };
+                }
+            }
+        }
         if (seen.has(value)) throw new TypeError('Timeline data must not contain cycles');
         seen.add(value);
         let normalized;
         if (Array.isArray(value)) {
-            normalized = value.map(item => normalizeForStableJson(item, seen));
+            normalized = value.map(item => normalizeForStableJson(item, seen, jsonInput));
         } else {
             normalized = {};
             Object.keys(value).sort().forEach(key => {
                 if (key === '__proto__' || key === 'prototype' || key === 'constructor') return;
-                normalized[key] = normalizeForStableJson(value[key], seen);
+                normalized[key] = normalizeForStableJson(value[key], seen, jsonInput);
             });
         }
         seen.delete(value);
         return normalized;
     }
 
-    function stableStringify(value) {
-        return JSON.stringify(normalizeForStableJson(value));
+    function stableStringify(value, jsonInput = false) {
+        return JSON.stringify(normalizeForStableJson(value, new Set(), jsonInput));
     }
 
     function hashString(value) {
@@ -55,16 +68,17 @@
         return (hash >>> 0).toString(36).padStart(7, '0');
     }
 
-    function snapshotFromEntry(entry) {
+    function snapshotFromEntry(entry, borrowedJson = false) {
         return {
-            pages: cloneJson(Array.isArray(entry?.pages) ? entry.pages : [], []),
+            pages: borrowedJson ? (Array.isArray(entry?.pages) ? entry.pages : [])
+                : cloneJson(Array.isArray(entry?.pages) ? entry.pages : [], []),
             calendarPageConfig: cloneJson(entry?.calendarPageConfig ?? null, null),
             exportName: String(entry?.exportName || '').slice(0, 220)
         };
     }
 
-    function snapshotHash(snapshot) {
-        return hashString(stableStringify(snapshot));
+    function snapshotHash(snapshot, jsonInput = false) {
+        return hashString(stableStringify(snapshot, jsonInput));
     }
 
     function copyMetadata(entry) {
@@ -107,7 +121,7 @@
         return left.length === right.length && left.every((value, index) => value === right[index]);
     }
 
-    function buildSnapshotDelta(previous, next) {
+    function buildSnapshotDelta(previous, next, borrowedJson = false) {
         const previousPages = snapshotPageMap(previous);
         const nextPages = snapshotPageMap(next);
         if (!previousPages || !nextPages) return null;
@@ -119,8 +133,8 @@
         nextPages.order.forEach(id => {
             const nextPage = nextPages.map.get(id);
             const previousPage = previousPages.map.get(id);
-            if (!previousPage || stableStringify(previousPage) !== stableStringify(nextPage)) {
-                upserts.push([id, cloneJson(nextPage, {})]);
+            if (!previousPage || stableStringify(previousPage, borrowedJson) !== stableStringify(nextPage, borrowedJson)) {
+                upserts.push([id, borrowedJson ? nextPage : cloneJson(nextPage, {})]);
             }
         });
         if (upserts.length > 0) delta.upserts = upserts;
@@ -137,7 +151,7 @@
         return delta;
     }
 
-    function createArchive(history, options = {}) {
+    function buildArchive(history, options = {}, borrowedJson = false) {
         if (!Array.isArray(history)) throw new TypeError('Timeline history must be an array');
         if (history.length > MAX_ARCHIVE_ENTRIES) throw new RangeError('Timeline history has too many entries');
         const requestedInterval = Number(options.checkpointInterval);
@@ -149,16 +163,16 @@
         let previousHash = '';
 
         history.forEach((entry, index) => {
-            const snapshot = snapshotFromEntry(entry);
+            const snapshot = snapshotFromEntry(entry, borrowedJson);
             if (snapshot.pages.length > MAX_ARCHIVE_PAGES) {
                 throw new RangeError('Timeline snapshot has too many pages');
             }
-            const hash = snapshotHash(snapshot);
+            const hash = snapshotHash(snapshot, borrowedJson);
             const metadata = copyMetadata(entry);
             const forceCheckpoint = !previousSnapshot
                 || index % checkpointInterval === 0
                 || !!entry?.isMilestone;
-            const delta = forceCheckpoint ? null : buildSnapshotDelta(previousSnapshot, snapshot);
+            const delta = forceCheckpoint ? null : buildSnapshotDelta(previousSnapshot, snapshot, borrowedJson);
             if (!delta) {
                 records.push({
                     type: 'checkpoint',
@@ -185,6 +199,17 @@
             checkpointInterval,
             entries: records
         };
+    }
+
+    function createArchive(history, options = {}) {
+        return buildArchive(history, options);
+    }
+
+    // For JSON-only input (the worker owns a freshly parsed history), borrow
+    // snapshot pages solely during this synchronous encoding call. Only a
+    // string escapes; no archive or cache can retain mutable editor references.
+    function encodeArchiveJson(history, options = {}) {
+        return JSON.stringify(buildArchive(history, options, true));
     }
 
     function assertSafeRecord(record, index) {
@@ -320,6 +345,7 @@
         ARCHIVE_SCHEMA_VERSION,
         DEFAULT_CHECKPOINT_INTERVAL,
         createArchive,
+        encodeArchiveJson,
         materializeArchive,
         estimateArchiveBytes,
         stableStringify,
