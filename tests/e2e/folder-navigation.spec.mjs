@@ -110,6 +110,11 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
             return route.fulfill({ json: { files: [{ id: 'obsolete', name: 'Obsolete.pdf', mimeType: 'application/pdf', parents: ['projects'] }] } });
         }
         const parent = /'([^']+)' in parents/.exec(query)?.[1];
+        // Reconnecting also refreshes the whole cached catalogue. Returning
+        // an empty catalogue here would mark the fixture's folders trashed.
+        if (!parent && query.includes(' or ')) {
+            return route.fulfill({ json: { files: entries } });
+        }
         const isFolder = query.includes("mimeType='application/vnd.google-apps.folder'");
         const files = entries.filter(entry => entry.parents.includes(parent) && (entry.mimeType === folderType) === isFolder);
         if (parent === 'travel' && !isFolder) files.push({ id: 'new-online', name: 'Online.pdf', mimeType: 'application/pdf', parents: ['travel'] });

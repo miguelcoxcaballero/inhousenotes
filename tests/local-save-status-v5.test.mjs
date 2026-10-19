@@ -9,7 +9,7 @@ const app = readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
 const section = (start, end) => app.slice(app.indexOf(start), app.indexOf(end, app.indexOf(start)));
 const source = [
   section('        function getLocalSaveStatus()', '        function isDriveSyncPending()'),
-  section('        function hasPendingLocalSave()', '        function hasPendingDriveSave()'),
+  section('        function hasPendingLocalSave(', '        function hasPendingDriveSave()'),
   section('        const localCheckpointQueue =', '        function flushOnClose()'),
   section('        async function runStrokeOpsQueueFlush(', '        async function flushStrokeOpsQueue(')
 ].join('\n');

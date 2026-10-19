@@ -27,7 +27,7 @@ const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const scannerLive = readText('../scanner/live-camera.js');
 const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.16.5.md');
+const notes = readText('../RELEASE_NOTES_v5.16.6.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -37,7 +37,7 @@ const androidManifestPublisher = readText('../.github/scripts/update_services_ma
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.16.5';/);
+assert.match(indexHtml, /const APP_VERSION = '5.16.6';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -61,10 +61,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.5/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.5/);
-assert.match(indexHtml, /app-v5\.js\?v=5.16.5/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.5/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.6/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.6/);
+assert.match(indexHtml, /app-v5\.js\?v=5.16.6/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.6/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -90,7 +90,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.5/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.6/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -452,10 +452,10 @@ const goHomeStart = html.indexOf('const goHome = async () =>');
 const goHomeEnd = html.indexOf("driveHomeBtn.addEventListener('click'", goHomeStart);
 const goHomeSource = html.slice(goHomeStart, goHomeEnd);
 assert.match(goHomeSource, /showHomeSaveLoading\(/);
-assert.match(goHomeSource, /const saveCompleted = await backgroundExitSavePromise;[\s\S]{0,700}showDriveHome\(\);/);
+assert.match(goHomeSource, /await persistExitLocalCheckpoint\(exitingFileId\);[\s\S]*showDriveHome\(\);/);
 assert.match(goHomeSource, /Could not finish saving\. The document is still open/);
 assert.doesNotMatch(goHomeSource, /showDriveHome\(\);[\s\S]{0,500}Saving the last document to Drive/);
-assert.match(html, /await backgroundExitSavePromise/);
+assert.doesNotMatch(goHomeSource, /await backgroundExitSavePromise|await ensureDriveToken/);
 assert.doesNotMatch(html, /Finishing (the )?previous (Drive )?save/i);
 const openDriveStart = html.indexOf('async function openDriveFile(file)');
 const openDriveEnd = html.indexOf('function updateViewerModeUI()', openDriveStart);
@@ -491,7 +491,7 @@ assert.match(
   /if \(!hasPendingLocalSave\(\)\) \{[\s\S]{0,350}scheduleLocalStorageBackup\(payload, \{ immediate: true \}\)/,
   'close handling must not publish metadata while page bodies are still pending'
 );
-assert.match(goHomeSource, /await Promise\.all\(\[localCheckpoint, driveTokenReady, driveRenameReady\]\)/);
+assert.match(goHomeSource, /startLifecycleExitSave\(exitingFileId, Promise\.resolve\(true\)\)/);
 assert.doesNotMatch(goHomeSource, /Promise\.race/, 'Home must wait for the durable local checkpoint');
 assert.match(html, /event\.returnValue = '';/);
 assert.match(html, /clearPendingExitUpload\(state\.driveFileId/);
@@ -1218,7 +1218,7 @@ assert.match(app, /card\.style\.setProperty\('--sheet-ratio', ratio\)/);
 assert.match(indexHtml, /--sheet-inset-block: max\(0%, \(141\.42% - 100% \/ var\(--sheet-ratio\)\) \/ 2\);/);
 assert.match(indexHtml, /width: min\(100%, 141\.42% \* var\(--sheet-ratio\)\);/);
 assert.match(indexHtml, /\.drive-folder-art \{\n\s+position: relative;\n\s+width: 100%;\n\s+aspect-ratio: 210 \/ 297;/);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.5/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.6/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 1600\)/);
@@ -1228,7 +1228,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.16.5 smoke checks passed.');
+console.log('v5.16.6 smoke checks passed.');
 
 
 
