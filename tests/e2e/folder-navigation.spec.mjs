@@ -38,7 +38,7 @@ async function settle(page) {
     await page.waitForFunction(() => !driveFolderAnimation);
 }
 
-test('cached folders appear during opening; nested navigation and closing retain content until it fades', async ({ page, context }) => {
+test('cached folders appear during opening; nested navigation and closing retain content inside the moving folder', async ({ page, context }) => {
     await setup(page, context);
     await openFolder(page, 'projects');
     await expect(page.locator('#drive-view-files')).toContainText('Proyecto');
@@ -54,8 +54,13 @@ test('cached folders appear during opening; nested navigation and closing retain
     // Start from a real UI event and sample before the first exit frame.
     const closing = await page.evaluate(() => {
         document.getElementById('btn-folder-view-back').click();
-        const view = document.getElementById('drive-folder-view');
-        return { visible: !view.classList.contains('hidden'), text: view.textContent, effects: view.getAnimations().length };
+        const ghost = document.querySelector('.drive-folder-ghost');
+        const contents = ghost?.querySelector(':scope > .drive-folder-contents');
+        return {
+            visible: !!contents && getComputedStyle(contents).display !== 'none',
+            text: contents?.textContent,
+            effects: ghost?.getAnimations({ subtree: true }).length || 0
+        };
     });
     expect(closing.visible).toBe(true);
     expect(closing.text).toContain('Proyecto');
@@ -103,6 +108,8 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
     await setup(page, context);
     const pending = [];
     let holdProjects = true;
+    let holdTravel = true;
+    let releaseTravel = null;
     await page.route('https://www.googleapis.com/drive/v3/files?*', async route => {
         const query = new URL(route.request().url()).searchParams.get('q') || '';
         if (query.includes("'projects' in parents") && holdProjects) {
@@ -117,7 +124,10 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
         }
         const isFolder = query.includes("mimeType='application/vnd.google-apps.folder'");
         const files = entries.filter(entry => entry.parents.includes(parent) && (entry.mimeType === folderType) === isFolder);
-        if (parent === 'travel' && !isFolder) files.push({ id: 'new-online', name: 'Online.pdf', mimeType: 'application/pdf', parents: ['travel'] });
+        if (parent === 'travel' && !isFolder) {
+            if (holdTravel) await new Promise(resolve => { releaseTravel = resolve; });
+            files.push({ id: 'new-online', name: 'Online.pdf', mimeType: 'application/pdf', parents: ['travel'] });
+        }
         return route.fulfill({ json: { files } });
     });
     await page.route('https://www.googleapis.com/drive/v3/about?*', route => route.fulfill({json:{user:{displayName:'Folders',emailAddress:'folders@example.test'}}}));
@@ -145,6 +155,12 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
     });
     await openFolder(page, 'travel');
     await expect(page.locator('#drive-view-files')).toContainText('Viaje');
+    await settle(page);
+    // Cached contents are exposed by the lid itself. A genuinely later
+    // network result still needs a separate arrival fade in the settled view.
+    await expect.poll(() => !!releaseTravel).toBe(true);
+    holdTravel = false;
+    releaseTravel();
     await expect(page.locator('#drive-view-files')).toContainText('Online');
     expect(await page.evaluate(() => window.folderArrivalOpacity)).toBeLessThan(0.1);
     await settle(page);
@@ -159,10 +175,10 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
     await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
 });
 
-async function sampleFolderMotion(page, selector, returnCardSelector = null) {
-    return page.evaluate(async ({ selector, returnCardSelector }) => {
-        // Pause the actual zoom at creation. On close it starts after the short
-        // cover crossfade; observing its creation avoids racing that phase.
+async function sampleFolderMotion(page, selector, returnCardSelector = null, childId = null, sampleHandoff = false) {
+    return page.evaluate(async ({ selector, returnCardSelector, childId, sampleHandoff }) => {
+        // Pause the actual zoom at creation, avoiding races with a short
+        // compositor animation on a loaded CI worker.
         const nativeAnimate = Element.prototype.animate;
         const startedInsideFolder = !document.getElementById('drive-folder-view').classList.contains('hidden');
         let zoom = null;
@@ -191,12 +207,15 @@ async function sampleFolderMotion(page, selector, returnCardSelector = null) {
         }
         const ghost = document.querySelector('.drive-folder-ghost');
         if (!ghost || !driveFolderAnimation) return [];
+        const layer = ghost.closest('.drive-folder-transition');
+        const contents = ghost.querySelector(':scope > .drive-folder-contents');
+        const lid = ghost.querySelector(':scope > .drive-folder-cover');
         // Seek the actual compositor effects instead of racing a 300ms
         // animation on a loaded CI worker. Finishing below still exercises the
         // production transition's content swap and cleanup.
         const animations = document.getAnimations().filter(animation => {
             const target = animation.effect?.target;
-            return target === ghost || ghost.contains(target)
+            return target === layer || layer.contains(target)
                 || document.getElementById('drive-folder-view').contains(target);
         });
         const offsets = animations.map(animation => (animation.currentTime || 0) - (zoom.currentTime || 0));
@@ -210,23 +229,65 @@ async function sampleFolderMotion(page, selector, returnCardSelector = null) {
         const destinationHidden = returnCardSelector ? !!destination && getComputedStyle(destination).visibility === 'hidden' : undefined;
         const destinationRect = destination?.getBoundingClientRect().toJSON();
         const sourceInert = document.getElementById('drive-folder-view').inert;
+        const visibleOpacity = element => {
+            if (!element) return 0;
+            let opacity = 1;
+            for (let node = element; node instanceof Element; node = node.parentElement) {
+                const style = getComputedStyle(node);
+                if (style.display === 'none' || style.visibility === 'hidden') return 0;
+                opacity *= Number(style.opacity);
+            }
+            return opacity;
+        };
         const frames = [];
         for (const progress of [0, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .999]) {
             for (let i = 0; i < animations.length; i++) animations[i].currentTime = offsets[i] + duration * progress;
             const rect = ghost.getBoundingClientRect();
-            const cover = new DOMMatrixReadOnly(getComputedStyle(ghost.querySelector('.drive-folder-cover')).transform);
+            const cover = new DOMMatrixReadOnly(getComputedStyle(lid).transform);
+            const children = childId && contents ? [...contents.querySelectorAll(`[data-drive-item-id="${childId}"]`)] : [];
+            const interior = contents?.getBoundingClientRect();
+            const childVisibility = children.map(child => {
+                const bounds = child.getBoundingClientRect();
+                const area = Math.max(0, Math.min(bounds.right, target.right, interior.right) - Math.max(bounds.left, target.left, interior.left))
+                    * Math.max(0, Math.min(bounds.bottom, target.bottom, interior.bottom) - Math.max(bounds.top, target.top, interior.top));
+                return { opacity: area > 0 ? visibleOpacity(child) : 0, area };
+            });
             frames.push({ progress, duration, target, destinationHidden, destinationRect, startedInsideFolder, sourceInert,
                 opacity: Number(getComputedStyle(ghost).opacity) * Number(getComputedStyle(ghost.parentElement).opacity),
-                coverOpacity: Number(getComputedStyle(ghost.querySelector('.drive-folder-cover')).opacity), turn: cover.m11,
+                coverOpacity: Number(getComputedStyle(lid).opacity), turn: cover.m11,
+                lidDepth: Math.abs(cover.m13), layerOpacity: Number(getComputedStyle(layer).opacity),
+                labelOpacity: visibleOpacity(lid.querySelector('.drive-folder-print')),
+                childVisibility,
                 direction: ghost.dataset.direction,
                 left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
                 width: rect.width, height: rect.height,
                 centerX: rect.left + rect.width / 2, centerY: rect.top + rect.height / 2,
                 originalWidth: parseFloat(ghost.style.width) });
         }
+        const captureSettledCards = () => {
+            const view = document.getElementById('drive-folder-view');
+            const container = view.classList.contains('hidden') ? document.querySelector('#drive-home .drive-main') : view;
+            return [...container.querySelectorAll('[data-drive-item-id]')]
+                .filter(card => card.offsetParent !== null)
+                .map(card => ({
+                    id: card.dataset.driveItemId,
+                    opacity: visibleOpacity(card),
+                    unfinishedArrivals: card.getAnimations({ subtree: true }).filter(animation =>
+                        animation.animationName === 'drive-folder-item-in'
+                        && animation.effect.getComputedTiming().progress < 1).length
+                }));
+        };
         driveFolderAnimation.finish();
+        if (sampleHandoff) {
+            frames.at(-1).handoff = [captureSettledCards()];
+            // Inspect both the synchronous DOM handoff and the next painted
+            // frame: moving a card out of animation:none can restart its CSS
+            // arrival effect only after styles have been recalculated.
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            frames.at(-1).handoff.push(captureSettledCards());
+        }
         return frames;
-    }, { selector, returnCardSelector });
+    }, { selector, returnCardSelector, childId, sampleHandoff });
 }
 
 function expectDirectFolderZoom(frames, direction) {
@@ -272,6 +333,20 @@ function expectDirectFolderZoom(frames, direction) {
     expect(frames.some(frame => frame.opacity > .5 && frame.coverOpacity > .4 && frame.turn < .95)).toBe(true);
 }
 
+function expectFolderContentsDuringZoom(frames) {
+    // Turning the lid must expose actual cards while the folder is still
+    // growing, not replace the screen with a tint and reveal everything last.
+    expect(frames.every(frame => frame.layerOpacity > .99), 'The transition must not fade the whole screen').toBe(true);
+    expect(frames.every(frame => frame.coverOpacity > .99), 'The lid must open rather than fade away').toBe(true);
+    expect(frames.some(frame => frame.progress >= .2 && frame.progress <= .8
+        && frame.lidDepth > .65 && frame.coverOpacity > .95), 'The visible lid must rotate in 3D').toBe(true);
+    expect(frames.filter(frame => frame.progress >= .2).every(frame => frame.labelOpacity < .05),
+        'The cover label must disappear before it becomes enlarged text').toBe(true);
+    const visible = frames.filter(frame => frame.progress >= .3 && frame.progress <= .8)
+        .flatMap(frame => frame.childVisibility.filter(child => child.opacity > .1 && child.area > 200));
+    expect(visible.length, 'Real folder children must appear before the zoom completes').toBeGreaterThan(1);
+}
+
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
     test(`folder zoom fills the content viewport directly in both directions at every nesting level (${viewport.width}px)`, async ({ page, context }) => {
         await page.setViewportSize(viewport);
@@ -306,6 +381,66 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 
         expectDirectFolderZoom(await sampleFolderMotion(page, '#drive-breadcrumbs button:first-of-type', '#drive-folders [data-drive-item-id="projects"]'), 'close');
         await expect(page.locator('#drive-folder-view')).toBeHidden();
         await expect(page.locator('.drive-folder-ghost')).toHaveCount(0);
+    });
+
+    test(`the 3D lid reveals actual children throughout root and nested opening and closing (${viewport.width}px)`, async ({ page, context }) => {
+        await page.setViewportSize(viewport);
+        await setup(page, context);
+        for (const [selector, child] of [
+            ['#drive-folders [data-drive-item-id="projects"]', 'drafts'],
+            ['#drive-view-folders [data-drive-item-id="drafts"]', 'deep'],
+            ['#drive-view-folders [data-drive-item-id="deep"]', 'deep-note']
+        ]) {
+            const frames = await sampleFolderMotion(page, selector, null, child);
+            expectDirectFolderZoom(frames, 'open');
+            expectFolderContentsDuringZoom(frames);
+            await expect(page.locator('.drive-folder-transition')).toHaveCount(0);
+            await expect(page.locator(`#drive-folder-view [data-drive-item-id="${child}"]`)).toBeVisible();
+        }
+        for (const child of ['deep-note', 'draft-note', 'project-note']) {
+            const frames = await sampleFolderMotion(page, '#btn-folder-view-back', null, child);
+            expectDirectFolderZoom(frames, 'close');
+            expectFolderContentsDuringZoom(frames);
+            await expect(page.locator('.drive-folder-transition')).toHaveCount(0);
+        }
+        await expect(page.locator('#drive-folder-view')).toBeHidden();
+        await expect(page.locator('#drive-folder-view')).toHaveCount(1);
+    });
+
+    test(`cached cards remain opaque when the folder zoom hands off to the live view (${viewport.width}px)`, async ({ page, context }) => {
+        await page.setViewportSize(viewport);
+        await setup(page, context);
+        await page.evaluate(async files => {
+            const pdf = await PDFLib.PDFDocument.create();
+            pdf.addPage([210, 297]);
+            const blob = new Blob([await pdf.save()], { type: 'application/pdf' });
+            for (const file of files) {
+                await InhouseOfflineLibrary.cache(file.id, blob, { version: '1' }, null, {
+                    fileName: file.name, parentIds: file.parents
+                });
+            }
+        }, entries.filter(entry => entry.mimeType === 'application/pdf'));
+        for (const [selector, child, direction] of [
+            ['#drive-folders [data-drive-item-id="projects"]', 'project-note', 'open'],
+            ['#drive-view-folders [data-drive-item-id="drafts"]', 'draft-note', 'open'],
+            ['#drive-view-folders [data-drive-item-id="deep"]', 'deep-note', 'open'],
+            ['#btn-folder-view-back', 'draft-note', 'close'],
+            ['#btn-folder-view-back', 'project-note', 'close'],
+            ['#btn-folder-view-back', 'projects', 'close']
+        ]) {
+            const frames = await sampleFolderMotion(page, selector, null, child, true);
+            if (direction === 'open') {
+                expect(frames.at(-1).childVisibility.some(card => card.opacity > .99),
+                    `${child} must already be visible before the live view takes over`).toBe(true);
+            }
+            for (const cards of frames.at(-1).handoff) {
+                expect(cards.some(card => card.id === child), `${child} remains in the destination`).toBe(true);
+                for (const card of cards) {
+                    expect(card.opacity, `${card.id} must not blink at the ${direction} handoff`).toBeGreaterThan(.99);
+                    expect(card.unfinishedArrivals, `${card.id} must not restart its arrival fade`).toBe(0);
+                }
+            }
+        }
     });
 }
 
