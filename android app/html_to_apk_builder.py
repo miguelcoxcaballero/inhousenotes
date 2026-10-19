@@ -1479,6 +1479,7 @@ class ApkBuilderApp(tk.Tk):
         application = root.find("application")
         if application is not None:
             application.set(f"{ns}label", app_name)
+            application.set(f"{ns}hardwareAccelerated", "true")
             provider_authority = f"{package_id}.fileprovider"
             provider_exists = any(
                 provider.attrib.get(f"{ns}authorities") == provider_authority
@@ -1502,6 +1503,7 @@ class ApkBuilderApp(tk.Tk):
                     break
             if activity is not None:
                 activity.set(f"{ns}exported", "true")
+                activity.set(f"{ns}hardwareAccelerated", "true")
                 # Two redirect schemes are registered:
                 #   1. inhousenotes://oauth2callback — legacy implicit flow.
                 #   2. <package_id>:/oauth2redirect — PKCE flow (Google requires reverse-DNS scheme
@@ -1549,6 +1551,7 @@ class ApkBuilderApp(tk.Tk):
         )
 
     def patch_oauth_persistence(self, project_dir: Path, package_id: str):
+        self.patch_display_performance(project_dir, package_id)
         main_src_root = project_dir / "android" / "app" / "src" / "main"
         java_file = main_src_root / "java" / Path(*package_id.split(".")) / "MainActivity.java"
         kotlin_file = main_src_root / "kotlin" / Path(*package_id.split(".")) / "MainActivity.kt"
@@ -1588,11 +1591,13 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
+    private InhouseDisplayPerformance displayPerformance;
     @Override
     public void onCreate(Bundle savedInstanceState) {{
         super.onCreate(savedInstanceState);
 
         WebView webView = getBridge().getWebView();
+        displayPerformance = new InhouseDisplayPerformance(this, webView);
         int bootColor = ContextCompat.getColor(this, R.color.ihn_boot_background);
         getWindow().setStatusBarColor(bootColor);
         getWindow().setNavigationBarColor(bootColor);
@@ -1918,7 +1923,26 @@ public class MainActivity extends BridgeActivity {{
     }}
 
     @Override
+    public void onResume() {{
+        super.onResume();
+        if (displayPerformance != null) displayPerformance.resume();
+    }}
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {{
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && displayPerformance != null) displayPerformance.refresh();
+    }}
+
+    @Override
+    public void onDestroy() {{
+        if (displayPerformance != null) displayPerformance.dispose();
+        super.onDestroy();
+    }}
+
+    @Override
     public void onPause() {{
+        if (displayPerformance != null) displayPerformance.pause();
         CookieManager.getInstance().flush();
         super.onPause();
     }}
@@ -1958,10 +1982,12 @@ import com.getcapacitor.BridgeActivity
 import java.io.File
 
 class MainActivity : BridgeActivity() {{
+    private var displayPerformance: InhouseDisplayPerformance? = null
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
 
         val webView = bridge.webView
+        displayPerformance = InhouseDisplayPerformance(this, webView)
         val bootColor = ContextCompat.getColor(this, R.color.ihn_boot_background)
         window.statusBarColor = bootColor
         window.navigationBarColor = bootColor
@@ -2151,7 +2177,23 @@ class MainActivity : BridgeActivity() {{
         }}
     }}
 
+    override fun onResume() {{
+        super.onResume()
+        displayPerformance?.resume()
+    }}
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {{
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) displayPerformance?.refresh()
+    }}
+
+    override fun onDestroy() {{
+        displayPerformance?.dispose()
+        super.onDestroy()
+    }}
+
     override fun onPause() {{
+        displayPerformance?.pause()
         CookieManager.getInstance().flush()
         super.onPause()
     }}
@@ -2168,6 +2210,185 @@ class MainActivity : BridgeActivity() {{
             return
 
         self.log("MainActivity not found; skipped OAuth persistence patch.", "warn")
+
+    def patch_display_performance(self, project_dir: Path, package_id: str):
+        """Request supported high refresh rates without changing display resolution."""
+        java_root = project_dir / "android" / "app" / "src" / "main" / "java" / Path(*package_id.split("."))
+        java_root.mkdir(parents=True, exist_ok=True)
+        (java_root / "InhouseRefreshRatePolicy.java").write_text(
+            """package __PACKAGE__;
+
+/** Pure selection policy, shared by every generated Activity. */
+final class InhouseRefreshRatePolicy {
+    private InhouseRefreshRatePolicy() {}
+
+    static int selectMode(int width, int height, int currentModeId,
+            int[] ids, int[] widths, int[] heights, float[] rates) {
+        int selected = -1;
+        float bestRate = 0f;
+        for (int i = 0; i < ids.length; i++) {
+            float rate = rates[i];
+            if (widths[i] != width || heights[i] != height
+                    || Float.isNaN(rate) || Float.isInfinite(rate)
+                    || rate <= 0f || rate > 120.01f) continue;
+            // Prefer the current mode for equivalent rates, avoiding needless
+            // switches between duplicate panel configurations.
+            if (selected < 0 || rate > bestRate + 0.01f
+                    || (Math.abs(rate - bestRate) <= 0.01f && ids[i] == currentModeId)) {
+                selected = i;
+                bestRate = rate;
+            }
+        }
+        return selected;
+    }
+}
+""".replace("__PACKAGE__", package_id), encoding="utf-8")
+        (java_root / "InhouseDisplayPerformance.java").write_text(
+            """package __PACKAGE__;
+
+import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.hardware.display.DisplayManager;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.view.Display;
+import android.view.View;
+import android.view.WindowManager;
+
+/** Lifecycle-driven hints; Android retains control over thermal/battery limits. */
+final class InhouseDisplayPerformance implements DisplayManager.DisplayListener,
+        View.OnAttachStateChangeListener {
+    private final Activity activity;
+    private final View content;
+    private final DisplayManager displays;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private boolean resumed;
+    private boolean listening;
+    private boolean powerReceiverRegistered;
+    private int displayId = -1;
+    private float requestedRate = Float.NaN;
+    private final Runnable refreshTask = this::applyPreference;
+    private final BroadcastReceiver powerReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) { refresh(); }
+    };
+
+    InhouseDisplayPerformance(Activity activity, View content) {
+        this.activity = activity;
+        this.content = content;
+        displays = (DisplayManager) activity.getSystemService(Context.DISPLAY_SERVICE);
+        content.addOnAttachStateChangeListener(this);
+    }
+
+    void resume() {
+        if (!resumed) {
+            resumed = true;
+            if (displays != null) {
+                displays.registerDisplayListener(this, main);
+                listening = true;
+            }
+            IntentFilter filter = new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
+            if (Build.VERSION.SDK_INT >= 33) {
+                activity.registerReceiver(powerReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                activity.registerReceiver(powerReceiver, filter);
+            }
+            powerReceiverRegistered = true;
+        }
+        refresh();
+    }
+
+    void pause() {
+        resumed = false;
+        main.removeCallbacks(refreshTask);
+        if (listening) {
+            displays.unregisterDisplayListener(this);
+            listening = false;
+        }
+        if (powerReceiverRegistered) {
+            activity.unregisterReceiver(powerReceiver);
+            powerReceiverRegistered = false;
+        }
+        setPreference(0, 0f);
+    }
+
+    void dispose() {
+        pause();
+        content.removeOnAttachStateChangeListener(this);
+    }
+
+    void refresh() {
+        if (!resumed) return;
+        // Coalesce lifecycle/display callbacks; never run a per-frame polling
+        // loop, and never rewrite identical window or view preferences.
+        main.removeCallbacks(refreshTask);
+        main.post(refreshTask);
+    }
+
+    private void applyPreference() {
+        if (!resumed) return;
+        Display display = content.getDisplay();
+        PowerManager power = (PowerManager) activity.getSystemService(Context.POWER_SERVICE);
+        if (display == null || !content.isAttachedToWindow()
+                || (power != null && power.isPowerSaveMode())) {
+            setPreference(0, 0f);
+            return;
+        }
+        displayId = display.getDisplayId();
+        Display.Mode current = display.getMode();
+        Display.Mode[] modes = display.getSupportedModes();
+        int[] ids = new int[modes.length];
+        int[] widths = new int[modes.length];
+        int[] heights = new int[modes.length];
+        float[] rates = new float[modes.length];
+        for (int i = 0; i < modes.length; i++) {
+            ids[i] = modes[i].getModeId();
+            widths[i] = modes[i].getPhysicalWidth();
+            heights[i] = modes[i].getPhysicalHeight();
+            rates[i] = modes[i].getRefreshRate();
+        }
+        int selected = InhouseRefreshRatePolicy.selectMode(current.getPhysicalWidth(),
+                current.getPhysicalHeight(), current.getModeId(), ids, widths, heights, rates);
+        // A panel exposing only modes above 120 Hz is left to Android rather
+        // than requesting a nonexistent mode or changing its resolution.
+        setPreference(selected < 0 ? 0 : ids[selected], selected < 0 ? 0f : rates[selected]);
+    }
+
+    private void setPreference(int modeId, float rate) {
+        WindowManager.LayoutParams attributes = activity.getWindow().getAttributes();
+        if (attributes.preferredDisplayModeId != modeId
+                || Math.abs(attributes.preferredRefreshRate - rate) > 0.01f) {
+            attributes.preferredDisplayModeId = modeId;
+            attributes.preferredRefreshRate = rate;
+            activity.getWindow().setAttributes(attributes);
+        }
+        if (Build.VERSION.SDK_INT >= 35 && Float.compare(requestedRate, rate) != 0) {
+            content.setRequestedFrameRate(rate > 0f
+                    ? rate : View.REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE);
+        }
+        requestedRate = rate;
+    }
+
+    @Override public void onDisplayAdded(int id) { refresh(); }
+    @Override public void onDisplayRemoved(int id) { if (id == displayId) refresh(); }
+    @Override public void onDisplayChanged(int id) {
+        Display current = content.getDisplay();
+        if (current != null && current.getDisplayId() == id) refresh();
+    }
+    @Override public void onViewAttachedToWindow(View view) {
+        requestedRate = Float.NaN;
+        refresh();
+    }
+    @Override public void onViewDetachedFromWindow(View view) {
+        main.removeCallbacks(refreshTask);
+        requestedRate = Float.NaN;
+    }
+}
+""".replace("__PACKAGE__", package_id), encoding="utf-8")
 
     def patch_startup_theme(self, project_dir: Path):
         """Use one launch/WebView colour so Android never exposes black or white frames."""
