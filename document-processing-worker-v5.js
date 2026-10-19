@@ -137,6 +137,20 @@ function embedPreparedRaster(doc, raster) {
 
 async function processTask(type, data) {
     if (type === 'compress') return compress(data.json);
+    if (type === 'prepareMetadata') {
+        // Let native compression run while the worker computes the sync hash.
+        // Both consume the same immutable payload; send the large JSON once.
+        const [compressed, hashed] = await Promise.allSettled([
+            compress(data.json),
+            Promise.resolve().then(() => ihnCanonicalDocumentHash(
+                JSON.parse(data.json), data.structure, data.calendar, data.name, data.fields
+            ))
+        ]);
+        return {
+            encoded: compressed.status === 'fulfilled' ? compressed.value : null,
+            contentHash: hashed.status === 'fulfilled' ? hashed.value : null
+        };
+    }
     if (type === 'timelineHash') {
         let hash = 0;
         for (let i = 0; i < data.json.length; i++) hash = ((hash << 5) - hash + data.json.charCodeAt(i)) | 0;
@@ -248,12 +262,12 @@ async function processTask(type, data) {
     }
     if (type === 'timeline') {
         const history = JSON.parse(data.json);
-        let archiveJson = JSON.stringify(InhouseTimelineCore.createArchive(history));
+        let archiveJson = InhouseTimelineCore.encodeArchiveJson(history);
         while (archiveJson.length > data.budget && history.length > 1) {
             const index = history.findIndex((entry, i) => i < history.length - 1 && !entry.isMilestone);
             if (index < 0) break;
             history.splice(index, 1);
-            archiveJson = JSON.stringify(InhouseTimelineCore.createArchive(history));
+            archiveJson = InhouseTimelineCore.encodeArchiveJson(history);
         }
         const retained = history.map(entry => `${entry.id}:${entry.ts}:${entry.contentHash}`);
         let encoded = await compress(archiveJson);
@@ -261,7 +275,7 @@ async function processTask(type, data) {
             let index = history.findIndex((entry, i) => i < history.length - 1 && !entry.isMilestone);
             if (index < 0) index = history.findIndex((entry, i) => i < history.length - 1 && entry.kind !== 'baseline');
             history.splice(index < 0 ? 0 : index, 1);
-            encoded = await compress(JSON.stringify(InhouseTimelineCore.createArchive(history)));
+            encoded = await compress(InhouseTimelineCore.encodeArchiveJson(history));
         }
         return { archiveJson, retained, encoded: encoded.length <= data.budget ? encoded : '' };
     }

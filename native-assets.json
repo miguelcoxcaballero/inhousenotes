@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "a73226f3b3d57c3d2b0fc00b2c6391c3bcaea1221a7b2f083de6f5b78a1bd682",
-      "size": 1851446,
+      "sha256": "15ee18a901d88b50aa90e7f1f435bf0aa51d9d1982f4f2c6e48f4820203f0243",
+      "size": 1854232,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -27,8 +27,8 @@
       "mime": "application/javascript"
     },
     "/document-processing-worker-v5.js": {
-      "sha256": "a3f8d9a374e162d959c703729b64b9d7f974dba85af1162694bf6be7542047a7",
-      "size": 15191,
+      "sha256": "2f8986c1d478ec9cbd88541bb850b6d86fc25f354692fd524e2191fbf1c6b47e",
+      "size": 15827,
       "mime": "application/javascript"
     },
     "/ink-palette.js": {
@@ -217,8 +217,8 @@
       "mime": "application/javascript"
     },
     "/timeline-core-v5.js": {
-      "sha256": "fb5379324e97c45419193a86a278154e83ed4cbd711ead5e1cd0e7663aa78f4b",
-      "size": 13868,
+      "sha256": "7a136493ad24476fed153130c7cbc24fefe500780f63325bc19c6d86685d64cc",
+      "size": 15465,
       "mime": "application/javascript"
     },
     "/vendor/fonts/ui-0.ttf": {

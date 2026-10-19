@@ -19413,7 +19413,14 @@
             }
         }
 
-        async function acquireRemotePageMerge(timeoutMs = 15_000) {
+        async function acquireRemotePageMerge(timeoutMs = 15_000, options = {}) {
+            const assertCurrent = () => {
+                if (options.signal?.aborted) throw createAbortError('Drive save aborted');
+                if (Number.isFinite(options.sessionToken) && !isDocumentSessionTokenValid(options.sessionToken)) {
+                    throw createAbortError('Document session replaced');
+                }
+            };
+            assertCurrent();
             const deadline = Date.now() + timeoutMs;
             while (localPageStructureMutationToken
                 || remotePageMergeToken
@@ -19421,17 +19428,19 @@
                 || activePageStoreWrites > 0
                 || strokeOpsFlushInProgress
                 || strokeOpsFlushPromise) {
+                assertCurrent();
                 if (Date.now() >= deadline) return null;
                 if (strokeOpsFlushPromise) {
-                    const settled = await waitForPromiseBeforeDeadline(
+                    const settled = await waitForDrivePreparation(waitForPromiseBeforeDeadline(
                         strokeOpsFlushPromise,
                         deadline
-                    );
+                    ), options.signal);
                     if (!settled) return null;
                 } else {
-                    await new Promise(resolve => setTimeout(resolve, 24));
+                    await waitForDrivePreparation(new Promise(resolve => setTimeout(resolve, 24)), options.signal);
                 }
             }
+            assertCurrent();
             const token = {};
             remotePageMergeToken = token;
             return token;
@@ -24109,18 +24118,20 @@
             }
         }
 
-        function schedulePreparedDrivePdf(delay = 1600) {
+        function schedulePreparedDrivePdf(delay = 180) {
             if (!state.driveAutosave || state.isReadOnly || !driveAccessToken) return;
             if (!state.pages.length || driveContentVersion === driveUploadedContentVersion) return;
             if (preparedDrivePdf?.version === driveContentVersion
-                && preparedDrivePdf.sessionToken === getDocumentSessionToken()) {
-                return;
-            }
-            if (preparedDrivePdfTimer) clearTimeout(preparedDrivePdfTimer);
+                && preparedDrivePdf.sessionToken === getDocumentSessionToken()) return;
+            // Repeated save requests for the same content must not postpone warmup.
+            // Content changes already cancel this timer via invalidatePreparedDrivePdf.
+            if (preparedDrivePdfTimer) return;
             preparedDrivePdfTimer = setTimeout(() => {
                 preparedDrivePdfTimer = null;
+                if (!state.driveAutosave || state.isReadOnly || !driveAccessToken
+                    || driveContentVersion === driveUploadedContentVersion) return;
                 if (hasSmoothInteraction() || hasRecentUserActivity()) {
-                    schedulePreparedDrivePdf(Math.max(1200, getRecentUserActivityRemaining() + 500));
+                    schedulePreparedDrivePdf(Math.max(60, getRecentUserActivityRemaining() + 24));
                     return;
                 }
                 prepareDrivePdfBlob().catch(err => {
@@ -24131,90 +24142,91 @@
             }, Math.max(40, delay));
         }
 
+        function waitForDrivePreparation(promise, signal) {
+            if (!signal) return promise;
+            if (signal.aborted) return Promise.reject(createAbortError('Drive save aborted'));
+            return new Promise((resolve, reject) => {
+                const abort = () => {
+                    signal.removeEventListener('abort', abort);
+                    reject(createAbortError('Drive save aborted'));
+                };
+                signal.addEventListener('abort', abort, { once: true });
+                Promise.resolve(promise).then(value => {
+                    signal.removeEventListener('abort', abort);
+                    resolve(value);
+                }, error => {
+                    signal.removeEventListener('abort', abort);
+                    reject(error);
+                });
+            });
+        }
+
         async function prepareDrivePdfBlob(options = {}) {
             const sessionToken = Number.isFinite(options.sessionToken)
                 ? options.sessionToken
                 : getDocumentSessionToken();
-            const requestedVersion = driveContentVersion;
-            if (preparedDrivePdf
-                && preparedDrivePdf.version === requestedVersion
-                && preparedDrivePdf.sessionToken === sessionToken
-                && preparedDrivePdf.blob) {
-                return preparedDrivePdf;
-            }
-
-            // pdf-lib and the fallback renderer both use shared canvases/caches.
-            // Serialize document builds instead of letting autosave and the idle
-            // pre-builder compete for memory and main-thread time.
-            if (preparedDrivePdfBuild) {
-                try {
-                    await preparedDrivePdfBuild.promise;
-                } catch (err) {
-                    if (err?.name === 'AbortError' && options.signal?.aborted) throw err;
-                }
+            const assertCurrent = () => {
                 if (options.signal?.aborted) throw createAbortError('Drive save aborted');
-                if (!isDocumentSessionTokenValid(sessionToken)) {
-                    throw createAbortError('Document session replaced');
-                }
-                if (preparedDrivePdf
-                    && preparedDrivePdf.version === driveContentVersion
-                    && preparedDrivePdf.sessionToken === sessionToken) {
-                    return preparedDrivePdf;
-                }
-            }
-
-            const versionAtBuildStart = driveContentVersion;
-            const backgroundController = options.signal ? null : new AbortController();
-            const buildRecord = {
-                version: versionAtBuildStart,
-                sessionToken,
-                background: !!backgroundController,
-                controller: backgroundController,
-                promise: null
+                if (!isDocumentSessionTokenValid(sessionToken)) throw createAbortError('Document session replaced');
             };
-            buildRecord.promise = (async () => {
-                const structureToken = await acquireRemotePageMerge();
-                if (!structureToken) {
-                    throw new Error('Page structure remained busy while building the Drive PDF');
-                }
-                try {
-                    const blob = await buildPdfBlob({
-                        signal: options.signal || backgroundController?.signal,
-                        sessionToken,
-                        status: options.status === true,
-                        ...DRIVE_UPLOAD_PDF_OPTIONS
-                    });
-                    const result = {
-                        blob,
-                        version: versionAtBuildStart,
-                        sessionToken,
-                        contentHash: String(blob?.inhouseContentHash || '')
-                    };
-                    if (isDocumentSessionTokenValid(sessionToken)
-                        && driveContentVersion === versionAtBuildStart) {
-                        preparedDrivePdf = result;
-                        window.InhouseOfflineLibrary?.prepared(window.InhouseOfflineApp.currentId(),blob,versionAtBuildStart,sessionToken).catch(()=>{});
+            // One owner across foreground saves and idle preparation. Always
+            // recheck ownership after an await: several consumers can wake up
+            // together when an obsolete build finishes.
+            while (true) {
+                assertCurrent();
+                if (preparedDrivePdf?.version === driveContentVersion
+                    && preparedDrivePdf.sessionToken === sessionToken
+                    && preparedDrivePdf.blob) return preparedDrivePdf;
+                if (preparedDrivePdfBuild) {
+                    try {
+                        await waitForDrivePreparation(preparedDrivePdfBuild.promise, options.signal);
+                    } catch (err) {
+                        assertCurrent();
+                        // The owner may have been cancelled by a structural edit.
+                        // Its cleanup runs before consumers compete for the next build.
                     }
-                    return result;
-                } finally {
-                    releaseRemotePageMerge(structureToken);
+                    continue;
                 }
-            })();
-            preparedDrivePdfBuild = buildRecord;
-            try {
-                const result = await buildRecord.promise;
-                if (options.signal?.aborted) throw createAbortError('Drive save aborted');
-                if (!isDocumentSessionTokenValid(sessionToken)) {
-                    throw createAbortError('Document session replaced');
-                }
-                if (result.version !== driveContentVersion) {
-                    return prepareDrivePdfBlob(options);
-                }
-                return result;
-            } finally {
-                if (preparedDrivePdfBuild === buildRecord) {
-                    preparedDrivePdfBuild = null;
-                }
+                const backgroundController = options.signal ? null : new AbortController();
+                const signal = options.signal || backgroundController.signal;
+                const buildRecord = {
+                    version: driveContentVersion,
+                    sessionToken,
+                    background: !!backgroundController,
+                    controller: backgroundController,
+                    promise: null
+                };
+                buildRecord.promise = (async () => {
+                    const structureToken = await acquireRemotePageMerge(15_000, { signal, sessionToken });
+                    if (!structureToken) throw new Error('Page structure remained busy while building the Drive PDF');
+                    try {
+                        assertCurrent();
+                        // Edits made while waiting for the structure lock belong
+                        // to this build; do not rebuild them a second time.
+                        buildRecord.version = driveContentVersion;
+                        const blob = await buildPdfBlob({
+                            signal, sessionToken, status: options.status === true,
+                            ...DRIVE_UPLOAD_PDF_OPTIONS
+                        });
+                        const result = {
+                            blob, version: buildRecord.version, sessionToken,
+                            contentHash: String(blob?.inhouseContentHash || '')
+                        };
+                        if (!signal.aborted && isDocumentSessionTokenValid(sessionToken)
+                            && driveContentVersion === result.version) {
+                            preparedDrivePdf = result;
+                            window.InhouseOfflineLibrary?.prepared(window.InhouseOfflineApp.currentId(), blob, result.version, sessionToken).catch(() => {});
+                        }
+                        return result;
+                    } finally {
+                        releaseRemotePageMerge(structureToken);
+                    }
+                })().finally(() => {
+                    if (preparedDrivePdfBuild === buildRecord) preparedDrivePdfBuild = null;
+                });
+                preparedDrivePdfBuild = buildRecord;
+                await waitForDrivePreparation(buildRecord.promise, options.signal);
+                // Session, version and cache are rechecked even for the owner.
             }
         }
 
@@ -25105,6 +25117,11 @@
                 driveResumableSessions.set(resumeKey, location);
                 return location;
             };
+            driveUploadProgress = { sent: 0, total: blob.size };
+            driveSavePhase = 'uploading';
+            if (driveSaveInProgress) {
+                showStatus('Uploading to Drive... 0%', { phase: 'uploading' });
+            }
             if (!sessionUrl) sessionUrl = await startSession();
 
             let offset = 0;
@@ -25112,11 +25129,6 @@
             let noProgressCount = 0;
             const chunkSize = Math.max(256 * 1024,
                 Math.floor(DRIVE_RESUMABLE_CHUNK_BYTES / (256 * 1024)) * 256 * 1024);
-            driveUploadProgress = { sent: 0, total: blob.size };
-            driveSavePhase = 'uploading';
-            if (driveSaveInProgress) {
-                showStatus('Uploading to Drive... 0%', { phase: 'uploading' });
-            }
             // A previous attempt may have been interrupted after Drive accepted
             // bytes. Query the session before sending anything again.
             if (hadExistingSession && driveResumableSessions.get(resumeKey) === sessionUrl && retryCount === 0
@@ -25392,6 +25404,8 @@
                 // state on top of Drive, overwriting the other device's strokes.
                 if (deferredRemotePullPending && state.driveFileId) {
                     try {
+                        driveSavePhase = 'verifying';
+                        refreshSaveIndicatorState();
                         recordSaveDebug('Merging pending remote changes');
                         const flushed = await flushDeferredRemotePull({ allowWhileLocalPending: true });
                         assertCurrent();
@@ -25480,6 +25494,8 @@
                     // The final revision check below still runs immediately before upload,
                     // so concurrent edits are still merged instead of overwritten.
                     if (!mergedRemoteBeforeBuild && hasRemoteActiveSaveSignal()) {
+                        driveSavePhase = 'verifying';
+                        refreshSaveIndicatorState();
                         await mergeLatestRemoteBeforeDriveUpload(fileId, controller, 'Checking remote revision');
                         assertCurrent();
                         mergedRemoteBeforeBuild = true;
@@ -25490,6 +25506,7 @@
                     let finalRemoteCheckAttempts = 0;
                     while (true) {
                         if (!pdfBlob) {
+                            driveSavePhase = 'building';
                             showStatus('Building PDF...', { phase: 'building' });
                             setPresenceSavePhase('processing');
                             recordSaveDebug('Building PDF blob');
@@ -25506,6 +25523,8 @@
                         if (controller.signal.aborted) {
                             throw new Error('Drive save aborted');
                         }
+                        driveSavePhase = 'verifying';
+                        refreshSaveIndicatorState();
                         await waitForRemoteSaveQuietBeforeUpload(fileId, controller);
                         assertCurrent();
                         const latestMerge = await mergeLatestRemoteBeforeDriveUpload(
@@ -29555,7 +29574,8 @@
                 driveDetail = 'Latest changes are waiting for a connection. Drive will update automatically when you are online.';
                 driveClass = 'active';
             } else if (driveSaveInProgress) {
-                driveLabel = driveSavePhase === 'uploading' ? 'Uploading' : 'Preparing';
+                driveLabel = driveSavePhase === 'uploading' ? 'Uploading'
+                    : driveSavePhase === 'verifying' ? 'Checking Drive' : 'Preparing';
                 driveDetail = {
                     uploading: 'Sending the latest PDF to Drive.',
                     building: 'Preparing the latest PDF for Drive.',
@@ -29584,7 +29604,8 @@
             const title = {
                 error: 'Save needs attention',
                 saving: 'Saving on this device',
-                uploading: driveSavePhase === 'uploading' ? 'Saving to Google Drive' : 'Preparing Drive copy',
+                uploading: driveSavePhase === 'uploading' ? 'Saving to Google Drive'
+                    : driveSavePhase === 'verifying' ? 'Checking Google Drive' : 'Preparing Drive copy',
                 syncing: 'Receiving changes',
                 paused: reconnect ? 'Reconnect to Google Drive' : (offline ? 'Waiting for connection' : 'Waiting to save to Drive'),
                 saved: connected ? (local.savedAt ? 'All changes saved' : 'Saved in Google Drive') : (local.savedAt ? 'Saved on this device' : 'No pending changes')
@@ -32066,6 +32087,11 @@
             const metadataParts = [];
             const metadataPages = [];
             const templateBackgroundImageCache = new Map();
+            // Template canvases already have a six-entry LRU and are replaced
+            // when SVG resources finish loading. Cache only their encoded bytes,
+            // never document-owned PDF images, across consecutive saves.
+            const templateJpegCache = buildPdfBlobWithPdfLib.templateJpegCache
+                ||= new WeakMap();
             const customBackgroundImageCache = new Map();
             // Track each overlay XObject's ref number so future reopens can
             // surgically remove the overlay from page resources (no white
@@ -32130,31 +32156,26 @@
                         const templateKey = `${templateKind}|${pageWidthPx}x${pageHeightPx}|${overlayScale}`;
                         let embedded = templateBackgroundImageCache.get(templateKey) || null;
                         if (!embedded) {
-                            const tplCanvas = createProcessingCanvas(
-                                Math.max(1, Math.round(pageWidthPx * overlayScale)),
-                                Math.max(1, Math.round(pageHeightPx * overlayScale))
-                            );
-                            const tplCtx = tplCanvas.getContext('2d');
-                            tplCtx.fillStyle = 'white';
-                            tplCtx.fillRect(0, 0, tplCanvas.width, tplCanvas.height);
-                            drawTemplateBackground(
-                                tplCtx,
-                                tplCanvas.width,
-                                tplCanvas.height,
-                                1,
-                                templateKind
-                            );
-                            const tplBlob = await canvasToBlobSafe(tplCanvas, 'image/jpeg', 0.85);
-                            if (tplBlob) {
-                                try {
-                                    embedded = await outDoc.embedJpg(await tplBlob.arrayBuffer());
-                                    templateBackgroundImageCache.set(templateKey, embedded);
-                                } catch (tplErr) {
-                                    console.warn('Failed to embed template background:', tplErr);
-                                }
+                            const tplWidth = Math.max(1, Math.round(pageWidthPx * overlayScale));
+                            const tplHeight = Math.max(1, Math.round(pageHeightPx * overlayScale));
+                            drawTemplateBackground(null, tplWidth, tplHeight, 1, templateKind);
+                            const tplCanvas = _tplCache.get(`${templateKind}|${tplWidth}x${tplHeight}`);
+                            let encodedTemplate = templateJpegCache.get(tplCanvas);
+                            if (!encodedTemplate) {
+                                encodedTemplate = canvasToBlobSafe(tplCanvas, 'image/jpeg', 0.85)
+                                    .then(blob => {
+                                        if (!blob) throw new Error('Failed to encode template background');
+                                        return blob.arrayBuffer();
+                                    });
+                                templateJpegCache.set(tplCanvas, encodedTemplate);
+                                encodedTemplate.catch(() => templateJpegCache.delete(tplCanvas));
                             }
-                            tplCanvas.width = 0;
-                            tplCanvas.height = 0;
+                            try {
+                                embedded = await outDoc.embedJpg(await encodedTemplate);
+                                templateBackgroundImageCache.set(templateKey, embedded);
+                            } catch (tplErr) {
+                                console.warn('Failed to embed template background:', tplErr);
+                            }
                         }
                         if (embedded) {
                             await outPage.drawImage(embedded, {
@@ -32168,8 +32189,13 @@
                 await yieldToUI();
 
                 // Stroke metadata for STROKES_Z so re-opens still get vector strokes.
-                let exportStrokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
-                if (exportStrokes.length > 1) {
+                const compactCached = pdfCompactStrokeCache.get(pageData);
+                const compactGeneration = pageDirtyGeneration.get(i) || 0;
+                const reuseCompact = compactCached?.generation === compactGeneration
+                    && compactCached.session === sessionToken && compactCached.strokes === pageData.strokes;
+                let exportStrokes = reuseCompact ? compactCached.exportStrokes
+                    : (Array.isArray(pageData.strokes) ? pageData.strokes : []);
+                if (!reuseCompact && exportStrokes.length > 1) {
                     const seen = new Set();
                     exportStrokes = exportStrokes.filter(s => {
                         const pts = Array.isArray(s.points) ? s.points : [];
@@ -32179,10 +32205,6 @@
                         return true;
                     });
                 }
-                const compactCached = pdfCompactStrokeCache.get(pageData);
-                const compactGeneration = pageDirtyGeneration.get(i) || 0;
-                const reuseCompact = compactCached?.generation === compactGeneration
-                    && compactCached.session === sessionToken && compactCached.strokes === pageData.strokes;
                 const compactStrokes = reuseCompact ? compactCached.compact : [];
                 let compactStrokeCounter = 0;
                 let compactPointCounter = 0;
@@ -32214,7 +32236,10 @@
                         await yieldToUI();
                     }
                 }
-                if (!reuseCompact) pdfCompactStrokeCache.set(pageData, {generation:compactGeneration,session:sessionToken,strokes:pageData.strokes,compact:compactStrokes});
+                if (!reuseCompact) pdfCompactStrokeCache.set(pageData, {
+                    generation: compactGeneration, session: sessionToken,
+                    strokes: pageData.strokes, compact: compactStrokes, exportStrokes
+                });
                 if (!pageData.pageId) pageData.pageId = generatePageId();
                 const pageStrokeEntry = {
                     pageId: pageData.pageId,
@@ -32241,7 +32266,16 @@
                 // occupied rectangle instead of a transparent full-page PNG.
                 // Pixel-aligned bounds make this visually identical while sparse
                 // handwritten pages become dramatically smaller and faster to decode.
-                let overlayBounds = getPdfOverlayContentBounds(
+                const cached = pdfLibOverlayCache.get(i);
+                const mutationGeneration = pageDirtyGeneration.get(i) || 0;
+                // A clean cache entry is invalidated at every page mutation.
+                // Reuse both pixels and bounds before inspecting stroke points:
+                // editing one page must not re-walk all the unchanged pages.
+                const cachedHashIsCurrent = !!cached
+                    && cached.pageRef === pageData
+                    && cached.mutationGeneration === mutationGeneration
+                    && cached.exportProfile === exportProfile;
+                let overlayBounds = cachedHashIsCurrent ? cached.bounds : getPdfOverlayContentBounds(
                     pageData,
                     exportStrokes,
                     logicalPageWidthPx,
@@ -32249,25 +32283,10 @@
                     overlayScale
                 );
                 if (!overlayBounds) continue;
-
-                // Try cache: same content hash => reuse the prior PNG bytes.
-                const cached = pdfLibOverlayCache.get(i);
-                const mutationGeneration = pageDirtyGeneration.get(i) || 0;
-                // A clean cache entry is invalidated at every page mutation.
-                // Reuse its content hash for the exact same page object instead
-                // of walking every point in every unchanged stroke on each save.
-                const cachedHashIsCurrent = !!cached
-                    && cached.pageRef === pageData
-                    && cached.mutationGeneration === mutationGeneration
-                    && cached.exportProfile === exportProfile;
                 const pageHash = cachedHashIsCurrent
                     ? cached.hash
                     : `${sessionToken}:${i}:${mutationGeneration}:${++pdfOverlayBuildVersion}:${exportProfile}`;
-                let pngBytes = null;
-                if (cached && cached.hash === pageHash && cached.pngBytes && cached.bounds) {
-                    pngBytes = cached.pngBytes;
-                    overlayBounds = cached.bounds;
-                }
+                let pngBytes = cachedHashIsCurrent ? cached.pngBytes : null;
 
                 if (!pngBytes && window.InhouseDocumentProcessing && typeof OffscreenCanvas === 'function') {
                     try {
@@ -32398,9 +32417,21 @@
             // Embed metadata so reopening the file restores vector strokes.
             const metadataString = `[${metadataParts.join(',')}]`;
             await yieldToUI(true);
+            const syncHashInput = {
+                json: metadataString, structure: getCollabStructureSnapshot(),
+                fields: getCollabFieldSnapshot(), calendar: state.calendarPageConfig || null,
+                name: state.exportName || ''
+            };
+            let preparedMetadata = null;
+            try {
+                preparedMetadata = await window.InhouseDocumentProcessing.run('prepareMetadata', syncHashInput);
+            } catch (error) {
+                console.warn('Combined PDF metadata preparation unavailable:', error);
+            }
             let encodedMetadata, metaPrefix;
             try {
-                encodedMetadata = await window.InhouseDocumentProcessing.run('compress', { json: metadataString });
+                encodedMetadata = preparedMetadata?.encoded
+                    ?? await window.InhouseDocumentProcessing.run('compress', { json: metadataString });
                 metaPrefix = 'STROKES_Z:';
             } catch (compressErr) {
                 console.warn('Metadata compression failed, using uncompressed:', compressErr);
@@ -32431,11 +32462,8 @@
             let savedContentHash = '';
             try {
                 pagesParsedForSync = metadataPages;
-                savedContentHash = await window.InhouseDocumentProcessing.run('contentHash', {
-                    json: metadataString, structure: getCollabStructureSnapshot(),
-                    fields: getCollabFieldSnapshot(), calendar: state.calendarPageConfig || null,
-                    name: state.exportName || ''
-                });
+                savedContentHash = preparedMetadata?.contentHash
+                    ?? await window.InhouseDocumentProcessing.run('contentHash', syncHashInput);
                 const encodedSync = btoa(unescape(encodeURIComponent(JSON.stringify({
                     v: 1, writer: getPresenceClientId(), contentHash: savedContentHash,
                     contentVersion: driveContentVersion

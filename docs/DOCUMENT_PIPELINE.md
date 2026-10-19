@@ -69,3 +69,24 @@ network uploads or peer acknowledgements. Storage failure keeps the editor open.
 Exit jobs recheck their document session after waiting so they cannot save the next
 document. An unchanged cached document can leave immediately; cache materialization
 and an expired Drive token alone do not indicate unsaved content.
+
+## Preparing a Drive save
+
+Idle warmup and foreground saving share a single PDF build. Consumers recheck the
+owner, document session and content version after every wait; an invalidated
+build cannot start several competing successor exports. A cancelled consumer
+leaves immediately, while a valid shared owner can continue. Structure-lock
+waits also observe cancellation before starting an export.
+
+Warmup starts after a 180 ms pause and repeated requests for the same version do
+not reset its timer. The complete prepared blob is reusable only for that exact
+session and content version. Export caches retain unchanged template encodings,
+compact strokes and overlay bounds; normal page-generation invalidation still
+applies. Native metadata compression overlaps the worker's canonical sync hash.
+The worker encodes its private, parsed timeline snapshots directly to JSON, without
+additional page clones. The default archive API still returns detached snapshots;
+archive bytes and integrity hashes remain compatible with previous releases.
+
+“Preparing” describes local PDF work. “Checking Drive” describes final revision
+verification and merging before upload. The latter still depends on the network
+and is never skipped just to shorten the displayed preparation phase.
