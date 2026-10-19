@@ -1954,7 +1954,7 @@
         // Home tabs, manila folders and the folder view (§ 4.15b)
         const DRIVE_HOME_TABS = ['home', 'starred', 'shared', 'files'];
         const DRIVE_DEFAULT_FOLDER_COLOR = '#e3c58e';
-        const DRIVE_FOLDER_OPEN_MS = 720;
+        const DRIVE_FOLDER_OPEN_MS = 600;
         const DRIVE_FOLDER_CLOSE_MS = 560;
         let driveHomeTab = 'home';
         let driveFolderViewOriginId = null;
@@ -9858,10 +9858,10 @@
             let done = false, destinationArt = null, restoreLiveView = null;
             let focusAfter = null;
             const animate = (el, frames, timing = {}) => {
-                // A gentle start keeps the lid legible, then the zoom settles
-                // softly onto the final layout instead of stopping dead.
+                // One shared ease-in-out: the scene accelerates gently out of
+                // the card and settles softly onto the final layout.
                 const animation = el.animate(frames, {
-                    duration, fill: 'both', easing: 'cubic-bezier(0.45, 0.05, 0.2, 1)', ...timing
+                    duration, fill: 'both', easing: 'cubic-bezier(0.55, 0, 0.15, 1)', ...timing
                 });
                 animation.pause();
                 animation.currentTime = 0;
@@ -10019,54 +10019,42 @@
             };
             // Opacity would flatten the opaque lid's two 3D faces. Animate
             // transform only; the browser compositor owns every motion frame.
+            // The lid and the zoom are one movement on one timeline. The lid
+            // leads slightly (it starts turning as the folder begins to grow)
+            // and is fully open well before the zoom lands, with the same
+            // smooth acceleration as the enlargement itself.
             const zoom = animate(ghost, zoomFrames());
             const hinge = animate(cover, backwards ? [
                 { transform: opened },
-                { transform: opened, offset: .2 },
+                { transform: opened, offset: .2, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
                 { transform: closed }
             ] : [
-                { transform: 'rotateY(-45deg)' },
-                { transform: opened, offset: .75 },
+                { transform: closed, easing: 'cubic-bezier(0.2, 0, 0.2, 1)' },
+                { transform: opened, offset: .8 },
                 { transform: opened }
             ], { easing: 'linear' });
-            const introDuration = backwards ? 0 : Math.round(duration * .2);
-            let intro = null;
-            let introFinished = Promise.resolve();
-            if (!backwards) {
-                // Respond before building the catalogue. This small native
-                // hinge animation continues even while main-thread setup runs.
-                intro = cover.animate([{ transform: closed }, { transform: 'rotateY(-45deg)' }], {
-                    duration: introDuration, fill: 'both', easing: 'ease-out'
-                });
-                animations.push(intro);
-                introFinished = intro.finished.catch(() => {});
-            }
             const startMotion = () => {
                 if (done) return;
                 handle.phase = 'animating';
-                intro?.cancel();
                 const start = document.timeline.currentTime;
                 [zoom, hinge, fade].filter(Boolean).forEach(animation => {
-                    animation.effect.updateTiming({ duration: duration - introDuration });
                     animation.play();
-                    // Both transforms share one native timeline, including on
+                    // Every effect shares one native timeline, including on
                     // high-refresh displays; no JS clock or frame-rate cap.
                     animation.startTime = start;
                 });
                 zoom.finished.then(cleanup).catch(() => {});
             };
-            // Let the initial lid reach the compositor before building the
-            // interior. Commit its final-size raster before starting the zoom:
-            // setup time must not spend any of that visible enlargement.
+            // Commit the resting lid, then build the interior, then let its
+            // final-size raster land before anything moves: all setup happens
+            // before the first visible frame, never in the middle of the motion.
             prepareFrame = requestAnimationFrame(() => {
+                if (done) return;
+                prepareScene();
+                handle.phase = 'priming';
                 prepareFrame = requestAnimationFrame(() => {
-                    if (done) return;
-                    prepareScene();
-                    handle.phase = 'priming';
                     prepareFrame = requestAnimationFrame(() => {
-                        prepareFrame = requestAnimationFrame(() => {
-                            if (!done) void introFinished.then(startMotion);
-                        });
+                        if (!done) startMotion();
                     });
                 });
             });
