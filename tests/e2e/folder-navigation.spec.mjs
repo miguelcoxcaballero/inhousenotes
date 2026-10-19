@@ -471,3 +471,103 @@ test('returning from a scrolled nested folder restores its card and position; re
     await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
     await expect(page.locator('.drive-folder-ghost')).toHaveCount(0);
 });
+
+test('finishing a folder zoom preserves focus moved to the topbar search', async ({ page, context }) => {
+    await setup(page, context);
+    for (const selector of [
+        '#drive-folders [data-drive-item-id="projects"]',
+        '#drive-view-folders [data-drive-item-id="drafts"]'
+    ]) {
+        const focus = await page.evaluate(selector => {
+            const card = document.querySelector(selector);
+            card.focus();
+            card.click();
+            const search = document.getElementById('drive-search');
+            search.focus({ preventScroll: true });
+            const during = document.activeElement === search;
+            driveFolderAnimation.finish();
+            return { during, after: document.activeElement === search };
+        }, selector);
+        expect(focus).toEqual({ during: true, after: true });
+        await expect(page.locator('#drive-search')).toBeFocused();
+    }
+});
+
+test('dense folders paint intermediate zoom frames on a slower CPU and retain every item', async ({ page, context }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setup(page, context);
+    await page.evaluate(async folderType => {
+        const folders = ['projects', 'drafts'].flatMap(parent => Array.from({ length: 149 }, (_, index) => ({
+            id: `${parent}-dense-${index}`, name: `Z ${String(index).padStart(3, '0')}`,
+            mimeType: folderType, parents: [parent]
+        })));
+        await InhouseOfflineLibrary.observed(folders);
+        await document.fonts.ready;
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }, folderType);
+    const cpu = await context.newCDPSession(page);
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    try {
+        for (const [selector, expectedFolder, lastItem] of [
+            ['#drive-folders [data-drive-item-id="projects"]', 'Proyectos', 'projects-dense-148'],
+            ['#drive-view-folders [data-drive-item-id="drafts"]', 'Borradores', 'drafts-dense-148'],
+            ['#btn-folder-view-back', 'Proyectos', 'projects-dense-148'],
+            ['#btn-folder-view-back', null, null]
+        ]) {
+            const motion = await page.evaluate(async selector => {
+                const started = performance.now();
+                const nativeAnimate = Element.prototype.animate;
+                const frames = [];
+                let zoom = null, observedTransition = false;
+                Element.prototype.animate = function (keyframes, timing) {
+                    const animation = nativeAnimate.call(this, keyframes, timing);
+                    if (this.classList.contains('drive-folder-ghost')) zoom = animation;
+                    return animation;
+                };
+                try {
+                    document.querySelector(selector).click();
+                    const clickMs = performance.now() - started;
+                    await new Promise(resolve => {
+                        const sample = () => {
+                            const elapsed = performance.now() - started;
+                            observedTransition ||= !!driveFolderAnimation || !!zoom;
+                            frames.push({ ms: elapsed, progress: zoom?.effect.getComputedTiming().progress ?? null });
+                            if ((observedTransition && !driveFolderAnimation) || elapsed > 12_000) resolve();
+                            else requestAnimationFrame(sample);
+                        };
+                        requestAnimationFrame(sample);
+                    });
+                    return { clickMs, frames, finished: !driveFolderAnimation };
+                } finally {
+                    Element.prototype.animate = nativeAnimate;
+                }
+            }, selector);
+            const moving = motion.frames.filter(frame => frame.progress > .05 && frame.progress < .95);
+            const firstAnimated = motion.frames.find(frame => frame.progress !== null);
+            // Initial raster/upload has its own startup budget below. Once
+            // movement begins, no long main-thread job may consume the zoom.
+            const maxGap = Math.max(...moving.slice(1).map((frame, i) => frame.ms - moving[i].ms));
+            const diagnostics = JSON.stringify({ selector, clickMs: motion.clickMs,
+                firstMotionMs: moving[0]?.ms, firstProgress: firstAnimated?.progress, intermediateFrames: moving.length, maxGap });
+            expect(motion.finished, diagnostics).toBe(true);
+            expect(firstAnimated?.progress, diagnostics).toBeLessThan(.2);
+            expect(moving.length, diagnostics).toBeGreaterThanOrEqual(6);
+            expect(moving[0]?.ms, diagnostics).toBeLessThan(900);
+            expect(maxGap, diagnostics).toBeLessThan(120);
+            await expect(page.locator('.drive-folder-transition')).toHaveCount(0);
+            if (expectedFolder) {
+                await expect(page.locator('#drive-folder-view-title')).toHaveText(expectedFolder);
+                await expect(page.locator('#drive-view-folders [data-drive-item-id]')).toHaveCount(150);
+                await page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"]`).scrollIntoViewIfNeeded();
+                await expect(page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"]`)).toBeInViewport();
+                await expect(page.locator(`#drive-view-folders [data-drive-item-id="${lastItem}"] .drive-card-title`)).toHaveText('Z 148');
+                await page.locator('#drive-folder-view-scroll').evaluate(el => { el.scrollTop = 0; });
+                await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            } else await expect(page.locator('#drive-folder-view')).toBeHidden();
+        }
+    } finally {
+        await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+        await cpu.detach();
+    }
+});

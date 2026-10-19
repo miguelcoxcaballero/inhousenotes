@@ -14,6 +14,8 @@ for (const folder of [false, true]) {
     await card.hover();
     await expect(page.locator('.drive-card-tools')).toHaveCount(0);
     await expect(page.locator('.drive-card-dropdown:not(.hidden)')).toHaveCount(0);
+    await expect(card.locator('.drive-card-dropdown [data-action]')).toHaveCount(0);
+    await expect(card.locator('.drive-card-dropdown svg')).toHaveCount(0);
     await card.locator('.drive-card-more').click();
     const menu = page.locator('.drive-card-dropdown:not(.hidden)');
     await expect(menu).toBeVisible();

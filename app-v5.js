@@ -1960,6 +1960,8 @@
         let driveFolderViewOriginId = null;
         let driveFolderAnimation = null;
         let driveFolderNavigationId = 0;
+        const driveDeferredFolderCards = new Set();
+        let driveFolderCardTask = null;
         const driveReducedMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
         const DRIVE_TOOL_ICONS = {
             color: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" opacity="0.3"/>',
@@ -9020,8 +9022,7 @@
             });
         }
 
-        function createDriveFileCard(file) {
-            const card = document.createElement('div');
+        function createDriveFileCard(file, card = document.createElement('div')) {
             card.className = 'drive-card';
             const preview = createDrivePreview(file);
             card.appendChild(preview);
@@ -9084,8 +9085,6 @@
                         <span>${label}</span>
                     </button>`).join('');
             };
-            renderActions();
-
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 closeColorPopup();
@@ -9259,8 +9258,7 @@
             return createDriveFileCard(item);
         }
 
-        function createDriveFolderCard(folder) {
-            const card = document.createElement('div');
+        function createDriveFolderCard(folder, card = document.createElement('div')) {
             card.className = 'drive-folder-card';
             card.appendChild(createDriveFolderArt(folder, { menu: true }));
             bindDriveCardActivation(card, () => openDriveFolderFromCard(folder, card));
@@ -9359,7 +9357,8 @@
                 // Need a new card (data changed or didn't exist before).
                 const newCard = builderForItem(item);
                 if (!newCard) return;
-                if ((container === driveViewFoldersEl || container === driveViewFilesEl) && !prefersReducedHomeMotion()) {
+                if ((container === driveViewFoldersEl || container === driveViewFilesEl)
+                    && !newCard.hydrate && !prefersReducedHomeMotion()) {
                     newCard.classList.add('drive-folder-item-arriving');
                     newCard.addEventListener('animationend', () => newCard.classList.remove('drive-folder-item-arriving'), { once: true });
                 }
@@ -9428,7 +9427,84 @@
             return driveFolderStack.length > 1 && !!driveViewFilesEl;
         }
 
+        function createDeferredDriveFolderCard(item, builder) {
+            // Reserve the same A4 grid slot without building offscreen menus,
+            // images and 3D surfaces on the navigation input task.
+            const card = document.createElement('div');
+            card.className = item.mimeType === 'application/vnd.google-apps.folder' ? 'drive-folder-card' : 'drive-card';
+            card.classList.add('drive-card-deferred');
+            const arrive = !driveFolderAnimation && !prefersReducedHomeMotion();
+            if (arrive) card.classList.add('drive-folder-item-arriving');
+            card.style.aspectRatio = '210 / 297';
+            card.tabIndex = 0;
+            card.setAttribute('aria-label', item.name || 'Document');
+            card.driveFile = item;
+            const focus = () => card.hydrate?.();
+            const activate = event => {
+                event.stopImmediatePropagation();
+                card.hydrate()?.click();
+            };
+            card.hydrate = () => {
+                driveDeferredFolderCards.delete(card);
+                if (!card.isConnected) return null;
+                const next = card.driveFile || item;
+                card.removeEventListener('focus', focus);
+                card.removeEventListener('click', activate);
+                delete card.hydrate;
+                card.removeAttribute('aria-label');
+                card.style.removeProperty('aspect-ratio');
+                card.replaceChildren();
+                const ready = builder(next, card);
+                if (arrive) {
+                    ready.classList.add('drive-folder-item-arriving');
+                    ready.addEventListener('animationend', () => ready.classList.remove('drive-folder-item-arriving'), { once: true });
+                }
+                ready.dataset.driveItemId = next.id;
+                ready.dataset.driveItemFp = driveItemFingerprint(next);
+                return ready;
+            };
+            card.addEventListener('focus', focus, { once: true });
+            card.addEventListener('click', activate, { once: true });
+            driveDeferredFolderCards.add(card);
+            return card;
+        }
+
+        function hydrateVisibleDriveFolderCards() {
+            if (!isDriveFolderViewOpen() || !driveDeferredFolderCards.size) return;
+            const viewport = driveFolderViewScrollEl.getBoundingClientRect();
+            if (!viewport.width || !viewport.height) return;
+            const visible = [];
+            // Batch layout reads before replacing any slot. One extra row
+            // below the viewport is ready before the next scroll gesture.
+            for (const card of driveDeferredFolderCards) {
+                if (!card.isConnected) { driveDeferredFolderCards.delete(card); continue; }
+                const rect = card.getBoundingClientRect();
+                if (rect.bottom >= viewport.top && rect.top <= viewport.bottom + 240) visible.push(card);
+            }
+            visible.forEach(card => card.hydrate());
+        }
+
+        function scheduleDriveFolderCards() {
+            if (driveFolderCardTask !== null || driveFolderAnimation || !isDriveFolderViewOpen()
+                || driveHome?.classList.contains('hidden') || !driveDeferredFolderCards.size) return;
+            driveFolderCardTask = setTimeout(() => {
+                driveFolderCardTask = null;
+                if (driveFolderAnimation || !isDriveFolderViewOpen() || driveHome?.classList.contains('hidden')) return;
+                const until = performance.now() + 6;
+                for (const card of driveDeferredFolderCards) {
+                    if (!card.isConnected) { driveDeferredFolderCards.delete(card); continue; }
+                    card.hydrate();
+                    if (performance.now() >= until) break;
+                }
+                scheduleDriveFolderCards();
+            }, 32);
+        }
+
         function renderDriveFolderContents(folders, files) {
+            if (driveFolderAnimation && !driveFolderAnimation.preparing) {
+                driveFolderAnimation.pendingContents = { folders, files };
+                return;
+            }
             const folderList = Array.isArray(folders) ? folders : [];
             const fileList = Array.isArray(files) ? files : [];
             const hasFolders = folderList.length > 0;
@@ -9438,13 +9514,19 @@
             const filesEl = nested ? driveViewFilesEl : driveFolderFilesEl;
             const emptyEl = nested ? driveViewEmptyEl : driveFolderEmptyEl;
             if (foldersEl) {
-                diffRenderDriveList(foldersEl, folderList, createDriveFolderCard);
+                diffRenderDriveList(foldersEl, folderList, nested
+                    ? item => createDeferredDriveFolderCard(item, createDriveFolderCard) : createDriveFolderCard);
             }
             if (filesEl) {
-                diffRenderDriveList(filesEl, fileList, createDriveFileCard);
+                diffRenderDriveList(filesEl, fileList, nested
+                    ? item => createDeferredDriveFolderCard(item, createDriveFileCard) : createDriveFileCard);
             }
             if (emptyEl) {
                 emptyEl.classList.toggle('hidden', hasFolders || hasFiles);
+            }
+            if (!driveFolderAnimation) {
+                hydrateVisibleDriveFolderCards();
+                scheduleDriveFolderCards();
             }
         }
 
@@ -9634,7 +9716,7 @@
             return top;
         }
 
-        function prepareDriveFolderViewContent(entry) {
+        function prepareDriveFolderViewContent(entry, scrollTop = 0) {
             const name = entry?.name || 'Folder';
             if (driveFolderViewTitleEl) driveFolderViewTitleEl.textContent = name;
             if (driveFolderViewEl) driveFolderViewEl.setAttribute('aria-label', `${name} folder`);
@@ -9654,7 +9736,8 @@
                 if (driveViewFilesEl) fillSkeletons(driveViewFilesEl, 4, buildDriveCardSkeleton);
                 if (driveViewEmptyEl) driveViewEmptyEl.classList.add('hidden');
             }
-            if (driveFolderViewScrollEl) driveFolderViewScrollEl.scrollTop = 0;
+            if (driveFolderViewScrollEl) driveFolderViewScrollEl.scrollTop = scrollTop;
+            if (!driveFolderAnimation) hydrateVisibleDriveFolderCards();
         }
 
         function finishDriveFolderAnimation() {
@@ -9680,7 +9763,21 @@
 
         function snapshotDriveFolderView() {
             if (!isDriveFolderViewOpen()) return null;
-            const view = driveFolderViewEl.cloneNode(true);
+            const viewport = driveFolderViewScrollEl.getBoundingClientRect();
+            const outside = new Map();
+            driveFolderViewEl.querySelectorAll('[data-drive-item-id]').forEach(card => {
+                const rect = card.getBoundingClientRect();
+                if (rect.bottom < viewport.top || rect.top > viewport.bottom) outside.set(card, rect.height);
+            });
+            const copy = node => {
+                const clone = node.cloneNode(false);
+                if (outside.has(node)) {
+                    // Preserve scroll geometry, not invisible card contents.
+                    clone.style.height = `${outside.get(node)}px`;
+                } else for (const child of node.childNodes) clone.appendChild(copy(child));
+                return clone;
+            };
+            const view = copy(driveFolderViewEl);
             view.removeAttribute('id');
             view.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
             view.querySelectorAll('.drive-folder-item-arriving').forEach(el => el.classList.remove('drive-folder-item-arriving'));
@@ -9756,6 +9853,7 @@
             const opened = 'rotateY(-112deg)';
             const small = 'translate(0px, 0px) scale(1)';
             const animations = [];
+            const focusBefore = document.activeElement;
             let done = false, destinationArt = null, restoreLiveView = null;
             let focusAfter = null;
             const animate = (el, frames, timing = {}) => {
@@ -9777,9 +9875,19 @@
                 driveFolderViewEl.inert = false;
                 driveFolderViewEl.classList.remove('is-leaving');
                 window.removeEventListener('resize', resized);
-                if (focusAfter?.isConnected && document.activeElement === document.body) {
+                if (focusAfter?.isConnected && (document.activeElement === document.body
+                    || (handle.focusTarget && document.activeElement === focusBefore))) {
                     focusAfter.focus({ preventScroll: true });
                 }
+                const navigationId = driveFolderNavigationId;
+                // Let the completed scene paint before reconciliation or
+                // offscreen thumbnail work can take over the main thread.
+                requestAnimationFrame(() => setTimeout(() => {
+                    if (navigationId !== driveFolderNavigationId || driveFolderAnimation) return;
+                    if (handle.pendingContents) renderDriveFolderContents(handle.pendingContents.folders, handle.pendingContents.files);
+                    if (handle.refresh) void refreshDriveFolderContents(handle.refresh);
+                    scheduleDriveFolderCards();
+                }, 0));
             };
             const resized = () => { cleanup(); positionDriveFolderView(); };
             const handle = { finish: cleanup };
@@ -9797,8 +9905,11 @@
                 layer.insertBefore(previous.view, ghost);
                 previous.view.querySelector('.drive-folder-view-scroll').scrollTop = previous.scrollTop;
             }
+            handle.preparing = true;
             onSwap();
-            focusAfter = isDriveFolderViewOpen() ? document.activeElement : null;
+            handle.preparing = false;
+            hydrateVisibleDriveFolderCards();
+            focusAfter = isDriveFolderViewOpen() ? handle.focusTarget || document.activeElement : null;
             if (backwards) {
                 destinationArt = findVisibleDriveFolderArt(entry?.id);
                 const destination = captureDriveFolderOrigin(destinationArt);
@@ -9849,7 +9960,7 @@
                     transformOrigin: '0 0', transform: `scale(${1 / scale})`
                 });
                 surface.appendChild(interior);
-                interior.querySelector('.drive-folder-view-scroll').scrollTop = backwards ? previous.scrollTop : 0;
+                interior.querySelector('.drive-folder-view-scroll').scrollTop = backwards ? previous.scrollTop : driveFolderViewScrollEl.scrollTop;
             }
             // Opacity on the cover would flatten preserve-3d and make both
             // faces paint over each other. Swing an opaque lid past edge-on.
@@ -9903,7 +10014,9 @@
             if (driveHome) driveHome.classList.add('folder-open');
             const active = document.activeElement;
             if (!active || active === document.body || (driveMain && driveMain.contains(active)) || driveFolderViewEl.contains(active)) {
-                document.getElementById('btn-folder-view-back')?.focus({ preventScroll: true });
+                const target = document.getElementById('btn-folder-view-back');
+                if (driveFolderAnimation) driveFolderAnimation.focusTarget = target;
+                else target?.focus({ preventScroll: true });
             }
         }
 
@@ -9935,8 +10048,8 @@
             driveFolderNavigationId++;
             positionDriveFolderView();
             playDriveFolderOpen(art, entry, () => {
-                prepareDriveFolderViewContent(entry);
                 revealDriveFolderView(entry);
+                prepareDriveFolderViewContent(entry);
                 renderDriveBreadcrumbs();
                 if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
                 refreshDriveFolderContents();
@@ -9986,8 +10099,8 @@
             driveCurrentFolderId = entry.id;
             driveFolderNavigationId++;
             playDriveFolderClose(null, closing, () => {
-                prepareDriveFolderViewContent(entry);
                 revealDriveFolderView(entry);
+                prepareDriveFolderViewContent(entry, closing?.origin?.scrollTop || 0);
                 renderDriveBreadcrumbs();
                 if (driveFolderViewScrollEl) driveFolderViewScrollEl.scrollTop = closing?.origin?.scrollTop || 0;
                 if (driveStatusEl) driveStatusEl.textContent = 'Loading folder...';
@@ -10066,6 +10179,10 @@
         }
 
         async function refreshDriveFolderContents(options = {}) {
+            if (driveFolderAnimation) {
+                driveFolderAnimation.refresh = options;
+                return;
+            }
             const requestedFolderId = driveCurrentFolderId;
             const navigationId = driveFolderNavigationId;
             const remoteFolderId=window.InhouseOfflineLibrary?.ready()?await window.InhouseOfflineStore.resolveId(window.InhouseOfflineLibrary.account(),driveCurrentFolderId):driveCurrentFolderId;
@@ -15406,6 +15523,9 @@
                 });
             }
             document.getElementById('btn-folder-view-back')?.addEventListener('click', navigateDriveFolderUp);
+            driveFolderViewScrollEl?.addEventListener('scroll', () => {
+                if (!driveFolderAnimation) hydrateVisibleDriveFolderCards();
+            }, { passive: true });
             document.getElementById('btn-folder-view-new-folder')?.addEventListener('click', openNewFolderModal);
             document.getElementById('btn-folder-view-new-pdf')?.addEventListener('click', createNewDriveDocument);
             window.addEventListener('resize', () => {
