@@ -6,6 +6,8 @@ const entries = [
     { id: 'travel', name: 'Viajes', mimeType: folderType, parents: ['root'], folderColorRgb: '#4986e7' },
     { id: 'drafts', name: 'Borradores', mimeType: folderType, parents: ['projects'] },
     { id: 'project-note', name: 'Proyecto.pdf', mimeType: 'application/pdf', parents: ['projects'] },
+    { id: 'deep', name: 'Dentro', mimeType: folderType, parents: ['drafts'] },
+    { id: 'deep-note', name: 'Dentro.pdf', mimeType: 'application/pdf', parents: ['deep'] },
     { id: 'draft-note', name: 'Borrador.pdf', mimeType: 'application/pdf', parents: ['drafts'] },
     { id: 'trip-note', name: 'Viaje.pdf', mimeType: 'application/pdf', parents: ['travel'] }
 ];
@@ -152,31 +154,74 @@ test('slow Drive responses do not block cached contents or overwrite a newer nav
     await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
 });
 
-test('folder lid stays visible while opening and the interior covers the view before content fades in', async ({ page, context }) => {
-    await setup(page, context);
-    const frames = await page.evaluate(async () => {
-        const home = document.getElementById('drive-home').getBoundingClientRect();
-        const top = document.querySelector('#drive-home .drive-topbar').getBoundingClientRect().bottom;
-        document.querySelector('#drive-folders [data-drive-item-id="projects"]').click();
+async function sampleFolderMotion(page, selector) {
+    return page.evaluate(async selector => {
+        document.querySelector(selector).click();
         const frames = [];
         await new Promise(resolve => {
             const sample = () => {
                 const ghost = document.querySelector('.drive-folder-ghost');
-                const view = document.getElementById('drive-folder-view');
                 if (ghost) {
-                    const r = ghost.getBoundingClientRect();
+                    const rect = ghost.getBoundingClientRect();
                     const cover = new DOMMatrixReadOnly(getComputedStyle(ghost.querySelector('.drive-folder-cover')).transform);
-                    frames.push({ opacity: Number(getComputedStyle(ghost).opacity), turned: cover.m11 < -.5,
-                        revealed: !view.classList.contains('hidden'),
-                        covers: r.left <= home.left + 1 && r.right >= home.right - 1 && r.top <= top + 1 && r.bottom >= home.bottom - 1 });
+                    frames.push({ opacity: Number(getComputedStyle(ghost).opacity), turn: cover.m11,
+                        direction: ghost.dataset.direction, width: rect.width,
+                        originalWidth: parseFloat(ghost.style.width) });
                 }
                 if (driveFolderAnimation) requestAnimationFrame(sample); else resolve();
             };requestAnimationFrame(sample);
         });
         return frames;
+    }, selector);
+}
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
+    test(`lid is visible in both directions at every nesting level without full-screen zoom (${viewport.width}px)`, async ({ page, context }) => {
+        await page.setViewportSize(viewport);
+        await setup(page, context);
+        for (const [selector, direction, title] of [
+            ['#drive-folders [data-drive-item-id="projects"]', 'open', 'Proyectos'],
+            ['#drive-view-folders [data-drive-item-id="drafts"]', 'open', 'Borradores'],
+            ['#drive-view-folders [data-drive-item-id="deep"]', 'open', 'Dentro'],
+            ['#btn-folder-view-back', 'close', 'Borradores'],
+            ['#btn-folder-view-back', 'close', 'Proyectos'],
+            ['#btn-folder-view-back', 'close', null]
+        ]) {
+            const frames = await sampleFolderMotion(page, selector);
+            expect(frames.some(frame => frame.direction === direction && frame.opacity > .9 && frame.turn < .94 && frame.turn > .5)).toBe(true);
+            expect(frames.every(frame => frame.width <= frame.originalWidth * 1.03)).toBe(true);
+            if (title) await expect(page.locator('#drive-folder-view-title')).toHaveText(title);
+            else await expect(page.locator('#drive-folder-view')).toBeHidden();
+            await expect(page.locator('.drive-folder-ghost')).toHaveCount(0);
+            expect(await page.locator('#drive-folder-view').evaluate(el => el.inert)).toBe(false);
+        }
     });
-    expect(frames.some(frame => frame.turned && !frame.revealed && frame.opacity > .99)).toBe(true);
-    expect(frames.some(frame => frame.covers && frame.opacity > .95)).toBe(true);
-    expect(frames.filter(frame => frame.revealed).every(frame => frame.covers)).toBe(true);
-    await expect(page.locator('#drive-view-files')).toContainText('Proyecto');
+}
+
+test('returning from a scrolled nested folder restores its card and position; resize still transitions', async ({ page, context }) => {
+    await page.setViewportSize({ width: 390, height: 600 });
+    await setup(page, context);
+    await page.evaluate(async folderType => {
+        await InhouseOfflineLibrary.observed(Array.from({ length: 15 }, (_, i) => ({
+            id: `filler-${i}`, name: `Antes ${i}`, mimeType: folderType, parents: ['projects']
+        })));
+    }, folderType);
+    await openFolder(page, 'projects');await settle(page);
+    await page.locator('#drive-view-folders [data-drive-item-id="drafts"]').scrollIntoViewIfNeeded();
+    const before = await page.locator('#drive-folder-view-scroll').evaluate(el => el.scrollTop);
+    expect(before).toBeGreaterThan(0);
+    await openFolder(page, 'drafts', '#drive-view-folders');await settle(page);
+    const frames = await sampleFolderMotion(page, '#btn-folder-view-back');
+    expect(frames.some(frame => frame.direction === 'close' && frame.opacity > .9)).toBe(true);
+    await expect.poll(() => page.locator('#drive-folder-view-scroll').evaluate(el => el.scrollTop)).toBe(before);
+    await openFolder(page, 'drafts', '#drive-view-folders');await settle(page);
+    await page.setViewportSize({ width: 844, height: 390 });
+    const state = await page.evaluate(() => {
+        document.getElementById('btn-folder-view-back').click();
+        return { active: !!driveFolderAnimation, effects: document.getElementById('drive-folder-view').getAnimations({ subtree: true }).length };
+    });
+    expect(state.active).toBe(true);expect(state.effects).toBeGreaterThan(0);
+    await settle(page);
+    await expect(page.locator('#drive-folder-view-title')).toHaveText('Proyectos');
+    await expect(page.locator('.drive-folder-ghost')).toHaveCount(0);
 });
