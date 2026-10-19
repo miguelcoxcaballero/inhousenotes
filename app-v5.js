@@ -8894,6 +8894,7 @@
                     if(!url){revision=undefined;return;}
                     const decoded=new Image();decoded.decoding='async';decoded.src=url;
                     await decoded.decode();
+                    await whenDriveFolderMotionSettled();
                     if(ticket!==generation||account!==window.InhouseOfflineLibrary?.account())return;
                     if(!decoded.naturalWidth||!decoded.naturalHeight)return;
                     // Decode offscreen. Never remove the displayed image or re-run
@@ -9726,6 +9727,19 @@
             if (driveFolderAnimation) driveFolderAnimation.finish();
         }
 
+        // Work that would repaint the folder interior (thumbnail swaps and
+        // their tone updates) waits here while a zoom is in flight: the scene
+        // is one composited texture, and any repaint of it costs a frame.
+        const driveFolderMotionWaiters = [];
+        function whenDriveFolderMotionSettled() {
+            if (!driveFolderAnimation) return Promise.resolve();
+            return new Promise(resolve => driveFolderMotionWaiters.push(resolve));
+        }
+        function releaseDriveFolderMotionWaiters() {
+            if (driveFolderAnimation) return;
+            driveFolderMotionWaiters.splice(0).forEach(resolve => resolve());
+        }
+
         function captureDriveFolderOrigin(art) {
             const rect = art?.getBoundingClientRect();
             if (!rect?.width || !rect.height) return null;
@@ -9842,8 +9856,10 @@
             let done = false, destinationArt = null, restoreLiveView = null;
             let focusAfter = null;
             const animate = (el, frames, timing = {}) => {
+                // A gentle start keeps the lid legible, then the zoom settles
+                // softly onto the final layout instead of stopping dead.
                 const animation = el.animate(frames, {
-                    duration, fill: 'both', easing: 'cubic-bezier(0.35, 0.15, 0.65, 0.85)', ...timing
+                    duration, fill: 'both', easing: 'cubic-bezier(0.45, 0.05, 0.2, 1)', ...timing
                 });
                 animation.pause();
                 animation.currentTime = 0;
@@ -9874,6 +9890,7 @@
                 // Let the completed scene paint before reconciliation or
                 // offscreen thumbnail work can take over the main thread.
                 requestAnimationFrame(() => setTimeout(() => {
+                    releaseDriveFolderMotionWaiters();
                     if (navigationId !== driveFolderNavigationId || driveFolderAnimation) return;
                     if (handle.pendingContents) renderDriveFolderContents(handle.pendingContents.folders, handle.pendingContents.files);
                     if (handle.refresh) void refreshDriveFolderContents(handle.refresh);
