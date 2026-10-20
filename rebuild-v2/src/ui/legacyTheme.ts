@@ -3,9 +3,10 @@
 // The goal is that the rebuilt engine is indistinguishable from the
 // original app's chrome.
 
-export const BRAND_SVG = `<svg viewBox="0 0 40 24" fill="none" aria-hidden="true">
-  <path d="M4 22 L20 6 L36 22" stroke="#E07A3C" stroke-width="4.2"
-    stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+export const BRAND_SVG = `<svg viewBox="34 30 40 48" fill="none" aria-hidden="true">
+  <path d="M42 30 H61 L74 43 V70 A8 8 0 0 1 66 78 H42 A8 8 0 0 1 34 70 V38 A8 8 0 0 1 42 30 Z" fill="#FF7F1F" />
+  <path d="M61 30 V39 Q61 43 65 43 H74 Z" fill="#FFB984" />
+  <path d="M45 62.5 L54 53.5 L63 62.5" stroke="#FFFFFF" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
 
 const CSS = `
 :root {
@@ -54,7 +55,7 @@ html, body {
 }
 #welcome-view.hidden { display: none; }
 #welcome-view .welcome-logo { display: flex; flex-direction: column; align-items: center; gap: 24px; }
-#welcome-view .welcome-logo svg { width: 180px; height: 108px; }
+#welcome-view .welcome-logo svg { width: 90px; height: 108px; }
 #welcome-view .welcome-logo .brand-name {
   font-family: 'Comfortaa', cursive; font-size: 2.25rem; font-weight: 600;
   color: #f5f5f5; letter-spacing: 0.5px;
@@ -78,7 +79,7 @@ html, body {
   font-family: 'Comfortaa', cursive; font-size: 1.25rem; font-weight: 600;
   color: var(--text-primary); display: flex; align-items: center; gap: 10px;
 }
-.drive-brand svg { width: 32px; height: 24px; }
+.drive-brand svg { width: 20px; height: 24px; }
 .drive-brand span { letter-spacing: -0.5px; }
 .drive-topbar-actions { display: flex; gap: 10px; align-items: center; }
 .drive-body {
