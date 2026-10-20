@@ -2,7 +2,10 @@ node_modules/
 test-results/
 playwright-report/
 blob-report/
-.claude/
+# Keep local Claude Code state out of git, but commit the frozen-installer guard.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 .codex/
 .agents/
 

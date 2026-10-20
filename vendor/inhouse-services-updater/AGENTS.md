@@ -1,5 +1,9 @@
 # Inhouse services updater
 
+## STOP: the Android installer is FROZEN
+
+The Android installer works and is frozen at tag `installer-known-good` (verified on a real Samsung phone on 2026-10-20). Do not edit, refactor, reformat, rename, move or delete `android/PhotosUpdateInstaller.kt`, `android/UpdateFileProvider.java` or `tools/register_android.py`, their vendored copies in the apps, or the guards listed in `FROZEN_INSTALLER.md`. Do not move or delete tag `installer-known-good` or branch `frozen-installer`. Never register `.update-provider` with `androidx.core.content.FileProvider`, and never replace `ACTION_VIEW` with PackageInstaller sessions or `ACTION_INSTALL_PACKAGE`: each of those broke in-app updates. Only the user, in their own words, can unfreeze it. Read `FROZEN_INSTALLER.md` first.
+
 Mandatory guidance for every AI and developer. This repository is the canonical updater for Inhouse YouTube, Instagram, Notes, Photos and Read.
 
 - Every new app change and automatic publication goes to **A** unless the user explicitly requests B. A receives **all A and B releases**; B receives **only explicitly authorized B releases**.
