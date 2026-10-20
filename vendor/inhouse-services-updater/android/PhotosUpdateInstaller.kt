@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.BufferedInputStream
 import java.io.File
@@ -15,7 +16,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.UUID
 
 // Inhouse services updater: canonical source in miguelcoxcaballero/inhouse-services-updater.
 // Change updater code there first, then sync ALL five apps at the same revision.
@@ -27,6 +27,16 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
   fun installUpdate(url: String, expectedSha256: String?, result: Result) {
     if (expectedSha256 == null || !expectedSha256.matches(Regex("[0-9a-fA-F]{64}"))) {
       result.error("invalid_checksum", "The update is missing a trusted checksum. Check for updates again.", null)
+      return
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.packageManager.canRequestPackageInstalls()) {
+      activity.startActivity(
+        Intent(
+          Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+          Uri.parse("package:${activity.packageName}"),
+        ),
+      )
+      result.success("permission_required")
       return
     }
     if (!downloadRunning.compareAndSet(false, true)) {
@@ -64,7 +74,7 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
             apkFile.delete(); partialFile.delete(); throw error
           }
         }
-        val verified = verifiedPackage ?: throw SecurityException("Invalid update package.")
+        if (verifiedPackage == null) throw SecurityException("Invalid update package.")
 
         val apkUri = FileProvider.getUriForFile(
           activity,
@@ -77,20 +87,17 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
             if (activity.isFinishing || activity.isDestroyed) {
               throw IllegalStateException("Open the app and try the update again.")
             }
-            // Use a foreground proxy to receive Android's result and preserve
-            // the expected version across self-update process termination.
-            val installIntent = Intent().apply {
-              setClassName(activity.packageName, "com.inhouse.services.updater.InstallActivity")
-              data = apkUri
+            // Hand the verified APK straight to Android's package installer, as
+            // the original Photos installer did. PackageInstaller sessions and
+            // ACTION_INSTALL_PACKAGE failed on real Samsung devices before
+            // showing consent; the installed version is checked on return.
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+              setDataAndType(apkUri, APK_MIME_TYPE)
               clipData = ClipData.newRawUri("Update APK", apkUri)
-              putExtra("installId", UUID.randomUUID().toString())
-              putExtra("versionCode", getVersionCode(verified))
-              putExtra("versionName", verified.versionName ?: "")
-              putExtra("sha256", expectedSha256)
               addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(installIntent)
-            result.success("installing")
+            result.success("ready")
           } catch (error: Exception) {
             result.error("installer_unavailable", error.message ?: "Android could not open the installer.", null)
           }
