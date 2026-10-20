@@ -9875,6 +9875,7 @@
                 done = true;
                 handle.phase = 'complete';
                 cancelAnimationFrame(prepareFrame);
+                clearTimeout(prepareTimer);
                 if (driveFolderAnimation === handle) driveFolderAnimation = null;
                 restoreLiveView?.();
                 animations.forEach(animation => animation.cancel());
@@ -9912,8 +9913,8 @@
             // keeps a snapshot of the outgoing interior while the parent is
             // restored underneath. Snapshot IDs never compete with live UI.
             // Closing starts with the outgoing viewport already in the
-            // scene. Opening can paint just the lightweight lid first.
-            let prepareFrame = 0;
+            // scene. Opening paints just the lightweight lid first.
+            let prepareFrame = 0, prepareTimer = 0;
             const geometry = () => {
                 const scale = Math.max((bounds.width + 4) / rect.width, (bounds.height + 4) / (rect.height * 0.94));
                 const finalLeft = (bounds.width - rect.width * scale) / 2;
@@ -9975,14 +9976,20 @@
                 handle.preparing = true;
                 onSwap();
                 handle.preparing = false;
-                hydrateVisibleDriveFolderCards();
                 focusAfter = handle.focusTarget || (isDriveFolderViewOpen() ? document.activeElement : null);
+                let retarget = false;
                 if (backwards) {
+                    // The landing card may still be a deferred slot.
+                    hydrateVisibleDriveFolderCards();
                     destinationArt = findVisibleDriveFolderArt(entry?.id);
                     const destination = captureDriveFolderOrigin(destinationArt);
                     if (destination) {
-                        Object.assign(rect, destination.rect);
-                        sizeGhost();
+                        retarget = ['left', 'top', 'width', 'height']
+                            .some(key => Math.abs(destination.rect[key] - rect[key]) > .5);
+                        if (retarget) {
+                            Object.assign(rect, destination.rect);
+                            sizeGhost();
+                        }
                         destinationArt.style.visibility = 'hidden';
                     }
                 }
@@ -10005,21 +10012,28 @@
                             // Leaving the animation-suppression container must not
                             // restart their arrival fade on the finished screen.
                             interior.querySelectorAll('.drive-folder-item-arriving').forEach(el => el.classList.remove('drive-folder-item-arriving'));
+                            // Labels move without their backdrop blur; ease it
+                            // back in once the landed view has been styled.
+                            interior.classList.add('is-settling-labels');
                             marker.replaceWith(interior);
+                            requestAnimationFrame(() => requestAnimationFrame(() => interior.classList.remove('is-settling-labels')));
                             saved.forEach(([name, value, priority]) => value
                                 ? interior.style.setProperty(name, value, priority) : interior.style.removeProperty(name));
                             if (scrollTop) driveFolderViewScrollEl.scrollTop = scrollTop;
                         };
                     }
-                    mountInterior(interior);
-                    // The folder colour and its sheets crossfade into the
-                    // interior background for most of the zoom, and back again
-                    // while closing. Opacity on this composited layer is free.
-                    fade = animate(interior, backwards
-                        ? [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }]
-                        : [{ opacity: 0 }, { opacity: 1, offset: .7 }, { opacity: 1 }], { easing: 'linear' });
+                    // Closing mounted the outgoing interior with the first
+                    // frame; moving it again would only re-raster it mid-motion.
+                    if (!backwards || retarget) mountInterior(interior);
                 }
-                zoom.effect.setKeyframes(zoomFrames());
+                // Opening hydrates after mounting: the interior is laid out
+                // once, in its place inside the folder, not at home and again.
+                if (!backwards) hydrateVisibleDriveFolderCards();
+                if (interior && !backwards) {
+                    // Held invisible until it joins the running movement.
+                    fade = animate(interior, [{ opacity: 0 }, { opacity: 0 }], { easing: 'linear' });
+                }
+                if (retarget) zoom.effect.setKeyframes(zoomFrames());
             };
             // Opacity would flatten the opaque lid's two 3D faces. Animate
             // transform only; the browser compositor owns every motion frame.
@@ -10037,30 +10051,42 @@
                 .map(print => animate(print, backwards
                     ? [{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }]
                     : [{ opacity: 1 }, { opacity: 0, offset: .4 }, { opacity: 0 }], { easing: 'linear' }));
-            const startMotion = () => {
+            // Closing shows the outgoing interior from its first frame and
+            // fades it out over the shrinking folder.
+            if (backwards && previous?.view) {
+                fade = animate(previous.view, [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }], { easing: 'linear' });
+            }
+            // The movement starts with the tap. Its first frame only adds the
+            // lid (and, closing, the outgoing interior); nothing waits for the
+            // next screen. Played together and left pending, the effects get
+            // one shared start time from the compositor when it actually
+            // presents their first frame: a slow first frame delays the motion
+            // instead of skipping into it, so every pose is shown, and the
+            // compositor owns every motion frame on any refresh rate.
+            [zoom, hinge, ...labels, fade].filter(Boolean).forEach(animation => animation.play());
+            zoom.finished.then(cleanup).catch(() => {});
+            // Right after that frame, build the next screen underneath the
+            // turning lid. Opening, the interior's crossfade into the folder
+            // colour then joins the movement's own timeline: invisible where
+            // it arrives and fully in by 70% of the zoom, as before.
+            const joinMotion = () => {
                 if (done) return;
+                if (!backwards && fade) {
+                    const elapsed = Math.min(1, Math.max(0, zoom.currentTime / duration));
+                    const from = Math.min(.9, elapsed + .03);
+                    fade.effect.setKeyframes([{ opacity: 0 }, { opacity: 0, offset: from },
+                        { opacity: 1, offset: Math.max(.7, Math.min(1, from + .15)) }, { opacity: 1 }]);
+                    fade.play();
+                    fade.startTime = zoom.startTime;
+                }
                 handle.phase = 'animating';
-                const start = document.timeline.currentTime;
-                [zoom, hinge, ...labels, fade].filter(Boolean).forEach(animation => {
-                    animation.play();
-                    // Every effect shares one native timeline, including on
-                    // high-refresh displays; no JS clock or frame-rate cap.
-                    animation.startTime = start;
-                });
-                zoom.finished.then(cleanup).catch(() => {});
             };
-            // Commit the resting lid, then build the interior, then let its
-            // final-size raster land before anything moves: all setup happens
-            // before the first visible frame, never in the middle of the motion.
             prepareFrame = requestAnimationFrame(() => {
-                if (done) return;
-                prepareScene();
-                handle.phase = 'priming';
-                prepareFrame = requestAnimationFrame(() => {
-                    prepareFrame = requestAnimationFrame(() => {
-                        if (!done) startMotion();
-                    });
-                });
+                prepareTimer = setTimeout(() => {
+                    if (done) return;
+                    prepareScene();
+                    zoom.ready.then(joinMotion).catch(() => {});
+                }, 0);
             });
             window.addEventListener('resize', resized);
             document.addEventListener('visibilitychange', visibilityChanged);
