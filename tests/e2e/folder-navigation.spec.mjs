@@ -121,6 +121,37 @@ test('opening starts from the exact card and the interior keeps the shadows it l
     expect(landed.grain).not.toBe('none');
 });
 
+test('the folder motion starts with the tap, before the next screen is built', async ({ page, context }) => {
+    await setup(page, context);
+    for (const selector of ['#drive-folders [data-drive-item-id="projects"]', '#btn-folder-view-back']) {
+        // Sampled in the tap's own task: the zoom already plays (pending only
+        // until the compositor presents its first frame) and nothing of the
+        // next screen has been built yet.
+        const state = await page.evaluate(selector => {
+            document.querySelector(selector).click();
+            const zoom = document.querySelector('.drive-folder-ghost').getAnimations()[0];
+            return { playState: zoom.playState, pending: zoom.pending, prepared: driveFolderAnimation.prepared };
+        }, selector);
+        expect(state, selector).toEqual({ playState: 'running', pending: true, prepared: false });
+        await settle(page);
+    }
+});
+
+test('labels move without their backdrop blur and ease it back in once landed', async ({ page, context }) => {
+    await setup(page, context);
+    const blur = () => page.evaluate(() => [...document.querySelectorAll('#drive-folder-view .drive-card-info')]
+        .map(info => getComputedStyle(info, '::before').backdropFilter));
+    await openFolder(page, 'projects');
+    await page.waitForFunction(() => driveFolderAnimation?.phase === 'animating');
+    const moving = await blur();
+    expect(moving.length).toBeGreaterThan(0);
+    expect(moving.every(value => value === 'none')).toBe(true);
+    await settle(page);
+    await expect.poll(blur).toEqual(moving.map(() => 'blur(1.5px)'));
+    // The sheets inside a folder are plain white paper.
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector('#drive-folders .drive-folder-sheets')).backgroundImage)).toBe('none');
+});
+
 test('rapid back, reopen and tab changes cannot leave a stale folder, hidden card or animation', async ({ page, context }) => {
     await setup(page, context);
     await openFolder(page, 'projects');
@@ -566,6 +597,16 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
     }, folderType);
     const cpu = await context.newCDPSession(page);
     await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    // Actual compositor output, as in the blocked-main-thread test: the zoom
+    // is a native compositor animation, so its smoothness is what reaches the
+    // screen, not how often the busy main thread gets a frame.
+    const presented = [];
+    cpu.on('Page.screencastFrame', event => {
+        presented.push({ timestamp: event.metadata.timestamp * 1000,
+            hash: createHash('sha256').update(event.data).digest('hex') });
+        void cpu.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
+    });
+    await cpu.send('Page.startScreencast', { format: 'jpeg', quality: 50, everyNthFrame: 1 });
     try {
         for (const [selector, expectedFolder, lastItem] of [
             ['#drive-folders [data-drive-item-id="projects"]', 'Proyectos', 'projects-dense-148'],
@@ -575,9 +616,10 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
         ]) {
             const motion = await page.evaluate(async selector => {
                 const started = performance.now();
+                const epoch = performance.timeOrigin + started;
                 const nativeAnimate = Element.prototype.animate;
                 const frames = [];
-                let zoom = null, observedTransition = false;
+                let zoom = null, observedTransition = false, zoomStart = null;
                 Element.prototype.animate = function (keyframes, timing) {
                     const animation = nativeAnimate.call(this, keyframes, timing);
                     if (this.classList.contains('drive-folder-ghost')) zoom = animation;
@@ -590,30 +632,45 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
                         const sample = () => {
                             const elapsed = performance.now() - started;
                             observedTransition ||= !!driveFolderAnimation || !!zoom;
-                            frames.push({ ms: elapsed, progress: zoom?.effect.getComputedTiming().progress ?? null });
+                            frames.push({ ms: elapsed, progress: zoom?.effect.getComputedTiming().progress ?? null,
+                                built: driveFolderAnimation?.phase === 'animating' });
+                            if (zoom?.startTime != null) zoomStart = performance.timeOrigin + zoom.startTime;
                             if ((observedTransition && !driveFolderAnimation) || elapsed > 12_000) resolve();
                             else requestAnimationFrame(sample);
                         };
                         requestAnimationFrame(sample);
                     });
-                    return { clickMs, frames, finished: !driveFolderAnimation };
+                    return { clickMs, frames, epoch, zoomStart, duration: zoom?.effect.getTiming().duration, finished: !driveFolderAnimation };
                 } finally {
                     Element.prototype.animate = nativeAnimate;
                 }
             }, selector);
             const moving = motion.frames.filter(frame => frame.progress > .05 && frame.progress < .95);
             const firstAnimated = motion.frames.find(frame => frame.progress !== null);
-            // Initial raster/upload has its own startup budget below. Once
-            // movement begins, no long main-thread job may consume the zoom.
-            const maxGap = Math.max(...moving.slice(1).map((frame, i) => frame.ms - moving[i].ms));
+            // The motion starts with the tap and the next screen is built
+            // underneath it while the compositor runs the zoom (main-thread
+            // stalls cannot stop it: see the blocked-main-thread test). That
+            // build, including the one frame that renders it, must land early
+            // in the motion, and after it no long main-thread job may follow
+            // until the folder lands.
+            const builtAt = motion.frames.find(frame => frame.built)?.progress ?? null;
+            // The zoom's own timeline bounds the motion on screen.
+            const from = motion.zoomStart + motion.duration * .05, to = motion.zoomStart + motion.duration * .95;
+            const shown = presented.filter(frame => frame.timestamp >= from && frame.timestamp <= to);
+            const maxGap = Math.max(0, ...shown.slice(1).map((frame, i) => frame.timestamp - shown[i].timestamp));
             const diagnostics = JSON.stringify({ selector, destination: expectedFolder || 'root', clickMs: motion.clickMs,
-                firstMotionMs: moving[0]?.ms, firstProgress: firstAnimated?.progress, intermediateFrames: moving.length, maxGap });
+                firstMotionMs: moving[0]?.ms, firstProgress: firstAnimated?.progress, intermediateFrames: moving.length,
+                builtAt, presentedFrames: new Set(shown.map(frame => frame.hash)).size, maxGap });
             expect(motion.finished, diagnostics).toBe(true);
             expect(motion.clickMs, diagnostics).toBeLessThan(100);
             expect(firstAnimated?.progress, diagnostics).toBeLessThan(.2);
-            expect(moving.length, diagnostics).toBeGreaterThanOrEqual(6);
+            expect(motion.zoomStart, diagnostics).not.toBeNull();
             expect(moving[0]?.ms, diagnostics).toBeLessThan(900);
-            expect(maxGap, diagnostics).toBeLessThan(120);
+            expect(builtAt, diagnostics).not.toBeNull();
+            // Headless screencasts deliver far fewer images than the display
+            // refreshes; this guards against a frozen zoom, not frame rate.
+            expect(new Set(shown.map(frame => frame.hash)).size, diagnostics).toBeGreaterThanOrEqual(6);
+            expect(maxGap, diagnostics).toBeLessThan(150);
             await expect(page.locator('.drive-folder-transition')).toHaveCount(0);
             if (expectedFolder) {
                 await expect(page.locator('#drive-folder-view-title')).toHaveText(expectedFolder);
@@ -638,6 +695,7 @@ test('dense folders paint intermediate zoom frames on a slower CPU and retain ev
             } else await expect(page.locator('#drive-folder-view')).toBeHidden();
         }
     } finally {
+        await cpu.send('Page.stopScreencast').catch(() => {});
         await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 });
         await cpu.detach();
     }
