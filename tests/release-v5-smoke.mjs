@@ -27,7 +27,7 @@ const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const scannerLive = readText('../scanner/live-camera.js');
 const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.16.23.md');
+const notes = readText('../RELEASE_NOTES_v5.16.24.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -37,7 +37,7 @@ const androidManifestPublisher = readText('../.github/scripts/update_services_ma
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.16.23';/);
+assert.match(indexHtml, /const APP_VERSION = '5.16.24';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -61,10 +61,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.23/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.23/);
-assert.match(indexHtml, /app-v5\.js\?v=5.16.23/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.23/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.24/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.24/);
+assert.match(indexHtml, /app-v5\.js\?v=5.16.24/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.24/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -90,7 +90,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.23/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.24/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -202,15 +202,15 @@ assert.doesNotMatch(
   /"url": "https:\/\/inhousenotes\.com/,
   'Android must paint its bundled launch shell before navigating to the web app'
 );
-assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.25"/);
-assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 26/);
-assert.match(androidApkVerifier, /package: name='com\.local\.inhousenotes' versionCode='26' versionName='1\.0\.25'/);
+assert.match(androidBuildScript, /ANDROID_VERSION_NAME = "1\.0\.26"/);
+assert.match(androidBuildScript, /ANDROID_VERSION_CODE = 27/);
+assert.match(androidApkVerifier, /package: name='com\.local\.inhousenotes' versionCode='27' versionName='1\.0\.26'/);
 assert.match(androidApkVerifier, /certificate\(apk\) == certificate\(previous\)/);
-assert.match(androidManifestPublisher, /'version':'1\.0\.25','versionCode':26/);
-assert.match(androidManifestPublisher, /New Inhouse Notes logo inside the app\./);
-assert.match(androidWorkflow, /gh release download android-v1\.0\.24 --pattern inhouse-notes-release-v1\.0\.24\.apk/);
-assert.match(androidWorkflow, /verify_release_apk\.py inhouse-notes-release-v1\.0\.25\.apk/);
-assert.match(androidWorkflow, /cmp inhouse-notes-release-v1\.0\.25\.apk/);
+assert.match(androidManifestPublisher, /'version':'1\.0\.26','versionCode':27/);
+assert.match(androidManifestPublisher, /Test the in-app updater\./);
+assert.match(androidWorkflow, /gh release download android-v1\.0\.25 --pattern inhouse-notes-release-v1\.0\.25\.apk/);
+assert.match(androidWorkflow, /verify_release_apk\.py inhouse-notes-release-v1\.0\.26\.apk/);
+assert.match(androidWorkflow, /cmp inhouse-notes-release-v1\.0\.26\.apk/);
 const verifySignedApkStep = androidWorkflow.indexOf('- name: Verify signed APK and signing continuity');
 const publishApkStep = androidWorkflow.indexOf('- name: Publish versioned APK download');
 assert.ok(androidWorkflow.indexOf('- name: Require passing shared Android installation tests') < publishApkStep);
@@ -1218,7 +1218,7 @@ assert.match(app, /card\.style\.setProperty\('--sheet-ratio', ratio\)/);
 assert.match(indexHtml, /--sheet-inset-block: max\(0%, \(141\.42% - 100% \/ var\(--sheet-ratio\)\) \/ 2\);/);
 assert.match(indexHtml, /width: min\(100%, 141\.42% \* var\(--sheet-ratio\)\);/);
 assert.match(indexHtml, /\.drive-folder-art \{\n\s+position: relative;\n\s+width: 100%;\n\s+aspect-ratio: 210 \/ 297;/);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.23/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.24/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 180\)/);
@@ -1228,7 +1228,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.16.23 smoke checks passed.');
+console.log('v5.16.24 smoke checks passed.');
 
 
 
