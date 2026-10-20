@@ -16,7 +16,7 @@ FROZEN_INSTALLER={
     'tools/register_android.py':'84ebb89d4941353e5eb135c6c08f9db1f057e4065a41a98684f7f2afe3db98ad',
 }
 for name, entry in lock['files'].items():
-    assert hashlib.sha256((root/name).read_bytes()).hexdigest()==entry['sha256'], f'Updater drift: {name}. Edit the central repository and sync all five apps.'
+    assert hashlib.sha256((root/name).read_bytes()).hexdigest()==entry['sha256'], f'Updater drift: {name}. Edit the central repository and sync every app in tools/sync.py.'
     if entry['source'] in FROZEN_INSTALLER:
         assert entry['sha256']==FROZEN_INSTALLER[entry['source']], f'Frozen installer changed: {name}. It is verified on a real phone and must not change; read FROZEN_INSTALLER.md.'
 assert 'explicit request' in (root/'UPDATER.md').read_text()

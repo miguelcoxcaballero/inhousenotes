@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "4ec22080cc4c14e5fd3381d020cead2b6acd6906",
+  "revision": "d0d2afdd8b291bd3c8bebe61015aaa6b0f98be1c",
   "version": "1.2.4",
   "appId": "notes",
   "files": {
@@ -66,7 +66,7 @@
     },
     "vendor/inhouse-services-updater/verify.py": {
       "source": "tools/verify.py",
-      "sha256": "7c239bc94137aea515628de073aee58dc5c8eb35a51f9a6030c910b1419ce9dd"
+      "sha256": "73d015414a98684f2d1bc06a27c73dd7496569891364155b00cbd428c0fdf487"
     },
     "vendor/inhouse-services-updater/catalog.py": {
       "source": "tools/catalog.py",
@@ -82,11 +82,11 @@
     },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
-      "sha256": "69a2b6b2eb4084ad3d77ed81c547a869d8c302396cd9e7d3ee8016afeff5696e"
+      "sha256": "56e904dcc5d389981661eaf6b3daea5c777fad905c3b72cda7f137c5b09d3b7e"
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "dcbd5fde2d772093848fce04a4248b5a40a47751b021b1cab3cc7dd21eed5360"
+      "sha256": "2628d04943705b66f218531e241bb80b515e7e2f7d341420c5a12438357b7511"
     },
     "vendor/inhouse-services-updater/FROZEN_INSTALLER.md": {
       "source": "FROZEN_INSTALLER.md",
@@ -98,7 +98,7 @@
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
-      "sha256": "304bef012d2dc4c914811908bc6c6b7607548f09fe81df2698f235cc7d5dc2da"
+      "sha256": "b42b71cd0ab4deef205419ab334656f7b7b8e2e40200d87116e0ff9af398a42b"
     },
     "shared/inhouse-services-updater/updater.js": {
       "source": "web/updater.js",
