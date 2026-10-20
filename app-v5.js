@@ -144,8 +144,15 @@
                 install: release => {
                     // Update stays inside the Android installer. GitHub is an
                     // explicit recovery option, never an automatic redirect.
-                    if (window.InhouseNative?.installInhouseUpdate) window.InhouseNative.installInhouseUpdate(release.apkUrl, release.apkSha256);
-                    else if (window.InhouseNative?.installAppUpdate) window.InhouseNative.installAppUpdate(release.apkUrl);
+                    // Android 1.0.23 and older (versionCode < 25) carry an install-session
+                    // bridge that fails on some phones ("Android could not start the
+                    // installation"). Their original installAppUpdate (download +
+                    // ACTION_VIEW) works, so those apps update through it.
+                    const native = window.InhouseNative;
+                    let installedCode = 0;
+                    try { installedCode = Number(native?.getAppVersionCode?.() || 0); } catch (_) {}
+                    if (native?.installAppUpdate && (installedCode < 25 || !native.installInhouseUpdate)) native.installAppUpdate(release.apkUrl);
+                    else if (native?.installInhouseUpdate) native.installInhouseUpdate(release.apkUrl, release.apkSha256);
                     else throw new Error('Abre la app Android para instalar.');
                 }
             });
