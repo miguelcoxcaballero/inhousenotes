@@ -27,7 +27,7 @@ const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const scannerLive = readText('../scanner/live-camera.js');
 const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.16.29.md');
+const notes = readText('../RELEASE_NOTES_v5.16.30.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -37,7 +37,7 @@ const androidManifestPublisher = readText('../.github/scripts/update_services_ma
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.16.29';/);
+assert.match(indexHtml, /const APP_VERSION = '5.16.30';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -61,10 +61,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.29/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.29/);
-assert.match(indexHtml, /app-v5\.js\?v=5.16.29/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.29/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.30/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.30/);
+assert.match(indexHtml, /app-v5\.js\?v=5.16.30/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.30/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -90,7 +90,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.29/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.30/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -1199,7 +1199,14 @@ assert.match(app, /function repaintDriveFolders\(\)/);
 assert.match(app, /function getDriveSheetRatio\(width, height\)/);
 // Folder covers carry only the name; the tab is cut from the back panel.
 assert.doesNotMatch(app, /'Shared folder' : 'Folder'/);
-assert.match(indexHtml, /\.drive-folder-back::after \{\n\s+content: '';\n\s+position: absolute;\n\s+right: 7%;\n\s+bottom: calc\(100% - 1px\);/);
+assert.match(indexHtml, /\.drive-folder-back::after \{\n\s+content: '';\n\s+position: absolute;\n\s+right: 7%;\n\s+bottom: calc\(100% - var\(--folder-px, 1px\)\);/);
+// Opening a folder starts from the exact card (name, rule and ⋮ in place)
+// and the items inside keep the shadows they land with.
+assert.doesNotMatch(app, /querySelectorAll\('\.drive-card-menu'\)\.forEach\(el => el\.remove\(\)\)/);
+assert.match(app, /ghost\.style\.setProperty\('--ghost-scale', String\(scale\)\)/);
+assert.match(indexHtml, /--folder-px: calc\(1px \* var\(--ghost-scale, 1\)\);/);
+assert.doesNotMatch(indexHtml, /\.drive-folder-transition \.drive-folder-back \{\s*filter: none;/);
+assert.doesNotMatch(indexHtml, /\.drive-folder-transition \.drive-folder-art \{\s*--folder-grain: none;/);
 assert.doesNotMatch(indexHtml, /drive-folder-view-tab/);
 // Cached startup stays immediate; the release watcher still reaches the published release.
 const bootScript = readText('../boot-v5.js');
@@ -1218,7 +1225,7 @@ assert.match(app, /card\.style\.setProperty\('--sheet-ratio', ratio\)/);
 assert.match(indexHtml, /--sheet-inset-block: max\(0%, \(141\.42% - 100% \/ var\(--sheet-ratio\)\) \/ 2\);/);
 assert.match(indexHtml, /width: min\(100%, 141\.42% \* var\(--sheet-ratio\)\);/);
 assert.match(indexHtml, /\.drive-folder-art \{\n\s+position: relative;\n\s+width: 100%;\n\s+aspect-ratio: 210 \/ 297;/);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.29/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.30/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 180\)/);
@@ -1228,7 +1235,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.16.29 smoke checks passed.');
+console.log('v5.16.30 smoke checks passed.');
 
 
 
