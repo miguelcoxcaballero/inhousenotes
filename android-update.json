@@ -1,10 +1,10 @@
 {
-  "version": "1.0.27",
-  "versionCode": 28,
+  "version": "1.0.28",
+  "versionCode": 29,
   "required": true,
   "apkSizeBytes": 6815752,
-  "apkSha256": "1bbb32b4d90152972b68f5ef41b3a0b9f3ee7e8ae556907c8238a1a0b0e318f3",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.27/inhouse-notes-release-v1.0.27.apk",
-  "publishedAppVersion": "5.16.27",
-  "releaseNotes": "Fix in-app update installation."
+  "apkSha256": "ac3e141b753b8eb17ed56627bfdbb0c577d626158c9817a60b251f833b89cec7",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.28/inhouse-notes-release-v1.0.28.apk",
+  "publishedAppVersion": "5.16.29",
+  "releaseNotes": "Test the in-app updater."
 }
