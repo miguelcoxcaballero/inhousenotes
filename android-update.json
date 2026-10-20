@@ -1,10 +1,10 @@
 {
-  "version": "1.0.25",
-  "versionCode": 26,
+  "version": "1.0.26",
+  "versionCode": 27,
   "required": true,
-  "apkSizeBytes": 6815988,
-  "apkSha256": "c4fd960e3398d5d414a6b54e43d612bbb6eef1def2fde6a6428eb73020f37bdf",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.25/inhouse-notes-release-v1.0.25.apk",
-  "publishedAppVersion": "5.16.22",
-  "releaseNotes": "New Inhouse Notes logo inside the app."
+  "apkSizeBytes": 6816204,
+  "apkSha256": "6321dfc8b02fef4f82ec107c82adb8834db0cb42c6baa0f9ce7be7d5d8276c4d",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.26/inhouse-notes-release-v1.0.26.apk",
+  "publishedAppVersion": "5.16.25",
+  "releaseNotes": "Test the in-app updater."
 }
