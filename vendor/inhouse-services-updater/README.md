@@ -2,7 +2,7 @@
 
 > **Instalador Android congelado.** `android/PhotosUpdateInstaller.kt`, `android/UpdateFileProvider.java` y `tools/register_android.py` funcionan y no se tocan: lee [FROZEN_INSTALLER.md](FROZEN_INSTALLER.md).
 
-Actualizador común de Inhouse YouTube, Instagram, Notes, Photos y Read. Una interfaz y una implementación de descarga, verificación e instalación para las cinco apps.
+Actualizador común de Inhouse YouTube, Instagram, Notes, Photos, Read y Learn. Una interfaz y una implementación de descarga, verificación e instalación para las seis apps (la lista `APPS` de `tools/sync.py`).
 
 **A recibe todas las versiones A y B. B recibe solo las versiones B.** En A se ofrece siempre la versión más nueva por `versionCode`: una B nueva sustituye a una A antigua, y una A posterior vuelve a ser la actualización disponible. Publicar una B anterior no desplaza una A más nueva.
 
@@ -25,10 +25,10 @@ los hosts existentes conservan el diálogo habitual.
 
 - `web/`: comprobador, selección de canal, recordatorio, popup y ajustes. El mismo código se incluye localmente en todas las aplicaciones; no se carga JavaScript remoto.
 - `android/`: host de Android y el instalador procedente de Inhouse Photos. Descarga reanudable, SHA-256, paquete, versión y certificado.
-- `tools/sync.py`: copia verificada y lock de revisión para los cinco proyectos.
+- `tools/sync.py`: copia verificada y lock de revisión para los seis proyectos.
 - `tools/catalog.py`: prepara publicaciones A y publicaciones/promociones B explícitas con historial corto; incluye automáticamente cada B en A conservando la versión más nueva.
 
-Los conectores de las apps solo aportan identidad, versión y enlace a ajustes. Cualquier cambio del actualizador se hace aquí primero y se sincroniza en las cinco apps. Las instrucciones de cada repositorio repiten esta regla.
+Los conectores de las apps solo aportan identidad, versión y enlace a ajustes. Cualquier cambio del actualizador se hace aquí primero y se sincroniza en las seis apps. Las instrucciones de cada repositorio repiten esta regla.
 
 La inclusión de B en A se hace al publicar los catálogos, por lo que también funciona con los clientes ya instalados. Cada catálogo apunta a APK públicos verificados e inmutables; el canal B nunca recurre a A ni a la última release genérica de GitHub.
 
