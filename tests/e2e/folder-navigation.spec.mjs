@@ -74,6 +74,53 @@ test('cached folders appear during opening; nested navigation and closing retain
     await expect(page.locator('#drive-folders [data-drive-item-id="projects"]')).toBeFocused();
 });
 
+test('opening starts from the exact card and the interior keeps the shadows it lands with', async ({ page, context }) => {
+    await setup(page, context);
+    const parts = ['.drive-card-title', '.drive-folder-rule', '.drive-card-more'];
+    const card = await page.evaluate(parts => {
+        const art = document.querySelector('#drive-folders [data-drive-item-id="projects"] .drive-folder-art');
+        return parts.map(selector => {
+            const rect = art.querySelector(selector).getBoundingClientRect();
+            return [rect.left, rect.top, rect.width, rect.height];
+        });
+    }, parts);
+    // Hold the first frame of a real opening: the lid must still be the card,
+    // with its name above the rule and its ⋮ menu in the corner.
+    const first = await page.evaluate(async parts => {
+        document.querySelector('#drive-folders [data-drive-item-id="projects"]').click();
+        await new Promise(resolve => {
+            const ready = () => driveFolderAnimation?.phase === 'animating' ? resolve() : requestAnimationFrame(ready);
+            requestAnimationFrame(ready);
+        });
+        const moving = document.getAnimations().filter(animation => animation.effect?.target?.closest?.('.drive-folder-transition'));
+        moving.forEach(animation => { animation.pause(); animation.currentTime = 0; });
+        const lid = document.querySelector('.drive-folder-ghost > .drive-folder-cover');
+        const lidParts = parts.map(selector => {
+            const el = lid.querySelector(selector);
+            if (!el) return null;
+            const rect = el.getBoundingClientRect();
+            return [rect.left, rect.top, rect.width, rect.height];
+        });
+        const nested = getComputedStyle(document.querySelector('.drive-folder-ghost .drive-folder-view .drive-folder-back'));
+        const interior = { boxShadow: nested.boxShadow, filter: nested.filter, grain: nested.backgroundImage };
+        moving.forEach(animation => animation.play());
+        return { lidParts, interior };
+    }, parts);
+    await settle(page);
+    const landed = await page.evaluate(() => {
+        const nested = getComputedStyle(document.querySelector('#drive-view-folders .drive-folder-back'));
+        return { boxShadow: nested.boxShadow, filter: nested.filter, grain: nested.backgroundImage };
+    });
+    parts.forEach((selector, index) => {
+        expect(first.lidParts[index], selector).not.toBeNull();
+        first.lidParts[index].forEach((value, axis) =>
+            expect(Math.abs(value - card[index][axis]), `${selector} [${axis}]`).toBeLessThan(1));
+    });
+    // Folders inside the moving scene look exactly as they do once landed.
+    expect(first.interior).toEqual(landed);
+    expect(landed.grain).not.toBe('none');
+});
+
 test('rapid back, reopen and tab changes cannot leave a stale folder, hidden card or animation', async ({ page, context }) => {
     await setup(page, context);
     await openFolder(page, 'projects');

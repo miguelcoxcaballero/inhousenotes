@@ -9823,9 +9823,9 @@
                 left: `${rect.left - bounds.left}px`, top: `${rect.top - bounds.top}px`,
                 width: `${rect.width}px`, height: `${rect.height}px`, visibility: ''
             });
-            // The printed name rides on the lid and fades as it turns; only
-            // the menu button never belongs to the moving scene.
-            ghost.querySelectorAll('.drive-card-menu').forEach(el => el.remove());
+            // The printed name and the ⋮ menu ride on the lid and fade as it
+            // turns. Removing the menu made the first frame differ from the
+            // card; the ghost is inert, so its copy can never be pressed.
             // Transparent on purpose: the folder board and its sheets stay
             // visible underneath until the interior has faded in over them.
             const surface = document.createElement('div');
@@ -9931,6 +9931,9 @@
                     width: `${rect.width * scale}px`, height: `${rect.height * scale}px`,
                     perspective: `${1100 * scale}px`
                 });
+                // Pixel measures of the lid (name spacing, menu, corners,
+                // shadows) grow with the layout so the shrunk start is the card.
+                ghost.style.setProperty('--ghost-scale', String(scale));
             };
             const zoomFrames = () => {
                 const { scale, dx, dy } = geometry();
@@ -10028,17 +10031,17 @@
                 ? [{ transform: opened }, { transform: closed }]
                 : [{ transform: closed }, { transform: opened }],
                 { easing: backwards ? 'cubic-bezier(0.4, 0, 0.2, 1)' : 'cubic-bezier(0.2, 0, 0.2, 1)' });
-            // The name printed on the lid stays legible while the lid starts
-            // to turn, then fades before it would become enlarged text.
-            const print = cover.querySelector('.drive-folder-print');
-            const label = print ? animate(print, backwards
-                ? [{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }]
-                : [{ opacity: 1 }, { opacity: 0, offset: .4 }, { opacity: 0 }], { easing: 'linear' }) : null;
+            // The name and ⋮ printed on the lid stay legible while the lid
+            // starts to turn, then fade before they would become enlarged.
+            const labels = Array.from(cover.querySelectorAll(':scope > .drive-folder-cover-face > :is(.drive-folder-print, .drive-card-menu)'))
+                .map(print => animate(print, backwards
+                    ? [{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }]
+                    : [{ opacity: 1 }, { opacity: 0, offset: .4 }, { opacity: 0 }], { easing: 'linear' }));
             const startMotion = () => {
                 if (done) return;
                 handle.phase = 'animating';
                 const start = document.timeline.currentTime;
-                [zoom, hinge, label, fade].filter(Boolean).forEach(animation => {
+                [zoom, hinge, ...labels, fade].filter(Boolean).forEach(animation => {
                     animation.play();
                     // Every effect shares one native timeline, including on
                     // high-refresh displays; no JS clock or frame-rate cap.
