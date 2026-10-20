@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.0.27",
-    "versionCode": 28,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.27/inhouse-notes-release-v1.0.27.apk",
-    "apkSha256": "1bbb32b4d90152972b68f5ef41b3a0b9f3ee7e8ae556907c8238a1a0b0e318f3",
+    "version": "1.0.28",
+    "versionCode": 29,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.28/inhouse-notes-release-v1.0.28.apk",
+    "apkSha256": "ac3e141b753b8eb17ed56627bfdbb0c577d626158c9817a60b251f833b89cec7",
     "apkSizeBytes": 6815752,
-    "changelog": "Fix in-app update installation.",
-    "releasedAt": "2026-10-20T12:51:35+00:00"
+    "changelog": "Test the in-app updater.",
+    "releasedAt": "2026-10-20T14:36:40+00:00"
   },
   "releases": [
+    {
+      "version": "1.0.28",
+      "versionCode": 29,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.28/inhouse-notes-release-v1.0.28.apk",
+      "apkSha256": "ac3e141b753b8eb17ed56627bfdbb0c577d626158c9817a60b251f833b89cec7",
+      "apkSizeBytes": 6815752,
+      "changelog": "Test the in-app updater.",
+      "releasedAt": "2026-10-20T14:36:40+00:00"
+    },
     {
       "version": "1.0.27",
       "versionCode": 28,
