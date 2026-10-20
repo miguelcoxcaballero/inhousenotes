@@ -28,7 +28,7 @@ def certificate(path):
 
 assert certificate(apk) == certificate(previous), "Signing key changed"
 badging = subprocess.check_output([str(build_tools / "aapt"), "dump", "badging", str(apk)], text=True)
-assert "package: name='com.local.inhousenotes' versionCode='27' versionName='1.0.26'" in badging, "APK identity/version mismatch"
+assert "package: name='com.local.inhousenotes' versionCode='28' versionName='1.0.27'" in badging, "APK identity/version mismatch"
 assert "uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'" in badging, "APK cannot request updates"
 assert "uses-permission: name='android.permission.CAMERA'" in badging, "APK cannot request a live camera"
 assert "uses-feature: name='android.hardware.camera'" not in badging, "Camera must remain optional for photo import"
@@ -36,6 +36,8 @@ manifest = subprocess.check_output([str(build_tools / "aapt"), "dump", "xmltree"
 assert re.search(r'android:hardwareAccelerated[^\n]*0xffffffff', manifest), "Hardware acceleration must be enabled"
 assert 'com.inhouse.services.updater.InstallActivity' in manifest, "Installer result activity is not registered"
 assert 'com.inhouse.services.updater.InstallReceiver' in manifest, 'Session receiver is not registered'
+# Capacitor already uses androidx FileProvider; a shared class breaks update URIs.
+assert 'com.inhouse.services.updater.UpdateFileProvider' in manifest, 'Update provider must have its own class'
 with ZipFile(apk) as archive:
     dex = b''.join(archive.read(name) for name in archive.namelist() if name.endswith('.dex'))
     for symbol in (b'InstallActivity', b'requestConfirmation', b'InstallReceiver', b'android/content/pm/PackageInstaller', b'InstallState', b'InstallResultPolicy', b'getInstallState', b'InhouseSyncWorker', b'InhouseBackgroundSync', b'InhouseLocalAssets', b'InhouseDisplayPerformance', b'InhouseRefreshRatePolicy', b'setRequestedFrameRate'):
@@ -45,4 +47,4 @@ with ZipFile(apk) as archive:
     for path,info in native['assets'].items():
         data=archive.read('assets/inhouse-native'+path)
         assert len(data)==info['size'] and hashlib.sha256(data).hexdigest()==info['sha256'], f'Invalid APK resource: {path}'
-print("APK verified: com.local.inhousenotes 1.0.26 / 27; signing key unchanged.")
+print("APK verified: com.local.inhousenotes 1.0.27 / 28; signing key unchanged.")
