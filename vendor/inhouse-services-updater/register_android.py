@@ -70,7 +70,12 @@ def register(project, repository, trust_read=False):
     receiver='com.inhouse.services.updater.InstallReceiver'
     if not any(node.get(f'{{{ns}}}name')==receiver for node in application.findall('receiver')):
         ET.SubElement(application,'receiver',{f'{{{ns}}}name':receiver,f'{{{ns}}}exported':'false'})
-    provider=ET.SubElement(application,'provider',{f'{{{ns}}}name':'androidx.core.content.FileProvider',f'{{{ns}}}authorities':'${applicationId}.update-provider',f'{{{ns}}}exported':'false',f'{{{ns}}}grantUriPermissions':'true'})
+    # Our own provider class: androidx FileProvider is usually registered by the
+    # host already, and Android serves every authority of one class from a single
+    # instance that rejects the other authorities' URIs.
+    update_provider='com.inhouse.services.updater.UpdateFileProvider'
+    if any(node.get(f'{{{ns}}}name')==update_provider for node in application.findall('provider')):raise ValueError('Update provider already registered')
+    provider=ET.SubElement(application,'provider',{f'{{{ns}}}name':update_provider,f'{{{ns}}}authorities':'${applicationId}.update-provider',f'{{{ns}}}exported':'false',f'{{{ns}}}grantUriPermissions':'true'})
     ET.SubElement(provider,'meta-data',{f'{{{ns}}}name':'android.support.FILE_PROVIDER_PATHS',f'{{{ns}}}resource':'@xml/inhouse_update_paths'})
     tree.write(path,encoding='unicode')
     xml=app/'src/main/res/xml/inhouse_update_paths.xml';xml.parent.mkdir(parents=True,exist_ok=True)

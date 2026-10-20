@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "d313e8acdefc69b6178a53e8e43d6b49b79eba3d",
+  "revision": "acd1c37e2e06994e4883add4b9aba28f116fb55d",
   "version": "1.2.4",
   "appId": "notes",
   "files": {
@@ -56,6 +56,10 @@
       "source": "android/UpdateAssetClient.java",
       "sha256": "a0cc200625ae7c9c5cb1f849bb6d656e943204a1c15067ffd6f819b8b78ba4e0"
     },
+    "vendor/inhouse-services-updater/android/UpdateFileProvider.java": {
+      "source": "android/UpdateFileProvider.java",
+      "sha256": "38cb86d055f903cd8398754a0cc62ce1fef0c5cd12044c646935d353858243a1"
+    },
     "vendor/inhouse-services-updater/android/UpdateState.java": {
       "source": "android/UpdateState.java",
       "sha256": "27d50ff3ba969991b175da60ce2a7003b343958a9c2b469946466a906704f0fb"
@@ -70,7 +74,7 @@
     },
     "vendor/inhouse-services-updater/register_android.py": {
       "source": "tools/register_android.py",
-      "sha256": "26fdd25d74d24447a46fab33f91e9f581f6c11fb6e9c8ad8e141a559bbac9bbf"
+      "sha256": "086984409cd44dec210fbf0c0622a257ac9d410fd6db20f07d08d47df4ce581b"
     },
     "vendor/inhouse-services-updater/tests/browser.py": {
       "source": "tests/browser.py",
@@ -86,7 +90,7 @@
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "2278429dad42db9452b9af6e8ba562cd254de4032dd6e5c53f4c333c17aaf8ce"
+      "sha256": "efe76dc31feb05637258869502aa1d2f9dda7b1398d285eb1fc6836f47317d8e"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",

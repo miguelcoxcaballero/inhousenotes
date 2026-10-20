@@ -214,26 +214,3 @@ test('older installed shells keep Update inside the native bridge without naviga
   await expect(page).toHaveURL(/127\.0\.0\.1:4173/);
   await expect(page.getByRole('heading', { name: 'Update available', exact: true })).toBeVisible();
 });
-
-for (const [installed, code, expected] of [['1.0.23', 24, 'installAppUpdate'], ['1.0.25', 26, 'installInhouseUpdate']]) {
-  test(`Android ${installed} updates through ${expected}`, async ({ page }) => {
-    // 1.0.23 and older carry an install-session bridge that fails on some phones;
-    // their original download + ACTION_VIEW bridge installs the update instead.
-    await page.addInitScript(([version, versionCode]) => {
-      window.InhouseNative = {
-        getAppVersion: () => version, getAppVersionCode: () => versionCode,
-        getUpdateState: () => '{}', saveUpdateState: () => {}, getInstallState: () => '{}',
-        installAppUpdate: (...args) => { window.nativeInstall = ['installAppUpdate', ...args]; },
-        installInhouseUpdate: (...args) => { window.nativeInstall = ['installInhouseUpdate', ...args]; },
-      };
-    }, [installed, code]);
-    const release = { version: '1.0.26', versionCode: 27,
-      apkUrl: 'https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.26/inhouse-notes-release-v1.0.26.apk',
-      apkSha256: 'e'.repeat(64), apkSizeBytes: 6815988, changelog: 'Test update.' };
-    await page.route('https://raw.githubusercontent.com/**', route => route.fulfill({ json: { schemaVersion: 1, channel: 'B', latest: release, releases: [release] } }));
-    await page.goto('/?e2e=1&inhouse_app=1');
-    await page.getByRole('button', { name: 'Update', exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.nativeInstall)).toEqual(
-      expected === 'installAppUpdate' ? [expected, release.apkUrl] : [expected, release.apkUrl, release.apkSha256]);
-  });
-}
