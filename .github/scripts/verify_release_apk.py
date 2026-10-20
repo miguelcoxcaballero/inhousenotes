@@ -28,7 +28,7 @@ def certificate(path):
 
 assert certificate(apk) == certificate(previous), "Signing key changed"
 badging = subprocess.check_output([str(build_tools / "aapt"), "dump", "badging", str(apk)], text=True)
-assert "package: name='com.local.inhousenotes' versionCode='28' versionName='1.0.27'" in badging, "APK identity/version mismatch"
+assert "package: name='com.local.inhousenotes' versionCode='29' versionName='1.0.28'" in badging, "APK identity/version mismatch"
 assert "uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'" in badging, "APK cannot request updates"
 assert "uses-permission: name='android.permission.CAMERA'" in badging, "APK cannot request a live camera"
 assert "uses-feature: name='android.hardware.camera'" not in badging, "Camera must remain optional for photo import"
@@ -47,4 +47,4 @@ with ZipFile(apk) as archive:
     for path,info in native['assets'].items():
         data=archive.read('assets/inhouse-native'+path)
         assert len(data)==info['size'] and hashlib.sha256(data).hexdigest()==info['sha256'], f'Invalid APK resource: {path}'
-print("APK verified: com.local.inhousenotes 1.0.27 / 28; signing key unchanged.")
+print("APK verified: com.local.inhousenotes 1.0.28 / 29; signing key unchanged.")
