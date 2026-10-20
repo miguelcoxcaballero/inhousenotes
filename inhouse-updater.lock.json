@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "acd1c37e2e06994e4883add4b9aba28f116fb55d",
+  "revision": "4ec22080cc4c14e5fd3381d020cead2b6acd6906",
   "version": "1.2.4",
   "appId": "notes",
   "files": {
@@ -46,7 +46,7 @@
     },
     "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt": {
       "source": "android/PhotosUpdateInstaller.kt",
-      "sha256": "729a7286d2f8c8e79b8548aad6c4643a32fdc6ff3fc9a08aad95543fe2774292"
+      "sha256": "ff033ec1968b047c507e5c2aeeb351cb856033c33270616b8d58d1b23776ab2f"
     },
     "vendor/inhouse-services-updater/android/UpdateActivity.java": {
       "source": "android/UpdateActivity.java",
@@ -58,7 +58,7 @@
     },
     "vendor/inhouse-services-updater/android/UpdateFileProvider.java": {
       "source": "android/UpdateFileProvider.java",
-      "sha256": "38cb86d055f903cd8398754a0cc62ce1fef0c5cd12044c646935d353858243a1"
+      "sha256": "046b4d96d93abb67e2149029fa29692e5576e969b9d7d7931ad6df20201c8ede"
     },
     "vendor/inhouse-services-updater/android/UpdateState.java": {
       "source": "android/UpdateState.java",
@@ -66,7 +66,7 @@
     },
     "vendor/inhouse-services-updater/verify.py": {
       "source": "tools/verify.py",
-      "sha256": "0f18c8bb365d9427ae7ade9111ddace96d2ffe09a394a2384f05d93d2d723724"
+      "sha256": "7c239bc94137aea515628de073aee58dc5c8eb35a51f9a6030c910b1419ce9dd"
     },
     "vendor/inhouse-services-updater/catalog.py": {
       "source": "tools/catalog.py",
@@ -74,7 +74,7 @@
     },
     "vendor/inhouse-services-updater/register_android.py": {
       "source": "tools/register_android.py",
-      "sha256": "086984409cd44dec210fbf0c0622a257ac9d410fd6db20f07d08d47df4ce581b"
+      "sha256": "84ebb89d4941353e5eb135c6c08f9db1f057e4065a41a98684f7f2afe3db98ad"
     },
     "vendor/inhouse-services-updater/tests/browser.py": {
       "source": "tests/browser.py",
@@ -82,15 +82,19 @@
     },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
-      "sha256": "08be875d6ce4cf8a51d43c98d5dc0213ead57d701316e6808d8671bcb1d03eb0"
+      "sha256": "69a2b6b2eb4084ad3d77ed81c547a869d8c302396cd9e7d3ee8016afeff5696e"
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "8c4b3408113e364b022c82be1b97eea5ba866950511cfc71999ef577fed3ad8f"
+      "sha256": "dcbd5fde2d772093848fce04a4248b5a40a47751b021b1cab3cc7dd21eed5360"
+    },
+    "vendor/inhouse-services-updater/FROZEN_INSTALLER.md": {
+      "source": "FROZEN_INSTALLER.md",
+      "sha256": "9c05accbd8333b426b924bb45401a79981007119380e830ae3a5e8b56fd114b4"
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "efe76dc31feb05637258869502aa1d2f9dda7b1398d285eb1fc6836f47317d8e"
+      "sha256": "7ea09e8e1e917215303d2347a3a4508d0e285bb4a9df17f3b0f0e0abf89993d5"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",

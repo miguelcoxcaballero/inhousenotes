@@ -47,6 +47,8 @@ jobs:
             --exclude '*.apk' \
             --exclude 'gh-*.tmp' \
             --exclude 'AGENTS.md' \
+            --exclude '.claude/' \
+            --exclude 'CLAUDE.md' \
             --exclude 'package.json' \
             --exclude 'package-lock.json' \
             --exclude 'playwright.config.mjs' \

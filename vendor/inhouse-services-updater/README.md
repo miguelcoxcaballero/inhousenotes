@@ -1,5 +1,7 @@
 # Inhouse services updater
 
+> **Instalador Android congelado.** `android/PhotosUpdateInstaller.kt`, `android/UpdateFileProvider.java` y `tools/register_android.py` funcionan y no se tocan: lee [FROZEN_INSTALLER.md](FROZEN_INSTALLER.md).
+
 Actualizador común de Inhouse YouTube, Instagram, Notes, Photos y Read. Una interfaz y una implementación de descarga, verificación e instalación para las cinco apps.
 
 **A recibe todas las versiones A y B. B recibe solo las versiones B.** En A se ofrece siempre la versión más nueva por `versionCode`: una B nueva sustituye a una A antigua, y una A posterior vuelve a ser la actualización disponible. Publicar una B anterior no desplaza una A más nueva.

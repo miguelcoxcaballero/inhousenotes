@@ -17,6 +17,34 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
+// ============================================================================
+// FROZEN FILE - DO NOT EDIT. Read FROZEN_INSTALLER.md before touching anything.
+// ============================================================================
+// This is the Android installer of the Inhouse services updater, frozen at the
+// version verified on a real Samsung phone on 2026-10-20: Inhouse Notes 1.0.27
+// installed 1.0.28 from inside the app. Inhouse Photos has always installed its
+// updates with this same ACTION_VIEW handoff.
+//
+// Every "improvement" of this path broke in-app updates:
+//   - PackageInstaller sessions: "Android could not start the installation".
+//   - ACTION_INSTALL_PACKAGE: Android's installer opened and closed on its own.
+//   - ACTION_VIEW while ".update-provider" shared androidx FileProvider's class
+//     with Capacitor's ".fileprovider": the installer vanished after the user
+//     picked it in the "Open with" chooser.
+// The intent was never the problem. The provider class was: Android keeps one
+// provider instance per class, and the shared instance rejected every update
+// URI, so no installer could read the APK. See UpdateFileProvider.java.
+//
+// What must stay exactly as it is (tests/test_frozen_installer.py and the
+// "Frozen installer" workflow compare this file with tag installer-known-good):
+//   - ACTION_VIEW + setDataAndType(APK MIME) + ClipData + read URI grant.
+//   - The authority "${packageName}.update-provider" and cacheDir/updates.
+//   - Every check: trusted SHA-256, package name, newer versionCode, signer.
+//   - No PackageInstaller sessions, no ACTION_INSTALL_PACKAGE, no
+//     DownloadManager, no third-party installer library, no extra intent flags.
+// Only the user, in their own words, can unfreeze it; then a real phone must
+// install an update from inside the app before the tag moves.
+//
 // Inhouse services updater: canonical source in miguelcoxcaballero/inhouse-services-updater.
 // Change updater code there first, then sync ALL five apps at the same revision.
 // New releases ALWAYS use A with a tiny changelog; B requires the user's explicit request.
@@ -25,10 +53,16 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
   interface Listener { fun progress(downloadedBytes: Long, totalBytes: Long); fun stage(value: String) }
   interface Result { fun success(value: String); fun error(code: String, message: String?, details: Any?) }
   fun installUpdate(url: String, expectedSha256: String?, result: Result) {
+    // The catalog's SHA-256 is mandatory: never hand Android bytes we cannot
+    // prove are the published APK.
     if (expectedSha256 == null || !expectedSha256.matches(Regex("[0-9a-fA-F]{64}"))) {
       result.error("invalid_checksum", "The update is missing a trusted checksum. Check for updates again.", null)
       return
     }
+    // Android 8+: this app must be allowed to "install unknown apps" before the
+    // package installer accepts its APK. Open that setting and report
+    // permission_required; the user comes back and taps Continue. Requires
+    // REQUEST_INSTALL_PACKAGES in the manifest.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !activity.packageManager.canRequestPackageInstalls()) {
       activity.startActivity(
         Intent(
@@ -39,6 +73,7 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
       result.success("permission_required")
       return
     }
+    // One download at a time; a second tap only reports the running download.
     if (!downloadRunning.compareAndSet(false, true)) {
       result.success("downloading")
       return
@@ -46,16 +81,23 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
 
     Thread({
       try {
+        // cacheDir/updates is exactly the root declared for ".update-provider"
+        // in res/xml/inhouse_update_paths.xml (cache-path name="updates"
+        // path="updates/", written by register_android.py). Moving the file
+        // anywhere else makes FileProvider.getUriForFile throw.
         val updateDirectory = File(activity.cacheDir, "updates")
         if (!updateDirectory.exists() && !updateDirectory.mkdirs()) {
           throw IllegalStateException("Could not prepare secure update storage.")
         }
+        // Stable per-URL file name. The "inhouse-photos-" prefix is inherited
+        // from Photos and is only a name; it is the same in every app.
         val fileKey = MessageDigest.getInstance("SHA-256")
           .digest(url.toByteArray())
           .joinToString("") { byte -> "%02x".format(byte) }
           .take(16)
         val partialFile = File(updateDirectory, "inhouse-photos-$fileKey.apk.part")
         val apkFile = File(updateDirectory, "inhouse-photos-$fileKey.apk")
+        // A partial download resumes; a complete one is re-verified, never trusted.
         // Retry the already verified package instead of downloading it again.
         var verifiedPackage: PackageInfo? = null
         if (apkFile.isFile) {
@@ -76,6 +118,12 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
         }
         if (verifiedPackage == null) throw SecurityException("Invalid update package.")
 
+        // ".update-provider" is served by UpdateFileProvider, the updater's OWN
+        // provider class. It must never share a class with another provider of
+        // the app: Android would answer this authority with that provider's
+        // instance, which rejects the URI ("authority does not match"), and the
+        // package installer could not read the APK. That was the bug behind
+        // every failed in-app update in Notes and Read before 2026-10-20.
         val apkUri = FileProvider.getUriForFile(
           activity,
           "${activity.packageName}.update-provider",
@@ -87,16 +135,24 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
             if (activity.isFinishing || activity.isDestroyed) {
               throw IllegalStateException("Open the app and try the update again.")
             }
-            // Hand the verified APK straight to Android's package installer, as
-            // the original Photos installer did. PackageInstaller sessions and
-            // ACTION_INSTALL_PACKAGE failed on real Samsung devices before
-            // showing consent; the installed version is checked on return.
+            // Hand the verified APK straight to Android's package installer with
+            // ACTION_VIEW, exactly as Inhouse Photos always has. A content URI
+            // (never file://) plus FLAG_GRANT_READ_URI_PERMISSION and the
+            // ClipData copy of the URI let whichever installer the user picks in
+            // the "Open with" chooser read the file. This exact intent is the one
+            // verified on a real phone: do not add flags, a package filter or a
+            // chooser of our own. PackageInstaller sessions and
+            // ACTION_INSTALL_PACKAGE were tried and are not coming back; they
+            // failed for the provider reason above, not because of the intent.
+            // Success is never assumed here: the web updater confirms it from the
+            // installed versionCode when the app opens again.
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
               setDataAndType(apkUri, APK_MIME_TYPE)
               clipData = ClipData.newRawUri("Update APK", apkUri)
               addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             activity.startActivity(installIntent)
+            // "ready" only means Android's installer was opened, not installed.
             result.success("ready")
           } catch (error: Exception) {
             result.error("installer_unavailable", error.message ?: "Android could not open the installer.", null)
@@ -112,6 +168,10 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
     }, "InhousePhotosUpdate").start()
   }
 
+  // Redirects are followed by hand so every hop is checked against
+  // ALLOWED_HOSTS (GitHub release downloads redirect to
+  // release-assets.githubusercontent.com). A Range request resumes a partial
+  // file; 416 restarts the download from zero once.
   private fun download(initialUrl: String, destination: File) {
     var currentUrl = URL(initialUrl)
     var redirects = 0
@@ -204,6 +264,10 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
     }
   }
 
+  // Defence in depth before Android sees the file: exact catalog SHA-256, same
+  // package, strictly newer versionCode and the same signing certificate as the
+  // installed app. Android rejects a different signer anyway; failing here
+  // gives a clear message and deletes the bad file.
   private fun verifyApk(apkFile: File, expectedSha256: String?): PackageInfo {
     if (!expectedSha256.isNullOrBlank()) {
       val actualSha256 = apkFile.inputStream().use { input ->
@@ -298,6 +362,8 @@ class PhotosUpdateInstaller(private val activity: Activity, private val listener
     private const val MAX_REDIRECTS = 5
     private const val PROGRESS_UPDATE_INTERVAL_MS = 200L
     private val downloadRunning = AtomicBoolean(false)
+    // Only GitHub release hosts. Every extra host widens what the app will
+    // download and hand to the package installer.
     private val ALLOWED_HOSTS = setOf(
       "github.com",
       "raw.githubusercontent.com",

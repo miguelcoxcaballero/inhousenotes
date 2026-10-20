@@ -1,6 +1,24 @@
 #!/usr/bin/env python3
 """Wire the SAME installer into generated Read/Notes shells; no second downloader.
 
+FROZEN FILE - DO NOT EDIT. Read FROZEN_INSTALLER.md before touching anything.
+This registration is part of the Android installer frozen at the version
+verified on a real Samsung phone on 2026-10-20 (Inhouse Notes 1.0.27 installed
+1.0.28 from inside the app). tests/test_frozen_installer.py and the "Frozen
+installer" workflow compare it with tag installer-known-good.
+
+What it does, and why each piece must stay:
+- Rewrites the shell's old installAppUpdate() body to call installInhouseUpdate(),
+  so every entry point uses PhotosUpdateInstaller. Consequence: an installed
+  Notes/Read APK cannot be "rescued" from the web by calling installAppUpdate;
+  it runs the same native installer. Fixing an installed APK requires a new APK.
+- Registers ".update-provider" with the updater's OWN class UpdateFileProvider.
+  Capacitor already registers androidx.core.content.FileProvider; sharing that
+  class made Android serve both authorities from one instance that rejected
+  every update URI, which broke all in-app installs until 2026-10-20.
+- Writes res/xml/inhouse_update_paths.xml with cache-path "updates/", the exact
+  folder where PhotosUpdateInstaller stores the verified APK.
+
 Canonical updater changes must be synced to all five apps. A + tiny changelog
 for every new release; B only on the user's explicit request.
 """
@@ -16,6 +34,7 @@ def register(project, repository, trust_read=False):
     candidates=list((app/'src/main/java').rglob('MainActivity.java'))
     if len(candidates)!=1:raise ValueError('Expected exactly one Java shell activity')
     activity=candidates[0];source=activity.read_text()
+    # Every shell entry point must end in PhotosUpdateInstaller (see docstring).
     found=re.search(r'public void installAppUpdate\(String url(?:, String (\w+))?\)\s*\{',source)
     if not found:raise ValueError('Generated shell updater entrypoint changed')
     # Replace only the old installer method body; existing progress callbacks remain.
@@ -70,6 +89,8 @@ def register(project, repository, trust_read=False):
     receiver='com.inhouse.services.updater.InstallReceiver'
     if not any(node.get(f'{{{ns}}}name')==receiver for node in application.findall('receiver')):
         ET.SubElement(application,'receiver',{f'{{{ns}}}name':receiver,f'{{{ns}}}exported':'false'})
+    # FROZEN: the class below is the fix for every failed in-app update before
+    # 2026-10-20. Never change it to androidx.core.content.FileProvider.
     # Our own provider class: androidx FileProvider is usually registered by the
     # host already, and Android serves every authority of one class from a single
     # instance that rejects the other authorities' URIs.
@@ -78,5 +99,6 @@ def register(project, repository, trust_read=False):
     provider=ET.SubElement(application,'provider',{f'{{{ns}}}name':update_provider,f'{{{ns}}}authorities':'${applicationId}.update-provider',f'{{{ns}}}exported':'false',f'{{{ns}}}grantUriPermissions':'true'})
     ET.SubElement(provider,'meta-data',{f'{{{ns}}}name':'android.support.FILE_PROVIDER_PATHS',f'{{{ns}}}resource':'@xml/inhouse_update_paths'})
     tree.write(path,encoding='unicode')
+    # FROZEN: must match File(cacheDir, "updates") in PhotosUpdateInstaller.kt.
     xml=app/'src/main/res/xml/inhouse_update_paths.xml';xml.parent.mkdir(parents=True,exist_ok=True)
     xml.write_text('<?xml version="1.0" encoding="utf-8"?><paths><cache-path name="updates" path="updates/"/></paths>\n')
