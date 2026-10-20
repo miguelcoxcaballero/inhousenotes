@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.0.21",
-    "versionCode": 22,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.21/inhouse-notes-release-v1.0.21.apk",
-    "apkSha256": "190ef811a74cafee4041b34a30cacb406258b29c2939be31e744a29bd1d63509",
-    "apkSizeBytes": 6798264,
-    "changelog": "Reliable in-app Android installation.",
-    "releasedAt": "2026-10-16T12:44:26+00:00"
+    "version": "1.0.23",
+    "versionCode": 24,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.23/inhouse-notes-release-v1.0.23.apk",
+    "apkSha256": "a6d0394588ad98a068d008294ab976c849ac521c6b1b70d25e76ee21760a707c",
+    "apkSizeBytes": 6815876,
+    "changelog": "New Inhouse Notes app icon.",
+    "releasedAt": "2026-10-20T00:38:01+00:00"
   },
   "releases": [
+    {
+      "version": "1.0.23",
+      "versionCode": 24,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhousenotes/releases/download/android-v1.0.23/inhouse-notes-release-v1.0.23.apk",
+      "apkSha256": "a6d0394588ad98a068d008294ab976c849ac521c6b1b70d25e76ee21760a707c",
+      "apkSizeBytes": 6815876,
+      "changelog": "New Inhouse Notes app icon.",
+      "releasedAt": "2026-10-20T00:38:01+00:00"
+    },
     {
       "version": "1.0.21",
       "versionCode": 22,
