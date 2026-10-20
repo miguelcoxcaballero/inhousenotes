@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "a69e52320f9c5f3c6e817282a317d8e0c9a83f1e",
+  "revision": "d313e8acdefc69b6178a53e8e43d6b49b79eba3d",
   "version": "1.2.4",
   "appId": "notes",
   "files": {
@@ -46,7 +46,7 @@
     },
     "vendor/inhouse-services-updater/android/PhotosUpdateInstaller.kt": {
       "source": "android/PhotosUpdateInstaller.kt",
-      "sha256": "a0ea48a3af1d0b7334c0ff77181e828deecd32fdcf2762372f2042136d56e4ed"
+      "sha256": "729a7286d2f8c8e79b8548aad6c4643a32fdc6ff3fc9a08aad95543fe2774292"
     },
     "vendor/inhouse-services-updater/android/UpdateActivity.java": {
       "source": "android/UpdateActivity.java",
@@ -86,7 +86,7 @@
     },
     "vendor/inhouse-services-updater/docs/PROTOCOL.md": {
       "source": "docs/PROTOCOL.md",
-      "sha256": "cf8b9b00cdfb3cd2401899bf028f41a92465bcd1aa4b38d5bea17f922648495f"
+      "sha256": "2278429dad42db9452b9af6e8ba562cd254de4032dd6e5c53f4c333c17aaf8ce"
     },
     "vendor/inhouse-services-updater/docs/PROVENANCE.md": {
       "source": "docs/PROVENANCE.md",
