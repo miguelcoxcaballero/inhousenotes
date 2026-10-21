@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "2b9dea1c177c64ac70e9aa5d4005b3fda2e4aac76f3ac1fdd966f7ca28469836",
-      "size": 1870149,
+      "sha256": "f383484130a0477153248d178771721ee89f7b3707739b4f102cf5702017f346",
+      "size": 1876900,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -47,8 +47,8 @@
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
-      "sha256": "a2c84919532c160d8cee309d6e83e882c9bec33245d831ec69b3bfd448bc24bc",
-      "size": 18161,
+      "sha256": "9ae1d75bc6e6553d2a5eacaf809a8bfe4a10d9d8b370e7d3ad3fad49bd7f54df",
+      "size": 19805,
       "mime": "application/javascript"
     },
     "/offline-media-v5.js": {
@@ -82,8 +82,8 @@
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {
-      "sha256": "8ef99ceb3f99e7fdb0452cef1990bfc7a1689afb4255fd6141c46bf5216076b4",
-      "size": 12789,
+      "sha256": "8d4cfde11f6f067c1a8433f816180965142ecf83c6c9e4562228cf762627c324",
+      "size": 21344,
       "mime": "application/javascript"
     },
     "/scanner/configLoader.js": {
@@ -1192,8 +1192,8 @@
       "mime": "font/ttf"
     },
     "/wasm/inhouse_notes_core.wasm": {
-      "sha256": "24058457a07d2738f199475cd1135236841724f7ca9dc51b6e9f4ee046b6ebc4",
-      "size": 114576,
+      "sha256": "759f66a6ef78014f1277648046d970a7db86ac6f476daae1b844255b07cd29a5",
+      "size": 118294,
       "mime": "application/wasm"
     }
   }

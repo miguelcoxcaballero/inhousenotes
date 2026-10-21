@@ -1961,6 +1961,8 @@
         let driveFolderAnimation = null;
         let driveFolderNavigationId = 0;
         const driveDeferredFolderCards = new Set();
+        const driveFolderGridPlans = new Map();
+        let driveFolderGridObserver = null;
         const driveReducedMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
         const DRIVE_TOOL_ICONS = {
             color: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" opacity="0.3"/>',
@@ -8906,6 +8908,9 @@
                     const card=preview.closest('.drive-card');
                     if(card&&ratio)card.style.setProperty('--sheet-ratio', ratio);
                     else card?.style.removeProperty('--sheet-ratio');
+                    // Two rows may exchange height without resizing the grid;
+                    // the grid ResizeObserver alone cannot detect that change.
+                    if(card?.parentElement===driveViewFilesEl)invalidateDriveFolderGridPlans();
                     preview.classList.toggle('is-landscape',decoded.naturalWidth>decoded.naturalHeight);
                     applyDrivePreviewTone(preview,decoded,url);
                 }catch(_) { if(ticket===generation)revision=undefined; /* Retry later, retaining the last good image. */ }
@@ -9366,6 +9371,7 @@
                 newCard.dataset.driveItemFp = fp;
                 if(item.mimeType!=='application/vnd.google-apps.folder')window.InhouseOfflineLibrary?.decorate(newCard,id);
                 if (card) {
+                    driveDeferredFolderCards.delete(card);
                     container.replaceChild(newCard, card);
                     existing.delete(id);
                     cursor = newCard.nextElementSibling;
@@ -9374,7 +9380,7 @@
                 }
             });
             // Anything left in `existing` is no longer in the list — remove.
-            existing.forEach(el => el.remove());
+            existing.forEach(el => { driveDeferredFolderCards.delete(el); el.remove(); });
             // Also sweep any leftover children that aren't tagged as real
             // cards. These are skeleton placeholders left behind by
             // showDriveSkeletons() when the actual data has fewer items
@@ -9469,19 +9475,83 @@
             return card;
         }
 
+        function invalidateDriveFolderGridPlans() {
+            for (const plan of driveFolderGridPlans.values()) plan.layout.dispose();
+            driveFolderGridPlans.clear();
+        }
+
+        function readDriveFolderGridPlans(overscan = 0) {
+            const viewport = driveFolderViewScrollEl.getBoundingClientRect();
+            if (!viewport.width || !viewport.height) return [];
+            const plans = [];
+            for (const container of [driveViewFoldersEl, driveViewFilesEl]) {
+                const count = container?.children.length || 0;
+                if (!count || !container.firstElementChild.dataset.driveItemId) continue;
+                // Files are display:contents. Their tracks belong to the sheet
+                // grid, including the trailing New PDF button's final row.
+                const grid = container === driveViewFilesEl ? container.parentElement : container;
+                const style = getComputedStyle(grid);
+                const rect = grid.getBoundingClientRect();
+                const columnsCss = style.gridTemplateColumns;
+                const columns = (columnsCss.match(/[\d.]+px/g) || []).length;
+                const width = parseFloat(style.width);
+                if (!columns || !width || !rect.width) continue;
+                let cached = driveFolderGridPlans.get(container);
+                const key = `${count}|${columnsCss}|${style.width}|${style.rowGap}`;
+                if (!cached || cached.key !== key) {
+                    cached?.layout.dispose();
+                    driveFolderGridPlans.delete(container);
+                    const rows = Float64Array.from(style.gridTemplateRows.match(/[\d.]+px/g) || [], parseFloat);
+                    const gap = parseFloat(style.rowGap) || 0;
+                    const layout = window.InhouseRust?.folderRows?.(rows, gap, columns, count);
+                    if (!layout) continue;
+                    const inset = parseFloat(style.paddingTop) + parseFloat(style.borderTopWidth);
+                    const boxWidth = width + (style.boxSizing === 'border-box' ? 0
+                        : parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+                            + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth));
+                    cached = { key, layout, rows, columns, inset, boxWidth };
+                    driveFolderGridPlans.set(container, cached);
+                    if (!driveFolderGridObserver && typeof ResizeObserver !== 'undefined') {
+                        // A thumbnail, font, or viewport can change track sizes.
+                        // Transforms do not trigger this observer during motion.
+                        driveFolderGridObserver = new ResizeObserver(invalidateDriveFolderGridPlans);
+                        driveFolderGridObserver.observe(driveViewFoldersEl);
+                        driveFolderGridObserver.observe(driveViewFilesEl.parentElement);
+                    }
+                }
+                const scale = rect.width / cached.boxWidth;
+                const range = cached.layout.range((viewport.top - rect.top) / scale - cached.inset,
+                    (viewport.bottom - rect.top) / scale - cached.inset, overscan);
+                if (range) plans.push({ ...cached, container, count, range });
+            }
+            return plans;
+        }
+
         function hydrateVisibleDriveFolderCards() {
             if (!isDriveFolderViewOpen() || !driveDeferredFolderCards.size) return;
-            const viewport = driveFolderViewScrollEl.getBoundingClientRect();
-            if (!viewport.width || !viewport.height) return;
             const visible = [];
-            // Batch layout reads before replacing any slot. One extra row
-            // below the viewport is ready before the next scroll gesture.
-            for (const card of driveDeferredFolderCards) {
-                if (!card.isConnected) { driveDeferredFolderCards.delete(card); continue; }
-                const rect = card.getBoundingClientRect();
-                if (rect.bottom >= viewport.top && rect.top <= viewport.bottom + 240) visible.push(card);
+            const plans = readDriveFolderGridPlans(240);
+            for (const { container, range } of plans) {
+                for (let i = range.start; i < range.end; i++) {
+                    const card = container.children[i];
+                    if (card?.hydrate) visible.push(card);
+                }
+            }
+            const planned = new Set(plans.map(plan => plan.container));
+            if ([driveViewFoldersEl, driveViewFilesEl].some(container => container?.children.length && !planned.has(container))) {
+                // Older cached adapters and unusual browser grid serializers
+                // retain working navigation while the new WASM is unavailable.
+                const viewport = driveFolderViewScrollEl.getBoundingClientRect();
+                if (!viewport.width || !viewport.height) return;
+                for (const card of driveDeferredFolderCards) {
+                    if (!card.isConnected) { driveDeferredFolderCards.delete(card); continue; }
+                    if (planned.has(card.parentElement)) continue;
+                    const rect = card.getBoundingClientRect();
+                    if (rect.bottom >= viewport.top && rect.top <= viewport.bottom + 240) visible.push(card);
+                }
             }
             visible.forEach(card => card.hydrate());
+            if (visible.length) invalidateDriveFolderGridPlans();
         }
 
         function renderDriveFolderContents(folders, files) {
@@ -9494,6 +9564,7 @@
             const hasFolders = folderList.length > 0;
             const hasFiles = fileList.length > 0;
             const nested = isDriveFolderNested();
+            if (nested) invalidateDriveFolderGridPlans();
             const foldersEl = nested ? driveViewFoldersEl : driveFoldersEl;
             const filesEl = nested ? driveViewFilesEl : driveFolderFilesEl;
             const emptyEl = nested ? driveViewEmptyEl : driveFolderEmptyEl;
@@ -9707,6 +9778,8 @@
             // reconcile it in the background without a skeleton on every visit.
             const library = window.InhouseOfflineLibrary;
             const cached = library?.ready() ? library.folder(entry.id, driveSearchInput?.value?.trim() || '') : [];
+            invalidateDriveFolderGridPlans();
+            driveDeferredFolderCards.clear();
             if (driveViewFoldersEl) driveViewFoldersEl.replaceChildren();
             if (driveViewFilesEl) driveViewFilesEl.replaceChildren();
             if (cached.length || driveIsOffline()) {
@@ -9759,17 +9832,37 @@
 
         function snapshotDriveFolderView() {
             if (!isDriveFolderViewOpen()) return null;
-            const viewport = driveFolderViewScrollEl.getBoundingClientRect();
-            const outside = new Map();
-            driveFolderViewEl.querySelectorAll('[data-drive-item-id]').forEach(card => {
-                const rect = card.getBoundingClientRect();
-                if (rect.bottom < viewport.top || rect.top > viewport.bottom) outside.set(card, rect.height);
-            });
+            const plans = new Map(readDriveFolderGridPlans().map(plan => [plan.container, plan]));
             const copy = node => {
                 const clone = node.cloneNode(false);
-                if (outside.has(node)) {
-                    // Preserve scroll geometry, not invisible card contents.
-                    clone.style.height = `${outside.get(node)}px`;
+                const plan = plans.get(node);
+                if (plan) {
+                    const { columns, count, range, layout, rows } = plan;
+                    const wholeRows = Math.floor(count / columns);
+                    const spacer = (from, to) => {
+                        if (to <= from) return;
+                        const el = document.createElement('div');
+                        el.className = 'drive-folder-snapshot-spacer';
+                        el.setAttribute('aria-hidden', 'true');
+                        el.style.gridColumn = '1 / -1';
+                        el.style.height = `${layout.span(from, to)}px`;
+                        clone.appendChild(el);
+                    };
+                    // Entire offscreen rows become one empty grid track. The
+                    // snapshot cost depends on the visible rows, not the total
+                    // directory size, while its scroll position stays exact.
+                    spacer(0, Math.min(wholeRows, Math.floor(range.start / columns)));
+                    for (let i = range.start; i < range.end; i++) clone.appendChild(copy(node.children[i]));
+                    spacer(Math.ceil(range.end / columns), wholeRows);
+                    // Preserve the incomplete last row's cells: the New PDF
+                    // button participates in the same grid after the file list.
+                    if (count % columns && (range.end <= wholeRows * columns || range.start === count)) {
+                        for (let i = wholeRows * columns; i < count; i++) {
+                            const cell = node.children[i].cloneNode(false);
+                            cell.style.height = `${rows[wholeRows]}px`;
+                            clone.appendChild(cell);
+                        }
+                    }
                 } else for (const child of node.childNodes) clone.appendChild(copy(child));
                 return clone;
             };
@@ -9847,7 +9940,8 @@
             const scene = createDriveFolderGhost(art, entry?.origin, entry);
             if (!scene) { onSwap(); return; }
             const { ghost, layer, surface, rect, bounds } = scene;
-            const duration = backwards ? DRIVE_FOLDER_CLOSE_MS : DRIVE_FOLDER_OPEN_MS;
+            let motion = window.InhouseRust?.folderMotion?.(bounds, rect, backwards);
+            const duration = motion?.duration ?? (backwards ? DRIVE_FOLDER_CLOSE_MS : DRIVE_FOLDER_OPEN_MS);
             const cover = ghost.querySelector(':scope > .drive-folder-cover');
             const resting = art ? getComputedStyle(art.querySelector('.drive-folder-cover')).transform : 'none';
             driveHome.appendChild(layer);
@@ -9862,7 +9956,7 @@
                 // One shared ease-in-out: the scene accelerates gently out of
                 // the card and settles softly onto the final layout.
                 const animation = el.animate(frames, {
-                    duration, fill: 'both', easing: 'cubic-bezier(0.55, 0, 0.15, 1)', ...timing
+                    duration, fill: 'both', easing: motion?.easing || 'cubic-bezier(0.55, 0, 0.15, 1)', ...timing
                 });
                 animation.pause();
                 animation.currentTime = 0;
@@ -9916,6 +10010,8 @@
             // scene. Opening paints just the lightweight lid first.
             let prepareFrame = 0, prepareTimer = 0;
             const geometry = () => {
+                if (motion) return motion;
+                // Keep navigation usable if an older adapter is still cached.
                 const scale = Math.max((bounds.width + 4) / rect.width, (bounds.height + 4) / (rect.height * 0.94));
                 const finalLeft = (bounds.width - rect.width * scale) / 2;
                 const finalTop = (bounds.height - rect.height * 0.94 * scale) / 2 - rect.height * 0.06 * scale;
@@ -9937,6 +10033,7 @@
                 ghost.style.setProperty('--ghost-scale', String(scale));
             };
             const zoomFrames = () => {
+                if (motion) return motion.zoomFrames;
                 const { scale, dx, dy } = geometry();
                 const at = amount => `translate(${dx * amount}px, ${dy * amount}px) scale(${(1 + (scale - 1) * amount) / scale})`;
                 return backwards
@@ -9946,7 +10043,7 @@
             sizeGhost();
             const mountInterior = interior => {
                 if (!interior) return;
-                const { scale, finalLeft, finalTop } = geometry();
+                const { finalLeft, finalTop } = geometry();
                 const scrollTop = backwards ? previous.scrollTop : driveFolderViewScrollEl.scrollTop;
                 Object.assign(interior.style, {
                     top: `${-finalTop}px`,
@@ -9988,6 +10085,7 @@
                             .some(key => Math.abs(destination.rect[key] - rect[key]) > .5);
                         if (retarget) {
                             Object.assign(rect, destination.rect);
+                            motion = window.InhouseRust?.folderMotion?.(bounds, rect, backwards);
                             sizeGhost();
                         }
                         destinationArt.style.visibility = 'hidden';
@@ -10041,20 +10139,22 @@
             // turns for the whole duration of the zoom, leading slightly at
             // the start and settling together with the enlargement.
             const zoom = animate(ghost, zoomFrames());
-            const hinge = animate(cover, backwards
-                ? [{ transform: opened }, { transform: closed }]
-                : [{ transform: closed }, { transform: opened }],
-                { easing: backwards ? 'cubic-bezier(0.4, 0, 0.2, 1)' : 'cubic-bezier(0.2, 0, 0.2, 1)' });
+            const hingeFrames = motion
+                ? [motion.hingeFrom, motion.hingeTo].map(angle => ({ transform: angle === 0 ? closed : `rotateY(${angle}deg)` }))
+                : backwards ? [{ transform: opened }, { transform: closed }] : [{ transform: closed }, { transform: opened }];
+            const hinge = animate(cover, hingeFrames,
+                { easing: motion?.hingeEasing || (backwards ? 'cubic-bezier(0.4, 0, 0.2, 1)' : 'cubic-bezier(0.2, 0, 0.2, 1)') });
             // The name and ⋮ printed on the lid stay legible while the lid
             // starts to turn, then fade before they would become enlarged.
             const labels = Array.from(cover.querySelectorAll(':scope > .drive-folder-cover-face > :is(.drive-folder-print, .drive-card-menu)'))
-                .map(print => animate(print, backwards
+                .map(print => animate(print, motion?.labelFrames || (backwards
                     ? [{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }]
-                    : [{ opacity: 1 }, { opacity: 0, offset: .4 }, { opacity: 0 }], { easing: 'linear' }));
+                    : [{ opacity: 1 }, { opacity: 0, offset: .4 }, { opacity: 0 }]), { easing: 'linear' }));
             // Closing shows the outgoing interior from its first frame and
             // fades it out over the shrinking folder.
             if (backwards && previous?.view) {
-                fade = animate(previous.view, [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }], { easing: 'linear' });
+                fade = animate(previous.view, window.InhouseRust?.folderFade?.(0, true)
+                    || [{ opacity: 1 }, { opacity: 1, offset: .3 }, { opacity: 0 }], { easing: 'linear' });
             }
             // The movement starts with the tap. Its first frame only adds the
             // lid (and, closing, the outgoing interior); nothing waits for the
@@ -10074,8 +10174,9 @@
                 if (!backwards && fade) {
                     const elapsed = Math.min(1, Math.max(0, zoom.currentTime / duration));
                     const from = Math.min(.9, elapsed + .03);
-                    fade.effect.setKeyframes([{ opacity: 0 }, { opacity: 0, offset: from },
-                        { opacity: 1, offset: Math.max(.7, Math.min(1, from + .15)) }, { opacity: 1 }]);
+                    fade.effect.setKeyframes(window.InhouseRust?.folderFade?.(elapsed, false)
+                        || [{ opacity: 0 }, { opacity: 0, offset: from },
+                            { opacity: 1, offset: Math.max(.7, Math.min(1, from + .15)) }, { opacity: 1 }]);
                     fade.play();
                     fade.startTime = zoom.startTime;
                 }

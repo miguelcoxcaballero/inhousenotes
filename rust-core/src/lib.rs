@@ -1,8 +1,9 @@
-//! Numeric pixel kernels only. Geometry validation, cancellation and persistence
-//! remain with the host. All dimensions/pointers are supplied by the private JS adapter.
+//! Numeric pixel kernels and folder scene planning. Rendering, cancellation and
+//! persistence remain with the host. Buffers are supplied by the private JS adapter.
 mod surface;
 mod ink;
 mod ink_repair;
+mod folder;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 

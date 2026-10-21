@@ -4,6 +4,35 @@
     let host, account='', entries=[], documents=new Map(), captureTimer, syncFrame;
     let initialized=false, loaded=false, resumed=false, cataloguePromise=null;
     let savedViews={};
+    let folderEntries=new Map(), folderIds=new Set(), activeEntries=[], activeAliases=new Map();
+    let documentAliases=new Map(), modifiedTimes=new WeakMap();
+    function indexCatalogue() {
+        folderEntries=new Map();folderIds=new Set();activeEntries=[];activeAliases=new Map();
+        documentAliases=new Map();modifiedTimes=new WeakMap();
+        for (const entry of entries) {
+            if(entry.mimeType===folderType)folderIds.add(entry.id);
+            if(entry.trashed)continue;
+            activeEntries.push(entry);
+            // Saved Home views historically resolve the first matching ID or
+            // remote alias. Preserve that priority when aliases overlap.
+            for(const id of [entry.id,entry.remoteId])if(id&&!activeAliases.has(id))activeAliases.set(id,entry);
+            for(const parent of new Set(entry.parents||[])) {
+                if(!folderEntries.has(parent))folderEntries.set(parent,[]);
+                folderEntries.get(parent).push(entry);
+            }
+        }
+        for(const doc of documents.values())if(doc.remoteId&&!documentAliases.has(doc.remoteId))documentAliases.set(doc.remoteId,doc);
+    }
+    function modifiedTime(entry) {
+        let cached=modifiedTimes.get(entry);
+        // Cards can update an observed record before the next reload. Cache
+        // parsing, not the record's mutable timestamp or its resulting order.
+        if(!cached||cached.source!==entry.modifiedTime) {
+            cached={source:entry.modifiedTime,value:Date.parse(entry.modifiedTime)||0};
+            modifiedTimes.set(entry,cached);
+        }
+        return cached.value;
+    }
     const isWorker=new URLSearchParams(location.search).has('offline-worker');
     const folderType='application/vnd.google-apps.folder';
     let disconnected=false;
@@ -43,23 +72,26 @@
             return {...item,parents:(item.parents||['root']).map(p=>aliases.get(p)||p)};
         });
         documents=new Map(docs.map(doc=>[doc.id,doc]));
-        savedViews=views||{};loaded=true;
+        savedViews=views||{};indexCatalogue();loaded=true;
         document.querySelectorAll('[data-drive-item-id]').forEach(card=>decorate(card,card.dataset.driveItemId));
     }
-    function record(id) {return documents.get(id)||[...documents.values()].find(doc=>doc.remoteId===id);}
+    function record(id) {return documents.get(id)||documentAliases.get(id);}
     function decorate(card,id) {
-        if(entries.some(e=>e.id===id&&e.mimeType===folderType))return;
-        const available=!!record(id)?.available;
+        if(folderIds.has(id))return;
+        const doc=record(id);
+        const available=!!doc?.available;
         card.classList.toggle('offline-unavailable',offline()&&!available);
         if (offline()&&!available) {card.setAttribute('aria-disabled','true');card.title='Connect to download this document';}
         else {card.removeAttribute('aria-disabled');card.removeAttribute('title');}
         card.dataset.offlineAvailable=available?'true':'false';
-        card.dataset.offlinePinned=record(id)?.pinned?'true':'false';
+        card.dataset.offlinePinned=doc?.pinned?'true':'false';
     }
     function folder(id, search='') {
         const needle=search.toLowerCase();
-        return entries.filter(e=>!e.trashed && (e.parents||[]).includes(id||'root') && (!needle||e.name?.toLowerCase().includes(needle)))
-            .sort((a,b)=>a.mimeType===folderType&&b.mimeType===folderType ? (a.name||'').localeCompare(b.name||'') : (Date.parse(b.modifiedTime)||0)-(Date.parse(a.modifiedTime)||0));
+        // Read this directory only; rebuilding every card no longer searches
+        // the entire Drive catalogue. Filter returns a fresh sortable array.
+        return (folderEntries.get(id||'root')||[]).filter(e=>!needle||e.name?.toLowerCase().includes(needle))
+            .sort((a,b)=>a.mimeType===folderType&&b.mimeType===folderType ? (a.name||'').localeCompare(b.name||'') : modifiedTime(b)-modifiedTime(a));
     }
     function combine(remote,parent,search='') {
         const local=folder(parent,search).filter(e=>e.pending||e.id.startsWith('local-'));
@@ -67,10 +99,10 @@
         return [...local,...remote.filter(e=>!ids.has(e.id))];
     }
     function home() {
-        const active=entries.filter(e=>!e.trashed);
-        const ordered=list=>list.sort((a,b)=>(Date.parse(b.modifiedTime)||0)-(Date.parse(a.modifiedTime)||0));
+        const active=activeEntries;
+        const ordered=list=>list.sort((a,b)=>modifiedTime(b)-modifiedTime(a));
         const view=(name,fallback)=>Array.isArray(savedViews[name])
-            ? savedViews[name].map(id=>active.find(e=>e.id===id||e.remoteId===id)).filter(Boolean) : fallback;
+            ? savedViews[name].map(id=>activeAliases.get(id)).filter(Boolean) : fallback;
         const files=active.filter(e=>e.mimeType==='application/pdf'&&!host.quickAccess?.(e));
         const pending=files.filter(e=>e.pending||e.id.startsWith('local-'));
         const recents=view('recents',ordered(files).slice(0,12));
@@ -263,7 +295,7 @@
         account=next;loaded=false;await reload();host.refreshed?.();kick();catalogue().catch(()=>{});
     }
     function disable() {initialized=false;resumed=false;}
-    function logout() {account='';loaded=false;savedViews={};entries=[];documents.clear();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
+    function logout() {account='';loaded=false;savedViews={};entries=[];documents.clear();indexCatalogue();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
     root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&loaded&&!!account,folder,combine,home,observed,cache,capture,scheduleCapture,prepared,
         openRecord,pin,createFolder,catalogue,kick,scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
 })(window);
