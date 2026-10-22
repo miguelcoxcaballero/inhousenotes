@@ -10,15 +10,36 @@
         if(!id || !state.pages.length || driveOpenInProgress || state.driveCanEdit===false)return null;
         const token=getDocumentSessionToken(),version=driveContentVersion;
         const pages=[];
-        for(let i=0;i<state.pages.length;i++)pages.push(await loadPageDataForExport(i));
-        if(token!==getDocumentSessionToken()||version!==driveContentVersion)throw createAbortError('Document changed during offline checkpoint');
-        const snapshot={pages:buildTimelineSnapshotFromPages(pages),collabStructure:getCollabStructureSnapshot(),collabFields:getCollabFieldSnapshot(),
+        const assertCurrent=()=>{
+            if(token!==getDocumentSessionToken()||version!==driveContentVersion)
+                throw createAbortError('Document changed during offline checkpoint');
+        };
+        const yieldCapture=async()=>{
+            await yieldProcessingForUi();
+            await waitForHotInteractionToSettle({sessionToken:token,windowMs:500});
+            assertCurrent();
+        };
+        // Copy incrementally: a dense scanned page must not serialize the whole
+        // notebook in one main-thread task between two pen contacts.
+        for(let i=0;i<state.pages.length;i++){
+            await yieldCapture();
+            const page=await loadPageDataForExport(i);assertCurrent();
+            const copy=buildTimelineSnapshotFromPages([{...page,strokes:[],images:[]}])[0];
+            let sliceStarted=performance.now();
+            for(const kind of ['strokes','images'])for(const item of page[kind]||[]){
+                copy[kind].push(cloneTimelineValue(item));
+                if(performance.now()-sliceStarted>=3){await yieldCapture();sliceStarted=performance.now();}
+            }
+            pages.push(copy);
+        }
+        assertCurrent();
+        const snapshot={pages,collabStructure:getCollabStructureSnapshot(),collabFields:getCollabFieldSnapshot(),
             calendarPageConfig:state.calendarPageConfig,exportName:state.exportName,versionHistory:state.versionHistory,
             baseline:[...lastSyncedStrokeIds].map(([index,ids])=>[index,[...ids]]),baselinePages:[...lastSyncedPageIds]};
         const pendingExit=readPendingExitUpload();
         const dirty=driveContentVersion!==driveUploadedContentVersion || driveDirty || state.driveFileId?.startsWith('local-') || pendingExit?.fileId===state.driveFileId;
         return {id,snapshot,baseMeta:metadata(),contentVersion:version,session:token,dirty,
-            entry:{id,localPreview:(state.pages[0]?.backgroundSource==='template'?renderPagePreview(0):null)||state.pages[0]?.preview||null,name:state.driveFileName||`${state.exportName||'Untitled'}.pdf`,mimeType:'application/pdf',parents:state.driveParentIds?.length?state.driveParentIds:['root'],ownedByMe:state.driveOwnedByMe,pending:!!dirty},
+            entry:{id,localPreview:state.pages[0]?.preview||null,name:state.driveFileName||`${state.exportName||'Untitled'}.pdf`,mimeType:'application/pdf',parents:state.driveParentIds?.length?state.driveParentIds:['root'],ownedByMe:state.driveOwnedByMe,pending:!!dirty},
             details:{fileName:state.driveFileName,parentIds:state.driveParentIds,canEdit:state.driveCanEdit,ownedByMe:state.driveOwnedByMe,resourceKey:state.driveResourceKey,folderKind:state.driveFolderKind,ownerName:state.driveOwnerName,ownerEmail:state.driveOwnerEmail,ownerPhoto:state.driveOwnerPhoto},
             originalBlob:state.cleanOriginalPdfBytes?.byteLength?new Blob([state.cleanOriginalPdfBytes],{type:'application/pdf'}):undefined};
     }
