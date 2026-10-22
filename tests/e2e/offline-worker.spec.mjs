@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
-for (const mode of ['strokes','pdf','home-frame']) test(`background processor merges and uploads real PDFs (${mode})`,async({context,page})=>{
+for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-401']) test(`background processor merges and uploads real PDFs (${mode})`,async({context,page})=>{
  test.setTimeout(90000);
+ const liveAuth=mode==='home-memory-auth'||mode==='home-auth-401';
  const withPhoto=mode!=='strokes';
  await context.route('https://accounts.google.com/**',r=>r.fulfill({status:200,body:''}));
  await page.addInitScript(()=>localStorage.setItem('drive-hint-email','worker@example.test'));
@@ -41,14 +42,24 @@ for (const mode of ['strokes','pdf','home-frame']) test(`background processor me
   localStorage.setItem('google-granted-scopes-v1',grantedScopes);
   localStorage.setItem('drive-token-v1',JSON.stringify({token:'test',expiry:Date.now()+600000,scopeVersion:'drive-calendar-v2',grantedScopes}));
  },withPhoto);
- await page.close();
- let uploads=0,downloads=0;
+ if(liveAuth)await page.evaluate(()=>{
+  driveOpenInProgress=true;driveAccessToken='live-home-token';driveTokenExpiry=Date.now()+600000;driveSignedOut=false;
+  window.refreshes=0;
+  requestDriveToken=async()=>{window.refreshes++;driveAccessToken='refreshed-home-token';driveTokenExpiry=Date.now()+600000;return driveAccessToken;};
+  localStorage.removeItem('drive-token-v1');editorView.classList.add('hidden');
+ });
+ else await page.close();
+ let uploads=0,downloads=0,rejections=0;
  const meta={id:'worker-doc',version:'2',headRevisionId:'h2',modifiedTime:'2026-10-14T12:00:00.000Z',name:'Offline.pdf',capabilities:{canEdit:true},parents:['root']};
  await context.route('https://www.googleapis.com/**',async route=>{
   const url=new URL(route.request().url());
+  if(mode==='home-auth-401'&&route.request().frame().url().includes('offline-worker')&&url.pathname.endsWith('/worker-doc')&&route.request().headers().authorization==='Bearer live-home-token'){
+   rejections++;return route.fulfill({status:401,json:{error:'expired'}});
+  }
+  if(mode==='home-auth-401'&&url.pathname.includes('/upload/'))expect(route.request().headers().authorization).toBe('Bearer refreshed-home-token');
   if(url.pathname.includes('/drive/v2/')&&!url.pathname.includes('/upload/'))return route.fulfill({json:{etag:'"h2"',version:'2'}});
   if(url.pathname.endsWith('/about'))return route.fulfill({json:{user:{emailAddress:'worker@example.test'}}});
-  if(url.searchParams.get('alt')==='media'){downloads++;return route.fulfill({contentType:'application/pdf',body:Buffer.from(remote)});}
+  if(url.searchParams.get('alt')==='media'){if(route.request().frame().url().includes('offline-worker'))downloads++;return route.fulfill({contentType:'application/pdf',body:Buffer.from(remote)});}
   if(url.pathname.includes('/upload/')&&route.request().method()==='PATCH'){
    expect(route.request().headers()['if-match']).toBe('"h2"');uploads++;
    if(mode==='home-frame')expect(url.pathname).toContain('/upload/drive/v2/');
@@ -57,16 +68,17 @@ for (const mode of ['strokes','pdf','home-frame']) test(`background processor me
   return route.fulfill({headers:mode==='home-frame'?{}:{ETag:'"h2"','Access-Control-Expose-Headers':'ETag'},json:meta});
  });
  await context.setOffline(false);
- const host=await context.newPage();
+ const host=liveAuth?page:await context.newPage();
  await host.addInitScript(()=>{
   window.requestAnimationFrame=()=>0; // No painted frames in Android's headless WebView.
   Object.defineProperty(document,'visibilityState',{get:()=> 'hidden'});
   addEventListener('message',e=>{if(e.data?.type==='ihn-offline-complete')window.result=e.data.result;});
  });
  let worker=host;
- if(mode==='home-frame'){
+ if(mode==='home-frame'||liveAuth){
   await context.route('**/sync-test-host',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><title>Home sync host</title>'}));
-  await host.goto('/sync-test-host');
+  if(mode==='home-frame')await host.goto('/sync-test-host');
+  else await host.evaluate(()=>addEventListener('message',e=>{if(e.data?.type==='ihn-offline-complete')window.result=e.data.result;}));
   await host.evaluate(()=>{const frame=document.createElement('iframe');frame.hidden=true;frame.src='/?offline-worker=1';document.body.append(frame);});
   await expect.poll(()=>host.frames().find(f=>f.url().includes('offline-worker'))?.url()).toBeTruthy();
   worker=host.frames().find(f=>f.url().includes('offline-worker'));
@@ -95,5 +107,21 @@ for (const mode of ['strokes','pdf','home-frame']) test(`background processor me
  for(let i=0;i<3;i++)expect(result.ids).toEqual(expect.arrayContaining([`first-${i}`,`remote-${i}`]));
  if(withPhoto){expect(result.remotePixel[0]).toBeLessThan(90);expect(result.pixel[1]).toBeGreaterThan(130);expect(result.pixel[0]).toBeLessThan(90);}
  expect(result.ids).not.toContain('base-1-0');expect(result.recoveries).toBe(1);
+ if(mode==='home-auth-401'){expect(rejections).toBe(1);expect(await host.evaluate(()=>window.refreshes)).toBe(1);}
  await host.close();
+});
+
+test('background access rejects account changes while authentication is pending',async({page})=>{
+ await page.route('https://accounts.google.com/**',r=>r.fulfill({body:''}));
+ await page.addInitScript(()=>localStorage.setItem('drive-hint-email','worker@example.test'));
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ const result=await page.evaluate(async()=>{
+  let resolve,calls=0;
+  ensureDriveToken=()=>{calls++;return new Promise(done=>resolve=done);};
+  const wrong=await InhouseOfflineApp.backgroundAccess('other@example.test').catch(error=>error.message);
+  const pending=InhouseOfflineApp.backgroundAccess('worker@example.test').catch(error=>error.message);
+  localStorage.setItem('drive-hint-email','other@example.test');resolve('must-not-escape');
+  return {wrong,pending:await pending,calls};
+ });
+ expect(result.calls).toBe(1);expect(result.wrong).toMatch(/account changed/i);expect(result.pending).toMatch(/account changed/i);
 });
