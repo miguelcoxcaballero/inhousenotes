@@ -4,6 +4,7 @@ mod surface;
 mod ink;
 mod ink_repair;
 mod folder;
+mod checkpoint;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 

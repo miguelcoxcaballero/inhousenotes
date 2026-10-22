@@ -145,3 +145,15 @@ test('a cached core without measured coverage or neutral calibration requests th
     assert.equal(legacy.InhouseRust.inkRepair(pixels,new Uint16Array(4),coverage,2,2),null);
     assert.equal(allocations,0);
 });
+
+test('Rust checkpoint codec preserves every bit and rejects truncated streams',()=>{
+    let seed=12345;
+    const raw=Uint8Array.from({length:4096},()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed>>>24;});
+    const packed=scope.InhouseRust.checkpointCodec(raw);
+    assert.deepEqual(scope.InhouseRust.checkpointCodec(packed,raw.length),raw);
+    for(const end of [0,1,7,packed.length-1]) {
+        if(end)assert.throws(()=>scope.InhouseRust.checkpointCodec(packed.slice(0,end),raw.length),/Invalid/);
+    }
+    assert.throws(()=>scope.InhouseRust.checkpointCodec(new Uint8Array([9]),8),/Invalid/);
+    assert.throws(()=>scope.InhouseRust.checkpointCodec(new Uint8Array(7)),/Invalid/);
+});

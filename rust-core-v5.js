@@ -1,4 +1,4 @@
-/* Small, optional Rust/WASM adapter. No document or network state enters Rust. */
+/* Rust/WASM numeric kernels and lossless ink codec. Persistence and network orchestration stay with the host. */
 (function (root) {
     'use strict';
     const scriptUrl = typeof document !== 'undefined' && document.currentScript?.src;
@@ -322,6 +322,51 @@
             dispose() { disposed = true; }
         };
     }
-    root.InhouseRust = Object.freeze({ ready, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
+    function checkpointCodec(bytes, decodedLength = null) {
+        if (!core || core.ink_checkpoint_version?.() !== 1) return null;
+        if (!(bytes instanceof Uint8Array) || !bytes.length) return null;
+        const capacity = decodedLength === null ? Math.ceil(bytes.length / 8) * 9 : decodedLength;
+        if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 72 * 1024 * 1024) throw new RangeError('Ink checkpoint too large');
+        let input, output;
+        try {
+            input = allocation(bytes.length); output = allocation(capacity);
+            view(input).set(bytes);
+            const length = decodedLength === null
+                ? core.ink_checkpoint_pack(input.pointer, bytes.length, output.pointer, capacity)
+                : core.ink_checkpoint_unpack(input.pointer, bytes.length, output.pointer, capacity);
+            if (length < 0) throw new Error('Invalid ink checkpoint');
+            return view(output).slice(0, length);
+        } finally { release(input); release(output); }
+    }
+    async function unpackCheckpoint(data) {
+        const { codec, rawLength } = data;
+        const bytes = new Uint8Array(data.bytes);
+        if (!Number.isSafeInteger(rawLength) || rawLength < 0 || rawLength > 64 * 1024 * 1024 || rawLength % 32) throw new Error('Invalid ink checkpoint length');
+        if (codec === 'raw-v1') {
+            if (bytes.length !== rawLength) throw new Error('Truncated ink checkpoint');
+            return bytes;
+        }
+        if (codec !== 'xor-v1') throw new Error('Unknown ink checkpoint codec');
+        await ready;
+        const decoded = checkpointCodec(bytes, rawLength);
+        if (decoded) return decoded;
+        // Existing offline files remain readable even if WebAssembly is disabled.
+        const output = new Uint8Array(rawLength), previous = new Uint8Array(32);
+        let offset = 0;
+        for (let word = 0; word < rawLength / 8; word++) {
+            const length = bytes[offset++];
+            if (length === undefined || length > 8 || offset + length > bytes.length) throw new Error('Truncated ink checkpoint');
+            for (let byte = 0; byte < 8; byte++) {
+                const lane = (word % 4) * 8 + byte;
+                previous[lane] ^= byte < length ? bytes[offset + byte] : 0;
+                output[word * 8 + byte] = previous[lane];
+            }
+            offset += length;
+            if (word && word % 8192 === 0) await new Promise(resolve=>setTimeout(resolve,0));
+        }
+        if (offset !== bytes.length) throw new Error('Trailing ink checkpoint bytes');
+        return output;
+    }
+    root.InhouseRust = Object.freeze({ ready, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
         folderMotion, folderFade, folderRows, available: () => !!core });
 })(globalThis);
