@@ -21,7 +21,7 @@
         };
         const yieldCapture=async()=>{
             await yieldProcessingForUi();
-            await waitForHotInteractionToSettle({sessionToken:token,windowMs:500});
+            await waitForHotInteractionToSettle({sessionToken:token,windowMs:PAGE_CHECKPOINT_IDLE_MS});
             assertCurrent();
         };
         // Copy incrementally: a dense scanned page must not serialize the whole

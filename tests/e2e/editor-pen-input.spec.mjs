@@ -132,3 +132,45 @@ test('offline checkpoint yields on dense pages and reuses the cached preview',as
  });
  expect(result.paints).toBe(0);expect(result.yields).toBeGreaterThan(2);expect(result.strokes).toBe(3000);expect(result.preview).toBe(result.cached||null);expect(result.cancelled).toBe('AbortError');expect(result.unchanged).toBe(true);
 });
+
+test('writing bursts journal ink without full-page compaction between letters',async({page,context})=>{
+ test.setTimeout(45000);
+ const {cdp,target}=await startPen(page,context,3000);
+ await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
+ await page.evaluate(()=>{
+  window.pageWrites=0;window.operationWrites=0;
+  const put=IDBObjectStore.prototype.put,add=IDBObjectStore.prototype.add;
+  IDBObjectStore.prototype.put=function(...args){if(this.name===PAGE_STORE)pageWrites++;return put.apply(this,args);};
+  IDBObjectStore.prototype.add=function(...args){if(this.name===OPS_STORE)operationWrites++;return add.apply(this,args);};
+ });
+ for(let letter=0;letter<6;letter++){
+  if(letter)await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...target,button:'left',buttons:1,clickCount:1,pointerType:'pen'});
+  await page.evaluate(async()=>{
+   const canvas=document.querySelector('canvas.page-canvas[data-page="0"]'),r=canvas.getBoundingClientRect();
+   for(let i=0;i<10;i++){
+    canvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:penInputId,pointerType:'pen',buttons:1,pressure:.5,clientX:r.left+110+i*4,clientY:r.top+410+Math.sin(i)*8}));
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+   }
+  });
+  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+  await page.waitForTimeout(250);
+ }
+ const during=await page.evaluate(()=>({pages:pageWrites,ops:operationWrites,ink:state.pages[0].strokes.filter(s=>s.color==='#E81010').length}));
+ expect(during.ink).toBe(6);expect(during.ops).toBeGreaterThanOrEqual(6);expect(during.pages).toBe(0);
+ await cdp.send('Emulation.setCPUThrottlingRate',{rate:1});
+ await page.evaluate(()=>__IHN_TEST_API__.checkpointBeforeLeaving());
+ await page.reload();await page.evaluate(()=>__IHN_TEST_API__.ready());
+ expect(await page.evaluate(async()=>{await __IHN_TEST_API__.loadPage(0);return state.pages[0].strokes.filter(s=>s.color==='#E81010').length;})).toBe(6);
+});
+
+test('a full-page copy stops when its save is cancelled',async({page})=>{
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ await page.evaluate(()=>__IHN_TEST_API__.seedDensePageForTest(3000,100));
+ const result=await page.evaluate(async()=>{
+  const yieldUi=yieldProcessingForUi;const signal={aborted:false};let yields=0;
+  yieldProcessingForUi=async()=>{yields++;signal.aborted=true;};
+  try{return {saved:await savePageToIndexedDb(0,state.pages[0],{abortSignal:signal}),yields};}
+  finally{yieldProcessingForUi=yieldUi;}
+ });
+ expect(result.saved).toBe(false);expect(result.yields).toBe(1);
+});

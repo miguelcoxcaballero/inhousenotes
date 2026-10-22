@@ -226,7 +226,9 @@
         const previous = await S.read('documents', captureAccount, value.id);
         const current = host.identity?.();
         if (account !== captureAccount || (current && (current.id !== value.id || current.session !== value.session || current.version !== value.contentVersion))) return;
-        if (previous?.contentVersion === value.contentVersion && previous?.session === value.session) return;
+        // A delayed capture must not roll back a newer checkpoint from the
+        // same editor session (e.g. while shutdown/background work completes).
+        if (previous?.session === value.session && previous.contentVersion >= value.contentVersion) return;
         await S.checkpoint(captureAccount, value.id, { ...value, offlineEdited: offline() || previous?.offlineEdited || false, lastOpenedAt: Date.now() }, value.dirty);
         await scheduleBackground();
         await reload();
