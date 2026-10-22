@@ -27,7 +27,7 @@ const scannerLightweight = readText('../scanner/processing/lightweight.js');
 const scannerLive = readText('../scanner/live-camera.js');
 const scannerLiveDetection = readText('../scanner/processing/liveDetection.js');
 const update = JSON.parse(fs.readFileSync(new URL('../android-update.json', import.meta.url), 'utf8'));
-const notes = readText('../RELEASE_NOTES_v5.16.42.md');
+const notes = readText('../RELEASE_NOTES_v5.16.43.md');
 const oauthCallback = readText('../oauth-callback/index.html');
 const androidLoader = readText('../.github/android/app-loader.html');
 const androidBuilder = readText('../android app/html_to_apk_builder.py');
@@ -37,7 +37,7 @@ const androidManifestPublisher = readText('../.github/scripts/update_services_ma
 const androidWorkflow = readText('../.github/workflows/build-android.yml');
 const pagesWorkflow = readText('../.github/workflows/deploy-pages.yml');
 
-assert.match(indexHtml, /const APP_VERSION = '5.16.42';/);
+assert.match(indexHtml, /const APP_VERSION = '5.16.43';/);
 assert.match(app, /initialPages: 1/);
 assert.match(app, /renderAllPages\(\{ deferVisibleUpdate: true \}\)/);
 assert.match(app, /cleanOriginalRecoveryPromise/);
@@ -61,10 +61,10 @@ assert.doesNotMatch(
 );
 assert.match(app, /const APP_VERSION = appVersionMatch\[1\];/);
 assert.equal((html.match(/data-app-version/g) || []).length, 3, 'two labels plus one binding are expected');
-assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.42/);
-assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.42/);
-assert.match(indexHtml, /app-v5\.js\?v=5.16.42/);
-assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.42/);
+assert.match(indexHtml, /collaboration-core-v5\.js\?v=5.16.43/);
+assert.match(indexHtml, /live-collaboration-v5\.js\?v=5.16.43/);
+assert.match(indexHtml, /app-v5\.js\?v=5.16.43/);
+assert.match(indexHtml, /timeline-core-v5\.js\?v=5.16.43/);
 assert.match(indexHtml, /Content-Security-Policy/);
 assert.match(indexHtml, /script-src-attr 'none'/);
 assert.match(indexHtml, /frame-src 'self'/);
@@ -90,7 +90,7 @@ assert.match(scanner, /postEmbeddedMessage\("ihn-scanner-pages"/);
 assert.match(scanner, /async function addScannedPagesToDocument\(/);
 assert.match(scanner, /await applyStencilToContext\(/);
 assert.doesNotMatch(scannerHtml, /opencv\.js|__cvReady|Loading Core/);
-assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.42/);
+assert.match(scannerHtml, /processing\/lightweight\.js\?v=5.16.43/);
 assert.match(scannerLightweight, /function estimateCalibrationStrip\(/);
 assert.match(scannerLightweight, /function detectMarkerGuidedStencil\(/);
 assert.match(scannerLightweight, /function traceYellowFrame\(/);
@@ -221,11 +221,11 @@ assert.ok(verifySignedApkStep >= 0 && verifySignedApkStep < publishApkStep, 'ver
 assert.ok(publishApkStep < verifyPublicApkStep && verifyPublicApkStep < publishCatalogStep, 'verify the exact public APK before publishing its catalog');
 assert.match(androidLoader, /html, body \{ margin: 0; width: 100%; height: 100%;/);
 assert.match(androidLoader, /position: fixed;\s*inset: 0;\s*display: grid;\s*place-items: center;/);
-assert.match(html, /#toolbar \{[\s\S]{0,500}--toolbar-ink: #1a1a1a;/);
+assert.match(html, /#toolbar, \.eraser-menu \{[\s\S]{0,500}--toolbar-ink: #1a1a1a;/);
 assert.match(html, /#toolbar \{[\s\S]{0,900}color: var\(--toolbar-ink\);/);
 assert.match(html, /\.tool-btn \{[\s\S]{0,300}color: var\(--toolbar-ink, var\(--text-primary\)\);/);
 assert.match(html, /#toolbar-handle \{[\s\S]{0,400}color: var\(--toolbar-muted-ink\);/);
-assert.match(html, /#toolbar \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
+assert.match(html, /#toolbar \.size-dot, \.eraser-menu \.size-dot \{[\s\S]{0,180}background: var\(--toolbar-ink\);/);
 assert.match(html, /#toolbar \.tool-btn\.active \.color-dot \{\s*border-color: var\(--toolbar-ink\);/);
 assert.doesNotMatch(androidWorkflow, /Publish APK as app v4\.4\.24/);
 assert.match(app, /InhouseServicesUpdater\.create/);
@@ -1231,7 +1231,7 @@ assert.match(app, /card\.style\.setProperty\('--sheet-ratio', ratio\)/);
 assert.match(indexHtml, /--sheet-inset-block: max\(0%, \(141\.42% - 100% \/ var\(--sheet-ratio\)\) \/ 2\);/);
 assert.match(indexHtml, /width: min\(100%, 141\.42% \* var\(--sheet-ratio\)\);/);
 assert.match(indexHtml, /\.drive-folder-art \{\n\s+position: relative;\n\s+width: 100%;\n\s+aspect-ratio: 210 \/ 297;/);
-assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.42/);
+assert.match(indexHtml, /document-processing-v5\.js\?v=5.16.43/);
 const interactionPause = app.slice(app.indexOf('function pauseSavesDuringInteraction'), app.indexOf('function clearPausedSaveWatchdog'));
 assert.doesNotMatch(interactionPause, /controller\.abort\(|activeDriveSaveController\.abort\(/);
 assert.match(app, /schedulePreparedDrivePdf\(delay = 180\)/);
@@ -1241,7 +1241,7 @@ assert.match(oauthCallback, /ihr-oauth-exchange/);
 assert.match(oauthCallback, /event\.source !== window\.opener/);
 assert.match(oauthCallback, /code_verifier: data\.verifier/);
 
-console.log('v5.16.42 smoke checks passed.');
+console.log('v5.16.43 smoke checks passed.');
 
 
 
