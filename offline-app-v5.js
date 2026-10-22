@@ -8,6 +8,11 @@
     async function capture() {
         const id=currentId();
         if(!id || !state.pages.length || driveOpenInProgress || state.driveCanEdit===false)return null;
+        // Boot restores a single-editor cache, not necessarily the newest
+        // per-document draft. Home must upload the durable outbox as-is until
+        // this document has been explicitly opened/restored in this launch.
+        const existing=L.record(id);
+        if(!documentSessionActivated && existing?.available && existing.session!==getOfflineDocumentSessionToken())return null;
         const token=getDocumentSessionToken(),version=driveContentVersion;
         const pages=[];
         const assertCurrent=()=>{
@@ -38,7 +43,7 @@
             baseline:[...lastSyncedStrokeIds].map(([index,ids])=>[index,[...ids]]),baselinePages:[...lastSyncedPageIds]};
         const pendingExit=readPendingExitUpload();
         const dirty=driveContentVersion!==driveUploadedContentVersion || driveDirty || state.driveFileId?.startsWith('local-') || pendingExit?.fileId===state.driveFileId;
-        return {id,snapshot,baseMeta:metadata(),contentVersion:version,session:token,dirty,
+        return {id,snapshot,baseMeta:metadata(),contentVersion:version,session:getOfflineDocumentSessionToken(token),dirty,
             entry:{id,localPreview:state.pages[0]?.preview||null,name:state.driveFileName||`${state.exportName||'Untitled'}.pdf`,mimeType:'application/pdf',parents:state.driveParentIds?.length?state.driveParentIds:['root'],ownedByMe:state.driveOwnedByMe,pending:!!dirty},
             details:{fileName:state.driveFileName,parentIds:state.driveParentIds,canEdit:state.driveCanEdit,ownedByMe:state.driveOwnedByMe,resourceKey:state.driveResourceKey,folderKind:state.driveFolderKind,ownerName:state.driveOwnerName,ownerEmail:state.driveOwnerEmail,ownerPhoto:state.driveOwnerPhoto},
             originalBlob:state.cleanOriginalPdfBytes?.byteLength?new Blob([state.cleanOriginalPdfBytes],{type:'application/pdf'}):undefined};
@@ -137,7 +142,7 @@
     }
     async function refreshed() {
         const doc=L.record(currentId());
-        if(doc&&!doc.dirty&&doc.lastUploadedAt&&doc.session===getDocumentSessionToken()
+        if(doc&&!doc.dirty&&doc.lastUploadedAt&&doc.session===getOfflineDocumentSessionToken()
             &&doc.contentVersion===driveContentVersion&&driveDirty&&!hasSmoothInteraction()) {
             const readOnly=state.isReadOnly;
             await restore(await S.read('documents',L.account(),doc.id),!!editorView&&!editorView.classList.contains('hidden'));setReadOnlyMode(readOnly,{force:true});
@@ -170,7 +175,7 @@
     }
     async function initialize() {
         await L.init({version:APP_VERSION,currentId,quickAccess:isQuickAccessDriveFile,activeDocument:()=>document.visibilityState==='visible'&&editorView&&!editorView.classList.contains('hidden'),busy:()=>hasSmoothInteraction()||driveOpenInProgress||offlineOpenInProgress,
-            identity:()=>({id:currentId(),version:driveContentVersion,session:getDocumentSessionToken()}),
+            identity:()=>({id:currentId(),version:driveContentVersion,session:getOfflineDocumentSessionToken()}),
             retrySync:()=>driveAuthNeedsReconnect||L.syncStatus().errors.some(error=>error.code===401||/sign.?in|refresh token/i.test(error.message||''))?signInDrive():void L.kick(),syncChanged:renderSyncStatus,syncActive:()=>queueDriveSave(true),
             connectionChanged:connected=>{
                 renderSyncStatus();
@@ -269,7 +274,7 @@
         if(!L.account()||L.isWorker)return;
         const id=currentId();if((state.driveFileId!==fileId&&id!==fileId)||getDocumentSessionToken()!==session)return;
         const doc=await S.read('documents',L.account(),id);
-        if(doc?.contentVersion===version&&doc.session===session){
+        if(doc?.contentVersion===version&&doc.session===getOfflineDocumentSessionToken(session)){
             await S.acknowledge(L.account(),id,doc.generation,meta,blob);
             await L.reload().catch(()=>{});
         }

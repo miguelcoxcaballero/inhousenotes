@@ -76,6 +76,8 @@
                 const old = event.target.result || {};
                 const generation = (old.generation || 0) + 1;
                 const record = { ...old, ...value, account,id,key:key(account,id),generation,
+                    // A prepared PDF belongs to exactly one immutable checkpoint.
+                    preparedBlob:null, preparedGeneration:null,
                     updatedAt:Date.now(), lastOpenedAt:value.lastOpenedAt || old.lastOpenedAt || Date.now(),
                     pinned: value.pinned ?? old.pinned ?? false, dirty:dirty || old.dirty || false };
                 s.documents.put(record);
