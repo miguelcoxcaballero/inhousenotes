@@ -4,8 +4,10 @@
     const processorVersion = new URL(document.currentScript.src, document.baseURI).searchParams.get('v');
     if (processorVersion) processorUrl.searchParams.set('v', processorVersion);
     const client = new root.InhouseRuntimeCore.WorkerRpcClient(() => new Worker(processorUrl));
-    const run = (type, data, options) => client.run(type, data, options);
-    function reset(error) { client.reset(error); facade = null; }
+    // Checkpoint compression must not queue behind a PDF export.
+    const checkpointClient = new root.InhouseRuntimeCore.WorkerRpcClient(() => new Worker(processorUrl));
+    const run = (type, data, options) => (type === 'packInkCheckpoint' || type === 'unpackInkCheckpoint' ? checkpointClient : client).run(type, data, options);
+    function reset(error) { client.reset(error); checkpointClient.reset(error); facade = null; }
     let facade = null;
     async function pdfLib(library) {
         await run('pdfReady', {});

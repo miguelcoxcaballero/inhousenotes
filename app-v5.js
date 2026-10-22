@@ -21950,9 +21950,96 @@
         // wait through the gaps between letters, rather than compete with the
         // next pen contact after the short gesture-idle timer expires.
         const PAGE_CHECKPOINT_IDLE_MS = 1200;
-        async function cloneSanitizedPageForStorage(page, sessionToken, isStale = () => false) {
+        async function packInkPageForStorage(page, sessionToken, isStale, normalizedInput = false) {
+            const sanitized = normalizedInput ? page : sanitizePageForStorage(page);
+            const {strokes, legacyCoverStrokes, ...metadata} = sanitized;
+            const result = structuredClone(metadata);
+            const collections = [['strokes',strokes],['legacyCoverStrokes',legacyCoverStrokes]];
+            const pointCount = collections.reduce((sum,[,items]) => sum + (items || []).reduce((n,s)=>n+(s.points?.length||0),0),0);
+            // Large/unusual documents keep the established lossless representation.
+            if (pointCount * 32 > 64 * 1024 * 1024) return cloneSanitizedPageForStorage(page,sessionToken,isStale,false,normalizedInput);
+            const words = new Float64Array(pointCount * 4);
+            let used = 0, started = performance.now();
+            const pause = async () => {
+                await yieldProcessingForUi();
+                if (isStale() || !await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isStale()) return false;
+                started = performance.now();return true;
+            };
+            for (const [key,items] of collections) {
+                if (!Array.isArray(items)) {result[key]=items;continue;}
+                result[key]=[];
+                for (const stroke of items.slice()) {
+                    if (isStale()) return null;
+                    const {points,...attributes}=stroke;
+                    const copy=structuredClone(attributes), offset=used;
+                    let portable=Array.isArray(points);
+                    if (portable) for (const point of points) {
+                        const keys=point && Object.keys(point);
+                        if (!keys || keys.some(k=>k!=='x'&&k!=='y'&&k!=='p') || typeof point.x!=='number' || typeof point.y!=='number'
+                            || ('p' in point && typeof point.p!=='number')) {portable=false;break;}
+                        words[used++]=point.x;words[used++]=point.y;
+                        words[used++]=point.p??0;words[used++]='p' in point?1:0;
+                        if (performance.now()-started>=3 && !await pause()) return null;
+                    }
+                    if (portable) copy.points={inkRange:[offset,points.length]};
+                    else {used=offset;copy.points=structuredClone(points);}
+                    result[key].push(copy);
+                    if (performance.now()-started>=3 && !await pause()) return null;
+                }
+            }
+            if (isStale()) return null;
+            // Transfer the numeric buffer; never post a document-sized object graph.
+            if (used) {
+                const bytes=used===words.length?words.buffer:words.buffer.slice(0,used*8);
+                // Retain a raw numeric copy until the worker succeeds: a cold
+                // offline launch can fail to load its script before SW control.
+                const fallback=bytes.slice(0);
+                try {result.__inkCheckpoint=await window.InhouseDocumentProcessing.run('packInkCheckpoint',{bytes},{transfer:[bytes]});}
+                catch(error){result.__inkCheckpoint={inkCheckpoint:1,codec:'raw-v1',rawLength:fallback.byteLength,bytes:new Uint8Array(fallback)};}
+            } else {
+                // Empty point arrays do not need a binary payload.
+                for (const [key] of collections) for (const stroke of result[key]||[]) if(stroke.points?.inkRange)stroke.points=[];
+            }
+            return isStale()?null:result;
+        }
+
+        async function unpackInkPageFromStorage(record) {
+            const sessionToken=getDocumentSessionToken();
+            const assertCurrent=()=>{if(!isDocumentSessionTokenValid(sessionToken))throw createAbortError('Document changed while decoding ink');};
+            const checkpoint=record?.__inkCheckpoint;
+            if (!checkpoint) return stripStoredPageSession(record);
+            if (checkpoint.inkCheckpoint!==1 || !(checkpoint.bytes instanceof Uint8Array)) throw new Error('Unknown ink checkpoint format');
+            let raw;
+            try {raw=await window.InhouseDocumentProcessing.run('unpackInkCheckpoint',checkpoint);}
+            catch(error){raw=await window.InhouseRust.unpackCheckpoint(checkpoint);}
+            assertCurrent();
+            const words=new Float64Array(raw.buffer,raw.byteOffset,raw.byteLength/8);
+            const page=stripStoredPageSession(record);delete page.__inkCheckpoint;
+            let started=performance.now();
+            for (const key of ['strokes','legacyCoverStrokes']) {
+                if(Array.isArray(page[key]))page[key]=page[key].map(stroke=>({...stroke}));
+                for (const stroke of page[key]||[]) {
+                if (!stroke.points?.inkRange) continue;
+                const [offset,count]=stroke.points.inkRange;
+                if (!Number.isSafeInteger(offset)||!Number.isSafeInteger(count)||offset<0||count<0||offset%4||offset+count*4>words.length) throw new Error('Invalid ink point range');
+                const points=[];
+                for(let i=0;i<count;i++) {
+                    const j=offset+i*4,point={x:words[j],y:words[j+1]};
+                    if(words[j+3]===1)point.p=words[j+2];
+                    else if(words[j+3]!==0)throw new Error('Invalid ink pressure flag');
+                    points.push(point);
+                    if(performance.now()-started>=3){await yieldProcessingForUi();assertCurrent();started=performance.now();}
+                }
+                stroke.points=points;
+                }
+            }
+            return page;
+        }
+
+        async function cloneSanitizedPageForStorage(page, sessionToken, isStale = () => false, packed = false, normalizedInput = false) {
             if (!await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isStale()) return null;
-            const sanitized = sanitizePageForStorage(page);
+            if (packed && typeof structuredClone === 'function' && window.InhouseDocumentProcessing) return packInkPageForStorage(page,sessionToken,isStale);
+            const sanitized = normalizedInput ? page : sanitizePageForStorage(page);
             const clone = value => typeof structuredClone === 'function'
                 ? structuredClone(value) : JSON.parse(JSON.stringify(value));
             const { strokes, legacyCoverStrokes, ...metadata } = sanitized;
@@ -22050,7 +22137,7 @@
             const isSnapshotStale = () => options.abortSignal?.aborted
                 || !isDocumentSessionTokenValid(sessionToken)
                 || (pageDirtyGeneration.get(pageIndex) || 0) !== mutationGenerationAtSnapshot;
-            const snapshot = await cloneSanitizedPageForStorage(page,sessionToken,isSnapshotStale);
+            const snapshot = await cloneSanitizedPageForStorage(page,sessionToken,isSnapshotStale,true);
             if (!snapshot || !isDocumentSessionTokenValid(sessionToken)) return false;
             const storedPageRecord = { ...snapshot, __sessionId: sessionToken };
             const db = await openNotebookDb();
@@ -22137,7 +22224,9 @@
                             resolve(null);
                             return;
                         }
-                        resolve(stripStoredPageSession(result));
+                        unpackInkPageFromStorage(result).then(resolve,error=>{
+                            console.error('Cannot decode saved ink; preserving stored checkpoint:',error);resolve(null);
+                        });
                     };
                     request.onerror = () => resolve(null);
                 } catch (error) {
@@ -22413,7 +22502,9 @@
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     const fullPage = isPageLoaded(livePage)
                         ? livePage
-                        : (persistedPage || normalizeLegacyPage(legacyPage, pageIndex));
+                        : (persistedPage || normalizeLegacyPage(await unpackInkPageFromStorage(legacyPage), pageIndex));
+                    assertContext?.();
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     const saved = await savePageToIndexedDb(pageIndex, fullPage, { structureToken });
                     assertContext?.();
                     if (!saved || !isDocumentSessionTokenValid(sessionToken)) return false;
@@ -23499,7 +23590,8 @@
             const keepCount = Math.min(requestedInitialPages, pages.length);
             for (let i = 0; i < keepCount; i++) {
                 if (!isDocumentSessionTokenValid(sessionToken)) return false;
-                const fullPage = normalizeLegacyPage(pages[i], i);
+                const fullPage = normalizeLegacyPage(await unpackInkPageFromStorage(pages[i]), i);
+                if (!isDocumentSessionTokenValid(sessionToken)) return false;
                 if (options.ensureLegacyIds) {
                     ensureStrokeIds(fullPage, {
                         documentId: options.documentId || state.driveFileId || '',
@@ -23550,7 +23642,8 @@
                     const sourcePage = deferPageWrites && isPageLoaded(livePage)
                         ? livePage
                         : (persistedPage || cachedLegacyPage);
-                    const fullPage = normalizeLegacyPage(sourcePage, index);
+                    const fullPage = normalizeLegacyPage(await unpackInkPageFromStorage(sourcePage), index);
+                    if (!isDocumentSessionTokenValid(sessionToken)) return false;
                     if (options.ensureLegacyIds) {
                         ensureStrokeIds(fullPage, {
                             documentId: options.documentId || state.driveFileId || '',
@@ -23712,7 +23805,8 @@
                 let data = await loadPageFromIndexedDb(pageIndex);
                 if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                 if (!data && Array.isArray(legacyPagesCache) && legacyPagesCache[pageIndex]) {
-                    data = normalizeLegacyPage(legacyPagesCache[pageIndex], pageIndex);
+                    data = normalizeLegacyPage(await unpackInkPageFromStorage(legacyPagesCache[pageIndex]), pageIndex);
+                    if (!isDocumentSessionTokenValid(sessionToken) || structureVersion !== pageStructureVersion) return null;
                     const saved = await savePageToIndexedDb(pageIndex, data);
                     if (saved) {
                         legacyPagesCache[pageIndex] = null;
@@ -31487,7 +31581,7 @@
             }
             let data = await loadPageFromIndexedDb(pageIndex);
             if (!data && legacyPagesCache && legacyPagesCache[pageIndex]) {
-                data = normalizeLegacyPage(legacyPagesCache[pageIndex], pageIndex);
+                data = normalizeLegacyPage(await unpackInkPageFromStorage(legacyPagesCache[pageIndex]), pageIndex);
             }
             if (!data && typeof page.strokeCount === 'number' && page.strokeCount > 0) {
                 throw new Error(`Missing page data for export (page ${pageIndex + 1})`);

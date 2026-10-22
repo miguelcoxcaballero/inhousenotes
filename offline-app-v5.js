@@ -29,7 +29,12 @@
         for(let i=0;i<state.pages.length;i++){
             await yieldCapture();
             const page=await loadPageDataForExport(i);assertCurrent();
-            const copy=buildTimelineSnapshotFromPages([{...page,strokes:[],images:[]}])[0];
+            const copy=buildTimelineSnapshotFromPages([{...page,strokes:[],images:[],legacyCoverStrokes:null}])[0];
+            if(typeof structuredClone==='function' && window.InhouseDocumentProcessing){
+                const packed=await packInkPageForStorage({...copy,strokes:page.strokes||[],images:page.images||[],legacyCoverStrokes:page.legacyCoverStrokes||null},token,()=>{assertCurrent();return false;},true);
+                assertCurrent();pages.push(packed);continue;
+            }
+            copy.legacyCoverStrokes=cloneTimelineValue(page.legacyCoverStrokes||null);
             let sliceStarted=performance.now();
             for(const kind of ['strokes','images'])for(const item of page[kind]||[]){
                 copy[kind].push(cloneTimelineValue(item));
@@ -101,6 +106,7 @@
             }
         }
         if(doc.snapshot) {
+            // Decode only pages requested by the editor; hidden pages stay binary.
             await migrateLegacyPayload({...doc.snapshot,pages:doc.snapshot.pages.slice()},{awaitAllPages:false,deferPageWrites:true,initialPages:1});
             state.collabStructure=ihnNormalizeStructureMeta(doc.snapshot.collabStructure,state.pages.map(p=>p.pageId));
             state.collabFields=ihnNormalizeFieldMeta(doc.snapshot.collabFields);

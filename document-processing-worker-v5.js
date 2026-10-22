@@ -136,6 +136,15 @@ function embedPreparedRaster(doc, raster) {
 }
 
 async function processTask(type, data) {
+    if (type === 'packInkCheckpoint') {
+        await InhouseRust.ready;
+        const raw = new Uint8Array(data.bytes);
+        const packed = InhouseRust.checkpointCodec(raw);
+        return { inkCheckpoint: 1, codec: packed && packed.length < raw.length ? 'xor-v1' : 'raw-v1',
+            bytes: packed && packed.length < raw.length ? packed : raw, rawLength: raw.length };
+    }
+    if (type === 'unpackInkCheckpoint') return InhouseRust.unpackCheckpoint(data);
+
     if (type === 'compress') return compress(data.json);
     if (type === 'prepareMetadata') {
         // Let native compression run while the worker computes the sync hash.
@@ -288,7 +297,7 @@ async function processTask(type, data) {
 self.onmessage = async ({ data: { id, type, data } }) => {
     try {
         const value = await processTask(type, data);
-        const transfers = value instanceof Uint8Array ? [value.buffer]
+        const transfers = value?.inkCheckpoint ? [value.bytes.buffer] : value instanceof Uint8Array ? [value.buffer]
             : value?.pdfRaster ? [value.colorBytes.buffer, ...(value.alphaBytes ? [value.alphaBytes.buffer] : [])] : [];
         self.postMessage({ id, value }, transfers);
     } catch (error) {
