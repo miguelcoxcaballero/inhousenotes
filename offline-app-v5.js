@@ -23,19 +23,6 @@
             originalBlob:state.cleanOriginalPdfBytes?.byteLength?new Blob([state.cleanOriginalPdfBytes],{type:'application/pdf'}):undefined};
     }
     function renderSyncStatus() {
-        const status=L.syncStatus(),el=document.getElementById('offline-sync-status');
-        if(el) {
-            const active=status.phase!=='idle';
-            el.hidden=!status.pending&&!active;
-            el.dataset.phase=active?status.phase:status.errors.length?'error':'pending';
-            const label=el.querySelector('[data-sync-label]');
-            label.textContent=active?({checking:'Checking Drive…',building:'Preparing document…',merging:'Merging changes…',uploading:'Uploading to Drive…'}[status.phase]||'Syncing…')
-                :L.offline()?`${status.pending} waiting for connection`
-                :status.errors.length?(driveAuthNeedsReconnect?'Sign in to sync':'Sync pending · will retry'):`${status.pending} waiting to sync`;
-            const retry=el.querySelector('button');retry.hidden=active||L.offline()||!status.pending;
-            retry.textContent=driveAuthNeedsReconnect?'Sign in':'Retry';
-            retry.onclick=()=>driveAuthNeedsReconnect?signInDrive():void L.kick();
-        }
         refreshSaveIndicatorState();
     }
     function renderHome() {
@@ -157,7 +144,7 @@
     async function initialize() {
         await L.init({version:APP_VERSION,currentId,quickAccess:isQuickAccessDriveFile,activeDocument:()=>document.visibilityState==='visible'&&editorView&&!editorView.classList.contains('hidden'),busy:()=>hasSmoothInteraction()||driveOpenInProgress||offlineOpenInProgress,
             identity:()=>({id:currentId(),version:driveContentVersion,session:getDocumentSessionToken()}),
-            syncChanged:renderSyncStatus,syncActive:()=>queueDriveSave(true),
+            retrySync:()=>driveAuthNeedsReconnect||L.syncStatus().errors.some(error=>error.code===401||/sign.?in|refresh token/i.test(error.message||''))?signInDrive():void L.kick(),syncChanged:renderSyncStatus,syncActive:()=>queueDriveSave(true),
             connectionChanged:connected=>{
                 renderSyncStatus();
                 if(connected&&L.ready()){
@@ -221,7 +208,10 @@
         if(!L.account()||L.isWorker)return;
         const id=currentId();if((state.driveFileId!==fileId&&id!==fileId)||getDocumentSessionToken()!==session)return;
         const doc=await S.read('documents',L.account(),id);
-        if(doc?.contentVersion===version&&doc.session===session)await S.acknowledge(L.account(),id,doc.generation,meta,blob);
+        if(doc?.contentVersion===version&&doc.session===session){
+            await S.acknowledge(L.account(),id,doc.generation,meta,blob);
+            await L.reload().catch(()=>{});
+        }
     }
     async function queueSave(force,options,normal) {
         if(L.isWorker)return;
@@ -252,7 +242,7 @@
                 }});
             } catch(error) {result={errors:[{message:error.message}]};}
             finally {await L.syncFinished(result||{});}
-            if(result?.errors?.length)showStatus('Saved on this device · sync pending',{preserveState:true});
+            if(result?.errors?.length)showStatus(L.syncErrorText(result.errors[0]),{preserveState:true});
             return result;
         }
         const session=getDocumentSessionToken();

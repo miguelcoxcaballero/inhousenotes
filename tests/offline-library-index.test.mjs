@@ -29,7 +29,7 @@ async function library(initial = {}) {
 function card() {
     const attributes = new Map(), classes = new Set();
     return {
-        attributes, classes, dataset: {},
+        attributes, classes, dataset: {}, querySelector: () => null,
         classList: { toggle(name, enabled) { enabled ? classes.add(name) : classes.delete(name); } },
         setAttribute(name, value) { attributes.set(name, value); },
         removeAttribute(name) { attributes.delete(name); }
@@ -79,14 +79,14 @@ test('document aliases retain direct-ID priority and offline decoration without 
     assert.deepEqual(folder.dataset, {});
 });
 
-test('Home resolves saved remote aliases in their stored order and omits removed entries', async () => {
+test('Home resolves saved remote aliases in deterministic order and omits removed entries', async () => {
     const { api } = await library({
         entries: [file('local-doc', 'Offline.pdf', { remoteId: 'remote-doc' }), file('second'),
             file('removed', 'Removed.pdf', { trashed: true }), directory('dir')],
         views: { recents: ['second', 'remote-doc', 'removed', 'unknown'], starred: ['dir'], shared: [] }
     });
     const home = api.home();
-    assert.deepEqual(ids(home.recents), ['second', 'local-doc']);
+    assert.deepEqual(ids(home.recents), ['local-doc', 'second']);
     assert.deepEqual(ids(home.starred), ['dir']);
     assert.deepEqual(ids(home.shared), []);
 });
@@ -119,4 +119,10 @@ test('ordering reflects a changed observed timestamp without reparsing stale val
     assert.deepEqual(ids(first), ['first', 'second']);
     first[1].modifiedTime = '2026-10-04T00:00:00Z';
     assert.deepEqual(ids(api.folder('root')), ['second', 'first']);
+});
+
+test('recently opened documents do not swap when background uploads change modification times',async()=>{
+ const {api,state}=await library({entries:[file('a','A.pdf',{modifiedTime:'2026-10-22T10:00:00Z'}),file('b','B.pdf',{modifiedTime:'2026-10-22T11:00:00Z'})],docs:[{id:'a',lastOpenedAt:200},{id:'b',lastOpenedAt:100}],views:{recents:['b','a']}});
+ assert.deepEqual(ids(api.home().recents),['a','b']);
+ assert.deepEqual(ids(api.recentItems([file('b','B.pdf',{modifiedTime:'2026-10-23T11:00:00Z'}),file('a') ])),['a','b']);
 });

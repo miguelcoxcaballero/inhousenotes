@@ -1833,6 +1833,7 @@
         let driveSyncMaxTimeout = null;
         let driveSaveInProgress = false;
         let driveSavePhase = 'idle';
+        let driveLastSaveError = null;
         let driveUploadProgress = null;
         const driveResumableSessions = new Map();
         let driveSaveQueued = false;
@@ -7507,7 +7508,7 @@
                 }
                 if (!res.ok && !acceptedStatuses.includes(res.status)) {
                     const message = await res.text().catch(() => '');
-                    throw new Error(`Drive API error ${res.status}: ${message}`);
+                    throw Object.assign(new Error(`Drive API error ${res.status}: ${message}`), { code: res.status, status: res.status });
                 }
                 return res;
             } catch (err) {
@@ -9401,7 +9402,9 @@
         // the 5-second auto-refresh never causes a visible flicker.
         function renderDriveRecents(files) {
             if (!driveRecentsEl) return;
-            diffRenderDriveList(driveRecentsEl, files || [], createDriveFileCard);
+            const library = window.InhouseOfflineLibrary;
+            const list = library?.ready() ? library.recentItems(files || []) : files || [];
+            diffRenderDriveList(driveRecentsEl, list, createDriveFileCard);
         }
 
         function renderDriveStarred(files) {
@@ -10860,8 +10863,7 @@
 
         function showDriveOpenError(message) {
             showStatus(message,{error:true,preserveState:true});
-            const notice=document.getElementById('offline-sync-status');
-            if(notice){notice.hidden=false;notice.dataset.phase='error';notice.querySelector('[data-sync-label]').textContent=message;notice.querySelector('button').hidden=true;}
+            if(driveStatusEl){driveStatusEl.textContent=message;driveStatusEl.style.display='block';}
         }
         let offlineOpenInProgress = false;
         async function openDriveFile(file) {
@@ -17212,6 +17214,7 @@
 
         function applyViewportTransformStyle() {
             canvasContainer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+            documentFastScroller?.schedule();
         }
 
         function scheduleViewportTransformRender() {
@@ -24147,6 +24150,7 @@
             deferredDriveSave = false;
             driveSaveQueued = false;
             driveSaveBlockedReason = '';
+            driveLastSaveError = null;
             driveSavePhase = 'idle';
             driveUploadProgress = null;
             driveResumableSessions.clear();
@@ -25952,6 +25956,7 @@
                     rememberOwnDriveWrite(updateRes || {});
                     saveDriveSession();
                 }
+                driveLastSaveError = null;
                 await window.InhouseOfflineApp.confirmed(fileId,pdfBlob,{id:fileId,headRevisionId:state.driveHeadRevisionId,version:state.driveRevisionVersion,modifiedTime:state.driveLastKnownModified?new Date(state.driveLastKnownModified).toISOString():null},uploadedContentVersion,sessionToken);
                 assertCurrent();
                 markDriveContentUploaded(uploadedContentVersion);
@@ -26030,6 +26035,7 @@
                         scheduleDeferredDriveSaveRetry();
                     }
                 } else {
+                    driveLastSaveError = err;
                     console.error('queueDriveSave failed:', err);
                     recordSaveDebug(`Drive save failed: ${err?.message || err}`);
                     setPresenceSavePhase('');
@@ -29975,7 +29981,7 @@
                 }[driveSavePhase] || 'Preparing the Drive update.';
                 driveClass = 'syncing';
             } else if (pendingDrive) {
-                driveLabel = driveSavePhase === 'retrying' ? 'Retrying' : 'Waiting';
+                driveLabel = driveSavePhase === 'retrying' ? (driveLastSaveError ? 'Upload failed' : 'Retrying') : 'Waiting';
                 driveDetail = driveSavePhase === 'retrying'
                     ? 'The last upload did not finish. Retrying automatically.'
                     : (local.pending ? 'Waiting for the local copy to finish saving.'
@@ -30112,7 +30118,8 @@
             const actionLabel = view.local.error ? 'Retry save' : (view.local.pending ? 'Save now' : (view.reconnect ? 'Reconnect Drive' : (view.phase === 'error' ? 'Retry save' : 'Save now')));
             if (els.action.textContent !== actionLabel) els.action.textContent = actionLabel;
             const notice = view.local.error ? 'Keep this document open and retry.'
-                : driveSaveBlockedReason ? 'Some pages could not be recovered. Keep this document open.' : '';
+                : driveSaveBlockedReason ? 'Some pages could not be recovered. Keep this document open.'
+                : view.pendingDrive ? window.InhouseOfflineLibrary?.syncErrorText(window.InhouseOfflineLibrary?.syncStatus().errors.find(error => !error.id || error.id === (state.offlineLocalId || state.driveFileId)) || driveLastSaveError) || '' : '';
             if (els.notice.textContent !== notice) els.notice.textContent = notice;
             if (els.notice.hidden !== !notice) els.notice.hidden = !notice;
         }
@@ -34241,6 +34248,77 @@
             });
         }
 
+        // Same thumb silhouette, dimensions and paired arrows as Photos'
+        // mobile timeline/scrubber.widget.dart (_CircularThumb).
+        var documentFastScroller;
+        function installDocumentFastScroller() {
+            const thumb=document.createElement('div');
+            thumb.id='document-fast-scroll';thumb.tabIndex=0;thumb.hidden=true;
+            thumb.setAttribute('role','scrollbar');thumb.setAttribute('aria-label','Fast scroll');
+            thumb.setAttribute('aria-orientation','vertical');thumb.setAttribute('aria-valuemin','0');
+            thumb.setAttribute('aria-valuemax','100');
+            thumb.innerHTML='<svg width="24" height="28" viewBox="0 0 24 28" aria-hidden="true"><path d="M6 12h12L12 4z M6 16h12l-6 8z" fill="currentColor"/></svg>';
+            document.body.append(thumb);
+            let raf=0,drag=null,metrics=null;
+            const selected=()=>isDriveHomeVisible()?(isDriveFolderViewOpen()?driveFolderViewScrollEl:driveMain):!editorView.classList.contains('hidden')?canvasViewport:null;
+            const measure=()=>{
+                const target=selected();if(!target)return null;
+                const rect=target.getBoundingClientRect(),editor=target===canvasViewport;
+                const max=editor?Math.max(0,getContentHeight()*state.zoom-rect.height+40):target.scrollHeight-target.clientHeight;
+                return {target,editor,max,top:Math.max(0,rect.top)+12,travel:Math.max(1,Math.min(innerHeight,rect.bottom)-Math.max(0,rect.top)-72),offset:editor?20-state.panY:target.scrollTop};
+            };
+            const render=()=>{
+                raf=0;metrics=measure();
+                thumb.hidden=!metrics||metrics.max<2||metrics.travel<30;
+                if(thumb.hidden){drag=null;return;}
+                const ratio=Math.max(0,Math.min(1,metrics.offset/metrics.max));
+                thumb.style.transform=`translateY(${metrics.top+ratio*metrics.travel}px)`;
+                thumb.setAttribute('aria-valuenow',String(Math.round(ratio*100)));
+                if(!metrics.target.id)metrics.target.id='drive-main-scroll';
+                thumb.setAttribute('aria-controls',metrics.target.id);
+            };
+            const schedule=()=>{if(!raf)raf=requestAnimationFrame(render);};
+            const move=ratio=>{
+                const m=measure();if(!m)return;
+                const offset=Math.max(0,Math.min(1,ratio))*m.max;
+                if(m.editor){state.panY=20-offset;state.overscrollY=0;scheduleViewportTransformRender();scheduleVisiblePageUpdate();scheduleViewSave();}
+                else m.target.scrollTop=offset;
+                schedule();
+            };
+            thumb.addEventListener('pointerdown',event=>{
+                if(event.button!==0)return;
+                event.preventDefault();event.stopPropagation();render();
+                if(!metrics)return;
+                if(state.inertiaFrame){cancelAnimationFrame(state.inertiaFrame);state.inertiaFrame=null;}
+                drag={id:event.pointerId,y:event.clientY,ratio:Math.max(0,Math.min(1,metrics.offset/metrics.max)),travel:metrics.travel,target:metrics.target};
+                thumb.setPointerCapture(event.pointerId);thumb.classList.add('is-dragging');
+            });
+            thumb.addEventListener('pointermove',event=>{
+                if(!drag||event.pointerId!==drag.id)return;
+                event.preventDefault();event.stopPropagation();
+                if(selected()!==drag.target){drag=null;return;}
+                move(drag.ratio+(event.clientY-drag.y)/drag.travel);
+            });
+            const release=()=>{drag=null;thumb.classList.remove('is-dragging');schedule();};
+            for(const name of ['pointerup','pointercancel','lostpointercapture'])thumb.addEventListener(name,release);
+            thumb.addEventListener('keydown',event=>{
+                metrics=measure();if(!metrics)return;
+                const steps={ArrowDown:.04,ArrowUp:-.04,PageDown:.2,PageUp:-.2};
+                if(event.key==='Home'||event.key==='End'||event.key in steps){event.preventDefault();event.stopPropagation();move(event.key==='Home'?0:event.key==='End'?1:metrics.offset/metrics.max+steps[event.key]);}
+            });
+            for(const el of [driveMain,driveFolderViewScrollEl])el?.addEventListener('scroll',schedule,{passive:true});
+            const resize=new ResizeObserver(schedule);
+            for(const el of [driveMain,driveFolderViewScrollEl,canvasViewport,canvasContainer,driveRecentsEl,driveFolderViewScrollEl?.firstElementChild])if(el)resize.observe(el);
+            const visibility=new MutationObserver(schedule);
+            for(const el of [driveHome,editorView,driveFolderViewEl])if(el)visibility.observe(el,{attributes:true,attributeFilter:['class','data-home-tab']});
+            const contents=new MutationObserver(schedule);
+            for(const el of [driveMain,driveFolderViewScrollEl])if(el)contents.observe(el,{childList:true,subtree:true});
+            window.addEventListener('resize',schedule,{passive:true});schedule();
+            return {schedule};
+        }
+
         // Start
         const appInitializationPromise = OFFLINE_WORKER ? window.InhouseOfflineApp.worker() : init();
         installLocalE2ETestApi(appInitializationPromise);
+
+        if (!OFFLINE_WORKER) documentFastScroller = installDocumentFastScroller();

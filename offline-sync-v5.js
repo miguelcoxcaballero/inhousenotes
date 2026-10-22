@@ -31,17 +31,23 @@
                 await S.patch('entries',account,id,old=>({...old,remoteId}));
                 return remoteId;
             };
-            const multipart=async (id,blob,meta,etag,create)=>{
+            const multipart=async (id,blob,meta,etag,create,tokenApi='v3')=>{
+                const legacyConditional=!create&&tokenApi==='v2';
+                const uploadMeta=legacyConditional?{properties:Object.entries(meta.appProperties||{}).map(([key,value])=>({key,value,visibility:'PRIVATE'}))}:meta;
                 const boundary=`ihn_${crypto.randomUUID()}`;
-                const body=new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,JSON.stringify(meta),
+                const body=new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,JSON.stringify(uploadMeta),
                     `\r\n--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`,blob,`\r\n--${boundary}--\r\n`]);
                 const headers={'Content-Type':`multipart/related; boundary=${boundary}`};
                 if (!create) {
                     if (!etag) throw failure('Drive did not provide a conditional-write token','needs-merge');
                     headers['If-Match']=etag;
                 }
-                return (await request(`${UPLOAD}${create?'':`/${encodeURIComponent(id)}`}?uploadType=multipart&fields=${encodeURIComponent(fields)}`,
+                // Use the same API representation that supplied the conditional token.
+                const endpoint=legacyConditional?UPLOAD.replace('/v3/','/v2/'):UPLOAD;
+                const projection=legacyConditional?'id,title,mimeType,modifiedDate,version,headRevisionId':fields;
+                const result=await (await request(`${endpoint}${create?'':`/${encodeURIComponent(id)}`}?uploadType=multipart&fields=${encodeURIComponent(projection)}`,
                     {method:create?'POST':'PATCH',headers,body})).json();
+                return legacyConditional?{...result,...(result.title?{name:result.title}:{}),...(result.modifiedDate?{modifiedTime:result.modifiedDate}:{}),appProperties:meta.appProperties}:result;
             };
             const queue=await S.list('outbox',account);
             // Resolve parents first, even when folder names are duplicated.
@@ -111,16 +117,24 @@
                         current=after;
                     }
                     if ((await S.read('documents',account,op.id))?.generation!==generation) {summary.pending++;continue;}
+                    // Drive v3 does not guarantee an exposed ETag. v2 supplies it in
+                    // JSON; tie it to the same revision before conditional writing.
+                    if(current&&!current.etag) {
+                        const token=await (await request(`https://www.googleapis.com/drive/v2/files/${encodeURIComponent(id)}?fields=etag,version`,{headers:{'Cache-Control':'no-cache'}})).json();
+                        if(!token.etag)throw failure('Drive did not provide a conditional-write token','needs-merge');
+                        if(!current.meta.version || String(token.version)!==String(current.meta.version))throw failure('Remote document changed before upload',412);
+                        current.etag=token.etag;current.tokenApi='v2';
+                    }
                     progress(op.id,'uploading');
                     const saved=await multipart(id,blob,{...(current?{}:{id,name:entry?.name||'Untitled.pdf',mimeType:'application/pdf',parents:[parent]}),
-                        appProperties:{...(current?.meta.appProperties||{}),ihnOfflineReceipt:receipt}},current?.etag,!current);
+                        appProperties:{...(current?.meta.appProperties||{}),ihnOfflineReceipt:receipt}},current?.etag,!current,current?.tokenApi);
                     await S.acknowledge(account,op.id,generation,saved,blob);
                     summary.saved++;
                     await adapter.saved?.(op.id,saved,blob);
                 } catch(error) {
                     summary.pending++;
                     summary.errors.push({id:op.id,code:error.code||'network',message:error.message});
-                    await S.patch('outbox',account,op.id,old=>old.kind?{...old,lastError:error.code||'network',attemptedAt:Date.now()}:null);
+                    await S.patch('outbox',account,op.id,old=>old.kind?{...old,lastError:error.code||'network',lastErrorMessage:error.message,attemptedAt:Date.now()}:null);
                 }
             }
             return summary;

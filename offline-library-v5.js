@@ -4,9 +4,11 @@
     let host, account='', entries=[], documents=new Map(), captureTimer, syncFrame;
     let initialized=false, loaded=false, resumed=false, cataloguePromise=null;
     let savedViews={}, kicking=false;
+    let pendingOperations=new Map();
     let syncState={phase:'idle',pending:0,id:null,errors:[]};
     function setSyncProgress(progress) {
         syncState={...syncState,...progress};
+        document.querySelectorAll('[data-drive-item-id]').forEach(card=>decorate(card,card.dataset.driveItemId));
         host?.syncChanged?.({...syncState});
     }
     async function syncFinished(result={}) {
@@ -85,11 +87,13 @@
         const byId=new Map(items.map(e=>[e.id,e]));
         entries=items.filter(e=>!aliases.has(e.id)).map(e=>{
             const remote=!e.pending&&e.remoteId?byId.get(e.remoteId):null;
-            const item=remote?{...e,...remote,id:e.id,remoteId:e.remoteId}:e;
+            const remoteIsNewer=remote&&(Date.parse(remote.modifiedTime)||0)>=(Date.parse(e.modifiedTime)||0);
+            const item=remoteIsNewer?{...e,...remote,id:e.id,remoteId:e.remoteId}:e;
             return {...item,parents:(item.parents||['root']).map(p=>aliases.get(p)||p)};
         });
         documents=new Map(docs.map(doc=>[doc.id,doc]));
         savedViews=views||{};indexCatalogue();loaded=true;
+        pendingOperations=new Map(outbox.map(op=>[op.id,op]));
         setSyncProgress({pending:outbox.length,...(!outbox.length?{errors:[]}:{})});
         document.querySelectorAll('[data-drive-item-id]').forEach(card=>decorate(card,card.dataset.driveItemId));
     }
@@ -103,6 +107,25 @@
         else {card.removeAttribute('aria-disabled');card.removeAttribute('title');}
         card.dataset.offlineAvailable=available?'true':'false';
         card.dataset.offlinePinned=doc?.pinned?'true':'false';
+        const op=pendingOperations.get(doc?.id||id),active=syncState.phase!=='idle'&&[id,doc?.id,doc?.remoteId].includes(syncState.id);
+        let badge=card.querySelector('.document-sync-status');
+        if(!op&&!active){badge?.remove();return;}
+        if(!badge){badge=document.createElement('button');badge.type='button';badge.className='document-sync-status';badge.setAttribute('aria-live','polite');card.append(badge);}
+        const error=syncState.errors.find(e=>!e.id||e.id===(doc?.id||id))||(op?.lastError?{code:op.lastError,message:op.lastErrorMessage}:null);
+        badge.dataset.phase=active?syncState.phase:error?'error':'pending';
+        badge.textContent=active?({checking:'Checking…',building:'Preparing…',merging:'Merging…',uploading:'Uploading…'}[syncState.phase]||'Syncing…'):offline()?'Saved offline':error?'Retry upload':'Waiting to upload';
+        badge.title=error?syncErrorText(error):badge.textContent;
+        badge.onclick=event=>{event.preventDefault();event.stopPropagation();if(!offline()&&!active)host?.retrySync?.();};
+    }
+    function syncErrorText(error) {
+        if(!error)return '';
+        const text=String(error.message||'');
+        if(error.code===401||/auth|sign.?in|refresh token|access token|token expired/i.test(text))return 'Reconnect Google Drive to upload. Your local copy is safe.';
+        if(error.code===403)return /quota|storage/i.test(text)?'Google Drive storage is full. Your local copy is safe.':'Drive denied access. Check editing permission.';
+        if(error.code===404||error.code==='remote-deleted')return 'The Drive file is missing or unavailable. Your local copy is safe.';
+        if(error.code===412)return 'The document changed on Drive. Retrying the merge.';
+        if(error.code==='needs-merge')return 'Waiting to verify the Drive revision. Your local copy is safe.';
+        return 'Upload failed: '+(text.replace(/Drive API error \d+:.*$/s,'Drive request failed').slice(0,160)||'Check your connection and retry.');
     }
     function folder(id, search='') {
         const needle=search.toLowerCase();
@@ -118,15 +141,28 @@
     }
     function home() {
         const active=activeEntries;
-        const ordered=list=>list.sort((a,b)=>modifiedTime(b)-modifiedTime(a));
+        const ordered=list=>list.sort(compareRecents);
         const view=(name,fallback)=>Array.isArray(savedViews[name])
             ? savedViews[name].map(id=>activeAliases.get(id)).filter(Boolean) : fallback;
         const files=active.filter(e=>e.mimeType==='application/pdf'&&!host.quickAccess?.(e));
-        const pending=files.filter(e=>e.pending||e.id.startsWith('local-'));
         const recents=view('recents',ordered(files).slice(0,12));
-        return {recents:[...pending.filter(e=>!recents.some(r=>r.id===e.id)),...recents].slice(0,12),
+        return {recents:recentItems(recents),
             starred:view('starred',ordered(active.filter(e=>e.starred)).slice(0,12)),
             shared:view('shared',ordered(active.filter(e=>e.ownedByMe===false)).slice(0,24))};
+    }
+    function compareRecents(a,b) {
+        const openedA=record(a.id)?.lastOpenedAt||0,openedB=record(b.id)?.lastOpenedAt||0;
+        const delta=openedB-openedA||modifiedTime(b)-modifiedTime(a);
+        const ak=String(a.remoteId||a.id),bk=String(b.remoteId||b.id);
+        return delta||(ak<bk?-1:ak>bk?1:0);
+    }
+    function recentItems(remote) {
+        const byId=new Map();
+        // Both cached and network renders use the same ordering and pending
+        // aliases. Never prepend the outbox in IndexedDB key order.
+        for(const entry of remote)byId.set(entry.remoteId||entry.id,entry);
+        for(const entry of activeEntries)if(entry.mimeType==='application/pdf'&&(entry.pending||entry.id.startsWith('local-')))byId.set(entry.remoteId||entry.id,entry);
+        return [...byId.values()].sort(compareRecents).slice(0,12);
     }
     async function observed(items,parent,view) {
         if (!account) return;
@@ -334,6 +370,6 @@
     }
     function disable() {initialized=false;resumed=false;}
     function logout() {setSyncProgress({phase:'idle',pending:0,id:null,errors:[]});account='';loaded=false;savedViews={};entries=[];documents.clear();indexCatalogue();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
-    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&loaded&&!!account,folder,combine,home,observed,cache,capture,scheduleCapture,prepared,
+    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&loaded&&!!account,folder,combine,home,recentItems,syncErrorText,observed,cache,capture,scheduleCapture,prepared,
         openRecord,pin,createFolder,catalogue,kick,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
 })(window);
