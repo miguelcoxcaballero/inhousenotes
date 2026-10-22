@@ -130,9 +130,15 @@
     async function merge(doc,meta,remoteBlob) {
         // Called after local PDF construction, so this isolated editor contains
         // the exact local snapshot plus its persisted baseline and tombstones.
-        const result=await pullRemoteChanges(meta,{allowWhileLocalPending:true,preserveLocalUnsynced:true,visualSync:false,
+        const result=await pullRemoteChanges(meta,{allowWhileLocalPending:true,preserveLocalUnsynced:true,visualSync:false,uploadManagedExternally:true,
             downloadedSnapshot:remoteBlob instanceof Blob?{fileId:state.driveFileId,blob:remoteBlob,meta}:null});
-        if(!result || result.error || result.busy || result.deferred || result.stale)throw new Error('Concurrent changes could not be merged yet');
+        if(result?.error)throw result.cause||new Error('Concurrent changes could not be merged');
+        if(!result || result.busy || result.deferred || result.stale)throw Object.assign(new Error(
+            result?.backgroundRenderFailed?'The remote PDF background could not be reconstructed':
+            result?.supersededRevision?'The Drive revision changed during merge':
+            result?.revisionRecheckFailed?'The Drive revision could not be rechecked':
+            'Concurrent changes could not be merged yet'),{code:result?.supersededRevision?412:'needs-merge'});
+        if(result.noMetadata)throw Object.assign(new Error('The remote PDF has no editable merge data; both copies are retained'),{code:'merge-unavailable'});
         return buildPdfBlob({sessionToken:getDocumentSessionToken(),...DRIVE_UPLOAD_PDF_OPTIONS});
     }
     async function authorizeBackground() {
@@ -185,7 +191,7 @@
                 if(active?.enabled===false||(localStorage.getItem('drive-hint-email')||'').toLowerCase()!==account)throw new Error('Account signed out');
                 return driveFetch(url,options);
             };
-            result=await root.InhouseOfflineSync.run(account,{fetch:guardedFetch,build:workerBuild,merge:async(doc,meta,remoteBlob)=>{await restore(doc,false);return merge(doc,meta,remoteBlob);},
+            result=await root.InhouseOfflineSync.run(account,{background:true,fetch:guardedFetch,build:workerBuild,merge:async(doc,meta,remoteBlob)=>{await restore(doc,false);return merge(doc,meta,remoteBlob);},
                 progress:progress=>root.parent?.postMessage({type:'ihn-offline-progress',progress},location.origin),
                 skip:id=>editor?.documentId===id&&editor.expires>Date.now()});
         } catch(error) {result={pending:1,errors:[{message:error.message}]};}
@@ -213,6 +219,16 @@
             await L.reload().catch(()=>{});
         }
     }
+    let syncRetryTimer=null;
+    function retryBusySave(result,force,options,context) {
+        if(!result?.busy||options?.priority)return;
+        clearTimeout(syncRetryTimer);
+        syncRetryTimer=setTimeout(()=>{
+            syncRetryTimer=null;
+            if(isDocumentPersistenceContextCurrent(context)&&driveDirty)
+                void queueDriveSave(force,options).catch(()=>{});
+        },1000);
+    }
     async function queueSave(force,options,normal) {
         if(L.isWorker)return;
         if(!L.ready())return normal(force,options);
@@ -227,6 +243,7 @@
             L.setSyncProgress({phase:'checking',id,errors:[]});
             let result;
             try {result=await root.InhouseOfflineSync.run(L.account(),{
+                targetId:options?.priority?id:null,
                 fetch:(url,options)=>{
                     if(!isDocumentPersistenceContextCurrent(requestContext))throw createAbortError('Sync document changed');
                     return driveFetch(url,options);
@@ -243,12 +260,36 @@
             } catch(error) {result={errors:[{message:error.message}]};}
             finally {await L.syncFinished(result||{});}
             if(result?.errors?.length)showStatus(L.syncErrorText(result.errors[0]),{preserveState:true});
+            retryBusySave(result,force,options,requestContext);
             return result;
         }
-        const session=getDocumentSessionToken();
         const result=await S.withLease(L.account(),'sync',()=>isDocumentPersistenceContextCurrent(requestContext)?normal(force,options):{cancelled:true});
-        if(result?.busy)setTimeout(()=>{if(session===getDocumentSessionToken()&&driveDirty)queueDriveSave(force,options);},1000);
+        retryBusySave(result,force,options,requestContext);
         return result;
     }
-    root.InhouseOfflineApp=Object.freeze({authorizeBackground,initialize,reconcileStartup,worker,restore,newDocument,confirmed,queueSave,renderHome,renderFolder,currentId});
+    async function saveNow() {
+        if(!L.ready()||L.offline())return queueDriveSave(true);
+        const account=L.account(),id=currentId(),context=captureDocumentPersistenceContext(),token=crypto.randomUUID();
+        if(!id)return queueDriveSave(true);
+        const priority={documentId:id,token,expires:Date.now()+60000};
+        await S.put('settings',account,'sync-priority',priority);
+        const renew=setInterval(()=>{void S.patch('settings',account,'sync-priority',old=>old.token===token?{...old,expires:Date.now()+60000}:old).catch(()=>{});},10000);
+        try {
+            const deadline=Date.now()+120000;
+            while(isDocumentPersistenceContextCurrent(context)&&L.account()===account&&!L.offline()){
+                const result=await queueDriveSave(true,{priority:true});
+                if(!result?.busy)return result;
+                if(Date.now()>=deadline){showStatus('Another upload is still finishing. Your local copy is safe; retry shortly.',{preserveState:true});return result;}
+                // Let the current network request finish, then take the lease
+                // before any further background documents are started.
+                await new Promise(resolve=>setTimeout(resolve,250));
+            }
+            return {cancelled:true};
+        } finally {
+            clearInterval(renew);
+            await S.patch('settings',account,'sync-priority',old=>old.token===token?null:old);
+            void L.kick();
+        }
+    }
+    root.InhouseOfflineApp=Object.freeze({authorizeBackground,initialize,reconcileStartup,worker,restore,newDocument,confirmed,queueSave,saveNow,renderHome,renderFolder,currentId});
 })(window);

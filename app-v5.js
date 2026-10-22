@@ -3333,7 +3333,10 @@
                 tempCtx.fillStyle = 'white';
                 tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-                const renderTask = pdfPage.render({ canvasContext: tempCtx, viewport });
+                // Hidden sync frames have no animation frames. PDF.js display
+                // rendering waits for rAF; print rendering runs independently.
+                const renderTask = pdfPage.render({ canvasContext: tempCtx, viewport,
+                    intent: OFFLINE_WORKER || document.hidden ? 'print' : 'display' });
                 activePdfBackgroundRenderTask = renderTask;
                 try {
                     await renderTask.promise;
@@ -27990,7 +27993,7 @@
                 if (mergeResult && mergeResult.hasLocalMerges && state.driveCanEdit !== false) {
                     console.log('Local strokes merged into pull — saving back to Drive');
                     showStatus('Syncing merged changes...', { phase: 'syncing' });
-                    requestImmediateDriveSave({ force: true });
+                    if (!options.uploadManagedExternally) requestImmediateDriveSave({ force: true });
                 } else {
                     if (!preserveLocalAtApply) {
                         markDriveContentUploaded();
@@ -28008,7 +28011,7 @@
             } catch (err) {
                 console.error('pullRemoteChanges failed:', err);
                 showStatus('Sync failed', { error: true });
-                return { changed: false, hasLocalMerges: false, error: true };
+                return { changed: false, hasLocalMerges: false, error: true, cause: err };
             } finally {
                 collabPullInProgress = false;
                 if (visualSyncStarted) markRemotePresenceSyncFinished();
@@ -29185,10 +29188,15 @@
                     backgroundFieldKey,
                     localBackgroundValue
                 );
-                const latestLocalBackgroundRecord = latestLocalFieldMetadata.fields?.[backgroundFieldKey] || null;
+                const originalBackgroundRecord = localFieldMetadata.fields?.[backgroundFieldKey] || null;
+                const remoteBackgroundRecord = remoteFieldMetadata.fields?.[backgroundFieldKey] || null;
                 const mergedBackgroundRecord = currentMergedFieldMetadata.fields?.[backgroundFieldKey] || null;
+                // The document registers were merged before hydrating pages.
+                // Compare against the original local register, not that already
+                // merged map, while still allowing a newer local edit to win.
                 const remoteBackgroundWins = structuralIdentityChanged || (
-                    ihnStableStringify(mergedBackgroundRecord) !== ihnStableStringify(latestLocalBackgroundRecord)
+                    ihnStableStringify(mergedBackgroundRecord) === ihnStableStringify(remoteBackgroundRecord)
+                    && ihnStableStringify(mergedBackgroundRecord) !== ihnStableStringify(originalBackgroundRecord)
                 );
                 const nextBackgroundSource = remoteBackgroundWins
                     ? String(resolvedBackgroundValue?.backgroundSource || remoteBackgroundSource)
@@ -30227,7 +30235,7 @@
                     if (getLocalSaveStatus().pending || getLocalSaveStatus().error) await queueSave();
                     if (!isDocumentSessionTokenValid(sessionToken)) return;
                     if (!getLocalSaveStatus().error && !driveAuthNeedsReconnect && hasPendingDriveSave() && !driveIsOffline()) {
-                        await queueDriveSave(true);
+                        await window.InhouseOfflineApp.saveNow();
                     }
                 } finally {
                     saveDebugElements.actionBusy = false;
@@ -33448,7 +33456,7 @@
                             const viewport = pdfPage.getViewport({ scale });
                             pdfCanvas.width = Math.max(1, Math.round(viewport.width));
                             pdfCanvas.height = Math.max(1, Math.round(viewport.height));
-                            const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport });
+                            const renderTask = pdfPage.render({ canvasContext: pdfCtx, viewport, intent: 'print' });
                             let abortHandler = null;
                             if (abortSignal) {
                                 abortHandler = () => {

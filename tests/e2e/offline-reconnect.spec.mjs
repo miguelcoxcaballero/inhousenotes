@@ -66,13 +66,13 @@ test('active offline edits retry after a busy sync lease and show upload progres
   await page.waitForFunction(()=>!InhouseOfflineLibrary.offline());
   await page.evaluate(()=>queueDriveSave(true));
   expect(uploads).toBe(0);
-  await page.evaluate(async account=>{await InhouseOfflineStore.patch('leases',account,'sync',()=>null);window.retrySync=InhouseOfflineLibrary.kick();},account);
+  await page.evaluate(async account=>{await InhouseOfflineStore.patch('leases',account,'sync',()=>null);},account);
   await expect.poll(()=>uploads).toBe(1);
   expect(await page.evaluate(()=>getSavePresentation().driveLabel)).toBe('Uploading');
   await page.evaluate(()=>renderDriveRecents([{id:'pending',name:'Pending.pdf',mimeType:'application/pdf'}]));
   await expect(page.locator('#drive-recents .document-sync-status')).toHaveAttribute('data-phase','uploading');
   await expect(page.locator('#offline-sync-status')).toHaveCount(0);
-  release();await page.evaluate(()=>window.retrySync);
+  release();
   await expect.poll(()=>page.evaluate(async account=>(await InhouseOfflineStore.list('outbox',account)).length,account)).toBe(0);
   expect(await page.evaluate(()=>driveDirty)).toBe(false);
   expect(await page.evaluate(async account=>(await InhouseOfflineStore.read('documents',account,'pending')).blob.size,account)).toBeGreaterThan(100);

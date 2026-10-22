@@ -11,6 +11,13 @@
     async function run(account,adapter={}) {
         return S.withLease(account,'sync',async assertLease=>{
             const summary={saved:0,pending:0,errors:[]};
+            const yieldToManualSave=async()=>{
+                if(!adapter.background)return false;
+                const priority=await S.read('settings',account,'sync-priority');
+                if(!priority?.documentId||!(priority.expires>Date.now()))return false;
+                summary.pending=(await S.list('outbox',account)).length;
+                return true;
+            };
             const progress=(id,phase)=>{try{adapter.progress?.({id,phase});}catch(_){}};
             const request=async (url,options={})=>{
                 await assertLease();
@@ -52,9 +59,18 @@
             const queue=await S.list('outbox',account);
             // Resolve parents first, even when folder names are duplicated.
             let folders=queue.filter(op=>op.kind==='folder');
+            if(adapter.targetId){
+                const target=await S.read('entries',account,adapter.targetId);
+                const ancestors=new Set();let parent=target?.parents?.[0];
+                while(parent?.startsWith('local-')&&!ancestors.has(parent)){
+                    ancestors.add(parent);parent=(await S.read('entries',account,parent))?.parents?.[0];
+                }
+                folders=folders.filter(op=>ancestors.has(op.id));
+            }
             for (let pass=0;folders.length && pass<=queue.length;pass++) {
                 const deferred=[];
                 for (const op of folders) {
+                    if(await yieldToManualSave())return summary;
                     try {
                         progress(op.id,'uploading');
                         const entry=await S.read('entries',account,op.id);
@@ -72,6 +88,7 @@
                 if (deferred.length===folders.length) {summary.pending+=deferred.length;break;} folders=deferred;
             }
             for (const op of queue.filter(op=>op.kind==='document')) {
+                if(await yieldToManualSave())return summary;
                 try {
                     let doc=await S.read('documents',account,op.id);
                     if (!doc?.dirty) continue;
@@ -125,6 +142,7 @@
                         if(!current.meta.version || String(token.version)!==String(current.meta.version))throw failure('Remote document changed before upload',412);
                         current.etag=token.etag;current.tokenApi='v2';
                     }
+                    if(await yieldToManualSave())return summary;
                     progress(op.id,'uploading');
                     const saved=await multipart(id,blob,{...(current?{}:{id,name:entry?.name||'Untitled.pdf',mimeType:'application/pdf',parents:[parent]}),
                         appProperties:{...(current?.meta.appProperties||{}),ihnOfflineReceipt:receipt}},current?.etag,!current,current?.tokenApi);
