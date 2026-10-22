@@ -125,7 +125,7 @@
         if(!badge){badge=document.createElement('button');badge.type='button';badge.className='document-sync-status';badge.setAttribute('aria-live','polite');card.append(badge);}
         const error=syncState.errors.find(e=>!e.id||e.id===(doc?.id||id))||(op?.lastError?{code:op.lastError,message:op.lastErrorMessage,phase:op.lastErrorPhase}:null);
         badge.dataset.phase=active?syncState.phase:error?'error':'pending';
-        badge.textContent=active?({checking:'Checking…',building:'Preparing…',merging:'Merging…',uploading:'Uploading…'}[syncState.phase]||'Syncing…'):error?'Retry upload':offline()?'Saved offline':'Waiting to upload';
+        badge.textContent=active?({checking:'Checking…',building:'Preparing…',merging:'Merging…',preserving:'Keeping both versions…',uploading:'Uploading…'}[syncState.phase]||'Syncing…'):error?'Retry upload':offline()?'Saved offline':'Waiting to upload';
         badge.title=error?syncErrorText(error):badge.textContent;
         badge.onclick=event=>{
             event.preventDefault();event.stopPropagation();

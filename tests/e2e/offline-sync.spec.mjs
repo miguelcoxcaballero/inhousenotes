@@ -66,3 +66,65 @@ test('folder dependencies resolve before child documents and retries reuse reser
  expect(result.summary.saved).toBe(3);expect(result.pending).toBe(0);expect(result.created[0].parents).toEqual(['root']);
  expect(result.created[1].parents).toEqual(['remote-1']);expect(result.created[2].pdf).toContain('"parents":["remote-2"]');
 });
+
+test('a byte-identical remote PDF does not require editable metadata',async({page})=>{
+ const result=await page.evaluate(async()=>{
+  const S=InhouseOfflineStore,a='flat-baseline@test';
+  await S.checkpoint(a,'doc',{blob:new Blob(['original PDF']),snapshot:{pages:[]},baseMeta:{version:'1'},entry:{parents:['root']}});
+  let merged=0,uploaded='';
+  const summary=await InhouseOfflineSync.run(a,{build:async()=>new Blob(['edited PDF']),merge:async()=>{merged++;throw Error('Must not merge unchanged PDF');},fetch:async(url,o={})=>{
+   if(o.method==='PATCH'){uploaded=await o.body.text();return Response.json({id:'doc',version:'3'});}
+   if(url.includes('alt=media'))return new Response('original PDF');
+   return Response.json({id:'doc',version:'2'},{headers:{ETag:'"2"'}});
+  }});
+  return {summary,merged,uploaded};
+ });
+ expect(result.summary.saved).toBe(1);expect(result.merged).toBe(0);expect(result.uploaded).toContain('edited PDF');
+});
+
+for(const lostReply of [false,true])test(`flattened remote is preserved in Drive before upload, including lost copy response (${lostReply})`,async({page})=>{
+ const result=await page.evaluate(async(lostReply)=>{
+  const S=InhouseOfflineStore,a='flat-conflict@test';
+  await S.checkpoint(a,'doc',{blob:new Blob(['local PDF']),baseMeta:{version:'1'},entry:{name:'Notes.pdf',parents:['folder']}});
+  let copy=null,reservations=0,creates=0,uploads=0;const events=[];
+  const adapter={merge:async()=>{throw Object.assign(Error('No editable data'),{code:'merge-unavailable'});},fetch:async(url,o={})=>{
+   if(url.includes('generateIds')){reservations++;return Response.json({ids:['copy']});}
+   if(o.method==='POST'){
+    creates++;events.push('copy');const body=await o.body.text();
+    copy=JSON.parse(body.split('\r\n\r\n')[1].split('\r\n--')[0]);
+    if(!body.includes('remote PDF'))throw Error('Missing original bytes');
+    if(lostReply&&creates===1)throw Error('Response lost');
+    return Response.json(copy);
+   }
+   if(o.method==='PATCH'){uploads++;events.push('upload');if(!copy)throw Error('Copy must exist first');return Response.json({id:'doc',version:'3'});}
+   if(url.includes('/copy?'))return copy?Response.json(copy):new Response('',{status:404});
+   if(url.includes('alt=media'))return new Response('remote PDF');
+   return Response.json({id:'doc',version:'2',parents:['folder']},{headers:{ETag:'"2"'}});
+  }};
+  const first=await InhouseOfflineSync.run(a,adapter);
+  const dirtyAfterFirst=(await S.read('documents',a,'doc')).dirty;
+  const last=lostReply?await InhouseOfflineSync.run(a,adapter):first;
+  return {first,last,dirtyAfterFirst,creates,uploads,reservations,events,pending:(await S.list('outbox',a)).length,copy};
+ },lostReply);
+ expect(result.last.errors).toEqual([]);expect(result.last.saved).toBe(1);expect(result.pending).toBe(0);
+ expect(result.creates).toBe(1);expect(result.reservations).toBe(1);expect(result.uploads).toBe(1);expect(result.events).toEqual(['copy','upload']);
+ expect(result.copy.parents).toEqual(['folder']);expect(result.copy.name).toContain('recovered Drive version');
+ if(lostReply){expect(result.dirtyAfterFirst).toBe(true);expect(result.first.errors).toHaveLength(1);}
+});
+
+test('failure to preserve a flattened remote never replaces the original',async({page})=>{
+ const result=await page.evaluate(async()=>{
+  const S=InhouseOfflineStore,a='flat-failure@test';let uploads=0;
+  await S.checkpoint(a,'doc',{blob:new Blob(['local']),baseMeta:{version:'1'},entry:{parents:['root']}});
+  const summary=await InhouseOfflineSync.run(a,{merge:async()=>{throw Object.assign(Error('No editable data'),{code:'merge-unavailable'});},fetch:async(url,o={})=>{
+   if(url.includes('generateIds'))return Response.json({ids:['copy']});
+   if(o.method==='POST')return new Response('',{status:403});
+   if(o.method==='PATCH'){uploads++;return Response.json({id:'doc'});}
+   if(url.includes('/copy?'))return new Response('',{status:404});
+   if(url.includes('alt=media'))return new Response('remote');
+   return Response.json({id:'doc',version:'2'},{headers:{ETag:'"2"'}});
+  }});
+  return {summary,uploads,dirty:(await S.read('documents',a,'doc')).dirty,pending:(await S.list('outbox',a)).length};
+ });
+ expect(result.summary.errors[0].code).toBe(403);expect(result.uploads).toBe(0);expect(result.dirty).toBe(true);expect(result.pending).toBe(1);
+});

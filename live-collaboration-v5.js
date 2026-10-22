@@ -2077,7 +2077,7 @@ async function ihnCreateOffer(targetPeerId, options = {}) {
             throw new Error('Live peer connection was replaced');
         }
         const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments?fields=id,createdTime`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
+            method: 'POST', timeout: DRIVE_META_TIMEOUT, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
         });
         const responseData = await response.json();
         if (ihnLivePeers.get(targetPeerId) !== peer
@@ -2178,7 +2178,7 @@ async function ihnAcceptOffer(comment, offer) {
             throw new Error('Live peer connection was replaced');
         }
         await driveFetch(`https://www.googleapis.com/drive/v3/files/${fileId}/comments/${comment.id}/replies?fields=id,createdTime`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
+            method: 'POST', timeout: DRIVE_META_TIMEOUT, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
         });
         ihnTouchPeerSignalling(peer);
         ihnScheduleDirectCommentPoll(offer.from, peer, { reset: true });
@@ -2441,6 +2441,7 @@ async function ihnPollSignals(options = {}) {
         // offers cannot be hidden by unrelated or stale discussion threads.
         let pageToken = '';
         const requestedPageTokens = new Set();
+        const signalErrors = [];
         while (true) {
             if (requestedPageTokens.has(pageToken)) {
                 throw new Error('Drive comments returned a repeated page token');
@@ -2452,14 +2453,24 @@ async function ihnPollSignals(options = {}) {
             ]);
             ihnAssertLiveSessionContext(fileId, generation);
             ihnAssertLiveOperationContext(operation);
-            for (const comment of data.comments || []) {
+            // A slow/rejected handshake must not block discovery of every other
+            // device. Keep work bounded, await every result, and continue the
+            // remaining pages before backing off failed requests.
+            const comments = data.comments || [];
+            for (let index = 0; index < comments.length; index += 4) {
+                const results = await Promise.allSettled(comments.slice(index, index + 4).map(async comment => {
+                    ihnAssertLiveSessionContext(fileId, generation);
+                    ihnAssertLiveOperationContext(operation);
+                    return ihnProcessSignalComment(comment, now, ownId);
+                }));
                 ihnAssertLiveSessionContext(fileId, generation);
                 ihnAssertLiveOperationContext(operation);
-                await ihnProcessSignalComment(comment, now, ownId);
+                for (const result of results) if (result.status === 'rejected') signalErrors.push(result.reason);
             }
             pageToken = String(data.nextPageToken || '');
             if (!pageToken) break;
         }
+        if (signalErrors.length) throw signalErrors[0];
         if (runId === ihnLiveSignalRunId) {
             ihnLiveSignalFailures = 0;
             ihnLiveNextSignalAttemptAt = 0;

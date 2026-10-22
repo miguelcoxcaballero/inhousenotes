@@ -59,6 +59,37 @@
                     {method:create?'POST':legacyConditional?'PUT':'PATCH',headers,body})).json();
                 return legacyConditional?{...result,...(result.title?{name:result.title}:{}),...(result.modifiedDate?{modifiedTime:result.modifiedDate}:{}),appProperties:meta.appProperties}:result;
             };
+            // A metadata-only Drive change is not a concurrent PDF edit. Compare
+            // exact baseline bytes before requiring editable collaboration data.
+            const sameBytes=async(a,b)=>{
+                if(!(a instanceof Blob)||a.size!==b.size)return false;
+                const digest=async blob=>new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()));
+                const [x,y]=await Promise.all([digest(a),digest(b)]);
+                return x.every((value,index)=>value===y[index]);
+            };
+            const preserveRemote=async(key,remote,current,entry,id)=>{
+                let recovery=await S.read('recoveries',account,key);
+                if(!recovery.remoteCopyId){
+                    const response=await request(`${API}/generateIds?count=1&space=drive&type=files`);
+                    const copyId=(await response.json()).ids?.[0];
+                    if(!copyId)throw failure('Drive did not reserve a recovery copy ID','retry');
+                    recovery=await S.patch('recoveries',account,key,old=>({...old,remoteCopyId:copyId}));
+                }
+                let existing;
+                try{existing=(await metadata(recovery.remoteCopyId)).meta;}catch(error){if(error.code!==404)throw error;}
+                if(existing){
+                    if(existing.trashed||existing.appProperties?.ihnRecoveryKey!==key)
+                        throw failure('The remote recovery copy could not be verified','recovery-unavailable');
+                }else{
+                    const name=String(entry?.name||'Document.pdf').replace(/\.pdf$/i,'');
+                    await multipart(recovery.remoteCopyId,remote,{
+                        id:recovery.remoteCopyId,name:`${name} (recovered Drive version).pdf`,mimeType:'application/pdf',
+                        parents:current.meta.parents?.length?current.meta.parents:[await S.resolveId(account,entry?.parents?.[0])],
+                        appProperties:{ihnRecoveryFor:id,ihnRecoveryKey:key}
+                    },null,true);
+                }
+                await S.patch('recoveries',account,key,old=>({...old,remoteCopySaved:true}));
+            };
             const queue=await S.list('outbox',account);
             // Resolve parents first, even when folder names are duplicated.
             let folders=queue.filter(op=>op.kind==='folder');
@@ -127,11 +158,22 @@
                     if (current && changed(doc.baseMeta,current.meta)) {
                         const remote=await (await request(`${API}/${encodeURIComponent(id)}?alt=media`,{headers:{'Cache-Control':'no-cache'}})).blob();
                         // Full originals are durable before any merge, including same-item edits.
-                        await S.put('recoveries',account,`${op.id}:${generation}:${current.meta.version||current.meta.headRevisionId}`,
-                            {fileId:op.id,name:entry?.name,localBlob:blob,remoteBlob:remote,snapshot:doc.snapshot,createdAt:Date.now()});
-                        if (!adapter.merge) throw failure('Concurrent edits are retained and waiting to merge','needs-merge');
-                        progress(op.id,'merging');
-                        blob=await adapter.merge(doc,current.meta,remote);
+                        const recoveryKey=`${op.id}:${generation}:${current.meta.version||current.meta.headRevisionId}`;
+                        await S.patch('recoveries',account,recoveryKey,old=>({...old,
+                            fileId:op.id,name:entry?.name,localBlob:blob,remoteBlob:remote,snapshot:doc.snapshot,createdAt:old.createdAt||Date.now()}));
+                        if(!await sameBytes(doc.blob,remote)){
+                            if (!adapter.merge) throw failure('Concurrent edits are retained and waiting to merge','needs-merge');
+                            progress(op.id,'merging');
+                            try{blob=await adapter.merge(doc,current.meta,remote);}
+                            catch(error){
+                                if(error.code!=='merge-unavailable')throw error;
+                                // A flattened/external PDF cannot be merged as strokes.
+                                // Preserve that exact revision in Drive before replacing it;
+                                // reservation makes retries and lost responses idempotent.
+                                progress(op.id,'preserving');
+                                await preserveRemote(recoveryKey,remote,current,entry,id);
+                            }
+                        }
                         const after=await metadata(id);
                         if (changed(current.meta,after.meta)) throw failure('Remote document changed during merge; retrying',412);
                         current=after;

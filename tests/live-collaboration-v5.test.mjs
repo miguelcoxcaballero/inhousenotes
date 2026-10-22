@@ -3290,3 +3290,34 @@ test('equivalent live convergence bumps the Drive PDF generation exactly once be
   assert.equal(harness.context.immediateDriveSaves, 1);
   assert.equal(harness.context.driveContentVersion, 2);
 });
+
+test('one slow or broken handshake does not hide other devices or later comment pages', async () => {
+  const keyEncoded = bytesToBase64Url(new Uint8Array(32).fill(0x79));
+  let release, started, second;
+  const held = new Promise(r => release = r);
+  const firstStarted = new Promise(r => started = r);
+  const secondStarted = new Promise(r => second = r);
+  const seen = [];
+  const harness = createHarness({driveFetch: async url => {
+    if(String(url).includes('fields=properties'))return {json:async()=>({properties:{ihn_live_key_v1:keyEncoded}})};
+    const later = new URL(url).searchParams.has('pageToken');
+    return {json:async()=>later?{comments:[{id:'later'}]}:{comments:[{id:'slow'},{id:'other'},{id:'broken'}],nextPageToken:'next'}};
+  }});
+  harness.context.processTestSignal = async comment => {
+    seen.push(comment.id);
+    if(comment.id==='slow'){started();await held;}
+    if(comment.id==='other')second();
+    if(comment.id==='broken')throw new Error('Transient handshake error');
+  };
+  vm.runInContext('ihnProcessSignalComment = processTestSignal', harness.context);
+  harness.api.claimLeader();
+  const poll = harness.api.pollSignals();
+  await firstStarted;
+  try {
+    await Promise.race([secondStarted,new Promise((_,reject)=>setTimeout(()=>reject(Error('Other peer blocked')),500))]);
+  } finally {release();}
+  await poll;
+  assert.deepEqual(seen,['slow','other','broken','later']);
+  assert.equal(harness.api.signalBusy(),false);
+  assert.ok(harness.api.nextSignalPollDelay()>=1000,'failed requests still back off');
+});
