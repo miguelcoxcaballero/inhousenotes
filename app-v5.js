@@ -1908,6 +1908,8 @@
         let lastPenEventTime = 0;
         let lastUserInteractionAt = 0;
         let documentSessionId = 1;
+        const offlineCheckpointLaunchId = crypto.randomUUID();
+        let documentSessionActivated = false;
         let touchDrawEnabled = false;
 
         function shouldAcceptDrawInput(e) {
@@ -15653,7 +15655,7 @@
                         const pendingDrive = hasPendingDriveSave();
                         if (pendingDrive) {
                             const copy = window.InhouseOfflineLibrary?.record(state.offlineLocalId || exitingFileId);
-                            if (!copy?.available || copy.session !== context.sessionToken
+                            if (!copy?.available || copy.session !== getOfflineDocumentSessionToken(context.sessionToken)
                                 || copy.contentVersion !== driveContentVersion) {
                                 throw new Error('The latest document snapshot is not durable yet');
                             }
@@ -23110,6 +23112,7 @@
 
         function buildMetaPayload(savedAt) {
             return {
+                sessionId: getDocumentSessionToken(),
                 pages: state.pages.map((page, pageIndex) => buildPageMeta(page, pageIndex)),
                 version: 3,
                 savedAt,
@@ -23339,6 +23342,22 @@
             }, null);
 
             if (best && Array.isArray(best.pages)) {
+                // Page records and the operation journal use the notebook's
+                // persisted session, not a fresh process-local counter.
+                let restoredSession = best.sessionId;
+                if (!Number.isSafeInteger(restoredSession) && best.pages[0]?.pageId) {
+                    // Upgrade existing notebooks whose metadata predates the
+                    // session field. Only adopt a page belonging to this cache.
+                    const db = await openNotebookDb();
+                    if (db) restoredSession = await new Promise(resolve => {
+                        try {
+                            const request = db.transaction(PAGE_STORE, 'readonly').objectStore(PAGE_STORE).get(0);
+                            request.onsuccess = () => resolve(request.result?.pageId === best.pages[0].pageId ? request.result.__sessionId : null);
+                            request.onerror = () => resolve(null);
+                        } catch (error) { resolve(null); }
+                    });
+                }
+                if (Number.isSafeInteger(restoredSession) && restoredSession > 0) documentSessionId = restoredSession;
                 const hasLegacyStrokes = best.pages.some(page => Array.isArray(page?.strokes));
                 if (hasLegacyStrokes) {
                     await migrateLegacyPayload(best);
@@ -24233,6 +24252,10 @@
             return getRecentUserActivityRemaining(windowMs) > 0;
         }
 
+        function getOfflineDocumentSessionToken(token = getDocumentSessionToken()) {
+            return `${offlineCheckpointLaunchId}:${token}`;
+        }
+
         function getDocumentSessionToken() {
             return documentSessionId;
         }
@@ -24270,6 +24293,7 @@
                 localPageStructureMutationToken = null;
             }
             documentSessionId += 1;
+            documentSessionActivated = true;
             clearTimeout(localSaveRetryTimer);
             localSaveRetryTimer = null;
             localSaveRetryAttempts = 0;
@@ -24788,7 +24812,7 @@
                         if (!signal.aborted && isDocumentSessionTokenValid(sessionToken)
                             && driveContentVersion === result.version) {
                             preparedDrivePdf = result;
-                            window.InhouseOfflineLibrary?.prepared(window.InhouseOfflineApp.currentId(), blob, result.version, sessionToken).catch(() => {});
+                            window.InhouseOfflineLibrary?.prepared(window.InhouseOfflineApp.currentId(), blob, result.version, getOfflineDocumentSessionToken(sessionToken)).catch(() => {});
                         }
                         return result;
                     } finally {

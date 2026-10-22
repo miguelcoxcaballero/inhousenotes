@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "8d0ed603171a081f1974c1cdd647a74b547bb65cb5b41f14236f0d1bb8064cbd",
-      "size": 1900407,
+      "sha256": "c25c582ed83fe640133eb48f713be609b3cb79cb07f3131aea583fcdf165596e",
+      "size": 1901997,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -42,8 +42,8 @@
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "de1c07f892f4cc5214b0b69c1a5fda28401d119fabb1c077889016659227a6d8",
-      "size": 23831,
+      "sha256": "a3bce1b1c1dba91c3e716d6fe1e85c55193843e94d8f10fa984a9c3a92eda9a9",
+      "size": 24305,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
@@ -57,8 +57,8 @@
       "mime": "application/javascript"
     },
     "/offline-store-v5.js": {
-      "sha256": "7ae5c0f749c2cf56ea3c925b7ca7b2589b77a40044f6538b26ec4e0fc3514f1c",
-      "size": 10471,
+      "sha256": "cf351998c63858f9a2466423cb4cd9440fdd4d1e1145b1e38b9bec818168fccb",
+      "size": 10618,
       "mime": "application/javascript"
     },
     "/offline-sync-v5.js": {

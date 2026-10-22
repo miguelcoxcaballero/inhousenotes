@@ -152,3 +152,50 @@ test('a new confirmed PDF cannot reuse the previous revision snapshot or decoded
  });
  expect(result.ack).toEqual([null,null,null,'confirmed']);expect(result.download).toEqual([null,null,'new','new download']);
 });
+
+test('cold Home resume never replaces the durable outbox draft with the last editor cache',async({page,context})=>{
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ await page.evaluate(async()=>{
+  await __IHN_TEST_API__.seedLiveReplicaForTest('before');
+  state.driveFileId='cold-draft';state.driveFileName='Draft.pdf';state.driveCanEdit=true;state.driveAutosave=false;
+  driveDirty=true;bumpDriveContentVersion();
+  await __IHN_TEST_API__.checkpointBeforeLeaving();saveDriveSession();
+  // The per-document draft can be newer than the single-editor cache, e.g.
+  // after an interrupted checkpoint or after opening another document.
+  const doc=await InhouseOfflineStore.read('documents','cached@example.test','cold-draft');
+  doc.snapshot.pages[0].strokes.push({id:'last-durable-stroke',tool:'pen',color:'#000000',width:2,points:[{x:10,y:10},{x:80,y:80}]});
+  await InhouseOfflineStore.checkpoint('cached@example.test','cold-draft',{...doc,contentVersion:doc.contentVersion+1},true);
+  showDriveHome();
+ });
+ await context.route('https://www.googleapis.com/**',r=>r.abort());
+ await page.reload();await page.evaluate(()=>__IHN_TEST_API__.ready());
+ await page.evaluate(()=>InhouseOfflineLibrary.resume());
+ const ids=await page.evaluate(async()=>{
+  const doc=await InhouseOfflineStore.read('documents','cached@example.test','cold-draft');
+  return doc.snapshot.pages[0].strokes.map(s=>s.id);
+ });
+ expect(ids).toContain('last-durable-stroke');
+});
+
+for(const legacy of [false,true])test(`cold notebook restores the persisted page session (legacy=${legacy})`,async({page})=>{
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ const before=await page.evaluate(async legacy=>{
+  beginDocumentSession();
+  await __IHN_TEST_API__.seedLiveReplicaForTest('persisted');
+  await __IHN_TEST_API__.checkpointBeforeLeaving();
+  if(legacy){
+   const record=await loadFromIndexedDb();delete record.data.sessionId;
+   await saveToIndexedDb(record.data,record.data.savedAt);
+   const local=JSON.parse(localStorage.getItem(DATA_STORAGE_KEY));delete local.sessionId;
+   localStorage.setItem(DATA_STORAGE_KEY,JSON.stringify(local));
+  }
+  return {session:getDocumentSessionToken(),ids:state.pages.map(p=>p.strokes.map(s=>s.id))};
+ },legacy);
+ expect(before.session).toBeGreaterThan(1);
+ await page.reload();await page.evaluate(()=>__IHN_TEST_API__.ready());
+ const after=await page.evaluate(async()=>{
+  for(let i=0;i<state.pages.length;i++)await __IHN_TEST_API__.loadPage(i);
+  return {session:getDocumentSessionToken(),ids:state.pages.map(p=>p.strokes.map(s=>s.id))};
+ });
+ expect(after).toEqual(before);
+});

@@ -1,9 +1,9 @@
 import {test,expect} from '@playwright/test';
-for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-401','home-auto','home-flat']) test(`background processor merges and uploads real PDFs (${mode})`,async({context,page})=>{
+for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-401','home-auto','home-flat','home-cold']) test(`background processor merges and uploads real PDFs (${mode})`,async({context,page})=>{
  test.setTimeout(90000);
- const liveAuth=mode==='home-memory-auth'||mode==='home-auth-401'||(mode==='home-auto'||mode==='home-flat');
+ const liveAuth=mode==='home-memory-auth'||mode==='home-auth-401'||(mode==='home-auto'||mode==='home-cold'||mode==='home-flat');
  const withPhoto=mode!=='strokes';
- const v2Mode=mode==='home-frame'||(mode==='home-auto'||mode==='home-flat');
+ const v2Mode=mode==='home-frame'||(mode==='home-auto'||mode==='home-cold'||mode==='home-flat');
  await context.route('https://accounts.google.com/**',r=>r.fulfill({status:200,body:''}));
  await page.addInitScript(()=>localStorage.setItem('drive-hint-email','worker@example.test'));
  await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
@@ -54,6 +54,13 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
  if(mode==='home-auto'||mode==='home-flat')await page.evaluate(()=>{
   beginDocumentSession();resetPdfState();state.pages=[];state.driveFileId=null;state.driveAutosave=false;driveDirty=false;
  });
+ if(mode==='home-cold')await page.evaluate(async()=>{
+  driveOpenInProgress=false;
+  await __IHN_TEST_API__.checkpointBeforeLeaving();saveDriveSession();
+  const doc=await InhouseOfflineStore.read('documents','worker@example.test','worker-doc');
+  doc.snapshot.pages[0].strokes.push({id:'cold-final-ink',tool:'pen',color:'#000000',width:2,points:[{x:20,y:20},{x:60,y:60}]});
+  await InhouseOfflineStore.checkpoint('worker@example.test','worker-doc',{...doc,contentVersion:doc.contentVersion+1},true);
+ });
  let uploads=0,downloads=0,rejections=0,recoveryBody='';
  const meta={id:'worker-doc',version:'2',headRevisionId:'h2',modifiedTime:'2026-10-14T12:00:00.000Z',name:'Offline.pdf',capabilities:{canEdit:true},parents:['root']};
  await context.route('https://www.googleapis.com/**',async route=>{
@@ -80,6 +87,10 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
   return route.fulfill({headers:v2Mode?{}:{ETag:'"h2"','Access-Control-Expose-Headers':'ETag'},json:meta});
  });
  await context.setOffline(false);
+ if(mode==='home-cold'){
+  await page.reload();await page.evaluate(()=>__IHN_TEST_API__.ready());
+  await page.evaluate(()=>{driveAccessToken='live-home-token';driveTokenExpiry=Date.now()+600000;driveSignedOut=false;showDriveHome();});
+ }
  const host=liveAuth?page:await context.newPage();
  await host.addInitScript(()=>{
   window.requestAnimationFrame=()=>0; // No painted frames in Android's headless WebView.
@@ -87,7 +98,7 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
   addEventListener('message',e=>{if(e.data?.type==='ihn-offline-complete')window.result=e.data.result;});
  });
  let worker=host;
- if(mode==='home-auto'||mode==='home-flat'){
+ if(mode==='home-auto'||mode==='home-cold'||mode==='home-flat'){
   await host.evaluate(async()=>{
    addEventListener('message',e=>{if(e.data?.type==='ihn-offline-complete')window.result=e.data.result;});
    await InhouseOfflineLibrary.resume();
@@ -125,6 +136,7 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
  });
  expect(result.summary.errors).toEqual([]);expect(result.dirty).toBe(false);expect(uploads).toBe(1);expect(downloads).toBe(1);
  for(let i=0;i<3;i++)expect(result.ids).toEqual(expect.arrayContaining(mode==='home-flat'?[`first-${i}`]:[`first-${i}`,`remote-${i}`]));
+ if(mode==='home-cold')expect(result.ids).toContain('cold-final-ink');
  if(mode==='home-flat'){expect(recoveryBody.includes(Buffer.from(remote))).toBe(true);expect(recoveryBody.toString()).toContain('recovered Drive version');}
  if(withPhoto&&mode!=='home-flat'){expect(result.remotePixel[0]).toBeLessThan(90);expect(result.pixel[1]).toBeGreaterThan(130);expect(result.pixel[0]).toBeLessThan(90);}
  expect(result.ids).not.toContain('base-1-0');expect(result.recoveries).toBe(1);
