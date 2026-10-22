@@ -113,7 +113,7 @@ test('visible controls create a folder and document offline and keep the last ed
  const folder=page.locator('#drive-folders [data-drive-item-id]').filter({hasText:'Trips'});
  await expect(folder).toBeVisible();await folder.click();
  await expect(page.locator('#drive-folder-view')).toBeVisible();await expect(page.locator('#drive-folder-view-title')).toHaveText('Trips');
- await page.locator('#btn-drive-new').click();await page.locator('#folder-picker-name').fill('Travel notes');
+ await page.locator('#btn-drive-new').click();await page.locator('#drive-create-pdf').click();await page.locator('#folder-picker-name').fill('Travel notes');
  await page.locator('#folder-picker-confirm').click();await expect(page.locator('#editor-view')).toBeVisible();
  const saved=await page.evaluate(async()=>{
   const first=state.driveFileId;
