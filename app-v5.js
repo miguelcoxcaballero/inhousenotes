@@ -10858,110 +10858,130 @@
             });
         }
 
+        function showDriveOpenError(message) {
+            showStatus(message,{error:true,preserveState:true});
+            const notice=document.getElementById('offline-sync-status');
+            if(notice){notice.hidden=false;notice.dataset.phase='error';notice.querySelector('[data-sync-label]').textContent=message;notice.querySelector('button').hidden=true;}
+        }
         let offlineOpenInProgress = false;
         async function openDriveFile(file) {
             if (!file || !file.id || driveOpenInProgress || offlineOpenInProgress) return;
             await appInitializationPromise;
             if(driveOpenInProgress||offlineOpenInProgress)return;
+            let bypassOpenCache = false;
             if (window.InhouseOfflineLibrary?.ready()) {
                 offlineOpenInProgress=true;
+                let local = null, checkpointing = false;
+                closeDriveCardMenu();showLoading('Opening…');
                 try {
-                    await window.InhouseOfflineLibrary.capture();
-                    const local = await window.InhouseOfflineLibrary.openRecord(file);
-                    if (local) {closeDriveCardMenu();showLoading('Opening…');await window.InhouseOfflineApp.restore(local);return;}
-                    if (driveIsOffline()) {showStatus('Connect to download this document',{preserveState:true});return;}
-                } catch(error) {showStatus('Could not open the offline copy. Your changes are retained.',{error:true});return;}
-                finally {offlineOpenInProgress=false;hideLoading();}
+                    // Home already checkpoints on exit. Re-capturing its stale
+                    // editor can fail and used to prevent every subsequent open.
+                    if(editorView && !editorView.classList.contains('hidden')) {
+                        checkpointing = true;
+                        await window.InhouseOfflineLibrary.capture();
+                        checkpointing = false;
+                    }
+                    local = await window.InhouseOfflineLibrary.openRecord(file);
+                    if (local) {await window.InhouseOfflineApp.restore(local);return;}
+                    if (driveIsOffline()) {showDriveOpenError('Connect to download this document');return;}
+                } catch(error) {
+                    // Never replace an unsynced draft with the server PDF. A
+                    // clean, broken cache can safely fall through to Drive.
+                    if(checkpointing || !local || local.dirty || driveIsOffline()) {
+                        showDriveOpenError('Could not open the local copy. Your changes are retained; try again.');return;
+                    }
+                    bypassOpenCache = true;
+                } finally {offlineOpenInProgress=false;hideLoading();}
             }
             state.offlineLocalId = null;
             if (driveOpenInProgress) return;
             closeDriveCardMenu();
             driveOpenInProgress = true;
-            // Start the persistent lookup at click time. If this is the document
-            // we just saved, the exact uploaded Blob is still in memory and wins
-            // below without waiting for IndexedDB or copying it again.
-            const persistedOpenPromise = loadDriveOpenCache(file.id);
-            const detachedExitSaves = [lifecycleExitSavePromise, backgroundExitSavePromise]
-                .filter(Boolean);
-            // Opening a document starts a new session and aborts stale Drive
-            // work safely. Never block this action behind the removed
-            // previous-document screen; the durable marker can retry
-            // silently if this is the same document.
-            resumeDetachedExitUploadAfterOpen(detachedExitSaves);
-            const preparedOpen = getPreparedDriveOpenCache(file);
-            const cachedOpenPromise = preparedOpen
-                ? Promise.resolve(preparedOpen)
-                : persistedOpenPromise;
             driveOpenFileId = file.id;
-            const sessionToken = beginDocumentSession();
-            clearPublicInlinePreview();
-            clearSharedEditorSignInGate();
-            const requestedResourceKey = file.resourceKey || '';
-            state.zoom = 1;
-            state.panX = 0;
-            state.panY = 0;
-            state.overscrollY = 0;
-
-            // Clean up old document state before showing editor
-            clearDriveSyncTimers();
-            driveDirty = false;
-            deferredDriveSave = false;
-            resetDriveContentSyncVersion();
-            resetDriveHydrationState();
-            state.driveFileId = null;
-            state.driveHeadRevisionId = null;
-            state.driveRevisionVersion = null;
-            state.driveLastKnownModified = null;
-            state.driveFolderId = null;
-            state.driveParentIds = [];
-            state.driveFolderKind = null;
-            state.calendarPageConfig = null;
-            // Reset the version-history so it doesn't carry over from the
-            // previous document. importPDFData will fill it back in from the
-            // newly-loaded PDF's IH_VERSIONS keyword (or leave it empty when
-            // the doc has no history yet).
-            state.versionHistory = [];
-            state.pendingVersionHint = null;
-            state.driveAutosave = false;
-            state.pages = [];
-            activePageIndices.clear();
-            if (canvasContainer) canvasContainer.innerHTML = '';
-            clearTemplateBackgroundUrlCache();
-            _tplCache.clear();
-
-            setReadOnlyMode(true, { force: true });
-
-            // Set the document title immediately upon clicking
-            state.driveFileName = file.name || 'Untitled';
-            const baseName = state.driveFileName.replace(/\.pdf$/i, '');
-            state.exportName = baseName || state.exportName;
-            updateDocTitle();
-
-            // Show current doc's thumbnail as loading preview (matching page-wrapper layout)
-            const thumbUrl = file.thumbnailLink ? file.thumbnailLink.replace(/=s\d+/, '=s800') : '';
-            if (thumbUrl && canvasContainer) {
-                const previewDiv = document.createElement('div');
-                previewDiv.className = 'page-wrapper loading-doc-preview';
-                previewDiv.style.cssText = `width:${A4_WIDTH}px;height:${A4_HEIGHT}px;overflow:hidden;opacity:0.5;background:white;`;
-                const previewImg = document.createElement('img');
-                previewImg.src = thumbUrl;
-                previewImg.style.cssText = 'width:100%;height:100%;object-fit:contain;';
-                previewImg.onerror = () => { previewDiv.style.background = 'white'; previewImg.remove(); };
-                previewDiv.appendChild(previewImg);
-                canvasContainer.appendChild(previewDiv);
-            }
-
-            showEditorView();
-            if (thumbUrl && canvasContainer) {
-                syncLoadingDocPreviewLayout(A4_WIDTH, A4_HEIGHT);
-            } else {
-                alignViewportTopToWidth(A4_WIDTH);
-            }
-            showLoading('Opening PDF...');
-            if (typeof prewarmLiveCollaboration === 'function') {
-                prewarmLiveCollaboration(file.id, sessionToken);
-            }
             try {
+                // Start the persistent lookup at click time. If this is the document
+                // we just saved, the exact uploaded Blob is still in memory and wins
+                // below without waiting for IndexedDB or copying it again.
+                const persistedOpenPromise = bypassOpenCache ? Promise.resolve(null) : loadDriveOpenCache(file.id);
+                const detachedExitSaves = [lifecycleExitSavePromise, backgroundExitSavePromise]
+                    .filter(Boolean);
+                // Opening a document starts a new session and aborts stale Drive
+                // work safely. Never block this action behind the removed
+                // previous-document screen; the durable marker can retry
+                // silently if this is the same document.
+                resumeDetachedExitUploadAfterOpen(detachedExitSaves);
+                const preparedOpen = bypassOpenCache ? null : getPreparedDriveOpenCache(file);
+                const cachedOpenPromise = preparedOpen
+                    ? Promise.resolve(preparedOpen)
+                    : persistedOpenPromise;
+                const sessionToken = beginDocumentSession();
+                clearPublicInlinePreview();
+                clearSharedEditorSignInGate();
+                const requestedResourceKey = file.resourceKey || '';
+                state.zoom = 1;
+                state.panX = 0;
+                state.panY = 0;
+                state.overscrollY = 0;
+
+                // Clean up old document state before showing editor
+                clearDriveSyncTimers();
+                driveDirty = false;
+                deferredDriveSave = false;
+                resetDriveContentSyncVersion();
+                resetDriveHydrationState();
+                state.driveFileId = null;
+                state.driveHeadRevisionId = null;
+                state.driveRevisionVersion = null;
+                state.driveLastKnownModified = null;
+                state.driveFolderId = null;
+                state.driveParentIds = [];
+                state.driveFolderKind = null;
+                state.calendarPageConfig = null;
+                // Reset the version-history so it doesn't carry over from the
+                // previous document. importPDFData will fill it back in from the
+                // newly-loaded PDF's IH_VERSIONS keyword (or leave it empty when
+                // the doc has no history yet).
+                state.versionHistory = [];
+                state.pendingVersionHint = null;
+                state.driveAutosave = false;
+                state.pages = [];
+                activePageIndices.clear();
+                if (canvasContainer) canvasContainer.innerHTML = '';
+                clearTemplateBackgroundUrlCache();
+                _tplCache.clear();
+
+                setReadOnlyMode(true, { force: true });
+
+                // Set the document title immediately upon clicking
+                state.driveFileName = file.name || 'Untitled';
+                const baseName = state.driveFileName.replace(/\.pdf$/i, '');
+                state.exportName = baseName || state.exportName;
+                updateDocTitle();
+
+                // Show current doc's thumbnail as loading preview (matching page-wrapper layout)
+                const thumbUrl = file.thumbnailLink ? file.thumbnailLink.replace(/=s\d+/, '=s800') : '';
+                if (thumbUrl && canvasContainer) {
+                    const previewDiv = document.createElement('div');
+                    previewDiv.className = 'page-wrapper loading-doc-preview';
+                    previewDiv.style.cssText = `width:${A4_WIDTH}px;height:${A4_HEIGHT}px;overflow:hidden;opacity:0.5;background:white;`;
+                    const previewImg = document.createElement('img');
+                    previewImg.src = thumbUrl;
+                    previewImg.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+                    previewImg.onerror = () => { previewDiv.style.background = 'white'; previewImg.remove(); };
+                    previewDiv.appendChild(previewImg);
+                    canvasContainer.appendChild(previewDiv);
+                }
+
+                showEditorView();
+                if (thumbUrl && canvasContainer) {
+                    syncLoadingDocPreviewLayout(A4_WIDTH, A4_HEIGHT);
+                } else {
+                    alignViewportTopToWidth(A4_WIDTH);
+                }
+                showLoading('Opening PDF...');
+                if (typeof prewarmLiveCollaboration === 'function') {
+                    prewarmLiveCollaboration(file.id, sessionToken);
+                }
                 const cachedOpen = await cachedOpenPromise;
                 if (driveOpenCacheMatchesCard(cachedOpen, file)) {
                     const canEdit = applyCachedDriveOpenMetadata(cachedOpen, file, requestedResourceKey);
@@ -10973,7 +10993,7 @@
                         sessionToken,
                         driveFileId: file.id,
                         sourceBlob: cachedOpen.blob,
-                        strictCollabMetadata: true,
+                        strictCollabMetadata: true, throwOnError: true,
                         cachedAnalysis: cachedOpen.analysis || null
                     });
                     if (!isDocumentSessionTokenValid(sessionToken) || driveOpenFileId !== file.id) {
@@ -11106,19 +11126,23 @@
                     sessionToken,
                     driveFileId: file.id,
                     sourceBlob: blob,
-                    strictCollabMetadata: true
+                    strictCollabMetadata: true, throwOnError: true
                 });
-                const resolvedFolderKind = await resolvedFolderKindPromise;
                 if (!isDocumentSessionTokenValid(sessionToken) || driveOpenFileId !== file.id) {
                     throw createAbortError('Drive open superseded');
                 }
-                if (resolvedFolderKind !== state.driveFolderKind) {
-                    state.driveFolderKind = resolvedFolderKind;
-                    updateCalendarFeatureAvailability();
-                    if (resolvedFolderKind === 'agenda') {
-                        renderAllPages();
+                const resolvedFolderKind = provisionalFolderKind || null;
+                // Folder classification is optional metadata, not a prerequisite
+                // for opening a PDF whose pages have already been decoded.
+                void resolvedFolderKindPromise.then(kind => {
+                    if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== file.id) return;
+                    if (kind !== state.driveFolderKind) {
+                        state.driveFolderKind = kind;
+                        updateCalendarFeatureAvailability();
+                        if (kind === 'agenda') renderAllPages();
+                        saveDriveSession();
                     }
-                }
+                }).catch(() => {});
                 // Persist the exact confirmed Drive snapshot together with the
                 // already-decoded vectors. Subsequent opens avoid both the
                 // network download and STROKES_Z decompression.
@@ -11166,7 +11190,8 @@
                 showStatus(canEdit ? 'PDF loaded' : 'PDF loaded (View Only)', { preserveState: true });
             } catch (err) {
                 if (err?.name !== 'AbortError') {
-                    showStatus('Failed to load PDF', { preserveState: true });
+                    showDriveHome();
+                    showDriveOpenError('Could not open this document. Try again.');
                 }
             } finally {
                 hideLoading();
@@ -29906,11 +29931,13 @@
             const connected = !!(state.driveAutosave && state.driveFileId);
             const offline = driveIsOffline();
             const pendingDrive = hasPendingDriveSave();
+            const outbox = window.InhouseOfflineLibrary?.syncStatus?.();
+            const outboxActive = outbox?.phase !== 'idle' && !!outbox?.id && [state.offlineLocalId,state.driveFileId].includes(outbox.id);
             const reconnect = connected && driveAuthNeedsReconnect;
             let phase = 'saved';
             if (local.error || driveSaveBlockedReason) phase = 'error';
             else if (local.pending) phase = 'saving';
-            else if (driveSaveInProgress) phase = 'uploading';
+            else if (driveSaveInProgress || outboxActive) phase = 'uploading';
             else if (collabPullInProgress) phase = 'syncing';
             else if (pendingDrive) phase = 'paused';
 
@@ -29933,6 +29960,10 @@
                 driveLabel = 'Offline';
                 driveDetail = 'Latest changes are waiting for a connection. Drive will update automatically when you are online.';
                 driveClass = 'active';
+            } else if (outboxActive) {
+                driveLabel = {checking:'Checking Drive',building:'Preparing',merging:'Merging changes',uploading:'Uploading'}[outbox.phase] || 'Syncing';
+                driveDetail = 'Your locally saved changes are being synchronized with Drive.';
+                driveClass = 'syncing';
             } else if (driveSaveInProgress) {
                 driveLabel = driveSavePhase === 'uploading' ? 'Uploading'
                     : driveSavePhase === 'verifying' ? 'Checking Drive' : 'Preparing';

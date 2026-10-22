@@ -10,3 +10,12 @@ html[data-boot-destination="drive"]:not([data-app-ready="true"]) #drive-home { d
 .offline-settings-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
 .offline-settings-actions button[value="save"] { background:#f5df4d; color:#151515; border:0; }
 .offline-recoveries { max-height:240px; overflow:auto; }
+
+.offline-sync-status:not([hidden]) { display:flex; align-items:center; gap:10px; flex-basis:100%; font-size:.8rem; color:var(--text-secondary); }
+.offline-sync-status button { font:inherit; color:inherit; border:0; border-radius:10px; padding:6px 10px; background:var(--bg-secondary, #eee); cursor:pointer; }
+.offline-sync-status[data-phase="uploading"]::before,
+.offline-sync-status[data-phase="building"]::before,
+.offline-sync-status[data-phase="checking"]::before,
+.offline-sync-status[data-phase="merging"]::before { content:""; width:10px; height:10px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:offline-sync-spin .8s linear infinite; }
+@keyframes offline-sync-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .offline-sync-status::before { animation:none!important; } }

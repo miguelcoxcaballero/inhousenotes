@@ -11,6 +11,7 @@
     async function run(account,adapter={}) {
         return S.withLease(account,'sync',async assertLease=>{
             const summary={saved:0,pending:0,errors:[]};
+            const progress=(id,phase)=>{try{adapter.progress?.({id,phase});}catch(_){}};
             const request=async (url,options={})=>{
                 await assertLease();
                 const response=await adapter.fetch(url,options);
@@ -49,6 +50,7 @@
                 const deferred=[];
                 for (const op of folders) {
                     try {
+                        progress(op.id,'uploading');
                         const entry=await S.read('entries',account,op.id);
                         const parent=await S.resolveId(account,entry.parents?.[0]);
                         if (!parent) {deferred.push(op);continue;}
@@ -69,6 +71,7 @@
                     if (!doc?.dirty) continue;
                     if (adapter.skip?.(op.id)) {summary.pending++;continue;}
                     const generation=doc.generation;
+                    progress(op.id,'checking');
                     const entry=await S.read('entries',account,op.id) || doc.entry;
                     const parent=await S.resolveId(account,entry?.parents?.[0]);
                     if (!parent) {summary.pending++;continue;}
@@ -90,6 +93,7 @@
                     let blob=doc.preparedBlob;
                     if (doc.snapshot && (!blob || doc.preparedGeneration!==generation)) {
                         if (!adapter.build) throw failure('A saved draft is waiting for the document processor','needs-processor');
+                        progress(op.id,'building');
                         blob=await adapter.build(doc);
                     }
                     blob ||= doc.blob;
@@ -100,12 +104,14 @@
                         await S.put('recoveries',account,`${op.id}:${generation}:${current.meta.version||current.meta.headRevisionId}`,
                             {fileId:op.id,name:entry?.name,localBlob:blob,remoteBlob:remote,snapshot:doc.snapshot,createdAt:Date.now()});
                         if (!adapter.merge) throw failure('Concurrent edits are retained and waiting to merge','needs-merge');
+                        progress(op.id,'merging');
                         blob=await adapter.merge(doc,current.meta,remote);
                         const after=await metadata(id);
                         if (changed(current.meta,after.meta)) throw failure('Remote document changed during merge; retrying',412);
                         current=after;
                     }
                     if ((await S.read('documents',account,op.id))?.generation!==generation) {summary.pending++;continue;}
+                    progress(op.id,'uploading');
                     const saved=await multipart(id,blob,{...(current?{}:{id,name:entry?.name||'Untitled.pdf',mimeType:'application/pdf',parents:[parent]}),
                         appProperties:{...(current?.meta.appProperties||{}),ihnOfflineReceipt:receipt}},current?.etag,!current);
                     await S.acknowledge(account,op.id,generation,saved,blob);
