@@ -1889,6 +1889,13 @@
             }
             return activeDrawingPointers.size > 0;
         }
+        for (const type of ['pointerup','pointercancel']) document.addEventListener(type, event => {
+            for (const [canvas,pointerId] of activeDrawingPointers) {
+                if (pointerId !== event.pointerId || event.composedPath().includes(canvas)) continue;
+                canvas.dispatchEvent(new PointerEvent(type, {pointerId,pointerType:event.pointerType,
+                    clientX:event.clientX,clientY:event.clientY,pressure:event.pressure,buttons:event.buttons}));
+            }
+        }, {capture:true});
         window.addEventListener('blur', () => {
             // Commit the partial pen before losing the capture/foreground.
             for (const [canvas, pointerId] of activeDrawingPointers) {
@@ -4265,7 +4272,12 @@
             };
 
             canvas.addEventListener('pointerdown', (e) => {
-                if (activePointerId !== null) return;
+                if (activePointerId !== null) {
+                    // Some Android pen drivers omit up/capture-loss during a
+                    // stall. A fresh down is a new stroke, never a continuation.
+                    if (e.pointerType !== 'pen') return;
+                    endDrawing({type:'pointercancel',pointerId:activePointerId});
+                }
                 if (state.isReadOnly || localPageStructureMutationToken || remotePageStructureApplyInProgress) return;
                 state.activePageIndex = pageIndex;
                 const activePage = state.pages[pageIndex];
@@ -4379,6 +4391,12 @@
 
             const moveDrawing = (e) => {
                 if (state.isReadOnly || e.pointerId !== activePointerId) return;
+                // Hover is a terminal contact signal, even if pointerup was lost.
+                // Do not append the hover position (it draws a spurious bridge).
+                if (e.pointerType === 'pen' && e.buttons === 0 && e.pressure === 0) {
+                    endDrawing({type:'pointercancel',pointerId:e.pointerId});
+                    return;
+                }
                 if (e.type === 'pointerrawupdate' && (!currentStroke || e.pointerType !== 'pen')) return;
                 if (isLassoing) {
                     e.preventDefault();
@@ -4396,10 +4414,8 @@
 
                 notePenActivity();
 
-                const events = samplesForEvent(e);
-
                 if (state.currentTool === 'eraser-stroke' || state.currentTool === 'eraser-area') {
-                    const positions = collectEraserPositions(events);
+                    const positions = collectEraserPositions(samplesForEvent(e));
                     if (state.currentTool === 'eraser-stroke') {
                         applyEraserPositions(positions);
                     } else {

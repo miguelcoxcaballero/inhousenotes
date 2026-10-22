@@ -83,3 +83,52 @@ for(const count of [40,3000])test(`a stationary pen blocks full repaint and page
   expect(await page.evaluate(()=>penPageWrites)).toBeGreaterThan(0);
   expect((await page.evaluate(()=>__IHN_TEST_API__.snapshot().pages[0].strokes)).filter(s=>s.color==='#E81010')).toHaveLength(1);
 });
+
+for(const termination of ['hover','new-down','new-id','outside-up'])test(`a lost pen release cannot bridge separate letters (${termination})`,async({page,context})=>{
+ const {cdp,target}=await startPen(page,context,40);
+ const result=await page.evaluate(termination=>{
+  const c=document.querySelector('canvas.page-canvas[data-page="0"]'),r=c.getBoundingClientRect();let id=penInputId;
+  const event=(type,x,y,buttons=1,pressure=.5)=>new PointerEvent(type,{pointerType:'pen',pointerId:id,
+   clientX:r.left+x*r.width/794,clientY:r.top+y*r.height/1123,buttons,pressure,bubbles:true});
+  c.dispatchEvent(event('pointermove',130,420));
+  if(termination==='hover')c.dispatchEvent(event('pointerrawupdate',700,800,0,0));
+  if(termination==='outside-up')document.body.dispatchEvent(event('pointerup',130,420,0,0));
+  if(termination==='new-id'){id++;c.setPointerCapture=()=>{};}
+  c.dispatchEvent(event('pointerdown',300,400));
+  c.dispatchEvent(event('pointermove',330,420));
+  c.dispatchEvent(event('pointerup',340,430,0,0));
+  return __IHN_TEST_API__.snapshot().pages[0].strokes.filter(s=>s.color==='#E81010');
+ },termination);
+ await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+ expect(result).toHaveLength(2);
+ expect(Math.max(...result[0].points.map(p=>p.x))).toBeCloseTo(130,2);
+ expect(result[1].points[0].x).toBeCloseTo(300,2);
+ expect(result[1].points.at(-1).x).toBeCloseTo(340,2);
+});
+
+test('offline checkpoint yields on dense pages and reuses the cached preview',async({page})=>{
+ await page.addInitScript(()=>localStorage.setItem('drive-hint-email','pen@example.test'));
+ await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
+ await page.evaluate(()=>__IHN_TEST_API__.seedDensePageForTest(3000,100));
+ await page.waitForFunction(()=>!__IHN_TEST_API__.densePaintStatusForTest().pending);
+ const result=await page.evaluate(async()=>{
+  state.driveFileId='dense-pen';state.driveAutosave=false;driveDirty=true;
+  const cached=state.pages[0].preview;
+  const render=renderPagePreview,yieldUi=yieldProcessingForUi;
+  let paints=0,yields=0;
+  renderPagePreview=()=>{paints++;throw Error('Checkpoint must not repaint all ink');};
+  yieldProcessingForUi=async()=>{yields++;await new Promise(r=>setTimeout(r,0));};
+  try{
+   await InhouseOfflineLibrary.capture();
+   const doc=await InhouseOfflineStore.read('documents','pen@example.test','dense-pen');
+   const copiedYields=yields;
+   bumpDriveContentVersion();
+   yieldProcessingForUi=async()=>{await new Promise(r=>setTimeout(r,0));bumpDriveContentVersion();};
+   const cancelled=await InhouseOfflineLibrary.capture().then(()=>null,error=>error.name);
+   const after=await InhouseOfflineStore.read('documents','pen@example.test','dense-pen');
+   return {paints,yields:copiedYields,strokes:doc.snapshot.pages[0].strokes.length,preview:doc.entry.localPreview,cached,
+    cancelled,unchanged:doc.generation===after.generation};
+  }finally{renderPagePreview=render;yieldProcessingForUi=yieldUi;}
+ });
+ expect(result.paints).toBe(0);expect(result.yields).toBeGreaterThan(2);expect(result.strokes).toBe(3000);expect(result.preview).toBe(result.cached||null);expect(result.cancelled).toBe('AbortError');expect(result.unchanged).toBe(true);
+});
