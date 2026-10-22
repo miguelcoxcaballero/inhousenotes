@@ -3038,6 +3038,7 @@
 
         function releasePageCanvas(pageIndex) {
             if (!activePageIndices.has(pageIndex)) return;
+            applyPagePreview(pageIndex);
             if (state.selection.pageIndex === pageIndex) {
                 clearSelection();
             }
@@ -3071,6 +3072,7 @@
         }
 
         function resetPdfState() {
+            resetScrollPagePreviews();
             pdfExportCache.clear();
             pdfLibOverlayCache.clear();
             cancelPdfRenderResume();
@@ -3465,6 +3467,7 @@
         // viewport, activates their canvases, and unloads pages that moved
         // far enough away (to stay within the MAX_ACTIVE_PAGES memory limit).
         function updateVisiblePages(force = false) {
+            queueScrollPagePreviews();
             const pageCount = state.pages.length;
             if (!pageCount) return;
             const deferHeavy = !force && isViewportInteracting();
@@ -6960,6 +6963,7 @@
                     resetPdfState();
                     assertRestoreContext();
                     activePdfDocument = pdf;
+                    queueScrollPagePreviews(true);
                     activePdfPageCount = pdf.numPages;
                     state.activePdfObjectUrl = objectUrl;
                     state.activePdfBytes = arrayBuffer;
@@ -11328,6 +11332,60 @@
             window.open(`https://drive.google.com/open?id=${state.driveFileId}`, '_blank');
         }
 
+        function installDriveCreateMenu() {
+            const menu=document.getElementById('drive-create-menu'),input=document.getElementById('drive-upload-input');
+            const close=()=>{menu.hidden=true;driveNewBtn.setAttribute('aria-expanded','false');};
+            driveNewBtn.addEventListener('click',event=>{
+                event.stopPropagation();if(!menu.hidden){close();return;}
+                menu.hidden=false;driveNewBtn.setAttribute('aria-expanded','true');
+                const rect=driveNewBtn.getBoundingClientRect(),height=menu.offsetHeight;
+                menu.style.left=`${Math.max(8,Math.min(innerWidth-menu.offsetWidth-8,rect.right-menu.offsetWidth))}px`;
+                menu.style.top=`${rect.bottom+height+8<innerHeight?rect.bottom+8:Math.max(8,rect.top-height-8)}px`;
+                menu.querySelector('button').focus();
+            });
+            document.getElementById('drive-create-pdf').addEventListener('click',()=>{close();createNewDriveDocument();});
+            document.getElementById('drive-upload-file').addEventListener('click',()=>{close();input.value='';input.click();});
+            input.addEventListener('change',()=>{const file=input.files?.[0];if(file)openFolderPicker('upload',file);});
+            document.addEventListener('pointerdown',event=>{if(!menu.contains(event.target)&&!driveNewBtn.contains(event.target))close();});
+            menu.addEventListener('keydown',event=>{
+                if(event.key==='Escape'){event.preventDefault();close();driveNewBtn.focus();}
+                if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();const items=[...menu.querySelectorAll('button')],index=items.indexOf(document.activeElement);items[(index+1)%items.length].focus();}
+            });
+            window.addEventListener('resize',close,{passive:true});
+        }
+        async function uploadDeviceFile(file,folderId,name) {
+            if(!(file instanceof Blob)||!file.size)throw new Error('Choose a non-empty file.');
+            const library=window.InhouseOfflineLibrary;
+            const isPdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name);
+            if(isPdf&&library?.ready()) {
+                // Durable before closing the picker. The existing outbox handles
+                // offline parents, retries and the exact original PDF bytes.
+                const id=`local-${crypto.randomUUID()}`;
+                await window.InhouseOfflineStore.checkpoint(library.account(),id,{
+                    blob:file,offlineEdited:true,baseMeta:null,
+                    entry:{id,name,mimeType:'application/pdf',parents:[folderId],pending:true,ownedByMe:true,modifiedTime:new Date().toISOString()},
+                    details:{fileName:name,parentIds:[folderId],canEdit:true,ownedByMe:true}
+                });
+                await library.reload().catch(()=>{});await library.scheduleBackground();
+                window.InhouseOfflineApp.renderHome();void library.kick();
+                return;
+            }
+            if(driveIsOffline())throw new Error('Connect to upload this file. PDFs can also be queued offline.');
+            const remoteFolder=library?.ready()?await window.InhouseOfflineStore.resolveId(library.account(),folderId):folderId;
+            if(!remoteFolder)throw new Error('This folder is still waiting to upload. Try again shortly.');
+            const mimeType=file.type||'application/octet-stream';
+            const result=await uploadDriveBlobResumable({
+                url:'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,parents,modifiedTime,version',
+                method:'POST',blob:file,contentType:mimeType,
+                metadata:{name,mimeType,...(remoteFolder==='root'?{}:{parents:[remoteFolder]})},
+                options:{resumeKey:`device-upload:${folderId}:${name}:${file.size}:${file.lastModified}`}
+            });
+            if(!result?.id)throw new Error('Drive did not confirm the upload. Retry without closing this dialog.');
+            await library?.observed([{...result,name,mimeType,parents:[folderId]}]).catch(()=>{});
+            void refreshDriveHomeQuiet();
+            if(driveStatusEl){driveStatusEl.textContent=`Uploaded: ${name}`;driveStatusEl.style.display='block';}
+        }
+
         function createNewDriveDocument() {
             openFolderPicker('new');
         }
@@ -11535,11 +11593,13 @@
             if (folderPickerTitle) {
                 if (mode === 'move') folderPickerTitle.textContent = 'Move file';
                 else if (mode === 'copy') folderPickerTitle.textContent = 'Copy file';
+                else if(mode==='upload')folderPickerTitle.textContent='Upload file';
                 else folderPickerTitle.textContent = 'New PDF';
             }
             if (folderPickerSubtitle) {
                 if (mode === 'move') folderPickerSubtitle.textContent = 'Choose the destination folder.';
                 else if (mode === 'copy') folderPickerSubtitle.textContent = 'Choose a destination and name your copy.';
+                else if(mode==='upload')folderPickerSubtitle.textContent='Choose where to upload '+(file?.name||'your file')+'.';
                 else folderPickerSubtitle.textContent = 'Choose a folder and name your file.';
             }
             if (folderPickerMeta) {
@@ -11564,11 +11624,14 @@
             }
             if (folderPickerNameRow) {
                 folderPickerNameRow.style.display = mode === 'move' ? 'none' : 'flex';
+                folderPickerNameRow.querySelector('.file-ext').hidden=mode==='upload';
             }
             if (folderPickerNameInput) {
                 const defaultName = normalizeDocTitleInput(state.exportName || 'Untitled');
                 if (mode === 'move') {
                     folderPickerNameInput.value = '';
+                } else if(mode==='upload'){
+                    folderPickerNameInput.value=file?.name||'';
                 } else if (mode === 'copy') {
                     // Handled inside makeDriveCopy
                 } else {
@@ -11578,6 +11641,7 @@
             if (folderPickerConfirm) {
                 if (mode === 'move') folderPickerConfirm.textContent = 'Move';
                 else if (mode === 'copy') folderPickerConfirm.textContent = 'Copy';
+                else if(mode==='upload')folderPickerConfirm.textContent='Upload';
                 else folderPickerConfirm.textContent = 'Create';
             }
             updateFolderPickerConfirmState();
@@ -11692,6 +11756,15 @@
         }
 
         async function confirmFolderPicker() {
+            if(folderPickerMode==='upload'){
+                const file=folderPickerTargetFile,name=folderPickerNameInput.value.trim(),folderId=folderPickerCurrentFolderId;
+                if(!file||!name||folderPickerConfirm.disabled)return;
+                folderPickerConfirm.disabled=true;folderPickerConfirm.textContent='Uploading…';
+                try {await uploadDeviceFile(file,folderId,name);if(folderPickerMode==='upload'&&folderPickerTargetFile===file)closeFolderPicker();}
+                catch(error){if(folderPickerMode==='upload'&&folderPickerTargetFile===file)folderPickerSubtitle.textContent=window.InhouseOfflineLibrary.syncErrorText(error);}
+                finally {if(folderPickerMode==='upload'&&folderPickerTargetFile===file){folderPickerConfirm.disabled=false;folderPickerConfirm.textContent='Upload';}}
+                return;
+            }
             if (folderPickerMode === 'move') {
                 const target = folderPickerTargetFile;
                 closeFolderPicker();
@@ -13471,6 +13544,7 @@
 
         // Render all pages
         function renderAllPages(options = {}) {
+            resetScrollPagePreviews();
             invalidatePageBoundsCache();
             viewportGestureGeometry = null;
             clearSelection();
@@ -13540,6 +13614,7 @@
             const maxIndex = Math.max(0, state.pages.length - 1);
             state.activePageIndex = Math.min(Math.max(0, state.activePageIndex || 0), maxIndex);
             if (!options.deferVisibleUpdate) scheduleVisiblePageUpdate(true);
+            queueScrollPagePreviews(true);
         }
 
         function bakeLegacyEraserAreaStrokes() {
@@ -15377,7 +15452,7 @@
                 driveLoginBtn.addEventListener('click', signInDrive);
             }
             if (driveNewBtn) {
-                driveNewBtn.addEventListener('click', createNewDriveDocument);
+                installDriveCreateMenu();
             }
             // "APP" download — only meaningful on the web; the Android in-app
             // WebView hides the trigger button via CSS (data-inhouse-app).
@@ -17215,6 +17290,7 @@
         function applyViewportTransformStyle() {
             canvasContainer.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
             documentFastScroller?.schedule();
+            queueScrollPagePreviews();
         }
 
         function scheduleViewportTransformRender() {
@@ -22811,9 +22887,96 @@
             }
         }
 
+        // A separate, serial thumbnail queue is allowed to run while scrolling.
+        // Full-resolution canvases still wait for the gesture to settle.
+        const scrollPreviewQueue = new Map();
+        const scrollPreviewFailures = new WeakMap();
+        let scrollPreviewTimer = null, scrollPreviewBusy = false, scrollPreviewEpoch = 0;
+        let activeScrollPreviewTask = null;
+        function resetScrollPagePreviews() {
+            scrollPreviewEpoch++;
+            scrollPreviewQueue.clear();
+            if(scrollPreviewTimer!==null)clearTimeout(scrollPreviewTimer);
+            scrollPreviewTimer=null;
+            try {activeScrollPreviewTask?.cancel();} catch(_) {}
+        }
+        function queueScrollPagePreviews(all=false) {
+            if(OFFLINE_WORKER||!state.pages.length)return;
+            const range=getVisiblePageRange(1);
+            const first=all?0:Math.max(0,range.start),last=all?state.pages.length-1:Math.min(state.pages.length-1,range.end);
+            for(let index=first;index<=last;index++){
+                const page=state.pages[index];
+                if(!page||page.preview&&!page.scrollPreviewDirty&&!(page.backgroundSource==='pdf'&&!page.scrollPreviewVerified)||Date.now()-(scrollPreviewFailures.get(page)||0)<3000)continue;
+                const priority=index>=range.start&&index<=range.end?0:1000+index;
+                scrollPreviewQueue.set(index,Math.min(priority,scrollPreviewQueue.get(index)??Infinity));
+            }
+            scheduleScrollPagePreviews();
+        }
+        function scheduleScrollPagePreviews() {
+            if(scrollPreviewTimer!==null||scrollPreviewBusy||!scrollPreviewQueue.size)return;
+            scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},16);
+        }
+        async function processScrollPagePreview() {
+            if(scrollPreviewBusy||!scrollPreviewQueue.size)return;
+            if(isPenWriting){scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},80);return;}
+            let pageIndex=-1,priority=Infinity;
+            for(const [index,value] of scrollPreviewQueue)if(value<priority){pageIndex=index;priority=value;}
+            scrollPreviewQueue.delete(pageIndex);scrollPreviewBusy=true;
+            const page=state.pages[pageIndex],epoch=scrollPreviewEpoch,session=getDocumentSessionToken(),structure=pageStructureVersion;
+            const generation=pageDirtyGeneration.get(pageIndex)||0;
+            const valid=()=>epoch===scrollPreviewEpoch&&isDocumentSessionTokenValid(session)&&structure===pageStructureVersion&&state.pages[pageIndex]===page&&(pageDirtyGeneration.get(pageIndex)||0)===generation;
+            let canvas=null;
+            try {
+                if(!page||page.preview&&!page.scrollPreviewDirty&&!(page.backgroundSource==='pdf'&&!page.scrollPreviewVerified))return;
+                let data=page.unloaded?await loadPageFromIndexedDb(pageIndex):page;
+                if(!data&&page.pdfPageIndex&&!page.strokeCount)data={...page,strokes:[],images:[]};
+                if(!valid()||!data)return;
+                const {width,height}=getPageDimensions(pageIndex),scale=Math.min(.25,320/width,440/height);
+                canvas=document.createElement('canvas');canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);
+                const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+                const source=data.backgroundSource||(data.pdfPageIndex?'pdf':'template');
+                if(source==='pdf'&&!data.backgroundImage){
+                    const pdf=activePdfDocument;if(!pdf||!data.pdfPageIndex)return;
+                    const pdfPage=await pdf.getPage(data.pdfPageIndex);if(!valid())return;
+                    const base=pdfPage.getViewport({scale:1});
+                    const viewport=pdfPage.getViewport({scale:Math.min(canvas.width/base.width,canvas.height/base.height)});
+                    const task=pdfPage.render({canvasContext:ctx,viewport});activeScrollPreviewTask=task;
+                    try {await task.promise;} finally {if(activeScrollPreviewTask===task)activeScrollPreviewTask=null;}
+                }
+                if(!valid())return;
+                const sources=[data.backgroundImage,data.bakedBackground,...(data.images||[]).map(image=>image.src)].filter(Boolean);
+                await Promise.all(sources.map(async src=>{const image=getCachedImage(src);if(!image.complete||!image.naturalWidth)await image.decode();}));
+                if(!valid())return;
+                ctx.setTransform(scale,0,0,scale,0,0);
+                if(data.backgroundImage)ctx.drawImage(getCachedImage(data.backgroundImage),0,0,width,height);
+                else if(source==='template'){const kind=normalizeTemplateKind(data.templateKind);drawTemplateBackground(ctx,width,height,width/getTemplateKindDefaults(kind).width,kind);}
+                if(data.bakedBackground)ctx.drawImage(getCachedImage(data.bakedBackground),0,0,width,height);
+                if(!pendingCleanOriginalSwap)drawLegacyCoverStrokes(ctx,data);
+                drawImagesOnContext(ctx,data,pageIndex);
+                let started=performance.now();
+                for(const stroke of data.strokes||[]){
+                    if(stroke.tool!=='eraser-stroke'&&stroke.points?.length>=(stroke.tool==='highlighter'?1:2))drawSmoothStroke(ctx,stroke);
+                    if(performance.now()-started>3){await new Promise(resolve=>setTimeout(resolve,0));if(!valid()||isPenWriting)return;started=performance.now();}
+                }
+                if(!valid())return;
+                page.preview=canvas.toDataURL('image/jpeg',.65);page.scrollPreviewDirty=false;page.scrollPreviewVerified=true;
+                const full=document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
+                if(!full||full.dataset.hasPageDraw!=='1'||!canClearPagePreview(pageIndex))applyPagePreview(pageIndex);
+                // Store only the preview field. Never replace strokes with the
+                // snapshot read before an asynchronous render.
+                const db=await openNotebookDb();if(!db||!valid())return;
+                try {
+                    const tx=db.transaction(PAGE_STORE,'readwrite'),store=tx.objectStore(PAGE_STORE),request=store.get(pageIndex);
+                    request.onsuccess=()=>{try {const record=request.result;if(valid()&&record&&(!Number.isFinite(Number(record.__sessionId))||Number(record.__sessionId)===session))store.put({...record,preview:page.preview},pageIndex);}catch(_) {}};
+                }catch(_) { /* The in-memory preview remains usable if storage closed. */ }
+            }catch(error){if(page&&error?.name!=='RenderingCancelledException')scrollPreviewFailures.set(page,Date.now());}
+            finally {if(canvas){canvas.width=0;canvas.height=0;}scrollPreviewBusy=false;scheduleScrollPagePreviews();}
+        }
+
         function renderPagePreview(pageIndex) {
             const page = state.pages[pageIndex];
             if (!page || !Array.isArray(page.strokes)) return null;
+            if(page.backgroundSource==='pdf'&&(!page.backgroundImage||!getCachedImage(page.backgroundImage)?.naturalWidth))return null;
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
             const scale = PAGE_PREVIEW_SCALE;
             const previewCanvas = document.createElement('canvas');
@@ -22827,9 +22990,8 @@
             // Draw appropriate background
             const backgroundSource = page.backgroundSource || 'template';
             if (page.backgroundImage && backgroundSource !== 'template') {
-                const img = new Image();
-                img.src = page.backgroundImage;
-                if (img.complete) {
+                const img = getCachedImage(page.backgroundImage);
+                if (img.complete&&img.naturalWidth) {
                     ctx.drawImage(img, 0, 0, pageWidth, pageHeight);
                 }
             } else if (backgroundSource === 'template' || backgroundSource === undefined) {
@@ -23630,14 +23792,15 @@
                 return;
             }
             currentPage.strokeCount = getVisibleStrokeCount(currentPage);
-            if (!currentPage.preview) {
+            if (!currentPage.preview || currentPage.scrollPreviewDirty) {
                 const hasImages = Array.isArray(currentPage.images) && currentPage.images.length > 0;
                 const hasStrokes = Array.isArray(currentPage.strokes) && currentPage.strokes.length > 0;
                 const hasBackground = currentPage.backgroundSource === 'pdf'
                     || !!currentPage.backgroundImage
                     || !!currentPage.bakedBackground;
                 if (hasImages || hasStrokes || hasBackground) {
-                    currentPage.preview = renderPagePreview(pageIndex);
+                    const updatedPreview=renderPagePreview(pageIndex);
+                    if(updatedPreview){currentPage.preview=updatedPreview;currentPage.scrollPreviewDirty=false;}
                 }
             }
             if (currentPage.backgroundSource === 'pdf' && currentPage.backgroundImage && currentPage.backgroundImage.startsWith('blob:')) {
@@ -23924,6 +24087,7 @@
             pageDirty.add(pageIndex);
             pageMutationGeneration += 1;
             pageDirtyGeneration.set(pageIndex, pageMutationGeneration);
+            if(page)page.scrollPreviewDirty=true;
             pdfExportCache.delete(pageIndex);
             pdfLibOverlayCache.delete(pageIndex);
             // During interaction, just mark dirty — flushDeferredSavesAfterInteraction
@@ -25476,7 +25640,7 @@
             return match ? Math.max(0, Number(match[1]) + 1) : 0;
         }
 
-        async function uploadDriveBlobResumable({ url, method, metadata = null, blob, options = {} }) {
+        async function uploadDriveBlobResumable({ url, method, metadata = null, blob, options = {}, contentType = 'application/pdf' }) {
             if (!(blob instanceof Blob)) throw new TypeError('Drive upload requires a Blob');
             if (!blob.size) throw new Error('Cannot upload an empty PDF to Drive');
             const signal = options.signal;
@@ -25485,7 +25649,7 @@
             const contentIdentity = String(blob.inhouseContentHash || `blob-${blob.size}-${blob.type}`);
             const resumeKey = String(options.resumeKey || `${method}:${url}:${blob.size}:${contentIdentity}:${metadata?.name || ''}:${(metadata?.parents || []).join(',')}`);
             const initiationHeaders = {
-                'X-Upload-Content-Type': 'application/pdf',
+                'X-Upload-Content-Type': contentType,
                 'X-Upload-Content-Length': String(blob.size)
             };
             if (metadata) initiationHeaders['Content-Type'] = 'application/json; charset=UTF-8';
@@ -25555,12 +25719,12 @@
             while (offset < blob.size) {
                 if (signal?.aborted) throw createAbortError('Drive save aborted');
                 const endExclusive = Math.min(blob.size, offset + chunkSize);
-                const chunk = blob.slice(offset, endExclusive, 'application/pdf');
+                const chunk = blob.slice(offset, endExclusive, contentType);
                 try {
                     const response = await driveFetch(sessionUrl, {
                         method: 'PUT',
                         headers: {
-                            'Content-Type': 'application/pdf',
+                            'Content-Type': contentType,
                             'Content-Range': `bytes ${offset}-${endExclusive - 1}/${blob.size}`
                         },
                         body: chunk,
@@ -30647,6 +30811,7 @@
                 resetPdfState();
                 throwIfSessionInvalid();
                 activePdfDocument = pdf;
+                    queueScrollPagePreviews(true);
                 activePdfPageCount = numPages;
                 pdfBackgroundScale = getPdfBackgroundScale(numPages, options.fileSize || 0);
                 if (capturedOriginalBytes) {

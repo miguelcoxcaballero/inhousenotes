@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "2447c84e387b00d1088df2e58cee9dec959b91a6410c9ae718e9f422891b8fe5",
-      "size": 1885136,
+      "sha256": "fc67e5ef4f02c979c63999ce672055d69f55121e2633c456bf9ad2efd997a728",
+      "size": 1898393,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -67,8 +67,8 @@
       "mime": "application/javascript"
     },
     "/offline-v5.css": {
-      "sha256": "b209e22097d17cd051e09811d9654a9bff6d44ea4a2dbb2309c6781dac10bde1",
-      "size": 2779,
+      "sha256": "1b84450108789b404c372010ecd9aaef52b97d60117653bae2123fb51c676ae5",
+      "size": 4001,
       "mime": "text/css"
     },
     "/peer-transport-v5.js": {

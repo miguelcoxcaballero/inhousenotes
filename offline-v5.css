@@ -26,3 +26,13 @@ html[data-boot-destination="drive"]:not([data-app-ready="true"]) #drive-home { d
 #document-fast-scroll:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
 #document-fast-scroll.is-dragging { filter:brightness(.9); }
 [data-theme="dark"] #document-fast-scroll { background:#87502f; }
+
+#drive-home button#btn-drive-new { position:fixed; right:calc(env(safe-area-inset-right,0px) + 24px); bottom:calc(env(safe-area-inset-bottom,0px) + 24px); z-index:1300; width:52px; height:52px; min-height:52px; padding:0; border-radius:14px; display:inline-flex; align-items:center; justify-content:center; background:#fff; color:#111; box-shadow:0 3px 16px #0002; }
+#drive-home button#btn-drive-new svg { width:26px; height:26px; }
+#drive-create-menu { position:fixed; z-index:1400; min-width:190px; padding:6px; background:var(--bg-primary,#fff); color:var(--text-primary,#222); border-radius:16px; box-shadow:0 6px 28px #0003; }
+#drive-create-menu[hidden] { display:none; }
+#drive-create-menu button { display:flex; align-items:center; gap:12px; width:100%; padding:12px; border:0; border-radius:10px; background:none; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+#drive-create-menu button:hover,#drive-create-menu button:focus-visible { background:var(--bg-secondary,#eee); }
+#drive-create-menu svg { width:22px; height:22px; }
+
+@media(max-width:720px) { #drive-home button#btn-drive-new { right:calc(env(safe-area-inset-right,0px) + 16px); bottom:calc(env(safe-area-inset-bottom,0px) + 84px); } }
