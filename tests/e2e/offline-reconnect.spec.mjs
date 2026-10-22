@@ -69,7 +69,9 @@ test('active offline edits retry after a busy sync lease and show upload progres
   await page.evaluate(async account=>{await InhouseOfflineStore.patch('leases',account,'sync',()=>null);window.retrySync=InhouseOfflineLibrary.kick();},account);
   await expect.poll(()=>uploads).toBe(1);
   expect(await page.evaluate(()=>getSavePresentation().driveLabel)).toBe('Uploading');
-  await expect(page.locator('#offline-sync-status')).toHaveAttribute('data-phase','uploading');
+  await page.evaluate(()=>renderDriveRecents([{id:'pending',name:'Pending.pdf',mimeType:'application/pdf'}]));
+  await expect(page.locator('#drive-recents .document-sync-status')).toHaveAttribute('data-phase','uploading');
+  await expect(page.locator('#offline-sync-status')).toHaveCount(0);
   release();await page.evaluate(()=>window.retrySync);
   await expect.poll(()=>page.evaluate(async account=>(await InhouseOfflineStore.list('outbox',account)).length,account)).toBe(0);
   expect(await page.evaluate(()=>driveDirty)).toBe(false);
@@ -111,7 +113,7 @@ test('a failed dirty draft open preserves it and releases the lock for another f
   await InhouseOfflineLibrary.reload();
   await openDriveFile({id:'broken-dirty',name:'Dirty.pdf'});
  },account);
- await expect(page.locator('#offline-sync-status')).toContainText('changes are retained');
+ await expect(page.locator('#drive-status')).toContainText('changes are retained');
  const doc=await page.evaluate(async account=>{
   const doc=await InhouseOfflineStore.read('documents',account,'broken-dirty');
   return {dirty:doc.dirty,body:await doc.blob.text(),queued:!!await InhouseOfflineStore.read('outbox',account,'broken-dirty')};
@@ -120,4 +122,83 @@ test('a failed dirty draft open preserves it and releases the lock for another f
  await page.evaluate(()=>openDriveFile({id:'good',name:'Good.pdf'}));
  await expect(page.locator('#editor-view')).toBeVisible();
  expect(await page.evaluate(()=>state.driveFileId)).toBe('good');
+});
+
+test('production Drive adapter creates an offline document after reserved ID returns 404',async({page,context})=>{
+ const writes=[];
+ await context.route('https://www.googleapis.com/**',route=>{
+  const req=route.request(),url=new URL(req.url());
+  if(url.pathname.includes('/upload/')){writes.push(req.method());return route.fulfill({json:{id:'reserved',version:'1'}});}
+  if(url.pathname.endsWith('/generateIds'))return route.fulfill({json:{ids:['reserved']}});
+  return route.fulfill({status:404,json:{error:{code:404,message:'File not found'}}});
+ });
+ const result=await page.evaluate(async account=>{
+  driveSignedOut=false;driveAccessToken='test';driveTokenExpiry=Date.now()+600000;
+  await InhouseOfflineStore.checkpoint(account,'local-create',{blob:new Blob(['pdf']),entry:{name:'Offline.pdf',parents:['root']}});
+  const result=await InhouseOfflineSync.run(account,{fetch:driveFetch});
+  return {result,pending:(await InhouseOfflineStore.list('outbox',account)).length};
+ },account);
+ expect(result.result.errors).toEqual([]);expect(result.result.saved).toBe(1);expect(result.pending).toBe(0);expect(writes).toEqual(['POST']);
+});
+
+test('Drive v3 without ETag obtains a revision-matched token without discarding conditional writes',async({page,context})=>{
+ const writes=[];
+ await context.route('https://www.googleapis.com/**',route=>{
+  const req=route.request(),url=new URL(req.url());
+  if(req.method()==='PATCH'){writes.push({match:req.headers()['if-match'],path:url.pathname,body:req.postData()});return route.fulfill({json:{id:'existing',title:'Existing.pdf',modifiedDate:'2026-10-22T12:00:00Z',version:'8'}});}
+  if(url.pathname.includes('/v2/'))return route.fulfill({json:{etag:'"revision-7"',version:'7'}});
+  return route.fulfill({json:{id:'existing',version:'7',capabilities:{canEdit:true}}});
+ });
+ const result=await page.evaluate(async account=>{
+  driveSignedOut=false;driveAccessToken='test';driveTokenExpiry=Date.now()+600000;
+  await InhouseOfflineStore.checkpoint(account,'existing',{blob:new Blob(['offline edit']),baseMeta:{version:'7'},entry:{parents:['root']}});
+  return InhouseOfflineSync.run(account,{fetch:driveFetch});
+ },account);
+ expect(result.errors).toEqual([]);expect(result.saved).toBe(1);expect(writes).toHaveLength(1);expect(writes[0].match).toBe('"revision-7"');expect(writes[0].path).toContain('/upload/drive/v2/');expect(writes[0].body).toContain('"visibility":"PRIVATE"');
+});
+
+test('a changed revision during token recovery never overwrites Drive',async({page})=>{
+ const result=await page.evaluate(async account=>{
+  const S=InhouseOfflineStore;let writes=0;
+  await S.checkpoint(account,'race',{blob:new Blob(['local ink']),baseMeta:{version:'7'},entry:{parents:['root']}});
+  const result=await InhouseOfflineSync.run(account,{fetch:async(url,o={})=>{
+   if(o.method==='PATCH'){writes++;return Response.json({});}
+   return Response.json(url.includes('/v2/')?{etag:'"revision-8"',version:'8'}:{id:'race',version:'7'});
+  }});
+  return {result,writes,local:await (await S.read('documents',account,'race')).blob.text(),pending:(await S.list('outbox',account)).length};
+ },account);
+ expect(result.result.errors[0].code).toBe(412);expect(result.writes).toBe(0);expect(result.local).toBe('local ink');expect(result.pending).toBe(1);
+});
+
+test('recents stay ordered across cached and network renders with pending local aliases',async({page})=>{
+ const orders=await page.evaluate(async()=>{
+  const items=['b','a'].map(id=>({id,name:id+'.pdf',mimeType:'application/pdf',parents:['root'],modifiedTime:'2026-10-22T12:00:00Z'}));
+  await InhouseOfflineLibrary.observed([{...items[0],id:'local-b',remoteId:'b',pending:true}]);
+  const orders=[];
+  for(let i=0;i<4;i++){
+   const files=i%2?items:[...items].reverse();
+   await InhouseOfflineLibrary.observed(files,null,'recents');
+   renderDriveRecents(files);orders.push([...document.querySelectorAll('#drive-recents [data-drive-item-id]')].map(e=>e.dataset.driveItemId));
+   renderDriveRecents(InhouseOfflineLibrary.home().recents);orders.push([...document.querySelectorAll('#drive-recents [data-drive-item-id]')].map(e=>e.dataset.driveItemId));
+  }
+  return orders;
+ });
+ for(const order of orders)expect(order).toEqual(['a','local-b']);
+});
+
+test('eight queued documents drain through the production adapter without exposed v3 ETags',async({page,context})=>{
+ let uploaded=0;
+ await context.route('https://www.googleapis.com/**',route=>{
+  const request=route.request(),url=new URL(request.url()),id=url.pathname.split('/').pop();
+  if(request.method()==='PATCH'){uploaded++;return route.fulfill({json:{id,version:'2'}});}
+  return route.fulfill({json:url.pathname.includes('/v2/')?{etag:'"v1"',version:'1'}:{id,version:'1'}});
+ });
+ const result=await page.evaluate(async account=>{
+  driveSignedOut=false;driveAccessToken='test';driveTokenExpiry=Date.now()+600000;
+  for(let i=0;i<8;i++)await InhouseOfflineStore.checkpoint(account,'queued-'+i,{blob:new Blob(['ink-'+i]),baseMeta:{version:'1'},entry:{name:'Note '+i,parents:['root']}});
+  const summary=await InhouseOfflineSync.run(account,{fetch:driveFetch});
+  await InhouseOfflineLibrary.syncFinished(summary);
+  return {summary,pending:InhouseOfflineLibrary.syncStatus().pending};
+ },account);
+ expect(result.summary.errors).toEqual([]);expect(result.summary.saved).toBe(8);expect(result.pending).toBe(0);expect(uploaded).toBe(8);
 });
