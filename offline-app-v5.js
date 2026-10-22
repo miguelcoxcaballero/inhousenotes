@@ -22,6 +22,22 @@
             details:{fileName:state.driveFileName,parentIds:state.driveParentIds,canEdit:state.driveCanEdit,ownedByMe:state.driveOwnedByMe,resourceKey:state.driveResourceKey,folderKind:state.driveFolderKind,ownerName:state.driveOwnerName,ownerEmail:state.driveOwnerEmail,ownerPhoto:state.driveOwnerPhoto},
             originalBlob:state.cleanOriginalPdfBytes?.byteLength?new Blob([state.cleanOriginalPdfBytes],{type:'application/pdf'}):undefined};
     }
+    function renderSyncStatus() {
+        const status=L.syncStatus(),el=document.getElementById('offline-sync-status');
+        if(el) {
+            const active=status.phase!=='idle';
+            el.hidden=!status.pending&&!active;
+            el.dataset.phase=active?status.phase:status.errors.length?'error':'pending';
+            const label=el.querySelector('[data-sync-label]');
+            label.textContent=active?({checking:'Checking Drive…',building:'Preparing document…',merging:'Merging changes…',uploading:'Uploading to Drive…'}[status.phase]||'Syncing…')
+                :L.offline()?`${status.pending} waiting for connection`
+                :status.errors.length?(driveAuthNeedsReconnect?'Sign in to sync':'Sync pending · will retry'):`${status.pending} waiting to sync`;
+            const retry=el.querySelector('button');retry.hidden=active||L.offline()||!status.pending;
+            retry.textContent=driveAuthNeedsReconnect?'Sign in':'Retry';
+            retry.onclick=()=>driveAuthNeedsReconnect?signInDrive():void L.kick();
+        }
+        refreshSaveIndicatorState();
+    }
     function renderHome() {
         if(!L.ready())return;
         const cached=L.home();
@@ -141,10 +157,11 @@
     async function initialize() {
         await L.init({version:APP_VERSION,currentId,quickAccess:isQuickAccessDriveFile,activeDocument:()=>document.visibilityState==='visible'&&editorView&&!editorView.classList.contains('hidden'),busy:()=>hasSmoothInteraction()||driveOpenInProgress||offlineOpenInProgress,
             identity:()=>({id:currentId(),version:driveContentVersion,session:getDocumentSessionToken()}),
+            syncChanged:renderSyncStatus,syncActive:()=>queueDriveSave(true),
             connectionChanged:connected=>{
-                refreshSaveIndicatorState();
-                if(connected&&L.ready()&&driveAccessToken){
-                    if(state.driveAutosave&&driveDirty)void queueDriveSave(true);
+                renderSyncStatus();
+                if(connected&&L.ready()){
+                    if(state.driveAutosave&&driveDirty)void queueDriveSave(true).catch(()=>{});
                     if(isDriveHomeVisible())void refreshDriveHomeQuiet();
                 }
             },
@@ -182,6 +199,7 @@
                 return driveFetch(url,options);
             };
             result=await root.InhouseOfflineSync.run(account,{fetch:guardedFetch,build:workerBuild,merge:async(doc,meta,remoteBlob)=>{await restore(doc,false);return merge(doc,meta,remoteBlob);},
+                progress:progress=>root.parent?.postMessage({type:'ihn-offline-progress',progress},location.origin),
                 skip:id=>editor?.documentId===id&&editor.expires>Date.now()});
         } catch(error) {result={pending:1,errors:[{message:error.message}]};}
         finally {
@@ -216,7 +234,14 @@
         if(!isDocumentPersistenceContextCurrent(requestContext))return {cancelled:true};
         if(state.driveFileId?.startsWith('local-') || pending?.offlineEdited) {
             const id=currentId(),session=getDocumentSessionToken(),version=driveContentVersion;
-            const result=await root.InhouseOfflineSync.run(L.account(),{fetch:driveFetch,skip:other=>other!==id,
+            L.setSyncProgress({phase:'checking',id,errors:[]});
+            let result;
+            try {result=await root.InhouseOfflineSync.run(L.account(),{
+                fetch:(url,options)=>{
+                    if(!isDocumentPersistenceContextCurrent(requestContext))throw createAbortError('Sync document changed');
+                    return driveFetch(url,options);
+                },skip:other=>other!==id,
+                progress:L.setSyncProgress,
                 build:()=>buildPdfBlob({sessionToken:session,...DRIVE_UPLOAD_PDF_OPTIONS}),merge,
                 saved:async(localId,meta,blob)=>{
                     if(getDocumentSessionToken()!==session)return;
@@ -225,6 +250,8 @@
                     markDriveContentUploaded(version);if(version===driveContentVersion){driveDirty=false;updateSyncBaseline();}
                     saveDriveSession();updateDocTitle();refreshSaveIndicatorState();
                 }});
+            } catch(error) {result={errors:[{message:error.message}]};}
+            finally {await L.syncFinished(result||{});}
             if(result?.errors?.length)showStatus('Saved on this device · sync pending',{preserveState:true});
             return result;
         }

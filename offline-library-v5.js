@@ -3,7 +3,24 @@
     const S=root.InhouseOfflineStore;
     let host, account='', entries=[], documents=new Map(), captureTimer, syncFrame;
     let initialized=false, loaded=false, resumed=false, cataloguePromise=null;
-    let savedViews={};
+    let savedViews={}, kicking=false;
+    let syncState={phase:'idle',pending:0,id:null,errors:[]};
+    function setSyncProgress(progress) {
+        syncState={...syncState,...progress};
+        host?.syncChanged?.({...syncState});
+    }
+    async function syncFinished(result={}) {
+        setSyncProgress({phase:'idle',id:null,errors:result.errors||[]});
+        await reload();
+        host?.refreshed?.();
+    }
+    function compareEntries(a,b) {
+        const af=a.mimeType===folderType,bf=b.mimeType===folderType;
+        if(af!==bf)return af?-1:1;
+        const order=af?(a.name||'').localeCompare(b.name||''):modifiedTime(b)-modifiedTime(a);
+        const ak=String(a.remoteId||a.id),bk=String(b.remoteId||b.id);
+        return order||(ak<bk?-1:ak>bk?1:0);
+    }
     let folderEntries=new Map(), folderIds=new Set(), activeEntries=[], activeAliases=new Map();
     let documentAliases=new Map(), modifiedTimes=new WeakMap();
     function indexCatalogue() {
@@ -61,7 +78,7 @@
     async function reload() {
         if (!account) return;
         const requestedAccount=account;
-        const [items,docs,driveRoot,views]=await Promise.all([S.list('entries',requestedAccount),S.list('document-index',requestedAccount),S.read('settings',requestedAccount,'drive-root'),S.read('settings',requestedAccount,'home-views')]);
+        const [items,docs,driveRoot,views,outbox]=await Promise.all([S.list('entries',requestedAccount),S.list('document-index',requestedAccount),S.read('settings',requestedAccount,'drive-root'),S.read('settings',requestedAccount,'home-views'),S.list('outbox',requestedAccount)]);
         if(account!==requestedAccount)return;
         const aliases=new Map(items.filter(e=>e.remoteId && e.remoteId!==e.id).map(e=>[e.remoteId,e.id]));
         if(driveRoot?.remoteId)aliases.set(driveRoot.remoteId,'root');
@@ -73,6 +90,7 @@
         });
         documents=new Map(docs.map(doc=>[doc.id,doc]));
         savedViews=views||{};indexCatalogue();loaded=true;
+        setSyncProgress({pending:outbox.length,...(!outbox.length?{errors:[]}:{})});
         document.querySelectorAll('[data-drive-item-id]').forEach(card=>decorate(card,card.dataset.driveItemId));
     }
     function record(id) {return documents.get(id)||documentAliases.get(id);}
@@ -91,12 +109,12 @@
         // Read this directory only; rebuilding every card no longer searches
         // the entire Drive catalogue. Filter returns a fresh sortable array.
         return (folderEntries.get(id||'root')||[]).filter(e=>!needle||e.name?.toLowerCase().includes(needle))
-            .sort((a,b)=>a.mimeType===folderType&&b.mimeType===folderType ? (a.name||'').localeCompare(b.name||'') : modifiedTime(b)-modifiedTime(a));
+            .sort(compareEntries);
     }
     function combine(remote,parent,search='') {
         const local=folder(parent,search).filter(e=>e.pending||e.id.startsWith('local-'));
         const ids=new Set(local.flatMap(e=>[e.id,e.remoteId]));
-        return [...local,...remote.filter(e=>!ids.has(e.id))];
+        return [...local,...remote.filter(e=>!ids.has(e.id))].sort(compareEntries);
     }
     function home() {
         const active=activeEntries;
@@ -228,19 +246,38 @@
         try {const registration=await navigator.serviceWorker?.getRegistration();await registration?.sync?.register('inhouse-outbox');}catch(_){}
     }
     async function kick() {
-        if (isWorker || !initialized || !resumed || !account || offline() || syncFrame || host.busy()) return;
-        const queue=await S.list('outbox',account);
-        if (!queue.some(op=>op.kind==='folder'||!host.activeDocument?.()||op.id!==host.currentId()) || syncFrame) return;
-        const frame=document.createElement('iframe');frame.hidden=true;frame.title='Background document sync';
-        frame.src=`/?offline-worker=1&v=${encodeURIComponent(host.version)}`;
-        syncFrame=frame;document.body.appendChild(frame);
-        const timer=setTimeout(()=>{window.removeEventListener('message',listener);if(syncFrame===frame){frame.remove();syncFrame=null;}},8*60*1000);
-        const listener=event=>{
-            if(event.origin!==location.origin || event.source!==frame.contentWindow || event.data?.type!=='ihn-offline-complete')return;
-            clearTimeout(timer);window.removeEventListener('message',listener);frame.remove();syncFrame=null;
-            reload().then(()=>host.refreshed?.()).catch(()=>{});
-        };
-        window.addEventListener('message',listener);
+        if (isWorker || !initialized || !resumed || !account || offline() || syncFrame || kicking || host.busy()) return;
+        kicking=true;
+        try {
+            let queue=await S.list('outbox',account);
+            if(host.activeDocument?.()&&queue.some(op=>op.kind==='document'&&op.id===host.currentId())) {
+                // The background editor deliberately skips a live document.
+                // Its foreground owner must retry too, including after a busy lease.
+                await host.syncActive?.();
+                queue=await S.list('outbox',account);
+            }
+            if (!queue.some(op=>op.kind==='folder'||!host.activeDocument?.()||op.id!==host.currentId()) || syncFrame || offline()) return;
+            const frame=document.createElement('iframe');frame.hidden=true;frame.title='Background document sync';
+            frame.src=`/?offline-worker=1&v=${encodeURIComponent(host.version)}`;
+            syncFrame=frame;
+            setSyncProgress({phase:'checking',pending:queue.length,id:null,errors:[]});
+            const finish=result=>{
+                clearTimeout(timer);window.removeEventListener('message',listener);
+                if(syncFrame!==frame)return;
+                frame.remove();syncFrame=null;
+                void syncFinished(result).catch(()=>{});
+            };
+            const listener=event=>{
+                if(event.origin!==location.origin || event.source!==frame.contentWindow)return;
+                if(event.data?.type==='ihn-offline-progress')setSyncProgress(event.data.progress);
+                if(event.data?.type==='ihn-offline-complete')finish(event.data.result);
+            };
+            const timer=setTimeout(()=>finish({errors:[{message:'Sync timed out; retrying automatically'}]}),8*60*1000);
+            window.addEventListener('message',listener);
+            document.body.appendChild(frame);
+        } catch(error) {
+            await syncFinished({errors:[{message:error.message}]}).catch(()=>{});
+        } finally {kicking=false;}
     }
     async function showSettings() {
         if (!account) return;
@@ -287,7 +324,8 @@
     }
     async function resume() {
         if(isWorker||!initialized)return;
-        await capture();resumed=true;kick().catch(()=>{});catalogue().catch(()=>{});
+        resumed=true;
+        try {await capture();} finally {kick().catch(()=>{});catalogue().catch(()=>{});}
     }
     async function useAccount(email) {
         const next=String(email||'').trim().toLowerCase();
@@ -295,7 +333,7 @@
         account=next;loaded=false;await reload();host.refreshed?.();kick();catalogue().catch(()=>{});
     }
     function disable() {initialized=false;resumed=false;}
-    function logout() {account='';loaded=false;savedViews={};entries=[];documents.clear();indexCatalogue();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
+    function logout() {setSyncProgress({phase:'idle',pending:0,id:null,errors:[]});account='';loaded=false;savedViews={};entries=[];documents.clear();indexCatalogue();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
     root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&loaded&&!!account,folder,combine,home,observed,cache,capture,scheduleCapture,prepared,
-        openRecord,pin,createFolder,catalogue,kick,scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
+        openRecord,pin,createFolder,catalogue,kick,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
 })(window);
