@@ -175,14 +175,48 @@
         await heartbeat();
         if(driveAccessToken)await authorizeBackground();
     }
+    async function backgroundAccess(expectedAccount,rejectedToken=null) {
+        const assertAccount=()=>{
+            if(!expectedAccount||L.account()!==expectedAccount||driveSignedOut
+                ||(localStorage.getItem('drive-hint-email')||'').trim().toLowerCase()!==expectedAccount)
+                throw new Error('Background account changed or signed out');
+        };
+        assertAccount();
+        // Invalidate only the token rejected by Drive; another request may
+        // already have refreshed the shared session in the meantime.
+        if(rejectedToken&&driveAccessToken===rejectedToken){driveAccessToken=null;driveTokenExpiry=0;}
+        const token=await ensureDriveToken(false);
+        assertAccount();
+        return {token,expiry:driveTokenExpiry};
+    }
     async function worker() {
         let result;
         try {
             await initialize();
             const account=L.account();if(!account)throw new Error('No saved account');
-            loadDriveTokenFromStorage();
-            if(!driveAccessToken && !useAndroidPkceFlow())throw new Error('Sign in to renew background access');
-            await ensureDriveToken(false);
+            // Home owns authentication (including native/silent refresh).
+            // Its hidden processor must not depend on a stale storage copy or
+            // initialize a second OAuth client while the visible session works.
+            let owner=null;
+            try {if(root.parent!==root&&root.parent.location.origin===location.origin)
+                owner=root.parent.InhouseOfflineApp;}catch(_){}
+            const access=owner?.backgroundAccess;
+            if(access){
+                const credentials=await access(account);
+                driveAccessToken=credentials.token;driveTokenExpiry=credentials.expiry;
+                // Use the same owner for refreshes during long PDF jobs too.
+                let lastToken=credentials.token;
+                ensureDriveToken=async()=>{
+                    const next=await access(account,driveAccessToken?null:lastToken);
+                    lastToken=next.token;
+                    driveAccessToken=next.token;driveTokenExpiry=next.expiry;
+                    return next.token;
+                };
+            }else{
+                loadDriveTokenFromStorage();
+                if(!driveAccessToken && !useAndroidPkceFlow())throw new Error('Sign in to renew background access');
+                await ensureDriveToken(false);
+            }
             const profile=await (await driveFetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json();
             if(profile.user?.emailAddress?.toLowerCase()!==account)throw new Error('Background account changed');
             const editor=await S.read('leases',account,'editor');
@@ -291,5 +325,5 @@
             void L.kick();
         }
     }
-    root.InhouseOfflineApp=Object.freeze({authorizeBackground,initialize,reconcileStartup,worker,restore,newDocument,confirmed,queueSave,saveNow,renderHome,renderFolder,currentId});
+    root.InhouseOfflineApp=Object.freeze({authorizeBackground,initialize,reconcileStartup,backgroundAccess,worker,restore,newDocument,confirmed,queueSave,saveNow,renderHome,renderFolder,currentId});
 })(window);

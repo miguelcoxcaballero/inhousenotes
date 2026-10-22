@@ -42,8 +42,8 @@
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "b35fd38b548a4fc710eb30163f648cd8f373b25aae46852b42dcb03d5fa2a9c3",
-      "size": 21074,
+      "sha256": "8a595ffd4745c3617d78a7391c10519dfc132940d79fc5b8e05e695ae20bbc1a",
+      "size": 22988,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
