@@ -21946,8 +21946,12 @@
             };
         }
 
-        async function cloneSanitizedPageForStorage(page, sessionToken) {
-            if (!await waitForHotInteractionToSettle({sessionToken,windowMs:0})) return null;
+        // Per-stroke journal writes remain immediate. Full-page compaction must
+        // wait through the gaps between letters, rather than compete with the
+        // next pen contact after the short gesture-idle timer expires.
+        const PAGE_CHECKPOINT_IDLE_MS = 1200;
+        async function cloneSanitizedPageForStorage(page, sessionToken, isStale = () => false) {
+            if (!await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isStale()) return null;
             const sanitized = sanitizePageForStorage(page);
             const clone = value => typeof structuredClone === 'function'
                 ? structuredClone(value) : JSON.parse(JSON.stringify(value));
@@ -21960,10 +21964,11 @@
                 // Generation validation after the snapshot rejects concurrent
                 // edits. Small clones avoid a document-sized blocking task.
                 for (const stroke of source.slice()) {
+                    if (isStale()) return null;
                     result[key].push(clone(stroke));
                     if (performance.now() - sliceStart >= 4) {
                         await yieldProcessingForUi();
-                        if (!await waitForHotInteractionToSettle({sessionToken,windowMs:0})) return null;
+                        if (isStale() || !await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isStale()) return null;
                         sliceStart = performance.now();
                     }
                 }
@@ -22042,11 +22047,14 @@
             }
             // Snapshot in short slices. The captured generation below rejects
             // any edit that arrives during cloning or the IndexedDB commit.
-            const snapshot = await cloneSanitizedPageForStorage(page,sessionToken);
+            const isSnapshotStale = () => options.abortSignal?.aborted
+                || !isDocumentSessionTokenValid(sessionToken)
+                || (pageDirtyGeneration.get(pageIndex) || 0) !== mutationGenerationAtSnapshot;
+            const snapshot = await cloneSanitizedPageForStorage(page,sessionToken,isSnapshotStale);
             if (!snapshot || !isDocumentSessionTokenValid(sessionToken)) return false;
             const storedPageRecord = { ...snapshot, __sessionId: sessionToken };
             const db = await openNotebookDb();
-            if (!db || !await waitForHotInteractionToSettle({sessionToken,windowMs:0})) return false;
+            if (!db || !await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isSnapshotStale()) return false;
             const currentPageMatches = state.pages[pageIndex] === page
                 || (!!pageId && state.pages[pageIndex]?.pageId === pageId);
             if (!isDocumentSessionTokenValid(sessionToken)
@@ -23156,7 +23164,7 @@
                     pageDirtyMode.delete(pageIndex);
                     continue;
                 }
-                const saved = await savePageToIndexedDb(pageIndex, page, { structureToken });
+                const saved = await savePageToIndexedDb(pageIndex, page, { structureToken, abortSignal });
                 assertContext?.();
                 if (abortSignal?.aborted) return false;
                 if (!saved) {
