@@ -285,6 +285,8 @@
         if (isWorker || !initialized || !resumed || !account || offline() || syncFrame || kicking || host.busy()) return;
         kicking=true;
         try {
+            const priority=await S.read('settings',account,'sync-priority');
+            if(priority?.documentId&&priority.expires>Date.now())return;
             let queue=await S.list('outbox',account);
             if(host.activeDocument?.()&&queue.some(op=>op.kind==='document'&&op.id===host.currentId())) {
                 // The background editor deliberately skips a live document.
