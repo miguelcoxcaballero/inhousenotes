@@ -145,7 +145,8 @@ test('Drive v3 without ETag obtains a revision-matched token without discarding 
  const writes=[];
  await context.route('https://www.googleapis.com/**',route=>{
   const req=route.request(),url=new URL(req.url());
-  if(req.method()==='PATCH'){writes.push({match:req.headers()['if-match'],path:url.pathname,body:req.postData()});return route.fulfill({json:{id:'existing',title:'Existing.pdf',modifiedDate:'2026-10-22T12:00:00Z',version:'8'}});}
+  if(url.pathname.includes('/upload/drive/v2/')&&req.method()!=='PUT')return route.fulfill({status:405,json:{error:'Drive v2 media upload requires PUT'}});
+  if(req.method()==='PUT'){writes.push({match:req.headers()['if-match'],path:url.pathname,body:req.postData()});return route.fulfill({json:{id:'existing',title:'Existing.pdf',modifiedDate:'2026-10-22T12:00:00Z',version:'8'}});}
   if(url.pathname.includes('/v2/'))return route.fulfill({json:{etag:'"revision-7"',version:'7'}});
   return route.fulfill({json:{id:'existing',version:'7',capabilities:{canEdit:true}}});
  });
@@ -162,7 +163,7 @@ test('a changed revision during token recovery never overwrites Drive',async({pa
   const S=InhouseOfflineStore;let writes=0;
   await S.checkpoint(account,'race',{blob:new Blob(['local ink']),baseMeta:{version:'7'},entry:{parents:['root']}});
   const result=await InhouseOfflineSync.run(account,{fetch:async(url,o={})=>{
-   if(o.method==='PATCH'){writes++;return Response.json({});}
+   if(o.method==='PATCH'||o.method==='PUT'){writes++;return Response.json({});}
    return Response.json(url.includes('/v2/')?{etag:'"revision-8"',version:'8'}:{id:'race',version:'7'});
   }});
   return {result,writes,local:await (await S.read('documents',account,'race')).blob.text(),pending:(await S.list('outbox',account)).length};
@@ -190,7 +191,8 @@ test('eight queued documents drain through the production adapter without expose
  let uploaded=0;
  await context.route('https://www.googleapis.com/**',route=>{
   const request=route.request(),url=new URL(request.url()),id=url.pathname.split('/').pop();
-  if(request.method()==='PATCH'){uploaded++;return route.fulfill({json:{id,version:'2'}});}
+  if(url.pathname.includes('/upload/drive/v2/')&&request.method()!=='PUT')return route.fulfill({status:405,json:{error:'Drive v2 media upload requires PUT'}});
+  if(request.method()==='PUT'){uploaded++;return route.fulfill({json:{id,version:'2'}});}
   return route.fulfill({json:url.pathname.includes('/v2/')?{etag:'"v1"',version:'1'}:{id,version:'1'}});
  });
  const result=await page.evaluate(async account=>{
