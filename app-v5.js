@@ -7485,6 +7485,7 @@
                     keepalive: !!options.keepalive,
                     signal: controller.signal
                 });
+                window.InhouseOfflineLibrary?.networkAvailable?.();
                 // Upload completion and signalling/revision JSON are not usable
                 // until their bodies arrive. Retain the deadline/cancellation
                 // during that read, while leaving successful PDF media streaming.

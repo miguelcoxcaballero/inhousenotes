@@ -56,23 +56,35 @@
     const folderType='application/vnd.google-apps.folder';
     let disconnected=false;
     try {disconnected=sessionStorage.getItem('ihn-network-offline')==='1';}catch(_){}
-    const offline=()=>navigator.onLine===false||disconnected;
+    let reachable=false,networkEpoch=0;
+    const offline=()=>disconnected||(navigator.onLine===false&&!reachable);
     function connectivity(value) {
-        const changed=disconnected!==!value;disconnected=!value;
+        const before=offline();reachable=!!value;disconnected=!value;
         try {sessionStorage.setItem('ihn-network-offline',disconnected?'1':'0');}catch(_){}
+        const changed=before!==offline();
         if(changed)host?.connectionChanged?.(value);
         if(changed&&loaded) {reload().then(()=>host.refreshed?.()).catch(()=>{});if(value){kick();catalogue().catch(()=>{});}}
     }
     let probing=false;
     async function probeConnection() {
-        if(probing||navigator.onLine===false)return;
+        if(probing)return;
         probing=true;
+        const epoch=networkEpoch;
         try {
-            // Android can report Wi-Fi as online even when it has no internet.
-            // This tiny uncached request must never hold up the local library.
-            const response=await fetch(`/service-worker.js?connectivity=${Date.now()}`,{cache:'no-store',signal:AbortSignal.timeout(5000)});
-            connectivity(response.ok);
-        }catch(_){connectivity(false);}finally{probing=false;}
+            // Probe the upload service itself. Shell assets may be cached or
+            // intercepted by Android, and their failure says nothing about Drive.
+            // An unauthenticated 401/403 is still proof that Drive is reachable.
+            const response=await fetch('https://www.googleapis.com/drive/v3/about?fields=kind',{
+                cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(5000)});
+            if(epoch!==networkEpoch)return;
+            connectivity(response.status>0);
+            if(!offline())void kick();
+        }catch(_){if(epoch===networkEpoch)connectivity(false);}finally{probing=false;}
+    }
+    function networkAvailable() {
+        // A real authenticated response outranks an older failed probe and the
+        // occasionally stale navigator.onLine flag in an Android WebView.
+        networkEpoch++;connectivity(true);
     }
     function knownAccount() {
         try {return (localStorage.getItem('drive-hint-email')||'').trim().toLowerCase();} catch(_){return '';}
@@ -111,11 +123,35 @@
         let badge=card.querySelector('.document-sync-status');
         if(!op&&!active){badge?.remove();return;}
         if(!badge){badge=document.createElement('button');badge.type='button';badge.className='document-sync-status';badge.setAttribute('aria-live','polite');card.append(badge);}
-        const error=syncState.errors.find(e=>!e.id||e.id===(doc?.id||id))||(op?.lastError?{code:op.lastError,message:op.lastErrorMessage}:null);
+        const error=syncState.errors.find(e=>!e.id||e.id===(doc?.id||id))||(op?.lastError?{code:op.lastError,message:op.lastErrorMessage,phase:op.lastErrorPhase}:null);
         badge.dataset.phase=active?syncState.phase:error?'error':'pending';
-        badge.textContent=active?({checking:'Checking…',building:'Preparing…',merging:'Merging…',uploading:'Uploading…'}[syncState.phase]||'Syncing…'):offline()?'Saved offline':error?'Retry upload':'Waiting to upload';
+        badge.textContent=active?({checking:'Checking…',building:'Preparing…',merging:'Merging…',uploading:'Uploading…'}[syncState.phase]||'Syncing…'):error?'Retry upload':offline()?'Saved offline':'Waiting to upload';
         badge.title=error?syncErrorText(error):badge.textContent;
-        badge.onclick=event=>{event.preventDefault();event.stopPropagation();if(!offline()&&!active)host?.retrySync?.();};
+        badge.onclick=event=>{
+            event.preventDefault();event.stopPropagation();
+            if(active)return;
+            if(error){showSyncFailure(doc?.entry?.name||doc?.name||card.querySelector('.file-name')?.textContent||'Document',error);return;}
+            void probeConnection().then(()=>{if(!offline())host?.retrySync?.();});
+        };
+    }
+    function showSyncFailure(name,error) {
+        document.getElementById('offline-sync-error')?.remove();
+        const dialog=document.createElement('dialog');dialog.id='offline-sync-error';dialog.className='offline-settings';
+        dialog.innerHTML='<form method="dialog"><h2>Upload pending</h2><p class="sync-file-name"></p><p class="sync-error-summary"></p><pre class="sync-error-detail"></pre><div class="offline-settings-actions"><button value="close">Close</button><button type="button" class="copy-sync-error">Copy error</button><button value="retry">Retry</button></div></form>';
+        dialog.querySelector('.sync-file-name').textContent=name;
+        dialog.querySelector('.sync-error-summary').textContent=syncErrorText(error);
+        const detail=String(error.message||'Unknown error').replace(/Bearer\s+[^\s"']+/gi,'Bearer [redacted]').slice(0,1200);
+        const report=`Inhouse Notes ${host.version}\n${error.phase||'sync'} · ${error.code||'unknown'}\n${detail}`;
+        dialog.querySelector('.sync-error-detail').textContent=report;
+        dialog.querySelector('.copy-sync-error').onclick=async event=>{
+            try{await navigator.clipboard.writeText(report);event.target.textContent='Copied';}catch(_){event.target.textContent='Select the error text';}
+        };
+        dialog.addEventListener('close',()=>{
+            dialog.remove();if(dialog.returnValue!=='retry')return;
+            if(!offline())host?.retrySync?.();
+            else void probeConnection().then(()=>{if(!offline())host?.retrySync?.();});
+        });
+        document.body.appendChild(dialog);dialog.showModal();
     }
     function syncErrorText(error) {
         if(!error)return '';
@@ -350,7 +386,7 @@
                 navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.type==='ihn-offline-updated')reload().then(()=>host.refreshed?.());});
             }
             document.querySelectorAll('[data-offline-settings]').forEach(button=>button.addEventListener('click',()=>showSettings().catch(host.error)));
-            window.addEventListener('offline',()=>connectivity(false));
+            window.addEventListener('offline',()=>{networkEpoch++;connectivity(false);});
             window.addEventListener('online',()=>probeConnection());
             document.addEventListener('visibilitychange',()=>{if(!document.hidden)probeConnection();});
             setInterval(()=>{if(offline())probeConnection();},30000);
@@ -372,6 +408,6 @@
     }
     function disable() {initialized=false;resumed=false;}
     function logout() {setSyncProgress({phase:'idle',pending:0,id:null,errors:[]});account='';loaded=false;savedViews={};entries=[];documents.clear();indexCatalogue();if(syncFrame){syncFrame.remove();syncFrame=null;}try{root.InhouseBackground?.cancel?.();}catch(_){} }
-    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,ready:()=>initialized&&loaded&&!!account,folder,combine,home,recentItems,syncErrorText,observed,cache,capture,scheduleCapture,prepared,
+    root.InhouseOfflineLibrary=Object.freeze({init,resume,disable,account:()=>account,offline,networkAvailable,ready:()=>initialized&&loaded&&!!account,folder,combine,home,recentItems,syncErrorText,observed,cache,capture,scheduleCapture,prepared,
         openRecord,pin,createFolder,catalogue,kick,setSyncProgress,syncFinished,syncStatus:()=>({...syncState}),scheduleBackground,decorate,reload,useAccount,logout,settings:showSettings,record,isWorker});
 })(window);

@@ -18,7 +18,8 @@
                 summary.pending=(await S.list('outbox',account)).length;
                 return true;
             };
-            const progress=(id,phase)=>{try{adapter.progress?.({id,phase});}catch(_){}};
+            const phases=new Map();
+            const progress=(id,phase)=>{phases.set(id,phase);try{adapter.progress?.({id,phase});}catch(_){}};
             const request=async (url,options={})=>{
                 await assertLease();
                 const response=await adapter.fetch(url,options);
@@ -50,10 +51,12 @@
                     headers['If-Match']=etag;
                 }
                 // Use the same API representation that supplied the conditional token.
+                // Drive v2 files.patch is metadata-only; media requires files.update
+                // (PUT). Drive v3 files.update uses PATCH, including media.
                 const endpoint=legacyConditional?UPLOAD.replace('/v3/','/v2/'):UPLOAD;
                 const projection=legacyConditional?'id,title,mimeType,modifiedDate,version,headRevisionId':fields;
                 const result=await (await request(`${endpoint}${create?'':`/${encodeURIComponent(id)}`}?uploadType=multipart&fields=${encodeURIComponent(projection)}`,
-                    {method:create?'POST':'PATCH',headers,body})).json();
+                    {method:create?'POST':legacyConditional?'PUT':'PATCH',headers,body})).json();
                 return legacyConditional?{...result,...(result.title?{name:result.title}:{}),...(result.modifiedDate?{modifiedTime:result.modifiedDate}:{}),appProperties:meta.appProperties}:result;
             };
             const queue=await S.list('outbox',account);
@@ -83,7 +86,7 @@
                             id:remoteId,name:entry.name,mimeType:'application/vnd.google-apps.folder',parents:[parent],appProperties:{ihnOfflineId:op.id}
                         })});
                         await S.finishFolder(account,op.id,remoteId); summary.saved++;
-                    } catch(error) {summary.errors.push({id:op.id,code:error.code||'network',message:error.message});}
+                    } catch(error) {summary.errors.push({id:op.id,phase:phases.get(op.id),code:error.code||'network',message:error.message});}
                 }
                 if (deferred.length===folders.length) {summary.pending+=deferred.length;break;} folders=deferred;
             }
@@ -151,8 +154,8 @@
                     await adapter.saved?.(op.id,saved,blob);
                 } catch(error) {
                     summary.pending++;
-                    summary.errors.push({id:op.id,code:error.code||'network',message:error.message});
-                    await S.patch('outbox',account,op.id,old=>old.kind?{...old,lastError:error.code||'network',lastErrorMessage:error.message,attemptedAt:Date.now()}:null);
+                    summary.errors.push({id:op.id,phase:phases.get(op.id),code:error.code||'network',message:error.message});
+                    await S.patch('outbox',account,op.id,old=>old.kind?{...old,lastError:error.code||'network',lastErrorMessage:error.message,lastErrorPhase:phases.get(op.id),attemptedAt:Date.now()}:null);
                 }
             }
             return summary;

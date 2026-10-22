@@ -1,8 +1,9 @@
 import {test,expect} from '@playwright/test';
-for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-401']) test(`background processor merges and uploads real PDFs (${mode})`,async({context,page})=>{
+for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-401','home-auto']) test(`background processor merges and uploads real PDFs (${mode})`,async({context,page})=>{
  test.setTimeout(90000);
- const liveAuth=mode==='home-memory-auth'||mode==='home-auth-401';
+ const liveAuth=mode==='home-memory-auth'||mode==='home-auth-401'||mode==='home-auto';
  const withPhoto=mode!=='strokes';
+ const v2Mode=mode==='home-frame'||mode==='home-auto';
  await context.route('https://accounts.google.com/**',r=>r.fulfill({status:200,body:''}));
  await page.addInitScript(()=>localStorage.setItem('drive-hint-email','worker@example.test'));
  await page.goto('/?e2e=1');await page.evaluate(()=>__IHN_TEST_API__.ready());
@@ -46,9 +47,12 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
   driveOpenInProgress=true;driveAccessToken='live-home-token';driveTokenExpiry=Date.now()+600000;driveSignedOut=false;
   window.refreshes=0;
   requestDriveToken=async()=>{window.refreshes++;driveAccessToken='refreshed-home-token';driveTokenExpiry=Date.now()+600000;return driveAccessToken;};
-  localStorage.removeItem('drive-token-v1');editorView.classList.add('hidden');
+  localStorage.removeItem('drive-token-v1');showDriveHome();
  });
  else await page.close();
+ if(mode==='home-auto')await page.evaluate(()=>{
+  beginDocumentSession();resetPdfState();state.pages=[];state.driveFileId=null;state.driveAutosave=false;driveDirty=false;
+ });
  let uploads=0,downloads=0,rejections=0;
  const meta={id:'worker-doc',version:'2',headRevisionId:'h2',modifiedTime:'2026-10-14T12:00:00.000Z',name:'Offline.pdf',capabilities:{canEdit:true},parents:['root']};
  await context.route('https://www.googleapis.com/**',async route=>{
@@ -60,12 +64,14 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
   if(url.pathname.includes('/drive/v2/')&&!url.pathname.includes('/upload/'))return route.fulfill({json:{etag:'"h2"',version:'2'}});
   if(url.pathname.endsWith('/about'))return route.fulfill({json:{user:{emailAddress:'worker@example.test'}}});
   if(url.searchParams.get('alt')==='media'){if(route.request().frame().url().includes('offline-worker'))downloads++;return route.fulfill({contentType:'application/pdf',body:Buffer.from(remote)});}
-  if(url.pathname.includes('/upload/')&&route.request().method()==='PATCH'){
+  if(url.pathname.includes('/upload/')){
+   const required=url.pathname.includes('/v2/')?'PUT':'PATCH';
+   if(route.request().method()!==required)return route.fulfill({status:405,json:{error:'Unsupported media upload method'}});
    expect(route.request().headers()['if-match']).toBe('"h2"');uploads++;
-   if(mode==='home-frame')expect(url.pathname).toContain('/upload/drive/v2/');
+   if(v2Mode)expect(url.pathname).toContain('/upload/drive/v2/');
    return route.fulfill({json:{...meta,title:meta.name,modifiedDate:meta.modifiedTime,version:'3',headRevisionId:'h3'}});
   }
-  return route.fulfill({headers:mode==='home-frame'?{}:{ETag:'"h2"','Access-Control-Expose-Headers':'ETag'},json:meta});
+  return route.fulfill({headers:v2Mode?{}:{ETag:'"h2"','Access-Control-Expose-Headers':'ETag'},json:meta});
  });
  await context.setOffline(false);
  const host=liveAuth?page:await context.newPage();
@@ -75,7 +81,14 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
   addEventListener('message',e=>{if(e.data?.type==='ihn-offline-complete')window.result=e.data.result;});
  });
  let worker=host;
- if(mode==='home-frame'||liveAuth){
+ if(mode==='home-auto'){
+  await host.evaluate(async()=>{
+   addEventListener('message',e=>{if(e.data?.type==='ihn-offline-complete')window.result=e.data.result;});
+   await InhouseOfflineLibrary.resume();
+   driveOpenInProgress=false;dispatchEvent(new Event('online'));
+  });
+  await host.waitForFunction(()=>window.result,{},{timeout:60000,polling:100});
+ }else if(mode==='home-frame'||liveAuth){
   await context.route('**/sync-test-host',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><title>Home sync host</title>'}));
   if(mode==='home-frame')await host.goto('/sync-test-host');
   else await host.evaluate(()=>addEventListener('message',e=>{if(e.data?.type==='ihn-offline-complete')window.result=e.data.result;}));
@@ -98,6 +111,7 @@ for (const mode of ['strokes','pdf','home-frame','home-memory-auth','home-auth-4
   const pixel=[...ctx.getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data];
   await pdf.destroy();
   const recovery=(await InhouseOfflineStore.list('recoveries','worker@example.test'))[0];
+  if(!recovery)return {summary:window.result,dirty:stored.dirty,meta:stored.baseMeta,ids:pages.flatMap(p=>p.strokes.map(s=>s.id)),recoveries:0,pixel};
   const rp=await pdfjsLib.getDocument({data:await recovery.remoteBlob.arrayBuffer()}).promise;
   const rpage=await rp.getPage(1);await rpage.render({canvasContext:ctx,viewport:rpage.getViewport({scale:0.2}),intent:'print'}).promise;
   const remotePixel=[...ctx.getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data];await rp.destroy();
