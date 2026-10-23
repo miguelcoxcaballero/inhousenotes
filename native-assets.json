@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "2be89cfe35962177b588a398dbb36c90a6f2430b93cd4f016a367f9053053798",
-      "size": 1909355,
+      "sha256": "faadd9cfb384e26200c04a4450c9418e5e14a5cd9aef71c9a6c10454698cbaa5",
+      "size": 1911672,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -30,6 +30,11 @@
       "sha256": "008cdb9caf4c70ea02ceb856d20054affc2cc7238455c64d958e98cb5bcf904a",
       "size": 16340,
       "mime": "application/javascript"
+    },
+    "/icons/welcome-pages.svg": {
+      "sha256": "3c9d908975098f3c1914d43a7c0c76425f7afa3a82d435f21aa3481459d75f6e",
+      "size": 37234,
+      "mime": "image/svg+xml"
     },
     "/ink-palette.js": {
       "sha256": "682f56c8810624d850e2ef67c8d24688d740eee6468d5e2933ab44a3af773bf4",

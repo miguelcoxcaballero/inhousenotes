@@ -6,6 +6,7 @@ self.INHOUSE_OFFLINE_ASSETS=[
   "/collaboration-core-v5.js",
   "/document-processing-v5.js",
   "/document-processing-worker-v5.js",
+  "/icons/welcome-pages.svg",
   "/index.html",
   "/ink-palette.js",
   "/live-collaboration-v5.js",
