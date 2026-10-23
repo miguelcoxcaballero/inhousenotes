@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scanner Pro</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#131314">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0">
+
+  <link rel="stylesheet" href="./styles.css?v=5.11.26&amp;native=10c5d3bde6cd0598d98a2a35f5c3d2ae0b3c2e9833e8970728efee54e744f959">
+  <link rel="stylesheet" href="./live-camera.css?v=5.16.46&amp;native=0d378eeab8c7488d11b0d5c0529dc6935a8e71b48fa843beea5ba52fc1604eab">
+
+  <!-- Embedded mode is known before the first paint. -->
+  <script>
+    window.__scannerEmbedMode = new URLSearchParams(window.location.search).get('embed') === '1';
+    if (window.__scannerEmbedMode) document.documentElement.dataset.embed = 'true';
+  </script>
+</head>
+
+<body>
+
+<div id="appLoading">
+  <div class="spinner"></div>
+  <span style="font-family:'Google Sans';font-size:18px;color:var(--text-main)">Opening scanner...</span>
+</div>
+
+<div id="landingPage">
+  <div class="hero-content">
+    <span class="material-symbols-rounded hero-icon">document_scanner</span>
+    <h1 class="hero-title">Scanner</h1>
+    <p class="hero-sub">Digitize, Crop & Export</p>
+    <div class="hero-actions">
+      <button class="btn-hero" id="btnLandingStart">
+        <span class="material-symbols-rounded">add</span>New Scan
+      </button>
+
+      <div class="dropdown" id="stencilDropdown">
+        <button class="btn-hero secondary" id="btnStencilToggle">
+          <span class="material-symbols-rounded">download</span>Download Stencil
+        </button>
+        <div class="dropdown-content">
+          <button class="dropdown-item" onclick="downloadStencil('pdf')">
+            <span class="material-symbols-rounded">picture_as_pdf</span>PDF Document
+          </button>
+          <button class="dropdown-item" onclick="downloadStencil('svg')">
+            <span class="material-symbols-rounded">gesture</span>SVG Vector
+          </button>
+          <button class="dropdown-item" onclick="downloadStencil('png')">
+            <span class="material-symbols-rounded">image</span>PNG Image
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="inhouse-badge">
+    <svg viewBox="0 0 100 60"><path d="M5 55 L50 10 L95 55"/></svg>
+    <span>inhouse software</span>
+  </div>
+</div>
+
+<div id="modalOverlay">
+  <div class="modal-card">
+    <h2 class="modal-title">New Scan</h2>
+    <div class="input-group">
+      <input type="text" id="scanNameInput" class="mat-input" placeholder="Untitled Scan" autofocus>
+      <span class="input-label">Document Name</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-text" id="btnModalCancel">Cancel</button>
+      <button class="btn-fill" id="btnModalCreate">Create</button>
+    </div>
+  </div>
+</div>
+
+<div id="sourceModal">
+  <div class="source-sheet">
+    <h3 class="source-title">Add Pages</h3>
+    <div class="source-options">
+      <button class="source-btn" id="btnSourceCamera">
+        <span class="material-symbols-rounded">photo_camera</span>Take Photo
+      </button>
+      <button class="source-btn" id="btnSourceGallery">
+        <span class="material-symbols-rounded">photo_library</span>Choose from Gallery
+      </button>
+    </div>
+    <button class="source-cancel" id="btnSourceCancel">Cancel</button>
+  </div>
+</div>
+
+<div id="appContainer" class="hidden">
+  <div id="magnifier"><canvas id="magCanvas"></canvas></div>
+  <input type="file" id="fileInput" accept="image/*" multiple hidden disabled>
+  <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+
+  <div id="mainPanel">
+    <div id="toolbar">
+      <input type="text" class="doc-title" id="docTitle" value="Untitled Document">
+      <div class="actions">
+        <button class="btn-icon embedded-only" id="closeEmbedBtn" title="Back to document" aria-label="Back to document">
+          <span class="material-symbols-rounded">close</span>
+        </button>
+        <button class="btn-icon" id="themeBtn" title="Theme">
+          <span class="material-symbols-rounded">dark_mode</span>
+        </button>
+        <div style="width:1px;height:20px;background:var(--outline);opacity:.3"></div>
+        <button class="btn-chip" id="autoCropBtn" style="display:none">
+          <span class="material-symbols-rounded">auto_fix</span>
+          <span class="label-text">Auto</span>
+        </button>
+        <button class="btn-chip" id="cropBtn" disabled>
+          <span class="material-symbols-rounded">crop</span>
+          <span class="label-text">Crop</span>
+        </button>
+        <button class="btn-chip" id="stencilBtn" disabled>
+          <span class="material-symbols-rounded">grid_4x4</span>
+          <span class="label-text">Ref</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="viewport">
+      <div id="stageBadge">
+        <span class="dot"></span>
+        <span id="stageText">Processing…</span>
+      </div>
+
+      <div id="emptyState">
+        <span class="material-symbols-rounded">add_photo_alternate</span>
+        <p>Add photos to start</p>
+      </div>
+
+      <div id="paper">
+        <img id="previewImg" alt="" style="display:none">
+        <canvas id="processAnimationLayer" class="layer-canvas processing-animation-layer" aria-hidden="true"></canvas>
+        <canvas id="stencilLayer" class="layer-canvas"></canvas>
+        <canvas id="cropLayer" class="layer-canvas"></canvas>
+      </div>
+    </div>
+
+    <div id="toast">Notification</div>
+  </div>
+
+  <button id="btnAddMobile" aria-label="Add pages">
+    <span class="material-symbols-rounded">add</span>
+  </button>
+
+  <div id="sidebar">
+    <div class="brand" id="mobileSidebarHeader">
+      <div class="brand-main">
+        <span class="material-symbols-rounded brand-icon">document_scanner</span>
+        <div class="brand-text">
+          <span class="brand-name">Scanner</span>
+          <span class="brand-pages" id="pageSummary">No pages</span>
+        </div>
+      </div>
+      <button id="sidebarToggle" class="sidebar-toggle" aria-expanded="false">
+        <span id="sidebarToggleIcon" class="material-symbols-rounded">expand_less</span>
+      </button>
+    </div>
+
+    <div class="fab-add" id="btnDesktopAdd">
+      <span class="material-symbols-rounded">add</span> Add Pages
+    </div>
+
+    <div id="sidebarBody">
+      <div id="pageList"></div>
+    </div>
+
+    <div class="bottom-controls">
+      <button id="addToDocumentBtn" class="btn-main embedded-only" disabled>
+        <span class="material-symbols-rounded">note_add</span> Add to document
+      </button>
+      <button id="exportBtn" class="btn-main" disabled>
+        <span class="material-symbols-rounded">picture_as_pdf</span> Export PDF
+      </button>
+      <button id="downloadEmbedStencilBtn" class="btn-main scanner-secondary-action embedded-only">
+        <span class="material-symbols-rounded">download</span> Download stencil
+      </button>
+      <div class="sidebar-footer-brand">
+        <div class="inhouse-badge">
+          <svg viewBox="0 0 100 60"><path d="M5 55 L50 10 L95 55"/></svg>
+          <span>inhouse software</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section id="liveScanner" data-phase="camera" role="dialog" aria-modal="true" aria-labelledby="liveTitle" hidden>
+  <header class="live-header">
+    <div class="live-heading">
+      <span class="material-symbols-rounded live-heading-icon" aria-hidden="true">document_scanner</span>
+      <h1 id="liveTitle">Scan</h1>
+    </div>
+    <button id="liveCloseBtn" class="live-icon-button" type="button" aria-label="Close scanner" title="Close scanner">
+      <span class="material-symbols-rounded" aria-hidden="true">close</span>
+    </button>
+  </header>
+
+  <div id="liveCameraView">
+    <div id="liveStage">
+      <video id="liveVideo" autoplay muted playsinline aria-label="Live camera preview"></video>
+      <canvas id="liveOverlay" aria-hidden="true"></canvas>
+    </div>
+    <div class="live-camera-controls">
+      <div class="live-guidance">
+        <p id="liveStatus" role="status" aria-live="polite" aria-atomic="true">Opening camera…</p>
+        <p id="liveHint" hidden></p>
+      </div>
+      <progress id="liveProgress" max="1" value="0" aria-label="Automatic capture readiness"></progress>
+      <div class="live-actions">
+        <button id="liveImportBtn" class="live-button live-button-secondary" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">photo_library</span>
+          <span>Photos</span>
+        </button>
+        <button id="liveRetryBtn" class="live-button live-button-primary" type="button" hidden>
+          <span class="material-symbols-rounded" aria-hidden="true">videocam</span>
+          <span>Open camera</span>
+        </button>
+        <button id="liveCaptureBtn" class="live-button live-button-primary" type="button" disabled>
+          <span class="material-symbols-rounded" aria-hidden="true">photo_camera</span>
+          <span>Capture</span>
+        </button>
+      </div>
+      <input id="liveFileInput" type="file" accept="image/*" hidden>
+    </div>
+  </div>
+
+  <div id="liveReview" hidden>
+    <div class="live-review-image">
+      <div class="live-review-canvas">
+        <img id="livePreview" alt="Scanned page" hidden>
+        <canvas id="liveProcessingOverlay" aria-hidden="true" hidden></canvas>
+      </div>
+    </div>
+    <div class="live-review-controls">
+      <p id="liveReviewStatus" role="status" aria-live="polite" aria-atomic="true">Ready</p>
+      <ol id="liveProcessingSteps" aria-label="Scan processing" hidden>
+        <li data-step="dots" aria-label="Dots"></li>
+        <li data-step="surface" aria-label="Straighten"></li>
+        <li data-step="colors" aria-label="Clean"></li>
+        <li data-step="template" aria-label="Template"></li>
+      </ol>
+      <div id="liveAlternatives" role="group" aria-label="Choose a captured frame"></div>
+      <div class="live-actions">
+        <button id="liveRetakeBtn" class="live-button live-button-secondary" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
+          <span>Retake</span>
+        </button>
+        <button id="liveAddBtn" class="live-button live-button-primary" type="button">
+          <span class="material-symbols-rounded" aria-hidden="true">note_add</span>
+          <span>Add page</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- config loader (must load first) -->
+<script src="./configLoader.js?v=5.16.46&amp;native=b511d25da2be5b242309de0b8666ffebbd7dd6a24f60cabdef0051c023027809"></script>
+
+<!-- Canvas processing with background page detection and curved-surface correction. -->
+<script src="../rust-core-v5.js?v=5.16.46&amp;native=def88ff0f037231f432fbf3e36bac39170f3d58d01a9cc3e4b62a4563f87f502"></script>
+<script src="../ink-palette.js?v=5.16.46&amp;native=682f56c8810624d850e2ef67c8d24688d740eee6468d5e2933ab44a3af773bf4"></script>
+<script src="./processing/ink-vectorizer.js?v=5.16.46&amp;native=bce5569878b595a95bd066043b1757849505507f89ac433b9da641551e34d002"></script>
+<script src="../bullet-template.js?v=5.16.46&amp;native=6a0b9bcf6ca15fd007a6f302e41fe2597b494f1b6d4607406db44785f7cc0088"></script>
+<script src="./processing/scan-template.js?v=5.16.46&amp;native=48c692b6d5248ba1416277610e07a7372f03af7182f47fffbc92408781ff1525"></script>
+<script src="./processing/surface-parameterization.js?v=5.16.46&amp;native=72a9e0ab0ed4a7a25e69d1dbe10783307eb8d6b6e654975c2d75e2530468b8dc"></script>
+<script src="./processing/metric-surface.js?v=5.16.46&amp;native=583b6f6754af0104f45edd3353f920e7a14f99af0128031dec3c298f6b929a36"></script>
+<script src="./processing/lightweight.js?v=5.16.46&amp;native=da4588d4e02b48012aef15eecc820b4db5f20799c91358b5986d4f07637b8543"></script>
+
+<!-- main app script -->
+<script src="./script.js?v=5.16.46&amp;native=009a9f9fe23b168bbdd037efbf106cbdfd728fcadd90cba66773048f8397967d"></script>
+<script src="./processing/liveDetection.js?v=5.16.46&amp;native=618d46bc58146b85da5a3b5dc7e8d9558fa0a145e232b28822e5f0cc1fa5c1e0"></script>
+<script src="./processing/capture-quality.js?v=5.16.46&amp;native=46c6e4d647e0560fc42e67cc3c0250fea09534570d68e9ca3a5e5e80c94f4020"></script>
+<script src="./live-camera.js?v=5.16.46&amp;native=78baaa998dbdf96844a31533a39ffe8c3f4d19da0fa9909650f4ecddbed34328"></script>
+
+</body>
+</html>
