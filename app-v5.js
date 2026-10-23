@@ -2265,6 +2265,7 @@
             if (welcomeLoginBtn) {
                 welcomeLoginBtn.addEventListener('click', () => signInDrive());
             }
+            installWelcomeSheet();
             if (state.driveFileId) {
                 updateViewerModeUI();
             }
@@ -5931,9 +5932,37 @@
             panel.setAttribute('aria-hidden', 'true');
         }
 
+        // The welcome screen's first button explains what signing in does in a
+        // bottom sheet; its own button then starts the real Google sign-in.
+        function installWelcomeSheet() {
+            const start = document.getElementById('btn-welcome-start');
+            const sheet = document.getElementById('welcome-sheet');
+            const backdrop = document.getElementById('welcome-sheet-backdrop');
+            if (!start || !sheet || !backdrop) return;
+            const close = () => {
+                if (sheet.hidden) return;
+                sheet.hidden = true;
+                backdrop.hidden = true;
+                start.focus();
+            };
+            start.addEventListener('click', () => {
+                sheet.hidden = false;
+                backdrop.hidden = false;
+                document.getElementById('btn-welcome-login')?.focus();
+            });
+            backdrop.addEventListener('click', close);
+            sheet.addEventListener('keydown', event => {
+                if (event.key === 'Escape') { event.preventDefault(); close(); }
+            });
+        }
+
         function showWelcomeView() {
             const welcomeView = document.getElementById('welcome-view');
             if (welcomeView) welcomeView.classList.remove('hidden');
+            const welcomeSheet = document.getElementById('welcome-sheet');
+            if (welcomeSheet) welcomeSheet.hidden = true;
+            const welcomeBackdrop = document.getElementById('welcome-sheet-backdrop');
+            if (welcomeBackdrop) welcomeBackdrop.hidden = true;
             if (driveHome) driveHome.classList.add('hidden');
             if (editorView) editorView.classList.add('hidden');
             closeTimelinePanelIfOpen();
@@ -19093,7 +19122,10 @@
             renderPagesList({ force: true });
             if (setCoverBtn) setCoverBtn.disabled = !!state.isReadOnly;
             if (scanPageBtn) scanPageBtn.disabled = !!state.isReadOnly;
-            document.getElementById('pages-panel').classList.add('visible');
+            const pagesPanel = document.getElementById('pages-panel');
+            const editorHeader = editorView?.querySelector('header');
+            if (editorHeader) pagesPanel.style.setProperty('--pages-top', `${Math.max(0, Math.round(editorHeader.getBoundingClientRect().bottom))}px`);
+            pagesPanel.classList.add('visible');
             document.getElementById('panel-overlay').classList.add('visible');
         }
 
@@ -20262,6 +20294,10 @@
                 const value = document.createElement('strong');
                 value.textContent = [
                     defaultSizeInfo.standardName,
+                    defaultSizeInfo.dimensionsLabel
+                ].filter(Boolean).join(' · ');
+                pagesDefaultSize.title = [
+                    defaultSizeInfo.standardName,
                     defaultSizeInfo.dimensionsLabel,
                     defaultSizeInfo.ratioLabel
                 ].filter(Boolean).join(' · ');
@@ -20270,18 +20306,20 @@
 
             state.pages.forEach((page, index) => {
                 const item = document.createElement('div');
-                item.className = 'page-item';
+                item.className = index === state.activePageIndex ? 'page-item is-current' : 'page-item';
                 item.dataset.pageIndex = index;
                 const strokeCount = getVisibleStrokeCount(page);
                 const isPdfBackground = page.backgroundSource === 'pdf' || Number.isFinite(page.pdfPageIndex);
                 const isPhotoBackground = page.backgroundSource === 'custom' && !!page.backgroundImage;
                 const pageDimensions = getPageDimensions(page);
                 const pageSizeInfo = getPageSizeInfo(pageDimensions.width, pageDimensions.height);
+                // Thumbnails fill the sidebar's column (see #pages-panel).
+                const thumbnailBox = window.innerWidth <= 720 ? 100 : 136;
                 const thumbnailRect = getContainedRect(
                     pageDimensions.width,
                     pageDimensions.height,
-                    50,
-                    70
+                    thumbnailBox,
+                    Math.round(thumbnailBox * 1.42)
                 );
                 const thumbnailWidth = Math.max(1, thumbnailRect.width);
                 const thumbnailHeight = Math.max(1, thumbnailRect.height);
@@ -20294,14 +20332,14 @@
                             <line x1="4" y1="16" x2="20" y2="16"/>
                         </svg>
                     </div>` : ''}
-                    <div class="page-item-main" data-action="open">
+                    <div class="page-item-main" data-action="open" title="${[`Page ${index + 1}`, pageSizeInfo.standardName, `${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}`, pageType].filter(Boolean).join(' · ')}">
                         <div class="page-thumbnail-slot">
                             <div class="page-thumbnail" style="width:${thumbnailWidth}px;height:${thumbnailHeight}px">
                                 <canvas id="thumb-${index}" width="${thumbnailWidth * thumbnailScale}" height="${thumbnailHeight * thumbnailScale}"></canvas>
                             </div>
                         </div>
                         <div class="page-info">
-                            <h3>Page ${index + 1}</h3>
+                            <h3 aria-label="Page ${index + 1}">${index + 1}</h3>
                             <p class="page-size">${[
                                 pageSizeInfo.standardName,
                                 pageSizeInfo.dimensionsLabel,
