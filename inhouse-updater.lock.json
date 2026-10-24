@@ -1,6 +1,6 @@
 {
   "repository": "miguelcoxcaballero/inhouse-services-updater",
-  "revision": "d0d2afdd8b291bd3c8bebe61015aaa6b0f98be1c",
+  "revision": "1f91084b395b0af1f55908f05622968bc09b07dd",
   "version": "1.2.4",
   "appId": "notes",
   "files": {
@@ -82,11 +82,11 @@
     },
     "vendor/inhouse-services-updater/AGENTS.md": {
       "source": "AGENTS.md",
-      "sha256": "56e904dcc5d389981661eaf6b3daea5c777fad905c3b72cda7f137c5b09d3b7e"
+      "sha256": "95c8b9b3dd42e70f1bfd950a58e37bccffe8b649b8408daf55ecf49a4be43e7b"
     },
     "vendor/inhouse-services-updater/README.md": {
       "source": "README.md",
-      "sha256": "2628d04943705b66f218531e241bb80b515e7e2f7d341420c5a12438357b7511"
+      "sha256": "95e7a7e266dd834f76bf289ba89d15dbfb102c63c01f6886563feb568c3c644a"
     },
     "vendor/inhouse-services-updater/FROZEN_INSTALLER.md": {
       "source": "FROZEN_INSTALLER.md",
