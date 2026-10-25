@@ -48,7 +48,7 @@ test('reopening the pages panel starts only one gesture per drag', async ({ page
     };
     try {
       const handle = document.querySelector('.page-drag-handle');
-      handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 7 }));
+      handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 7, isPrimary: true }));
       const dragging = document.querySelectorAll('.page-item.is-dragging').length;
       document.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 7 }));
       return { moves, dragging, remaining: document.querySelectorAll('.page-item.is-dragging').length };

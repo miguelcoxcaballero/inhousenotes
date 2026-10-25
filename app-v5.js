@@ -19170,6 +19170,7 @@
         }
 
         function closePagesPanel() {
+            cancelPageListDrag?.();
             document.getElementById('pages-panel').classList.remove('visible');
             document.getElementById('panel-overlay').classList.remove('visible');
         }
@@ -20323,6 +20324,8 @@
             // current state when it opens, without painting hidden thumbnails.
             if (!options.force && !document.getElementById('pages-panel')?.classList.contains('visible')) return;
             const pagesList = document.getElementById('pages-list');
+            cancelPageListDrag?.();
+            const savedScrollTop = pagesList.scrollTop;
             pagesList.innerHTML = '';
             const canDeletePages = !state.isReadOnly && state.pages.length > 1;
             const canReorder = !state.isReadOnly && state.pages.length > 1;
@@ -20348,6 +20351,7 @@
                 const item = document.createElement('div');
                 item.className = index === state.activePageIndex ? 'page-item is-current' : 'page-item';
                 item.dataset.pageIndex = index;
+                item.dataset.pageId = page.pageId || '';
                 const strokeCount = getVisibleStrokeCount(page);
                 const isPdfBackground = page.backgroundSource === 'pdf' || Number.isFinite(page.pdfPageIndex);
                 const isPhotoBackground = page.backgroundSource === 'custom' && !!page.backgroundImage;
@@ -20422,100 +20426,159 @@
 
             });
 
+            pagesList.scrollTop = savedScrollTop;
             if (canReorder) {
                 initPageListDrag(pagesList);
             }
         }
 
         const pageListDragBindings = new WeakSet();
+        let cancelPageListDrag = null;
 
         function initPageListDrag(list) {
-            // The list survives row replacements, so delegate each drag once.
             if (pageListDragBindings.has(list)) return;
             pageListDragBindings.add(list);
             list.addEventListener('pointerdown', (e) => {
                 const handle = e.target.closest('.page-drag-handle');
-                if (!handle) return;
-                const item = handle.closest('.page-item');
-                if (!item) return;
-                if (state.isReadOnly || pageStructureDragInProgress || remotePageMergeToken) return;
-                e.preventDefault();
-                e.stopPropagation();
-
-                const fromIndex = parseInt(item.dataset.pageIndex, 10);
+                const item = handle?.closest('.page-item');
+                if (!item || e.button > 0 || e.isPrimary === false) return;
+                if (state.isReadOnly || pageStructureDragInProgress || localPageStructureMutationToken || remotePageMergeToken) return;
+                const fromIndex = Number(item.dataset.pageIndex);
                 const movingPageId = String(state.pages[fromIndex]?.pageId || '');
                 if (!movingPageId) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const session = getDocumentSessionToken();
+                const pointerId = e.pointerId;
+                const viewport = list.getBoundingClientRect();
+                // Measure once. Scroll only changes the viewport offset, not row geometry.
+                const rows = Array.from(list.querySelectorAll('.page-item'), row => {
+                    const rect = row.getBoundingClientRect();
+                    const index = Number(row.dataset.pageIndex);
+                    return { index, pageId: String(state.pages[index]?.pageId || ''),
+                        top: rect.top - viewport.top + list.scrollTop, height: rect.height };
+                });
+                const ghost = document.createElement('div');
+                ghost.className = 'page-reorder-preview';
+                ghost.setAttribute('aria-hidden', 'true');
+                const source = item.querySelector('canvas');
+                if (source) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = source.width; canvas.height = source.height;
+                    canvas.getContext('2d').drawImage(source, 0, 0);
+                    ghost.appendChild(canvas);
+                }
+                const label = document.createElement('span');
+                label.textContent = String(fromIndex + 1);
+                ghost.appendChild(label);
+                const indicator = document.createElement('div');
+                indicator.className = 'page-reorder-indicator';
+                indicator.setAttribute('aria-hidden', 'true');
+                document.body.append(ghost, indicator);
                 pageStructureDragInProgress = true;
                 item.classList.add('is-dragging');
-                let lastIndicatorItem = null;
-                let dragFinished = false;
-                let dragSafetyTimer = null;
+                list.classList.add('is-reordering');
+                let x = e.clientX, y = e.clientY, frame = 0, previousTime = 0;
+                let finished = false, destination = null;
+                try { list.setPointerCapture(pointerId); } catch (_) { }
 
-                function clearIndicator() {
-                    if (lastIndicatorItem) {
-                        lastIndicatorItem.classList.remove('drag-over-above', 'drag-over-below');
-                        lastIndicatorItem = null;
+                function updateTarget() {
+                    const rect = list.getBoundingClientRect();
+                    const within = x >= rect.left - 48 && x <= rect.right + 48
+                        && y >= rect.top - 64 && y <= rect.bottom + 64;
+                    destination = null;
+                    indicator.hidden = !within;
+                    if (!within) return;
+                    const contentY = Math.max(0, Math.min(rect.height, y - rect.top)) + list.scrollTop;
+                    // Gaps are valid insertion targets too. Binary search avoids scanning
+                    // every thumbnail on every frame in long notebooks.
+                    let lo = 0, hi = rows.length;
+                    while (lo < hi) {
+                        const mid = (lo + hi) >> 1;
+                        if (contentY < rows[mid].top + rows[mid].height / 2) hi = mid;
+                        else lo = mid + 1;
                     }
+                    const before = lo < rows.length;
+                    const row = rows[before ? lo : rows.length - 1];
+                    if (row.pageId !== movingPageId) destination = { row, before };
+                    const lineY = rect.top + row.top + (before ? 0 : row.height) - list.scrollTop;
+                    indicator.style.width = `${Math.max(0, rect.width - 20)}px`;
+                    indicator.style.transform = `translate3d(${rect.left + 10}px,${Math.max(rect.top, Math.min(rect.bottom - 3, lineY))}px,0)`;
+                    indicator.hidden = !destination;
+                }
+
+                function tick(time) {
+                    if (finished) return;
+                    if (!item.isConnected || !isDocumentSessionTokenValid(session)
+                        || state.isReadOnly || !document.getElementById('pages-panel').classList.contains('visible')) {
+                        finishDrag(true); return;
+                    }
+                    const dt = previousTime ? Math.min(40, time - previousTime) : 0;
+                    previousTime = time;
+                    const rect = list.getBoundingClientRect();
+                    const edge = Math.min(88, rect.height / 3);
+                    let speed = 0;
+                    if (edge > 0 && x >= rect.left - 48 && x <= rect.right + 48) {
+                        if (y < rect.top + edge) speed = -Math.min(1, (rect.top + edge - y) / edge);
+                        else if (y > rect.bottom - edge) speed = Math.min(1, (y - rect.bottom + edge) / edge);
+                    }
+                    // px/sec, independent of display refresh rate. Continues even
+                    // while the pointer is stationary at the edge.
+                    if (speed) list.scrollTop += Math.sign(speed) * speed * speed * 1050 * dt / 1000;
+                    ghost.style.transform = `translate3d(${x + 14}px,${y - 48}px,0)`;
+                    updateTarget();
+                    frame = requestAnimationFrame(tick);
                 }
 
                 function onMove(ev) {
-                    ev.preventDefault();
-                    const target = document.elementFromPoint(ev.clientX, ev.clientY);
-                    const targetItem = target ? target.closest('.page-item') : null;
-                    if (targetItem !== lastIndicatorItem) clearIndicator();
-                    if (targetItem) {
-                        const rect = targetItem.getBoundingClientRect();
-                        targetItem.classList.add(ev.clientY < rect.top + rect.height / 2 ? 'drag-over-above' : 'drag-over-below');
-                        lastIndicatorItem = targetItem;
-                    }
+                    if (ev.pointerId !== pointerId) return;
+                    ev.preventDefault(); x = ev.clientX; y = ev.clientY;
                 }
-
-                function finishDrag(ev = null, cancelled = false) {
-                    if (dragFinished) return;
-                    dragFinished = true;
+                function onUp(ev) {
+                    if (ev.pointerId !== pointerId) return;
+                    x = ev.clientX; y = ev.clientY; updateTarget(); finishDrag(false);
+                }
+                function onCancel(ev) { if (ev.pointerId === pointerId) finishDrag(true); }
+                function onBlur() { finishDrag(true); }
+                function onKey(ev) { if (ev.key === 'Escape') { ev.preventDefault(); finishDrag(true); } }
+                function finishDrag(cancelled) {
+                    if (finished) return;
+                    finished = true;
+                    cancelAnimationFrame(frame);
                     document.removeEventListener('pointermove', onMove);
                     document.removeEventListener('pointerup', onUp);
                     document.removeEventListener('pointercancel', onCancel);
+                    document.removeEventListener('keydown', onKey);
+                    list.removeEventListener('lostpointercapture', onCancel);
                     window.removeEventListener('blur', onBlur);
-                    if (dragSafetyTimer) clearTimeout(dragSafetyTimer);
-                    item.classList.remove('is-dragging');
-                    clearIndicator();
-
+                    window.removeEventListener('resize', onBlur);
+                    try { if (list.hasPointerCapture(pointerId)) list.releasePointerCapture(pointerId); } catch (_) { }
+                    ghost.remove(); indicator.remove();
+                    item.classList.remove('is-dragging'); list.classList.remove('is-reordering');
                     pageStructureDragInProgress = false;
-                    if (cancelled || !ev) return;
-                    const target = document.elementFromPoint(ev.clientX, ev.clientY);
-                    const targetItem = target ? target.closest('.page-item') : null;
-                    if (targetItem) {
-                        const toIndex = parseInt(targetItem.dataset.pageIndex, 10);
-                        const targetPageId = String(state.pages[toIndex]?.pageId || '');
-                        if (!targetPageId || targetPageId === movingPageId) return;
-                        const rect = targetItem.getBoundingClientRect();
-                        const insertBefore = ev.clientY < rect.top + rect.height / 2;
-                        movePage(fromIndex, toIndex, {
-                            movingPageId,
-                            targetPageId,
-                            insertBeforeTarget: insertBefore
+                    cancelPageListDrag = null;
+                    if (cancelled || !destination || !isDocumentSessionTokenValid(session)) return;
+                    const { row, before } = destination;
+                    void movePage(fromIndex, row.index, { movingPageId, targetPageId: row.pageId, insertBeforeTarget: before })
+                        .then(() => {
+                            if (!isDocumentSessionTokenValid(session) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+                            const moved = Array.from(list.children).find(el => el.dataset.pageId === movingPageId);
+                            moved?.animate([{ opacity: 0.55, transform: 'scale(.97)' }, { opacity: 1, transform: 'scale(1)' }],
+                                { duration: 180, easing: 'ease-out' });
+                        }).catch(error => {
+                            console.error('Failed to move page:', error);
+                            showStatus('Could not move the page. Try again.', { error: true, preserveState: true });
                         });
-                    }
                 }
-
-                function onUp(ev) {
-                    finishDrag(ev, false);
-                }
-
-                function onCancel() {
-                    finishDrag(null, true);
-                }
-
-                function onBlur() {
-                    finishDrag(null, true);
-                }
-
+                cancelPageListDrag = () => finishDrag(true);
                 document.addEventListener('pointermove', onMove, { passive: false });
                 document.addEventListener('pointerup', onUp);
                 document.addEventListener('pointercancel', onCancel);
-                window.addEventListener('blur', onBlur, { once: true });
-                dragSafetyTimer = setTimeout(() => finishDrag(null, true), 30_000);
+                document.addEventListener('keydown', onKey);
+                list.addEventListener('lostpointercapture', onCancel);
+                window.addEventListener('blur', onBlur);
+                window.addEventListener('resize', onBlur);
+                frame = requestAnimationFrame(tick);
             }, { passive: false });
         }
 
