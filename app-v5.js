@@ -22242,6 +22242,7 @@
         }
 
         async function savePageToIndexedDb(pageIndex, page, options = {}) {
+            const deferCheckpoint = () => { if (options.checkpointOutcome) options.checkpointOutcome.deferred = true; return false; };
             const structureToken = options.structureToken || null;
             const ownsLocalStructure = !!structureToken
                 && localPageStructureMutationToken === structureToken;
@@ -22256,7 +22257,7 @@
                     pageDirty.add(pageIndex);
                     pageDirtyMode.set(pageIndex, 'full');
                 }
-                return false;
+                return deferCheckpoint();
             }
             const sessionToken = getDocumentSessionToken();
             const structureVersion = pageStructureVersion;
@@ -22279,10 +22280,11 @@
                 || !isDocumentSessionTokenValid(sessionToken)
                 || (pageDirtyGeneration.get(pageIndex) || 0) !== mutationGenerationAtSnapshot;
             const snapshot = await cloneSanitizedPageForStorage(page,sessionToken,isSnapshotStale,true);
-            if (!snapshot || !isDocumentSessionTokenValid(sessionToken)) return false;
+            if (!snapshot || !isDocumentSessionTokenValid(sessionToken)) return deferCheckpoint();
             const storedPageRecord = { ...snapshot, __sessionId: sessionToken };
             const db = await openNotebookDb();
-            if (!db || !await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isSnapshotStale()) return false;
+            if (!db) return false;
+            if (!await waitForHotInteractionToSettle({sessionToken,windowMs:PAGE_CHECKPOINT_IDLE_MS}) || isSnapshotStale()) return deferCheckpoint();
             const currentPageMatches = state.pages[pageIndex] === page
                 || (!!pageId && state.pages[pageIndex]?.pageId === pageId);
             if (!isDocumentSessionTokenValid(sessionToken)
@@ -22301,7 +22303,7 @@
                     pageDirty.add(currentIndex);
                     pageDirtyMode.set(currentIndex, 'full');
                 }
-                return false;
+                return deferCheckpoint();
             }
             return new Promise((resolve) => {
                 let tx = null;
@@ -22326,12 +22328,14 @@
                     tx = db.transaction(PAGE_STORE, 'readwrite');
                     activePageStoreTransactions.add(tx);
                     activePageStoreWrites = activePageStoreTransactions.size;
-                    tx.oncomplete = () => finish(
-                        isDocumentSessionTokenValid(sessionToken)
-                        && structureVersion === pageStructureVersion
-                        && (pageDirtyGeneration.get(pageIndex) || 0) === mutationGenerationAtSnapshot
-                        && !structureToken?.cancelled
-                    );
+                    tx.oncomplete = () => {
+                        const current = isDocumentSessionTokenValid(sessionToken)
+                            && structureVersion === pageStructureVersion
+                            && (pageDirtyGeneration.get(pageIndex) || 0) === mutationGenerationAtSnapshot
+                            && !structureToken?.cancelled;
+                        if (!current) deferCheckpoint();
+                        finish(current);
+                    };
                     tx.onerror = () => {
                         console.error('Failed to save page to IndexedDB:', tx.error);
                         finish(false);
@@ -22646,7 +22650,7 @@
                         : (persistedPage || normalizeLegacyPage(await unpackInkPageFromStorage(legacyPage), pageIndex));
                     assertContext?.();
                     if (!isDocumentSessionTokenValid(sessionToken)) return false;
-                    const saved = await savePageToIndexedDb(pageIndex, fullPage, { structureToken });
+                    const saved = await savePageToIndexedDb(pageIndex, fullPage, { structureToken, checkpointOutcome: options.checkpointOutcome });
                     assertContext?.();
                     if (!saved || !isDocumentSessionTokenValid(sessionToken)) return false;
                     legacyPagesCache[pageIndex] = null;
@@ -23363,6 +23367,7 @@
         }
 
         async function flushDirtyPages(options = {}) {
+            const outcome = options.checkpointOutcome || {};
             const force = !!options.force;
             const abortSignal = options.abortSignal || null;
             const structureToken = options.structureToken || null;
@@ -23371,11 +23376,15 @@
                 : null;
             assertContext?.();
             if (collabPageOrderMutationInProgress || collabPageStoreRewritePending) {
+                outcome.deferred = true;
                 return false;
             }
-            const opsFlushed = await flushStrokeOpsQueue({ abortSignal, structureToken });
+            const opsFlushed = await flushStrokeOpsQueue({ abortSignal, structureToken, checkpointOutcome: outcome });
             assertContext?.();
-            if (!opsFlushed && abortSignal?.aborted) return false;
+            if (!opsFlushed) {
+                if (!abortSignal?.aborted && !outcome.deferred) outcome.failed = true;
+                return false;
+            }
             if (pageDirty.size === 0) return true;
             const dirty = Array.from(pageDirty);
             let allSaved = true;
@@ -23396,10 +23405,13 @@
                     pageDirtyMode.delete(pageIndex);
                     continue;
                 }
-                const saved = await savePageToIndexedDb(pageIndex, page, { structureToken, abortSignal });
+                const pageOutcome = {};
+                const saved = await savePageToIndexedDb(pageIndex, page, { structureToken, abortSignal, checkpointOutcome: pageOutcome });
                 assertContext?.();
                 if (abortSignal?.aborted) return false;
                 if (!saved) {
+                    if (pageOutcome.deferred) outcome.deferred = true;
+                    else outcome.failed = true;
                     allSaved = false;
                     continue;
                 }
@@ -23412,6 +23424,7 @@
                     if (cleared) {
                         retirePendingStrokeOpKeys(pageIndex, capturedPendingKeys);
                     } else {
+                        outcome.failed = true;
                         allSaved = false;
                     }
                 }
@@ -23422,6 +23435,7 @@
                     pageDirty.delete(pageIndex);
                     pageDirtyMode.delete(pageIndex);
                 } else {
+                    outcome.deferred = true;
                     pageDirty.add(pageIndex);
                     if (!pageDirtyMode.has(pageIndex)) {
                         pageDirtyMode.set(pageIndex, newerPendingOps ? 'stroke' : 'full');
@@ -23431,6 +23445,7 @@
             // A page can change while its transaction is committing. In that
             // case it deliberately remains dirty and the metadata checkpoint
             // must wait for the next save rather than describe a stale body.
+            if (pageDirty.size > 0 && allSaved) outcome.deferred = true;
             return allSaved && pageDirty.size === 0;
         }
 
@@ -23484,28 +23499,33 @@
         async function saveToStorage(controller = null) {
             const persistenceContext = captureDocumentPersistenceContext();
             if (controller?.aborted) return { ok: false, savedAt: null, cancelled: true };
-            const opsFlushed = await flushStrokeOpsQueue({ abortSignal: controller });
+            const checkpointOutcome = {};
+            const opsFlushed = await flushStrokeOpsQueue({ abortSignal: controller, checkpointOutcome });
             if ((!opsFlushed && controller?.aborted)
                 || !isDocumentPersistenceContextCurrent(persistenceContext)) {
                 return { ok: false, savedAt: null, cancelled: true };
             }
+            if (!opsFlushed) return { ok: false, savedAt: null, cancelled: false, deferred: !!checkpointOutcome.deferred };
             if (hasPendingLegacyPageMigration()) {
-                const migrated = await flushLegacyPagesCacheForCheckpoint();
+                const migrated = await flushLegacyPagesCacheForCheckpoint({ checkpointOutcome });
                 if (!migrated || !isDocumentPersistenceContextCurrent(persistenceContext)) {
-                    return { ok: false, savedAt: null, cancelled: !isDocumentPersistenceContextCurrent(persistenceContext) };
+                    return { ok: false, savedAt: null, cancelled: !isDocumentPersistenceContextCurrent(persistenceContext), deferred: !!checkpointOutcome.deferred };
                 }
             }
             // Commit page bodies before publishing metadata that describes them.
             // If a page transaction fails, the previous complete checkpoint stays
             // authoritative instead of pointing at partially-written content.
-            const flushed = await flushDirtyPages({ abortSignal: controller });
+            const flushed = await flushDirtyPages({ abortSignal: controller, checkpointOutcome });
             if (!flushed && controller?.aborted) {
                 return { ok: false, savedAt: null, cancelled: true };
             }
             if (!flushed || pageDirty.size > 0 || hasPendingLegacyPageMigration()
                 || !isDocumentPersistenceContextCurrent(persistenceContext)) {
-                return { ok: false, savedAt: null, cancelled: false };
+                return { ok: false, savedAt: null,
+                    cancelled: !isDocumentPersistenceContextCurrent(persistenceContext),
+                    deferred: !!checkpointOutcome.deferred && !checkpointOutcome.failed };
             }
+            const checkpointGeneration = pageMutationGeneration;
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
             const dbOk = await saveToIndexedDb(payload, savedAt, { context: persistenceContext });
@@ -23522,6 +23542,9 @@
             }
             const ok = localOk || dbOk;
 
+            if (ok && checkpointGeneration !== pageMutationGeneration) {
+                return { ok: false, savedAt, cancelled: false, deferred: true };
+            }
             if (ok) {
                 confirmLocalSave(savedAt);
                 state.lastSavedAt = savedAt;
@@ -24292,6 +24315,7 @@
                 || (remotePageStructureApplyInProgress && !ownsRemoteStructure)
                 || collabPageOrderMutationInProgress
                 || collabPageStoreRewritePending) {
+                if (options.checkpointOutcome) options.checkpointOutcome.deferred = true;
                 return false;
             }
 
@@ -24446,16 +24470,19 @@
             }
         }
 
-        function scheduleLocalSaveRetry() {
-            if (localSaveRetryTimer || localSaveRetryAttempts >= 3) return;
+        function scheduleLocalSaveRetry({ deferred = false } = {}) {
+            if (localSaveRetryTimer) return;
             const context = captureDocumentPersistenceContext();
-            const delay = 800 * (2 ** localSaveRetryAttempts);
-            localSaveRetryAttempts += 1;
+            // Transient contention is pending work, not a storage failure. Real
+            // failures keep retrying at a bounded rate instead of stopping forever.
+            const delay = deferred ? 400 : Math.min(30_000, 800 * (2 ** localSaveRetryAttempts));
+            if (!deferred) localSaveRetryAttempts = Math.min(6, localSaveRetryAttempts + 1);
             localSaveRetryTimer = setTimeout(() => {
                 localSaveRetryTimer = null;
                 if (!isDocumentPersistenceContextCurrent(context)) return;
                 if (hasSmoothInteraction()) {
                     saveQueued = true;
+                    scheduleLocalSaveRetry({ deferred: true });
                     return;
                 }
                 void queueSave();
@@ -25674,6 +25701,13 @@
                 // checkpoint once this old attempt releases the writer.
                 if (saveQueued && !hasSmoothInteraction()) void queueSave();
                 return;
+            }
+            if (result.deferred) {
+                saveQueued = true;
+                recordSaveDebug('Local checkpoint superseded; retrying current changes');
+                showPendingSaveStatus();
+                scheduleLocalSaveRetry({ deferred: true });
+                return result;
             }
             if (result.cancelled) {
                 saveQueued = true;
