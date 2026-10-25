@@ -108,10 +108,10 @@ test('a durable operation retry clears its own error without requiring compactio
   assert.equal(context.getLocalSaveStatus().savedAt, 200);
 });
 
-test('local retries back off and stop after three automatic attempts', async () => {
+test('local retries keep recovering after three failures with bounded backoff', async () => {
   const { context, timers } = harness();
   let attempts = 0;
-  context.saveToStorage = async () => { attempts += 1; return { ok: false }; };
+  context.saveToStorage = async () => { attempts += 1; return attempts > 8 ? { ok: true, savedAt: 800 } : { ok: false }; };
   await context.queueSave();
   const delays = [];
   while (timers.size) {
@@ -120,11 +120,11 @@ test('local retries back off and stop after three automatic attempts', async () 
     delays.push(timer.delay);
     timer.fn();
     for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
-    assert.ok(attempts <= 4);
+    assert.ok(attempts <= 9);
   }
-  assert.deepEqual(delays, [800, 1600, 3200]);
-  assert.equal(attempts, 4);
-  assert.ok(context.getLocalSaveStatus().error);
+  assert.deepEqual(delays, [800, 1600, 3200, 6400, 12800, 25600, 30000, 30000]);
+  assert.equal(attempts, 9);
+  assert.equal(context.getLocalSaveStatus().error, '');
 });
 
 test('read mode still saves edits made before the mode changed', async () => {
@@ -189,4 +189,19 @@ test('a new document save queued behind an old attempt still completes', async (
   assert.equal(context.getLocalSaveStatus().error, '');
   assert.equal(context.getLocalSaveStatus().pending, false);
   assert.equal(timers.size, 0);
+});
+
+
+test('superseded checkpoints stay pending without reporting a storage error', async () => {
+  const {context,timers}=harness();
+  context.saveToStorage=async()=>({ok:false,deferred:true});
+  await context.queueSave();
+  assert.equal(context.getLocalSaveStatus().error,'');
+  assert.equal(context.getLocalSaveStatus().pending,true);
+  assert.equal(context.localSaveRetryAttempts,0);
+  assert.equal(timers.values().next().value.delay,400);
+  context.saveToStorage=async()=>({ok:true,savedAt:500});
+  await context.queueSave();
+  assert.equal(context.getLocalSaveStatus().pending,false);
+  assert.equal(context.getLocalSaveStatus().savedAt,500);
 });
