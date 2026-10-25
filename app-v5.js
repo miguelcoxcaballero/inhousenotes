@@ -31746,6 +31746,9 @@
             if (backgroundSource === 'pdf' && !pageData.backgroundImage) return null;
             const canvas = document.querySelector(`canvas.page-canvas[data-page="${pageIndex}"]`);
             if (!canvas || canvas.width < 2 || canvas.height < 2) return null;
+            // The live canvas contains ink; its CSS background is not included
+            // by drawImage(). Compose the actual photo/PDF/template for export.
+            if (backgroundSource !== 'template' || (canvas.style.backgroundImage && canvas.style.backgroundImage !== 'none')) return null;
             return canvas;
         }
 
@@ -32696,6 +32699,29 @@
         async function fetchBytesAsImage(srcUrl) {
             // Returns { bytes: ArrayBuffer, kind: 'png'|'jpg' } or null.
             try {
+                // Uploaded pages are data URLs. Decode their bytes locally: fetch
+                // is governed by connect-src, which deliberately excludes data:.
+                if (typeof srcUrl === 'string' && srcUrl.startsWith('data:')) {
+                    const comma = srcUrl.indexOf(',');
+                    const header = srcUrl.slice(0, comma);
+                    if (comma < 0 || !/;base64$/i.test(header)) return null;
+                    const payload = srcUrl.slice(comma + 1);
+                    const parts = [];
+                    let length = 0;
+                    for (let offset = 0; offset < payload.length; offset += 32768) {
+                        const decoded = atob(payload.slice(offset, offset + 32768));
+                        const bytes = Uint8Array.from(decoded, char => char.charCodeAt(0));
+                        parts.push(bytes); length += bytes.length;
+                        if (offset + 32768 < payload.length) await yieldProcessingForUi();
+                    }
+                    const bytes = new Uint8Array(length);
+                    let offset = 0;
+                    for (const part of parts) { bytes.set(part, offset); offset += part.length; }
+                    const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8;
+                    const png = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+                    if (!jpeg && !png) return null;
+                    return { bytes: bytes.buffer, kind: jpeg ? 'jpg' : 'png' };
+                }
                 const result = await fetchWithDeadline(
                     srcUrl,
                     {},
@@ -33000,12 +33026,11 @@
                                 console.warn('Failed to embed page background:', embedErr);
                             }
                         }
-                        if (embedded) {
-                            await outPage.drawImage(embedded, {
-                                x: 0, y: 0,
-                                width: pageWidthPt, height: pageHeightPt
-                            });
-                        }
+                        if (!embedded) throw new Error(`Could not embed the image on page ${i + 1}`);
+                        await outPage.drawImage(embedded, {
+                            x: 0, y: 0,
+                            width: pageWidthPt, height: pageHeightPt
+                        });
                     } else if (pageData.backgroundSource === 'template') {
                         const templateKind = normalizeTemplateKind(pageData.templateKind);
                         const templateKey = `${templateKind}|${pageWidthPx}x${pageHeightPx}|${overlayScale}`;
@@ -33728,9 +33753,8 @@
 
                         if (backgroundImage) {
                             const img = await loadImage(backgroundImage, { abortSignal });
-                            if (img) {
-                                tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
-                            }
+                            if (!img) throw new Error(`Could not decode the image on page ${i + 1}`);
+                            tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
                             throwIfAborted();
                             throwIfSessionInvalid();
                         } else if (sourcePdfPageIndex && activePdfDocument) {
