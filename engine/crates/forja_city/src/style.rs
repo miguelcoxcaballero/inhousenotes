@@ -119,6 +119,10 @@ pub struct Style {
     /// = same as the upper wall with a stone plinth); empty uses `ground`.
     #[serde(default)]
     pub grounds: Vec<String>,
+    /// Chance of an extra storey set back from the street behind a terrace
+    /// (ático retranqueado), the usual later addition on old fronts.
+    #[serde(default)]
+    pub atico: f32,
 }
 
 #[derive(Deserialize)]
