@@ -451,6 +451,63 @@
     // >>> stream:editor_render (only this area edits between its markers)
     // <<< stream:editor_render
     // >>> stream:editor_view (only this area edits between its markers)
+    // Page layout cache and visible-window planner. Rust owns the layout; there is no JavaScript fallback.
+    {
+        const need = () => { if (!core?.ev_plan) throw new Error('Rust core is unavailable: the editor page layout requires WebAssembly'); return core; };
+        let layoutGap = 0;
+        api.editorView = Object.freeze({
+            // Uploads the raw page sizes and rebuilds the layout inside Rust. Returns the scalar metrics.
+            layout(pages, calendarEnabled, constants) {
+                const wasm = need(), pageCount = pages.length;
+                const valuePointer = wasm.ev_layout_values(pageCount), flagPointer = wasm.ev_layout_flags(pageCount);
+                if (!valuePointer || !flagPointer) throw new RangeError('Page layout upload rejected');
+                const values = new Float64Array(wasm.memory.buffer, valuePointer, pageCount * 2);
+                const flags = new Uint8Array(wasm.memory.buffer, flagPointer, pageCount);
+                for (let index = 0; index < pageCount; index += 1) {
+                    const page = pages[index];
+                    const width = page?.pageWidth, height = page?.pageHeight;
+                    values[index] = typeof width === 'number' ? width : NaN;
+                    values[pageCount + index] = typeof height === 'number' ? height : NaN;
+                    flags[index] = calendarEnabled && page && page.sidePanel ? 1 : 0;
+                }
+                layoutGap = constants.gap;
+                if (!wasm.ev_layout_build(pageCount, constants.padding, constants.gap, constants.a4Width, constants.a4Height, constants.calendarSpace)) {
+                    throw new RangeError('Page layout rejected');
+                }
+                return {
+                    pageCount: wasm.ev_layout_scalar(5), contentBottom: wasm.ev_layout_scalar(0),
+                    bounds: { left: wasm.ev_layout_scalar(1), top: wasm.ev_layout_scalar(2), right: wasm.ev_layout_scalar(3), bottom: wasm.ev_layout_scalar(4) }
+                };
+            },
+            // getPageTopOffset over the current layout (index clamping included).
+            topOffset(pageIndex) { return need().ev_layout_top(pageIndex, layoutGap); },
+            // Visible page window with `buffer` extra pages on both sides. start > end means empty.
+            visibleRange(panY, zoom, rectHeight, buffer) {
+                const wasm = need(), out = new Float64Array(wasm.memory.buffer, wasm.ev_range(panY, zoom, rectHeight, buffer), 2);
+                return { start: out[0], end: out[1] };
+            },
+            // Planning half of updateVisiblePages. `pending` is a Map keyed by page index. Null means nothing to update.
+            plan(view) {
+                const wasm = need();
+                const pending = view.pending, pendingCount = pending.size;
+                const pointer = wasm.ev_plan_input(pendingCount);
+                if (!pointer) throw new RangeError('Visible page plan rejected');
+                const input = new Int32Array(wasm.memory.buffer, pointer, pendingCount);
+                let at = 0;
+                for (const index of pending.keys()) input[at++] = index;
+                const integer = value => Number.isInteger(value) ? value : NaN;
+                const written = wasm.ev_plan(view.panX, view.panY, view.zoom, view.rectWidth, view.rectHeight, view.buffer, view.maxActive,
+                    integer(view.selection), integer(view.activePage), pendingCount);
+                if (!written) return null;
+                const out = new Int32Array(wasm.memory.buffer, wasm.ev_plan_output(), written);
+                let cursor = 6;
+                const take = length => { const list = out.slice(cursor, cursor + length); cursor += length; return list; };
+                const plan = { rangeStart: out[0], rangeEnd: out[1] };
+                plan.direct = take(out[2]); plan.ordered = take(out[3]); plan.previewOnly = take(out[4]); plan.prune = take(out[5]);
+                return plan;
+            }
+        });
+    }
     // <<< stream:editor_view
     // >>> stream:editor_history (only this area edits between its markers)
     // <<< stream:editor_history
