@@ -4259,20 +4259,34 @@
                 return samples;
             };
             const appendPenSamples = event => {
-                if (!currentStroke) return;
-                for (const sample of samplesForEvent(event)) {
+                if (!currentStroke) return false;
+                // Read the browser batch directly: no copied event array and
+                // no temporary coordinate object for each hardware sample.
+                let samples;
+                try { samples = event.getCoalescedEvents?.(); } catch (_) { }
+                const count = samples?.length || 0;
+                const tail = count ? samples[count - 1] : null;
+                const includeEvent = !tail || tail.clientX !== event.clientX || tail.clientY !== event.clientY
+                    || tail.timeStamp < event.timeStamp;
+                const geometry = drawGeometry || refreshDrawGeometry();
+                const points = currentStroke.points;
+                const before = points.length;
+                const minDistance = currentStroke.tool === 'highlighter' ? Math.max(.6, currentStroke.width * .12) : .001;
+                const minDistanceSquared = minDistance * minDistance;
+                for (let i = 0; i < count + (includeEvent ? 1 : 0); i++) {
+                    const sample = i < count ? samples[i] : event;
                     if (Number.isFinite(sample.pointerId) && sample.pointerId !== activePointerId) continue;
                     if (sample.timeStamp < lastSampleTime) continue;
-                    const pos = getCanvasPointerPos(sample), last = currentStroke.points.at(-1);
-                    if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y)) continue;
+                    const x = (sample.clientX - geometry.rectLeft) * geometry.scaleX;
+                    const y = (sample.clientY - geometry.rectTop) * geometry.scaleY;
+                    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
                     lastSampleTime = Math.max(lastSampleTime, sample.timeStamp);
-                    // rawupdate and pointermove can deliver the same samples.
-                    // Retain every distinct position, even at the same time.
-                    const distance = Math.hypot(pos.x-last.x,pos.y-last.y);
-                    if (distance < .001 || (currentStroke.tool === 'highlighter'
-                        && distance < Math.max(.6,currentStroke.width*.12))) continue;
-                    currentStroke.points.push({x:pos.x,y:pos.y,p:sample.pressure || last.p || .5});
+                    const last = points[points.length - 1];
+                    const dx = x - last.x, dy = y - last.y;
+                    if (dx * dx + dy * dy < minDistanceSquared) continue;
+                    points.push({x, y, p:sample.pressure || last.p || .5});
                 }
+                return points.length !== before;
             };
             const schedulePenPaint = () => {
                 if (paintFrame) return;
@@ -4437,8 +4451,7 @@
                     return;
                 }
 
-                appendPenSamples(e);
-                schedulePenPaint();
+                if (appendPenSamples(e)) schedulePenPaint();
             };
             canvas.addEventListener('pointermove', moveDrawing);
             canvas.addEventListener('pointerrawupdate', moveDrawing);
@@ -24803,19 +24816,23 @@
             penWritingIdleTimer = setTimeout(tick, delay);
         }
 
+        let penWritingIdleDelay = 220;
         function notePenActivity() {
             const wasWriting = isPenWriting;
             noteRecentUserActivity();
             isPenWriting = true;
             // Only update status indicator on the first pen event of a stroke,
             // not on every pointermove — avoids DOM thrashing during drawing.
-            if (!wasWriting) showPendingSaveStatus();
+            if (!wasWriting) {
+                penWritingIdleDelay = detectDeviceType() === 'pc' ? 120 : 220;
+                showPendingSaveStatus();
+            }
             const now = Date.now();
             if (!wasWriting || (hasInterruptibleProcessingInFlight() && now - lastPenProcessingPauseAt > 140)) {
                 lastPenProcessingPauseAt = now;
                 pauseSavesDuringInteraction();
             }
-            armPenWritingIdleTimer(detectDeviceType() === 'pc' ? 120 : 220);
+            armPenWritingIdleTimer(penWritingIdleDelay);
         }
 
         function requestImmediateDriveSave(options = {}) {

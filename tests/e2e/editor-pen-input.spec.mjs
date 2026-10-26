@@ -250,3 +250,32 @@ test.describe('Android tablet canvas budget',()=>{
   expect(pixels).toBeLessThanOrEqual(16*1024*1024);
  });
 });
+
+test('duplicate pen batches do not schedule frames or previews, and sample capture avoids temporary copies',async({page,context})=>{
+ const {cdp,target}=await startPen(page,context,40);
+ const result=await page.evaluate(async()=>{
+  const c=document.querySelector('.page-canvas'),r=c.getBoundingClientRect(),id=penInputId;
+  const originals={raf:requestAnimationFrame,publish:publishLiveStrokePreview,device:detectDeviceType,from:Array.from,hypot:Math.hypot};
+  let frames=0,previews=0,devices=0,copies=0,distances=0;
+  window.requestAnimationFrame=fn=>{frames++;return originals.raf(fn);};
+  publishLiveStrokePreview=()=>{previews++;};detectDeviceType=()=>{devices++;return originals.device();};
+  Array.from=(...args)=>{copies++;return originals.from(...args);};Math.hypot=(...args)=>{distances++;return originals.hypot(...args);};
+  const clock=performance.now();
+  const event=(type,x,time)=>{const e=new PointerEvent(type,{pointerId:id,pointerType:'pen',pressure:.5,buttons:1,bubbles:true,clientX:r.left+x*r.width/794,clientY:r.top+400*r.height/1123});Object.defineProperty(e,'timeStamp',{value:time});return e;};
+  try{
+   const a=event('pointerrawupdate',110,clock),b=event('pointerrawupdate',120,clock+1),move=event('pointermove',130,clock+2);
+   Object.defineProperty(move,'getCoalescedEvents',{value:()=>Object.freeze([a,b])});
+   c.dispatchEvent(move);
+   await new Promise(originals.raf);
+   frames=previews=devices=copies=distances=0;
+   const started=performance.now();
+   for(let i=0;i<500;i++)c.dispatchEvent(move);
+   const elapsed=performance.now()-started;
+   await new Promise(originals.raf);
+   return {frames,previews,devices,copies,distances,elapsed};
+  }finally{window.requestAnimationFrame=originals.raf;publishLiveStrokePreview=originals.publish;detectDeviceType=originals.device;Array.from=originals.from;Math.hypot=originals.hypot;}
+ });
+ console.log('500 repeated coalesced batches:',result);
+ expect(result.frames).toBe(0);expect(result.previews).toBe(0);expect(result.devices).toBe(0);expect(result.copies).toBe(0);expect(result.distances).toBe(0);
+ await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+});
