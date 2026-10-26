@@ -2,9 +2,12 @@
 # quarter, a Madrid barrio grid, a tree-lined boulevard, a Valencian
 # Ensanche and Valencia's Barrio del Carmen inside its ronda. Planned grids
 # and organic old towns share one fabric: the same lots, streets,
-# sidewalks and furniture rules work on both.
+# sidewalks and furniture rules work on both. The old towns stand on
+# hills, each crossed by a large avenue, and the player starts on the
+# Austrias' main square.
 
 name = "default"
+start = "madrid_austrias"
 
 # The old towns stand on high ground: Austrias on a hill (down towards the
 # Manzanares to the west), the Carmen on a low rise. Alleys climb it and
@@ -85,6 +88,9 @@ plaza = [["madrid_austrias", 1.0]]
 plaza = { radius = [20.0, 28.0], vertices = [4, 5] }
 meander = 0.5
 lattice = 2.0
+# A broad avenue cut through the old town below the hilltop: it grades at
+# <= 5 %, so it runs in a cutting and the alleys climb or step down to it.
+avenue = [{ profile = "avenida", name = "Gran Vía", angle = 12.0, offset = -55.0, bend = 16.0 }]
 tiers = [
   { profile = "calle_vieja", d_max = 46.0, adarve = 0.0, loops = 0.25, plazuelas = 0.0 },
   { profile = "callejuela_aceras", d_max = 24.0, adarve = 0.1, loops = 0.15, plazuelas = 0.2 },
@@ -108,6 +114,7 @@ plaza = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
 plaza = { radius = [14.0, 22.0], vertices = [4, 6] }
 meander = 0.6
 lattice = 2.0
+avenue = [{ profile = "avenida", name = "Avenida del Oeste", angle = 94.0, offset = 75.0, bend = -10.0 }]
 tiers = [
   { profile = "calle_vieja", d_max = 50.0, adarve = 0.0, loops = 0.2, plazuelas = 0.0 },
   { profile = "callejuela", d_max = 24.0, adarve = 0.15, loops = 0.15, plazuelas = 0.25 },

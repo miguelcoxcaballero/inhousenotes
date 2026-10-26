@@ -290,7 +290,7 @@ impl Fabric {
     pub fn build(d: &Draft, plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> Fabric {
         let mut laps = Laps::new();
         let graph = StreetGraph::build(&d.ways, &d.nodes, lib, d.snap);
-        let relief = crate::plan::Relief::solve(&graph, lib, &d.hills);
+        let relief = crate::plan::Relief::solve(&graph, lib, &d.hills, &d.plazas.iter().map(|p| p.ring.clone()).collect::<Vec<_>>());
         laps.lap("graph and grades");
         let corridors = graph.corridor(|s, i| s.width[i]);
         laps.lap("corridors");
