@@ -48,7 +48,7 @@ test('empty coalesced events, raw samples and the release tail retain a curved p
     return {beforeFrame,frameCalls,strokes:__IHN_TEST_API__.snapshot().pages[0].strokes.filter(s=>s.color==='#E81010')};
   });
   await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
-  expect(result.beforeFrame).toBe(0);expect(result.frameCalls).toBeGreaterThan(0);expect(result.frameCalls).toBeLessThanOrEqual(3);
+  expect(result.beforeFrame).toBeGreaterThan(0);expect(result.frameCalls - result.beforeFrame).toBeLessThanOrEqual(3);
   expect(result.strokes).toHaveLength(1);
   const points=result.strokes[0].points;
   expect(points.length).toBeGreaterThan(140);expect(points.length).toBeLessThan(210);
@@ -173,4 +173,35 @@ test('a full-page copy stops when its save is cancelled',async({page})=>{
   finally{yieldProcessingForUi=yieldUi;}
  });
  expect(result.saved).toBe(false);expect(result.yields).toBe(1);
+});
+
+for (const raw of [true, false]) test(`pen tail uses ${raw ? 'immediate raw input' : 'frame-batched fallback'} without repainting duplicate samples`, async ({page,context}) => {
+  const {cdp,target} = await startPen(page,context,40);
+  const result = await page.evaluate(async raw => {
+    const c=document.querySelector('canvas.page-canvas[data-page="0"]'),r=c.getBoundingClientRect();
+    const original=CanvasRenderingContext2D.prototype.stroke;
+    let paints=0;
+    CanvasRenderingContext2D.prototype.stroke=function(...args){paints++;return original.apply(this,args);};
+    const time=performance.now();
+    const send=type=>{
+      const e=new PointerEvent(type,{pointerId:penInputId,pointerType:'pen',buttons:1,pressure:.5,bubbles:true,
+        clientX:r.left+140*r.width/794,clientY:r.top+420*r.height/1123});
+      Object.defineProperty(e,'timeStamp',{value:time});c.dispatchEvent(e);
+    };
+    send(raw ? 'pointerrawupdate' : 'pointermove');
+    const immediate=paints;
+    for(let i=0;i<200;i++) send('pointermove');
+    const duplicates=paints;
+    await new Promise(requestAnimationFrame);
+    const afterFrame=paints;
+    await new Promise(requestAnimationFrame);
+    const idleFrame=paints;
+    CanvasRenderingContext2D.prototype.stroke=original;
+    return {immediate,duplicates,afterFrame,idleFrame};
+  },raw);
+  expect(result.immediate).toBe(raw ? 1 : 0);
+  expect(result.duplicates).toBe(result.immediate);
+  expect(result.afterFrame).toBe(1);
+  expect(result.idleFrame).toBe(1);
+  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
 });
