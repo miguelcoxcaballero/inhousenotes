@@ -5,7 +5,7 @@
 
 use forja_math::{Mat4, Quat, Vec2, Vec3};
 
-use crate::building::{self, CityOut, EdgeKind, Lot, ModuleLib, inset};
+use crate::building::{self, CityOut, EdgeKind, Frontage, Lot, ModuleLib, inset};
 use crate::furniture::{self, Aspect};
 use crate::geom::{Parts, Rng};
 use crate::kit::{Kit, Mat, assemble, hex};
@@ -361,8 +361,16 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
             };
             let id = pick(&mut rng, pool);
             if let Some(style) = styles.get(id) {
+                let first = lay.out.frontages.len();
                 building::build_into(&mut lib, &mut lay.out, &mut parts, &lot, style, rng.next_u32() as u64);
                 lots += 1;
+                // Bars spill onto sidewalks wide enough for a terrace.
+                let fronts: Vec<Frontage> = lay.out.frontages[first..].to_vec();
+                for fr in fronts.iter().filter(|fr| fr.bar && !fr.closed) {
+                    if d.sidewalk >= 3.5 && rng.chance(0.85) {
+                        terrace(&mut lib, &mut lay, fr, d.sidewalk, &mut rng);
+                    }
+                }
             }
         }
         let si = lay.out.add_scene(assemble(kit, "block", parts, None));
@@ -404,6 +412,23 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
     lay.stats.push(("streets".into(), segments.len()));
     lay.stats.push(("modules".into(), lay.out.scenes.len()));
     lay
+}
+
+/// Table sets (some under parasols) in front of an open bar, between the
+/// pedestrian strip along the facade and the trees at the kerb.
+fn terrace(lib: &mut ModuleLib, lay: &mut CityLayout, fr: &Frontage, sidewalk: f32, rng: &mut Rng) {
+    let parasols = rng.chance(0.5);
+    let pitch = if parasols { 2.1 } else { 1.75 };
+    let n = ((fr.width + 1.2) / pitch).floor().clamp(1.0, 3.0) as i32;
+    let dist = (sidewalk * 0.52).clamp(1.6, 2.5);
+    let yaw0 = fr.out.x.atan2(fr.out.z);
+    for k in 0..n {
+        let off = (k as f32 - (n - 1) as f32 * 0.5) * pitch;
+        let v = rng.below(3) as u8 * 2 + parasols as u8;
+        let m = lib.named(&mut lay.out, &format!("terrace_{v}"), || furniture::terrace_set(v));
+        let p = fr.pos + fr.right * off + fr.out * dist;
+        lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw0 + rng.range(-0.25, 0.25)), p)));
+    }
 }
 
 /// Raised paved area with a granite curb, plus its collider.
@@ -899,6 +924,27 @@ mod tests {
             let outline = crate::geom::signed_area(&ring);
             let court = (100.0 - 2.0 * depth) * (96.0 - 2.0 * depth);
             assert!((area - (outline - court)).abs() < 2.0, "area {area} expected {}", outline - court);
+        }
+    }
+
+    #[test]
+    fn terraces_stay_on_the_sidewalk() {
+        let kit = Kit::load(None);
+        let mut lib = ModuleLib::new(&kit);
+        let mut lay = CityLayout::default();
+        let fr = Frontage { pos: Vec3::new(0.0, 0.15, 0.0), right: Vec3::X, out: Vec3::Z, width: 3.0, bar: true, closed: false };
+        for seed in 0..8 {
+            terrace(&mut lib, &mut lay, &fr, 4.5, &mut Rng::new(seed));
+        }
+        assert!(lay.out.placements.len() >= 8);
+        for (s, m) in &lay.out.placements {
+            let b = lay.out.scenes[*s].bounds();
+            for c in [b.min, b.max, Vec3::new(b.min.x, 0.0, b.max.z), Vec3::new(b.max.x, 0.0, b.min.z)] {
+                let w = m.transform_point3(c);
+                // Clear of the facade and of the tree line 1 m from the kerb.
+                assert!(w.z > 0.5 && w.z < 3.5, "terrace piece at {w:?}");
+                assert!((w.y - 0.15).abs() < 3.0);
+            }
         }
     }
 
