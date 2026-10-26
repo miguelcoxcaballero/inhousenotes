@@ -756,6 +756,13 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
     // plain windows at the ends.
     let terraces = style.balcony == "terrace";
     let span = if terraces && bays >= 4 && rng.chance(0.6) { (1, bays - 2) } else { (0, bays.saturating_sub(1)) };
+    let terrace = if !terraces {
+        0
+    } else if matches!(c.wall, Mat::Brick(_)) {
+        *rng.pick(&[1u8, 2, 2, 3, 4])
+    } else {
+        *rng.pick(&[1u8, 1, 3, 4])
+    };
     for fl in 0..c.floors as usize {
         let (y, fh) = c.levels[fl];
         let first = fl == 0;
@@ -789,7 +796,7 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                     ends,
                     pots: 0,
                     awning: ((!corrido || terraces) && rng.chance(style.awnings)).then(|| if terraces { rng.below(3) as u8 } else { 2 }),
-                    solid: terraces,
+                    terrace,
                 }
             });
             // Flower pots are their own small instanced module.
@@ -940,7 +947,7 @@ fn facade_clutter(lib: &mut ModuleLib, out: &mut CityOut, f: &Frame, rng: &mut R
 
 /// Finishes of medianeras: old exposed brick, grey cement render, render
 /// painted once and left to fade.
-const MEDIANERAS: [Mat; 5] = [Mat::Brick([236, 214, 200]), Mat::Brick([222, 200, 186]), Mat::Plaster([206, 198, 186]), Mat::Plaster([217, 208, 194]), Mat::Stucco([226, 218, 206])];
+const MEDIANERAS: [Mat; 6] = [Mat::Brick([240, 222, 210]), Mat::Brick([228, 208, 194]), Mat::Plaster([222, 216, 206]), Mat::Plaster([232, 224, 212]), Mat::Stucco([238, 232, 222]), Mat::Stucco([244, 241, 234])];
 
 /// Builds the party walls recorded since `from`. Where a wall rises above
 /// its neighbour's it gets what real exposed medianeras show: a cement
@@ -1159,14 +1166,22 @@ fn roof(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lo
     let atico = if c.atico { setback_ring(lot, ATICO_SETBACK) } else { None };
     let aerial_count = |rng: &mut Rng| 1 + rng.below(1 + (style.clutter * 3.0) as usize);
     match roof_kind {
+        "clay" if atico.is_none() && plain_street_edge(lot).is_some() => {
+            gable_roof(lib, out, parts, lot, style, c, y0 + 0.28, rng);
+        }
         "clay" | "mansard" if atico.is_none() => {
-            let (slope_in, rise, mat) = if roof_kind == "clay" { (4.0, 1.5, Mat::RoofClay) } else { (0.9, 2.9, Mat::RoofSlate) };
+            let mat = if roof_kind == "clay" { Mat::RoofClay } else { Mat::RoofSlate };
             let eave = if roof_kind == "clay" { -0.45 } else { 0.1 };
             let outer = inset(&lot.ring, eave);
-            let inner = inset(&lot.ring, slope_in).or_else(|| inset(&lot.ring, slope_in * 0.5));
-            if let (Some(outer), Some(inner)) = (outer, inner) {
+            // Tiled hips run up as close to a ridge as the plan allows (the
+            // short courtyard returns of corner lots limit it), at the
+            // pitch of the gabled roofs; mansards keep their steep sides.
+            let tries: &[f32] = if roof_kind == "clay" { &[5.8, 5.0, 4.0, 3.0, 2.0] } else { &[0.9, 0.45] };
+            let found = tries.iter().find_map(|&d| inset(&lot.ring, d).map(|r| (d, r)));
+            if let (Some(outer), Some((slope_in, inner))) = (outer, found) {
+                let rise = if roof_kind == "clay" { GABLE_PITCH * (slope_in + 0.45) } else { 2.9 * slope_in / 0.9 };
                 let ylo = if roof_kind == "clay" { y0 + 0.28 } else { cornice_top };
-                let yhi = ylo + rise * if inner.len() == n { 1.0 } else { 0.5 };
+                let yhi = ylo + rise;
                 roof_slopes(parts, mat, &outer, &inner, ylo, yhi, (roof_kind == "clay").then_some(&lot.ring[..]));
                 let top_mat = if roof_kind == "clay" { Mat::RoofTerrace } else { Mat::Zinc };
                 parts.get(top_mat).polygon(&inner, yhi, true, top_mat.scale());
@@ -1351,6 +1366,110 @@ fn roof_slopes(parts: &mut Parts<Mat>, mat: Mat, outer: &[Vec2], inner: &[Vec2],
             let q = [Vec3::new(a.x, ylo - 0.02, a.y), Vec3::new(b.x, ylo - 0.02, b.y), Vec3::new(r2.x, ylo - 0.02, r2.y), Vec3::new(r.x, ylo - 0.02, r.y)];
             quad_facing(parts.get(Mat::Wood(hex(0x6a4a30))), q, Vec3::NEG_Y, [Vec2::ZERO, Vec2::X, Vec2::ONE, Vec2::Y]);
         }
+    }
+}
+
+/// The street edge of a plain lot: one street front, party walls on both
+/// sides and the courtyard at the back.
+fn plain_street_edge(lot: &Lot) -> Option<usize> {
+    let n = lot.ring.len();
+    if n != 4 {
+        return None;
+    }
+    let i = (0..n).find(|&i| lot.edges[i] == EdgeKind::Street)?;
+    let k = |d: usize| lot.edges[(i + d) % n];
+    (k(1) == EdgeKind::Party && k(2) == EdgeKind::Courtyard && k(3) == EdgeKind::Party).then_some(i)
+}
+
+/// Roof pitch of the old Madrid tiled roofs (rise over run).
+const GABLE_PITCH: f32 = 0.42;
+
+/// Tiled roof in two slopes (a dos aguas) on a plain lot: the ridge runs
+/// parallel to the street, both eaves overhang, the gables stand on the
+/// party walls; dormers on the street slope, chimneys and aerials on the
+/// ridge. `ylo` is the eave height.
+#[allow(clippy::too_many_arguments)]
+fn gable_roof(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lot, style: &Style, c: &Choices, ylo: f32, rng: &mut Rng) {
+    let Some(i) = plain_street_edge(lot) else {
+        return;
+    };
+    let r = |d: usize| lot.ring[(i + d) % 4];
+    let (p0, p1, p2, p3) = (r(0), r(1), r(2), r(3));
+    let outward = |a: Vec2, b: Vec2| {
+        let d = (b - a).normalize_or(Vec2::X);
+        Vec2::new(d.y, -d.x)
+    };
+    let (os, oc) = (outward(p0, p1), outward(p2, p3));
+    let (s0, s1) = (p0 + os * 0.45, p1 + os * 0.45);
+    let (c0, c1) = (p2 + oc * 0.35, p3 + oc * 0.35);
+    let (ma, mb) = ((p0 + p3) * 0.5, (p1 + p2) * 0.5);
+    let half = ((p3 - p0).length() + (p2 - p1).length()) * 0.25;
+    let rise = (GABLE_PITCH * (half + 0.4)).clamp(1.2, 2.8);
+    let yr = ylo + rise;
+    let v3 = |q: Vec2, y: f32| Vec3::new(q.x, y, q.y);
+    let mat = Mat::RoofClay;
+    let s = mat.scale();
+    for (a, b, along) in [(s0, s1, p1 - p0), (c0, c1, p3 - p2)] {
+        let (ra, rb) = if a == s0 { (mb, ma) } else { (ma, mb) };
+        let pts = [v3(a, ylo), v3(b, ylo), v3(ra, yr), v3(rb, yr)];
+        let up = (pts[1] - pts[0]).cross(pts[3] - pts[0]);
+        let pts = if up.y >= 0.0 { pts } else { [pts[1], pts[0], pts[3], pts[2]] };
+        let d = along.normalize_or(Vec2::X);
+        let uv = |q: Vec3| Vec2::new(Vec2::new(q.x, q.z).dot(d), (Vec2::new(q.x, q.z) - a).perp_dot(d) * 1.2) / s;
+        parts.get(mat).quad_uv(pts, [uv(pts[0]), uv(pts[1]), uv(pts[2]), uv(pts[3])]);
+    }
+    // Timber soffits under both eaves.
+    let wood = Mat::Wood(hex(0x6a4a30));
+    quad_facing(parts.get(wood), [v3(s0, ylo - 0.02), v3(s1, ylo - 0.02), v3(p1, ylo - 0.02), v3(p0, ylo - 0.02)], Vec3::NEG_Y, [Vec2::ZERO, Vec2::X, Vec2::ONE, Vec2::Y]);
+    quad_facing(parts.get(wood), [v3(c0, ylo - 0.02), v3(c1, ylo - 0.02), v3(p3, ylo - 0.02), v3(p2, ylo - 0.02)], Vec3::NEG_Y, [Vec2::ZERO, Vec2::X, Vec2::ONE, Vec2::Y]);
+    // Gables on the party walls, above where the medianera stops.
+    let wall_top = c.top() + lot.base + 1.0;
+    let t = (wall_top - ylo) / rise;
+    if t < 1.0 {
+        // The roof's section on the party plane runs eave to eave.
+        for (a, b, apex, n) in [(s0, c1, ma, outward(p3, p0)), (c0, s1, mb, outward(p1, p2))] {
+            let (qa, qb) = (v3(a, ylo).lerp(v3(apex, yr), t), v3(b, ylo).lerp(v3(apex, yr), t));
+            let tip = v3(apex, yr);
+            let m = c.party;
+            let ms = m.scale();
+            let uv = |q: Vec3| Vec2::new(Vec2::new(q.x, q.z).dot(Vec2::new(-n.y, n.x)), -q.y) / ms;
+            let prim = parts.get(m);
+            let tri = [qa, qb, tip];
+            let fwd = (tri[1] - tri[0]).cross(tri[2] - tri[0]).dot(Vec3::new(n.x, 0.0, n.y)) >= 0.0;
+            let tri = if fwd { tri } else { [qb, qa, tip] };
+            prim.tri(tri[0], tri[1], tri[2], [uv(tri[0]), uv(tri[1]), uv(tri[2])]);
+        }
+    }
+    // Ridge tiles.
+    parts.get(Mat::RoofClay).beam(v3(ma, yr + 0.04), v3(mb, yr + 0.04), Vec3::Y, 0.26, 0.12, 1.0);
+    // Dormers on the street slope.
+    let f = edge_frame(p0, p1, lot.base);
+    if style.dormers && f.len >= 5.0 {
+        let wallm = c.wall;
+        let d = lib.named(out, &format!("dormer_clay_{wallm:?}"), || modules::dormer(wallm, mat, c.frame));
+        let cnt = ((f.len - 2.0) / 3.4).floor().max(1.0) as i32;
+        for k in (0..cnt).step_by(2) {
+            let u = 1.0 + (k as f32 + 0.5) * (f.len - 2.0) / cnt as f32;
+            let setback = 0.6;
+            let yb = ylo + (setback + 0.45) * rise / (half + 0.45);
+            let p = f.p(u, 0.0, -setback);
+            out.placements.push((d, facade_frame(Vec3::new(p.x, yb, p.z), f.t, f.n)));
+        }
+    }
+    // Chimneys and aerials along the ridge.
+    let cm = if matches!(c.wall, Mat::Brick(_)) { Mat::Brick([255; 3]) } else { Mat::Stucco(hex(0xe6ddcc)) };
+    let chim = lib.named(out, &format!("chimney_{cm:?}"), || modules::chimney(cm));
+    for _ in 0..rng.below(3) + 1 {
+        let q = ma.lerp(mb, rng.range(0.15, 0.85)) + os * rng.range(-0.8, 0.8);
+        out.placements.push((chim, Mat4::from_translation(v3(q, yr - 0.7))));
+    }
+    let count = 1 + rng.below(1 + (style.clutter * 3.0) as usize);
+    for _ in 0..count {
+        let v = rng.below(3) as u8;
+        let m = lib.named(out, &format!("tv_antenna_{v}"), || modules::tv_antenna(v));
+        let q = ma.lerp(mb, rng.range(0.1, 0.9));
+        let yaw = AERIAL_YAW + rng.range(-0.15, 0.15);
+        out.placements.push((m, Mat4::from_rotation_translation(forja_math::Quat::from_rotation_y(yaw), v3(q, yr - 0.05))));
     }
 }
 
@@ -1710,7 +1829,7 @@ mod tests {
             surround_kind: SurroundKind::Lintel,
             frame: hex(0xf1eee6),
             shutter: Some((ShutterKind::Louvre, hex(0x4e3420), 1)),
-            balcony: Some(BalconyKey { width_cm: 190, depth_cm: 50, belly: false, ends: (true, true), pots: 0, awning: None, solid: false }),
+            balcony: Some(BalconyKey { width_cm: 190, depth_cm: 50, belly: false, ends: (true, true), pots: 0, awning: None, terrace: 0 }),
             mirador: None,
             interior: 0,
             grille: false,
@@ -1842,8 +1961,34 @@ mod tests {
         let eave = build(&mut lib, &mut out, &lot(), s, 4);
         // Taller than the old blocks around it.
         assert!(eave > 20.0, "eave {eave}");
-        // Terraces: solid concrete parapets on galvanised-tube handrails.
+        // Terraces: parapets or railings with galvanised-tube handrails.
         assert!(out.scenes.iter().any(|sc| sc.name == "window" && sc.materials.iter().any(|m| m.name == "galvanized")));
+    }
+
+    #[test]
+    fn plain_madrid_lots_get_a_gabled_roof() {
+        let l = lot();
+        assert_eq!(plain_street_edge(&l), Some(2));
+        let kit = Kit::load(None);
+        let styles = StyleLibrary::builtin();
+        let mut style = styles.get("madrid_centro").unwrap().clone();
+        style.atico = 0.0;
+        let mut lib = ModuleLib::new(&kit);
+        let mut out = CityOut::default();
+        let mut parts = Parts::new();
+        let eave = build_into(&mut lib, &mut out, &mut parts, &l, &style, 9);
+        let clay: Vec<Vec3> = parts.prims.get(&Mat::RoofClay).map(|p| p.positions.clone()).unwrap_or_default();
+        assert!(!clay.is_empty());
+        let top = clay.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+        // The ridge runs along the street at mid depth (z = 10), from party
+        // wall to party wall, well above the eave; eaves overhang both fronts.
+        let ridge: Vec<&Vec3> = clay.iter().filter(|p| p.y > top - 0.2).collect();
+        assert!(ridge.iter().all(|p| (p.z - 10.0).abs() < 0.3), "{ridge:?}");
+        assert!(ridge.iter().any(|p| p.x < 0.5) && ridge.iter().any(|p| p.x > 17.5));
+        assert!(top > eave + 2.0 && top < eave + 3.6, "ridge {top} eave {eave}");
+        assert!(clay.iter().any(|p| p.z > 20.3) && clay.iter().any(|p| p.z < -0.3));
+        // No flat terrace on top of it.
+        assert!(parts.prims.get(&Mat::RoofTerrace).is_none_or(|p| p.positions.is_empty()));
     }
 
     #[test]
