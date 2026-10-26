@@ -11,7 +11,7 @@
     const ready = (async () => {
         try {
             if (typeof WebAssembly === 'undefined') return false;
-            const response = await fetch(url, { signal: AbortSignal.timeout(4000) });
+            const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
             if (!response.ok) return false;
             const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), {});
             if (instance.exports.core_abi_version() !== 1) return false;
@@ -408,6 +408,65 @@
         const result = core.editor_stroke_hit(entry.pointer,points.length,x,y,radius);
         return result < 0 ? null : !!result;
     }
-    root.InhouseRust = Object.freeze({ ready, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
-        folderMotion, folderFade, folderRows, available: () => !!core });
+    // Generic bridge to the ported logic modules (rust-core/src/bridge.rs).
+    let textEncoder = null, textDecoder = null;
+    const codecs = () => { textEncoder ||= new TextEncoder(); textDecoder ||= new TextDecoder(); };
+    function callBytes(name, bytes = null) {
+        if (!core?.bridge_call || typeof name !== 'string') return null;
+        codecs();
+        const nameBytes = textEncoder.encode(name), data = bytes || new Uint8Array(0);
+        let nameBlock = null, inputBlock = null, lengthBlock = null, pointer = 0, total = 0;
+        try {
+            nameBlock = allocation(nameBytes.length); view(nameBlock).set(nameBytes);
+            if (data.length) { inputBlock = allocation(data.length); view(inputBlock).set(data); }
+            lengthBlock = allocation(8);
+            pointer = core.bridge_call(nameBlock.pointer, nameBytes.length, inputBlock ? inputBlock.pointer : 0, data.length, lengthBlock.pointer);
+            if (!pointer) throw new Error(`Rust call ${name} was rejected`);
+            total = new Uint32Array(core.memory.buffer, lengthBlock.pointer, 1)[0];
+            const out = new Uint8Array(core.memory.buffer, pointer, total);
+            const status = out[0], body = out.slice(1);
+            if (status !== 0) throw new Error(textDecoder.decode(body));
+            return body;
+        } finally { release(nameBlock); release(inputBlock); release(lengthBlock); if (pointer) core.free(pointer, total); }
+    }
+    function callJson(name, value) {
+        codecs();
+        const body = callBytes(name, textEncoder.encode(JSON.stringify(value === undefined ? null : value)));
+        return body ? JSON.parse(textDecoder.decode(body)) : null;
+    }
+    // Typed-pointer access for hot kernels. The memory view must be re-read after every call.
+    const runtime = Object.freeze({ allocation, view, release, exports: () => core });
+    const api = { ready, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
+        folderMotion, folderFade, folderRows, callBytes, callJson, runtime, available: () => !!core };
+    // >>> stream:scan_light (only this area edits between its markers)
+    // <<< stream:scan_light
+    // >>> stream:scan_color (only this area edits between its markers)
+    // <<< stream:scan_color
+    // >>> stream:scan_geometry (only this area edits between its markers)
+    // <<< stream:scan_geometry
+    // >>> stream:scan_live (only this area edits between its markers)
+    // <<< stream:scan_live
+    // >>> stream:editor_input (only this area edits between its markers)
+    // <<< stream:editor_input
+    // >>> stream:editor_render (only this area edits between its markers)
+    // <<< stream:editor_render
+    // >>> stream:editor_view (only this area edits between its markers)
+    // <<< stream:editor_view
+    // >>> stream:editor_history (only this area edits between its markers)
+    // <<< stream:editor_history
+    // >>> stream:collab (only this area edits between its markers)
+    // <<< stream:collab
+    // >>> stream:offline (only this area edits between its markers)
+    // <<< stream:offline
+    // >>> stream:docio (only this area edits between its markers)
+    // <<< stream:docio
+    // >>> stream:storage (only this area edits between its markers)
+    // <<< stream:storage
+    // >>> stream:drive_home (only this area edits between its markers)
+    // <<< stream:drive_home
+    // >>> stream:calendar (only this area edits between its markers)
+    // <<< stream:calendar
+    // >>> stream:ts_engine (only this area edits between its markers)
+    // <<< stream:ts_engine
+    root.InhouseRust = Object.freeze(api);
 })(globalThis);

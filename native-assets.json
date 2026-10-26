@@ -87,8 +87,8 @@
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {
-      "sha256": "045342888f574ee8a6b0ce9109fa13eabed8e6f7d3d0cb1778667db8125f4215",
-      "size": 26364,
+      "sha256": "af33527115096b28ba8033fe150c02908fa227d9a326f7b5236f4856876cea38",
+      "size": 29790,
       "mime": "application/javascript"
     },
     "/scanner/configLoader.js": {
@@ -1197,8 +1197,8 @@
       "mime": "font/ttf"
     },
     "/wasm/inhouse_notes_core.wasm": {
-      "sha256": "de15389f8a2403fcf2c5c768eb8afa904ae95b580ceae423f12a56f99b5a903e",
-      "size": 119752,
+      "sha256": "fe1812e183ca5a2ac5e6c8df77dde3cd4daca24c95a5da9eea8a1850e503521b",
+      "size": 123290,
       "mime": "application/wasm"
     }
   }

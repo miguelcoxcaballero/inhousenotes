@@ -6,6 +6,10 @@ mod ink_repair;
 mod folder;
 mod checkpoint;
 mod editor;
+mod bridge;
+mod scan_light; mod scan_color; mod scan_geometry; mod scan_live;
+mod editor_input; mod editor_render; mod editor_view; mod editor_history;
+mod collab; mod offline; mod docio; mod storage; mod drive_home; mod calendar; mod ts_engine;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 
