@@ -6,12 +6,15 @@
 # (u, towards the main facade on Plaça del Mercat, facing the Llotja) and
 # 139 deg (w).
 #
-# Volumes: five parallel naves (side naves eaves 12.5 m, raised central
-# nave 23 m wide with eaves 16 m), a transept of the same height through
-# the main dome (crossing at u 13.5, w 5.8), chamfered gabled corners, the
-# octagonal fish market (pescateria) on the NW side with its own dome, and
-# the stone office block with two domed corner turrets on the SW side
-# (Plaça de la Ciutat de Bruges / Av. del Baró de Càrcer).
+# Volumes: five parallel naves (side-nave eaves 13.5 m, raised central nave
+# 23 m wide with eaves 14.2 m), a transept of the same height through the
+# main dome (crossing at u 13.5, w 5.8), chamfered gabled corners, the
+# octagonal fish market (pescateria) on the NW side with its own dome, the
+# stone office block with two domed corner turrets on the SW side (Plaça de
+# la Ciutat de Bruges / Av. del Baró de Càrcer), the two brick pavilions of
+# the Concejalía (N and E) and the one-storey stalls against the walls.
+# Second pass: heights measured on photos with solved cameras (sources.toml
+# facts.update2_heights), portico with marquees, 13 photo views.
 
 [landmark]
 name = "Mercat Central"
@@ -31,11 +34,15 @@ roof_material = "roof"
 glass_material = "glass"
 frame_material = "louvre"
 iron_material = "iron"
-detail = 1.0
+detail = 0.75
 
 [render]
 sun = [200, 50]
-street_distance = 32
+# street view: fixed camera on the Plaça del Mercat, 28 m in front of the
+# main entrance (the automatic one backed into a neighbour)
+street_eye = [64.64, 1.7, -47.58]
+street_target = [43.18, 10.0, -29.59]
+street_fov = 62
 exposure = 0.55
 paving = 90
 
@@ -43,19 +50,24 @@ paving = 90
 
 [material.stone]
 kind = "ashlar"
-tint = "#e9dfca"
+tint = "#f4e4c0"
 block = [1.2, 0.5]
-weathering = 0.22
+weathering = 0.12
+
+[material.office_stone]
+kind = "limestone"
+tint = "#ece4d3"
+weathering = 0.15
 
 [material.stone_fine]
 kind = "limestone"
-tint = "#efe6d2"
+tint = "#f3e5c6"
 weathering = 0.15
 
 [material.azulejo]
 kind = "azulejo"
-pattern = "diamond_blue"
-uv_scale = 1.2
+pattern = "checker_blue"
+uv_scale = 0.28
 tint = "#f2f2ee"
 
 [material.yellow_band]
@@ -64,10 +76,15 @@ pattern = "stripes"
 colors = ["#d9a92a", "#e8c24a", "#2f5aa8"]
 uv_scale = 0.8
 
+# Spandrel ceramic (photos e29, 10, 13): a lattice of orange-red glazed
+# strips (diagonals) with red rosettes at the nodes over white tiles with
+# a blue motif; one lattice cell is about 0.75 m. polychrome tile: k0 field,
+# k1 petal, k2 centre, k3 diagonals, k4 corners -> blue motif in the field,
+# red diagonals meeting in red corner rosettes.
 [material.ceramic]
 kind = "polychrome"
-colors = ["#f3eee6", "#c4362c", "#244a9a", "#2a52a8", "#c4362c"]
-uv_scale = 5.0
+colors = ["#c3cde3", "#2b4c9c", "#c9573b", "#c9573b", "#c24a34"]
+uv_scale = 4.5
 
 [material.roof]
 kind = "roof_tiles"
@@ -76,11 +93,15 @@ tint = "#a08a80"
 [material.zinc]
 kind = "zinc"
 
+# louvred iron shutters: horizontal slats as light / shadow stripes
 [material.slats]
-kind = "zinc"
+kind = "glazed_tiles"
+pattern = "stripes"
+colors = ["#a99d86", "#857a67", "#5f574a"]
 uv_rotate = 90
-uv_scale = 0.35
-tint = "#bdb8a8"
+uv_scale = 0.75
+clearcoat = 0.0
+roughness = 0.6
 
 [material.louvre]
 kind = "flat"
@@ -94,6 +115,11 @@ color = "#3a3f3c"
 [material.glass]
 kind = "glass"
 
+[material.head_glass]
+kind = "stained_glass"
+colors = ["#7f9693", "#93a7a2", "#6d8a80", "#8a9c98", "#a7b4ae", "#b08a5a"]
+uv_scale = 1.6
+
 [material.stained]
 kind = "stained_glass"
 colors = ["#2c5a8c", "#a0302a", "#d2a02a", "#3b7a46", "#e8e2d0"]
@@ -106,14 +132,22 @@ uv_scale = 1.4
 
 [material.fish_dome]
 kind = "glazed_tiles"
-pattern = "scales"
-colors = ["#e6d6a2", "#d8c07a", "#efe4c4"]
-uv_scale = 1.2
+pattern = "checker"
+colors = ["#7fc0b4", "#e2cd7c", "#efe2b4", "#79b9ad"]
+weights = [0.35, 0.3, 0.15, 0.2]
+uv_scale = 0.9
+
+[material.fish_frieze]
+kind = "glazed_tiles"
+pattern = "stripes"
+colors = ["#f1efe6", "#8fb46a", "#f1efe6", "#e1c35a", "#2f4f9c"]
+uv_scale = 0.6
+uv_rotate = 90
 
 [material.blue_tiles]
 kind = "glazed_tiles"
 pattern = "plain"
-colors = ["#4f8fb8", "#5b9cc4"]
+colors = ["#6db5ab", "#7cc2b6"]
 
 [material.turret_dome]
 kind = "glazed_tiles"
@@ -126,6 +160,43 @@ uv_scale = 1.2
 
 [material.gold]
 kind = "gold"
+
+[material.stall]
+kind = "painted_wood"
+tint = "#cfc3a8"
+
+[material.awning]
+kind = "flat"
+color = "#f0b62a"
+roughness = 0.8
+
+[material.marquee_iron]
+kind = "flat"
+color = "#d8d2c2"
+roughness = 0.5
+
+[material.marquee_glass]
+kind = "glass"
+tint = "#9fb3b5"
+
+[material.lamp]
+kind = "flat"
+color = "#f1e6c8"
+emissive = 0.3
+
+[material.brick]
+kind = "terracotta"
+tint = "#d4906e"
+
+[material.amber]
+kind = "flat"
+color = "#d9a640"
+roughness = 0.2
+emissive = 0.15
+
+[material.slate]
+kind = "slate"
+tint = "#7d8288"
 
 [material.parrot]
 kind = "flat"
@@ -146,7 +217,7 @@ type = "mass"
 name = "base"
 note = "Glazed-tile (azulejo) socle with the yellow ceramic band; doors."
 polygon = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]]
-height = 5.2
+height = 5.6
 material = "azulejo"
 top = false
 plinth = { profile = "plinth", size = 0.75, material = "stone" }
@@ -155,10 +226,10 @@ plinth = { profile = "plinth", size = 0.75, material = "stone" }
   edges = [14]
   kind = "door"
   arch = "round"
-  width = 3.4
-  height = 3.9
-  levels = [1.6]
-  bays = { at = [31.9, 26.7, 21.5] }
+  width = 2.8
+  height = 3.6
+  levels = [1.75]
+  bays = { at = [31.2, 26.8, 22.4] }
   infill = "door"
   depth = 0.5
   surround = { width = 0.35, projection = 0.1 }
@@ -225,7 +296,7 @@ plinth = { profile = "plinth", size = 0.75, material = "stone" }
 type = "string_course"
 note = "Yellow-and-blue glazed band over the tiled socle."
 polygon = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]]
-y = 4.75
+y = 5.6
 profile = "band"
 size = 0.45
 projection = 0.06
@@ -236,7 +307,7 @@ type = "mass"
 name = "walls"
 note = "Upper walls: ceramic spandrels between stone piers, tall round-arched iron windows with grey louvres."
 polygon = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-23.55, -8.95], [14.27, -41.82], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]]
-y0 = 5.2
+y0 = 5.6
 y1 = 13.5
 material = "ceramic"
 top_material = "zinc"
@@ -246,10 +317,10 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   edges = [12]
   kind = "window"
   arch = "flat"
-  width = 3.6
-  height = 4.8
-  levels = [5.6]
-  bays = { at = [41.6, 47.8] }
+  width = 2.6
+  height = 4.2
+  levels = [6.3]
+  bays = { at = [40.9, 48.3] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
@@ -260,15 +331,14 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   edges = [12]
   kind = "window"
   arch = "round"
-  width = 3.6
-  height = 1.8
-  levels = [10.4]
-  bays = { at = [41.6, 47.8] }
-  infill = "glass"
+  width = 2.6
+  height = 1.3
+  levels = [10.5]
+  bays = { at = [40.9, 48.3] }
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -277,10 +347,98 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   edges = [12]
   kind = "window"
   arch = "flat"
+  width = 3.2
+  height = 5.1
+  levels = [6.3]
+  bays = { at = [44.6] }
+  infill = "dark"
+  depth = 0.35
+  frame = 0.0
+  surround = { width = 0.2, projection = 0.07 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = [12]
+  kind = "window"
+  arch = "round"
+  width = 3.2
+  height = 1.6
+  levels = [11.4]
+  bays = { at = [44.6] }
+  infill = "stained"
+  glass_material = "head_glass"
+  depth = 0.35
+  frame = 0.06
+  frame_material = "iron"
+  surround = { width = 0.2, projection = 0.07 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = [12]
+  kind = "window"
+  arch = "flat"
+  width = 3.3
+  height = 4.55
+  levels = [6.3]
+  bays = { at = [17.5, 35.9] }
+  infill = "dark"
+  depth = 0.35
+  frame = 0.0
+  surround = { width = 0.2, projection = 0.07 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = [12]
+  kind = "window"
+  arch = "round"
+  width = 3.3
+  height = 1.65
+  levels = [10.85]
+  bays = { at = [17.5, 35.9] }
+  infill = "stained"
+  glass_material = "head_glass"
+  depth = 0.35
+  frame = 0.06
+  frame_material = "iron"
+  surround = { width = 0.2, projection = 0.07 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = [12]
+  kind = "window"
+  arch = "flat"
+  width = 3.9
+  height = 6.75
+  levels = [6.3]
+  bays = { at = [22.1, 31.3] }
+  infill = "dark"
+  depth = 0.35
+  frame = 0.0
+  surround = { width = 0.2, projection = 0.07 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = [12]
+  kind = "window"
+  arch = "flat"
+  width = 3.8
+  height = 6.75
+  levels = [6.3]
+  bays = { at = [26.7] }
+  infill = "dark"
+  depth = 0.35
+  frame = 0.0
+  surround = { width = 0.2, projection = 0.07 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = [12]
+  kind = "window"
+  arch = "flat"
   width = 2.8
-  height = 4.6
-  levels = [5.6]
-  bays = { at = [5.1, 12.3, 17.9, 35.5] }
+  height = 4.7
+  levels = [6.3]
+  bays = { at = [3.0, 12.2] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
@@ -293,44 +451,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.8
   height = 1.4
-  levels = [10.2]
-  bays = { at = [5.1, 12.3, 17.9, 35.5] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [12]
-  kind = "window"
-  arch = "flat"
-  width = 3.4
-  height = 5.4
-  levels = [5.6]
-  bays = { at = [21.8, 31.6] }
-  infill = "dark"
-  depth = 0.35
-  frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [12]
-  kind = "window"
-  arch = "round"
-  width = 3.4
-  height = 1.7
   levels = [11.0]
-  bays = { at = [21.8, 31.6] }
-  infill = "glass"
+  bays = { at = [3.0, 12.2] }
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -339,44 +465,13 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   edges = [12]
   kind = "window"
   arch = "flat"
-  width = 4.6
-  height = 7.0
-  levels = [5.6]
-  bays = { at = [26.7] }
+  width = 3.4
+  height = 6.75
+  levels = [6.3]
+  bays = { at = [7.6] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [12]
-  kind = "window"
-  arch = "flat"
-  width = 3.6
-  height = 5.1
-  levels = [5.6]
-  bays = { at = [8.7] }
-  infill = "dark"
-  depth = 0.35
-  frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [12]
-  kind = "window"
-  arch = "round"
-  width = 3.6
-  height = 1.8
-  levels = [10.7]
-  bays = { at = [8.7] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
 
@@ -385,8 +480,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.25
-  height = 4.67
-  levels = [5.6]
+  height = 4.47
+  levels = [6.0]
   bays = { at = [2.25, 16.52] }
   infill = "dark"
   depth = 0.35
@@ -400,13 +495,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.25
   height = 1.13
-  levels = [10.27]
+  levels = [10.47]
   bays = { at = [2.25, 16.52] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -416,8 +510,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.72
-  height = 5.44
-  levels = [5.6]
+  height = 5.64
+  levels = [6.0]
   bays = { at = [5.63, 13.14] }
   infill = "dark"
   depth = 0.35
@@ -431,13 +525,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.72
   height = 1.36
-  levels = [11.04]
+  levels = [11.64]
   bays = { at = [5.63, 13.14] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -447,8 +540,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.75
-  height = 5.72
-  levels = [5.6]
+  height = 7.05
+  levels = [6.0]
   bays = { at = [9.39] }
   infill = "dark"
   depth = 0.35
@@ -457,29 +550,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   material = "stone_fine"
 
   [[element.openings]]
-  edges = [13]
-  kind = "window"
-  arch = "round"
-  width = 3.75
-  height = 1.88
-  levels = [11.32]
-  bays = { at = [9.39] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
   edges = [14]
   kind = "window"
   arch = "flat"
   width = 2.27
-  height = 4.67
-  levels = [5.6]
+  height = 4.47
+  levels = [6.0]
   bays = { at = [2.27, 16.64] }
   infill = "dark"
   depth = 0.35
@@ -493,13 +569,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.27
   height = 1.13
-  levels = [10.27]
+  levels = [10.47]
   bays = { at = [2.27, 16.64] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -509,8 +584,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.74
-  height = 5.43
-  levels = [5.6]
+  height = 5.63
+  levels = [6.0]
   bays = { at = [5.67, 13.24] }
   infill = "dark"
   depth = 0.35
@@ -524,13 +599,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.74
   height = 1.37
-  levels = [11.03]
+  levels = [11.63]
   bays = { at = [5.67, 13.24] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -540,8 +614,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.78
-  height = 5.71
-  levels = [5.6]
+  height = 7.05
+  levels = [6.0]
   bays = { at = [9.46] }
   infill = "dark"
   depth = 0.35
@@ -550,29 +624,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   material = "stone_fine"
 
   [[element.openings]]
-  edges = [14]
-  kind = "window"
-  arch = "round"
-  width = 3.78
-  height = 1.89
-  levels = [11.31]
-  bays = { at = [9.46] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
   edges = [15]
   kind = "window"
   arch = "flat"
   width = 2.28
-  height = 4.66
-  levels = [5.6]
+  height = 4.46
+  levels = [6.0]
   bays = { at = [5.08, 19.52] }
   infill = "dark"
   depth = 0.35
@@ -586,13 +643,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.28
   height = 1.14
-  levels = [10.26]
+  levels = [10.46]
   bays = { at = [5.08, 19.52] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -602,8 +658,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.75
-  height = 5.42
-  levels = [5.6]
+  height = 5.62
+  levels = [6.0]
   bays = { at = [8.5, 16.1] }
   infill = "dark"
   depth = 0.35
@@ -617,13 +673,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.75
   height = 1.38
-  levels = [11.02]
+  levels = [11.62]
   bays = { at = [8.5, 16.1] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -633,8 +688,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.8
-  height = 6.4
-  levels = [5.6]
+  height = 7.05
+  levels = [6.0]
   bays = { at = [12.3] }
   infill = "dark"
   depth = 0.35
@@ -647,8 +702,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.28
-  height = 4.66
-  levels = [5.6]
+  height = 4.46
+  levels = [6.0]
   bays = { at = [2.28, 16.72] }
   infill = "dark"
   depth = 0.35
@@ -662,13 +717,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.28
   height = 1.14
-  levels = [10.26]
+  levels = [10.46]
   bays = { at = [2.28, 16.72] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -678,8 +732,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.76
-  height = 5.42
-  levels = [5.6]
+  height = 5.62
+  levels = [6.0]
   bays = { at = [5.7, 13.3] }
   infill = "dark"
   depth = 0.35
@@ -693,13 +747,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.76
   height = 1.38
-  levels = [11.02]
+  levels = [11.62]
   bays = { at = [5.7, 13.3] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -709,29 +762,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.8
-  height = 5.7
-  levels = [5.6]
+  height = 7.05
+  levels = [6.0]
   bays = { at = [9.5] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [16]
-  kind = "window"
-  arch = "round"
-  width = 3.8
-  height = 1.9
-  levels = [11.3]
-  bays = { at = [9.5] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
 
@@ -741,7 +777,7 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "flat"
   width = 3.0
   height = 4.3
-  levels = [5.6]
+  levels = [6.0]
   bays = { at = [2.53, 7.6, 12.66, 17.73] }
   infill = "dark"
   depth = 0.35
@@ -755,13 +791,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 3.0
   height = 1.5
-  levels = [9.9]
+  levels = [10.3]
   bays = { at = [2.53, 7.6, 12.66, 17.73] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -771,8 +806,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.07
-  height = 4.26
-  levels = [5.6]
+  height = 4.06
+  levels = [6.0]
   bays = { at = [3.07, 22.52] }
   infill = "dark"
   depth = 0.35
@@ -786,13 +821,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 3.07
   height = 1.54
-  levels = [9.86]
+  levels = [10.06]
   bays = { at = [3.07, 22.52] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -802,8 +836,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.71
-  height = 4.94
-  levels = [5.6]
+  height = 5.14
+  levels = [6.0]
   bays = { at = [7.68, 17.92] }
   infill = "dark"
   depth = 0.35
@@ -817,13 +851,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 3.71
   height = 1.86
-  levels = [10.54]
+  levels = [11.14]
   bays = { at = [7.68, 17.92] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -833,29 +866,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 4.6
-  height = 5.3
-  levels = [5.6]
+  height = 7.05
+  levels = [6.0]
   bays = { at = [12.8] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [0]
-  kind = "window"
-  arch = "round"
-  width = 4.6
-  height = 2.3
-  levels = [10.9]
-  bays = { at = [12.8] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
 
@@ -865,7 +881,7 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "flat"
   width = 2.53
   height = 4.53
-  levels = [5.6]
+  levels = [6.0]
   bays = { at = [1.97, 5.9] }
   infill = "dark"
   depth = 0.35
@@ -879,13 +895,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.53
   height = 1.27
-  levels = [10.13]
+  levels = [10.53]
   bays = { at = [1.97, 5.9] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -896,7 +911,7 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "flat"
   width = 3.0
   height = 4.3
-  levels = [5.6]
+  levels = [6.0]
   bays = { at = [2.31, 6.93] }
   infill = "dark"
   depth = 0.35
@@ -910,13 +925,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 3.0
   height = 1.5
-  levels = [9.9]
+  levels = [10.3]
   bays = { at = [2.31, 6.93] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -926,8 +940,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.91
-  height = 4.34
-  levels = [5.6]
+  height = 4.14
+  levels = [6.0]
   bays = { at = [2.91, 21.36] }
   infill = "dark"
   depth = 0.35
@@ -941,13 +955,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.91
   height = 1.46
-  levels = [9.94]
+  levels = [10.14]
   bays = { at = [2.91, 21.36] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -957,8 +970,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.52
-  height = 5.04
-  levels = [5.6]
+  height = 5.24
+  levels = [6.0]
   bays = { at = [7.28, 16.99] }
   infill = "dark"
   depth = 0.35
@@ -972,13 +985,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 3.52
   height = 1.76
-  levels = [10.64]
+  levels = [11.24]
   bays = { at = [7.28, 16.99] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -988,29 +1000,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 4.6
-  height = 5.3
-  levels = [5.6]
+  height = 7.05
+  levels = [6.0]
   bays = { at = [12.14] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [6]
-  kind = "window"
-  arch = "round"
-  width = 4.6
-  height = 2.3
-  levels = [10.9]
-  bays = { at = [12.14] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
 
@@ -1020,7 +1015,7 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "flat"
   width = 2.8
   height = 4.6
-  levels = [5.8]
+  levels = [6.2]
   bays = { at = [2.55, 7.65, 12.75, 17.85] }
   infill = "stained"
   depth = 0.35
@@ -1036,8 +1031,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.33
-  height = 4.63
-  levels = [5.6]
+  height = 4.43
+  levels = [6.0]
   bays = { at = [2.33, 17.11] }
   infill = "dark"
   depth = 0.35
@@ -1051,13 +1046,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.33
   height = 1.17
-  levels = [10.23]
+  levels = [10.43]
   bays = { at = [2.33, 17.11] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -1067,8 +1061,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.82
-  height = 5.39
-  levels = [5.6]
+  height = 5.59
+  levels = [6.0]
   bays = { at = [5.83, 13.61] }
   infill = "dark"
   depth = 0.35
@@ -1082,13 +1076,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.82
   height = 1.41
-  levels = [10.99]
+  levels = [11.59]
   bays = { at = [5.83, 13.61] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -1098,29 +1091,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.89
-  height = 5.66
-  levels = [5.6]
+  height = 7.05
+  levels = [6.0]
   bays = { at = [9.72] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [11]
-  kind = "window"
-  arch = "round"
-  width = 3.89
-  height = 1.94
-  levels = [11.26]
-  bays = { at = [9.72] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
 
@@ -1129,8 +1105,8 @@ type = "mass"
 name = "walls_fish"
 note = "Lower upper walls of the octagonal fish market."
 polygon = [[-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [14.27, -41.82], [-23.55, -8.95]]
-y0 = 5.2
-y1 = 11.0
+y0 = 5.6
+y1 = 13.2
 material = "ceramic"
 top_material = "zinc"
 cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
@@ -1140,8 +1116,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.0
-  height = 1.8
-  levels = [5.6]
+  height = 4.0
+  levels = [6.0]
   bays = { at = [3.63] }
   infill = "dark"
   depth = 0.35
@@ -1155,13 +1131,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 3.0
   height = 1.5
-  levels = [7.4]
+  levels = [10.0]
   bays = { at = [3.63] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -1171,8 +1146,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.23
-  height = 3.08
-  levels = [5.6]
+  height = 4.38
+  levels = [6.0]
   bays = { at = [2.23, 16.37] }
   infill = "dark"
   depth = 0.35
@@ -1186,13 +1161,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.23
   height = 1.12
-  levels = [8.68]
+  levels = [10.38]
   bays = { at = [2.23, 16.37] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -1202,8 +1176,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.7
-  height = 3.25
-  levels = [5.6]
+  height = 6.75
+  levels = [6.0]
   bays = { at = [5.58, 13.03] }
   infill = "dark"
   depth = 0.35
@@ -1214,48 +1188,14 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   [[element.openings]]
   edges = [1]
   kind = "window"
-  arch = "round"
-  width = 2.7
-  height = 1.35
-  levels = [8.85]
-  bays = { at = [5.58, 13.03] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [1]
-  kind = "window"
   arch = "flat"
   width = 3.72
-  height = 3.14
-  levels = [5.6]
+  height = 6.75
+  levels = [6.0]
   bays = { at = [9.3] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [1]
-  kind = "window"
-  arch = "round"
-  width = 3.72
-  height = 1.86
-  levels = [8.74]
-  bays = { at = [9.3] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
 
@@ -1264,8 +1204,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.79
-  height = 2.81
-  levels = [5.6]
+  height = 4.11
+  levels = [6.0]
   bays = { at = [2.79, 20.43] }
   infill = "dark"
   depth = 0.35
@@ -1279,13 +1219,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.79
   height = 1.39
-  levels = [8.41]
+  levels = [10.11]
   bays = { at = [2.79, 20.43] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -1295,8 +1234,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.37
-  height = 2.92
-  levels = [5.6]
+  height = 6.75
+  levels = [6.0]
   bays = { at = [6.97, 16.25] }
   infill = "dark"
   depth = 0.35
@@ -1307,27 +1246,10 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   [[element.openings]]
   edges = [2]
   kind = "window"
-  arch = "round"
-  width = 3.37
-  height = 1.68
-  levels = [8.52]
-  bays = { at = [6.97, 16.25] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [2]
-  kind = "window"
   arch = "flat"
   width = 4.6
-  height = 3.8
-  levels = [5.6]
+  height = 6.75
+  levels = [6.0]
   bays = { at = [11.61] }
   infill = "dark"
   depth = 0.35
@@ -1340,8 +1262,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.23
-  height = 3.08
-  levels = [5.6]
+  height = 4.38
+  levels = [6.0]
   bays = { at = [2.23, 16.37] }
   infill = "dark"
   depth = 0.35
@@ -1355,13 +1277,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 2.23
   height = 1.12
-  levels = [8.68]
+  levels = [10.38]
   bays = { at = [2.23, 16.37] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -1371,8 +1292,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 2.7
-  height = 3.25
-  levels = [5.6]
+  height = 6.75
+  levels = [6.0]
   bays = { at = [5.58, 13.02] }
   infill = "dark"
   depth = 0.35
@@ -1383,48 +1304,14 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   [[element.openings]]
   edges = [3]
   kind = "window"
-  arch = "round"
-  width = 2.7
-  height = 1.35
-  levels = [8.85]
-  bays = { at = [5.58, 13.02] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [3]
-  kind = "window"
   arch = "flat"
   width = 3.72
-  height = 3.14
-  levels = [5.6]
+  height = 6.75
+  levels = [6.0]
   bays = { at = [9.3] }
   infill = "dark"
   depth = 0.35
   frame = 0.0
-  surround = { width = 0.2, projection = 0.07 }
-  material = "stone_fine"
-
-  [[element.openings]]
-  edges = [3]
-  kind = "window"
-  arch = "round"
-  width = 3.72
-  height = 1.86
-  levels = [8.74]
-  bays = { at = [9.3] }
-  infill = "glass"
-  depth = 0.35
-  frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
-  frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
 
@@ -1433,8 +1320,8 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   kind = "window"
   arch = "flat"
   width = 3.0
-  height = 1.8
-  levels = [5.6]
+  height = 4.0
+  levels = [6.0]
   bays = { at = [3.14] }
   infill = "dark"
   depth = 0.35
@@ -1448,13 +1335,12 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
   arch = "round"
   width = 3.0
   height = 1.5
-  levels = [7.4]
+  levels = [10.0]
   bays = { at = [3.14] }
-  infill = "glass"
+  infill = "stained"
+  glass_material = "head_glass"
   depth = 0.35
   frame = 0.06
-  tracery = "geometric"
-  stone_material = "iron"
   frame_material = "iron"
   surround = { width = 0.2, projection = 0.07 }
   material = "stone_fine"
@@ -1462,332 +1348,725 @@ cornice = { profile = "cyma", size = 0.55, material = "stone", edges = "outer" }
 # Round stained-glass windows over the central bays (disc + stone rings).
 [[element]]
 type = "cylinder"
-from = [42.91, 15.0, -30.07]
-to = [42.99, 15.0, -30.13]
-radius = 2.35
+from = [42.91, 14.6, -30.07]
+to = [42.99, 14.6, -30.13]
+radius = 1.95
 segments = 32
 material = "stained"
 
 [[element]]
 type = "torus"
-center = [43.01, 15.0, -30.15]
-radius = 2.35
+center = [43.01, 14.6, -30.15]
+radius = 1.95
 tube = 0.2
 axis = [0.756, 0.0, -0.655]
 material = "stone_fine"
 
 [[element]]
 type = "torus"
-center = [43.01, 15.0, -30.15]
-radius = 1.29
+center = [43.01, 14.6, -30.15]
+radius = 1.07
 tube = 0.09
 axis = [0.756, 0.0, -0.655]
 material = "stone_fine"
 
 [[element]]
 type = "cylinder"
-from = [31.34, 13.9, 15.44]
-to = [31.4, 13.9, 15.51]
-radius = 1.7
+from = [31.34, 11.9, 15.44]
+to = [31.4, 11.9, 15.51]
+radius = 1.6
 segments = 32
 material = "stained"
 
 [[element]]
 type = "torus"
-center = [31.42, 13.9, 15.53]
-radius = 1.7
+center = [31.42, 11.9, 15.53]
+radius = 1.6
 tube = 0.2
 axis = [0.664, 0.0, 0.748]
 material = "stone_fine"
 
 [[element]]
 type = "torus"
-center = [31.42, 13.9, 15.53]
-radius = 0.94
+center = [31.42, 11.9, 15.53]
+radius = 0.88
 tube = 0.09
 axis = [0.664, 0.0, 0.748]
 material = "stone_fine"
 
 [[element]]
 type = "cylinder"
-from = [-24.23, 11.3, -47.85]
-to = [-24.29, 11.3, -47.92]
-radius = 1.7
+from = [-24.23, 12.9, -47.85]
+to = [-24.29, 12.9, -47.92]
+radius = 1.6
 segments = 32
 material = "stained"
 
 [[element]]
 type = "torus"
-center = [-24.31, 11.3, -47.95]
-radius = 1.7
+center = [-24.31, 12.9, -47.95]
+radius = 1.6
 tube = 0.2
 axis = [-0.642, 0.0, -0.767]
 material = "stone_fine"
 
 [[element]]
 type = "torus"
-center = [-24.31, 11.3, -47.95]
-radius = 0.94
+center = [-24.31, 12.9, -47.95]
+radius = 0.88
 tube = 0.09
 axis = [-0.642, 0.0, -0.767]
 material = "stone_fine"
+
+# Arched heads of the tall central windows, above the eaves line.
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.95, 13.05], [1.95, 13.05], [1.95, 12.8], [1.88, 13.3], [1.69, 13.78], [1.38, 14.18], [0.98, 14.49], [0.5, 14.68], [0.0, 14.75], [-0.5, 14.68], [-0.97, 14.49], [-1.38, 14.18], [-1.69, 13.78], [-1.88, 13.3], [-1.95, 12.8]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [39.9, 0.0, -33.54], rotate_y = 130.9 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.05, 13.0, 0.0], [2.05, 12.8, 0.0], [1.98, 13.33, 0.0], [1.78, 13.83, 0.0], [1.45, 14.25, 0.0], [1.03, 14.58, 0.0], [0.53, 14.78, 0.0], [0.0, 14.85, 0.0], [-0.53, 14.78, 0.0], [-1.02, 14.58, 0.0], [-1.45, 14.25, 0.0], [-1.78, 13.83, 0.0], [-1.98, 13.33, 0.0], [-2.05, 12.8, 0.0], [-2.05, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [39.9, 0.0, -33.54], rotate_y = 130.9 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.9, 13.05], [1.9, 13.05], [1.9, 15.0], [1.84, 15.49], [1.65, 15.95], [1.34, 16.34], [0.95, 16.65], [0.49, 16.84], [0.0, 16.9], [-0.49, 16.84], [-0.95, 16.65], [-1.34, 16.34], [-1.65, 15.95], [-1.84, 15.49], [-1.9, 15.0]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [42.91, 0.0, -30.07], rotate_y = 130.9 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.0, 13.0, 0.0], [2.0, 15.0, 0.0], [1.93, 15.52, 0.0], [1.73, 16.0, 0.0], [1.41, 16.41, 0.0], [1.0, 16.73, 0.0], [0.52, 16.93, 0.0], [0.0, 17.0, 0.0], [-0.52, 16.93, 0.0], [-1.0, 16.73, 0.0], [-1.41, 16.41, 0.0], [-1.73, 16.0, 0.0], [-1.93, 15.52, 0.0], [-2.0, 15.0, 0.0], [-2.0, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [42.91, 0.0, -30.07], rotate_y = 130.9 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.95, 13.05], [1.95, 13.05], [1.95, 12.8], [1.88, 13.3], [1.69, 13.78], [1.38, 14.18], [0.98, 14.49], [0.5, 14.68], [0.0, 14.75], [-0.5, 14.68], [-0.97, 14.49], [-1.38, 14.18], [-1.69, 13.78], [-1.88, 13.3], [-1.95, 12.8]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [45.93, 0.0, -26.59], rotate_y = 130.9 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.05, 13.0, 0.0], [2.05, 12.8, 0.0], [1.98, 13.33, 0.0], [1.78, 13.83, 0.0], [1.45, 14.25, 0.0], [1.03, 14.58, 0.0], [0.53, 14.78, 0.0], [0.0, 14.85, 0.0], [-0.53, 14.78, 0.0], [-1.02, 14.58, 0.0], [-1.45, 14.25, 0.0], [-1.78, 13.83, 0.0], [-1.98, 13.33, 0.0], [-2.05, 12.8, 0.0], [-2.05, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [45.93, 0.0, -26.59], rotate_y = 130.9 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.7, 13.05], [1.7, 13.05], [1.7, 11.5], [1.64, 11.94], [1.47, 12.35], [1.2, 12.7], [0.85, 12.97], [0.44, 13.14], [0.0, 13.2], [-0.44, 13.14], [-0.85, 12.97], [-1.2, 12.7], [-1.47, 12.35], [-1.64, 11.94], [-1.7, 11.5]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [55.43, 0.0, -15.64], rotate_y = 130.9 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.8, 13.0, 0.0], [1.8, 11.5, 0.0], [1.74, 11.97, 0.0], [1.56, 12.4, 0.0], [1.27, 12.77, 0.0], [0.9, 13.06, 0.0], [0.47, 13.24, 0.0], [0.0, 13.3, 0.0], [-0.47, 13.24, 0.0], [-0.9, 13.06, 0.0], [-1.27, 12.77, 0.0], [-1.56, 12.4, 0.0], [-1.74, 11.97, 0.0], [-1.8, 11.5, 0.0], [-1.8, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [55.43, 0.0, -15.64], rotate_y = 130.9 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.88, 13.05], [1.88, 13.05], [1.88, 12.32], [1.81, 12.81], [1.63, 13.26], [1.33, 13.65], [0.94, 13.95], [0.49, 14.14], [0.0, 14.2], [-0.49, 14.14], [-0.94, 13.95], [-1.33, 13.65], [-1.63, 13.26], [-1.81, 12.81], [-1.88, 12.32]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [59.72, 0.0, -0.52], rotate_y = 85.8 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.98, 13.0, 0.0], [1.98, 12.32, 0.0], [1.91, 12.83, 0.0], [1.71, 13.31, 0.0], [1.4, 13.72, 0.0], [0.99, 14.04, 0.0], [0.51, 14.23, 0.0], [0.0, 14.3, 0.0], [-0.51, 14.23, 0.0], [-0.99, 14.04, 0.0], [-1.4, 13.72, 0.0], [-1.71, 13.31, 0.0], [-1.91, 12.83, 0.0], [-1.98, 12.32, 0.0], [-1.98, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [59.72, 0.0, -0.52], rotate_y = 85.8 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.89, 13.05], [1.89, 13.05], [1.89, 12.31], [1.83, 12.8], [1.64, 13.25], [1.34, 13.65], [0.95, 13.95], [0.49, 14.14], [0.0, 14.2], [-0.49, 14.14], [-0.95, 13.95], [-1.34, 13.65], [-1.64, 13.25], [-1.83, 12.8], [-1.89, 12.31]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [49.58, 0.0, 8.23], rotate_y = -3.8 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.99, 13.0, 0.0], [1.99, 12.31, 0.0], [1.92, 12.82, 0.0], [1.72, 13.3, 0.0], [1.41, 13.72, 0.0], [1.0, 14.03, 0.0], [0.52, 14.23, 0.0], [0.0, 14.3, 0.0], [-0.52, 14.23, 0.0], [-1.0, 14.03, 0.0], [-1.41, 13.72, 0.0], [-1.72, 13.3, 0.0], [-1.92, 12.82, 0.0], [-1.99, 12.31, 0.0], [-1.99, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [49.58, 0.0, 8.23], rotate_y = -3.8 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.9, 13.05], [1.9, 13.05], [1.9, 12.3], [1.84, 12.79], [1.65, 13.25], [1.34, 13.64], [0.95, 13.95], [0.49, 14.14], [0.0, 14.2], [-0.49, 14.14], [-0.95, 13.95], [-1.34, 13.64], [-1.65, 13.25], [-1.84, 12.79], [-1.9, 12.3]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [31.34, 0.0, 15.44], rotate_y = 41.6 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.0, 13.0, 0.0], [2.0, 12.3, 0.0], [1.93, 12.82, 0.0], [1.73, 13.3, 0.0], [1.41, 13.71, 0.0], [1.0, 14.03, 0.0], [0.52, 14.23, 0.0], [0.0, 14.3, 0.0], [-0.52, 14.23, 0.0], [-1.0, 14.03, 0.0], [-1.41, 13.71, 0.0], [-1.73, 13.3, 0.0], [-1.93, 12.82, 0.0], [-2.0, 12.3, 0.0], [-2.0, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [31.34, 0.0, 15.44], rotate_y = 41.6 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.9, 13.05], [1.9, 13.05], [1.9, 12.3], [1.84, 12.79], [1.65, 13.25], [1.34, 13.64], [0.95, 13.95], [0.49, 14.14], [0.0, 14.2], [-0.49, 14.14], [-0.95, 13.95], [-1.34, 13.64], [-1.65, 13.25], [-1.84, 12.79], [-1.9, 12.3]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [21.58, 0.0, 33.08], rotate_y = 86.6 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.0, 13.0, 0.0], [2.0, 12.3, 0.0], [1.93, 12.82, 0.0], [1.73, 13.3, 0.0], [1.41, 13.71, 0.0], [1.0, 14.03, 0.0], [0.52, 14.23, 0.0], [0.0, 14.3, 0.0], [-0.52, 14.23, 0.0], [-1.0, 14.03, 0.0], [-1.41, 13.71, 0.0], [-1.73, 13.3, 0.0], [-1.93, 12.82, 0.0], [-2.0, 12.3, 0.0], [-2.0, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [21.58, 0.0, 33.08], rotate_y = 86.6 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-2.3, 13.05], [2.3, 13.05], [2.3, 11.9], [2.22, 12.5], [1.99, 13.05], [1.63, 13.53], [1.15, 13.89], [0.6, 14.12], [0.0, 14.2], [-0.6, 14.12], [-1.15, 13.89], [-1.63, 13.53], [-1.99, 13.05], [-2.22, 12.5], [-2.3, 11.9]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-7.01, 0.0, 55.02], rotate_y = -4.1 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.4, 13.0, 0.0], [2.4, 11.9, 0.0], [2.32, 12.52, 0.0], [2.08, 13.1, 0.0], [1.7, 13.6, 0.0], [1.2, 13.98, 0.0], [0.62, 14.22, 0.0], [0.0, 14.3, 0.0], [-0.62, 14.22, 0.0], [-1.2, 13.98, 0.0], [-1.7, 13.6, 0.0], [-2.08, 13.1, 0.0], [-2.32, 12.52, 0.0], [-2.4, 11.9, 0.0], [-2.4, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-7.01, 0.0, 55.02], rotate_y = -4.1 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-2.3, 13.05], [2.3, 13.05], [2.3, 11.9], [2.22, 12.5], [1.99, 13.05], [1.63, 13.53], [1.15, 13.89], [0.6, 14.12], [0.0, 14.2], [-0.6, 14.12], [-1.15, 13.89], [-1.63, 13.53], [-1.99, 13.05], [-2.22, 12.5], [-2.3, 11.9]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-46.28, 0.0, 9.06], rotate_y = -93.9 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.4, 13.0, 0.0], [2.4, 11.9, 0.0], [2.32, 12.52, 0.0], [2.08, 13.1, 0.0], [1.7, 13.6, 0.0], [1.2, 13.98, 0.0], [0.62, 14.22, 0.0], [0.0, 14.3, 0.0], [-0.62, 14.22, 0.0], [-1.2, 13.98, 0.0], [-1.7, 13.6, 0.0], [-2.08, 13.1, 0.0], [-2.32, 12.52, 0.0], [-2.4, 11.9, 0.0], [-2.4, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-46.28, 0.0, 9.06], rotate_y = -93.9 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.35, 12.75], [1.35, 12.75], [1.35, 12.35], [1.3, 12.7], [1.17, 13.03], [0.95, 13.3], [0.67, 13.52], [0.35, 13.65], [0.0, 13.7], [-0.35, 13.65], [-0.67, 13.52], [-0.95, 13.3], [-1.17, 13.03], [-1.3, 12.7], [-1.35, 12.35]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-33.38, 0.0, -34.8], rotate_y = -92.5 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.45, 12.7, 0.0], [1.45, 12.35, 0.0], [1.4, 12.73, 0.0], [1.25, 13.08, 0.0], [1.02, 13.38, 0.0], [0.72, 13.61, 0.0], [0.38, 13.75, 0.0], [0.0, 13.8, 0.0], [-0.38, 13.75, 0.0], [-0.72, 13.61, 0.0], [-1.02, 13.38, 0.0], [-1.25, 13.08, 0.0], [-1.4, 12.73, 0.0], [-1.45, 12.35, 0.0], [-1.45, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-33.38, 0.0, -34.8], rotate_y = -92.5 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.86, 12.75], [1.86, 12.75], [1.86, 13.74], [1.8, 14.22], [1.61, 14.67], [1.32, 15.05], [0.93, 15.35], [0.48, 15.54], [0.0, 15.6], [-0.48, 15.54], [-0.93, 15.35], [-1.32, 15.05], [-1.61, 14.67], [-1.8, 14.22], [-1.86, 13.74]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-33.54, 0.0, -31.09], rotate_y = -92.5 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.96, 12.7, 0.0], [1.96, 13.74, 0.0], [1.89, 14.25, 0.0], [1.7, 14.72, 0.0], [1.39, 15.13, 0.0], [0.98, 15.44, 0.0], [0.51, 15.63, 0.0], [0.0, 15.7, 0.0], [-0.51, 15.63, 0.0], [-0.98, 15.44, 0.0], [-1.39, 15.13, 0.0], [-1.7, 14.72, 0.0], [-1.89, 14.25, 0.0], [-1.96, 13.74, 0.0], [-1.96, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-33.54, 0.0, -31.09], rotate_y = -92.5 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.35, 12.75], [1.35, 12.75], [1.35, 12.35], [1.3, 12.7], [1.17, 13.03], [0.95, 13.3], [0.67, 13.52], [0.35, 13.65], [0.0, 13.7], [-0.35, 13.65], [-0.67, 13.52], [-0.95, 13.3], [-1.17, 13.03], [-1.3, 12.7], [-1.35, 12.35]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-33.71, 0.0, -27.37], rotate_y = -92.5 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.45, 12.7, 0.0], [1.45, 12.35, 0.0], [1.4, 12.73, 0.0], [1.25, 13.08, 0.0], [1.02, 13.38, 0.0], [0.72, 13.61, 0.0], [0.38, 13.75, 0.0], [0.0, 13.8, 0.0], [-0.38, 13.75, 0.0], [-0.72, 13.61, 0.0], [-1.02, 13.38, 0.0], [-1.25, 13.08, 0.0], [-1.4, 12.73, 0.0], [-1.45, 12.35, 0.0], [-1.45, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-33.71, 0.0, -27.37], rotate_y = -92.5 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.68, 12.75], [1.68, 12.75], [1.68, 12.02], [1.63, 12.45], [1.46, 12.86], [1.19, 13.21], [0.84, 13.47], [0.44, 13.64], [0.0, 13.7], [-0.44, 13.64], [-0.84, 13.47], [-1.19, 13.21], [-1.46, 12.86], [-1.63, 12.45], [-1.68, 12.02]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-20.67, 0.0, -50.83], rotate_y = -140.1 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.78, 12.7, 0.0], [1.78, 12.02, 0.0], [1.72, 12.48, 0.0], [1.54, 12.91, 0.0], [1.26, 13.28, 0.0], [0.89, 13.56, 0.0], [0.46, 13.74, 0.0], [0.0, 13.8, 0.0], [-0.46, 13.74, 0.0], [-0.89, 13.56, 0.0], [-1.26, 13.28, 0.0], [-1.54, 12.91, 0.0], [-1.72, 12.48, 0.0], [-1.78, 12.02, 0.0], [-1.78, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-20.67, 0.0, -50.83], rotate_y = -140.1 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-2.3, 12.75], [2.3, 12.75], [2.3, 13.3], [2.22, 13.9], [1.99, 14.45], [1.63, 14.93], [1.15, 15.29], [0.6, 15.52], [0.0, 15.6], [-0.6, 15.52], [-1.15, 15.29], [-1.63, 14.93], [-1.99, 14.45], [-2.22, 13.9], [-2.3, 13.3]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-24.23, 0.0, -47.85], rotate_y = -140.1 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.4, 12.7, 0.0], [2.4, 13.3, 0.0], [2.32, 13.92, 0.0], [2.08, 14.5, 0.0], [1.7, 15.0, 0.0], [1.2, 15.38, 0.0], [0.62, 15.62, 0.0], [0.0, 15.7, 0.0], [-0.62, 15.62, 0.0], [-1.2, 15.38, 0.0], [-1.7, 15.0, 0.0], [-2.08, 14.5, 0.0], [-2.32, 13.92, 0.0], [-2.4, 13.3, 0.0], [-2.4, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-24.23, 0.0, -47.85], rotate_y = -140.1 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.68, 12.75], [1.68, 12.75], [1.68, 12.02], [1.63, 12.45], [1.46, 12.86], [1.19, 13.21], [0.84, 13.47], [0.44, 13.64], [0.0, 13.7], [-0.44, 13.64], [-0.84, 13.47], [-1.19, 13.21], [-1.46, 12.86], [-1.63, 12.45], [-1.68, 12.02]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-27.79, 0.0, -44.87], rotate_y = -140.1 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.78, 12.7, 0.0], [1.78, 12.02, 0.0], [1.72, 12.48, 0.0], [1.54, 12.91, 0.0], [1.26, 13.28, 0.0], [0.89, 13.56, 0.0], [0.46, 13.74, 0.0], [0.0, 13.8, 0.0], [-0.46, 13.74, 0.0], [-0.89, 13.56, 0.0], [-1.26, 13.28, 0.0], [-1.54, 12.91, 0.0], [-1.72, 12.48, 0.0], [-1.78, 12.02, 0.0], [-1.78, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-27.79, 0.0, -44.87], rotate_y = -140.1 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.35, 12.75], [1.35, 12.75], [1.35, 12.35], [1.3, 12.7], [1.17, 13.03], [0.95, 13.3], [0.67, 13.52], [0.35, 13.65], [0.0, 13.7], [-0.35, 13.65], [-0.67, 13.52], [-0.95, 13.3], [-1.17, 13.03], [-1.3, 12.7], [-1.35, 12.35]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-2.32, 0.0, -54.42], rotate_y = 176.1 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.45, 12.7, 0.0], [1.45, 12.35, 0.0], [1.4, 12.73, 0.0], [1.25, 13.08, 0.0], [1.02, 13.38, 0.0], [0.72, 13.61, 0.0], [0.37, 13.75, 0.0], [0.0, 13.8, 0.0], [-0.37, 13.75, 0.0], [-0.72, 13.61, 0.0], [-1.02, 13.38, 0.0], [-1.25, 13.08, 0.0], [-1.4, 12.73, 0.0], [-1.45, 12.35, 0.0], [-1.45, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-2.32, 0.0, -54.42], rotate_y = 176.1 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.86, 12.75], [1.86, 12.75], [1.86, 13.74], [1.8, 14.22], [1.61, 14.67], [1.32, 15.06], [0.93, 15.35], [0.48, 15.54], [0.0, 15.6], [-0.48, 15.54], [-0.93, 15.35], [-1.32, 15.06], [-1.61, 14.67], [-1.8, 14.22], [-1.86, 13.74]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-6.03, 0.0, -54.67], rotate_y = 176.1 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.96, 12.7, 0.0], [1.96, 13.74, 0.0], [1.89, 14.25, 0.0], [1.7, 14.72, 0.0], [1.39, 15.13, 0.0], [0.98, 15.44, 0.0], [0.51, 15.63, 0.0], [0.0, 15.7, 0.0], [-0.51, 15.63, 0.0], [-0.98, 15.44, 0.0], [-1.39, 15.13, 0.0], [-1.7, 14.72, 0.0], [-1.89, 14.25, 0.0], [-1.96, 13.74, 0.0], [-1.96, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-6.03, 0.0, -54.67], rotate_y = 176.1 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.35, 12.75], [1.35, 12.75], [1.35, 12.35], [1.3, 12.7], [1.17, 13.03], [0.95, 13.3], [0.67, 13.52], [0.35, 13.65], [0.0, 13.7], [-0.35, 13.65], [-0.67, 13.52], [-0.95, 13.3], [-1.17, 13.03], [-1.3, 12.7], [-1.35, 12.35]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [-9.74, 0.0, -54.92], rotate_y = 176.1 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[1.45, 12.7, 0.0], [1.45, 12.35, 0.0], [1.4, 12.73, 0.0], [1.25, 13.08, 0.0], [1.02, 13.38, 0.0], [0.72, 13.61, 0.0], [0.37, 13.75, 0.0], [0.0, 13.8, 0.0], [-0.37, 13.75, 0.0], [-0.72, 13.61, 0.0], [-1.02, 13.38, 0.0], [-1.25, 13.08, 0.0], [-1.4, 12.73, 0.0], [-1.45, 12.35, 0.0], [-1.45, 12.7, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [-9.74, 0.0, -54.92], rotate_y = 176.1 }
+
+[[element]]
+type = "extrude"
+note = "arched head (stained glass)"
+profile = [[-1.94, 13.05], [1.94, 13.05], [1.94, 12.26], [1.88, 12.76], [1.68, 13.23], [1.38, 13.63], [0.97, 13.94], [0.5, 14.13], [0.0, 14.2], [-0.5, 14.13], [-0.97, 13.94], [-1.38, 13.63], [-1.68, 13.23], [-1.88, 12.76], [-1.94, 12.26]]
+plane = "xy"
+origin = [0.0, 0.0, 0.0]
+length = 0.04
+material = "head_glass"
+collide = false
+transform = { translate = [17.34, 0.0, -48.95], rotate_y = 176.5 }
+
+[[element]]
+type = "sweep"
+note = "stone surround of the arched head"
+profile = { shape = "rect", size = [0.22, 0.14] }
+path = { points = [[2.04, 13.0, 0.0], [2.04, 12.26, 0.0], [1.97, 12.78, 0.0], [1.77, 13.28, 0.0], [1.45, 13.7, 0.0], [1.02, 14.03, 0.0], [0.53, 14.23, 0.0], [0.0, 14.3, 0.0], [-0.53, 14.23, 0.0], [-1.02, 14.03, 0.0], [-1.45, 13.7, 0.0], [-1.77, 13.28, 0.0], [-1.97, 12.78, 0.0], [-2.04, 12.26, 0.0], [-2.04, 13.0, 0.0]] }
+material = "stone_fine"
+collide = false
+transform = { translate = [17.34, 0.0, -48.95], rotate_y = 176.5 }
 
 # Grey louvred shutters inside the windows (thin panels, slat texture).
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.56, 4.8, 0.05]
+size = [2.56, 4.2, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [28.95, 8.0, -45.88], rotate_y = 130.9 }
+transform = { translate = [28.62, 8.4, -46.26], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.56, 4.8, 0.05]
+size = [3.16, 5.1, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [33.01, 8.0, -41.2], rotate_y = 130.9 }
+transform = { translate = [31.04, 8.85, -43.46], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.76, 4.6, 0.05]
+size = [2.56, 4.2, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [37.0, 7.9, -36.59], rotate_y = 130.9 }
+transform = { translate = [33.47, 8.4, -40.67], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.36, 5.4, 0.05]
+size = [3.26, 4.55, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [39.56, 8.3, -33.64], rotate_y = 130.9 }
+transform = { translate = [36.74, 8.57, -36.89], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [4.56, 7.0, 0.05]
+size = [3.86, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [42.77, 9.1, -29.94], rotate_y = 130.9 }
+transform = { translate = [39.76, 9.68, -33.42], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.36, 5.4, 0.05]
+size = [3.76, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [45.98, 8.3, -26.24], rotate_y = 130.9 }
+transform = { translate = [42.77, 9.68, -29.94], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.76, 4.6, 0.05]
+size = [3.86, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [48.53, 7.9, -23.29], rotate_y = 130.9 }
+transform = { translate = [45.78, 9.68, -26.47], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.76, 4.6, 0.05]
+size = [3.26, 4.55, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [52.2, 7.9, -19.06], rotate_y = 130.9 }
+transform = { translate = [48.8, 8.57, -22.99], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.56, 5.1, 0.05]
+size = [2.76, 4.7, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [54.56, 8.15, -16.34], rotate_y = 130.9 }
+transform = { translate = [52.27, 8.65, -18.99], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.76, 4.6, 0.05]
+size = [3.36, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [56.92, 7.9, -13.62], rotate_y = 130.9 }
+transform = { translate = [55.28, 9.68, -15.51], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.21, 4.67, 0.05]
+size = [2.76, 4.7, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [59.01, 7.94, 6.58], rotate_y = 85.8 }
+transform = { translate = [58.3, 8.65, -12.04], rotate_y = 130.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.68, 5.44, 0.05]
+size = [2.21, 4.47, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [59.26, 8.32, 3.21], rotate_y = 85.8 }
+transform = { translate = [59.01, 8.24, 6.58], rotate_y = 85.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.71, 5.72, 0.05]
+size = [2.68, 5.64, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [59.54, 8.46, -0.53], rotate_y = 85.8 }
+transform = { translate = [59.26, 8.82, 3.21], rotate_y = 85.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.68, 5.44, 0.05]
+size = [3.71, 7.05, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [59.81, 8.32, -4.28], rotate_y = 85.8 }
+transform = { translate = [59.54, 9.53, -0.53], rotate_y = 85.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.21, 4.67, 0.05]
+size = [2.68, 5.64, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [60.06, 7.94, -7.65], rotate_y = 85.8 }
+transform = { translate = [59.81, 8.82, -4.28], rotate_y = 85.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.23, 4.67, 0.05]
+size = [2.21, 4.47, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [42.43, 7.93, 7.56], rotate_y = -3.8 }
+transform = { translate = [60.06, 8.24, -7.65], rotate_y = 85.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.7, 5.43, 0.05]
+size = [2.23, 4.47, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [45.82, 8.31, 7.79], rotate_y = -3.8 }
+transform = { translate = [42.43, 8.23, 7.56], rotate_y = -3.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.74, 5.71, 0.05]
+size = [2.7, 5.63, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [49.6, 8.45, 8.04], rotate_y = -3.8 }
+transform = { translate = [45.82, 8.81, 7.79], rotate_y = -3.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.7, 5.43, 0.05]
+size = [3.74, 7.05, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [53.37, 8.31, 8.29], rotate_y = -3.8 }
+transform = { translate = [49.6, 9.53, 8.04], rotate_y = -3.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.23, 4.67, 0.05]
+size = [2.7, 5.63, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [56.77, 7.93, 8.52], rotate_y = -3.8 }
+transform = { translate = [53.37, 8.81, 8.29], rotate_y = -3.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.24, 4.66, 0.05]
+size = [2.23, 4.47, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [25.81, 7.93, 20.09], rotate_y = 41.6 }
+transform = { translate = [56.77, 8.23, 8.52], rotate_y = -3.8 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.71, 5.42, 0.05]
+size = [2.24, 4.46, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [28.37, 8.31, 17.82], rotate_y = 41.6 }
+transform = { translate = [25.81, 8.23, 20.09], rotate_y = 41.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.76, 6.4, 0.05]
+size = [2.71, 5.62, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [31.21, 8.8, 15.29], rotate_y = 41.6 }
+transform = { translate = [28.37, 8.81, 17.82], rotate_y = 41.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.71, 5.42, 0.05]
+size = [3.76, 7.05, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [34.05, 8.31, 12.77], rotate_y = 41.6 }
+transform = { translate = [31.21, 9.53, 15.29], rotate_y = 41.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.24, 4.66, 0.05]
+size = [2.71, 5.62, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [36.61, 7.93, 10.5], rotate_y = 41.6 }
+transform = { translate = [34.05, 8.81, 12.77], rotate_y = 41.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.24, 4.66, 0.05]
+size = [2.24, 4.46, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [20.96, 7.93, 40.27], rotate_y = 86.6 }
+transform = { translate = [36.61, 8.23, 10.5], rotate_y = 41.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.72, 5.42, 0.05]
+size = [2.24, 4.46, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [21.16, 8.31, 36.86], rotate_y = 86.6 }
+transform = { translate = [20.96, 8.23, 40.27], rotate_y = 86.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.76, 5.7, 0.05]
+size = [2.72, 5.62, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [21.39, 8.45, 33.06], rotate_y = 86.6 }
+transform = { translate = [21.16, 8.81, 36.86], rotate_y = 86.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.72, 5.42, 0.05]
+size = [3.76, 7.05, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [21.62, 8.31, 29.27], rotate_y = 86.6 }
+transform = { translate = [21.39, 9.53, 33.06], rotate_y = 86.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.24, 4.66, 0.05]
+size = [2.72, 5.62, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [21.82, 7.93, 25.86], rotate_y = 86.6 }
+transform = { translate = [21.62, 8.81, 29.27], rotate_y = 86.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.96, 4.3, 0.05]
+size = [2.24, 4.46, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [7.55, 7.75, 54.12], rotate_y = 41.3 }
-
-[[element]]
-type = "box"
-center = [0.0, 0.0, 0.0]
-size = [2.96, 4.3, 0.05]
-material = "slats"
-collide = false
-transform = { translate = [11.36, 7.75, 50.78], rotate_y = 41.3 }
+transform = { translate = [21.82, 8.23, 25.86], rotate_y = 86.6 }
 
 [[element]]
 type = "box"
@@ -1795,7 +2074,7 @@ center = [0.0, 0.0, 0.0]
 size = [2.96, 4.3, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [15.17, 7.75, 47.44], rotate_y = 41.3 }
+transform = { translate = [7.55, 8.15, 54.12], rotate_y = 41.3 }
 
 [[element]]
 type = "box"
@@ -1803,47 +2082,63 @@ center = [0.0, 0.0, 0.0]
 size = [2.96, 4.3, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [18.97, 7.75, 44.1], rotate_y = 41.3 }
+transform = { translate = [11.36, 8.15, 50.78], rotate_y = 41.3 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.03, 4.26, 0.05]
+size = [2.96, 4.3, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-16.69, 7.73, 54.14], rotate_y = -4.1 }
+transform = { translate = [15.17, 8.15, 47.44], rotate_y = 41.3 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.67, 4.94, 0.05]
+size = [2.96, 4.3, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-12.1, 8.07, 54.47], rotate_y = -4.1 }
+transform = { translate = [18.97, 8.15, 44.1], rotate_y = 41.3 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [4.56, 5.3, 0.05]
+size = [3.03, 4.06, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-6.99, 8.25, 54.84], rotate_y = -4.1 }
+transform = { translate = [-16.69, 8.03, 54.14], rotate_y = -4.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.67, 4.94, 0.05]
+size = [3.67, 5.14, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-1.89, 8.07, 55.2], rotate_y = -4.1 }
+transform = { translate = [-12.1, 8.57, 54.47], rotate_y = -4.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.03, 4.26, 0.05]
+size = [4.56, 7.05, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [2.71, 7.73, 55.53], rotate_y = -4.1 }
+transform = { translate = [-6.99, 9.53, 54.84], rotate_y = -4.1 }
+
+[[element]]
+type = "box"
+center = [0.0, 0.0, 0.0]
+size = [3.67, 5.14, 0.05]
+material = "slats"
+collide = false
+transform = { translate = [-1.89, 8.57, 55.2], rotate_y = -4.1 }
+
+[[element]]
+type = "box"
+center = [0.0, 0.0, 0.0]
+size = [3.03, 4.06, 0.05]
+material = "slats"
+collide = false
+transform = { translate = [2.71, 8.03, 55.53], rotate_y = -4.1 }
 
 [[element]]
 type = "box"
@@ -1851,7 +2146,7 @@ center = [0.0, 0.0, 0.0]
 size = [2.49, 4.53, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-24.72, 7.87, 50.88], rotate_y = -31.3 }
+transform = { translate = [-24.72, 8.27, 50.88], rotate_y = -31.3 }
 
 [[element]]
 type = "box"
@@ -1859,7 +2154,7 @@ center = [0.0, 0.0, 0.0]
 size = [2.49, 4.53, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-21.36, 7.87, 52.92], rotate_y = -31.3 }
+transform = { translate = [-21.36, 8.27, 52.92], rotate_y = -31.3 }
 
 [[element]]
 type = "box"
@@ -1867,7 +2162,7 @@ center = [0.0, 0.0, 0.0]
 size = [2.96, 4.3, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-46.13, 7.75, 23.28], rotate_y = -69.5 }
+transform = { translate = [-46.13, 8.15, 23.28], rotate_y = -69.5 }
 
 [[element]]
 type = "box"
@@ -1875,334 +2170,344 @@ center = [0.0, 0.0, 0.0]
 size = [2.96, 4.3, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-44.52, 7.75, 27.61], rotate_y = -69.5 }
+transform = { translate = [-44.52, 8.15, 27.61], rotate_y = -69.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.87, 4.34, 0.05]
+size = [2.87, 4.14, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-45.46, 7.77, -0.13], rotate_y = -93.9 }
+transform = { translate = [-45.46, 8.07, -0.13], rotate_y = -93.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.48, 5.04, 0.05]
+size = [3.48, 5.24, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-45.76, 8.12, 4.23], rotate_y = -93.9 }
+transform = { translate = [-45.76, 8.62, 4.23], rotate_y = -93.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [4.56, 5.3, 0.05]
+size = [4.56, 7.05, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-46.1, 8.25, 9.07], rotate_y = -93.9 }
+transform = { translate = [-46.1, 9.53, 9.07], rotate_y = -93.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.48, 5.04, 0.05]
+size = [3.48, 5.24, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-46.43, 8.12, 13.92], rotate_y = -93.9 }
+transform = { translate = [-46.43, 8.62, 13.92], rotate_y = -93.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.87, 4.34, 0.05]
+size = [2.87, 4.14, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-46.73, 7.77, 18.28], rotate_y = -93.9 }
+transform = { translate = [-46.73, 8.07, 18.28], rotate_y = -93.9 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.29, 4.63, 0.05]
+size = [2.29, 4.43, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [24.7, 7.92, -48.31], rotate_y = 176.5 }
+transform = { translate = [24.7, 8.22, -48.31], rotate_y = 176.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.78, 5.39, 0.05]
+size = [2.78, 5.59, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [21.21, 8.3, -48.52], rotate_y = 176.5 }
+transform = { translate = [21.21, 8.8, -48.52], rotate_y = 176.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.85, 5.66, 0.05]
+size = [3.85, 7.05, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [17.32, 8.43, -48.76], rotate_y = 176.5 }
+transform = { translate = [17.32, 9.53, -48.76], rotate_y = 176.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.78, 5.39, 0.05]
+size = [2.78, 5.59, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [13.44, 8.3, -49.0], rotate_y = 176.5 }
+transform = { translate = [13.44, 8.8, -49.0], rotate_y = 176.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.29, 4.63, 0.05]
+size = [2.29, 4.43, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [9.95, 7.92, -49.21], rotate_y = 176.5 }
+transform = { translate = [9.95, 8.22, -49.21], rotate_y = 176.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.96, 1.8, 0.05]
+size = [2.96, 4.0, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-31.64, 6.5, -18.97], rotate_y = -53.6 }
+transform = { translate = [-31.64, 8.0, -18.97], rotate_y = -53.6 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.19, 3.08, 0.05]
+size = [2.19, 4.38, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-33.05, 7.14, -38.14], rotate_y = -92.5 }
+transform = { translate = [-33.05, 8.19, -38.14], rotate_y = -92.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.66, 3.25, 0.05]
+size = [2.66, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-33.19, 7.23, -34.8], rotate_y = -92.5 }
+transform = { translate = [-33.19, 9.38, -34.8], rotate_y = -92.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.68, 3.14, 0.05]
+size = [3.68, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-33.36, 7.17, -31.08], rotate_y = -92.5 }
+transform = { translate = [-33.36, 9.38, -31.08], rotate_y = -92.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.66, 3.25, 0.05]
+size = [2.66, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-33.52, 7.23, -27.36], rotate_y = -92.5 }
+transform = { translate = [-33.52, 9.38, -27.36], rotate_y = -92.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.19, 3.08, 0.05]
+size = [2.19, 4.38, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-33.66, 7.14, -24.01], rotate_y = -92.5 }
+transform = { translate = [-33.66, 8.19, -24.01], rotate_y = -92.5 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.75, 2.81, 0.05]
+size = [2.75, 4.11, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-17.34, 7.0, -53.36], rotate_y = -140.1 }
+transform = { translate = [-17.34, 8.05, -53.36], rotate_y = -140.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.33, 2.92, 0.05]
+size = [3.33, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-20.54, 7.06, -50.68], rotate_y = -140.1 }
+transform = { translate = [-20.54, 9.38, -50.68], rotate_y = -140.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [4.56, 3.8, 0.05]
+size = [4.56, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-24.11, 7.5, -47.7], rotate_y = -140.1 }
+transform = { translate = [-24.11, 9.38, -47.7], rotate_y = -140.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.33, 2.92, 0.05]
+size = [3.33, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-27.67, 7.06, -44.72], rotate_y = -140.1 }
+transform = { translate = [-27.67, 9.38, -44.72], rotate_y = -140.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.75, 2.81, 0.05]
+size = [2.75, 4.11, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-30.87, 7.0, -42.04], rotate_y = -140.1 }
+transform = { translate = [-30.87, 8.05, -42.04], rotate_y = -140.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.19, 3.08, 0.05]
+size = [2.19, 4.38, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [1.01, 7.14, -54.01], rotate_y = 176.1 }
+transform = { translate = [1.01, 8.19, -54.01], rotate_y = 176.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.66, 3.25, 0.05]
+size = [2.66, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-2.33, 7.23, -54.24], rotate_y = 176.1 }
+transform = { translate = [-2.33, 9.38, -54.24], rotate_y = 176.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [3.68, 3.14, 0.05]
+size = [3.68, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-6.04, 7.17, -54.49], rotate_y = 176.1 }
+transform = { translate = [-6.04, 9.38, -54.49], rotate_y = 176.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.66, 3.25, 0.05]
+size = [2.66, 6.75, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-9.75, 7.23, -54.74], rotate_y = 176.1 }
+transform = { translate = [-9.75, 9.38, -54.74], rotate_y = 176.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.19, 3.08, 0.05]
+size = [2.19, 4.38, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [-13.09, 7.14, -54.96], rotate_y = 176.1 }
+transform = { translate = [-13.09, 8.19, -54.96], rotate_y = 176.1 }
 
 [[element]]
 type = "box"
 center = [0.0, 0.0, 0.0]
-size = [2.96, 1.8, 0.05]
+size = [2.96, 4.0, 0.05]
 material = "slats"
 collide = false
-transform = { translate = [5.32, 6.5, -51.66], rotate_y = 134.2 }
+transform = { translate = [5.32, 8.0, -51.66], rotate_y = 134.2 }
 
 # Stone piers between the windows (taller ones mark the naves).
 [[element]]
 type = "pilaster"
 at = [27.31, 0.0, -48.03]
 facing = 49.1
-height = 14.4
+height = 14.0
 width = 1.0
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [31.11, 0.0, -43.65]
+at = [29.96, 0.0, -44.97]
 facing = 49.1
-height = 14.4
-width = 0.8
+height = 13.0
+width = 0.7
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
+
+[[element]]
+type = "pilaster"
+at = [32.38, 0.0, -42.18]
+facing = 49.1
+height = 13.0
+width = 0.7
+depth = 0.35
+order = "pier"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [35.36, 0.0, -38.74]
 facing = 49.1
-height = 18.8
+height = 16.6
 width = 1.4
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [38.51, 0.0, -35.11]
+at = [38.38, 0.0, -35.27]
 facing = 49.1
-height = 14.4
+height = 15.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [41.19, 0.0, -32.02]
+at = [41.39, 0.0, -31.79]
 facing = 49.1
-height = 21.4
+height = 21.6
 width = 0.9
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [44.6, 0.0, -28.09]
+at = [44.4, 0.0, -28.31]
 facing = 49.1
-height = 21.4
+height = 21.6
 width = 0.9
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [47.29, 0.0, -24.99]
+at = [47.42, 0.0, -24.84]
 facing = 49.1
-height = 14.4
+height = 15.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [50.43, 0.0, -21.36]
 facing = 49.1
-height = 18.8
+height = 16.6
 width = 1.4
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [53.51, 0.0, -17.81]
+at = [53.9, 0.0, -17.36]
 facing = 49.1
-height = 14.4
-width = 0.8
+height = 13.4
+width = 0.7
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [55.87, 0.0, -15.09]
+at = [56.92, 0.0, -13.88]
 facing = 49.1
-height = 14.4
-width = 0.8
+height = 13.4
+width = 0.7
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
-at = [58.95, 0.0, -11.54]
+at = [59.93, 0.0, -10.41]
 facing = 49.1
-height = 16.0
-width = 1.2
+height = 14.6
+width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2212,7 +2517,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2222,7 +2527,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2232,7 +2537,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2242,7 +2547,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2252,7 +2557,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2262,7 +2567,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2272,7 +2577,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2282,7 +2587,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2292,7 +2597,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2302,7 +2607,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2312,7 +2617,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2322,7 +2627,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2332,7 +2637,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2342,7 +2647,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2352,7 +2657,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2362,7 +2667,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2372,7 +2677,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2382,7 +2687,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2392,7 +2697,7 @@ height = 14.4
 width = 0.9
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2402,7 +2707,7 @@ height = 14.4
 width = 0.9
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2412,7 +2717,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2422,7 +2727,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2432,7 +2737,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2442,7 +2747,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2452,7 +2757,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2462,7 +2767,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2472,7 +2777,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2482,7 +2787,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2492,7 +2797,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2502,7 +2807,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2512,7 +2817,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2522,7 +2827,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2532,7 +2837,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2542,7 +2847,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2552,7 +2857,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2562,7 +2867,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2572,7 +2877,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2582,7 +2887,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2592,7 +2897,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2602,7 +2907,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2612,7 +2917,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2622,7 +2927,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2632,7 +2937,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2642,7 +2947,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2652,7 +2957,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2662,7 +2967,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2672,7 +2977,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2682,7 +2987,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2692,7 +2997,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2702,7 +3007,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2712,7 +3017,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2722,7 +3027,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2732,7 +3037,7 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2742,227 +3047,227 @@ height = 14.4
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-33.63, 0.0, -21.39]
 facing = 233.6
-height = 11.9
+height = 14.1
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-29.93, 0.0, -16.35]
 facing = 233.6
-height = 11.9
+height = 14.1
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-33.14, 0.0, -39.92]
 facing = 272.5
-height = 13.7
+height = 15.9
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-33.29, 0.0, -36.48]
 facing = 272.5
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-33.44, 0.0, -32.94]
 facing = 272.5
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-33.61, 0.0, -29.23]
 facing = 272.5
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-33.76, 0.0, -25.69]
 facing = 272.5
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-33.91, 0.0, -22.25]
 facing = 272.5
-height = 13.7
+height = 15.9
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-15.76, 0.0, -54.91]
 facing = 320.1
-height = 13.7
+height = 15.9
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-19.05, 0.0, -52.15]
 facing = 320.1
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-22.43, 0.0, -49.32]
 facing = 320.1
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-26.0, 0.0, -46.34]
 facing = 320.1
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-29.38, 0.0, -43.51]
 facing = 320.1
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-32.67, 0.0, -40.75]
 facing = 320.1
-height = 13.7
+height = 15.9
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [2.79, 0.0, -54.06]
 facing = 3.9
-height = 13.7
+height = 15.9
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-0.65, 0.0, -54.29]
 facing = 3.9
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-4.17, 0.0, -54.53]
 facing = 3.9
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-7.89, 0.0, -54.78]
 facing = 3.9
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-11.41, 0.0, -55.02]
 facing = 3.9
-height = 11.9
+height = 14.1
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [-14.85, 0.0, -55.25]
 facing = 3.9
-height = 13.7
+height = 15.9
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [7.28, 0.0, -49.88]
 facing = 45.8
-height = 11.9
+height = 14.1
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
 at = [3.6, 0.0, -53.67]
 facing = 45.8
-height = 11.9
+height = 14.1
 width = 0.8
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2972,7 +3277,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2982,7 +3287,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -2992,7 +3297,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -3002,7 +3307,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -3012,7 +3317,7 @@ height = 14.4
 width = 0.75
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 [[element]]
 type = "pilaster"
@@ -3022,7 +3327,7 @@ height = 16.2
 width = 1.1
 depth = 0.35
 order = "pier"
-material = "stone"
+material = "stone_fine"
 
 # ------------------------------------------------------------- roofs
 [[element]]
@@ -3122,7 +3427,7 @@ name = "nave_c_clerestory"
 note = "Raised clerestory of the central nave / transept."
 polygon = { points = [[36.06, -39.3], [51.15, -21.94], [-29.0, 47.73], [-44.09, 30.37]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
 y0 = 13.5
-y1 = 15.0
+y1 = 14.2
 material = "stone"
 top = false
 cornice = { profile = "cyma", size = 0.5, material = "stone" }
@@ -3138,7 +3443,6 @@ cornice = { profile = "cyma", size = 0.5, material = "stone" }
   infill = "glass"
   depth = 0.3
   frame = 0.06
-  mullions = 1
 
   [[element.openings]]
   edges = ["facing:49:20", "facing:229:20"]
@@ -3159,7 +3463,7 @@ name = "transept_clerestory"
 note = "Raised clerestory of the central nave / transept."
 polygon = { points = [[2.79, -31.84], [38.61, 9.36], [24.28, 21.83], [-11.55, -19.38]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
 y0 = 13.5
-y1 = 15.0
+y1 = 14.2
 material = "stone"
 top = false
 cornice = { profile = "cyma", size = 0.5, material = "stone" }
@@ -3175,7 +3479,6 @@ cornice = { profile = "cyma", size = 0.5, material = "stone" }
   infill = "glass"
   depth = 0.3
   frame = 0.06
-  mullions = 1
 
   [[element.openings]]
   edges = ["facing:139:20"]
@@ -3195,9 +3498,9 @@ type = "roof"
 name = "nave_c_roof"
 note = "central nave roof"
 polygon = { points = [[36.06, -39.3], [51.15, -21.94], [-29.0, 47.73], [-44.09, 30.37]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
-y = 15.0
+y = 14.2
 shape = "gable"
-pitch = 22.0
+pitch = 20.0
 ridge = 49.0
 overhang = 0.25
 material = "roof"
@@ -3208,9 +3511,9 @@ type = "roof"
 name = "transept_roof"
 note = "transept roof"
 polygon = { points = [[2.79, -31.84], [38.61, 9.36], [24.28, 21.83], [-11.55, -19.38]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
-y = 15.0
+y = 14.2
 shape = "gable"
-pitch = 22.0
+pitch = 20.0
 ridge = 139.0
 overhang = 0.25
 material = "roof"
@@ -3362,9 +3665,9 @@ type = "roof"
 name = "wing_f_w"
 note = "gabled front over a corner / fish-market face"
 polygon = { points = [[-34.23, -21.8], [-33.42, -40.39], [-24.13, -39.99], [-24.94, -21.4]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
-y = 11.0
+y = 13.2
 shape = "gable"
-pitch = 28.0
+pitch = 26.6
 ridge = 272.5
 overhang = 0.25
 material = "roof"
@@ -3375,9 +3678,9 @@ type = "roof"
 name = "wing_f_nw"
 note = "gabled front over a corner / fish-market face"
 polygon = { points = [[-33.31, -40.61], [-15.5, -55.51], [-9.54, -48.38], [-27.35, -33.48]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
-y = 11.0
+y = 13.2
 shape = "gable"
-pitch = 28.0
+pitch = 26.6
 ridge = 320.1
 overhang = 0.25
 material = "roof"
@@ -3388,9 +3691,9 @@ type = "roof"
 name = "wing_f_n"
 note = "gabled front over a corner / fish-market face"
 polygon = { points = [[-15.29, -55.58], [3.27, -54.33], [2.65, -45.05], [-15.91, -46.3]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
-y = 11.0
+y = 13.2
 shape = "gable"
-pitch = 28.0
+pitch = 26.6
 ridge = 3.9
 overhang = 0.25
 material = "roof"
@@ -3401,9 +3704,9 @@ type = "roof"
 name = "fish_roof"
 note = "Octagonal fish market: tiled roof sloping round its dome."
 polygon = { points = [[-23.32, -9.14], [-34.14, -21.6], [-33.05, -40.3], [-15.54, -55.53], [3.36, -54.06], [14.11, -41.68]], clip = [[5.76, 55.92], [-19.77, 54.09], [-26.49, 50.01], [-27.68, 48.65], [-42.94, 30.95], [-43.87, 29.83], [-47.1, 21.17], [-45.43, -3.05], [-29.63, -15.95], [-33.93, -21.79], [-33.12, -40.38], [-15.31, -55.28], [3.25, -54.03], [7.63, -49.52], [27.04, -48.34], [60.39, -9.88], [59.02, 8.84], [40.15, 7.58], [22.13, 23.59], [20.99, 42.56]] }
-y = 10.7
+y = 12.9
 shape = "pyramid"
-height = 6.0
+height = 9.0
 overhang = 0.2
 material = "roof"
 
@@ -3412,7 +3715,7 @@ material = "roof"
 type = "cylinder"
 name = "main_dome_base"
 note = "White base ring of the main dome rising from the crossing roofs."
-at = [13.99, 15.0, -4.48]
+at = [13.99, 14.2, -4.48]
 height = 5.0
 radius = 8.7
 segments = 48
@@ -3423,7 +3726,7 @@ type = "dome"
 name = "main_dome"
 note = "Main dome over the crossing: glazed drum with louvred arched windows between white piers continuing as ribs, slate-blue glazed scales, ~30 m."
 center = [13.99, -4.48]
-y = 20.0
+y = 19.2
 radius = 8.1
 height = 5.2
 profile = "ellipsoid"
@@ -3447,32 +3750,32 @@ type = "cylinder"
 name = "fish_dome_base"
 note = "Plain white drum base of the fish-market dome."
 at = [-14.38, 16.0, -36.66]
-height = 5.0
-radius = 4.9
+height = 6.3
+radius = 5.3
 segments = 40
 material = "stone_fine"
 
 [[element]]
 type = "cylinder"
 note = "ceramic frieze"
-at = [-14.38, 20.95, -36.66]
-height = 0.45
-radius = 4.98
+at = [-14.38, 21.55, -36.66]
+height = 0.75
+radius = 5.35
 segments = 40
-material = "yellow_band"
+material = "fish_frieze"
 
 [[element]]
 type = "dome"
 name = "fish_dome"
-note = "Fish-market dome: louvred arched drum windows, cream glazed cap with a blue band; swordfish weathervane."
+note = "Fish-market dome, about 10 m across (photos 07 and 09): twelve tall louvred arched windows between white ceramic-striped piers, cream-and-yellow glazed cap over a turquoise band; iron crown cage and swordfish weathervane (photos e29, 07, n12)."
 center = [-14.38, -36.66]
-y = 21.4
-radius = 4.6
+y = 22.3
+radius = 5.0
 height = 3.6
 profile = "ellipsoid"
 material = "fish_dome"
 drum_material = "stone_fine"
-drum = { height = 3.8, windows = 12, window_width = 1.6, window_height = 3.1, window_arch = "round", window_infill = "louvres", pilasters = true, cornice = true }
+drum = { height = 2.6, windows = 12, window_width = 2.0, window_height = 2.4, window_arch = "round", window_infill = "louvres", pilasters = true, cornice = true }
 base_ring = true
 
 [[element]]
@@ -3519,21 +3822,21 @@ material = "iron"
 
 [[element]]
 type = "finial"
-at = [-33.52, 16.05, -31.09]
+at = [-33.52, 17.96, -31.09]
 style = "spike"
 size = 2.6
 material = "iron"
 
 [[element]]
 type = "finial"
-at = [-24.21, 17.27, -47.83]
+at = [-24.21, 19.11, -47.83]
 style = "spike"
 size = 2.6
 material = "iron"
 
 [[element]]
 type = "finial"
-at = [-6.03, 16.05, -54.66]
+at = [-6.03, 17.96, -54.66]
 style = "spike"
 size = 2.6
 material = "iron"
@@ -3556,58 +3859,232 @@ material = "iron"
 [[element]]
 type = "slab"
 name = "podium"
-note = "Landing in front of the main doors, 1.6 m above the square."
-polygon = [[38.94, -39.95], [52.2, -24.7], [49.48, -22.34], [36.23, -37.59]]
-y = 1.6
-thickness = 1.6
+note = "Landing in front of the main doors, 1.75 m above the square."
+polygon = [[40.85, -40.81], [53.18, -26.62], [48.95, -22.95], [36.62, -37.13]]
+y = 1.75
+thickness = 1.75
 material = "stone"
 
 [[element]]
 type = "stairs"
 name = "main_stairs"
-note = "Nine-step staircase with scrolled stone cheeks."
-from = [49.65, -35.87]
-to = [45.57, -32.33]
-width = 20.0
-steps = 9
-rise = 1.6
+note = "Eleven-step staircase with scrolled stone cheeks (photo e26)."
+from = [50.71, -36.93]
+to = [47.01, -33.71]
+width = 17.6
+steps = 11
+rise = 1.75
 cheeks = true
+material = "stone"
+
+[[element]]
+type = "cylinder"
+note = "volute of the stair cheek"
+from = [45.14, 0.45, -44.41]
+to = [45.73, 0.45, -43.73]
+radius = 0.45
+segments = 16
+material = "stone"
+
+[[element]]
+type = "cylinder"
+note = "volute of the stair cheek"
+from = [56.75, 0.45, -31.05]
+to = [57.34, 0.45, -30.37]
+radius = 0.45
+segments = 16
 material = "stone"
 
 [[element]]
 type = "mass"
 name = "portico"
-note = "Portico of three round arches on stone piers with scrolled capitals (photo e26)."
-polygon = [[39.18, -39.22], [51.51, -25.03], [50.53, -24.18], [38.2, -38.37]]
-y0 = 1.6
-y1 = 6.4
+note = "Portico of three round arches on stone piers (photo e26)."
+polygon = [[41.81, -38.93], [51.46, -27.84], [47.69, -24.56], [38.04, -35.65]]
+y0 = 1.75
+y1 = 7.3
 material = "stone_fine"
-cornice = { profile = "cyma", size = 0.4 }
+cornice = { profile = "cyma", size = 0.35 }
+string_courses = [6.3]
   [[element.openings]]
   edges = ["facing:49:20", "facing:229:20"]
   kind = "arch"
   arch = "round"
-  width = 4.4
+  width = 3.0
+  height = 4.35
+  levels = [1.75]
+  bays = { offsets = [-4.4, 0.0, 4.4] }
+  infill = "void"
+  surround = { width = 0.25, projection = 0.08 }
+  keystone = 0.4
+
+  [[element.openings]]
+  edges = ["facing:139:20", "facing:319:20"]
+  kind = "arch"
+  arch = "round"
+  width = 2.6
   height = 4.1
-  levels = [1.6]
-  bays = { count = 3, spacing = 6.0 }
+  levels = [1.75]
+  bays = { count = 1 }
   infill = "void"
 
 [[element]]
-type = "slab"
-note = "iron-and-glass marquee over the portico"
-polygon = [[39.83, -40.45], [52.82, -25.51], [51.84, -24.66], [38.85, -39.6]]
-y = 6.6
-thickness = 0.25
+type = "column"
+at = [42.54, 1.75, -38.63]
+height = 2.85
+radius = 0.32
+order = "ionic"
+pedestal = 1.55
+material = "stone_fine"
+
+[[element]]
+type = "extrude"
+note = "scrolled iron bracket of the marquee"
+profile = [[0.0, 0.0], [1.5, 0.75], [1.5, 0.95], [0.0, 1.0]]
+plane = "zy"
+origin = [-0.05, 0.0, 0.0]
+length = 0.1
 material = "iron"
+transform = { translate = [42.27, 6.35, -38.4], rotate_y = 131.0 }
+
+[[element]]
+type = "column"
+at = [45.46, 1.75, -35.28]
+height = 2.85
+radius = 0.32
+order = "ionic"
+pedestal = 1.55
+material = "stone_fine"
+
+[[element]]
+type = "extrude"
+note = "scrolled iron bracket of the marquee"
+profile = [[0.0, 0.0], [1.5, 0.75], [1.5, 0.95], [0.0, 1.0]]
+plane = "zy"
+origin = [-0.05, 0.0, 0.0]
+length = 0.1
+material = "iron"
+transform = { translate = [45.19, 6.35, -35.05], rotate_y = 131.0 }
+
+[[element]]
+type = "column"
+at = [48.34, 1.75, -31.95]
+height = 2.85
+radius = 0.32
+order = "ionic"
+pedestal = 1.55
+material = "stone_fine"
+
+[[element]]
+type = "extrude"
+note = "scrolled iron bracket of the marquee"
+profile = [[0.0, 0.0], [1.5, 0.75], [1.5, 0.95], [0.0, 1.0]]
+plane = "zy"
+origin = [-0.05, 0.0, 0.0]
+length = 0.1
+material = "iron"
+transform = { translate = [48.08, 6.35, -31.73], rotate_y = 131.0 }
+
+[[element]]
+type = "column"
+at = [51.26, 1.75, -28.6]
+height = 2.85
+radius = 0.32
+order = "ionic"
+pedestal = 1.55
+material = "stone_fine"
+
+[[element]]
+type = "extrude"
+note = "scrolled iron bracket of the marquee"
+profile = [[0.0, 0.0], [1.5, 0.75], [1.5, 0.95], [0.0, 1.0]]
+plane = "zy"
+origin = [-0.05, 0.0, 0.0]
+length = 0.1
+material = "iron"
+transform = { translate = [51.0, 6.35, -28.37], rotate_y = 131.0 }
+
+[[element]]
+type = "extrude"
+note = "glass roof of a marquee bay, tilted up towards the square"
+profile = [[-2.2, 0.0], [-2.2, 1.1], [-1.65, 1.34], [-1.1, 1.51], [-0.55, 1.62], [0.0, 1.65], [0.55, 1.62], [1.1, 1.51], [1.65, 1.34], [2.2, 1.1], [2.2, 0.0]]
+plane = "xz"
+origin = [0.0, 0.0, 0.0]
+length = 0.08
+material = "marquee_glass"
+transform = { translate = [43.74, 7.45, -36.72], rotate_y = 131.0, rotate = [-10.0, 0.0, 0.0] }
+
+[[element]]
+type = "sweep"
+note = "iron fascia of a marquee bay"
+profile = { shape = "rect", size = [0.1, 0.45] }
+path = { points = [[-2.2, 0.0, 1.1], [-1.83, 0.15, 1.27], [-1.47, 0.28, 1.41], [-1.1, 0.38, 1.51], [-0.73, 0.44, 1.59], [-0.37, 0.49, 1.63], [0.0, 0.5, 1.65], [0.37, 0.49, 1.63], [0.73, 0.44, 1.59], [1.1, 0.38, 1.51], [1.47, 0.28, 1.41], [1.83, 0.15, 1.27], [2.2, 0.0, 1.1]] }
+material = "marquee_iron"
+transform = { translate = [43.74, 7.3, -36.72], rotate_y = 131.0 }
+
+[[element]]
+type = "sphere"
+center = [44.42, 6.5, -37.31]
+radius = 0.18
+segments = 8
+material = "lamp"
+
+[[element]]
+type = "extrude"
+note = "glass roof of a marquee bay, tilted up towards the square"
+profile = [[-2.2, 0.0], [-2.2, 1.1], [-1.65, 1.34], [-1.1, 1.51], [-0.55, 1.62], [0.0, 1.65], [0.55, 1.62], [1.1, 1.51], [1.65, 1.34], [2.2, 1.1], [2.2, 0.0]]
+plane = "xz"
+origin = [0.0, 0.0, 0.0]
+length = 0.08
+material = "marquee_glass"
+transform = { translate = [46.64, 7.45, -33.39], rotate_y = 131.0, rotate = [-10.0, 0.0, 0.0] }
+
+[[element]]
+type = "sweep"
+note = "iron fascia of a marquee bay"
+profile = { shape = "rect", size = [0.1, 0.45] }
+path = { points = [[-2.2, 0.0, 1.1], [-1.83, 0.15, 1.27], [-1.47, 0.28, 1.41], [-1.1, 0.38, 1.51], [-0.73, 0.44, 1.59], [-0.37, 0.49, 1.63], [0.0, 0.5, 1.65], [0.37, 0.49, 1.63], [0.73, 0.44, 1.59], [1.1, 0.38, 1.51], [1.47, 0.28, 1.41], [1.83, 0.15, 1.27], [2.2, 0.0, 1.1]] }
+material = "marquee_iron"
+transform = { translate = [46.64, 7.3, -33.39], rotate_y = 131.0 }
+
+[[element]]
+type = "sphere"
+center = [47.32, 6.5, -33.98]
+radius = 0.18
+segments = 8
+material = "lamp"
+
+[[element]]
+type = "extrude"
+note = "glass roof of a marquee bay, tilted up towards the square"
+profile = [[-2.2, 0.0], [-2.2, 1.1], [-1.65, 1.34], [-1.1, 1.51], [-0.55, 1.62], [0.0, 1.65], [0.55, 1.62], [1.1, 1.51], [1.65, 1.34], [2.2, 1.1], [2.2, 0.0]]
+plane = "xz"
+origin = [0.0, 0.0, 0.0]
+length = 0.08
+material = "marquee_glass"
+transform = { translate = [49.54, 7.45, -30.05], rotate_y = 131.0, rotate = [-10.0, 0.0, 0.0] }
+
+[[element]]
+type = "sweep"
+note = "iron fascia of a marquee bay"
+profile = { shape = "rect", size = [0.1, 0.45] }
+path = { points = [[-2.2, 0.0, 1.1], [-1.83, 0.15, 1.27], [-1.47, 0.28, 1.41], [-1.1, 0.38, 1.51], [-0.73, 0.44, 1.59], [-0.37, 0.49, 1.63], [0.0, 0.5, 1.65], [0.37, 0.49, 1.63], [0.73, 0.44, 1.59], [1.1, 0.38, 1.51], [1.47, 0.28, 1.41], [1.83, 0.15, 1.27], [2.2, 0.0, 1.1]] }
+material = "marquee_iron"
+transform = { translate = [49.54, 7.3, -30.05], rotate_y = 131.0 }
+
+[[element]]
+type = "sphere"
+center = [50.22, 6.5, -30.64]
+radius = 0.18
+segments = 8
+material = "lamp"
 
 [[element]]
 type = "mass"
 name = "crown_main"
 note = "Stone crown over the central gable with a segmental stained-glass window."
-polygon = [[41.34, -32.62], [45.27, -28.09], [44.22, -27.18], [40.28, -31.7]]
-y0 = 17.3
-y1 = 23.0
+polygon = [[41.6, -32.32], [45.01, -28.4], [43.96, -27.48], [40.54, -31.4]]
+y0 = 16.6
+y1 = 22.0
 material = "stone_fine"
 cornice = { profile = "cavetto", size = 0.6, material = "stone_fine" }
   [[element.openings]]
@@ -3616,7 +4093,7 @@ cornice = { profile = "cavetto", size = 0.6, material = "stone_fine" }
   arch = "segmental"
   width = 3.8
   height = 2.6
-  levels = [19.2]
+  levels = [18.2]
   bays = { count = 1 }
   infill = "stained"
   mullions = 3
@@ -3626,9 +4103,9 @@ cornice = { profile = "cavetto", size = 0.6, material = "stone_fine" }
 type = "mass"
 name = "crown_rear"
 note = "Stone crown over the central gable with a segmental stained-glass window."
-polygon = [[-37.83, 36.2], [-33.89, 40.73], [-34.95, 41.65], [-38.89, 37.12]]
-y0 = 15.0
-y1 = 22.4
+polygon = [[-37.57, 36.5], [-34.16, 40.43], [-35.21, 41.34], [-38.63, 37.42]]
+y0 = 14.2
+y1 = 19.2
 material = "stone_fine"
 cornice = { profile = "cavetto", size = 0.6, material = "stone_fine" }
   [[element.openings]]
@@ -3637,7 +4114,7 @@ cornice = { profile = "cavetto", size = 0.6, material = "stone_fine" }
   arch = "segmental"
   width = 3.8
   height = 2.6
-  levels = [18.6]
+  levels = [15.4]
   bays = { count = 1 }
   infill = "stained"
   mullions = 3
@@ -3648,7 +4125,7 @@ type = "mass"
 name = "crown_transept"
 note = "Stone crown over the central gable with a segmental stained-glass window."
 polygon = [[33.18, 13.02], [34.1, 14.08], [29.57, 18.02], [28.66, 16.96]]
-y0 = 15.0
+y0 = 14.2
 y1 = 22.0
 material = "stone_fine"
 cornice = { profile = "cavetto", size = 0.6, material = "stone_fine" }
@@ -3666,7 +4143,7 @@ cornice = { profile = "cavetto", size = 0.6, material = "stone_fine" }
 
 [[element]]
 type = "pinnacle"
-at = [41.24, 23.0, -32.27]
+at = [41.51, 22.0, -31.97]
 width = 0.7
 height = 1.4
 sides = 4
@@ -3674,7 +4151,7 @@ material = "stone_fine"
 
 [[element]]
 type = "pinnacle"
-at = [44.92, 23.0, -28.05]
+at = [44.65, 22.0, -28.35]
 width = 0.7
 height = 1.4
 sides = 4
@@ -3682,7 +4159,7 @@ material = "stone_fine"
 
 [[element]]
 type = "pinnacle"
-at = [-37.85, 22.4, 36.48]
+at = [-37.59, 19.2, 36.78]
 width = 0.7
 height = 1.4
 sides = 4
@@ -3690,7 +4167,7 @@ material = "stone_fine"
 
 [[element]]
 type = "pinnacle"
-at = [-34.18, 22.4, 40.71]
+at = [-34.44, 19.2, 40.41]
 width = 0.7
 height = 1.4
 sides = 4
@@ -3721,11 +4198,11 @@ type = "mass"
 name = "office_0"
 polygon = [[-39.44, 34.81], [-31.23, 44.24], [-38.18, 50.28], [-46.38, 40.85]]
 height = 10.2
-material = "stone"
+material = "office_stone"
 plinth = { profile = "plinth", size = 0.8 }
 string_courses = [5.0]
 cornice = { profile = "classical", size = 0.7, material = "stone_fine" }
-balustrade = { height = 0.9, finials = "urn" }
+balustrade = { height = 0.9, spacing = 0.42, finials = "none" }
 
   [[element.openings]]
   edges = "facing:229:20"
@@ -3772,11 +4249,11 @@ type = "mass"
 name = "office_1"
 polygon = [[-42.85, 30.89], [-39.44, 34.81], [-42.38, 37.37], [-45.79, 33.44]]
 height = 10.2
-material = "stone"
+material = "office_stone"
 plinth = { profile = "plinth", size = 0.8 }
 string_courses = [5.0]
 cornice = { profile = "classical", size = 0.7, material = "stone_fine" }
-balustrade = { height = 0.9, finials = "urn" }
+balustrade = { height = 0.9, spacing = 0.42, finials = "none" }
 
   [[element.openings]]
   edges = ["facing:319:20", "facing:139:20"]
@@ -3795,11 +4272,11 @@ type = "mass"
 name = "office_2"
 polygon = [[-31.23, 44.24], [-27.56, 48.47], [-30.5, 51.03], [-34.18, 46.8]]
 height = 10.2
-material = "stone"
+material = "office_stone"
 plinth = { profile = "plinth", size = 0.8 }
 string_courses = [5.0]
 cornice = { profile = "classical", size = 0.7, material = "stone_fine" }
-balustrade = { height = 0.9, finials = "urn" }
+balustrade = { height = 0.9, spacing = 0.42, finials = "none" }
 
   [[element.openings]]
   edges = ["facing:319:20", "facing:139:20"]
@@ -3828,7 +4305,7 @@ type = "mass"
 name = "turret_0"
 polygon = [[-34.18, 46.8], [-30.57, 50.95], [-34.57, 54.43], [-38.18, 50.28]]
 height = 10.8
-material = "stone"
+material = "office_stone"
 plinth = { profile = "plinth", size = 0.8 }
 string_courses = [5.0, 8.3]
 cornice = { profile = "classical", size = 0.6, material = "stone_fine" }
@@ -3928,7 +4405,7 @@ type = "mass"
 name = "turret_1"
 polygon = [[-45.79, 33.44], [-42.38, 37.37], [-46.3, 40.78], [-49.71, 36.86]]
 height = 10.8
-material = "stone"
+material = "office_stone"
 plinth = { profile = "plinth", size = 0.8 }
 string_courses = [5.0, 8.3]
 cornice = { profile = "classical", size = 0.6, material = "stone_fine" }
@@ -4026,14 +4503,14 @@ material = "iron"
 # ------------------------------------------------------------ weathervanes
 [[element]]
 type = "finial"
-at = [13.99, 33.0, -4.48]
+at = [13.99, 32.2, -4.48]
 style = "crown"
 size = 1.3
 material = "gold"
 
 [[element]]
 type = "cylinder"
-at = [13.99, 33.0, -4.48]
+at = [13.99, 32.2, -4.48]
 height = 5.2
 radius = 0.06
 segments = 8
@@ -4043,7 +4520,7 @@ material = "iron"
 type = "group"
 name = "cotorra"
 note = "The parrot weathervane of the main dome (about 1.6 m long), sheet iron painted green."
-transform = { translate = [13.99, 36.4, -4.48], rotate_y = 30 }
+transform = { translate = [13.99, 35.6, -4.48], rotate_y = 30 }
 material = "parrot"
   [[element.children]]
   type = "sphere"
@@ -4071,7 +4548,7 @@ material = "parrot"
 [[element]]
 type = "lantern"
 note = "iron crown-lantern on the fish dome"
-at = [-14.38, 28.5, -36.66]
+at = [-14.38, 28.2, -36.66]
 radius = 0.9
 height = 1.3
 sides = 8
@@ -4082,8 +4559,8 @@ material = "iron"
 
 [[element]]
 type = "cylinder"
-at = [-14.38, 30.7, -36.66]
-height = 4.6
+at = [-14.38, 30.4, -36.66]
+height = 7.1
 radius = 0.05
 segments = 8
 material = "iron"
@@ -4092,7 +4569,7 @@ material = "iron"
 type = "group"
 name = "pez_espada"
 note = "Swordfish weathervane of the fish-market dome."
-transform = { translate = [-14.38, 33.7, -36.66], rotate_y = 70 }
+transform = { translate = [-14.38, 33.4, -36.66], rotate_y = 70 }
 material = "fish_vane"
   [[element.children]]
   type = "sphere"
@@ -4120,7 +4597,7 @@ material = "fish_vane"
 # ---------------------------------------------------------- dome details
 [[element]]
 type = "torus"
-center = [15.28, 27.86, -10.96]
+center = [15.28, 27.06, -10.96]
 radius = 0.5
 tube = 0.14
 axis = [0.195, 0.25, -0.981]
@@ -4128,13 +4605,13 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [15.25, 27.86, -10.81]
+center = [15.25, 27.06, -10.81]
 radius = 0.45
 material = "louvre"
 
 [[element]]
 type = "torus"
-center = [19.48, 27.86, -8.15]
+center = [19.48, 27.06, -8.15]
 radius = 0.5
 tube = 0.14
 axis = [0.831, 0.25, -0.556]
@@ -4142,13 +4619,13 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [19.36, 27.86, -8.06]
+center = [19.36, 27.06, -8.06]
 radius = 0.45
 material = "louvre"
 
 [[element]]
 type = "torus"
-center = [20.47, 27.86, -3.19]
+center = [20.47, 27.06, -3.19]
 radius = 0.5
 tube = 0.14
 axis = [0.981, 0.25, 0.195]
@@ -4156,13 +4633,13 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [20.32, 27.86, -3.22]
+center = [20.32, 27.06, -3.22]
 radius = 0.45
 material = "louvre"
 
 [[element]]
 type = "torus"
-center = [17.66, 27.86, 1.01]
+center = [17.66, 27.06, 1.01]
 radius = 0.5
 tube = 0.14
 axis = [0.556, 0.25, 0.831]
@@ -4170,13 +4647,13 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [17.58, 27.86, 0.89]
+center = [17.58, 27.06, 0.89]
 radius = 0.45
 material = "louvre"
 
 [[element]]
 type = "torus"
-center = [12.71, 27.86, 2.0]
+center = [12.71, 27.06, 2.0]
 radius = 0.5
 tube = 0.14
 axis = [-0.195, 0.25, 0.981]
@@ -4184,13 +4661,13 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [12.73, 27.86, 1.85]
+center = [12.73, 27.06, 1.85]
 radius = 0.45
 material = "louvre"
 
 [[element]]
 type = "torus"
-center = [8.5, 27.86, -0.81]
+center = [8.5, 27.06, -0.81]
 radius = 0.5
 tube = 0.14
 axis = [-0.831, 0.25, 0.556]
@@ -4198,13 +4675,13 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [8.63, 27.86, -0.89]
+center = [8.63, 27.06, -0.89]
 radius = 0.45
 material = "louvre"
 
 [[element]]
 type = "torus"
-center = [7.52, 27.86, -5.77]
+center = [7.52, 27.06, -5.77]
 radius = 0.5
 tube = 0.14
 axis = [-0.981, 0.25, -0.195]
@@ -4212,13 +4689,13 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [7.66, 27.86, -5.74]
+center = [7.66, 27.06, -5.74]
 radius = 0.45
 material = "louvre"
 
 [[element]]
 type = "torus"
-center = [10.33, 27.86, -9.97]
+center = [10.33, 27.06, -9.97]
 radius = 0.5
 tube = 0.14
 axis = [-0.556, 0.25, -0.831]
@@ -4226,69 +4703,601 @@ material = "stone_fine"
 
 [[element]]
 type = "sphere"
-center = [10.41, 27.86, -9.84]
+center = [10.41, 27.06, -9.84]
 radius = 0.45
 material = "louvre"
 
 [[element]]
+type = "array"
+note = "12 window heads of the fish dome rising into the cap"
+mode = "radial"
+count = 12
+center = [-14.38, 24.75, -36.66]
+radius = 5.12
+  [[element.children]]
+  type = "extrude"
+  profile = [[-1.0, -0.2], [1.0, -0.2], [1.0, 0.75], [0.95, 1.06], [0.81, 1.34], [0.59, 1.56], [0.31, 1.7], [0.0, 1.75], [-0.31, 1.7], [-0.59, 1.56], [-0.81, 1.34], [-0.95, 1.06], [-1.0, 0.75]]
+  plane = "xy"
+  origin = [0.0, 0.0, -0.05]
+  length = 0.08
+  material = "slats"
+  [[element.children]]
+  type = "extrude"
+  profile = { points = [[-1.22, -0.2], [1.22, -0.2], [1.22, 0.75], [1.16, 1.13], [0.99, 1.47], [0.72, 1.74], [0.38, 1.91], [0.0, 1.97], [-0.38, 1.91], [-0.72, 1.74], [-0.99, 1.47], [-1.16, 1.13], [-1.22, 0.75]], holes = [[[-1.0, -0.21], [1.0, -0.21], [1.0, 0.75], [0.95, 1.06], [0.81, 1.34], [0.59, 1.56], [0.31, 1.7], [0.0, 1.75], [-0.31, 1.7], [-0.59, 1.56], [-0.81, 1.34], [-0.95, 1.06], [-1.0, 0.75]]] }
+  plane = "xy"
+  origin = [0.0, 0.0, -0.02]
+  length = 0.2
+  material = "stone_fine"
+
+[[element]]
 type = "cylinder"
 note = "blue glazed band"
-at = [-14.38, 25.2, -36.66]
-height = 0.7
-radius = 4.7
-radius_top = 4.5
+at = [-14.38, 24.9, -36.66]
+height = 0.8
+radius = 5.1
+radius_top = 4.75
 segments = 40
 material = "blue_tiles"
 
+# --------------------------------------------- Concejalia brick pavilions
+# Two brick pavilions of the market administration (Concejalia de Comercio y
+# Abastecimiento), one off the north face and one off the east corner
+# (Catastro context parcels, PNOA hip roofs with a central turret, photos 12,
+# n14, n15, e24): azulejo socle, round-arched ground-floor windows with iron
+# grilles, tall first-floor windows, an attic band with ceramic panels under
+# deep eaves, a central gabled bay and a slim turret with a glazed lantern.
+[[element]]
+type = "mass"
+name = "pavilion_n"
+polygon = "context:206"
+height = 11.5
+material = "brick"
+plinth = { profile = "plinth", size = 0.5, material = "stone_fine" }
+string_courses = [4.9, 8.6]
+cornice = { profile = "cyma", size = 0.5, material = "stone_fine" }
+roof = { shape = "hip", pitch = 30, overhang = 0.9 }
+
+  [[element.openings]]
+  edges = "facing:4.0:30"
+  kind = "door"
+  arch = "round"
+  width = 2.4
+  height = 3.7
+  bays = { count = 1 }
+  infill = "grille"
+  surround = { width = 0.3, projection = 0.1 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = ["min:5", "not:facing:4.0:30"]
+  kind = "window"
+  arch = "round"
+  width = 2.0
+  height = 2.9
+  levels = [1.3]
+  bays = { spacing = 4.2, margin = 1.2 }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  surround = { width = 0.25, projection = 0.08 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "min:5"
+  kind = "window"
+  arch = "segmental"
+  width = 1.2
+  height = 2.6
+  levels = [5.5]
+  bays = { spacing = 2.6, margin = 1.0 }
+  infill = "glass"
+  mullions = 1
+  sill = true
+  surround = { width = 0.15, projection = 0.05 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "min:5"
+  kind = "window"
+  arch = "round"
+  width = 0.8
+  height = 1.5
+  levels = [9.1]
+  bays = { spacing = 2.6, margin = 1.0 }
+  infill = "glass"
+
+[[element]]
+type = "string_course"
+on = "pavilion_n"
+y = 0.5
+profile = "band"
+size = 1.0
+projection = 0.03
+material = "azulejo"
+
+[[element]]
+type = "roof"
+name = "pavilion_n_gable"
+polygon = [[21.4, -57.2], [15.11, -57.63], [15.46, -62.67], [21.75, -62.24]]
+y = 11.5
+shape = "gable"
+pitch = 55
+ridge = 4.0
+overhang = 0.5
+material = "roof"
+wall_material = "brick"
+  [[element.gable_openings]]
+  edges = "facing:4.0:30"
+  kind = "oculus"
+  width = 0.9
+  infill = "glass"
+  material = "stone_fine"
+
+[[element]]
+type = "box"
+note = "stone balcony over the door"
+center = [0.0, 0.0, 0.0]
+size = [4.2, 0.3, 0.9]
+material = "stone_fine"
+transform = { translate = [18.64, 4.6, -62.85], rotate_y = 176.0 }
+
+[[element]]
+type = "box"
+note = "balustrade"
+center = [0.0, 0.0, 0.0]
+size = [4.2, 0.9, 0.12]
+material = "stone_fine"
+transform = { translate = [18.66, 5.2, -63.24], rotate_y = 176.0 }
+
+[[element]]
+type = "box"
+note = "carved coat of arms"
+center = [0.0, 0.0, 0.0]
+size = [3.2, 1.5, 0.3]
+material = "stone_fine"
+transform = { translate = [18.62, 9.3, -62.55], rotate_y = 176.0 }
+
+[[element]]
+type = "tower"
+name = "pavilion_n_turret"
+note = "slim octagonal turret with a glazed (yellow-lit) lantern and a slate spire"
+polygon = { shape = "octagon", center = [17.8, -57.3], width = 1.9 }
+y = 12.0
+  [[element.stages]]
+  name = "pavilion_n_turret_shaft"
+  height = 4.2
+  material = "brick"
+  cornice = { profile = "cyma", size = 0.25, material = "stone_fine" }
+  [[element.stages]]
+  name = "pavilion_n_lantern"
+  height = 1.9
+  inset = 0.1
+  material = "iron"
+    [[element.stages.openings]]
+    kind = "window"
+    arch = "flat"
+    width = 0.55
+    height = 1.5
+    levels = [16.4]
+    bays = { count = 1 }
+    infill = "glass"
+    glass_material = "amber"
+    depth = 0.05
+  [[element.top]]
+  type = "roof"
+  shape = "spire"
+  polygon = "parent"
+  height = 2.8
+  overhang = 0.1
+  material = "slate"
+
+[[element]]
+type = "finial"
+at = [17.8, 20.9, -57.3]
+style = "weathervane"
+size = 1.6
+material = "iron"
+
+[[element]]
+type = "mass"
+name = "pavilion_e"
+polygon = "context:207"
+height = 11.5
+material = "brick"
+plinth = { profile = "plinth", size = 0.5, material = "stone_fine" }
+string_courses = [4.9, 8.6]
+cornice = { profile = "cyma", size = 0.5, material = "stone_fine" }
+roof = { shape = "hip", pitch = 30, overhang = 0.9 }
+
+  [[element.openings]]
+  edges = "facing:94.0:30"
+  kind = "door"
+  arch = "round"
+  width = 2.4
+  height = 3.7
+  bays = { count = 1 }
+  infill = "grille"
+  surround = { width = 0.3, projection = 0.1 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = ["min:5", "not:facing:94.0:30"]
+  kind = "window"
+  arch = "round"
+  width = 2.0
+  height = 2.9
+  levels = [1.3]
+  bays = { spacing = 4.2, margin = 1.2 }
+  infill = "glass"
+  frame = 0.08
+  mullions = 1
+  surround = { width = 0.25, projection = 0.08 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "min:5"
+  kind = "window"
+  arch = "segmental"
+  width = 1.2
+  height = 2.6
+  levels = [5.5]
+  bays = { spacing = 2.6, margin = 1.0 }
+  infill = "glass"
+  mullions = 1
+  sill = true
+  surround = { width = 0.15, projection = 0.05 }
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "min:5"
+  kind = "window"
+  arch = "round"
+  width = 0.8
+  height = 1.5
+  levels = [9.1]
+  bays = { spacing = 2.6, margin = 1.0 }
+  infill = "glass"
+
+[[element]]
+type = "string_course"
+on = "pavilion_e"
+y = 0.5
+profile = "band"
+size = 1.0
+projection = 0.03
+material = "azulejo"
+
+[[element]]
+type = "roof"
+name = "pavilion_e_gable"
+polygon = [[74.88, -2.33], [74.31, 3.74], [69.27, 3.39], [69.84, -2.68]]
+y = 11.5
+shape = "gable"
+pitch = 55
+ridge = 94.0
+overhang = 0.5
+material = "roof"
+wall_material = "brick"
+  [[element.gable_openings]]
+  edges = "facing:94.0:30"
+  kind = "oculus"
+  width = 0.9
+  infill = "glass"
+  material = "stone_fine"
+
+[[element]]
+type = "box"
+note = "stone balcony over the door"
+center = [0.0, 0.0, 0.0]
+size = [4.2, 0.3, 0.9]
+material = "stone_fine"
+transform = { translate = [74.99, 4.6, 0.74], rotate_y = 86.0 }
+
+[[element]]
+type = "box"
+note = "balustrade"
+center = [0.0, 0.0, 0.0]
+size = [4.2, 0.9, 0.12]
+material = "stone_fine"
+transform = { translate = [75.38, 5.2, 0.76], rotate_y = 86.0 }
+
+[[element]]
+type = "box"
+note = "carved coat of arms"
+center = [0.0, 0.0, 0.0]
+size = [3.2, 1.5, 0.3]
+material = "stone_fine"
+transform = { translate = [74.69, 9.3, 0.72], rotate_y = 86.0 }
+
+[[element]]
+type = "tower"
+name = "pavilion_e_turret"
+note = "slim octagonal turret with a glazed (yellow-lit) lantern and a slate spire"
+polygon = { shape = "octagon", center = [67.9, 0.2], width = 1.9 }
+y = 12.0
+  [[element.stages]]
+  name = "pavilion_e_turret_shaft"
+  height = 4.2
+  material = "brick"
+  cornice = { profile = "cyma", size = 0.25, material = "stone_fine" }
+  [[element.stages]]
+  name = "pavilion_e_lantern"
+  height = 1.9
+  inset = 0.1
+  material = "iron"
+    [[element.stages.openings]]
+    kind = "window"
+    arch = "flat"
+    width = 0.55
+    height = 1.5
+    levels = [16.4]
+    bays = { count = 1 }
+    infill = "glass"
+    glass_material = "amber"
+    depth = 0.05
+  [[element.top]]
+  type = "roof"
+  shape = "spire"
+  polygon = "parent"
+  height = 2.8
+  overhang = 0.1
+  material = "slate"
+
+[[element]]
+type = "finial"
+at = [67.9, 20.9, 0.2]
+style = "weathervane"
+size = 1.6
+material = "iron"
+
+# ------------------------------------------------ market stalls (parades)
+# One-storey kiosks against the walls (Catastro context parcels 203-205,
+# 208; photos e26, 06, 16, n15): painted shopfronts on a tiled socle under
+# yellow canvas awnings.
+[[element]]
+type = "mass"
+name = "stall_203"
+polygon = { ref = "context:203", offset = 0.12 }
+height = 4.3
+material = "stall"
+top_material = "zinc"
+plinth = { profile = "band", size = 0.7, material = "azulejo" }
+  [[element.openings]]
+  edges = "min:2.6"
+  kind = "door"
+  arch = "flat"
+  width = 2.6
+  height = 2.35
+  bays = { spacing = 3.1, margin = 0.3 }
+  infill = "glass"
+  frame = 0.06
+
+[[element]]
+type = "slab"
+note = "yellow awning"
+polygon = { ref = "context:203", offset = 1.5 }
+y = 2.95
+thickness = 0.12
+material = "awning"
+collide = false
+
+[[element]]
+type = "mass"
+name = "stall_204"
+polygon = { ref = "context:204", offset = 0.12 }
+height = 4.3
+material = "stall"
+top_material = "zinc"
+plinth = { profile = "band", size = 0.7, material = "azulejo" }
+  [[element.openings]]
+  edges = "min:2.6"
+  kind = "door"
+  arch = "flat"
+  width = 2.6
+  height = 2.35
+  bays = { spacing = 3.1, margin = 0.3 }
+  infill = "glass"
+  frame = 0.06
+
+[[element]]
+type = "slab"
+note = "yellow awning"
+polygon = { ref = "context:204", offset = 1.5 }
+y = 2.95
+thickness = 0.12
+material = "awning"
+collide = false
+
+[[element]]
+type = "mass"
+name = "stall_205"
+polygon = { ref = "context:205", offset = 0.12 }
+height = 4.3
+material = "stall"
+top_material = "zinc"
+plinth = { profile = "band", size = 0.7, material = "azulejo" }
+  [[element.openings]]
+  edges = "min:2.6"
+  kind = "door"
+  arch = "flat"
+  width = 2.6
+  height = 2.35
+  bays = { spacing = 3.1, margin = 0.3 }
+  infill = "glass"
+  frame = 0.06
+
+[[element]]
+type = "slab"
+note = "yellow awning"
+polygon = { ref = "context:205", offset = 1.5 }
+y = 2.95
+thickness = 0.12
+material = "awning"
+collide = false
+
+[[element]]
+type = "mass"
+name = "stall_208"
+polygon = { ref = "context:208", offset = 0.12 }
+height = 4.3
+material = "stall"
+top_material = "zinc"
+plinth = { profile = "band", size = 0.7, material = "azulejo" }
+  [[element.openings]]
+  edges = "min:2.6"
+  kind = "door"
+  arch = "flat"
+  width = 2.6
+  height = 2.35
+  bays = { spacing = 3.1, margin = 0.3 }
+  infill = "glass"
+  frame = 0.06
+
+[[element]]
+type = "slab"
+note = "yellow awning"
+polygon = { ref = "context:208", offset = 1.5 }
+y = 2.95
+thickness = 0.12
+material = "awning"
+collide = false
+
 # ----------------------------------------------------------------- views
 [[view]]
-name = "main facade (e26)"
+name = "NE main entrance (e26)"
 photo = "extra/e26.jpg"
-eye = [61.72, 1.6, -46.37]
-target = [42.85, 10.6, -29.96]
-focal_35mm = 22.0
+eye = [60.18, 1.7, -44.63]
+target = [43.1, 9.9, -29.78]
+focal_35mm = 24.0
 sun = [60.0, 35.0]
 context = false
+match = [
+  { px = [590, 124], world = [44.88, 22.0, -28.55] },
+  { px = [757, 124], world = [41.73, 22.0, -32.17] },
+  { px = [672, 343], world = [43.0, 14.6, -30.1] },
+  { px = [355, 800], world = [51.26, 1.75, -28.6] },
+  { px = [560, 800], world = [48.34, 1.75, -31.95] },
+  { px = [770, 800], world = [45.46, 1.75, -35.28] },
+  { px = [985, 800], world = [42.54, 1.75, -38.63] },
+]
 
 [[view]]
-name = "Pl. del Mercat oblique (02)"
+name = "NE central gable (02)"
 photo = "photos/02_Mercado_Central_de_Valencia.jpg"
 eye = [61.82, 1.6, -47.78]
 target = [42.85, 12.5, -29.96]
 focal_35mm = 26.0
+sun = [70.0, 40.0]
+context = false
+match = [
+  { px = [515, 42], world = [44.88, 22.0, -28.55] },
+  { px = [690, 42], world = [41.73, 22.0, -32.17] },
+  { px = [600, 265], world = [43.0, 14.35, -30.1] },
+  { px = [262, 745], world = [51.26, 1.75, -28.6] },
+  { px = [492, 745], world = [48.34, 1.75, -31.95] },
+  { px = [712, 745], world = [45.46, 1.75, -35.28] },
+]
+
+[[view]]
+name = "NE facade from the NW end, E pavilion beyond (n15)"
+photo = "padded/n15_pad.jpg"
+eye = [39.71, 1.6, -61.02]
+target = [44.49, 1.6, -28.08]
+focal_35mm = 28.0
+sun = [60.0, 40.0]
+context = false
+match = [
+  { px = [800, 62], world = [41.73, 22.0, -32.17] },
+  { px = [683, 145], world = [44.88, 22.0, -28.55] },
+  { px = [565, 735], world = [51.26, 1.75, -28.6] },
+  { px = [655, 740], world = [48.34, 1.75, -31.95] },
+  { px = [765, 745], world = [45.46, 1.75, -35.28] },
+  { px = [905, 760], world = [42.54, 1.75, -38.63] },
+  { px = [1150, 85], world = [35.36, 16.6, -38.69] },
+]
+
+[[view]]
+name = "NW fish-market face (07)"
+photo = "padded/07_pad.jpg"
+eye = [-85.9, 1.6, -120.0]
+target = [-25.9, 1.6, -46.4]
+focal_35mm = 56.0
+sun = [250.0, 45.0]
 context = false
 
 [[view]]
-name = "fish market NW face from Ciutat de Bruges (07)"
-photo = "photos/07_Valencia_Ciutat_Vella_Mercat_Central_RI_51_0008309_vanaf_Pla.jpg"
-eye = [-56.5, 1.6, -86.5]
-target = [-24.2, 13.5, -47.9]
-focal_35mm = 26.0
-sun = [160.0, 55.0]
+name = "NW side from Sants Joans (03)"
+photo = "photos/03_panoramio.jpg"
+eye = [-80.0, 1.6, -70.0]
+target = [-14.0, 15.0, -36.0]
+focal_35mm = 24.0
+context = false
+time = "evening"
+
+[[view]]
+name = "N entrance, c. Vell de la Palla (e25)"
+photo = "extra/e25.jpg"
+eye = [-6.0, 1.6, -96.0]
+target = [-12.5, 12.0, -54.0]
+focal_35mm = 24.0
 context = false
 
 [[view]]
-name = "Baro de Carcer corner (e20)"
+name = "fish-market dome close-up (e29)"
+photo = "extra/e29.jpg"
+eye = [-45.0, 1.6, -73.0]
+target = [-14.4, 25.0, -36.7]
+focal_35mm = 70.0
+context = false
+
+[[view]]
+name = "W side panorama, Pl. Ciutat de Bruges (01)"
+photo = "photos/01_Mercado_Central_Valencia_Espana_2014_06_30_DD_108.jpg"
+eye = [-115.0, 1.6, -8.0]
+target = [-40.0, 13.0, -8.0]
+focal_35mm = 19.0
+sun = [150.0, 60.0]
+context = false
+
+[[view]]
+name = "SW office corner at dusk (e20)"
 photo = "extra/e20.jpg"
 eye = [-70.0, 1.6, 50.0]
 target = [-41.6, 10.0, 40.2]
 focal_35mm = 24.0
 context = false
+time = "evening"
 
 [[view]]
-name = "from the Micalet (09)"
-photo = "photos/09_Vista_cap_el_Mercat_Central_des_del_Micalet_Valencia.jpg"
-eye = [283.9, 47.0, -210.8]
-target = [0.0, 22.0, -18.0]
-focal_35mm = 97.0
-sun = [230.0, 30.0]
+name = "SW office block (e23)"
+photo = "extra/e23.jpg"
+eye = [-65.66, 1.6, 57.08]
+target = [-42.05, 9.0, 45.83]
+focal_35mm = 26.0
 context = false
 
 [[view]]
-name = "Vell de la Palla entrance (e25)"
-photo = "extra/e25.jpg"
-eye = [-12.0, 1.6, -88.0]
-target = [-20.0, 12.0, -50.0]
-focal_35mm = 22.0
+name = "N pavilion (12)"
+photo = "photos/12_Concejalia_de_Comercio_y_Abastecimiento_de_Valencia_1_png.jpg"
+eye = [8.0, 1.6, -85.0]
+target = [18.0, 9.5, -60.0]
+focal_35mm = 24.0
+context = false
+
+[[view]]
+name = "E pavilion and NE facade (n14)"
+photo = "extra2/n14.jpg"
+eye = [80.0, 1.6, -40.0]
+target = [60.0, 9.0, -10.0]
+focal_35mm = 24.0
+context = false
+
+[[view]]
+name = "aerial from the Micalet (09)"
+photo = "photos/09_Vista_cap_el_Mercat_Central_des_del_Micalet_Valencia.jpg"
+eye = [283.9, 47.0, -210.8]
+target = [258.81, 44.37, -194.57]
+fov_y = 14.7
+sun = [230.0, 30.0]
 context = false
 

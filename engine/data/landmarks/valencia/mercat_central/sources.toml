@@ -34,9 +34,9 @@ author = "Diego Delso"
 license = "CC BY-SA 3.0"
 width = 1280
 height = 507
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "W: long side on Plaça de la Ciutat de Bruges (fish market and its dome at left, main dome centre); stitched panorama, view approximate"
 
 [[photo]]
 file = "photos/02_Mercado_Central_de_Valencia.jpg"
@@ -49,7 +49,7 @@ height = 853
 camera = [51.76, -40.8]
 exterior = true
 selected = true
-side = "NE main facade on Plaça del Mercat (frontal, facing the Llotja)"
+side = "NE main facade on Plaça del Mercat, central gable frontal (view solved from 6 point matches, rms 6.8 px)"
 
 [[photo]]
 file = "photos/03_panoramio.jpg"
@@ -61,8 +61,8 @@ width = 1280
 height = 853
 camera = [-85.89, -28.02]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW: fish-market NW face and the NW side with its flat red-yellow louvred windows, Sants Joans at left; main dome behind (view by hand)"
 
 [[photo]]
 file = "photos/04_Exterior_del_Mercado_Central_esquina_con_la_iglesia_de_los_S.jpg"
@@ -114,7 +114,8 @@ height = 816
 camera = [-64.6, -41.29]
 exterior = true
 selected = true
-side = "NW face of the fish market with the swordfish dome, from Plaça de la Ciutat de Bruges"
+note = "perspective-corrected photo: the view uses padded/07_pad.jpg (bottom padded with grey to 1280x1334 so the horizon row 667 is the image centre)"
+side = "NW face of the fish market with its dome on axis, telephoto (~56 mm) from ~95 m; dome 10-11 m across, cap top ~28.5 m"
 
 [[photo]]
 file = "photos/08_Frontal_Mercado_Central.jpg"
@@ -138,7 +139,7 @@ width = 1280
 height = 905
 exterior = true
 selected = true
-side = "aerial from the Micalet (SE, ~300 m): roofs, main dome and fish-market dome"
+side = "aerial from the Micalet (NE, ~340 m): both domes, fish dome ~0.65 of the main dome's width and ~2.6 m lower (camera solved with the eye fixed at the Micalet)"
 
 [[photo]]
 file = "photos/10_Exterior_mercado_Valencia_01.jpg"
@@ -173,8 +174,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "N: brick pavilion of the Concejalia de Comercio y Abastecimiento (north face, gabled bay, turret with yellow lantern), fish-market gable at right"
 
 [[photo]]
 file = "photos/13_Mercat_Central_de_Valencia_3_png.jpg"
@@ -315,7 +316,7 @@ width = 1280
 height = 960
 exterior = true
 selected = true
-side = "main entrance (NE, Plaça del Mercat): portico, stairs, central crown; used to calibrate heights"
+side = "NE main entrance: portico, marquees, stairs, central crown (view solved from 7 point matches, rms 4.1 px; used to measure window arch tops 12.5 / 14.75 / 16.9 m, rose centre 14.6 m)"
 
 [[photo]]
 file = "extra/e20.jpg"
@@ -339,7 +340,7 @@ width = 1280
 height = 960
 exterior = true
 selected = true
-side = "NW side entrance of the fish market (c. Vell de la Palla); camera position approximate"
+side = "N entrance from c. Vell de la Palla: gable with rose and entrance arches, fish dome behind, north pavilion at left"
 
 [[photo]]
 file = "extra/e23.jpg"
@@ -350,8 +351,8 @@ license = "Public domain"
 width = 1280
 height = 868
 exterior = true
-selected = false
-side = "SW rear (office block, turrets, rear crown) - reference for the turret tops"
+selected = true
+side = "SW office block on Av. del Baro de Carcer: two domed turrets, central balcony bay, rear crown"
 
 [[photo]]
 file = "extra/e27.jpg"
@@ -404,3 +405,168 @@ url = "https://es.wikipedia.org/wiki/Mercado_Central_de_Valencia"
 title = "Wikipedia (es): Mercado Central de Valencia"
 notes = "Facing the Llotja; Calle Vieja de la Paja separates it from Santos Juanes; main access from Plaza del Mercado; dome crowned by a weathervane."
 
+# ------------------------------------------------- added by hand (update 2)
+# Photos added for the second modelling pass (raw folder extra2/, extra/).
+# Selected ones have a matching [[view]] in landmark.toml.
+
+[[photo]]
+file = "extra/e29.jpg"
+title = "File:Valencia, mercato centrale, esterno 03 cupola del pesce con pesce spada sulla banderuola 1.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia,_mercato_centrale,_esterno_03_cupola_del_pesce_con_pesce_spada_sulla_banderuola_1.jpg"
+author = "Francesco Bini (Sailko)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1662
+exterior = true
+selected = true
+side = "fish-market dome close-up from below the NW face: tall louvred arched windows rising into the cap, turquoise and yellow glazed cap, iron crown cage, swordfish vane"
+
+[[photo]]
+file = "extra2/n15.jpg"
+title = "File:Valencia, mercato centrale, esterno 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia,_mercato_centrale,_esterno_01.jpg"
+author = "Francesco Bini (Sailko)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 971
+exterior = true
+selected = true
+note = "perspective-corrected photo: the view uses padded/n15_pad.jpg (bottom padded with grey to 1280x1540, horizon row 770 at the centre)"
+side = "NE main facade from its NW end, the east brick pavilion and its turret beyond (view solved from 7 point matches, rms 8 px)"
+
+[[photo]]
+file = "extra2/n14.jpg"
+title = "File:Mercat Central de València 2019 5.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_Central_de_Val%C3%A8ncia_2019_5.jpg"
+author = "Steven Lek (Tukka)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 848
+exterior = true
+selected = true
+side = "E: NE facade towards its SE end with the east brick pavilion at right (Plaça del Mercat)"
+
+[[photo]]
+file = "extra2/n13.jpg"
+title = "File:Mercat Central de València 2019 2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_Central_de_Val%C3%A8ncia_2019_2.jpg"
+author = "Steven Lek (Tukka)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 848
+exterior = true
+selected = false
+side = "E corner: main facade and the east chamfered gable, main dome and parrot behind"
+
+[[photo]]
+file = "extra2/n16.jpg"
+title = "File:Valencia, Mercado Central, vchod.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia,_Mercado_Central,_vchod.jpg"
+author = "Aktron"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "main portico detail: curved iron-and-glass marquees on scrolled brackets, Ionic-scrolled capitals on pedestals (reference for the portico)"
+
+[[photo]]
+file = "extra2/n11.jpg"
+title = "File:Mercat Central de València, accés lateral.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_Central_de_Val%C3%A8ncia,_acc%C3%A9s_lateral.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "W/NW side entrance: arched door, flat windows with red/yellow louvres over the tiled socle"
+
+[[photo]]
+file = "extra2/n10.jpg"
+title = "File:Mercado Central außen.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercado_Central_au%C3%9Fen.jpg"
+author = "StefanieSk"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "NE main facade, oblique from the north"
+
+[[photo]]
+file = "extra2/n09.jpg"
+title = "File:Mercat central davant.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_central_davant.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "NE main facade, oblique"
+
+[[photo]]
+file = "extra2/n12.jpg"
+title = "File:Valencia - Mercado Central 2025-11-11.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Mercado_Central_2025-11-11.jpg"
+author = "Rafa Esteve"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "fish-market dome at dusk above its gable (lit drum windows)"
+
+[[photo]]
+file = "extra2/n06.jpg"
+title = "File:Mercat Central de Valencia (5).png"
+url = "https://commons.wikimedia.org/wiki/File:Mercat_Central_de_Valencia_(5).png"
+author = "Sea Olive"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "NE main facade from the SE end, north pavilion turret beyond"
+
+[[photo]]
+file = "extra2/n05.jpg"
+title = "File:Concejalía de Comercio y Abastecimiento de Valencia (2).png"
+url = "https://commons.wikimedia.org/wiki/File:Concejal%C3%ADa_de_Comercio_y_Abastecimiento_de_Valencia_(2).png"
+author = "Sea Olive"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "detail: carved royal coat of arms on the brick pavilion"
+
+[[photo]]
+file = "extra/e21.jpg"
+title = "File:493 Mercat Central de València, façana pl. Ciutat de Bruges.jpg"
+url = "https://commons.wikimedia.org/wiki/File:493_Mercat_Central_de_Val%C3%A8ncia,_fa%C3%A7ana_pl._Ciutat_de_Bruges.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "W facade on Plaça de la Ciutat de Bruges at dusk (camera not solved)"
+
+[[photo]]
+file = "extra/e24.jpg"
+title = "File:Valencia Mercat Central northeastern facade.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Mercat_Central_northeastern_facade.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1630
+exterior = true
+selected = false
+side = "NE facade along Plaça del Mercat from the SE, north pavilion at the far end"
+
+[facts.update2_heights]
+value = "socle band 5.6-6.0 m; NE windows: outer arches 12.5 m, inner 14.75 m, central 16.9 m, rose centre 14.6 m (r 1.95); central gable eaves 14.2 m, pitch 20 deg; crown 22 m; fish market eaves 13.2 m, NW gable apex ~19 m; fish dome 10 m across, drum 22.3-24.9 m, cap top 28.5 m; portico 14.7 m wide, ~5 m deep, landing 1.75 m"
+source = "photo measurements with solved cameras: e26 and 02 (back-projection onto the facade plane), 07 (telephoto, face 23.2 m = 475 px), 09 (dome ratio)"
+note = "Concejalia brick pavilions modelled on Catastro context parcels 206 (north) and 207 (east); market stalls on parcels 203-205 and 208."
