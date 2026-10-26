@@ -15627,6 +15627,7 @@
                     if (goHomeInProgress) return;
                     goHomeInProgress = true;
                     forceFlushingForExit = true;
+                    wakeDocumentBackgroundWork();
                     const context = captureDocumentPersistenceContext();
                     const exitingFileId = state.driveFileId || null;
                     try {
@@ -16191,6 +16192,7 @@
             });
 
             document.addEventListener('visibilitychange', () => {
+                wakeDocumentBackgroundWork();
                 if (document.visibilityState === 'hidden') {
                     const hiddenCheckpoint = flushOnClose();
                     // Do not unload page bodies while their final IndexedDB
@@ -24495,6 +24497,7 @@
                 localPageStructureMutationToken = null;
             }
             documentSessionId += 1;
+            wakeDocumentBackgroundWork();
             documentSessionActivated = true;
             clearTimeout(localSaveRetryTimer);
             localSaveRetryTimer = null;
@@ -24650,6 +24653,7 @@
         }
 
         function interruptDocumentBackgroundWork() {
+            wakeDocumentBackgroundWork();
             window.InhouseDocumentProcessing?.interruptForEditing?.();
             window.InhouseOfflineApp?.pauseForEditing?.();
             preparedDrivePdfBuild?.controller?.abort();
@@ -24681,6 +24685,7 @@
             }
             // Keep pending local changes queued when a checkpoint is interrupted.
             if (pausedProcessing) {
+                wakeDocumentBackgroundWork();
                 showStatus('Save paused...', { phase: 'paused' });
                 armPausedSaveWatchdog();
             }
@@ -24730,6 +24735,7 @@
 
         function flushDeferredSavesAfterInteraction() {
             if (hasSmoothInteraction()) return;
+            wakeDocumentBackgroundWork();
             window.InhouseOfflineLibrary?.resumeAfterEditing?.();
             clearPausedSaveWatchdog();
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
@@ -30923,17 +30929,29 @@
             assertCurrent();
         }
 
-        async function waitForHotInteractionToSettle(options = {}) {
-            const abortSignal = options.abortSignal || null;
-            const sessionToken = Number.isFinite(options.sessionToken) ? options.sessionToken : null;
-            const windowMs = Number.isFinite(options.windowMs) ? options.windowMs : DRIVE_BUILD_IDLE_WINDOW_MS;
-            const pollMs = Math.max(12, Number.isFinite(options.pollMs) ? options.pollMs : 24);
-            while (hasHotUserInteraction(windowMs)) {
-                if (abortSignal?.aborted) return false;
-                if (Number.isFinite(sessionToken) && !isDocumentSessionTokenValid(sessionToken)) return false;
-                await new Promise(resolve => setTimeout(resolve, pollMs));
+        let documentWorkQueue = null;
+        function getDocumentWorkInteractionState() {
+            const bypass = forceFlushingForExit || (document.hidden && !OFFLINE_WORKER);
+            let busy = hasSmoothInteraction() || hasPendingUserInput();
+            let lastActivity = lastUserInteractionAt;
+            if (!bypass && OFFLINE_WORKER && window.parent !== window) {
+                try {
+                    const parent = window.parent.getDocumentWorkInteractionState?.();
+                    if (parent && !parent.bypass) {
+                        busy ||= parent.busy;
+                        lastActivity = Math.max(lastActivity, parent.lastActivity);
+                    }
+                } catch (_) { }
             }
-            return true;
+            return {now:Date.now(), lastActivity, busy, bypass, session:getDocumentSessionToken()};
+        }
+
+        function wakeDocumentBackgroundWork() { documentWorkQueue?.wake(); }
+
+        function waitForHotInteractionToSettle(options = {}) {
+            documentWorkQueue ||= new window.InhouseRuntimeCore.DocumentWorkQueue(getDocumentWorkInteractionState);
+            return documentWorkQueue.wait({...options,
+                windowMs:Number.isFinite(options.windowMs) ? options.windowMs : DRIVE_BUILD_IDLE_WINDOW_MS});
         }
 
         async function drawImagesOnCanvas(ctx, page, options = {}) {

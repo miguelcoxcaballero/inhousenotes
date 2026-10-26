@@ -408,6 +408,35 @@
         const result = core.editor_stroke_hit(entry.pointer,points.length,x,y,radius);
         return result < 0 ? null : !!result;
     }
-    root.InhouseRust = Object.freeze({ ready, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
+    function documentWorkQueue() {
+        if (core?.document_work_version?.() !== 1) return null;
+        let handle = core.document_work_new(), output = null;
+        if (!handle) return null;
+        try { output = allocation(17 * 8); }
+        catch (_) { core.document_work_drop(handle); return null; }
+        return {
+            add(id, session, quietMs) {
+                return !!handle && Number.isInteger(id) && id > 0 && id <= 0xffffffff
+                    && core.document_work_add(handle, id, session, quietMs) === 1;
+            },
+            cancel(id) { if (handle) core.document_work_cancel(handle, id); },
+            poll(state) {
+                if (!handle) throw new Error('Document work queue disposed');
+                const count = core.document_work_poll(handle, state.now, state.lastActivity,
+                    state.session, (state.busy ? 1 : 0) | (state.bypass ? 2 : 0), output.pointer);
+                if (count < 0) throw new Error('Invalid document work state');
+                // Recreate after every call: other kernels can grow WASM memory.
+                const values = new Float64Array(core.memory.buffer, output.pointer, 17);
+                const ready = [];
+                for (let i = 0; i < count; i++) ready.push([values[1+i*2], values[2+i*2] === 1]);
+                return {ready, delay:values[0]};
+            },
+            dispose() {
+                if (!handle) return;
+                core.document_work_drop(handle); handle = 0; release(output); output = null;
+            }
+        };
+    }
+    root.InhouseRust = Object.freeze({ ready, documentWorkQueue, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
         folderMotion, folderFade, folderRows, available: () => !!core });
 })(globalThis);

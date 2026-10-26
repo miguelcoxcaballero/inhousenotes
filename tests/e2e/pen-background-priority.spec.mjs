@@ -100,3 +100,19 @@ test('native background sync stops once per writing burst and is rescheduled aft
  });
  expect(result).toEqual({during:{stopped:1,scheduled:0},after:{stopped:1,scheduled:1}});
 });
+test('the editor uses Rust and a shared alarm for concurrent document waits',async({page})=>{
+ const result=await page.evaluate(async()=>{
+  await InhouseRust.ready;
+  isPenWriting=true;let released=0;
+  const jobs=Array.from({length:64},()=>waitForHotInteractionToSettle({windowMs:1200,sessionToken:getDocumentSessionToken()}).then(ok=>{if(ok)released++;}));
+  const before=documentWorkQueue.diagnostics.wakes;
+  await new Promise(r=>setTimeout(r,1200));
+  const during={released,wakes:documentWorkQueue.diagnostics.wakes-before};
+  isPenWriting=false;lastUserInteractionAt=0;wakeDocumentBackgroundWork();
+  await Promise.all(jobs);
+  return {during,released,...documentWorkQueue.diagnostics};
+ });
+ expect(result.during.released).toBe(0);expect(result.during.wakes).toBeLessThanOrEqual(16);
+ expect(result.released).toBe(64);expect(result.backend).toBe('rust');expect(result.maxBatch).toBeLessThanOrEqual(8);
+ console.log('Document queue:',JSON.stringify(result));
+});
