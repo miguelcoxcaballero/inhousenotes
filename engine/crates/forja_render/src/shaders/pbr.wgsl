@@ -242,13 +242,16 @@ fn contact_shadow(p: vec3<f32>, ng: vec3<f32>, view_depth: f32, pix: vec2<f32>) 
 // HDR image (reprojected). Glass, car paint and glossy floors then mirror
 // the actual street instead of the HDRI's unrelated surroundings; misses
 // (off-screen, behind objects, sky) fall back to the environment.
+// Rough surfaces trace one GGX-distributed direction per frame (stochastic
+// SSR); TAA integrates them into a glossy reflection of the real street.
 // Returns rgb and a confidence in a.
 // Cost: up to 32 + 4 depth loads, 1 normal and 1 history tap per glossy
-// pixel (roughness < 0.45), ~0.6-1.2 ms at 1440p on an RTX 3070 class GPU
-// in a street full of windows.
-fn ssr_trace(p: vec3<f32>, r: vec3<f32>, rough: f32, pix: vec2<f32>) -> vec4<f32> {
-    let fade_rough = 1.0 - smoothstep(0.25, 0.45, rough);
+// pixel (roughness < 0.62), ~0.6-1.2 ms at 1440p on an RTX 3070 class GPU
+// in a street full of windows and shutters.
+fn ssr_trace(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, rough: f32, pix: vec2<f32>) -> vec4<f32> {
+    let fade_rough = 1.0 - smoothstep(0.45, 0.62, rough);
     if (frame.fx.z < 0.5 || fade_rough <= 0.0) { return vec4<f32>(0.0); }
+    let r = ssr_direction(n, v, rough, pix);
     let max_dist = frame.ao_params.z;
     // Keep the ray in front of the near plane (rays toward the camera).
     let pv = (frame.view * vec4<f32>(p, 1.0)).xyz;
@@ -329,6 +332,36 @@ fn ssr_trace(p: vec3<f32>, r: vec3<f32>, rough: f32, pix: vec2<f32>) -> vec4<f32
     let fade_dist = 1.0 - smoothstep(0.7, 1.0, length(hit_pos - p) / max_dist);
     let fade_cam = 1.0 - smoothstep(0.6, 0.95, normalize(rv).z);
     return vec4<f32>(col, fade_rough * facing * fade_edge * fade_dist * fade_cam);
+}
+
+// Reflection direction for SSR: the mirror direction for smooth surfaces,
+// otherwise reflected about a GGX microfacet normal sampled from the
+// visible-normal distribution (Heitz 2018). The lobe is truncated (u.x
+// scaled) to trade a little blur for much less noise.
+fn ssr_direction(n: vec3<f32>, v: vec3<f32>, rough: f32, pix: vec2<f32>) -> vec3<f32> {
+    let mirror = reflect(-v, n);
+    if (rough < 0.08) { return mirror; }
+    let a = rough * rough;
+    let helper = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0), abs(n.x) > 0.7);
+    let t = normalize(helper - n * dot(n, helper));
+    let b = cross(n, t);
+    let vl = vec3<f32>(dot(v, t), dot(v, b), dot(v, n));
+    let u = vec2<f32>(ign(pix + vec2<f32>(13.0, 71.0)) * 0.7, ign(pix + vec2<f32>(53.0, 7.0)));
+    // VNDF sample in the local frame (z = normal).
+    let vh = normalize(vec3<f32>(a * vl.x, a * vl.y, max(vl.z, 1e-4)));
+    let lensq = vh.x * vh.x + vh.y * vh.y;
+    let t1 = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(-vh.y, vh.x, 0.0) * inverseSqrt(max(lensq, 1e-12)), lensq > 1e-12);
+    let t2 = cross(vh, t1);
+    let rr = sqrt(u.x);
+    let phi = 6.2831853 * u.y;
+    let p1 = rr * cos(phi);
+    let s = 0.5 * (1.0 + vh.z);
+    let p2 = (1.0 - s) * sqrt(max(1.0 - p1 * p1, 0.0)) + s * rr * sin(phi);
+    let nh = p1 * t1 + p2 * t2 + sqrt(max(1.0 - p1 * p1 - p2 * p2, 0.0)) * vh;
+    let hl = normalize(vec3<f32>(a * nh.x, a * nh.y, max(nh.z, 1e-4)));
+    let h = t * hl.x + b * hl.y + n * hl.z;
+    let r = reflect(-v, h);
+    return select(mirror, r, dot(r, n) > 0.02);
 }
 
 // GTAO multi-bounce approximation (Jimenez 2016): bright albedo gets light
@@ -463,9 +496,9 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let rc = reflect(-v, ngc);
     var ssr: vec4<f32>;
     if (cc > 0.0) {
-        ssr = ssr_trace(in.world_pos, rc, material.layers.y, in.clip.xy);
+        ssr = ssr_trace(in.world_pos, ngc, v, material.layers.y, in.clip.xy);
     } else {
-        ssr = ssr_trace(in.world_pos, r, rough, in.clip.xy);
+        ssr = ssr_trace(in.world_pos, n, v, rough, in.clip.xy);
     }
     let ssr_base = select(ssr, vec4<f32>(0.0), cc > 0.0);
     color += mix(env_reflection(r, rough) * (spec_occ * horizon * horizon), ssr_base.rgb, ssr_base.a) * env;

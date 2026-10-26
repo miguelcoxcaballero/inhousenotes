@@ -177,9 +177,12 @@ pub struct Environment {
     /// Light with the loaded HDRI ([`Renderer::set_environment`]) instead of
     /// the analytic atmosphere. Its sun drives the shadows.
     pub use_ibl: bool,
-    /// World radius of the screen-space ambient occlusion (m).
+    /// World radius of the screen-space ambient occlusion (m). Screen space
+    /// misses what is hidden or off screen, so like XeGTAO (radius
+    /// multiplier 1.457) this is larger than the true occlusion distance.
     pub ao_radius: f32,
-    /// Exponent applied to the ambient occlusion (1 = physically based GTAO).
+    /// Exponent applied to the ambient occlusion (1 = raw GTAO visibility;
+    /// XeGTAO's default, matched to a ray-traced reference, is 2.2).
     pub ao_strength: f32,
     /// 0..1: how much ambient occlusion also occludes reflections.
     pub specular_occlusion: f32,
@@ -200,8 +203,8 @@ impl Default for Environment {
             vignette: 0.35,
             shadow_distance: 220.0,
             use_ibl: true,
-            ao_radius: 1.0,
-            ao_strength: 1.0,
+            ao_radius: 1.5,
+            ao_strength: 2.0,
             specular_occlusion: 1.0,
             sun_angular_diameter: 0.012,
         }
