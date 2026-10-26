@@ -2183,6 +2183,8 @@
             loadDriveSession();
             restoreCachedDriveProfile();
             showFastInitialView();
+            // Hashing, fingerprints and merges run in WASM; refuse to start without it.
+            if (!(await window.InhouseRust?.ready)) throw new Error('The Rust core (WASM) failed to load; Inhouse Notes cannot start.');
             const offlineLibraryReady = window.InhouseOfflineApp.initialize().catch(error=>{
                 window.InhouseOfflineLibrary.disable();console.warn('Offline library unavailable:',error);
             });
@@ -26760,13 +26762,14 @@
             return 'pc';
         }
 
-        function simpleHash(str) {
-            let h = 0;
-            for (let i = 0; i < str.length; i++) {
-                h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-            }
-            return Math.abs(h).toString(36).slice(0, 8);
+        // Hashing and item fingerprints run in the Rust core (rust-core/src/editor_history/fingerprints.rs).
+        // init() waits for InhouseRust.ready; a missing core throws instead of degrading silently.
+        function rustHistory() {
+            const history = window.InhouseRust?.history;
+            if (!history || !window.InhouseRust.available()) throw new Error('The Rust core (WASM) is not loaded');
+            return history;
         }
+        function simpleHash(str) { return rustHistory().simpleHash(str); }
 
         const PRESENCE_FIELD_SUFFIXES = ['q', 'r'];
         const PRESENCE_LEGACY_FIELD_SUFFIXES = ['n', 'e', 'p', 't', 'd', 'v', 'l', 'c', 'h', 's', 'm'];
@@ -28190,50 +28193,10 @@
             lastSyncedPageCount = state.pages.length;
         }
 
-        function pointFingerprint(point) {
-            if (!point) return '0,0,0';
-            const x = Number.isFinite(point.x) ? Math.round(point.x * 100) / 100 : 0;
-            const y = Number.isFinite(point.y) ? Math.round(point.y * 100) / 100 : 0;
-            const p = Number.isFinite(point.p) ? Math.round(point.p * 100) / 100 : 0;
-            return `${x},${y},${p}`;
-        }
-
-        function strokeSyncFingerprint(stroke) {
-            if (!stroke) return '';
-            const points = Array.isArray(stroke.points) ? stroke.points : [];
-            const pointHash = simpleHash(points.map(pointFingerprint).join(';'));
-            return [
-                stroke.id || '',
-                stroke.tool || '',
-                stroke.color || '',
-                Number.isFinite(stroke.width) ? Math.round(stroke.width * 100) / 100 : 0,
-                points.length,
-                pointHash
-            ].join('|');
-        }
-        function imageSyncFingerprint(image) {
-            if (!image) return '';
-            const x = Number.isFinite(image.x) ? Math.round(image.x * 100) / 100 : 0;
-            const y = Number.isFinite(image.y) ? Math.round(image.y * 100) / 100 : 0;
-            const width = Number.isFinite(image.width) ? Math.round(image.width * 100) / 100 : 0;
-            const height = Number.isFinite(image.height) ? Math.round(image.height * 100) / 100 : 0;
-            const rotation = Number.isFinite(image.rotation) ? Math.round(image.rotation * 10000) / 10000 : 0;
-            return `${image.id || ''}|${simpleHash(image.src || '')}|${x}|${y}|${width}|${height}|${rotation}`;
-        }
-        function itemSyncStampFingerprint(item) {
-            const stamp = item?.syncStamp
-                || item?._syncStamp
-                || (item?.updatedClock || item?.updatedBy
-                    ? { clock: item.updatedClock, actor: item.updatedBy }
-                    : null);
-            return `${Math.max(0, Math.floor(Number(stamp?.clock) || 0))}|${String(stamp?.actor || '')}`;
-        }
-        function strokeCollabFingerprint(stroke) {
-            return `${strokeSyncFingerprint(stroke)}|${itemSyncStampFingerprint(stroke)}`;
-        }
-        function imageCollabFingerprint(image) {
-            return `${imageSyncFingerprint(image)}|${itemSyncStampFingerprint(image)}`;
-        }
+        function strokeSyncFingerprint(stroke) { return rustHistory().strokeFingerprint(stroke); }
+        function imageSyncFingerprint(image) { return rustHistory().imageFingerprint(image); }
+        function strokeCollabFingerprint(stroke) { return rustHistory().strokeCollabFingerprint(stroke); }
+        function imageCollabFingerprint(image) { return rustHistory().imageCollabFingerprint(image); }
 
         function collaborativeItemLocationFingerprint(occurrence) {
             if (!occurrence) return '';
@@ -28415,12 +28378,9 @@
                     localPage.deletedStrokeIds
                 ))) return true;
                 if (remoteStrokes.length !== localStrokes.length || remoteImages.length !== localImages.length) return true;
-                for (let j = 0; j < remoteStrokes.length; j++) {
-                    if (strokeCollabFingerprint(remoteStrokes[j]) !== strokeCollabFingerprint(localStrokes[j])) return true;
-                }
-                for (let j = 0; j < remoteImages.length; j++) {
-                    if (imageCollabFingerprint(remoteImages[j]) !== imageCollabFingerprint(localImages[j])) return true;
-                }
+                const history = rustHistory();
+                if (history.collabItemsDiffer('stroke', remoteStrokes, localStrokes)
+                    || history.collabItemsDiffer('image', remoteImages, localImages)) return true;
             }
             return false;
         }
@@ -29768,19 +29728,7 @@
                     .filter(stroke => stroke?.id)
                     .map(stroke => [stroke.id, stroke])
             );
-            const touchedIds = new Set();
-            sourceById.forEach((source, id) => {
-                const target = targetById.get(id);
-                if (!target || strokeSyncFingerprint(source) !== strokeSyncFingerprint(target)) {
-                    touchedIds.add(id);
-                }
-            });
-            targetById.forEach((target, id) => {
-                const source = sourceById.get(id);
-                if (!source || strokeSyncFingerprint(source) !== strokeSyncFingerprint(target)) {
-                    touchedIds.add(id);
-                }
-            });
+            const touchedIds = rustHistory().touchedStrokeIds(sourceById, targetById);
 
             const removed = [];
             for (let index = page.strokes.length - 1; index >= 0; index -= 1) {
