@@ -459,6 +459,99 @@
     // >>> stream:offline (only this area edits between its markers)
     // <<< stream:offline
     // >>> stream:docio (only this area edits between its markers)
+    // PDF export bookkeeping computed in Rust (rust-core/src/docio). Every call throws when the core is missing:
+    // callers `await InhouseRust.ready` first and must not continue with a JS substitute.
+    api.docio = (() => {
+        const need = () => {
+            if (!core?.bridge_call) throw new Error('The Rust core (WASM) is required for PDF export but is not available');
+            codecs();
+        };
+        const frame = (...parts) => {
+            let size = 4 * parts.length;
+            for (const part of parts) size += part.length;
+            const out = new Uint8Array(size), view = new DataView(out.buffer);
+            let at = 0;
+            for (const part of parts) { view.setUint32(at, part.length, true); at += 4; out.set(part, at); at += part.length; }
+            return out;
+        };
+        const encode = value => textEncoder.encode(typeof value === 'string' ? value : JSON.stringify(value));
+        const NONE = new Uint8Array(0);
+        let scratch = 0;
+        const scratchPointer = () => {
+            if (!scratch) scratch = core.alloc(128);
+            if (!scratch) throw new Error('Rust scratch allocation failed');
+            return scratch;
+        };
+        const number = value => typeof value === 'number' ? value : NaN;
+        const readBounds = (view, at) => view.getUint8(at) === 1 ? {
+            x: view.getFloat64(at + 1, true), y: view.getFloat64(at + 9, true),
+            width: view.getFloat64(at + 17, true), height: view.getFloat64(at + 25, true) } : null;
+        const stampSource = stamps => stamps instanceof Map ? [...stamps].map(([id, stamp]) => ({ id, stamp })) : stamps;
+        return Object.freeze({
+            /**
+             * Duplicate removal, point compaction and the page metadata entry.
+             * `job` holds the scalar page fields; `strokesJson` is JSON.stringify(strokes) (omit when reusing `cachedCompact`).
+             * Returns { keep: indices of the surviving strokes, bounds, compact: Uint8Array, meta: JSON text }.
+             */
+            pageExport(job, strokesJson = '', cachedCompact = NONE) {
+                need();
+                const header = { ...job };
+                if (header.deletedStrokeStamps) header.deletedStrokeStamps = stampSource(header.deletedStrokeStamps);
+                const out = callBytes('docio.page_export', frame(encode(header), encode(strokesJson), cachedCompact));
+                const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
+                const count = view.getUint32(0, true), keep = new Array(count);
+                for (let i = 0; i < count; i++) keep[i] = view.getUint32(4 + i * 4, true);
+                const at = 4 + count * 4, bounds = readBounds(view, at);
+                const compactLength = view.getUint32(at + 33, true), start = at + 37;
+                return { keep, bounds, compact: out.slice(start, start + compactLength),
+                    meta: textDecoder.decode(out.subarray(start + compactLength)) };
+            },
+            /** getPdfOverlayContentBounds: { x, y, width, height } or null. */
+            overlayBounds(strokes, images, width, height, scale) {
+                need();
+                const out = callBytes('docio.overlay_bounds', frame(encode({ images, width, height, scale }), encode(strokes)));
+                return readBounds(new DataView(out.buffer, out.byteOffset, out.byteLength), 0);
+            },
+            /** computePageHash. */
+            pageHash(page, a4Width, a4Height) {
+                need();
+                const background = page.backgroundImage;
+                const strokes = Array.isArray(page.strokes);
+                const header = { images: page.images, deletedStrokeIds: page.deletedStrokeIds,
+                    deletedStrokeStamps: stampSource(page.deletedStrokeStamps), bgSource: page.backgroundSource,
+                    pdfIndex: page.pdfPageIndex, bgLen: background ? background.length : 0,
+                    bgHead: background ? background.slice(0, 160) : '', pageWidth: page.pageWidth, pageHeight: page.pageHeight,
+                    a4Width, a4Height, strokes: strokes ? undefined : page.strokes };
+                return textDecoder.decode(callBytes('docio.page_hash', frame(encode(header), strokes ? encode(JSON.stringify(page.strokes)) : NONE)));
+            },
+            /** Export profile, scale/quality and (pdf-lib) the copyPages plan. */
+            exportPlan(options) { need(); return callJson('docio.export_plan', options); },
+            /** Stored page size in px and mm: { width, height, mmWidth, mmHeight, landscape }. */
+            pageGeometry(width, height, a4Width, a4Height) {
+                need();
+                const pointer = scratchPointer();
+                if (!core.docio_page_geometry(pointer, number(width), number(height), a4Width, a4Height)) throw new Error('Rust page geometry rejected its input');
+                const v = new Float64Array(core.memory.buffer, pointer, 5);
+                return { width: v[0], height: v[1], mmWidth: v[2], mmHeight: v[3], landscape: v[4] === 1 };
+            },
+            /** pdf-lib page size; copiedWidthPt/copiedHeightPt only for pages copied from the source PDF. */
+            pdfLibGeometry(width, height, a4Width, a4Height, copiedWidthPt = NaN, copiedHeightPt = NaN) {
+                need();
+                const pointer = scratchPointer();
+                if (!core.docio_pdflib_geometry(pointer, number(width), number(height), a4Width, a4Height, copiedWidthPt, copiedHeightPt)) throw new Error('Rust page geometry rejected its input');
+                const v = new Float64Array(core.memory.buffer, pointer, 6);
+                return { logicalWidth: v[0], logicalHeight: v[1], widthPx: v[2], heightPx: v[3], widthPt: v[4], heightPt: v[5] };
+            },
+            /** Placement of the cropped overlay PNG in PDF points. */
+            overlayPlacement(bounds, widthPt, heightPt, logicalWidth, logicalHeight) {
+                need();
+                const pointer = scratchPointer();
+                if (!core.docio_overlay_placement(pointer, bounds.x, bounds.y, bounds.width, bounds.height, widthPt, heightPt, logicalWidth, logicalHeight)) throw new Error('Rust overlay placement rejected its input');
+                const v = new Float64Array(core.memory.buffer, pointer, 4);
+                return { x: v[0], y: v[1], width: v[2], height: v[3] };
+            }
+        });
+    })();
     // <<< stream:docio
     // >>> stream:storage (only this area edits between its markers)
     // <<< stream:storage
