@@ -410,7 +410,8 @@ assert.match(html, /const DRIVE_SYNC_KEYWORD = 'IH_SYNC:';/);
 assert.match(html, /const PDF_NORMALIZED_METADATA_KEYWORD = 'IH_NORM:1';/);
 assert.match(html, /metadataAlreadyNormalized = keywords\.includes/);
 assert.match(html, /embeddedStrokes && !metadataAlreadyNormalized/);
-assert.match(html, /function getPdfOverlayContentBounds\(/);
+assert.match(html, /docio\.overlayBounds\(/);
+assert.doesNotMatch(html, /function getPdfOverlayContentBounds\(/, 'overlay bounds now live in the Rust core (rust-core/src/docio)');
 assert.match(html, /pdfLibOverlayCache\.set\(i, \{\s*hash: pageHash,\s*pngBytes,\s*bounds: overlayBounds,/);
 assert.match(app, /cachedHashIsCurrent/);
 assert.match(app, /ensureLegacyIds: true/);
@@ -558,24 +559,27 @@ new vm.Script(scannerLiveDetection, { filename: 'scanner/processing/liveDetectio
 assert.match(live, /actorId: `\$\{ihnGetLivePeerId\(\)\}:\$\{ihnGetLiveTabId\(\)\}`/);
 assert.match(live, /let ihnLiveSequence = Date\.now\(\)/);
 new vm.Script(collaborationCore, { filename: 'collaboration-core-v5.js' });
-const pdfBoundsStart = html.indexOf('function getPdfOverlayContentBounds');
-const pdfBoundsEnd = html.indexOf('function canBuildCurrentPdfWithPdfLib', pdfBoundsStart);
-const pdfBoundsContext = vm.createContext({});
-vm.runInContext(html.slice(pdfBoundsStart, pdfBoundsEnd), pdfBoundsContext, {
-  filename: 'pdf-overlay-bounds-v5.js'
-});
-const sparseBounds = pdfBoundsContext.getPdfOverlayContentBounds(
-  { images: [] },
-  [{ tool: 'pen', width: 4, points: [{ x: 100, y: 200 }, { x: 140, y: 240 }] }],
+// The overlay bounds algorithm moved to Rust (rust-core/src/docio); its exact behaviour is covered by
+// tests/rust-docio-export.test.mjs. Here only the two release-critical properties are re-checked end to end.
+const rustWasm = fs.readFileSync(new URL('../wasm/inhouse_notes_core.wasm', import.meta.url));
+const rustScope = { WebAssembly, Uint8Array, Uint16Array, Uint32Array, Float32Array, Float64Array, DataView, Map, URL, TextEncoder, TextDecoder,
+  location: new URL('https://notes.test/'), fetch: async () => new Response(rustWasm), console, AbortSignal, AbortController, setTimeout, clearTimeout };
+vm.createContext(rustScope);
+vm.runInContext(readText('../rust-core-v5.js'), rustScope);
+assert.equal(await rustScope.InhouseRust.ready, true, 'Rust core must load for the PDF export checks');
+const rustDocio = rustScope.InhouseRust.docio;
+const sparseBounds = rustDocio.overlayBounds(
+  JSON.stringify([{ tool: 'pen', width: 4, points: [{ x: 100, y: 200 }, { x: 140, y: 240 }] }]),
+  [],
   794,
   1123,
   2
 );
 assert.ok(sparseBounds.width < 60 && sparseBounds.height < 60, 'sparse overlay must be tightly cropped');
 assert.equal(
-  pdfBoundsContext.getPdfOverlayContentBounds(
-    { images: [] },
-    [{ tool: 'eraser-stroke', width: 40, points: [{ x: 10, y: 10 }, { x: 50, y: 50 }] }],
+  rustDocio.overlayBounds(
+    JSON.stringify([{ tool: 'eraser-stroke', width: 40, points: [{ x: 10, y: 10 }, { x: 50, y: 50 }] }]),
+    [],
     794,
     1123,
     2
