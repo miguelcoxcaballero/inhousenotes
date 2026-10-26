@@ -23,6 +23,6 @@ pub mod modules;
 pub mod style;
 pub mod texgen;
 
-pub use building::{CityOut, EdgeKind, Lot, ModuleLib};
+pub use building::{CityOut, EdgeKind, Frontage, Lot, ModuleLib};
 pub use kit::{Kit, Mat};
 pub use style::{Style, StyleLibrary};
