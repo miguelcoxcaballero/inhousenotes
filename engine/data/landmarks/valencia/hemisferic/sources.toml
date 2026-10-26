@@ -13,12 +13,25 @@ wikipedia = { es = "https://es.wikipedia.org/wiki/Hemisf%C3%A8ric", ca = "https:
 
 [facts]
 height = { value = 26.0, unit = "m", source = "https://es.wikipedia.org/wiki/Hemisf%C3%A8ric", note = "su altura es de 26 metros; slightly below the promenade level" }
-length = { value = 110.0, unit = "m", source = "https://en.wikipedia.org/wiki/City_of_Arts_and_Sciences", note = "110 m long x 55.5 m wide incl. the eyelids; the cover is 'more than 100 m' (es); OSM outline 100.8 x 47.5 m, axis azimuth 129 deg" }
-width = { value = 55.5, unit = "m", source = "https://en.wikipedia.org/wiki/City_of_Arts_and_Sciences" }
+length = { value = 110.0, unit = "m", source = "https://en.wikipedia.org/wiki/City_of_Arts_and_Sciences", note = "published 110 x 55.5 m; measured (PNOA) the shell is 99.9 m tip to tip, the 110 m figure only fits if the end-frame wing canopies/terrace steps are included; the model uses the measured 100 m" }
+width = { value = 55.5, unit = "m", source = "https://en.wikipedia.org/wiki/City_of_Arts_and_Sciences", note = "agrees with the PNOA outer width at mid-length (56 m, closed eyelids at the waterline); OSM/Catastro 47.5-47.7 m is the enclosed ground-floor slab inside the eyelids" }
 pool_area = { value = 24000, unit = "m2", source = "https://es.wikipedia.org/wiki/Hemisf%C3%A8ric", note = "two halves either side of the axis walkways (OSM natural=water ways 635457984 and 635457986)" }
 screen = { value = "concave screen 900 m2, 24.4 m diameter (IMAX Dome)", source = "https://es.wikipedia.org/wiki/Hemisf%C3%A8ric" }
 opened = { value = "1998-04-16", source = "https://es.wikipedia.org/wiki/Hemisf%C3%A8ric" }
 eyelid = { value = "aluminium/glass louvres folding up collectively as a brise-soleil, hydraulic, < 20 min", source = "https://es.wikipedia.org/wiki/Hemisf%C3%A8ric" }
+plan_length_pnoa = { value = 99.9, unit = "m", source = "measured", note = "Measured on the PNOA orthophotos 2018/2021 (IGN, 0.1 m/px), rotated so the axis (azimuth 129 deg) is horizontal; s along the axis (+ = SE), t across (+ = SW): roof tips at s = -50.3 and +49.6 (2018 and 2021 agree to 0.2 m); OSM outline 100.8 m, Catastro parts -52.2..48.5 (100.7 m)" }
+plan_width_pnoa = { value = 56.0, unit = "m", source = "measured", note = "Measured on the PNOA orthophotos 2018/2021 (IGN, 0.1 m/px), rotated so the axis (azimuth 129 deg) is horizontal; s along the axis (+ = SE), t across (+ = SW): outer edge of the closed eyelids at the waterline t = -28 / +28 at s = 0 (2018 and 2021; 2024 is displaced ~4 m by relief and was not used)" }
+plan_roof_edge = { value = 15.8, unit = "m", source = "measured", note = "Measured on the PNOA orthophotos 2018/2021 (IGN, 0.1 m/px), rotated so the axis (azimuth 129 deg) is horizontal; s along the axis (+ = SE), t across (+ = SW): half-width of the metal roof (roof / upper-glazing seam) at s = 0, t = +-15.6..16" }
+plan_glazing_band = { value = 22.8, unit = "m", source = "measured", note = "Measured on the PNOA orthophotos 2018/2021 (IGN, 0.1 m/px), rotated so the axis (azimuth 129 deg) is horizontal; s along the axis (+ = SE), t across (+ = SW): outer edge of the upper glazing band (eyelid hinge beam) at s = 0, t = +-22.5..23" }
+plan_end_frames = { value = 37.5, unit = "m", source = "measured", note = "Measured on the PNOA orthophotos 2018/2021 (IGN, 0.1 m/px), rotated so the axis (azimuth 129 deg) is horizontal; s along the axis (+ = SE), t across (+ = SW): the upper glazing ends and the M frame apexes stand at |s| = 37..38, |t| = 8..8.5; frame feet at |s| = 36..40, |t| = 14.6" }
+plan_terraces = { value = 17.0, unit = "m", source = "measured", note = "Measured on the PNOA orthophotos 2018/2021 (IGN, 0.1 m/px), rotated so the axis (azimuth 129 deg) is horizontal; s along the axis (+ = SE), t across (+ = SW): paved axis walkways between the two pools t = -8.5..+8.5, NW s = -100..-50, SE s = +50..+92 ending at the C-shaped platform (s = 86..92)" }
+plan_pool = { value = 134.0, unit = "m", source = "measured", note = "Measured on the PNOA orthophotos 2018/2021 (IGN, 0.1 m/px), rotated so the axis (azimuth 129 deg) is horizontal; s along the axis (+ = SE), t across (+ = SW): pool between the promenade edges t = -66 .. +68; trencadis cypress planters at |s| = 57, 67, 77, |t| = 15" }
+crown_height = { value = 25.1, unit = "m", source = "measured", note = "crown above the pool water: least-squares fit of the modelled section to photo 24 (waterline, hinge beam, roof seam, crown silhouette, frame feet; f = 858 px, camera 72.5-75 m out, eye 1.3 m) gives 0.96-0.97 x 26 m; the published 26 m is taken as measured from the lower (pool-bottom / gallery) datum" }
+roof_profile = { value = 25.1, unit = "m", source = "measured", note = "longitudinal crown profile traced on photo 24 (square-on): relative heights 1.00 (s 0), 0.97 (10), 0.85 (20), 0.65 (30), 0.51 (35), 0.41 (38), 0.36 (40); scaled to the 25.1 m crown -> 25.1 / 24.3 / 21.8 / 17.3 / 13.5 / 11.1 m" }
+section_roof_edge = { value = 18.6, unit = "m", source = "measured", note = "height of the roof / glazing seam at s = 0 from photo 24 (y = 72 px at t = 15.6); model 19.2" }
+section_hinge = { value = 11.0, unit = "m", source = "measured", note = "height of the eyelid hinge beam at s = 0 from photo 24 (y = 170 px at t ~ 23); model 11.5" }
+pupil_top = { value = 13.9, unit = "m", source = "measured", note = "top of the IMAX sphere from photo 24 (y = 188 px at t = 0); apparent width 390 px = 31.6 m (sphere radius ~16); model r = 16.4 m, top 14.0 m" }
+end_frame_apex = { value = 9.5, unit = "m", source = "measured", note = "M-frame apex at |s| 37.5, |t| 8.3 (PNOA) and 9.5 m high: end-on photo 22 with the camera solved by the tool from the V, both frame feet and the crown (rms 3.2 px; eye s = 96.8 on the axis, 4.1 m up) puts the modelled apexes on the photo apexes; legs are straight" }
 architect = { value = "Santiago Calatrava", source = "https://www.wikidata.org/wiki/Q2712673#P84" }
 catastro_refcat = { value = "7809804YJ2770H", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7809804&rc2=YJ2770H" }
 catastro_built = { value = 2000, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7809804&rc2=YJ2770H", note = "Catastro dateOfConstruction (often the last major works)" }
@@ -364,6 +377,51 @@ exterior = true
 selected = false
 side = "N side from the NW under a storm sky, eyelid closed (same viewpoint as 01/09; Commons camera is wrong)"
 note = "fetched by hand (Special:FilePath, width 1280); camera from the Commons coordinates (approximate, +-5 m)"
+
+[[plan]]
+file = "plans/pnoa2018.jpg"
+title = "PNOA orthophoto 2018 (IGN), WMS"
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "200 x 200 m around the landmark origin (EPSG:25830 ~727570..727770 E, 4370699..4370899 N), 2000 px = 0.1 m/px, grid north up; scale cross-checked: tip-to-tip 99.9 m vs OSM 100.8 m. Used for the plan measurements (near-nadir)."
+
+[[plan]]
+file = "plans/pnoa2021.jpg"
+title = "PNOA orthophoto 2021 (IGN), WMS"
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "200 x 200 m around the landmark origin (EPSG:25830 ~727570..727770 E, 4370699..4370899 N), 2000 px = 0.1 m/px, grid north up; scale cross-checked: tip-to-tip 99.9 m vs OSM 100.8 m. Used for the plan measurements (near-nadir)."
+
+[[plan]]
+file = "plans/pnoa2024.jpg"
+title = "PNOA orthophoto 2024 (IGN), WMS"
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "200 x 200 m around the landmark origin (EPSG:25830 ~727570..727770 E, 4370699..4370899 N), 2000 px = 0.1 m/px, grid north up; scale cross-checked: tip-to-tip 99.9 m vs OSM 100.8 m. Displaced by relief / other eyelid state; only used qualitatively."
+
+[[plan]]
+file = "plans/pnoa2015.jpg"
+title = "PNOA orthophoto 2015 (IGN), WMS"
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "200 x 200 m around the landmark origin (EPSG:25830 ~727570..727770 E, 4370699..4370899 N), 2000 px = 0.1 m/px, grid north up; scale cross-checked: tip-to-tip 99.9 m vs OSM 100.8 m. Displaced by relief / other eyelid state; only used qualitatively."
+
+[[plan]]
+file = "plans/pnoa2012.jpg"
+title = "PNOA orthophoto 2012 (IGN), WMS"
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+author = "Instituto Geográfico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "200 x 200 m around the landmark origin (EPSG:25830 ~727570..727770 E, 4370699..4370899 N), 2000 px = 0.1 m/px, grid north up; scale cross-checked: tip-to-tip 99.9 m vs OSM 100.8 m. Displaced by relief / other eyelid state; only used qualitatively."
 
 [[plan]]
 file = "plans/catastro_wms.png"
