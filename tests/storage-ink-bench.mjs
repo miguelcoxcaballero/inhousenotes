@@ -14,7 +14,7 @@ const rust = rustScope.InhouseRust;
 await rust.ready;
 
 // Cut the two functions out of an app-v5.js text and evaluate them with host stubs.
-function build(source, {withRust}) {
+function build(source, {rustApi = rust} = {}) {
     const start = source.indexOf('async function packInkPageForStorage(');
     const end = source.indexOf('async function cloneSanitizedPageForStorage(');
     assert.ok(start > 0 && end > start, 'ink functions not found');
@@ -27,9 +27,9 @@ function build(source, {withRust}) {
         cloneSanitizedPageForStorage: async () => { throw new Error('lossless fallback'); },
         getDocumentSessionToken: () => 1, isDocumentSessionTokenValid: () => valid, createAbortError: m => new Error(m),
         stripStoredPageSession: record => { const next = {...record}; delete next.__sessionId; return next; }};
-    scope.window = {InhouseRust: rust, InhouseDocumentProcessing: {run: async (type, data) => {
+    scope.window = {InhouseRust: rustApi, InhouseDocumentProcessing: {run: async (type, data) => {
         if (type === 'packInkCheckpoint') return {inkCheckpoint: 1, codec: 'raw-v1', rawLength: data.bytes.byteLength, bytes: new Uint8Array(data.bytes)};
-        if (type === 'unpackInkCheckpoint') return rust.unpackCheckpoint(data);
+        if (type === 'unpackInkCheckpoint') return rustApi.unpackCheckpoint(data);
         throw new Error(type);
     }}};
     vm.createContext(scope);
@@ -37,8 +37,8 @@ function build(source, {withRust}) {
     return {pack: scope.pack, unpack: scope.unpack, invalidate: () => { valid = false; }};
 }
 const never = () => false;
-const legacy = build(legacySource('app-v5.js'), {});
-const current = build(await readFile(new URL('../app-v5.js', import.meta.url), 'utf8'), {});
+const legacy = build(legacySource("app-v5.js"));
+const current = build(await readFile(new URL('../app-v5.js', import.meta.url), 'utf8'));
 
 // Order-sensitive, realm-independent encoding that tells -0 from 0 and keeps NaN, undefined and key order.
 function canon(value) {
