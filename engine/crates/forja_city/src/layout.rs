@@ -559,7 +559,7 @@ fn split_block(b: &Block, d: &District, rng: &mut Rng) -> Vec<(Lot, Facing)> {
             } else {
                 Facing::Street
             };
-            lots.push((Lot { ring, edges, base: 0.15 }, f));
+            lots.push((Lot { ring, edges, base: 0.15, ..Default::default() }, f));
         }
         // Middle lots on side k.
         let l = side_len(k);
@@ -572,7 +572,7 @@ fn split_block(b: &Block, d: &District, rng: &mut Rng) -> Vec<(Lot, Facing)> {
             }
             let (p0, p1) = (v[k] + dir * t, v[k] + dir * (t + w));
             let ring = vec![p0, p1, p1 + inward * depth, p0 + inward * depth];
-            lots.push((Lot { ring, edges: vec![EdgeKind::Street, EdgeKind::Party, EdgeKind::Courtyard, EdgeKind::Party], base: 0.15 }, b.facing[k]));
+            lots.push((Lot { ring, edges: vec![EdgeKind::Street, EdgeKind::Party, EdgeKind::Courtyard, EdgeKind::Party], base: 0.15, ..Default::default() }, b.facing[k]));
             t += w;
         }
     }

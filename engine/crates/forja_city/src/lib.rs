@@ -19,10 +19,12 @@ pub mod furniture;
 pub mod layout;
 pub mod geom;
 pub mod kit;
+pub mod lot;
 pub mod modules;
 pub mod style;
 pub mod texgen;
 
 pub use building::{CityOut, EdgeKind, Frontage, Lot, ModuleLib};
 pub use kit::{Kit, Mat};
+pub use lot::{Front, FrontRules, Rhythm};
 pub use style::{Style, StyleLibrary};

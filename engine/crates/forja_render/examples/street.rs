@@ -30,6 +30,7 @@ fn main() {
                 ring: vec![Vec2::new(x, -18.0), Vec2::new(x + w, -18.0), Vec2::new(x + w, 0.0), Vec2::new(x, 0.0)],
                 edges: vec![EdgeKind::Courtyard, EdgeKind::Party, EdgeKind::Street, EdgeKind::Party],
                 base: 0.15,
+                ..Default::default()
             };
             let h = building::build(&mut lib, &mut out, &lot, s, (i * 31 + k) as u64 + 5);
             centers.push((s.id.clone(), x + w * 0.5, h));
