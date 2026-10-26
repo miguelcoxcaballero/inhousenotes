@@ -4,7 +4,7 @@ Owner files (JS bytes): offline-library-v5.js 27570, offline-app-v5.js 24897, do
 offline-sync-v5.js 15329, offline-store-v5.js 11268, boot-v5.js 10191, service-worker.js 4981,
 document-processing-v5.js 4403, offline-media-v5.js 2998. Total 117657 B / 1890 lines.
 Rust module: rust-core/src/offline.rs (currently an empty stub). Adapter: stream:offline markers in rust-core-v5.js.
-Status: U1 done (see section 6). U2-U6 not started.
+Status: U1 and U2 done (see section 6). U3-U6 not started.
 
 ## 1. Inventory and classification
 
@@ -122,7 +122,7 @@ Scope: offline-sync-v5.js `changed`, folder-op ancestor filtering and deferral p
 | # | Unit | Speedup | Risk | JS bytes | Status |
 |---|---|---|---|---|---|
 | U1 | worker-kernels | high | low | ~1400 removed | DONE |
-| U2 | library-index | high | medium | ~6500 | todo |
+| U2 | library-index | high | medium | ~4900 removed, ~7600 glue added (net +2.7 KB) | DONE |
 | U3 | timeline-trim planner | high | medium | ~1600 | todo (depends on timeline-core owner) |
 | U4 | png raster decode | high | high | ~1200 | todo (optional) |
 | U5 | store record plans | medium | low | ~3000 | todo |
@@ -142,8 +142,8 @@ Portable total about 19 KB of 117 KB; the remainder is IndexedDB, Cache API, fet
 - SHA-256 via WebCrypto: hardware accelerated.
 
 ## 5. Open parity questions
-- localeCompare and toLowerCase vs Rust (U2): resolve with JS-side rank/lowercase.
-- tests/offline-library-index.test.mjs loads the source in vm without InhouseRust; its harness needs the wasm injected once U2 lands.
+- localeCompare and toLowerCase vs Rust (U2): resolved. JS ranks folder names with `Intl.Collator` (equal rank exactly when `localeCompare` is 0) and lower-cases names and the search needle with `toLowerCase`; Rust only compares ranks and runs `contains`.
+- tests/offline-library-index.test.mjs now injects the real adapter and WASM into its vm sandbox (assertions unchanged).
 - tests/release-v5-smoke.mjs greps some of these sources; update it per unit.
 
 ## 6. Unit status
@@ -180,3 +180,37 @@ Measured (node 22, V8, shared 4-core box, median of 7; `node tests/offline-worke
 | timelineHash 5 MB | 11.3 | 6.1 | 1.9x |
 
 The hash gain is small because V8 already JIT-compiles the old loop well; the cost left is marshalling the string into WASM memory. The base64 gain is large because the old code built a binary string 16 KB at a time with spread arguments, and decoded with a per-character callback.
+
+### U2 library-index: DONE
+Moved to Rust (`rust-core/src/offline/library.rs`, adapter `InhouseRust.offlineLibrary` between the `stream:offline` markers in `rust-core-v5.js`). `offline-library-v5.js` keeps the entry objects and talks in `Uint32Array` indexes into its `entries` array.
+- `compareEntries`, `compareRecents`, `modifiedTime`, `indexCatalogue`, the merge section of `reload` (alias map, remote-newer overlay, parent aliasing), `folder`, `combine`, `home`, `recentItems` and the Home saved-view alias resolution are deleted from JS.
+- Calls (`offline.library_*`): `merge` (stored records in, plan out: which survive, which remote copy overlays them, which parent ids are aliases, or `identity` when nothing changes) then `load` (flags, timestamps, documents and saved views in; builds the per-directory index, the first-id-or-remote-id alias table and the document `lastOpenedAt` lookup), `touch`, `ranks`, `names`, `folder`, `sort` (combine), `recents`, `home`. Columnar JSON in, little-endian `u32` out.
+- Orderings are the exact legacy comparators. Folder names compare by a collation rank computed once per load in JS (`Intl.Collator`, lazily on the first folder query); ties fall back to the same UTF-16 code unit key comparison as `ak<bk`. Sorts are stable like V8's.
+- Timestamps: Rust parses the canonical `YYYY-MM-DDTHH:MM:SS(.mmm)Z` form (what Drive and `toISOString` write) exactly; every other text (and every invalid date) is reported back by `load` and parsed by `Date.parse` in JS, then handed over with `touch`. So `Date.parse(x)||0` semantics are unchanged and a 40 000 entry reload does not parse 40 000 dates in JS.
+- Live fields: cards can update `modifiedTime` and `starred` on an entry they were given before the next reload. JS remembers those two values the first time it hands an entry out and re-sends the ones that moved before the next query (`touch`). Other fields (name, parents, trashed, mimeType, ids, pending, ownedByMe) are read at reload time, as `indexCatalogue` already did for parents/trashed/folder-ness.
+- `names` (lower-cased, well-formed) are sent only when a search needle is used; the `quickAccess` host predicate is still called from JS for each active PDF in `home()`.
+- Reload no longer copies records it does not change: when the plan is `identity` (the usual Drive-only catalogue) `entries` are the freshly read store records, so nothing is spread or re-mapped. Records with an alias or overlay are rebuilt exactly as before.
+- Missing core: `reload` throws `Rust core is unavailable; reload the app` (`rustLibrary()`), after awaiting `InhouseRust.ready`.
+
+Behavior notes (none changes results for real data):
+- A lone surrogate in an entry name or search text is replaced by U+FFFD before it reaches Rust (JSON/UTF-8 cannot carry it); the search `contains` therefore cannot match half of an emoji. Folder ranking uses the original name in JS, so ordering is unaffected.
+- `lastOpenedAt` that is not a number (never written by the app) is coerced like `Number()`; a value that makes the legacy comparator inconsistent (NaN) can order differently because Rust's merge sort and V8's TimSort disagree on non-transitive comparators. The differential test therefore uses valid or absent values.
+- Store ids and remote ids must be strings (they always are: IndexedDB keys); anything else fails loudly in Rust instead of being compared by identity.
+- The store returns fresh records on every read, so reusing them as `entries` is safe. A test store that hands back the same objects every time would now keep a card's in-place edits across a reload (the old code copied them away).
+
+Tests: `cargo test` (23 library tests: merge cases, parents, aliases, ordering, ranks, search, saved views, recents, timestamps, documents, bad input), `tests/offline-library-differential.test.mjs` (pre-port `offline-library-v5.js` from git vs the Rust-backed one: hand written fixtures, collation ties and ignorables, 3400 canonical and odd ISO timestamps, observed mutations, logout, and 3000 seeded random catalogues with aliases, overlays, duplicate and trashed records, saved views, documents, foreign `combine` and `recentItems` lists; coverage guards fail the test if the random data stops exercising a query), `tests/offline-library-index.test.mjs` (existing six tests, only the sandbox harness changed to load the real WASM), `tests/offline-library-index.bench.mjs`. Existing `document-jobs`, `local-save-status-v5`, `rust-core`, `rust-folder`, `offline-worker-kernels`, `release-v5-smoke` green.
+
+Bytes: `offline-library-v5.js` 27570 -> about 30300 (net +2.7 KB: about 4.9 KB of algorithm removed, about 7.6 KB of projection and live-field glue added; that glue builds the columns from the entry objects, which cannot live in Rust). `rust-core-v5.js` adapter +2.1 KB. Rust source added 47 KB (17 KB of it tests); the wasm grows by about 39 KB.
+
+Measured (node 22, V8, shared 4-core box under load, best of 15; `node tests/offline-library-index.bench.mjs`):
+
+| operation | 2 000 entries | 10 000 entries | 40 000 entries |
+|---|---|---|---|
+| reload (merge + index), JS -> Rust ms | 3.1 -> 2.5 | 12.5 -> 11.8 | 69 -> 53 |
+| folder() of the largest directory | 2.4 -> 0.15 (16x) | 17 -> 0.65 (26x) | 102 -> 7 (14x) |
+| folder() with search | 0.25 -> 0.06 (4x) | 1.7 -> 0.30 (5.5x) | 9.4 -> 1.5 (6x) |
+| combine with 1000 network rows | 5.0 -> 1.2 (4x) | 21 -> 1.8 (12x) | 101 -> 6 (17x) |
+| home() | 9.4 -> 0.8 (12x) | 60 -> 1.5 (40x) | 350 -> 7.8 (45x) |
+| recentItems(12 rows) | 0.20 -> 0.05 | 0.07 -> 0.08 | 0.28 -> 0.45 |
+
+The sorts and filters are the win (the old code localeCompare'd every folder name and re-walked the whole catalogue on each Home render). Reload is on par or faster; recentItems on a huge catalogue pays a small per-call cost for the live-field check of everything handed out earlier (about 0.3 ms at 40 000 entries).
