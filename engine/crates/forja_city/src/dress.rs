@@ -446,7 +446,9 @@ fn mouth_bollards(env: &Env, plan: &CityPlan, out: &mut Vec<Item>) {
 /// Plazas of any polygon: a fountain (Valencia) or parterre (Madrid) at
 /// the pole, lamps and benches around.
 fn plazas(env: &Env, plan: &CityPlan, seed: u64, out: &mut Vec<Item>) {
-    for c in env.f.plazas.and(&env.f.public).components() {
+    // The plaza ground class: drafted squares and wide open paving, never the
+    // roadway or a shared street that crosses them.
+    for c in env.f.ground.plaza.components() {
         let Some((pole, r)) = c.pole() else { continue };
         if r < 4.0 {
             continue;
