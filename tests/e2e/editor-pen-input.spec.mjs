@@ -133,7 +133,7 @@ test('offline checkpoint yields on dense pages and reuses the cached preview',as
  expect(result.paints).toBe(0);expect(result.yields).toBeGreaterThan(2);expect(result.strokes).toBe(3000);expect(result.preview).toBe(result.cached||null);expect(result.cancelled).toBe('AbortError');expect(result.unchanged).toBe(true);
 });
 
-test('writing bursts journal ink without full-page compaction between letters',async({page,context})=>{
+test('writing bursts defer all disk writes until editing stops',async({page,context})=>{
  test.setTimeout(45000);
  const {cdp,target}=await startPen(page,context,3000);
  await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
@@ -156,7 +156,8 @@ test('writing bursts journal ink without full-page compaction between letters',a
   await page.waitForTimeout(250);
  }
  const during=await page.evaluate(()=>({pages:pageWrites,ops:operationWrites,ink:state.pages[0].strokes.filter(s=>s.color==='#E81010').length}));
- expect(during.ink).toBe(6);expect(during.ops).toBeGreaterThanOrEqual(6);expect(during.pages).toBe(0);
+ expect(during.ink).toBe(6);expect(during.ops).toBe(0);expect(during.pages).toBe(0);
+ await expect.poll(()=>page.evaluate(()=>operationWrites),{timeout:10000}).toBeGreaterThanOrEqual(6);
  await cdp.send('Emulation.setCPUThrottlingRate',{rate:1});
  await page.evaluate(()=>__IHN_TEST_API__.checkpointBeforeLeaving());
  await page.reload();await page.evaluate(()=>__IHN_TEST_API__.ready());

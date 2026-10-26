@@ -39,6 +39,7 @@ function harness() {
     STROKE_OP_FLUSH_BATCH_SIZE: 12,
     hasPendingLegacyPageMigration: () => false,
     hasSmoothInteraction: () => false,
+    waitForHotInteractionToSettle: async () => true,
     isDriveSyncPending: () => false,
     recordSaveDebug() {},
     showPendingSaveStatus() {},
@@ -86,10 +87,12 @@ test('Drive success cannot clear a local checkpoint failure or replace its times
 
 test('an operation removed from the queue stays pending until IndexedDB commits', async () => {
   const { context } = harness();
-  let commit;
-  context.appendStrokeOpsToIndexedDb = () => new Promise(resolve => { commit = resolve; });
+  let commit, started;
+  const transactionStarted = new Promise(resolve => { started = resolve; });
+  context.appendStrokeOpsToIndexedDb = () => new Promise(resolve => { commit = resolve; started(); });
   context.strokeOpsQueue.push({ pageIndex: 0, savedAt: 200 });
   const flushing = context.runStrokeOpsQueueFlush();
+  await transactionStarted;
   assert.equal(context.strokeOpsQueue.length, 0);
   assert.equal(context.getLocalSaveStatus().pending, true);
   assert.equal(context.getLocalSaveStatus().savedAt, null);
@@ -204,4 +207,21 @@ test('superseded checkpoints stay pending without reporting a storage error', as
   await context.queueSave();
   assert.equal(context.getLocalSaveStatus().pending,false);
   assert.equal(context.getLocalSaveStatus().savedAt,500);
+});
+
+
+test('the journal stays pending in memory until the editing gate opens', async () => {
+  const { context } = harness();
+  let resume, writes = 0;
+  context.waitForHotInteractionToSettle = () => new Promise(resolve => { resume = resolve; });
+  context.appendStrokeOpsToIndexedDb = async () => { writes++; return true; };
+  context.strokeOpsQueue.push({ pageIndex: 0, savedAt: 400 });
+  const flushing = context.runStrokeOpsQueueFlush();
+  assert.equal(context.strokeOpsQueue.length, 1);
+  assert.equal(context.getLocalSaveStatus().pending, true);
+  assert.equal(writes, 0);
+  resume(true);
+  await flushing;
+  assert.equal(writes, 1);
+  assert.equal(context.getLocalSaveStatus().savedAt, 400);
 });
