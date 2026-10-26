@@ -73,8 +73,8 @@ width = 1280
 height = 960
 camera = [-2.29, 40.82]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s (south corner: Placa del Mercat SW facade + SE facade)"
 
 [[photo]]
 file = "photos/05_Lonja_de_la_Seda_Valencia_20200810_002.jpg"
@@ -99,8 +99,8 @@ width = 1280
 height = 960
 camera = [-4.3, -4.45]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "garden (Pati dels Tarongers: hall NW wall, stair turret, tower, Consolat gallery)"
 
 [[photo]]
 file = "photos/07_La_Llotja_de_la_Seda_vista_des_del_campanar_de_santa_Caterin.jpg"
@@ -111,8 +111,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 865
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "aerial e (from the Santa Caterina bell tower: roofs, tower top)"
 
 [[photo]]
 file = "photos/08_Llotja_de_la_Seda_2019_1.jpg"
@@ -123,8 +123,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 848
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw (main facade on Placa del Mercat)"
 
 [[photo]]
 file = "photos/09_1533_wurde_das_Gebaude_der_Seidenborse_in_Valencia_fertigges.jpg"
@@ -135,8 +135,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 741
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n (Carrer de la Llotja: annex, north pier, garden wall, hall NE facade)"
 
 [[photo]]
 file = "photos/10_Valencia_loggia_della_seta_esterno_01.jpg"
@@ -147,8 +147,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1729
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w (Consolat de Mar NW face on Carrer dels Cordellats + SW facade)"
 
 [[photo]]
 file = "photos/11_L04_506_Lonja_de_la_Seda.jpg"
@@ -159,8 +159,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 903
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw (main facade, frontal, used for heights)"
 
 [[photo]]
 file = "photos/12_Valencia_Valencia_136.jpg"
@@ -183,8 +183,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw (main facade detail: panels, portal, windows)"
 
 [[photo]]
 file = "photos/14_Llotja_desde_mercat.jpg"
@@ -207,8 +207,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n (garden side: tower, Consolat gallery NE face, annex end)"
 
 [[photo]]
 file = "photos/16_Llotja_torre2.jpg"
@@ -279,3 +279,63 @@ notes = "built=1498; use=4_3_publicServices; area=2096; area_in_outline=1443.3"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1410"
 title = "Described at"
 notes = "Wikidata P973"
+
+# ---- added while modelling landmark.toml (photo-measured facts) ----
+
+[[photo]]
+file = "extra/057_Llotja_de_la_Seda__pl._del_Mercat_31__Val__ncia_.jpg"
+title = "File:057 Llotja de la Seda, pl. del Mercat 31 (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:057_Llotja_de_la_Seda,_pl._del_Mercat_31_(Val%C3%A8ncia).jpg"
+author = "see Commons file page"
+license = "see Commons file page (CC BY-SA)"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw (main facade oblique from the south-east: portal, panels, merlons, gargoyles)"
+notes = "Downloaded 2026-10-26 via Special:FilePath?width=1280; used for detail only (no view)."
+
+[facts.hall_cornice_height]
+value = 15.4
+unit = "m"
+source = "photo 11 (frontal), scaled by the 22.95 m OSM hall facade (23.9 px/m)"
+note = "string course with gargoyles; parapet to 16.9 m; merlon tops with crowns 18.4 m (Wikidata height 17.4 m is to the parapet/merlon base)"
+
+[facts.tower_height]
+value = 27.6
+unit = "m"
+source = "photo 11 (frontal) scaled by the hall facade"
+note = "cornice 24.4 m, overhanging parapet 24.4-25.8 m, crowned merlons to 27.6 m; OSM part height 25 m (to the terrace)"
+
+[facts.consolat_gallery]
+value = [13.2, 18.0]
+unit = "m"
+source = "photo 11 / photo 08"
+note = "Renaissance gallery band: 7 ogee windows on SW and NE, 2 on NW, medallion frieze, merlon tops 20.2 m"
+
+[facts.sala_de_contratacion_inside]
+value = [35.6, 21.39]
+unit = "m"
+source = "https://www.wikidata.org/wiki/Q588009 (P2049, P2043)"
+note = "OSM outside: 38.7 x 23-24 m"
+
+[facts.annex_height]
+value = 6.4
+unit = "m"
+source = "photos 09 and 15 (door 2.3 m as scale)"
+note = "OSM part:1 has building:levels=1 and no height (check assumes 3.2 m): the rendered annex wall is 6.4 m plus merlons"
+
+[[reference]]
+url = "https://commons.wikimedia.org/wiki/File:Llotja_pla.jpg"
+title = "Llotja pla (plan of the Llotja, Commons)"
+notes = "Could not be downloaded (Wikimedia rate limit, HTTP 429) on 2026-10-26; layout taken from OSM parts and photos instead."
+
+[[reference]]
+url = "https://commons.wikimedia.org/wiki/File:La_Llotja_de_Val%C3%A8ncia_el_1704_(pl%C3%A0nol_del_pare_Tosca).jpg"
+title = "La Llotja de Valencia el 1704 (planol del pare Tosca)"
+notes = "Historic view; not downloaded (rate limit)."
+
+[[reference]]
+url = "https://commons.wikimedia.org/wiki/File:1.16_LONJA_DE_LA_SEDA_firmado.pdf"
+title = "Ajuntament de Valencia catalogue ficha 1.16 (PGOU)"
+notes = "Used: parcel 5629101, 2 floors, situation Plaza del Mercado 31, aerial 2008 confirming the garden notch."
