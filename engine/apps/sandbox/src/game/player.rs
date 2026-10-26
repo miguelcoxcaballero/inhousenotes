@@ -25,9 +25,14 @@ pub struct Avatar {
     pub scale: f32,
     /// Joint of the right hand/arm for weapon attachment.
     pub hand: Option<usize>,
-    /// Realistic skinned human (vs. rigid node animation).
+    /// MakeHuman body (fallback when no Rocketbox avatar is downloaded).
     pub human: Option<super::humans::HumanAvatar>,
+    /// Rocketbox person with motion capture and procedural life.
+    pub person: Option<super::people::Person>,
 }
+
+/// The player's avatar, first match wins (`assets/downloaded/rocketbox_*`).
+const PLAYER_AVATARS: [&str; 3] = ["Male_Adult_08", "Male_Adult_01", "Business_Male_01"];
 
 pub struct Player {
     pub controller: CharacterController,
@@ -46,13 +51,28 @@ impl Player {
 
 fn load_avatar(app: &mut App) -> Avatar {
     let paths = app.world.res::<Paths>().clone();
+    if super::people::PeopleLibrary::available(&paths) {
+        let all = super::people::PeopleLibrary::catalogue(&paths);
+        let file = PLAYER_AVATARS.iter().find_map(|n| all.iter().find(|f| f.file_stem().is_some_and(|s| s == *n))).or(all.first()).cloned();
+        let person = file.and_then(|f| {
+            app.world.scope::<super::people::PeopleLibrary, _>(|w, lib| {
+                // Full-resolution textures: the camera is close.
+                let kind = lib.load(&paths, w.res_mut::<RenderScene>(), &[f], 2048).pop()?;
+                lib.spawn(&paths, &kind, super::people::WALKS[0], 0x0b0d1e5)
+            })
+        });
+        if let Some(p) = person {
+            let skeleton = p.kind.skeleton.clone();
+            return Avatar { model: p.kind.model, hand: p.kind.rig.right_hand, skeleton, anim: None, scale: 1.0, human: None, person: Some(p) };
+        }
+    }
     if super::humans::HumanLibrary::available(&paths) {
         let human = app.world.scope::<super::humans::HumanLibrary, _>(|w, lib| {
             lib.spawn(&paths, w.res_mut::<RenderScene>(), &forja_assets::makehuman::HumanSpec::casual_male())
         });
         if let Some(h) = human {
             let hand = h.skeleton.find("wrist.R");
-            return Avatar { model: h.model, skeleton: h.skeleton.clone(), anim: None, scale: 1.0, hand, human: Some(h) };
+            return Avatar { model: h.model, skeleton: h.skeleton.clone(), anim: None, scale: 1.0, hand, human: Some(h), person: None };
         }
     }
     let path = paths.asset("kenney_blocky_characters/character-a.glb");
@@ -69,11 +89,11 @@ fn load_avatar(app: &mut App) -> Avatar {
             .ok();
         let height = scene.bounds().max.y.max(0.1);
         let hand = skeleton.find("arm-right");
-        return Avatar { model, skeleton, anim, scale: 1.8 / height, hand, human: None };
+        return Avatar { model, skeleton, anim, scale: 1.8 / height, hand, human: None, person: None };
     }
     let model = rs.add_model(Arc::new(box_scene(Vec3::new(0.3, 0.9, 0.2), Vec4::new(0.2, 0.5, 0.9, 1.0))));
     let scene = Arc::clone(&rs.models[model]);
-    Avatar { model, skeleton: Skeleton::from_nodes(&scene), anim: None, scale: 1.0, hand: None, human: None }
+    Avatar { model, skeleton: Skeleton::from_nodes(&scene), anim: None, scale: 1.0, hand: None, human: None, person: None }
 }
 
 impl Plugin for PlayerPlugin {
@@ -189,7 +209,14 @@ fn player_move(w: &mut forja_core::World) {
     if wish.length_squared() > 1.0 {
         wish = wish.normalize();
     }
-    let speed = if dead { 0.0 } else if intent.sprint && !intent.aim { 6.5 } else if intent.aim { 2.2 } else { 3.6 };
+    // A person moves at the speeds its motion capture was recorded at: a
+    // brisk walk, a run when sprinting, a careful walk when aiming.
+    let gait = w.res::<Player>().avatar.person.as_ref().map(|p| p.gait);
+    let (walk, run, aim) = match gait {
+        Some(g) => (g.walk * 1.2, g.run * 1.15, g.walk * 0.85),
+        None => (3.6, 6.5, 2.2),
+    };
+    let speed = if dead { 0.0 } else if intent.sprint && !intent.aim { run } else if intent.aim { aim } else { walk };
     let target_vel = wish * speed;
     w.scope::<Player, _>(|w, player| {
     let physics = w.res_mut::<PhysicsWorld>();
@@ -224,7 +251,22 @@ fn player_animate(w: &mut forja_core::World) {
     let aim = w.res::<Intent>().aim;
     let armed = w.res::<super::combat::Combat>().equipped.is_some();
     let driving = w.res::<Driving>().0.is_some();
+    // People nearby catch the player's eye.
+    let glance = {
+        let p = w.res::<Player>();
+        let feet = p.controller.feet();
+        let fwd = forja_math::Vec2::new(p.facing.sin(), p.facing.cos());
+        w.resources.get::<super::crowd::Crowd>().and_then(|c| c.glance_target(forja_math::Vec2::new(feet.x, feet.z), fwd, 5.0))
+    };
     let player = w.res_mut::<Player>();
+    if let Some(person) = &mut player.avatar.person {
+        let v = player.controller.velocity;
+        let speed = if driving || player.health.is_dead() { 0.0 } else { Vec3::new(v.x, 0.0, v.z).length() };
+        person.anim.set("jump", (!player.controller.state.grounded && v.y > 1.0) as u32 as f32);
+        let transform = Mat4::from_rotation_translation(Quat::from_rotation_y(player.facing), player.controller.feet());
+        person.update(dt, speed, &transform, glance);
+        return;
+    }
     let v = player.controller.velocity;
     let dead = player.health.is_dead();
     let anim = match &mut player.avatar.human {
@@ -250,6 +292,20 @@ fn player_render(w: &mut forja_core::World) {
     let feet = player.controller.feet();
     let rot = vehicle_rot.unwrap_or_else(|| Quat::from_rotation_y(player.facing));
     let transform = Mat4::from_rotation_translation(rot, feet) * Mat4::from_scale(Vec3::splat(player.avatar.scale));
+    if let Some(person) = &mut player.avatar.person {
+        let kind = person.kind.clone();
+        if aiming && let Some(arm) = kind.rig.right_arm {
+            super::people::aim_arm(&kind.skeleton, arm, person.pose(), rot.inverse() * aim_dir, 1.0);
+        }
+        if let Some(hand) = player.avatar.hand {
+            player.hand_world = transform * person.pose()[hand];
+        }
+        let item = person.render_item(transform);
+        if !(driving.is_some() && !bike) {
+            w.res_mut::<RenderScene>().dynamic.push(item);
+        }
+        return;
+    }
     let mut item = RenderItem::new(player.avatar.model, transform);
     if let Some(h) = &player.avatar.human
         && let Some(anim) = &h.anim

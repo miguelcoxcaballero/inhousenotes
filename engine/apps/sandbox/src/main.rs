@@ -6,9 +6,6 @@
 //! ```
 //! Maps: `kit` (Kenney city), `osm` (Miami Beach), `track`, `terrain`.
 
-mod game;
-mod ui;
-
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -17,7 +14,8 @@ use forja_core::App;
 use forja_input::{ActionMap, Input};
 use forja_math::{Vec2, Vec3};
 use forja_render::{DrawInstance, FrameDesc, ModelHandle, Renderer};
-use game::{Hud, Intent, MapKind, Paths, RenderScene};
+use sandbox::game::{self, Hud, Intent, MapKind, Paths, RenderScene};
+use sandbox::ui;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
