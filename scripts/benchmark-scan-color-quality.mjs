@@ -2,7 +2,7 @@
 // 1100 px frozen photograph. Run: node scripts/benchmark-scan-color-quality.mjs [runs]
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
-import {loadLegacy, rng} from '../tests/helpers/legacy.mjs';
+import {legacySource, rng} from '../tests/helpers/legacy.mjs';
 
 const wasm = await readFile(new URL('../wasm/inhouse_notes_core.wasm', import.meta.url));
 const rustScope = {WebAssembly, Uint8Array, Uint16Array, Float32Array, URL, location: new URL('https://notes.test/scanner/'),
@@ -18,17 +18,20 @@ const quad = [{x: .08, y: .05}, {x: .92, y: .05}, {x: .92, y: .95}, {x: .08, y: 
 const frameEdges = quad.map((a, side) => { const b = quad[(side + 1) % 4]; return Array.from({length: 33}, (_, i) => ({x: a.x + (b.x - a.x) * i / 32, y: a.y + (b.y - a.y) * i / 32})); });
 const dot = (cx, cy) => { for (let y = Math.round(cy) - 2; y <= Math.round(cy) + 2; y++) for (let x = Math.round(cx) - 2; x <= Math.round(cx) + 2; x++) {
     const k = Math.max(0, 1 - Math.hypot(x - cx, y - cy) / 2.2) * .55, at = (y * width + x) * 4; for (let c = 0; c < 3; c++) rgba[at + c] *= 1 - k; } };
-for (let r = 1; r < 54; r++) for (let c = 1; c < 36; c++) dot(width * .08 + width * .84 * c / 36 + random() * .4, height * .05 + height * .9 * r / 54 + random() * .4);
+// Landscape page: the preflight resamples it to a 54 x 36 lattice cell grid.
+for (let r = 1; r < 36; r++) for (let c = 1; c < 54; c++) dot(width * .08 + width * .84 * c / 54 + random() * .4, height * .05 + height * .9 * r / 36 + random() * .4);
 for (let i = 0; i < 4; i++) { const a = quad[i], b = quad[(i + 1) % 4]; for (let s = 0; s <= 1200; s++) { const x = Math.round((a.x + (b.x - a.x) * s / 1200) * width), y = Math.round((a.y + (b.y - a.y) * s / 1200) * height); const at = (y * width + x) * 4; rgba[at] = rgba[at + 1] = rgba[at + 2] = 60; } }
 const stubDocument = {createElement: () => ({width: 0, height: 0, getContext: () => ({drawImage() {}, getImageData: () => ({data: rgba})})})};
 const source = {width, height};
 const detection = {quad, frameEdges};
-const legacy = loadLegacy('scanner/processing/capture-quality.js', {document: stubDocument}).ScannerPro.CaptureQuality;
-const scope = {console, setTimeout, clearTimeout, URL, Float32Array, Float64Array, Uint8Array, Math, JSON, Map, Set, Promise, document: stubDocument, InhouseRust: rustScope.InhouseRust};
-scope.window = scope.self = scope.globalThis = scope;
-vm.createContext(scope);
-vm.runInContext(await readFile(new URL('../scanner/processing/capture-quality.js', import.meta.url), 'utf8'), scope);
-const rust = scope.ScannerPro.CaptureQuality;
+// Both versions run in the main realm like a page script: vm contexts make every global lookup slow and would flatter Rust.
+function load(source, extra = {}) {
+    const win = {...extra};
+    new Function('window', 'document', 'Float32Array', 'Float64Array', 'Uint8Array', source)(win, stubDocument, Float32Array, Float64Array, Uint8Array);
+    return win.ScannerPro.CaptureQuality;
+}
+const legacy = load(legacySource('scanner/processing/capture-quality.js'));
+const rust = load(await readFile(new URL('../scanner/processing/capture-quality.js', import.meta.url), 'utf8'), {InhouseRust: rustScope.InhouseRust});
 
 const runs = Number(process.argv[2]) || 15;
 const median = values => values.slice().sort((a, b) => a - b)[Math.floor(values.length / 2)];

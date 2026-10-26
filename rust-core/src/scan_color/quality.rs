@@ -232,33 +232,48 @@ pub fn inspect_grid(raster: &Raster, quad: &[f64; 8], frame: &Edges) -> Result<G
     let mut gray = vec![0.0f32; width * height];
     let stride = width + 1;
     let mut integral = vec![0.0f64; stride * (height + 1)];
+    // Terms that depend on the column only are computed once; they are the same IEEE operations
+    // on the same operands as the original per-pixel expressions, so the results are identical.
+    struct Column { u: f64, one_minus_u: f64, base_a: Point, base_b: Point, top: Point, bottom: Point }
+    let columns: Vec<Column> = (0..width).map(|x| {
+        let u = x as f64 / (width - 1) as f64;
+        Column {
+            u, one_minus_u: 1.0 - u,
+            base_a: (q[0].0 * (1.0 - u) + q[1].0 * u, q[0].1 * (1.0 - u) + q[1].1 * u),
+            base_b: (q[3].0 * (1.0 - u) + q[2].0 * u, q[3].1 * (1.0 - u) + q[2].1 * u),
+            top: sides[0][x], bottom: sides[2][width - 1 - x],
+        }
+    }).collect();
     let mut clipped = 0usize;
     for y in 0..height {
         let v = y as f64 / (height - 1) as f64;
+        let one_minus_v = 1.0 - v;
         let left = sides[3][height - 1 - y];
         let right = sides[1][y];
         let mut row_sum = 0.0f64;
-        for x in 0..width {
-            let u = x as f64 / (width - 1) as f64;
-            let top = sides[0][x];
-            let bottom = sides[2][width - 1 - x];
-            let base_x = (q[0].0 * (1.0 - u) + q[1].0 * u) * (1.0 - v) + (q[3].0 * (1.0 - u) + q[2].0 * u) * v;
-            let base_y = (q[0].1 * (1.0 - u) + q[1].1 * u) * (1.0 - v) + (q[3].1 * (1.0 - u) + q[2].1 * u) * v;
-            let sx = (top.0 * (1.0 - v) + bottom.0 * v + left.0 * (1.0 - u) + right.0 * u - base_x) * sw;
-            let sy = (top.1 * (1.0 - v) + bottom.1 * v + left.1 * (1.0 - u) + right.1 * u - base_y) * sh;
+        let (done, rest) = integral.split_at_mut((y + 1) * stride);
+        let previous = &done[y * stride + 1..];
+        let current = &mut rest[1..stride];
+        let output = &mut gray[y * width..(y + 1) * width];
+        for (x, column) in columns.iter().enumerate() {
+            let base_x = column.base_a.0 * one_minus_v + column.base_b.0 * v;
+            let base_y = column.base_a.1 * one_minus_v + column.base_b.1 * v;
+            let sx = (column.top.0 * one_minus_v + column.bottom.0 * v + left.0 * column.one_minus_u + right.0 * column.u - base_x) * sw;
+            let sy = (column.top.1 * one_minus_v + column.bottom.1 * v + left.1 * column.one_minus_u + right.1 * column.u - base_y) * sh;
             if sx < 1.0 || sy < 1.0 || sx >= sw - 2.0 || sy >= sh - 2.0 { clipped += 1; }
-            let ix = jmax(0.0, jmin(sw - 2.0, sx.floor()));
-            let iy = jmax(0.0, jmin(sh - 2.0, sy.floor()));
-            let value = if ix.is_nan() || iy.is_nan() { f64::NAN } else {
-                let fx = jmax(0.0, jmin(1.0, sx - ix));
-                let fy = jmax(0.0, jmin(1.0, sy - iy));
+            let value = if sx.is_nan() || sy.is_nan() { f64::NAN } else {
+                // Operands are never NaN here, so plain min/max equal Math.min/Math.max.
+                let ix = sx.floor().min(sw - 2.0).max(0.0);
+                let iy = sy.floor().min(sh - 2.0).max(0.0);
+                let fx = (sx - ix).max(0.0).min(1.0);
+                let fy = (sy - iy).max(0.0).min(1.0);
                 let at = iy as usize * swi + ix as usize;
                 let g = |i: usize| raster.gray[i] as f64;
                 (g(at) * (1.0 - fx) + g(at + 1) * fx) * (1.0 - fy) + (g(at + swi) * (1.0 - fx) + g(at + swi + 1) * fx) * fy
             };
-            gray[y * width + x] = value as f32;
+            output[x] = value as f32;
             row_sum += value;
-            integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + row_sum;
+            current[x] = previous[x] + row_sum;
         }
     }
     if clipped as f64 > (width * height) as f64 * 0.01 { return Ok(Grid::empty(GridKind::Clipped, 0)); }
