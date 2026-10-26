@@ -6,11 +6,13 @@
 use forja_math::{Vec2, Vec3};
 
 use super::build::{Builder, Scope};
-use super::facade::{self, Cut, Facade};
+use super::facade::{self, Cut, Facade, Run};
 use super::mesh::{self, Geo, MatId, Plane};
 use super::parse::{Error, Result};
 use super::poly;
 use super::profiles::{self, Outline};
+use super::resolve::{self, EdgeRef};
+use super::runs;
 use super::spec::*;
 
 /// Opening settings after per-kind defaults.
@@ -45,6 +47,7 @@ pub fn effective(op: &Openings) -> Eff {
         OpeningKind::Niche => (ArchKind::Round, Infill::Blind),
         OpeningKind::Blind => (ArchKind::Round, Infill::Blind),
         OpeningKind::Slit => (ArchKind::Flat, Infill::Dark),
+        OpeningKind::Passage => (ArchKind::Round, Infill::Void),
     };
     let arch = op.arch.unwrap_or(arch);
     let infill = op.infill.unwrap_or(infill);
@@ -81,29 +84,51 @@ fn levels(op: &Openings, e: &Eff, f: &Facade) -> Vec<f32> {
     match &op.levels {
         Some(l) => l.0.clone(),
         None => match e.kind {
-            OpeningKind::Door | OpeningKind::Portal | OpeningKind::Arch => vec![f.v0],
+            OpeningKind::Door | OpeningKind::Portal | OpeningKind::Arch | OpeningKind::Passage => vec![f.v0],
             OpeningKind::Rose | OpeningKind::Oculus => vec![(f.v0 + (f.v1 - f.v0) * 0.62 - e.w * 0.5).max(f.v0 + 0.5)],
             _ => vec![f.v0 + 1.0],
         },
     }
 }
 
-/// Bay centres along a facade of length `len` (from its left end).
+/// Default clear wall at each end of a facade: 0.8 x the opening width
+/// (at least 0.6 m), but never more than 15% of the facade, and none for a
+/// single explicit bay (`count = 1`, centred).
+pub fn default_margin(bays: Option<&Bays>, len: f32, w: f32) -> f32 {
+    if bays.is_some_and(|b| b.count == Some(1)) {
+        return 0.0;
+    }
+    (w * 0.8).max(0.6).min(len * 0.15)
+}
+
+/// Bay centres along a facade (or facade run) of length `len`, measured
+/// from its left end seen from outside. `ring` lays bays evenly around a
+/// closed run (no ends, no margins).
 pub fn bay_centres(bays: Option<&Bays>, len: f32, w: f32, kind: OpeningKind) -> Vec<f32> {
-    let default_one = matches!(kind, OpeningKind::Door | OpeningKind::Portal | OpeningKind::Rose | OpeningKind::Oculus);
+    bay_layout(bays, len, w, kind, false)
+}
+
+pub fn bay_layout(bays: Option<&Bays>, len: f32, w: f32, kind: OpeningKind, ring: bool) -> Vec<f32> {
+    let default_one = matches!(kind, OpeningKind::Door | OpeningKind::Portal | OpeningKind::Rose | OpeningKind::Oculus | OpeningKind::Passage);
     let b = bays.cloned().unwrap_or_default();
+    let dm = if ring { 0.0 } else { default_margin(bays, len, w) };
     let (ml, mr) = match (b.margins, b.margin) {
         (Some(m), _) => (m[0], m[1]),
         (None, Some(m)) => (m, m),
-        (None, None) => {
-            let m = (w * 0.8).max(0.6);
-            (m, m)
-        }
+        (None, None) => (dm, dm),
     };
     let mut v: Vec<f32> = if let Some(at) = &b.at {
         at.clone()
     } else if let Some(off) = &b.offsets {
         off.iter().map(|o| len * 0.5 + o).collect()
+    } else if ring {
+        let c = match (b.count, b.spacing) {
+            (Some(c), _) => c as usize,
+            (None, Some(sp)) => ((len / sp.max(0.05)).floor() as usize).max(1),
+            (None, None) if default_one => 1,
+            (None, None) => ((len / (w * 2.4).max(w + 1.4)).floor() as usize).max(1),
+        };
+        (0..c).map(|k| len * (k as f32 + 0.5) / c as f32).collect()
     } else {
         let usable = len - ml - mr;
         match (b.count, b.spacing) {
@@ -118,11 +143,13 @@ pub fn bay_centres(bays: Option<&Bays>, len: f32, w: f32, kind: OpeningKind) -> 
             }
             (None, sp) => {
                 if default_one && sp.is_none() {
-                    vec![len * 0.5]
+                    vec![ml + usable * 0.5]
                 } else {
                     let sp = sp.unwrap_or((w * 2.4).max(w + 1.4));
                     if usable < w {
-                        Vec::new()
+                        // No room for the margins: one centred opening when
+                        // it still leaves some wall on both sides.
+                        if len >= w + 0.3 { vec![len * 0.5] } else { Vec::new() }
                     } else {
                         let c = ((usable - w) / sp).floor() as usize + 1;
                         let start = ml + usable * 0.5 - sp * (c as f32 - 1.0) * 0.5;
@@ -141,6 +168,23 @@ pub fn bay_centres(bays: Option<&Bays>, len: f32, w: f32, kind: OpeningKind) -> 
         keep
     });
     v
+}
+
+/// Facade u where the run's (smoothed) outward normal points closest to
+/// compass azimuth `az`, within `tol` degrees, inside `iv`.
+pub fn azimuth_u(run: &Run, iv: (f32, f32), az: f32, tol: f32) -> Option<f32> {
+    let len = iv.1 - iv.0;
+    let n = ((len / 0.05).ceil() as usize).clamp(2, 4000);
+    let mut best: Option<(f32, f32)> = None;
+    for k in 0..=n {
+        let u = iv.0 + len * k as f32 / n as f32;
+        let a = poly::azimuth(run.smooth_normal(u));
+        let d = ((a - az + 540.0).rem_euclid(360.0) - 180.0).abs();
+        if best.is_none_or(|b| d < b.1) {
+            best = Some((u, d));
+        }
+    }
+    best.filter(|b| b.1 <= tol).map(|b| b.0)
 }
 
 fn translate(o: &Outline, du: f32, dv: f32) -> Vec<Vec2> {
@@ -247,52 +291,137 @@ fn band(p: &mut crate::geom::Prim, f: &Facade, inner: &[Vec2], outer: &[Vec2], o
 }
 
 /// Context for building the openings of one facade.
-pub struct OpCtx {
+pub struct OpCtx<'a> {
     pub wall: MatId,
     pub trim: MatId,
     /// Wall thickness for through openings (free-standing walls).
     pub through: Option<f32>,
-    /// Depth available for the fake room behind glazed openings.
-    pub room: f32,
+    /// Plan of the solid behind the facades: rooms behind windows and
+    /// passages are measured in it (`None`: a fixed 1 m room).
+    pub solid: Option<&'a poly::Shape>,
 }
 
-/// Cuts and details of one openings block on facade `f`.
-pub fn place(b: &mut Builder, op: &Openings, f: &Facade, sc: &Scope, cx: &OpCtx, cuts: &mut Vec<Cut>, geo: &mut Geo) -> Result<()> {
+/// A through passage waiting for its exit (resolved once every facade of
+/// the solid has its cuts).
+#[derive(Clone, Debug)]
+pub struct PassageReq {
+    pub outline: Vec<Vec2>,
+    pub uc: f32,
+    pub mat: MatId,
+    pub depth_fallback: f32,
+}
+
+/// Flat output of one facade run: cuts, details and pending passages.
+#[derive(Clone, Default)]
+pub struct RunOut {
+    pub cuts: Vec<Cut>,
+    pub geo: Geo,
+    pub passages: Vec<PassageReq>,
+}
+
+/// Openings of every block on every run of a solid.
+pub struct Placed {
+    pub runs: Vec<RunOut>,
+    /// World-space geometry (passage vaults).
+    pub world: Geo,
+    pub passages: usize,
+}
+
+/// Cuts and details of one openings block on the interval `iv` (facade u
+/// range) of a run. Returns how many openings were placed.
+#[allow(clippy::too_many_arguments)]
+pub fn place(b: &mut Builder, op: &Openings, run: &Run, iv: (f32, f32), ring: bool, sc: &Scope, cx: &OpCtx, out: &mut RunOut) -> Result<usize> {
+    let f = &run.facade;
     let e = effective(op);
     if e.w <= 0.05 || e.h <= 0.05 {
         return Err(Error::msg("opening width and height must be positive"));
     }
     let lv = levels(op, &e, f);
-    let centres = bay_centres(op.bays.get(), f.len, e.w, e.kind);
+    let bays = op.bays.get();
+    let centres: Vec<f32> = match bays.and_then(|b| b.azimuth.as_ref()) {
+        Some(az) => az.iter().filter_map(|a| azimuth_u(run, iv, *a, bays.and_then(|b| b.azimuth_tolerance).unwrap_or(30.0))).collect(),
+        None => bay_layout(bays, iv.1 - iv.0, e.w, e.kind, ring).into_iter().map(|c| c + iv.0).collect(),
+    };
+    // Openings must stay on this facade (they may cross facets of a run,
+    // never a real corner).
+    let mut fit = Vec::with_capacity(centres.len());
+    let mut out_of = Vec::new();
+    for uc in centres {
+        if run.closed() || (uc - e.w * 0.5 >= -0.02 && uc + e.w * 0.5 <= f.len + 0.02) {
+            fit.push(uc);
+        } else {
+            out_of.push(format!("{uc:.2}"));
+        }
+    }
+    if !out_of.is_empty() {
+        b.warn(
+            sc,
+            format!(
+                "{} x {} {:.2} m wide at u = {} m skipped: past the ends of the {:.2} m facade ({}, a real corner); move them with `bays.at`/`offsets`, narrow them, or select fewer edges",
+                out_of.len(),
+                e.kind.name(),
+                e.w,
+                out_of.join(", "),
+                f.len,
+                run.label()
+            ),
+        );
+    }
     let n_arc = b.segs(e.w * 0.5, 6, 24);
     let stone = b.mat(op.stone_material.as_deref(), cx.wall)?;
+    let mut placed = 0;
     for (li, &vb) in lv.iter().enumerate() {
-        for (bi, &uc) in centres.iter().enumerate() {
+        let mut row = Vec::new();
+        for (bi, &uc) in fit.iter().enumerate() {
             if op.skip.iter().any(|s| s[0] == li as i64 && s[1] == bi as i64) {
                 continue;
             }
             if vb + e.h <= f.v0 + 0.01 || vb >= f.v1 - 0.01 {
                 continue;
             }
-            one(b, op, &e, f, sc, cx, stone, uc, vb, n_arc, cuts, geo)?;
+            one(b, op, &e, run, sc, cx, stone, uc, vb, n_arc, out)?;
+            row.push(uc);
+            placed += 1;
         }
         // Continuous balcony along the level.
         if let Some(bal) = op.balcony.get()
             && bal.continuous
-            && !centres.is_empty()
+            && !row.is_empty()
         {
-            let u0 = centres[0] - e.w * 0.5 - bal.extend;
-            let u1 = centres[centres.len() - 1] + e.w * 0.5 + bal.extend;
-            balcony(b, bal, f, cx, (u0.max(0.05), u1.min(f.len - 0.05)), vb, geo)?;
+            let u0 = row[0] - e.w * 0.5 - bal.extend;
+            let u1 = row[row.len() - 1] + e.w * 0.5 + bal.extend;
+            let (lo, hi) = if run.closed() { (f32::MIN, f32::MAX) } else { (0.05, f.len - 0.05) };
+            balcony(b, bal, f, cx, (u0.max(lo), u1.min(hi)), vb, &mut out.geo)?;
         }
     }
-    Ok(())
+    Ok(placed)
+}
+
+/// Depth available behind a window at facade `(u, v)`: the distance to the
+/// opposite wall of the solid along the inward normal, minus the reveal.
+fn room_depth(run: &Run, cx: &OpCtx, u: f32, v: f32, depth: f32) -> Option<f32> {
+    let Some(solid) = cx.solid else { return Some(1.0) };
+    let p = run.world(u, v, 0.0);
+    let d = -run.normal(u);
+    let hit = runs::ray_hit(solid, Vec2::new(p.x, p.z), d, 0.02).map(|h| h.0).unwrap_or(1.6 + depth);
+    let room = (hit - depth - 0.05).min(1.4);
+    (room >= 0.15).then_some(room)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn one(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, sc: &Scope, cx: &OpCtx, stone: MatId, uc: f32, vb: f32, n_arc: usize, cuts: &mut Vec<Cut>, geo: &mut Geo) -> Result<()> {
+fn one(b: &mut Builder, op: &Openings, e: &Eff, run: &Run, sc: &Scope, cx: &OpCtx, stone: MatId, uc: f32, vb: f32, n_arc: usize, out: &mut RunOut) -> Result<()> {
+    let f = &run.facade;
     let base = profiles::outline(e.arch, e.w, e.h, e.rise, n_arc);
     let o = translate(&base, uc, vb);
+    if e.kind == OpeningKind::Passage && cx.through.is_none() {
+        // Through the whole solid: resolved against the opposite facade.
+        out.passages.push(PassageReq { outline: o.clone(), uc, mat: stone, depth_fallback: e.depth });
+        let spring = vb + base.spring;
+        trims(b, op, e, f, cx, &base, &o, uc, vb, spring, &mut out.geo)?;
+        return Ok(());
+    }
+    let room = room_depth(run, cx, uc, vb + e.h * 0.5, cx.through.unwrap_or(e.depth));
+    let RunOut { cuts, geo, .. } = out;
     let spring = vb + base.spring;
     let depth = cx.through.unwrap_or(e.depth);
     let through = cx.through.is_some();
@@ -325,7 +454,7 @@ fn one(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, sc: &Scope, cx: &OpC
             }
             cuts.push(c);
             if glazed {
-                glass_window(b, op, e, f, &ring, uc + s * (col_w + lw) * 0.5, vb, lw, lo.spring, depth, cx.room, geo)?;
+                glass_window(b, op, e, f, &ring, uc + s * (col_w + lw) * 0.5, vb, lw, lo.spring, depth, room, geo)?;
             }
         }
         // Colonnette with capital.
@@ -386,7 +515,7 @@ fn one(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, sc: &Scope, cx: &OpC
     }
     match e.infill {
         Infill::Glass | Infill::Grille | Infill::Tracery => {
-            glass_window(b, op, e, f, &o, uc, vb, e.w, base.spring, depth, cx.room, geo)?;
+            glass_window(b, op, e, f, &o, uc, vb, e.w, base.spring, depth, room, geo)?;
             if e.infill == Infill::Tracery || e.mullions > 0 || op.tracery.is_some() {
                 tracery(b, op, e, f, stone, &o, &base, uc, vb, depth, geo)?;
             }
@@ -432,7 +561,7 @@ fn one(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, sc: &Scope, cx: &OpC
 
 /// Frame, glazing bars, glass and the room behind.
 #[allow(clippy::too_many_arguments)]
-fn glass_window(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, o: &[Vec2], uc: f32, vb: f32, w: f32, spring_rel: f32, depth: f32, room: f32, geo: &mut Geo) -> Result<()> {
+fn glass_window(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, o: &[Vec2], uc: f32, vb: f32, w: f32, spring_rel: f32, depth: f32, room: Option<f32>, geo: &mut Geo) -> Result<()> {
     let glass = b.glass_mat(op.glass_material.as_deref())?;
     let frame_m = b.frame_mat(op.frame_material.as_deref())?;
     let interior = b.mat_or(None, "interior")?;
@@ -442,24 +571,34 @@ fn glass_window(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, o: &[Vec2],
         let pl = Plane { o: f.plane.o - f.plane.n * (zf + 0.015), ..f.plane };
         mesh::planar_shape(geo.get(glass), &poly::Shape::new(r), &pl, false, Vec2::new(-uc + w * 0.5, -vb));
     }
-    // Room box behind (atlas column from the position).
+    // Room box behind (atlas column from the position), as deep as the
+    // solid allows here and never wider than the facade.
     let (mn, mx) = poly::bbox(o);
-    let room = room.clamp(0.15, 1.4);
-    let k = ((uc * 7.3 + vb * 3.1).abs() as usize) % 4;
-    let ua = |t: f32| k as f32 * 0.25 + 0.02 + t * 0.21;
-    let (x0, x1, y0, y1) = (mn.x - 0.5, mx.x + 0.5, mn.y - 0.3, mx.y + 0.4);
-    let zb = depth + room;
-    let pi = geo.get(interior);
-    let at = |u: f32, v: f32, z: f32| f.plane.at_d(Vec2::new(u, v), -z);
-    let n = f.plane.n;
-    mesh::quad_facing(pi, [at(x0, y0, zb), at(x1, y0, zb), at(x1, y1, zb), at(x0, y1, zb)], [Vec2::new(ua(0.0), 1.0), Vec2::new(ua(1.0), 1.0), Vec2::new(ua(1.0), 0.05), Vec2::new(ua(0.0), 0.05)], n);
-    mesh::quad_facing(pi, [at(x0, y1, zb), at(x1, y1, zb), at(x1, y1, depth), at(x0, y1, depth)], [Vec2::new(ua(0.0), 0.05), Vec2::new(ua(1.0), 0.05), Vec2::new(ua(1.0), 0.0), Vec2::new(ua(0.0), 0.0)], -f.plane.v);
-    mesh::quad_facing(pi, [at(x0, y0, depth), at(x1, y0, depth), at(x1, y0, zb), at(x0, y0, zb)], [Vec2::new(ua(0.0), 1.0), Vec2::new(ua(1.0), 1.0), Vec2::new(ua(1.0), 0.95), Vec2::new(ua(0.0), 0.95)], f.plane.v);
-    mesh::quad_facing(pi, [at(x0, y0, depth), at(x0, y0, zb), at(x0, y1, zb), at(x0, y1, depth)], [Vec2::new(ua(0.0), 1.0), Vec2::new(ua(0.1), 1.0), Vec2::new(ua(0.1), 0.05), Vec2::new(ua(0.0), 0.05)], f.plane.u);
-    mesh::quad_facing(pi, [at(x1, y0, zb), at(x1, y0, depth), at(x1, y1, depth), at(x1, y1, zb)], [Vec2::new(ua(0.9), 1.0), Vec2::new(ua(1.0), 1.0), Vec2::new(ua(1.0), 0.05), Vec2::new(ua(0.9), 0.05)], -f.plane.u);
-    // Closing ring between the reveal end and the room front.
-    let ring_out = [at(x0, y0, depth), at(x1, y0, depth), at(x1, y1, depth), at(x0, y1, depth)];
-    let _ = ring_out;
+    match room {
+        Some(room) => {
+            let k = ((uc * 7.3 + vb * 3.1).abs() as usize) % 4;
+            let ua = |t: f32| k as f32 * 0.25 + 0.02 + t * 0.21;
+            let (x0, x1) = if f.wrap.is_some() { (mn.x - 0.5, mx.x + 0.5) } else { ((mn.x - 0.5).max(0.02).min(mn.x), (mx.x + 0.5).min(f.len - 0.02).max(mx.x)) };
+            let (y0, y1) = (mn.y - 0.3, mx.y + 0.4);
+            let zb = depth + room;
+            let pi = geo.get(interior);
+            let at = |u: f32, v: f32, z: f32| f.plane.at_d(Vec2::new(u, v), -z);
+            let n = f.plane.n;
+            mesh::quad_facing(pi, [at(x0, y0, zb), at(x1, y0, zb), at(x1, y1, zb), at(x0, y1, zb)], [Vec2::new(ua(0.0), 1.0), Vec2::new(ua(1.0), 1.0), Vec2::new(ua(1.0), 0.05), Vec2::new(ua(0.0), 0.05)], n);
+            mesh::quad_facing(pi, [at(x0, y1, zb), at(x1, y1, zb), at(x1, y1, depth), at(x0, y1, depth)], [Vec2::new(ua(0.0), 0.05), Vec2::new(ua(1.0), 0.05), Vec2::new(ua(1.0), 0.0), Vec2::new(ua(0.0), 0.0)], -f.plane.v);
+            mesh::quad_facing(pi, [at(x0, y0, depth), at(x1, y0, depth), at(x1, y0, zb), at(x0, y0, zb)], [Vec2::new(ua(0.0), 1.0), Vec2::new(ua(1.0), 1.0), Vec2::new(ua(1.0), 0.95), Vec2::new(ua(0.0), 0.95)], f.plane.v);
+            mesh::quad_facing(pi, [at(x0, y0, depth), at(x0, y0, zb), at(x0, y1, zb), at(x0, y1, depth)], [Vec2::new(ua(0.0), 1.0), Vec2::new(ua(0.1), 1.0), Vec2::new(ua(0.1), 0.05), Vec2::new(ua(0.0), 0.05)], f.plane.u);
+            mesh::quad_facing(pi, [at(x1, y0, zb), at(x1, y0, depth), at(x1, y1, depth), at(x1, y1, zb)], [Vec2::new(ua(0.9), 1.0), Vec2::new(ua(1.0), 1.0), Vec2::new(ua(1.0), 0.05), Vec2::new(ua(0.9), 0.05)], -f.plane.u);
+        }
+        None => {
+            // Too thin for a room: a dark plane just behind the glass.
+            let dark = b.mat_or(None, "dark")?;
+            if let Some(r) = poly::normalize(o, true) {
+                let pl = Plane { o: f.plane.o - f.plane.n * (zf + 0.03), ..f.plane };
+                mesh::planar_shape(geo.get(dark), &poly::Shape::new(r), &pl, false, Vec2::ZERO);
+            }
+        }
+    }
     // Joinery frame.
     let fw = op.frame;
     if fw > 0.0 {
@@ -763,21 +902,39 @@ fn trims(b: &mut Builder, op: &Openings, e: &Eff, f: &Facade, cx: &OpCtx, base: 
             fbox(p, f, (uc - half, uc + half), (top, top + 0.14), (0.0, s.projection + 0.1));
             let rise = (half * 0.42).min(0.9);
             let apex = Vec2::new(uc, top + 0.14 + rise);
-            if ped == "segmental" {
-                let arc: Vec<Vec2> = (0..=12).map(|i| {
-                    let t = std::f32::consts::PI * i as f32 / 12.0;
-                    Vec2::new(uc + half * t.cos(), top + 0.14 + rise * t.sin())
-                }).collect();
-                fcurve(p, f, &arc, 0.16, (0.0, s.projection + 0.1), false);
+            let base_y = top + 0.14;
+            let z = (0.0, s.projection + 0.1);
+            // Broken pediments leave the middle open (gap of 35%).
+            let broken = ped.starts_with("broken");
+            if ped.ends_with("segmental") {
+                let arc: Vec<Vec2> = (0..=16)
+                    .map(|i| {
+                        let t = std::f32::consts::PI * i as f32 / 16.0;
+                        Vec2::new(uc + half * t.cos(), base_y + rise * t.sin())
+                    })
+                    .collect();
+                if broken {
+                    fcurve(p, f, &arc[..6], 0.16, z, false);
+                    fcurve(p, f, &arc[11..], 0.16, z, false);
+                } else {
+                    fcurve(p, f, &arc, 0.16, z, false);
+                }
+            } else if broken {
+                let l = Vec2::new(uc - half, base_y);
+                let r = Vec2::new(uc + half, base_y);
+                fbar(p, f, l, l.lerp(apex, 0.65), 0.16, z);
+                fbar(p, f, r, r.lerp(apex, 0.65), 0.16, z);
             } else {
-                fbar(p, f, Vec2::new(uc - half, top + 0.14), apex, 0.16, (0.0, s.projection + 0.1));
-                fbar(p, f, Vec2::new(uc + half, top + 0.14), apex, 0.16, (0.0, s.projection + 0.1));
+                fbar(p, f, Vec2::new(uc - half, base_y), apex, 0.16, z);
+                fbar(p, f, Vec2::new(uc + half, base_y), apex, 0.16, z);
             }
-            // Tympanum face.
-            let tri = vec![Vec2::new(uc - half + 0.1, top + 0.14), Vec2::new(uc + half - 0.1, top + 0.14), apex - Vec2::new(0.0, 0.1)];
-            if let Some(r) = poly::normalize(&tri, true) {
-                let pl = Plane { o: f.plane.o + f.plane.n * (s.projection * 0.5), ..f.plane };
-                mesh::planar_shape(p, &poly::Shape::new(r), &pl, false, Vec2::ZERO);
+            // Tympanum face (closed pediments only).
+            if !broken {
+                let tri = vec![Vec2::new(uc - half + 0.1, base_y), Vec2::new(uc + half - 0.1, base_y), apex - Vec2::new(0.0, 0.1)];
+                if let Some(r) = poly::normalize(&tri, true) {
+                    let pl = Plane { o: f.plane.o + f.plane.n * (s.projection * 0.5), ..f.plane };
+                    mesh::planar_shape(p, &poly::Shape::new(r), &pl, false, Vec2::ZERO);
+                }
             }
         }
     }
@@ -913,26 +1070,170 @@ fn balcony(b: &mut Builder, s: &BalconySpec, f: &Facade, cx: &OpCtx, u: (f32, f3
     Ok(())
 }
 
-/// Openings on a set of facades (one per selected edge).
-pub fn on_facades(b: &mut Builder, list: &[&Openings], facades: &[(Facade, super::resolve::EdgeRef)], shape: &poly::Shape, sc: &Scope, cx: &OpCtx, geo: &mut Geo) -> Result<Vec<Vec<Cut>>> {
-    let mut all = vec![Vec::new(); facades.len()];
-    for (k, op) in list.iter().enumerate() {
-        let edges = super::resolve::select(shape, &op.edges);
-        let trim = b.mat(op.material.as_deref(), cx.trim)?;
-        let c = OpCtx { wall: cx.wall, trim, through: cx.through, room: cx.room };
-        let mut any = false;
-        for (fi, (f, e)) in facades.iter().enumerate() {
-            if !edges.contains(e) {
-                continue;
-            }
-            any = true;
-            place(b, op, f, sc, &c, &mut all[fi], geo).map_err(|err| err.context(&format!("openings[{k}]")))?;
+/// Facade u intervals of a run covered by the selected edges: consecutive
+/// selected edges merge into one interval (laid out by arc length), unless
+/// `per_edge`. The flag tells whether the interval is a whole closed ring.
+pub fn intervals(run: &Run, sel: &[EdgeRef], per_edge: bool) -> Vec<((f32, f32), bool)> {
+    let on: Vec<bool> = run.edges.iter().map(|(e, _, _)| sel.contains(e)).collect();
+    let n = on.len();
+    if per_edge {
+        return run.edges.iter().zip(&on).filter(|(_, s)| **s).map(|((_, a, b), _)| ((*a, *b), false)).collect();
+    }
+    if n == 0 || !on.iter().any(|s| *s) {
+        return Vec::new();
+    }
+    let len = run.facade.len;
+    if run.closed() && on.iter().all(|s| *s) {
+        return vec![((0.0, len), true)];
+    }
+    let mut out: Vec<(f32, f32)> = Vec::new();
+    let mut k = 0;
+    while k < n {
+        if !on[k] {
+            k += 1;
+            continue;
         }
-        if !any {
+        let a = run.edges[k].1;
+        while k < n && on[k] {
+            k += 1;
+        }
+        out.push((a, run.edges[k - 1].2));
+    }
+    // Merge across the seam of a closed run.
+    if run.closed() && out.len() > 1 && on[0] && on[n - 1] {
+        let first = out.remove(0);
+        let last = out.last_mut().unwrap();
+        last.1 = len + first.1;
+    }
+    out.into_iter().map(|iv| (iv, false)).collect()
+}
+
+/// Openings of every block on the runs of one solid (`shape`).
+pub fn on_runs(b: &mut Builder, list: &[&Openings], runs: &[Run], shape: &poly::Shape, sc: &Scope, cx: &OpCtx) -> Result<Placed> {
+    let mut outs: Vec<RunOut> = runs.iter().map(|_| RunOut::default()).collect();
+    for (k, op) in list.iter().enumerate() {
+        let sel = resolve::select(shape, &op.edges);
+        let trim = b.mat(op.material.as_deref(), cx.trim)?;
+        let c = OpCtx { wall: cx.wall, trim, through: cx.through, solid: cx.solid };
+        let mut lens: Vec<f32> = Vec::new();
+        let mut placed = 0;
+        for (ri, run) in runs.iter().enumerate() {
+            for (iv, ring) in intervals(run, &sel, op.per_edge) {
+                lens.push(iv.1 - iv.0);
+                placed += place(b, op, run, iv, ring, sc, &c, &mut outs[ri]).map_err(|err| err.context(&format!("openings[{k}]")))?;
+            }
+        }
+        let e = effective(op);
+        if lens.is_empty() {
             b.warn(sc, format!("openings[{k}] ({}): edge selection matched no facade", op.kind.name()));
+        } else if placed == 0 {
+            let longest = lens.iter().copied().fold(0.0, f32::max);
+            let m = op.bays.get().and_then(|bb| bb.margin).unwrap_or_else(|| default_margin(op.bays.get(), longest, e.w));
+            let why = if op.bays.get().and_then(|bb| bb.azimuth.as_ref()).is_some() {
+                "no selected facade faces the requested azimuth".to_string()
+            } else if e.w > longest {
+                format!("the opening is wider than the longest selected facade ({longest:.2} m)")
+            } else {
+                format!("each needs {:.2} m (width {:.2} + margins {:.2}) or `bays = {{ count = 1 }}`", e.w + 2.0 * m, e.w, m)
+            };
+            let ls: Vec<String> = lens.iter().take(6).map(|l| format!("{l:.2}")).collect();
+            let _ = &ls;
+            b.warn(sc, format!("openings[{k}] ({} {:.2} x {:.2} m) placed nothing on {} selected facade(s) of {} m: {why}", e.kind.name(), e.w, e.h, lens.len(), ls.join(", ")));
         }
     }
-    Ok(all)
+    let mut world = Geo::new();
+    let mut count = 0;
+    for ri in 0..runs.len() {
+        let reqs = std::mem::take(&mut outs[ri].passages);
+        for p in reqs {
+            count += 1;
+            passage(b, runs, ri, &p, shape, sc, &mut outs, &mut world);
+        }
+    }
+    Ok(Placed { runs: outs, world, passages: count })
+}
+
+/// Resolves a passage: entry and exit holes on the two facades it joins
+/// and the vault between them (world space).
+#[allow(clippy::too_many_arguments)]
+fn passage(b: &mut Builder, runs: &[Run], ri: usize, p: &PassageReq, shape: &poly::Shape, sc: &Scope, outs: &mut [RunOut], world: &mut Geo) {
+    let run = &runs[ri];
+    let d = -run.normal(p.uc);
+    let d3 = Vec3::new(d.x, 0.0, d.y);
+    let mut hits = Vec::with_capacity(p.outline.len());
+    let mut exit_run = None;
+    let mut ok = true;
+    for q in &p.outline {
+        let w = run.world(q.x, q.y, 0.0);
+        match runs::ray_hit(shape, Vec2::new(w.x, w.z), d, 0.05) {
+            Some((t, r, i, s)) => {
+                let e = EdgeRef { ring: r, i };
+                let j = runs.iter().position(|x| x.edges.iter().any(|(ee, _, _)| *ee == e));
+                match (j, exit_run) {
+                    (Some(j), None) => exit_run = Some(j),
+                    (Some(j), Some(k)) if j == k => {}
+                    _ => ok = false,
+                }
+                let u = j.and_then(|j| runs[j].u_of(e, s)).unwrap_or(0.0);
+                hits.push((w, t, u));
+            }
+            None => ok = false,
+        }
+    }
+    let Some(j) = exit_run.filter(|_| ok) else {
+        b.warn(sc, "passage: the far side is not one facade of this solid (it crosses a corner or misses the plan); built as a deep recess");
+        let tmin = hits.iter().map(|h| h.1).fold(f32::MAX, f32::min);
+        let depth = if tmin < f32::MAX { (tmin - 0.3).max(0.3) } else { p.depth_fallback.max(1.0) };
+        let dark = b.mat_or(None, "dark").ok();
+        outs[ri].cuts.push(Cut::simple(p.outline.clone(), depth, p.mat, dark, false));
+        return;
+    };
+    // Unwrap exit u across the seam of a closed run.
+    let mut exit: Vec<Vec2> = Vec::with_capacity(hits.len());
+    let period = runs[j].facade.wrap;
+    let u_ref = hits[0].2;
+    for (h, q) in hits.iter().zip(&p.outline) {
+        let mut u = h.2;
+        if let Some(l) = period {
+            while u - u_ref > l * 0.5 {
+                u -= l;
+            }
+            while u_ref - u > l * 0.5 {
+                u += l;
+            }
+        }
+        exit.push(Vec2::new(u, q.y));
+    }
+    if poly::area(&exit) < 0.0 {
+        exit.reverse();
+    }
+    outs[ri].cuts.push(Cut { rings: vec![(p.outline.clone(), 0.0)], reveal_mat: p.mat, back: None, round: false });
+    outs[j].cuts.push(Cut { rings: vec![(exit, 0.0)], reveal_mat: p.mat, back: None, round: false });
+    // Vault, jambs and (above the ground) floor between the two holes.
+    let n = p.outline.len();
+    let c = poly::centroid(&p.outline);
+    let cw = run.world(c.x, c.y, 0.0);
+    let tc = hits.iter().map(|h| h.1).sum::<f32>() / n as f32;
+    let axis_mid = cw + d3 * (tc * 0.5);
+    let v0 = run.facade.v0;
+    let prim = world.get(p.mat);
+    let mut acc = 0.0;
+    for k in 0..n {
+        let l = (k + 1) % n;
+        let (qa, qb) = (p.outline[k], p.outline[l]);
+        let seg = (qb - qa).length();
+        if qa.y <= v0 + 0.01 && qb.y <= v0 + 0.01 {
+            acc += seg;
+            continue;
+        }
+        let (a0, a1) = (hits[k].0, hits[k].0 + d3 * hits[k].1);
+        let (b0, b1) = (hits[l].0, hits[l].0 + d3 * hits[l].1);
+        let mid = (a0 + a1 + b0 + b1) * 0.25;
+        let want = axis_mid + d3 * (mid - axis_mid).dot(d3) - mid;
+        let uv = [Vec2::new(acc, 0.0), Vec2::new(acc + seg, 0.0), Vec2::new(acc + seg, -hits[l].1), Vec2::new(acc, -hits[k].1)];
+        mesh::quad_facing(prim, [a0, b0, b1, a1], uv, want);
+        acc += seg;
+    }
 }
 
 #[cfg(test)]
@@ -950,5 +1251,11 @@ mod tests {
         assert!(c.iter().all(|u| *u > 1.0 && *u < 13.0));
         assert_eq!(bay_centres(None, 10.0, 2.0, OpeningKind::Portal), vec![5.0]);
         assert!(bay_centres(None, 0.8, 1.2, OpeningKind::Window).is_empty());
+        // A wide gate in a short facade is centred, not dropped.
+        assert_eq!(bay_centres(None, 7.0, 5.5, OpeningKind::Arch), vec![3.5]);
+        assert_eq!(bay_centres(Some(&Bays { count: Some(1), ..Default::default() }), 7.0, 6.5, OpeningKind::Arch), vec![3.5]);
+        // Evenly around a closed ring.
+        let r = bay_layout(Some(&Bays { count: Some(4), ..Default::default() }), 40.0, 1.0, OpeningKind::Window, true);
+        assert_eq!(r, vec![5.0, 15.0, 25.0, 35.0]);
     }
 }

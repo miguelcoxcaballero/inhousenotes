@@ -108,6 +108,15 @@ fn base_shapes(src_ref: Option<&str>, t: Option<&PolyTable>, points: Option<&Vec
         if SHAPES.contains(&rt.to_ascii_lowercase().as_str()) {
             return Err(format!("shape `{rt}` needs a size: write \"{rt}:<radius>\" or {{ shape = \"{rt}\", radius = ... }}"));
         }
+        // A typo in a shape name must not read as a footprint reference.
+        let head = rt.split(':').next().unwrap_or("").trim().to_ascii_lowercase();
+        const FP_KINDS: &[&str] = &["outline", "outlines", "part", "parts", "osm", "catastro", "context"];
+        if !FP_KINDS.contains(&head.as_str()) {
+            let mut names: Vec<&str> = SHAPES.to_vec();
+            names.extend_from_slice(FP_KINDS);
+            names.push("parent");
+            return Err(format!("unknown polygon `{rt}`{}; use a shape (square:6, octagon:4, circle:5, rect:10x6, ...), outline:<i>, part:<i>, osm:<id>, catastro:<i>, context:<i> or parent", super::parse::did_you_mean(&head, &names)));
+        }
         let fp = ctx.fp.ok_or_else(|| format!("polygon `{rt}` refers to footprint.json, but there is no footprint"))?;
         let hits = fp.resolve(rt)?;
         return Ok(hits.into_iter().map(|p| p.shape.clone()).collect());
@@ -178,6 +187,23 @@ pub fn resolve(spec: &PolySpec, ctx: &PolyCtx, detail: f32) -> Result<Vec<Shape>
                     }
                 }
                 let mut pieces = vec![s];
+                if !t.union.is_empty() {
+                    let mut add = Vec::new();
+                    for u in &t.union {
+                        add.extend(resolve(u, ctx, detail)?);
+                    }
+                    pieces = poly::boolean(&pieces, &add, poly::BoolOp::Union);
+                }
+                if !t.subtract.is_empty() {
+                    let mut sub = Vec::new();
+                    for u in &t.subtract {
+                        sub.extend(resolve(u, ctx, detail)?);
+                    }
+                    pieces = poly::boolean(&pieces, &sub, poly::BoolOp::Difference);
+                    if pieces.is_empty() {
+                        return Err("subtract leaves nothing".into());
+                    }
+                }
                 if let Some(c) = &t.clip {
                     let clips = resolve(c, ctx, detail)?;
                     let mut res = Vec::new();
@@ -246,8 +272,13 @@ fn matches(tok: &EdgeTok, shape: &Shape, e: EdgeRef, ranks: &[(usize, f32)]) -> 
         EdgeTok::Shortest(k) => e.ring == 0 && ranks.iter().rev().take(*k).any(|(i, _)| *i == e.i),
         EdgeTok::Facing(deg, tol) => {
             let az = poly::azimuth(poly::edge_normal(ring, e.i));
-            let d = ((az - deg + 540.0).rem_euclid(360.0) - 180.0).abs();
-            d <= *tol + 1e-3
+            let delta = (az - deg + 540.0).rem_euclid(360.0) - 180.0;
+            match tol {
+                // Compass words: half-open sectors, so every edge gets
+                // exactly one of n / e / s / w.
+                None => (-45.0 - 1e-4..45.0 - 1e-4).contains(&delta),
+                Some(t) => delta.abs() <= *t + 1e-3,
+            }
         }
         EdgeTok::MinLength(m) => len >= *m,
         EdgeTok::Not(t) => !matches(t, shape, e, ranks),
@@ -343,7 +374,7 @@ mod tests {
     #[test]
     fn edge_selection_and_chains() {
         let s = Shape::new(poly::rect(Vec2::ZERO, Vec2::new(20.0, 10.0), 0.0));
-        let south = select(&s, &EdgeSel(vec![EdgeTok::Facing(180.0, 45.0)]));
+        let south = select(&s, &EdgeSel(vec![EdgeTok::Facing(180.0, None)]));
         assert_eq!(south.len(), 1);
         let n = poly::edge_normal(&s.outer, south[0].i);
         assert!(n.y > 0.9);
@@ -358,5 +389,14 @@ mod tests {
         assert_eq!(chain_points(&s, c[0]).len(), 4);
         let all = select(&s, &EdgeSel::default());
         assert_eq!(chains(&s, &all), vec![(0, 0, 4, true)]);
+        // A plot rotated 45 degrees: each edge gets exactly one compass word.
+        let d = Shape::new(poly::rect(Vec2::ZERO, Vec2::new(10.0, 10.0), 45.0));
+        let mut seen = vec![0; 4];
+        for w in ["facing:n", "facing:e", "facing:s", "facing:w"] {
+            for e in select(&d, &EdgeSel(vec![EdgeTok::parse(w).unwrap()])) {
+                seen[e.i] += 1;
+            }
+        }
+        assert_eq!(seen, vec![1, 1, 1, 1]);
     }
 }

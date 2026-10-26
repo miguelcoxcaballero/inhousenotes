@@ -10,7 +10,11 @@ use super::parse::{Error, Result};
 use super::poly::{self, Shape};
 use super::profiles;
 use super::resolve;
+use super::runs::Path2;
 use super::spec::*;
+
+/// Corners sharper than this split repeated details into runs.
+const RUN_ANGLE: f32 = super::facade::RUN_ANGLE;
 
 /// Chains of selected edges as 2D polylines (outward = right of travel).
 fn paths(shape: &Shape, edges: &EdgeSel) -> Vec<(Vec<Vec2>, bool)> {
@@ -103,25 +107,17 @@ pub fn moulding_path(o: &mut Out, path: &[Vec2], closed: bool, y: f32, prof: &[V
     mesh::sweep(o.geo.get(mat), &p3, &sides, &ups, prof, closed, true, false, !closed);
 }
 
-/// Calls `f(point, outward normal, tangent)` at regular spacing along each
-/// edge of a polyline, keeping `margin` from the corners.
+/// Calls `f(point, outward normal, tangent)` at regular spacing by arc
+/// length along each smooth run of a polyline (curved plans are one run;
+/// sharp corners split runs and keep `margin` clear).
 fn along(path: &[Vec2], closed: bool, spacing: f32, margin: f32, mut f: impl FnMut(Vec2, Vec2, Vec2)) {
-    let m = path.len();
-    let segs = if closed { m } else { m - 1 };
-    for i in 0..segs {
-        let (a, b) = (path[i], path[(i + 1) % m]);
-        let len = (b - a).length();
-        let usable = len - 2.0 * margin;
-        if usable <= 0.0 {
-            continue;
-        }
-        let t = (b - a) / len;
-        let n = Vec2::new(t.y, -t.x);
-        let count = (usable / spacing.max(0.05)).floor() as usize + 1;
-        for k in 0..count {
-            let s = if count == 1 { 0.5 } else { k as f32 / (count - 1) as f32 };
-            f(a + t * (margin + usable * s), n, t);
-        }
+    if path.len() < 2 {
+        return;
+    }
+    let p = Path2::new(path, closed, RUN_ANGLE);
+    for d in p.spaced(spacing, margin) {
+        let (q, n, t) = p.at(d);
+        f(q, n, t);
     }
 }
 
@@ -204,28 +200,37 @@ pub fn crenel_on(b: &mut Builder, shape: &Shape, edges: &EdgeSel, y: f32, c: &Cr
     let dark = if c.loopholes { Some(b.mat_or(None, "dark")?) } else { None };
     let outline = merlon_outline(c.shape, c.width, c.height);
     let top = y + c.wall;
-    for e in sel {
-        let ring = resolve::ring_of(shape, e.ring);
-        let n = ring.len();
-        let (a, bb) = (ring[e.i], ring[(e.i + 1) % n]);
-        let len = (bb - a).length();
-        if len < c.width * 0.6 {
-            continue;
+    let _ = sel;
+    for (path, closed) in paths(shape, edges) {
+        let p = Path2::new(&path, closed, RUN_ANGLE);
+        // Merlons by arc length along each run: a merlon at both ends of
+        // a run (corners), evenly around a round tower.
+        let mut at: Vec<f32> = Vec::new();
+        if p.full_loop() {
+            let l = p.total();
+            let n = ((l / (c.width + c.gap)).round() as usize).max(1);
+            at.extend((0..n).map(|k| l * k as f32 / n as f32));
+        } else {
+            for &(a, bb) in &p.runs {
+                let len = bb - a;
+                if len < c.width * 0.6 {
+                    continue;
+                }
+                let count = (((len + c.gap) / (c.width + c.gap)).round() as usize).max(1);
+                let pitch = if count > 1 { (len - c.width) / (count - 1) as f32 } else { 0.0 };
+                at.extend((0..count).map(|k| if count > 1 { a + c.width * 0.5 + pitch * k as f32 } else { a + len * 0.5 }));
+            }
         }
-        let t = (bb - a) / len;
-        let nrm = Vec2::new(t.y, -t.x);
-        let count = (((len + c.gap) / (c.width + c.gap)).round() as usize).max(1);
-        let pitch = if count > 1 { (len - c.width) / (count - 1) as f32 } else { 0.0 };
-        for k in 0..count {
-            let s = if count > 1 { c.width * 0.5 + pitch * k as f32 } else { len * 0.5 };
-            let p = a + t * s + nrm * overhang;
-            // Plane on the outer face: u along the edge, v up, n inward.
-            let plane = Plane::new(Vec3::new(p.x, top, p.y), Vec3::new(t.x, 0.0, t.y), Vec3::Y);
+        for s in at {
+            let (q, nrm, t) = p.at(s);
+            let q = q + nrm * overhang;
+            // Plane on the outer face: u along the run, v up, n inward.
+            let plane = Plane::new(Vec3::new(q.x, top, q.y), Vec3::new(t.x, 0.0, t.y), Vec3::Y);
             if let Some(r) = poly::normalize(&outline, true) {
                 mesh::extrude_shape(o.geo.get(mat), &Shape::new(r), &plane, c.thickness);
             }
             if let Some(dk) = dark {
-                let ctr = Vec3::new(p.x, top + c.height * 0.45, p.y) + Vec3::new(nrm.x, 0.0, nrm.y) * 0.005;
+                let ctr = Vec3::new(q.x, top + c.height * 0.45, q.y) + Vec3::new(nrm.x, 0.0, nrm.y) * 0.005;
                 o.geo.get(dk).obox(ctr, [Vec3::new(t.x, 0.0, t.y), Vec3::Y, Vec3::new(nrm.x, 0.0, nrm.y)], Vec3::new(0.05, c.height * 0.3, 0.004), 1.0);
             }
         }
@@ -245,39 +250,43 @@ pub fn balustrade_on(b: &mut Builder, shape: &Shape, edges: &EdgeSel, y: f32, he
     for (path, closed) in paths(shape, edges) {
         let path = offset_path(&path, closed, -inset);
         let p3 = |q: &Vec2, h: f32| Vec3::new(q.x, h, q.y);
+        let _ = (spacing, pedestals);
         let base_path: Vec<Vec3> = path.iter().map(|q| p3(q, y)).collect();
         let (sides, ups) = mesh::level_frames(&base_path, closed, 1.0);
         mesh::sweep(o.geo.get(mat), &base_path, &sides, &ups, &rail, closed, true, false, !closed);
         let top_path: Vec<Vec3> = path.iter().map(|q| p3(q, y + height - 0.1 * k)).collect();
         mesh::sweep(o.geo.get(mat), &top_path, &sides, &ups, &top_rail, closed, true, false, !closed);
-        // Pedestal positions: every corner plus every `pedestals` metres.
-        let m = path.len();
-        let segs = if closed { m } else { m - 1 };
+        // Pedestals at the corners and every `pedestals` metres along each
+        // run; balusters evenly between (by arc length, so curved
+        // balustrades are not broken up by their facets).
+        let p2 = Path2::new(&path, closed, RUN_ANGLE);
         let mut peds: Vec<Vec2> = Vec::new();
-        for i in 0..m {
-            peds.push(path[i]);
+        let mut ped_s: Vec<f32> = Vec::new();
+        if !p2.full_loop() {
+            for &(a, c) in &p2.runs {
+                ped_s.push(a);
+                ped_s.push(c);
+            }
         }
-        for i in 0..segs {
-            let (a, c) = (path[i], path[(i + 1) % m]);
-            let len = (c - a).length();
-            if pedestals > 0.5 && len > pedestals * 1.5 {
+        if pedestals > 0.5 {
+            for &(a, c) in &p2.runs {
+                let len = c - a;
                 let n = (len / pedestals).round() as usize;
-                for j in 1..n {
-                    peds.push(a.lerp(c, j as f32 / n as f32));
+                for j in if p2.full_loop() { 0..n } else { 1..n } {
+                    ped_s.push(a + len * j as f32 / n as f32);
                 }
             }
         }
-        for i in 0..segs {
-            let (a, c) = (path[i], path[(i + 1) % m]);
-            let len = (c - a).length();
-            let n = (len / spacing.max(0.12)).floor() as usize;
-            for j in 0..n {
-                let q = a.lerp(c, (j as f32 + 0.5) / n.max(1) as f32);
-                if peds.iter().any(|pp| (*pp - q).length() < 0.3) {
-                    continue;
-                }
-                mesh::lathe(o.geo.get(mat), p3(&q, y), &baluster, 8, 0.0, std::f32::consts::TAU);
+        ped_s.sort_by(|a, b| a.total_cmp(b));
+        ped_s.dedup_by(|a, b| (*a - *b).abs() < 0.3);
+        for s in &ped_s {
+            peds.push(p2.at(*s).0);
+        }
+        for d in p2.spaced(spacing.max(0.12), 0.0) {
+            if ped_s.iter().any(|s| (s - d).abs() < 0.3 || (p2.closed && (s - d).abs() > p2.total() - 0.3)) {
+                continue;
             }
+            mesh::lathe(o.geo.get(mat), p3(&p2.at(d).0, y), &baluster, 8, 0.0, std::f32::consts::TAU);
         }
         for q in &peds {
             let g = o.geo.get(mat);
@@ -362,30 +371,77 @@ pub fn crenellations(b: &mut Builder, c: &Crenellations, sc: &Scope, o: &mut Out
     Ok(())
 }
 
+/// Projecting parapet on stepped corbels; with `arches`, the Valencian
+/// arcuated machicolation: arches spanning between the corbel heads, the
+/// openings between corbels dark, the parapet (and merlons) on top.
 pub fn machicolations(b: &mut Builder, m: &Machicolations, sc: &Scope, o: &mut Out) -> Result<()> {
     let (shapes, yr) = shapes_y(b, m.polygon.as_ref(), m.on.as_deref(), sc)?;
     let y = m.y.or(yr.map(|r| r.1 - m.corbel_height)).ok_or_else(|| Error::msg("machicolations need `y` or `on`"))?;
-    let ch = m.corbel_height;
+    let ch = m.corbel_height.max(0.2);
+    let courses = m.corbel_courses.clamp(1, 12) as usize;
+    let cw = m.corbel_width.max(0.1);
+    let proj = m.projection.max(0.1);
     let dark = b.mat_or(None, "dark")?;
+    let panel_t = (proj * 0.3).clamp(0.15, 0.35);
     for s in &shapes {
         for (path, closed) in paths(s, &m.edges) {
-            along(&path, closed, m.spacing, m.spacing * 0.35, |p, n, t| {
+            let p2 = Path2::new(&path, closed, RUN_ANGLE);
+            let at = p2.spaced(m.spacing, cw * 0.6);
+            for &d in &at {
+                let (p, n, t) = p2.at(d);
                 let p3 = Vec3::new(p.x, 0.0, p.y);
                 let n3 = Vec3::new(n.x, 0.0, n.y);
                 let t3 = Vec3::new(t.x, 0.0, t.y);
                 let g = o.geo.get(sc.mat);
-                for k in 0..3 {
-                    let d = m.projection * (k + 1) as f32 / 3.0;
-                    let yy = y + ch * k as f32 / 3.0;
-                    g.obox(p3 + n3 * (d * 0.5) + Vec3::Y * (yy + ch / 6.0), [t3, Vec3::Y, n3], Vec3::new(0.18, ch / 6.0, d * 0.5), 1.0);
+                // Stepped courses, deeper towards the top; each slightly
+                // rounded off at its lower front edge by a smaller block.
+                for k in 0..courses {
+                    let depth = proj * (k + 1) as f32 / courses as f32;
+                    let h = ch / courses as f32;
+                    let yy = y + h * k as f32;
+                    g.obox(p3 + n3 * (depth * 0.5) + Vec3::Y * (yy + h * 0.5), [t3, Vec3::Y, n3], Vec3::new(cw * 0.5, h * 0.5, depth * 0.5), 1.0);
                 }
-            });
+            }
+            if m.arches {
+                // Arches between consecutive corbels of a run, on the front.
+                let pairs: Vec<(f32, f32)> = at.windows(2).map(|w| (w[0], w[1])).chain((p2.full_loop() && at.len() > 1).then(|| (*at.last().unwrap(), at[0] + p2.total()))).collect();
+                for (s0, s1) in pairs {
+                    if p2.runs.iter().all(|r| !(s0 >= r.0 - 1e-3 && s1 <= r.1 + 1e-3)) && !p2.full_loop() {
+                        continue;
+                    }
+                    let (pa, na, _) = p2.at(s0 + cw * 0.5);
+                    let (pb, nb, _) = p2.at(s1 - cw * 0.5);
+                    let qa = pa + na * proj;
+                    let qb = pb + nb * proj;
+                    let gap = (qb - qa).length();
+                    if gap < 0.2 {
+                        continue;
+                    }
+                    let rise = super::profiles::default_rise(m.arch, gap).min(ch * 0.8);
+                    let spring = (ch - rise - 0.12).max(0.05);
+                    let ol = super::profiles::outline(m.arch, gap, spring + rise, Some(rise), 12);
+                    let head: Vec<Vec2> = ol.pts[ol.head.0..ol.head.1.min(ol.pts.len())].iter().map(|q| Vec2::new(q.x + gap * 0.5, q.y)).collect();
+                    // Panel above the arch: right side up, top, left side
+                    // down, then the arch from left to right.
+                    let mut ring = vec![Vec2::new(gap, spring), Vec2::new(gap, ch), Vec2::new(0.0, ch), Vec2::new(0.0, spring)];
+                    let mut hd = head.clone();
+                    if hd.first().is_some_and(|q| q.x > gap * 0.5) {
+                        hd.reverse();
+                    }
+                    ring.extend(hd.into_iter().filter(|q| q.y > spring + 1e-3));
+                    let dir = (qb - qa) / gap;
+                    let plane = Plane::new(Vec3::new(qa.x, y, qa.y), Vec3::new(dir.x, 0.0, dir.y), Vec3::Y);
+                    if let Some(r) = poly::normalize(&ring, true) {
+                        mesh::extrude_shape(o.geo.get(sc.mat), &Shape::new(r), &plane, panel_t);
+                    }
+                }
+            }
             // Projecting parapet with dark slots in its floor.
-            band_solid(o, &path, closed, y + ch, y + ch + m.parapet, m.thickness, m.projection, sc.mat);
-            band_solid(o, &path, closed, y + ch - 0.06, y + ch, m.projection - 0.12, m.projection - 0.02, dark);
+            band_solid(o, &path, closed, y + ch, y + ch + m.parapet, m.thickness, proj, sc.mat);
+            band_solid(o, &path, closed, y + ch - 0.06, y + ch, (proj - panel_t - 0.02).max(0.05), proj - panel_t, dark);
         }
         if let Some(c) = m.merlons.get() {
-            crenel_on(b, s, &m.edges, y + ch + m.parapet, &CrenelSpec { wall: 0.0, ..c.clone() }, m.projection, sc.mat, o)?;
+            crenel_on(b, s, &m.edges, y + ch + m.parapet, &CrenelSpec { wall: 0.0, ..c.clone() }, proj, sc.mat, o)?;
         }
     }
     Ok(())
@@ -411,8 +467,9 @@ pub fn gargoyles(b: &mut Builder, g: &Gargoyles, sc: &Scope, o: &mut Out) -> Res
             along(&path, closed, g.spacing, g.spacing * 0.5, |p, n, _| put(o, p, n));
             if g.corners {
                 let m = path.len();
+                let sharp = super::runs::corners(&path, closed, RUN_ANGLE);
                 for i in 0..m {
-                    if !closed && (i == 0 || i == m - 1) {
+                    if !closed && (i == 0 || i == m - 1) || !sharp[i] {
                         continue;
                     }
                     let (a, c, d) = (path[(i + m - 1) % m], path[i], path[(i + 1) % m]);
