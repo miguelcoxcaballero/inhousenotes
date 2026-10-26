@@ -2192,6 +2192,8 @@
             // The Drive file ID is part of deterministic legacy page/item IDs.
             // Restore it before migrating any old local payload.
             await Promise.all([loadFromStorage(), offlineLibraryReady]);
+            // The editor page layout lives in the Rust core; fail loudly instead of running without it.
+            if (!await window.InhouseRust.ready) throw new Error('Rust core failed to load; the editor cannot start without it');
             await window.InhouseOfflineApp.reconcileStartup();
             void window.InhouseOfflineLibrary.resume().catch(error=>console.warn('Offline resume pending:',error));
             bakeLegacyEraserAreaStrokes();
@@ -2338,27 +2340,12 @@
         }
 
         function getPageTopOffset(pageIndex) {
-            const idx = Math.max(0, Math.min(state.pages.length, pageIndex));
-            const metrics = getPageLayoutMetrics();
-            if (idx < metrics.tops.length) return metrics.tops[idx];
-            return metrics.contentBottom + (metrics.pageCount > 0 ? PAGE_GAP : 0);
-        }
-
-        function getPageCalendarPanelSpace(pageIndex) {
-            const page = state.pages[pageIndex];
-            return page && page.sidePanel && cachedPageLayoutCalendarEnabled
-                ? PAGE_CALENDAR_PANEL_HEIGHT + PAGE_CALENDAR_PANEL_GAP
-                : 0;
+            getPageLayoutMetrics();
+            return window.InhouseRust.editorView.topOffset(pageIndex);
         }
 
         function getPageHeight(pageIndex) {
             return getPageDimensions(pageIndex).height;
-        }
-
-        function getPageCenterOffset(pageIndex) {
-            const top = getPageTopOffset(pageIndex);
-            const height = getPageHeight(pageIndex);
-            return top + (height / 2);
         }
 
         function getTargetPageCanvasScale(pageWidth, pageHeight, zoom = state.zoom) {
@@ -3436,53 +3423,9 @@
 
         function getVisiblePageRange(bufferOverride = null) {
             const rect = canvasViewport.getBoundingClientRect();
-            if (!rect.height) return { start: 0, end: -1 };
-            const viewTop = (-state.panY) / state.zoom;
-            const viewBottom = (rect.height - state.panY) / state.zoom;
-            const metrics = getPageLayoutMetrics();
-            const firstVisible = findFirstPageWhoseBottomReaches(metrics, viewTop);
-            const lastVisible = findLastPageWhoseTopPrecedes(metrics, viewBottom);
-            if (firstVisible < 0 || lastVisible < firstVisible) {
-                if (!state.pages.length) return { start: 0, end: -1 };
-                const nearest = viewTop < PAGE_PADDING ? 0 : state.pages.length - 1;
-                return { start: nearest, end: nearest };
-            }
-            const buffer = Number.isFinite(bufferOverride) ? bufferOverride : VISIBLE_PAGE_BUFFER;
-            let start = Math.max(0, firstVisible - buffer);
-            let end = Math.min(state.pages.length - 1, lastVisible + buffer);
-            return { start, end };
-        }
-
-        function getViewportVisiblePageIndices(extraViewportBuffer = 0) {
-            const rect = canvasViewport.getBoundingClientRect();
-            if (!rect.width || !rect.height) return [];
-            const extraY = Math.max(0, rect.height * extraViewportBuffer);
-            const extraX = Math.max(0, rect.width * 0.25);
-            const viewTop = (-state.panY - extraY) / state.zoom;
-            const viewBottom = (rect.height - state.panY + extraY) / state.zoom;
-            const viewLeft = (-state.panX - extraX) / state.zoom;
-            const viewRight = (rect.width - state.panX + extraX) / state.zoom;
-            const metrics = getPageLayoutMetrics();
-            const first = findFirstPageWhoseBottomReaches(metrics, viewTop);
-            const last = findLastPageWhoseTopPrecedes(metrics, viewBottom);
-            const indices = [];
-            for (let index = Math.max(0, first); index <= Math.min(metrics.pageCount - 1, last); index += 1) {
-                if (metrics.rights[index] >= viewLeft && metrics.lefts[index] <= viewRight) {
-                    indices.push(index);
-                }
-            }
-            return indices;
-        }
-
-        function expandPageIndices(indices, buffer = VISIBLE_PAGE_BUFFER) {
-            const expanded = new Set();
-            const safeBuffer = Math.max(0, Number.isFinite(buffer) ? Math.round(buffer) : 0);
-            indices.forEach(index => {
-                for (let i = index - safeBuffer; i <= index + safeBuffer; i++) {
-                    if (i >= 0 && i < state.pages.length) expanded.add(i);
-                }
-            });
-            return Array.from(expanded).sort((a, b) => a - b);
+            getPageLayoutMetrics();
+            return window.InhouseRust.editorView.visibleRange(state.panY, state.zoom, rect.height,
+                Number.isFinite(bufferOverride) ? bufferOverride : VISIBLE_PAGE_BUFFER);
         }
 
         // ── § 4.10  Visible-page tracking ────────────────────────────────────
@@ -3510,87 +3453,22 @@
                 visiblePageUpdateRetryHandle = null;
             }
 
-            const buffer = VISIBLE_PAGE_BUFFER;
-            let range = getVisiblePageRange(buffer);
-            const directRange = getVisiblePageRange(0);
-            let visibleIndices = [];
-            let directlyVisibleIndices = [];
-            const domDirectIndices = getViewportVisiblePageIndices(0);
-            if (domDirectIndices.length > 0) {
-                const rect = canvasViewport.getBoundingClientRect();
-                const viewCenterY = (-state.panY + rect.height / 2) / state.zoom;
-                directlyVisibleIndices = domDirectIndices
-                    .slice()
-                    .sort((a, b) => Math.abs(getPageCenterOffset(a) - viewCenterY)
-                        - Math.abs(getPageCenterOffset(b) - viewCenterY))
-                    .slice(0, MAX_ACTIVE_PAGES);
-                visibleIndices = expandPageIndices(directlyVisibleIndices, buffer);
-                range = {
-                    start: visibleIndices[0],
-                    end: visibleIndices[visibleIndices.length - 1]
-                };
-            } else {
-                if (range.end < range.start) return;
-                for (let i = range.start; i <= range.end; i++) {
-                    visibleIndices.push(i);
-                }
-                if (directRange.end >= directRange.start) {
-                    for (let i = directRange.start; i <= directRange.end; i++) {
-                        directlyVisibleIndices.push(i);
-                    }
-                }
-            }
-            if (visibleIndices.length === 0) return;
-
             const rect = canvasViewport.getBoundingClientRect();
-            const viewCenterY = (-state.panY + rect.height / 2) / state.zoom;
-            const pageCenterY = (index) => getPageCenterOffset(index);
-
-            const activeSet = new Set();
-
-            const candidates = visibleIndices
-                .map(index => ({
-                    index,
-                    dist: Math.abs(pageCenterY(index) - viewCenterY)
-                }))
-                .sort((a, b) => a.dist - b.dist);
-
-            const orderedActive = [];
-            const addOrderedActive = (index) => {
-                if (activeSet.has(index)) return;
-                activeSet.add(index);
-                orderedActive.push(index);
-            };
-            if (Number.isFinite(state.selection.pageIndex)
-                && state.selection.pageIndex >= range.start
-                && state.selection.pageIndex <= range.end) {
-                addOrderedActive(state.selection.pageIndex);
-            }
-            if (Number.isFinite(state.activePageIndex)
-                && state.activePageIndex >= range.start
-                && state.activePageIndex <= range.end) {
-                addOrderedActive(state.activePageIndex);
-            }
-            for (const index of directlyVisibleIndices) {
-                if (activeSet.has(index)) continue;
-                if (activeSet.size >= MAX_ACTIVE_PAGES) break;
-                addOrderedActive(index);
-            }
-            for (const item of candidates) {
-                if (activeSet.size >= MAX_ACTIVE_PAGES) break;
-                addOrderedActive(item.index);
-            }
+            getPageLayoutMetrics();
+            const plan = window.InhouseRust.editorView.plan({
+                panX: state.panX, panY: state.panY, zoom: state.zoom, rectWidth: rect.width, rectHeight: rect.height,
+                buffer: VISIBLE_PAGE_BUFFER, maxActive: MAX_ACTIVE_PAGES,
+                selection: state.selection.pageIndex, activePage: state.activePageIndex, pending: pendingPageActivations
+            });
+            if (!plan) return;
+            const range = { start: plan.rangeStart, end: plan.rangeEnd };
+            const orderedActive = plan.ordered;
 
             desiredActivePageIndices.clear();
             orderedActive.forEach(index => desiredActivePageIndices.add(index));
-            pendingPageActivations.forEach((_, index) => {
-                if (!desiredActivePageIndices.has(index)) {
-                    pendingPageActivations.delete(index);
-                }
-            });
-            const directVisibleSet = new Set(directlyVisibleIndices);
+            plan.prune.forEach(index => pendingPageActivations.delete(index));
 
-            directVisibleSet.forEach(index => {
+            plan.direct.forEach(index => {
                 const page = state.pages[index];
                 if (!page) return;
                 const shouldDeferCanvas = !isPageLoaded(page);
@@ -3625,14 +3503,11 @@
                 queuePageActivation(index, order);
             });
 
-            visibleIndices.forEach(index => {
-                if (!activeSet.has(index)) {
-                    applyPagePreview(index);
-                }
-            });
+            plan.previewOnly.forEach(index => applyPagePreview(index));
 
+            // Earlier steps may have activated more canvases, so this reads the live set.
             activePageIndices.forEach(index => {
-                if (!activeSet.has(index)) {
+                if (!desiredActivePageIndices.has(index)) {
                     releasePageCanvas(index);
                 }
             });
@@ -16343,73 +16218,16 @@
                 && cachedPageLayoutMetrics.calendarEnabled === calendarEnabled) {
                 return cachedPageLayoutMetrics;
             }
-            const pageCount = state.pages.length;
-            const padding = PAGE_PADDING;
-            const maxWidth = getMaxPageWidth();
-            const tops = [];
-            const bottoms = [];
-            const lefts = [];
-            const rights = [];
-            let y = padding;
-            if (pageCount === 0) {
-                tops.push(padding);
-                bottoms.push(padding + A4_HEIGHT);
-                lefts.push(padding);
-                rights.push(padding + A4_WIDTH);
-                y = padding + A4_HEIGHT;
-            } else {
-                for (let index = 0; index < pageCount; index += 1) {
-                    const { width, height } = getPageDimensions(index);
-                    const left = padding + (maxWidth - width) / 2;
-                    tops.push(y);
-                    bottoms.push(y + height);
-                    lefts.push(left);
-                    rights.push(left + width);
-                    y += height + getPageCalendarPanelSpace(index);
-                    if (index < pageCount - 1) y += PAGE_GAP;
-                }
-            }
+            // Rust builds the layout; JS only keeps the cache keys.
+            const metrics = window.InhouseRust.editorView.layout(state.pages, calendarEnabled, {
+                padding: PAGE_PADDING, gap: PAGE_GAP, a4Width: A4_WIDTH, a4Height: A4_HEIGHT,
+                calendarSpace: PAGE_CALENDAR_PANEL_HEIGHT + PAGE_CALENDAR_PANEL_GAP
+            });
             cachedPageBoundsOwner = state.pages;
             cachedPageBoundsCount = state.pages.length;
-            cachedPageBounds = {
-                left: padding,
-                top: padding,
-                right: padding + maxWidth,
-                bottom: y
-            };
-            cachedPageLayoutMetrics = {
-                pageCount: pageCount || 1,
-                tops,
-                bottoms,
-                lefts,
-                rights,
-                contentBottom: y,
-                bounds: cachedPageBounds,
-                calendarEnabled
-            };
+            cachedPageBounds = metrics.bounds;
+            cachedPageLayoutMetrics = { ...metrics, calendarEnabled };
             return cachedPageLayoutMetrics;
-        }
-
-        function findFirstPageWhoseBottomReaches(metrics, y) {
-            let low = 0;
-            let high = metrics.bottoms.length;
-            while (low < high) {
-                const mid = (low + high) >>> 1;
-                if (metrics.bottoms[mid] < y) low = mid + 1;
-                else high = mid;
-            }
-            return low < metrics.bottoms.length ? low : -1;
-        }
-
-        function findLastPageWhoseTopPrecedes(metrics, y) {
-            let low = 0;
-            let high = metrics.tops.length;
-            while (low < high) {
-                const mid = (low + high) >>> 1;
-                if (metrics.tops[mid] <= y) low = mid + 1;
-                else high = mid;
-            }
-            return low > 0 ? low - 1 : -1;
         }
 
         function getPageBounds() {
