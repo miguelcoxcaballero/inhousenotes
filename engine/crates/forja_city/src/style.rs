@@ -53,7 +53,7 @@ pub struct Style {
     /// plain | lintel | keystone | pediment | eared
     #[serde(default)]
     pub surround_kind: String,
-    /// individual | noble | corrido | none
+    /// individual | noble | corrido | terrace | none
     #[serde(default)]
     pub balcony: String,
     /// bars | belly
@@ -68,7 +68,7 @@ pub struct Style {
     /// clay | mansard | balustrade | parapet
     #[serde(default)]
     pub roof: String,
-    /// eave | classic | modillions
+    /// eave | classic | modillions | slab
     #[serde(default)]
     pub cornice: String,
     #[serde(default)]
@@ -123,6 +123,10 @@ pub struct Style {
     /// (ático retranqueado), the usual later addition on old fronts.
     #[serde(default)]
     pub atico: f32,
+    /// A 1960s-80s block (desarrollismo): even floors, slab edges instead
+    /// of mouldings, terraces with solid parapets.
+    #[serde(default)]
+    pub modern: bool,
 }
 
 #[derive(Deserialize)]
