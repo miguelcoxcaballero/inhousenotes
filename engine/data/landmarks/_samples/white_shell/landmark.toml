@@ -1,0 +1,266 @@
+# Sample: an organic white pavilion in the spirit of the Ciutat de les
+# Arts i les Ciències — a trencadís shell with ribs over a reflecting
+# pool, an opening "eye" with a curved glass lens, a ribbed brise-soleil,
+# a tapering cantilevered plume, hypar umbrellas and a pierced screen.
+# Synthetic; it exercises shells, lofts, sweeps, arrays and components.
+
+[landmark]
+name = "Sample white shell pavilion"
+slug = "white_shell"
+main_facade = "facing:s"
+
+[landmark.info]
+style = "Organic modernism (synthetic sample)"
+
+[defaults]
+material = "white_concrete"
+
+[render]
+sun = [200, 48]
+
+# ------------------------------------------------------------- materials
+
+[material.trencadis]
+kind = "trencadis"
+uv_scale = 1.6
+
+[material.white_concrete]
+kind = "concrete"
+tint = "#f4f3ef"
+uv_scale = 2.4
+
+[material.white_steel]
+kind = "white_steel"
+
+[material.lens]
+kind = "curtain_wall"
+color = "#5b7c86"
+uv_scale = 3.0
+
+[material.water]
+kind = "water"
+
+[material.travertine]
+kind = "travertine"
+
+[material.glass]
+kind = "glass"
+
+# ------------------------------------------------------------ components
+
+[component.umbrella]
+note = "Hyperbolic-paraboloid umbrella on one column (origin at the column foot)."
+material = "white_concrete"
+[[component.umbrella.children]]
+type = "column"
+height = 4.6
+radius = 0.32
+order = "cylinder"
+[[component.umbrella.children]]
+type = "array"
+mode = "radial"
+count = 4
+  [[component.umbrella.children.children]]
+  type = "shell"
+  surface = "hypar"
+  corners = [[0.0, 4.6, 0.0], [5.0, 6.2, 0.0], [5.0, 4.9, 5.0], [0.0, 6.2, 5.0]]
+  thickness = 0.12
+  segments = [12, 12]
+
+# ------------------------------------------------------------- the shell
+
+[[element]]
+type = "shell"
+name = "shell"
+surface = "superellipsoid"
+center = [0.0, 0.0, 0.0]
+radii = [36.0, 15.0, 17.0]
+exponents = [2.6, 1.5]
+v_range = [0.0, 90.0]
+clip = [[0.0, 0.0, 1.0, 11.0]]
+thickness = 0.45
+segments = [128, 40]
+material = "trencadis"
+ribs = { count = 22, along = "v", width = 0.55, depth = 0.38, material = "white_concrete" }
+
+# Curved glass lens filling the opening.
+[[element]]
+type = "shell"
+name = "lens"
+surface = "superellipsoid"
+center = [0.0, 0.0, -0.6]
+radii = [34.6, 14.2, 16.6]
+exponents = [2.6, 1.5]
+v_range = [0.0, 90.0]
+clip = [[0.0, 0.0, -1.0, -10.4]]
+thickness = 0.06
+segments = [96, 32]
+material = "lens"
+
+# Brise-soleil: white steel ribs springing from the pool to the eye's rim.
+[[element]]
+type = "array"
+mode = "linear"
+count = 13
+step = [4.6, 0.0, 0.0]
+transform = { translate = [-27.6, 0.0, 0.0] }
+material = "white_steel"
+  [[element.children]]
+  type = "sweep"
+  profile = { shape = "rect", size = [0.35, 0.9] }
+  path = { center = [0.0, 0.0, 10.0], radius = 10.0, angles = [0.0, 88.0], normal = [1.0, 0.0, 0.0], axis = [0.0, 0.0, 1.0] }
+
+# Tapering plume cantilevered over the shell.
+[[element]]
+type = "loft"
+name = "plume"
+material = "trencadis"
+samples = 10
+resolution = 28
+section = { shape = "ellipse", size = [2.6, 1.8] }
+stations = [
+  { at = [-40.0, 3.0, -6.0], scale = [1.4, 1.4] },
+  { at = [-22.0, 13.0, -9.0], scale = [1.15, 1.1] },
+  { at = [0.0, 19.5, -10.0], scale = [0.9, 0.85] },
+  { at = [22.0, 22.5, -8.0], scale = [0.55, 0.5] },
+  { at = [40.0, 25.0, -4.0], scale = [0.18, 0.16] },
+]
+
+# Raking struts under the plume.
+[[element]]
+type = "cylinder"
+from = [-30.0, 0.0, -14.0]
+to = [-22.0, 12.5, -9.2]
+radius = 0.4
+radius_top = 0.3
+material = "white_steel"
+mirror = { axis = "z", at = -9.0 }
+
+# ------------------------------------------------------------ the podium
+
+[[element]]
+type = "slab"
+name = "pool"
+polygon = { shape = "ellipse", size = [100.0, 60.0], center = [0.0, 4.0] }
+y = 0.12
+thickness = 0.1
+material = "water"
+
+[[element]]
+type = "slab"
+polygon = { shape = "ellipse", size = [106.0, 66.0], center = [0.0, 4.0], holes = [{ shape = "ellipse", size = [100.0, 60.0], center = [0.0, 4.0] }] }
+y = 0.35
+thickness = 0.35
+material = "travertine"
+
+[[element]]
+type = "stairs"
+polygon = { shape = "rect", center = [0.0, 24.0], size = [18.0, 6.0] }
+steps = 4
+riser = 0.16
+tread = 0.45
+material = "travertine"
+
+[[element]]
+type = "slab"
+polygon = [[-6.0, 11.0], [6.0, 11.0], [8.0, 21.0], [-8.0, 21.0]]
+y = 0.64
+thickness = 0.5
+material = "travertine"
+
+[[element]]
+type = "array"
+mode = "points"
+points = [[-16.0, 0.35, 24.0], [16.0, 0.35, 24.0]]
+component = "umbrella"
+
+[[element]]
+type = "wall"
+name = "screen"
+path = [[-34.0, 31.0], [-12.0, 34.5]]
+height = 4.2
+thickness = 0.45
+y0 = 0.35
+material = "white_concrete"
+  [[element.openings]]
+  kind = "oculus"
+  width = 1.4
+  levels = [1.8]
+  bays = { spacing = 2.6, margin = 1.5 }
+  infill = "void"
+
+[[element]]
+type = "shell"
+name = "skylight"
+surface = "paraboloid"
+center = [24.0, 0.35, 24.0]
+radii = [3.2, 2.6, 3.2]
+height = 2.6
+thickness = 0.15
+material = "white_concrete"
+
+[[element]]
+type = "torus"
+center = [-30.0, 3.2, 8.0]
+radius = 2.8
+tube = 0.22
+axis = [1.0, 0.0, 0.3]
+material = "white_steel"
+
+[[element]]
+type = "mesh"
+name = "sculpture"
+material = "white_steel"
+vertices = [[30.0, 0.35, 12.0], [33.0, 0.35, 14.0], [29.0, 0.35, 15.0], [31.0, 5.5, 13.5]]
+triangles = [[0, 2, 1], [0, 1, 3], [1, 2, 3], [2, 0, 3]]
+
+[[element]]
+type = "lathe"
+at = [10.0, 0.35, 27.0]
+profile = [[0.0, 0.0], [0.6, 0.0], [0.9, 0.7], [0.95, 0.75], [0.0, 0.75]]
+segments = 24
+mirror = "x"
+
+[[element]]
+type = "extrude"
+name = "ramp"
+profile = [[0.0, 0.0], [6.0, 0.0], [6.0, 0.64]]
+plane = "xy"
+origin = [8.0, 0.0, 22.0]
+length = 2.0
+material = "travertine"
+
+[[element]]
+type = "array"
+mode = "linear"
+count = 6
+step = [5.0, 0.0, 0.0]
+  [[element.children]]
+  type = "box"
+  center = [-12.5, 0.75, 28.0]
+  size = [2.2, 0.45, 0.6]
+  [[element.children]]
+  type = "cylinder"
+  at = [-12.5, 0.35, 29.5]
+  height = 3.2
+  radius = 0.06
+  material = "white_steel"
+  [[element.children]]
+  type = "sphere"
+  center = [-12.5, 3.7, 29.5]
+  radius = 0.25
+  material = "glass"
+
+# ----------------------------------------------------------------- views
+
+[[view]]
+name = "eye"
+eye = [4.0, 2.2, 46.0]
+target = [0.0, 8.0, 0.0]
+focal_35mm = 24
+
+[[view]]
+name = "plume"
+eye = [58.0, 10.0, -42.0]
+target = [8.0, 14.0, -6.0]
+fov_y = 48

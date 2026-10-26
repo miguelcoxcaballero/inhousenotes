@@ -1,6 +1,6 @@
 // Bloom (Jimenez 2014 down/up chain), AgX tonemapping and FXAA.
 struct PostParams {
-    texel: vec4<f32>,   // xy: source texel size, z: first mip: bloom compression (1 / limit); tonemap: scotopic strength
+    texel: vec4<f32>,   // xy: source texel size, z: first mip: bloom compression (1 / limit); tonemap: scotopic strength, w: tonemap: night grade
     params: vec4<f32>,  // x: exposure (upsample: mip weight), y: bloom strength, z: vignette, w: first-mip flag / tonemap: 1 = auto exposure
 };
 
@@ -112,6 +112,34 @@ fn scotopic(c: vec3<f32>, nits: f32, strength: f32) -> vec3<f32> {
     return mix(c, night, s * strength);
 }
 
+// Cinematic night grade on the display image (after AgX, whose base look
+// is deliberately flat): an S-curve about a low pivot with a filmic toe
+// (true blacks, lamp-lit areas pushed toward white), teal shadows and warm
+// highlights, and richer saturation in the bright, lamp-coloured areas.
+// Strength `g` (0 = off, the daytime path).
+fn night_grade(lin: vec3<f32>, g: f32) -> vec3<f32> {
+    var v = pow(clamp(lin, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2));
+    // Black point: the darkest values sink to true black.
+    let bp = 0.018 * g;
+    v = max(v - vec3<f32>(bp), vec3<f32>(0.0)) / (1.0 - bp);
+    // S-curve about the pivot (exponent > 1 on both sides).
+    let pivot = 0.32;
+    let k = 1.0 + 0.5 * g;
+    let lo = pivot * pow(v / pivot, vec3<f32>(k));
+    let hi = vec3<f32>(1.0) - (1.0 - pivot) * pow((vec3<f32>(1.0) - v) / (1.0 - pivot), vec3<f32>(k));
+    v = select(hi, lo, v < vec3<f32>(pivot));
+    // Split toning by display luminance.
+    let l = luma(v);
+    let shadow_w = (1.0 - l) * (1.0 - l) * (1.0 - l) * g;
+    let high_w = l * l * g;
+    v *= mix(vec3<f32>(1.0), vec3<f32>(0.9, 1.0, 1.08), shadow_w);
+    v *= mix(vec3<f32>(1.0), vec3<f32>(1.06, 1.0, 0.9), high_w);
+    // Saturation of the lit areas.
+    let l2 = luma(v);
+    v = vec3<f32>(l2) + (v - vec3<f32>(l2)) * (1.0 + 0.25 * g * smoothstep(0.1, 0.6, l2));
+    return pow(clamp(v, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(2.2));
+}
+
 @fragment
 fn fs_tonemap(in: FsIn) -> @location(0) vec4<f32> {
     let hdr = textureSample(src, samp, in.uv).rgb;
@@ -126,6 +154,9 @@ fn fs_tonemap(in: FsIn) -> @location(0) vec4<f32> {
         c = scotopic(c, luma(hdr) / max(exposure_state.pre, 1e-8) * 1e4, post.texel.z);
     }
     c = agx(c);
+    if (post.texel.w > 0.0) {
+        c = night_grade(c, post.texel.w);
+    }
     let d = in.uv - vec2<f32>(0.5);
     c *= 1.0 - dot(d, d) * post.params.z;
     // Store perceptual luma in alpha for FXAA.

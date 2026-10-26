@@ -263,6 +263,10 @@ pub struct Environment {
     pub bloom_limit: f32,
     /// Night-vision shift of dim areas toward desaturated blue, 0..1.
     pub scotopic: f32,
+    /// Cinematic night grade after the tonemapper, 0..1: filmic toe with
+    /// true blacks, S-curve contrast, teal shadows and warm highlights
+    /// (0 = the daytime look, unchanged).
+    pub night_grade: f32,
 }
 
 impl Default for Environment {
@@ -297,6 +301,7 @@ impl Default for Environment {
             bloom_radius: 1.0,
             bloom_limit: 4.0,
             scotopic: 0.0,
+            night_grade: 0.0,
         }
     }
 }
@@ -1954,7 +1959,7 @@ impl Renderer {
         self.queue.write_buffer(
             tonemap_u,
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, env.scotopic, 0.0], params: [env.exposure, env.bloom, env.vignette, fx_on(auto.is_some())] }),
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, env.scotopic, env.night_grade], params: [env.exposure, env.bloom, env.vignette, fx_on(auto.is_some())] }),
         );
         // Bloom: first-mip compression (1 / limit) and the weight of the
         // wider mips (1 / 4 and 1 by day, as before).
