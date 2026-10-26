@@ -1,7 +1,14 @@
 [package]
 name = "forja_assets"
+description = "Forja assets: manifest, glTF/OBJ loading into CPU meshes, materials, skeletons and animation clips"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+forja_math.workspace = true
+serde.workspace = true
+toml.workspace = true
+gltf.workspace = true
+image.workspace = true
+log.workspace = true

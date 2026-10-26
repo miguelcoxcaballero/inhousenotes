@@ -1,0 +1,76 @@
+# Locomotion, driving, combat and death for Kenney's blocky characters
+# (node-hierarchy rig: root, torso, head, arm-left/right, leg-left/right).
+name = "blocky_humanoid"
+initial = "locomotion"
+
+[[state]]
+name = "locomotion"
+blend = { param = "speed", points = [[0.0, "idle"], [1.8, "walk"], [6.0, "sprint"]] }
+
+[[state]]
+name = "drive"
+clip = "drive"
+
+[[state]]
+name = "melee"
+clip = "attack-melee-right"
+looping = false
+
+[[state]]
+name = "pick_up"
+clip = "pick-up"
+looping = false
+
+[[state]]
+name = "dead"
+clip = "die"
+looping = false
+
+[[transition]]
+from = "*"
+to = "dead"
+when = [{ param = "dead", gt = 0.5 }]
+fade = 0.1
+
+[[transition]]
+from = "locomotion"
+to = "drive"
+when = [{ param = "in_vehicle", gt = 0.5 }]
+fade = 0.25
+
+[[transition]]
+from = "drive"
+to = "locomotion"
+when = [{ param = "in_vehicle", lt = 0.5 }]
+fade = 0.25
+
+[[transition]]
+from = "locomotion"
+to = "melee"
+when = [{ param = "melee", gt = 0.5 }]
+fade = 0.08
+
+[[transition]]
+from = "melee"
+to = "locomotion"
+on_finish = true
+fade = 0.15
+
+[[transition]]
+from = "locomotion"
+to = "pick_up"
+when = [{ param = "pick_up", gt = 0.5 }]
+fade = 0.1
+
+[[transition]]
+from = "pick_up"
+to = "locomotion"
+on_finish = true
+fade = 0.15
+
+# Upper body holds and fires the weapon while the legs keep moving.
+[[layer]]
+name = "aim"
+clip = "holding-right-shoot"
+mask_root = "torso"
+weight_param = "aiming"
