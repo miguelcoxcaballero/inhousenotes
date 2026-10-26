@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import { legacySource, rng } from './helpers/legacy.mjs';
+import './helpers/collab-rust.mjs'; // collaboration-core-v5.js hashes in the Rust core (collab area); install the adapter first
 
 const require = createRequire(import.meta.url);
 const { ihnStableStringify, ihnNormalizeDeletionStamps } = require('../collaboration-core-v5.js');
