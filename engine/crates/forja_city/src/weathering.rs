@@ -22,6 +22,10 @@ pub enum Decal {
     /// Rising damp, splash-back and traffic grime along the plinth. Tiles
     /// along the wall every [`PLINTH_REPEAT`] m; v spans the band height.
     Plinth,
+    /// Facade-scale wash: traffic soot and dust that darken the lower
+    /// floors and fade upwards, with rain-wash streaks. Tiles along the
+    /// wall every [`WASH_REPEAT`] m; v = 0 at its top, 1 at the pavement.
+    Wash,
     /// Streaks running down from sills and balcony slabs. Atlas of
     /// [`STREAK_VARIANTS`] columns (the last one is rust); one column spans
     /// the streak region, v runs from the sill down to the streak ends.
@@ -36,6 +40,7 @@ pub enum Decal {
 }
 
 pub const PLINTH_REPEAT: f32 = 4.0;
+pub const WASH_REPEAT: f32 = 8.0;
 pub const SOOT_REPEAT: f32 = 4.0;
 pub const GROUND_REPEAT: f32 = 4.0;
 pub const STREAK_VARIANTS: u32 = 4;
@@ -45,6 +50,7 @@ pub const LEVELS: [f32; 4] = [0.7, 0.8, 0.9, 1.0];
 /// Generated decal textures.
 pub struct DecalTextures {
     pub plinth: TextureData,
+    pub wash: TextureData,
     pub streaks: TextureData,
     pub soot: TextureData,
     pub ground: TextureData,
@@ -52,12 +58,13 @@ pub struct DecalTextures {
 
 impl DecalTextures {
     pub fn generate() -> Self {
-        DecalTextures { plinth: plinth(1024, 256, 7), streaks: streaks(512, 512, 19), soot: soot(1024, 256, 31), ground: ground(1024, 128, 43) }
+        DecalTextures { plinth: plinth(1024, 256, 7), wash: wash(1024, 512, 61), streaks: streaks(512, 512, 19), soot: soot(1024, 256, 31), ground: ground(1024, 128, 43) }
     }
 
     pub fn get(&self, d: Decal) -> &TextureData {
         match d {
             Decal::Plinth => &self.plinth,
+            Decal::Wash => &self.wash,
             Decal::Streaks => &self.streaks,
             Decal::Soot => &self.soot,
             Decal::Ground => &self.ground,
@@ -157,6 +164,25 @@ pub fn plinth(w: u32, h: u32, seed: u32) -> TextureData {
         }
     }
     to_texture("decal_plinth", w, h, &px, 2.0)
+}
+
+/// Facade wash, `w` px = [`WASH_REPEAT`] m: darker towards the street,
+/// mottled at the scale of a few metres, with vertical rain-wash streaks.
+pub fn wash(w: u32, h: u32, seed: u32) -> TextureData {
+    let mut px = vec![Px::default(); (w * h) as usize];
+    for y in 0..h {
+        let v = (y as f32 + 0.5) / h as f32;
+        for x in 0..w {
+            let u = (x as f32 + 0.5) / w as f32;
+            let p = &mut px[(y * w + x) as usize];
+            let grad = v.powf(1.3);
+            let mottle = 0.45 + 1.1 * fbm(u, v, 6, 4, seed);
+            let streak = fbm_aniso(u, v, 48, 2, 3, seed + 1);
+            p.over(SOOT, 0.5 * grad * mottle);
+            p.over(GRIME, 0.14 * smoothstep(0.55, 0.8, streak) * (0.3 + 0.7 * grad) * smoothstep(0.0, 0.25, v));
+        }
+    }
+    to_texture("decal_wash", w, h, &px, 1.0)
 }
 
 /// Dirt swept against the foot of the wall on the pavement: v = 0 at the
@@ -368,6 +394,15 @@ pub fn facade(parts: &mut Parts<Mat>, f: &FacadeWear) {
     let m = Mat::Decal(Decal::Plinth, level(&mut rng, lvl.max(1), 1));
     region(parts.get(m), f, 0.0, f.len, 0.0, band, f.ground_holes, base_out, |u, v| Vec2::new((u + uoff) / PLINTH_REPEAT, (band - v) / band));
 
+    // Facade wash over the lower floors (ground floor at the plinth's
+    // offset, so it also covers rustication).
+    let wtop = (rng.range(0.45, 0.85) * f.top).max(f.ground + 1.0).min(f.top);
+    let woff = rng.range(0.0, 80.0);
+    let m = Mat::Decal(Decal::Wash, level(&mut rng, lvl, 1));
+    let wuv = |u: f32, v: f32| Vec2::new((u + woff) / WASH_REPEAT, (wtop - v) / wtop);
+    region(parts.get(m), f, 0.0, f.len, 0.0, f.ground, f.ground_holes, base_out - 0.001, wuv);
+    region(parts.get(m), f, 0.0, f.len, f.ground, wtop, f.upper_holes, 0.005, wuv);
+
     // Dirt swept against the wall on the pavement (any street layout: it
     // follows the facade, not a grid).
     let gw = rng.range(0.35, 0.65);
@@ -510,6 +545,13 @@ mod tests {
     }
 
     #[test]
+    fn wash_darkens_the_lower_floors() {
+        let t = wash(128, 64, 3);
+        let row = |y: u32| (0..128).map(|x| alpha(&t, x, y) as u32).sum::<u32>();
+        assert!(row(62) > row(6) * 3 && row(62) > 128 * 40, "{} {}", row(62), row(6));
+    }
+
+    #[test]
     fn ground_dirt_hugs_the_wall() {
         let t = ground(256, 64, 3);
         let row = |y: u32| (0..256).map(|x| alpha(&t, x, y) as u32).sum::<u32>();
@@ -534,7 +576,7 @@ mod tests {
     fn dump_decals() {
         let d = DecalTextures::generate();
         let dir = std::env::var("DUMP_DIR").unwrap();
-        for (n, t) in [("plinth", &d.plinth), ("streaks", &d.streaks), ("soot", &d.soot), ("ground", &d.ground)] {
+        for (n, t) in [("plinth", &d.plinth), ("wash", &d.wash), ("streaks", &d.streaks), ("soot", &d.soot), ("ground", &d.ground)] {
             std::fs::write(format!("{dir}/{n}_{}x{}.rgba", t.width, t.height), &t.rgba8[..]).unwrap();
         }
     }

@@ -169,7 +169,9 @@ pub fn recipe(id: &str) -> Option<Recipe> {
         },
         "arch_brick_red" => Recipe { saturation: 0.9, mottle: 0.1, mottle_m: 2.0, hue: 0.03, rough_mul: 1.55, rough_var: 0.06, stains: 4, stain_dark: 0.25, patches: 2, patch_value: 0.08, patch_m: [0.4, 1.2], tile_tone: 0.08, joint_q: 0.15, cavity: 0.25, ..r },
         "arch_ashlar" => Recipe { saturation: 0.55, mottle: 0.08, mottle_m: 1.5, rough_mul: 1.45, rough_var: 0.05, stains: 3, stain_dark: 0.15, stain_m: [0.3, 1.0], tile_tone: 0.05, joint_q: 0.12, cavity: 0.3, ..r },
-        "arch_moulding" => Recipe { remix: true, rotate: true, saturation: 0.6, mean: Some(0.5), mottle: 0.06, mottle_m: 1.5, rough_var: 0.04, ..r },
+        // Stone and render mouldings collect dirt in every recess and stain
+        // where water runs off them.
+        "arch_moulding" => Recipe { remix: true, rotate: true, saturation: 0.6, mean: Some(0.48), mottle: 0.08, mottle_m: 1.5, rough_var: 0.05, streaks: 0.07, stains: 4, stain_dark: 0.2, stain_m: [0.3, 1.2], patches: 3, patch_value: 0.06, patch_m: [0.3, 1.0], cavity: 0.35, ..r },
         "arch_granite" => Recipe { remix: true, rotate: true, mean: Some(0.2), mottle: 0.06, mottle_m: 1.2, rough_mul: 0.82, rough_var: 0.06, stains: 2, stain_dark: 0.12, ..r },
         "arch_roof_clay" => Recipe { mottle: 0.12, mottle_m: 1.5, hue: 0.04, stains: 4, stain_dark: 0.22, rough_var: 0.04, ..r },
         "arch_roof_slate" | "pbr_roof" => Recipe { mottle: 0.08, mottle_m: 1.5, stains: 3, stain_dark: 0.12, rough_var: 0.05, ..r },
@@ -199,8 +201,8 @@ pub fn recipe(id: &str) -> Option<Recipe> {
         },
         // Paving: every tile, slab or cobble has its own tone (a few are
         // replacements), and the joints are packed with grime.
-        "street_sidewalk_hex" => Recipe { saturation: 0.4, mean: Some(0.24), mottle: 0.08, mottle_m: 1.2, stains: 5, stain_dark: 0.18, gum: 150, oil: 1, rough_var: 0.05, tile_tone: 0.07, joint_q: 0.1, cavity: 0.5, ..r },
-        "street_sidewalk_tiles" => Recipe { saturation: 0.6, mean: Some(0.18), mottle: 0.08, mottle_m: 1.5, stains: 5, stain_dark: 0.18, gum: 200, rough_add: -0.1, rough_var: 0.06, tile_tone: 0.07, joint_q: 0.06, cavity: 0.45, ..r },
+        "street_sidewalk_hex" => Recipe { saturation: 0.4, mean: Some(0.24), mottle: 0.1, mottle_m: 1.2, stains: 10, stain_dark: 0.24, stain_m: [0.3, 1.6], gum: 150, oil: 1, rough_var: 0.05, tile_tone: 0.07, joint_q: 0.1, cavity: 0.5, ..r },
+        "street_sidewalk_tiles" => Recipe { saturation: 0.6, mean: Some(0.18), mottle: 0.1, mottle_m: 1.5, stains: 9, stain_dark: 0.24, stain_m: [0.3, 1.6], gum: 200, rough_add: -0.1, rough_var: 0.06, tile_tone: 0.07, joint_q: 0.06, cavity: 0.45, ..r },
         "street_curb" => Recipe { mean: Some(0.2), mottle: 0.08, mottle_m: 0.8, stains: 2, stain_dark: 0.15, rough_var: 0.05, ..r },
         "street_cobble" => Recipe { mottle: 0.1, mottle_m: 1.2, stains: 4, stain_dark: 0.18, gum: 30, rough_var: 0.05, tile_tone: 0.1, joint_q: 0.2, cavity: 0.35, ..r },
         _ => r,
