@@ -23,7 +23,7 @@ name = "Compact SMG"
 category = "weapon"
 weight = 2.6
 weapon = "compact_smg"
-model = "kenney_blaster_kit/blaster-a.glb"
+model = "polyhaven_weapon_case/wooden_military_crate_1k.gltf"
 
 [[item]]
 id = "blaster_shotgun"
@@ -31,7 +31,7 @@ name = "Pump Shotgun"
 category = "weapon"
 weight = 3.4
 weapon = "pump_shotgun"
-model = "kenney_blaster_kit/blaster-h.glb"
+model = "polyhaven_weapon_case/wooden_military_crate_1k.gltf"
 
 [[item]]
 id = "carbine"
@@ -39,7 +39,7 @@ name = "Carbine Rifle"
 category = "weapon"
 weight = 3.2
 weapon = "carbine"
-model = "kenney_blaster_kit/blaster-d.glb"
+model = "polyhaven_weapon_case/wooden_military_crate_1k.gltf"
 
 [[item]]
 id = "fists"

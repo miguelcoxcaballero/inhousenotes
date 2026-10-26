@@ -23,8 +23,10 @@ pub struct Avatar {
     pub skeleton: Skeleton,
     pub anim: Option<AnimController>,
     pub scale: f32,
-    /// Node of the right hand/arm for weapon attachment.
+    /// Joint of the right hand/arm for weapon attachment.
     pub hand: Option<usize>,
+    /// Realistic skinned human (vs. rigid node animation).
+    pub human: Option<super::humans::HumanAvatar>,
 }
 
 pub struct Player {
@@ -44,6 +46,15 @@ impl Player {
 
 fn load_avatar(app: &mut App) -> Avatar {
     let paths = app.world.res::<Paths>().clone();
+    if super::humans::HumanLibrary::available(&paths) {
+        let human = app.world.scope::<super::humans::HumanLibrary, _>(|w, lib| {
+            lib.spawn(&paths, w.res_mut::<RenderScene>(), &forja_assets::makehuman::HumanSpec::casual_male())
+        });
+        if let Some(h) = human {
+            let hand = h.skeleton.find("wrist.R");
+            return Avatar { model: h.model, skeleton: h.skeleton.clone(), anim: None, scale: 1.0, hand, human: Some(h) };
+        }
+    }
     let path = paths.asset("kenney_blocky_characters/character-a.glb");
     let rs = app.world.res_mut::<RenderScene>();
     if let Some(model) = rs.load(&path) {
@@ -58,11 +69,11 @@ fn load_avatar(app: &mut App) -> Avatar {
             .ok();
         let height = scene.bounds().max.y.max(0.1);
         let hand = skeleton.find("arm-right");
-        return Avatar { model, skeleton, anim, scale: 1.8 / height, hand };
+        return Avatar { model, skeleton, anim, scale: 1.8 / height, hand, human: None };
     }
     let model = rs.add_model(Arc::new(box_scene(Vec3::new(0.3, 0.9, 0.2), Vec4::new(0.2, 0.5, 0.9, 1.0))));
     let scene = Arc::clone(&rs.models[model]);
-    Avatar { model, skeleton: Skeleton::from_nodes(&scene), anim: None, scale: 1.0, hand: None }
+    Avatar { model, skeleton: Skeleton::from_nodes(&scene), anim: None, scale: 1.0, hand: None, human: None }
 }
 
 impl Plugin for PlayerPlugin {
@@ -216,7 +227,11 @@ fn player_animate(w: &mut forja_core::World) {
     let player = w.res_mut::<Player>();
     let v = player.controller.velocity;
     let dead = player.health.is_dead();
-    if let Some(anim) = &mut player.avatar.anim {
+    let anim = match &mut player.avatar.human {
+        Some(h) => h.anim.as_mut(),
+        None => player.avatar.anim.as_mut(),
+    };
+    if let Some(anim) = anim {
         anim.set("speed", Vec3::new(v.x, 0.0, v.z).length());
         anim.set("in_vehicle", driving as u32 as f32);
         anim.set("aiming", (aim || armed) as u32 as f32 * if driving { 0.0 } else { 1.0 });
@@ -227,6 +242,8 @@ fn player_animate(w: &mut forja_core::World) {
 
 fn player_render(w: &mut forja_core::World) {
     let driving = w.res::<Driving>().0;
+    let aim_dir = w.res::<RenderScene>().camera.forward();
+    let aiming = w.res::<Intent>().aim && driving.is_none() && w.res::<super::combat::Combat>().equipped.is_some();
     let bike = driving.is_some_and(|i| w.res::<VehicleVisuals>().0[i].bike);
     let vehicle_rot = driving.and_then(|i| w.res::<PhysicsWorld>().body(w.res::<Vehicles>().0[i].body).map(|b| b.rotation()));
     let player = w.res_mut::<Player>();
@@ -234,7 +251,22 @@ fn player_render(w: &mut forja_core::World) {
     let rot = vehicle_rot.unwrap_or_else(|| Quat::from_rotation_y(player.facing));
     let transform = Mat4::from_rotation_translation(rot, feet) * Mat4::from_scale(Vec3::splat(player.avatar.scale));
     let mut item = RenderItem::new(player.avatar.model, transform);
-    if let Some(anim) = &player.avatar.anim {
+    if let Some(h) = &player.avatar.human
+        && let Some(anim) = &h.anim
+    {
+        let mut m = Vec::new();
+        h.skeleton.model_matrices(anim.pose(), &mut m);
+        if aiming {
+            super::humans::aim_arm(h, &mut m, rot.inverse() * aim_dir, 1.0);
+        }
+        if let Some(hand) = player.avatar.hand {
+            player.hand_world = transform * m[hand];
+        }
+        for (k, mm) in m.iter_mut().enumerate() {
+            *mm *= h.skeleton.inverse_bind[k];
+        }
+        item.joints = Some(Arc::new(m));
+    } else if let Some(anim) = &player.avatar.anim {
         let mut m = Vec::new();
         player.avatar.skeleton.model_matrices(anim.pose(), &mut m);
         if let Some(h) = player.avatar.hand {

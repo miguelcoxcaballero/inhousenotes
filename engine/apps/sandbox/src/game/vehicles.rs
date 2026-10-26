@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use forja_core::{App, Plugin, Stage};
-use forja_gameplay::{HandlingRegistry, bind_vehicle_model};
+use forja_gameplay::HandlingRegistry;
 use forja_math::{Iso, Mat4, Quat, Vec3, Vec4};
 use forja_physics::{PhysicsWorld, Vehicle, VehicleConfig, Vehicles};
 use forja_render::PointLight;
@@ -62,6 +62,22 @@ fn repaint(scene: &forja_assets::SceneData, color: [f32; 3]) -> forja_assets::Sc
     s
 }
 
+/// Photoreal cars downloaded from Sketchfab (`sf_car_*/scene.gltf`), if any.
+fn downloaded_cars(paths: &Paths) -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(&paths.downloaded)
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    (name.starts_with("sf_car_") && e.path().join("scene.gltf").exists()).then(|| format!("{name}/scene.gltf"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}
+
 fn spawn_car(app: &mut App, file: &str, handling: &str, scale: f32, color: [f32; 3], iso: Iso, reg: &HandlingRegistry) -> bool {
     let paths = app.world.res::<Paths>().clone();
     let path = paths.asset(file);
@@ -75,7 +91,9 @@ fn spawn_car(app: &mut App, file: &str, handling: &str, scale: f32, color: [f32;
         (base_model, Vec4::new(color[0], color[1], color[2], 1.0))
     };
     let handling_cfg = reg.get(handling).cloned().unwrap_or_else(VehicleConfig::sedan);
-    let bound = bind_vehicle_model(handling_cfg, &base, scale);
+    // Downloaded models: fix orientation and units automatically.
+    let (pre, scale) = if file.starts_with("sf_") { (forja_gameplay::auto_orient(&base), forja_gameplay::auto_scale(&base, 4.5)) } else { (Quat::IDENTITY, scale) };
+    let bound = forja_gameplay::bind_vehicle_model_oriented(handling_cfg, &base, scale, pre);
     let wheels = bound.wheel_nodes.iter().cloned().zip(bound.wheel_centers.iter().copied()).collect();
     let seat = Vec3::new(0.35, 0.1, -0.1);
     let physics = app.world.res_mut::<PhysicsWorld>();
@@ -154,8 +172,13 @@ impl Plugin for VehiclesPlugin {
             car_spawns.push(Iso::new(player.pos + Vec3::new(4.0, 0.5, 0.0), player.rot));
         }
         let mut spawned = 0;
+        // Prefer scanned/high-detail downloads, then the built-in list.
+        let paths = app.world.res::<Paths>().clone();
+        let mut lineup: Vec<(String, &str, f32, [f32; 3])> = downloaded_cars(&paths).into_iter().map(|f| (f, "sedan", 1.0, [1.0, 1.0, 1.0])).collect();
+        lineup.extend(CARS.iter().map(|(f, h, s, c)| (f.to_string(), *h, *s, *c)));
         for (i, iso) in car_spawns.iter().enumerate() {
-            let (file, handling, scale, color) = CARS[i % CARS.len()];
+            let (file, handling, scale, color) = lineup[i % lineup.len()].clone();
+            let file = file.as_str();
             let lifted = Iso::new(iso.pos + Vec3::Y * 0.8, iso.rot);
             if spawn_car(app, file, handling, scale, color, lifted, &reg) {
                 spawned += 1;

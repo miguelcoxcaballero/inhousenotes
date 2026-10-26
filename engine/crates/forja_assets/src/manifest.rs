@@ -31,6 +31,11 @@ pub struct AmbientCgSource {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SketchfabSource {
+    pub uid: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OsmSource {
     pub bbox: [f64; 4],
 }
@@ -86,6 +91,8 @@ pub struct AssetEntry {
     #[serde(default)]
     pub ambientcg: Option<AmbientCgSource>,
     #[serde(default)]
+    pub sketchfab: Option<SketchfabSource>,
+    #[serde(default)]
     pub osm: Option<OsmSource>,
     #[serde(default)]
     pub terrarium: Option<TerrariumSource>,
@@ -110,6 +117,7 @@ impl Manifest {
                 !a.files.is_empty(),
                 a.polyhaven.is_some(),
                 a.ambientcg.is_some(),
+                a.sketchfab.is_some(),
                 a.osm.is_some(),
                 a.terrarium.is_some(),
                 a.manual.is_some(),

@@ -161,6 +161,37 @@ fn fetch_polyhaven(ctx: &mut Ctx, entry: &AssetEntry) -> Result<usize> {
     Ok(count)
 }
 
+/// Sketchfab: verify the license with the public API, then download the
+/// glTF archive with the user's token (`SKETCHFAB_TOKEN`).
+fn fetch_sketchfab(ctx: &mut Ctx, entry: &AssetEntry, uid: &str) -> Result<usize> {
+    let token = std::env::var("SKETCHFAB_TOKEN").map_err(|_| {
+        format!("needs a Sketchfab API token: set SKETCHFAB_TOKEN (Sketchfab > Settings > Password & API) and rerun `forja_fetch fetch {}`", entry.id)
+    })?;
+    let info: serde_json::Value = serde_json::from_slice(&get(ctx, &format!("https://api.sketchfab.com/v3/models/{uid}"))?).map_err(|e| e.to_string())?;
+    let license = info["license"]["slug"].as_str().unwrap_or("");
+    if !["by", "cc0"].contains(&license) {
+        return Err(format!("{uid}: license '{license}' is not CC-BY or CC0; skipping"));
+    }
+    let author = info["user"]["displayName"].as_str().unwrap_or("?").to_string();
+    let resp = ctx
+        .agent
+        .get(&format!("https://api.sketchfab.com/v3/models/{uid}/download"))
+        .header("Authorization", &format!("Token {token}"))
+        .call()
+        .map_err(|e| format!("{uid}: download request failed ({e}); check the token"))?
+        .body_mut()
+        .read_to_vec()
+        .map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_slice(&resp).map_err(|e| e.to_string())?;
+    let url = json["gltf"]["url"].as_str().ok_or(format!("{uid}: no glTF download offered"))?;
+    let bytes = get(ctx, url)?;
+    let n = extract_zip(ctx, entry, &bytes)?;
+    // Credit as required by CC-BY.
+    let credit = format!("{} by {} ({}), {}\n", info["name"].as_str().unwrap_or(uid), author, info["viewerUrl"].as_str().unwrap_or(""), info["license"]["label"].as_str().unwrap_or(""));
+    store(ctx, entry, "CREDIT.txt", credit.as_bytes())?;
+    Ok(n + 1)
+}
+
 fn fetch_entry(ctx: &mut Ctx, entry: &AssetEntry) -> Result<usize> {
     if let Some(url) = &entry.zip {
         let bytes = match get(ctx, url) {
@@ -183,6 +214,9 @@ fn fetch_entry(ctx: &mut Ctx, entry: &AssetEntry) -> Result<usize> {
     }
     if entry.polyhaven.is_some() {
         return fetch_polyhaven(ctx, entry);
+    }
+    if let Some(sf) = &entry.sketchfab {
+        return fetch_sketchfab(ctx, entry, &sf.uid);
     }
     if let Some(acg) = &entry.ambientcg {
         let url = format!("https://ambientcg.com/get?file={}_{}.zip", acg.id, acg.res);
@@ -305,6 +339,10 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
             for a in selected {
+                if a.sketchfab.is_some() && all && std::env::var("SKETCHFAB_TOKEN").is_err() {
+                    println!("- {}: Sketchfab (set SKETCHFAB_TOKEN to download)", a.id);
+                    continue;
+                }
                 if a.manual.is_some() && all {
                     let m = a.manual.as_ref().expect("checked");
                     println!("- {}: manual download from {}", a.id, m.url);

@@ -21,6 +21,8 @@ pub struct CameraRig {
     pub idle: f32,
     /// Overrides everything (screenshots, cinematics).
     pub fixed: Option<(Vec3, Vec3)>,
+    /// Weapon kick (yaw, pitch) that springs back to zero.
+    pub recoil: (f32, f32),
     smoothed: Option<Vec3>,
 }
 
@@ -35,7 +37,7 @@ impl Plugin for CameraPlugin {
 
     fn build(&self, app: &mut App) {
         let facing = app.world.res::<Player>().facing;
-        app.insert_resource(CameraRig { yaw: facing + std::f32::consts::PI, pitch: -0.18, distance: 4.2, fov: 62.0, idle: 0.0, fixed: None, smoothed: None });
+        app.insert_resource(CameraRig { yaw: facing + std::f32::consts::PI, pitch: -0.18, distance: 4.2, fov: 62.0, idle: 0.0, fixed: None, recoil: (0.0, 0.0), smoothed: None });
         app.add_system(Stage::PostUpdate, "camera", camera_system);
     }
 }
@@ -79,18 +81,25 @@ fn camera_system(w: &mut forja_core::World) {
         rig.pitch += (-0.22 - rig.pitch) * smoothing(1.5, dt);
     }
     let aiming = intent.aim && driving.is_none();
-    let want_dist = if driving.is_some() { if bike { 4.6 } else { 7.0 } } else if aiming { 1.9 } else { 4.2 };
+    // Recoil decays with a critically damped feel.
+    let k = smoothing(9.0, dt);
+    rig.recoil.0 -= rig.recoil.0 * k;
+    rig.recoil.1 -= rig.recoil.1 * k;
+    let want_dist = if driving.is_some() { if bike { 4.6 } else { 7.0 } } else if aiming { 1.6 } else { 4.2 };
     rig.distance += (want_dist - rig.distance) * smoothing(8.0, dt);
     let want_fov = if aiming { 45.0 } else { 62.0 + (speed * 0.35).min(14.0) };
     rig.fov += (want_fov - rig.fov) * smoothing(6.0, dt);
-    let rot = Quat::from_euler(EulerRot::YXZ, rig.yaw, rig.pitch, 0.0);
-    let shoulder = if driving.is_some() { 0.0 } else if aiming { 0.55 } else { 0.35 };
+    let rot = Quat::from_euler(EulerRot::YXZ, rig.yaw + rig.recoil.0, (rig.pitch - rig.recoil.1).clamp(-1.3, 0.75), 0.0);
+    let shoulder = if driving.is_some() { 0.0 } else if aiming { 0.62 } else { 0.35 };
+    // Aim from head height so the shoulder stays in frame.
+    let target = if aiming { target + Vec3::Y * 0.22 } else { target };
     let pivot = match rig.smoothed {
         Some(s) if driving.is_some() => s + (target - s) * smoothing(18.0, dt),
         _ => target,
     };
     rig.smoothed = Some(pivot);
-    let desired = pivot + rot * Vec3::new(shoulder, 0.25, rig.distance);
+    let lift = if aiming { 0.05 } else { 0.25 };
+    let desired = pivot + rot * Vec3::new(shoulder, lift, rig.distance);
     let (fixed, fov) = (rig.fixed, rig.fov);
     // Pull in against walls.
     let dir = desired - pivot;

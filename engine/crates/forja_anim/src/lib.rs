@@ -12,6 +12,7 @@
 //!   spaces, defined in TOML so designers can change it without code.
 
 pub mod controller;
+pub mod retarget;
 
 use std::collections::HashMap;
 

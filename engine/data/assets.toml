@@ -393,6 +393,213 @@ homepage = "https://polyhaven.com/a/modular_street_seating"
 polyhaven = { id = "modular_street_seating", res = "1k", format = "gltf" }
 
 [[asset]]
+id = "polyhaven_wooden_crate"
+name = "Wooden crate 02 (scanned)"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/wooden_crate_02"
+polyhaven = { id = "wooden_crate_02", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "polyhaven_weapon_case"
+name = "Wooden military crate (weapon pickups)"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/wooden_military_crate"
+polyhaven = { id = "wooden_military_crate", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "polyhaven_ammo_box"
+name = "Ammo box"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/ammo_box"
+polyhaven = { id = "ammo_box", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "makehuman_base"
+name = "MakeHuman base body, default skeleton (163 bones) and weights"
+kind = "character"
+license = "CC0-1.0"
+author = "Data Collection AB, Joel Palmius, Jonas Hauquier (MakeHuman)"
+homepage = "https://github.com/makehumancommunity/makehuman"
+files = [
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj", path = "base.obj" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default.mhskel", path = "default.mhskel" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default_weights.mhw", path = "default_weights.mhw" },
+]
+
+[[asset]]
+id = "makehuman_assets"
+name = "MakeHuman CC0 system assets: skins, clothes, shoes, hair, eyes, brows"
+kind = "character"
+license = "CC0-1.0"
+author = "Data Collection AB, Joel Palmius, Jonas Hauquier (MakeHuman)"
+homepage = "https://static.makehumancommunity.org/assets/assetpacks.html"
+zip = "https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip"
+include = [
+    "skins/young_caucasian_male/", "skins/young_caucasian_female/", "skins/young_african_male/", "skins/middleage_asian_female/",
+    "clothes/male_casualsuit04/", "clothes/male_casualsuit02/", "clothes/female_casualsuit01/", "clothes/male_worksuit01/",
+    "clothes/shoes01/", "clothes/shoes02/", "clothes/shoes06/",
+    "hair/short02/", "hair/short04/", "hair/bob02/", "hair/ponytail01/",
+    "eyebrows/eyebrow001/", "eyebrows/eyebrow010/", "eyelashes/eyelashes01/",
+    "eyes/high-poly/", "eyes/materials/",
+]
+
+# ------------------------------------------- photoreal assets (Sketchfab)
+# Scanned people and high-detail vehicles under CC-BY. Downloading needs your
+# own API token: SKETCHFAB_TOKEN=... cargo run -p forja_fetch -- fetch --all
+# The license is re-checked through the public API before each download and
+# the credit is written next to the files (CREDIT.txt, ATTRIBUTION.md).
+
+[[asset]]
+id = "sf_car_porsche_930"
+name = "FREE 1975 Porsche 911 (930) Turbo"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "Lionsharp Studios"
+homepage = "https://sketchfab.com/3d-models/8568d9d14a994b9cae59499f0dbed21e"
+sketchfab = { uid = "8568d9d14a994b9cae59499f0dbed21e" }
+
+[[asset]]
+id = "sf_car_bmw_e30"
+name = "[FREE] BMW M3 E30"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "TinoD2"
+homepage = "https://sketchfab.com/3d-models/ac3c7013434e403e8faff87948caf422"
+sketchfab = { uid = "ac3c7013434e403e8faff87948caf422" }
+
+[[asset]]
+id = "sf_car_porsche_rwb"
+name = "Porsche 911 RAUH-Welt [FREE]"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "autoNgraphic"
+homepage = "https://sketchfab.com/3d-models/0e1f5e1c0ddc4c3f88b8484461146a79"
+sketchfab = { uid = "0e1f5e1c0ddc4c3f88b8484461146a79" }
+
+[[asset]]
+id = "sf_car_volvo_pv654"
+name = "Volvo PV654 Sedan Free v2"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "robinmikart"
+homepage = "https://sketchfab.com/3d-models/65f8f21ef0824e62b9fe36d17ebd8b99"
+sketchfab = { uid = "65f8f21ef0824e62b9fe36d17ebd8b99" }
+
+[[asset]]
+id = "sf_car_crown_vic_taxi"
+name = "2001 Crown Victoria Taxi"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "haoliu95"
+homepage = "https://sketchfab.com/3d-models/2429a825ff1646568e8e6e1453f9c501"
+sketchfab = { uid = "2429a825ff1646568e8e6e1453f9c501" }
+
+[[asset]]
+id = "sf_car_ford_police"
+name = "Ford Police Car"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "Blend_GUY"
+homepage = "https://sketchfab.com/3d-models/7dad4c43b222404daead1b9797b8d472"
+sketchfab = { uid = "7dad4c43b222404daead1b9797b8d472" }
+
+[[asset]]
+id = "sf_car_vw_polo"
+name = "2016 Volkswagen Polo"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "BHP3D"
+homepage = "https://sketchfab.com/3d-models/bab77902c638427bb85e68b6762a481f"
+sketchfab = { uid = "bab77902c638427bb85e68b6762a481f" }
+
+[[asset]]
+id = "sf_car_ford_everest"
+name = "2018 Ford Everest"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "BHP3D"
+homepage = "https://sketchfab.com/3d-models/a6681649d203483c95239c4b73157697"
+sketchfab = { uid = "a6681649d203483c95239c4b73157697" }
+
+[[asset]]
+id = "sf_bike_yamaha_r1"
+name = "Yamaha R1"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "ejsnowy"
+homepage = "https://sketchfab.com/3d-models/7b3343ad0c0f4cbe94238c734e1b731a"
+sketchfab = { uid = "7b3343ad0c0f4cbe94238c734e1b731a" }
+
+[[asset]]
+id = "sf_bike_aprilia_rs660"
+name = "Aprilia RS660"
+kind = "vehicle"
+license = "CC-BY-4.0"
+author = "ejsnowy"
+homepage = "https://sketchfab.com/3d-models/a4f255b6d53e46769f72f995a68bbc25"
+sketchfab = { uid = "a4f255b6d53e46769f72f995a68bbc25" }
+
+[[asset]]
+id = "sf_human_eric"
+name = "Eric Rigged 001 - scanned business man (rigged)"
+kind = "character"
+license = "CC-BY-4.0"
+author = "Renderpeople"
+homepage = "https://sketchfab.com/3d-models/a46bc9f67aaa415bb4f3241eef900e7f"
+sketchfab = { uid = "a46bc9f67aaa415bb4f3241eef900e7f" }
+
+[[asset]]
+id = "sf_human_nathan"
+name = "Nathan Animated 003 - scanned walking man"
+kind = "character"
+license = "CC-BY-4.0"
+author = "Renderpeople"
+homepage = "https://sketchfab.com/3d-models/143a2b1ea5eb4385ae90a73657aca3bc"
+sketchfab = { uid = "143a2b1ea5eb4385ae90a73657aca3bc" }
+
+[[asset]]
+id = "sf_human_manuel"
+name = "Manuel Animated 001 - scanned man"
+kind = "character"
+license = "CC-BY-4.0"
+author = "Renderpeople"
+homepage = "https://sketchfab.com/3d-models/e65e0fef4e0743868c8d5bff36d61116"
+sketchfab = { uid = "e65e0fef4e0743868c8d5bff36d61116" }
+
+[[asset]]
+id = "sf_human_alina"
+name = "Alina Ip, realistic woman (animated)"
+kind = "character"
+license = "CC-BY-4.0"
+author = "jungle_jim"
+homepage = "https://sketchfab.com/3d-models/600d4d4aa71c4181b2567a3605ce8c57"
+sketchfab = { uid = "600d4d4aa71c4181b2567a3605ce8c57" }
+
+[[asset]]
+id = "sf_gun_glock19"
+name = "G19 Pistol, game ready"
+kind = "weapon"
+license = "CC-BY-4.0"
+author = "Rotuma"
+homepage = "https://sketchfab.com/3d-models/e3412d9803f04bdaa97ad9b68ed665d7"
+sketchfab = { uid = "e3412d9803f04bdaa97ad9b68ed665d7" }
+
+[[asset]]
+id = "sf_gun_colt1911"
+name = "Modified Colt 1911 Pistol"
+kind = "weapon"
+license = "CC-BY-4.0"
+author = "OptiCube"
+homepage = "https://sketchfab.com/3d-models/320a8c76e88140e5ad8681e421b2f3d8"
+sketchfab = { uid = "320a8c76e88140e5ad8681e421b2f3d8" }
+
+[[asset]]
 id = "sketchfab_models"
 name = "Photoreal characters/cars from Sketchfab (needs your token)"
 kind = "character"

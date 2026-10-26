@@ -960,6 +960,7 @@ dependencies = [
  "log",
  "meshopt",
  "serde",
+ "serde_json",
  "toml",
 ]
 

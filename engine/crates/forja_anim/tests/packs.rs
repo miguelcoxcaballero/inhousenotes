@@ -65,3 +65,23 @@ fn every_blocky_character_shares_the_rig() {
         assert!(AnimController::new(&def, &skel, clips).is_ok(), "character-{}", c as char);
     }
 }
+
+#[test]
+fn auto_humanoid_map_matches_robot_and_makehuman() {
+    let dl = engine().join("assets/downloaded");
+    let robot = dl.join("quaternius_robot_expressive/RobotExpressive.glb");
+    if !robot.exists() || !dl.join("makehuman_base/base.obj").exists() {
+        return;
+    }
+    let r = forja_assets::load_gltf(&robot).unwrap();
+    let src = Skeleton::from_scene(&r, 0).unwrap();
+    let h = forja_assets::makehuman::build_human(&dl.join("makehuman_base"), &dl.join("makehuman_assets"), &forja_assets::makehuman::HumanSpec::casual_male()).unwrap();
+    let tgt = Skeleton::from_scene(&h, 0).unwrap();
+    let roles_src = forja_anim::retarget::humanoid_roles(&src);
+    let roles_tgt = forja_anim::retarget::humanoid_roles(&tgt);
+    eprintln!("robot roles {}: {:?}", roles_src.len(), roles_src.iter().map(|(k, v)| (format!("{k:?}"), src.joints[*v].name.clone())).collect::<Vec<_>>());
+    eprintln!("mh roles {}: {:?}", roles_tgt.len(), roles_tgt.iter().map(|(k, v)| (format!("{k:?}"), tgt.joints[*v].name.clone())).collect::<Vec<_>>());
+    let map = forja_anim::retarget::RetargetMap::auto(&src, &tgt);
+    assert!(map.rules.len() >= 18, "only {} rules", map.rules.len());
+    assert_eq!(map.root.1, "root");
+}
