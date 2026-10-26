@@ -754,9 +754,9 @@ struct RunDecor {
     reformed: Vec<[bool; 2]>,
     alu: Rgb,
     mirador_bay: Option<usize>,
-    /// Downpipe at the run end at `u` = 0 of the last edge (1) or `u` = len
-    /// of the first edge (2), or none (0).
-    pipe: u8,
+    /// A downpipe at the run's first vertex (in ring order). Every house in
+    /// a row puts it on the same side, so two never pair up on a party wall.
+    pipe: bool,
 }
 
 impl RunDecor {
@@ -775,7 +775,7 @@ impl RunDecor {
         let alu = *rng.pick(&[hex(0xf1f1ee), hex(0xf1f1ee), hex(0xb9bcbe), hex(0x6b5442)]);
         let mirador_bay = if c.mirador && n >= 3 { Some(n / 2) } else if run.corner && c.mirador && n >= 1 { Some(0) } else { None };
         let gutter = matches!(c.roof.as_str(), "clay" | "mansard");
-        let pipe = if run.len > 4.0 && (gutter || rng.chance(style.clutter * 0.5)) { 1 + rng.below(2) as u8 } else { 0 };
+        let pipe = run.len > 4.0 && (gutter || rng.chance(style.clutter * 0.5));
         RunDecor { span, terrace, reformed, alu, mirador_bay, pipe }
     }
 }
@@ -1331,11 +1331,7 @@ pub fn medianeras(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>
 fn services(parts: &mut Parts<Mat>, e: &StreetEdge, c: &Choices, style: &Style, rng: &mut Rng, top: f32, portal_u: Option<f32>) {
     let f = &e.f;
     let ends = e.run_ends();
-    let pipe = match e.decor.pipe {
-        1 if ends[0] => Some(0.16),
-        2 if ends[1] => Some(f.len - 0.16),
-        _ => None,
-    };
+    let pipe = (e.decor.pipe && ends[1]).then_some(f.len - 0.16);
     if let Some(u) = pipe.filter(|_| f.len > 0.4) {
         let (r, o) = (0.055, 0.09);
         let p = |y: f32| f.p(u, y, o);
