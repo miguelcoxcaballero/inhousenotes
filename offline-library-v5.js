@@ -321,7 +321,9 @@
         try {root.InhouseBackground?.schedule?.();}catch(_){}
         try {const registration=await navigator.serviceWorker?.getRegistration();await registration?.sync?.register('inhouse-outbox');}catch(_){}
     }
+    let nativeEditingResumeTimer = null;
     function pauseForEditing() {
+        clearTimeout(nativeEditingResumeTimer); nativeEditingResumeTimer = null;
         // The hidden editor must yield with its foreground owner as well.
         try { syncFrame?.contentWindow?.interruptDocumentBackgroundWork?.(); } catch (_) { }
         // Android also has an independent headless sync WebView. Stop its
@@ -332,7 +334,15 @@
         }
     }
     function resumeAfterEditing() {
-        if (!nativePausedForEditing || root.hasHotUserInteraction?.(1200)) return;
+        if (!nativePausedForEditing) return;
+        if (root.hasHotUserInteraction?.(1200)) {
+            if (!nativeEditingResumeTimer) nativeEditingResumeTimer = setTimeout(() => {
+                nativeEditingResumeTimer = null;
+                resumeAfterEditing();
+            }, 1200);
+            return;
+        }
+        clearTimeout(nativeEditingResumeTimer); nativeEditingResumeTimer = null;
         nativePausedForEditing = false;
         void scheduleBackground();
     }

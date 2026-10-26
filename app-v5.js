@@ -1898,6 +1898,7 @@
             }
         }, {capture:true});
         window.addEventListener('blur', () => {
+            releaseViewportGesture();
             // Commit the partial pen before losing the capture/foreground.
             for (const [canvas, pointerId] of activeDrawingPointers) {
                 canvas.dispatchEvent(new PointerEvent('pointercancel', { pointerId, pointerType: 'pen' }));
@@ -3435,7 +3436,7 @@
         }
 
         function getVisiblePageRange(bufferOverride = null) {
-            const rect = canvasViewport.getBoundingClientRect();
+            const rect = viewportGestureGeometry?.rect || canvasViewport.getBoundingClientRect();
             if (!rect.height) return { start: 0, end: -1 };
             const viewTop = (-state.panY) / state.zoom;
             const viewBottom = (rect.height - state.panY) / state.zoom;
@@ -15633,6 +15634,7 @@
                     try {
                         isPenWriting = false;
                         isGestureInteracting = false;
+                        releaseViewportGesture();
                         penWritingIdleDeadline = 0;
                         clearTimeout(penWritingIdleTimer); penWritingIdleTimer = null;
                         clearTimeout(gestureInteractionIdleTimer); gestureInteractionIdleTimer = null;
@@ -16374,6 +16376,7 @@
         }
 
         function invalidatePageBoundsCache() {
+            viewportGestureGeometry = null;
             cachedPageBounds = null;
             cachedPageBoundsOwner = null;
             cachedPageBoundsCount = -1;
@@ -16406,8 +16409,27 @@
             }
         }
 
+        function releaseViewportGesture() {
+            state.activePointers.clear();
+            state.isPanning = false;
+            if (state.inertiaFrame) cancelAnimationFrame(state.inertiaFrame);
+            state.inertiaFrame = null;
+            state.panVelocityX = state.panVelocityY = 0;
+            if (viewportTransformRaf) cancelAnimationFrame(viewportTransformRaf);
+            viewportTransformRaf = null;
+            viewportGestureGeometry = null;
+            canvasViewport.style.cursor = '';
+        }
+
+        function getViewportGestureGeometry() {
+            if (!viewportGestureGeometry) {
+                viewportGestureGeometry = {rect:canvasViewport.getBoundingClientRect(), bounds:getPageBounds()};
+            }
+            return viewportGestureGeometry;
+        }
+
         function getBottomLimit() {
-            const viewportHeight = canvasViewport.getBoundingClientRect().height;
+            const viewportHeight = (viewportGestureGeometry?.rect || canvasViewport.getBoundingClientRect()).height;
             const totalHeight = getContentHeight() * state.zoom;
             const minPanY = viewportHeight - OVERSCROLL_MARGIN - totalHeight;
             return { minPanY };
@@ -16429,7 +16451,7 @@
             addPageIndicator.style.left = '50%';
             addPageIndicator.style.top = (bottom + 20) + 'px';
             addPageIndicator.style.transform = 'translateX(-50%)';
-            const viewportHeight = canvasViewport.getBoundingClientRect().height;
+            const viewportHeight = (viewportGestureGeometry?.rect || canvasViewport.getBoundingClientRect()).height;
             const bottomInView = state.panY + getContentHeight() * state.zoom;
             const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
             const progress = Math.min(1, state.overscrollY / OVERSCROLL_THRESHOLD);
@@ -16571,7 +16593,7 @@
 
             if (dy < 0 && nextPanY < minPanY) {
                 const excess = minPanY - nextPanY;
-                const viewportHeight = canvasViewport.getBoundingClientRect().height;
+                const viewportHeight = (viewportGestureGeometry?.rect || canvasViewport.getBoundingClientRect()).height;
                 const requiredOverscroll = Math.max(0, (viewportHeight * (1 - CREATE_PAGE_MIN_BOTTOM_RATIO) - OVERSCROLL_MARGIN) / OVERSCROLL_FRICTION);
                 const maxOverscroll = Math.max(OVERSCROLL_THRESHOLD * 3, requiredOverscroll * 1.1);
                 state.overscrollY = Math.min(maxOverscroll, state.overscrollY + excess);
@@ -16607,7 +16629,7 @@
                 if (remaining > 0) {
                     state.panY += remaining;
                 }
-                const viewportHeight = canvasViewport.getBoundingClientRect().height;
+                const viewportHeight = (viewportGestureGeometry?.rect || canvasViewport.getBoundingClientRect()).height;
                 const bottomInView = state.panY + getContentHeight() * state.zoom;
                 const canCreate = bottomInView < viewportHeight * CREATE_PAGE_MIN_BOTTOM_RATIO;
                 state.pendingPageCreate = state.overscrollY >= OVERSCROLL_THRESHOLD && canCreate;
@@ -16666,6 +16688,8 @@
 
         function startInertia() {
             if (state.inertiaFrame) return;
+            if (viewportTransformRaf) cancelAnimationFrame(viewportTransformRaf);
+            viewportTransformRaf = null;
             let lastTime = performance.now();
             state.inertiaFrame = requestAnimationFrame(function step(time) {
                 const dt = Math.max(1, time - lastTime);
@@ -16695,7 +16719,10 @@
                     applyVerticalPan(dy);
                 }
 
-                scheduleViewportTransformRender();
+                // Already inside the display frame: do not add another frame
+                // of latency by scheduling a second RAF for this transform.
+                clampPanToVisible(viewportGestureGeometry);
+                applyViewportTransformStyle();
                 state.inertiaFrame = requestAnimationFrame(step);
             });
         }
@@ -16941,9 +16968,10 @@
             // If processing is running, prioritize fluidity and interrupt immediately.
             interruptProcessingForUserInput();
             noteInteractionActivity();
+            const geometry = getViewportGestureGeometry();
             const deltaScale = e.deltaMode === 1
                 ? 16
-                : (e.deltaMode === 2 ? Math.max(240, canvasViewport.getBoundingClientRect().height * 0.85) : 1);
+                : (e.deltaMode === 2 ? Math.max(240, geometry.rect.height * 0.85) : 1);
             const normDeltaX = e.deltaX * deltaScale;
             const normDeltaY = e.deltaY * deltaScale;
 
@@ -16953,7 +16981,7 @@
                 const newZoom = Math.min(Math.max(0.5, state.zoom * zoomFactor), 3);
 
                 // Zoom centered on mouse position
-                const rect = canvasViewport.getBoundingClientRect();
+                const rect = geometry.rect;
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
 
@@ -17018,10 +17046,7 @@
             if (e.pointerType === 'touch' && isPenWriting) return;
             noteInteractionActivity();
             stopInertia();
-            if (!viewportGestureGeometry) {
-                const rect = canvasViewport.getBoundingClientRect();
-                viewportGestureGeometry = { rect, bounds: getPageBounds() };
-            }
+            getViewportGestureGeometry();
             if (state.currentTool === 'lasso' && state.selection.pageIndex !== null) {
                 const selectionBox = document.querySelector(`.selection-box[data-page="${state.selection.pageIndex}"]`);
                 if (selectionBox && !selectionBox.classList.contains('hidden')) {
@@ -17325,7 +17350,7 @@
                 applyViewportTransformStyle();
                 // Canvas allocation, page discovery and PDF work are not
                 // gesture-frame work. Reconcile once the gesture settles.
-                if (!state.activePointers.size && !state.inertiaFrame) {
+                if (!isViewportInteracting()) {
                     scheduleCanvasResolutionSync();
                     scheduleVisiblePageUpdate();
                 }
@@ -17339,7 +17364,7 @@
             }
             clampPanToVisible(viewportGestureGeometry);
             applyViewportTransformStyle();
-            if (viewportGestureGeometry && !state.activePointers.size) {
+            if (isViewportInteracting() || viewportGestureGeometry) {
                 scheduleCanvasResolutionSync();
             } else {
                 scheduleCanvasResolutionSync({ immediate: true });
@@ -23114,13 +23139,13 @@
         }
         async function processScrollPagePreview() {
             if(scrollPreviewBusy||!scrollPreviewQueue.size)return;
-            if(isPenWriting){scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},80);return;}
+            if(isViewportInteracting()){scrollPreviewTimer=setTimeout(()=>{scrollPreviewTimer=null;void processScrollPagePreview();},240);return;}
             let pageIndex=-1,priority=Infinity;
             for(const [index,value] of scrollPreviewQueue)if(value<priority){pageIndex=index;priority=value;}
             scrollPreviewQueue.delete(pageIndex);scrollPreviewBusy=true;
             const page=state.pages[pageIndex],epoch=scrollPreviewEpoch,session=getDocumentSessionToken(),structure=pageStructureVersion;
             const generation=pageDirtyGeneration.get(pageIndex)||0;
-            const valid=()=>epoch===scrollPreviewEpoch&&isDocumentSessionTokenValid(session)&&structure===pageStructureVersion&&state.pages[pageIndex]===page&&(pageDirtyGeneration.get(pageIndex)||0)===generation;
+            const valid=()=>!isViewportInteracting()&&epoch===scrollPreviewEpoch&&isDocumentSessionTokenValid(session)&&structure===pageStructureVersion&&state.pages[pageIndex]===page&&(pageDirtyGeneration.get(pageIndex)||0)===generation;
             let canvas=null;
             try {
                 if(!page||page.preview&&!page.scrollPreviewDirty&&!(page.backgroundSource==='pdf'&&!page.scrollPreviewVerified))return;
@@ -23152,7 +23177,7 @@
                 let started=performance.now();
                 for(const stroke of data.strokes||[]){
                     if(stroke.tool!=='eraser-stroke'&&stroke.points?.length>=(stroke.tool==='highlighter'?1:2))drawSmoothStroke(ctx,stroke);
-                    if(performance.now()-started>3){await new Promise(resolve=>setTimeout(resolve,0));if(!valid()||isPenWriting)return;started=performance.now();}
+                    if(performance.now()-started>3){await new Promise(resolve=>setTimeout(resolve,0));if(!valid())return;started=performance.now();}
                 }
                 if(!valid())return;
                 page.preview=canvas.toDataURL('image/jpeg',.65);page.scrollPreviewDirty=false;page.scrollPreviewVerified=true;
@@ -23166,7 +23191,7 @@
                     request.onsuccess=()=>{try {const record=request.result;if(valid()&&record&&(!Number.isFinite(Number(record.__sessionId))||Number(record.__sessionId)===session))store.put({...record,preview:page.preview},pageIndex);}catch(_) {}};
                 }catch(_) { /* The in-memory preview remains usable if storage closed. */ }
             }catch(error){if(page&&error?.name!=='RenderingCancelledException')scrollPreviewFailures.set(page,Date.now());}
-            finally {if(canvas){canvas.width=0;canvas.height=0;}scrollPreviewBusy=false;scheduleScrollPagePreviews();}
+            finally {if(isViewportInteracting()&&epoch===scrollPreviewEpoch&&state.pages[pageIndex]===page)scrollPreviewQueue.set(pageIndex,priority);if(canvas){canvas.width=0;canvas.height=0;}scrollPreviewBusy=false;scheduleScrollPagePreviews();}
         }
 
         function renderPagePreview(pageIndex) {
@@ -24437,6 +24462,8 @@
             return !!(
                 isPenWriting
                 || isGestureInteracting
+                || state.isPanning
+                || state.activePointers.size > 0
                 || pageStructureDragInProgress
                 || state.inertiaFrame
                 || state.selectionTransform
@@ -24482,6 +24509,7 @@
         }
 
         function beginDocumentSession(options = {}) {
+            releaseViewportGesture();
             if (_eraserRedrawRaf) cancelAnimationFrame(_eraserRedrawRaf);
             _eraserRedrawRaf = null;
             _eraserRedrawPending.clear();
@@ -24648,7 +24676,7 @@
             if (pdfRenderActive || activePdfBackgroundRenderTask || pdfRenderQueue.length > 0 || pdfRenderResumeHandle) {
                 pausePdfRenderingDuringInteraction();
             }
-            if (!hasBlockingProcessingInFlight()) return;
+            if (!hasBlockingProcessingInFlight() && (!editorView || editorView.classList.contains('hidden'))) return;
             noteInteractionActivity();
         }
 
@@ -24675,8 +24703,8 @@
                 abortPrewarm();
                 pausedProcessing = true;
             }
-            // Pan/hover gestures pause cooperatively. Actual writing contacts
-            // also interrupt workers/uploads via interruptDocumentBackgroundWork.
+            // Gesture start interrupts workers/uploads once; subsequent input
+            // only extends the quiet deadline and keeps local work queued.
             pausePdfRenderingDuringInteraction();
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
@@ -24752,33 +24780,42 @@
 
         function noteInteractionActivity() {
             noteRecentUserActivity();
-            if (!isGestureInteracting) {
-                isGestureInteracting = true;
-                pauseSavesDuringInteraction();
-            }
             refreshInteractionIdleTimer();
         }
 
         function refreshInteractionIdleTimer() {
-            const wasInteracting = isGestureInteracting;
-            isGestureInteracting = true;
-            if (!wasInteracting) pauseSavesDuringInteraction();
-            const now = performance.now();
-            // Avoid clearing and recreating a timer for every stylus/touch
-            // sample. Refresh near its deadline; this keeps saves paused
-            // during a gesture while eliminating high-frequency timer churn.
-            if (gestureInteractionIdleTimer && gestureInteractionIdleDeadline - now > 35) return;
-            if (gestureInteractionIdleTimer) {
-                clearTimeout(gestureInteractionIdleTimer);
+            if (forceFlushingForExit) return;
+            if (!isGestureInteracting) {
+                isGestureInteracting = true;
+                if (editorView && !editorView.classList.contains('hidden')) {
+                    interruptDocumentBackgroundWork();
+                    window.InhouseOfflineLibrary?.pauseForEditing?.();
+                    try { activeScrollPreviewTask?.cancel(); } catch (_) {}
+                }
+                pauseSavesDuringInteraction();
             }
-            gestureInteractionIdleDeadline = now + INTERACTION_IDLE_MS;
-            gestureInteractionIdleTimer = setTimeout(() => {
+            // Update one deadline, not a timer per hardware event. A held
+            // pointer or inertial scroll must never be mistaken for idle.
+            gestureInteractionIdleDeadline = performance.now() + INTERACTION_IDLE_MS;
+            if (gestureInteractionIdleTimer) return;
+            const settle = () => {
+                const remaining = gestureInteractionIdleDeadline - performance.now();
+                if (remaining > 0 || state.activePointers.size || state.isPanning
+                    || state.inertiaFrame || state.selectionTransform || pageStructureDragInProgress) {
+                    gestureInteractionIdleTimer = setTimeout(settle, Math.max(INTERACTION_IDLE_MS, remaining));
+                    return;
+                }
                 isGestureInteracting = false;
                 gestureInteractionIdleDeadline = 0;
                 gestureInteractionIdleTimer = null;
+                viewportGestureGeometry = null;
                 flushDeferredSavesAfterInteraction();
-                scheduleVisiblePageUpdate(true);
-            }, INTERACTION_IDLE_MS);
+                scheduleCanvasResolutionSync();
+                scheduleVisiblePageUpdate();
+                scheduleScrollPagePreviews();
+                scheduleViewSave();
+            };
+            gestureInteractionIdleTimer = setTimeout(settle, INTERACTION_IDLE_MS);
         }
 
         function showPendingSaveStatus() {
@@ -34817,7 +34854,7 @@
             const selected=()=>isDriveHomeVisible()?(isDriveFolderViewOpen()?driveFolderViewScrollEl:driveMain):!editorView.classList.contains('hidden')?canvasViewport:null;
             const measure=()=>{
                 const target=selected();if(!target)return null;
-                const rect=target.getBoundingClientRect(),editor=target===canvasViewport;
+                const editor=target===canvasViewport,rect=editor?(viewportGestureGeometry?.rect||target.getBoundingClientRect()):target.getBoundingClientRect();
                 const max=editor?Math.max(0,getContentHeight()*state.zoom-rect.height+40):target.scrollHeight-target.clientHeight;
                 return {target,editor,max,top:Math.max(0,rect.top)+12,travel:Math.max(1,Math.min(innerHeight,rect.bottom)-Math.max(0,rect.top)-72),offset:editor?20-state.panY:target.scrollTop};
             };
