@@ -71,9 +71,12 @@ fn d_lattice() -> f32 {
 }
 
 /// A jittered convex polygon.
+/// An irregular square: `n` corners around `c` at about radius `r`, with
+/// unequal sides (angles jittered by a third of a step, radii by ±20%).
 fn blob(c: Vec2, r: f32, n: u32, rng: &mut Rng) -> Vec<Vec2> {
     let a0 = rng.range(0.0, std::f32::consts::TAU);
-    (0..n).map(|i| c + Vec2::from_angle(a0 + std::f32::consts::TAU * i as f32 / n as f32 + rng.range(-0.15, 0.15)) * r * rng.range(0.85, 1.1)).collect()
+    let step = std::f32::consts::TAU / n as f32;
+    (0..n).map(|i| c + Vec2::from_angle(a0 + step * (i as f32 + rng.range(-0.33, 0.33))) * r * rng.range(0.8, 1.15)).collect()
 }
 
 struct State<'a> {
@@ -153,7 +156,7 @@ pub fn generate(o: &OrganicSpec, zone: &Zone, zi: u16, mask: &Region, d: &Draft,
         let rad = rng.range(mp.radius[0], mp.radius[1]).min(r * 0.6);
         let n = mp.vertices[0] + rng.below((mp.vertices[1].saturating_sub(mp.vertices[0]) + 1) as usize) as u32;
         if rad > 6.0 {
-            let ring = blob(c, rad, n.max(5), &mut rng);
+            let ring = blob(c, rad, n.max(4), &mut rng);
             st.land = st.land.minus(&Region::ring(&ring));
             st.out.plazas.push(Plaza { ring, zone: zi, kind: zone.plaza_kind });
         }
@@ -294,7 +297,8 @@ fn carve_tier(st: &mut State, o: &OrganicSpec, tier: &Tier, ti: usize) -> bool {
             let ends: Vec<Vec2> = st.out.ways[ways_before..].iter().flat_map(|w| [w.line[0], *w.line.last().unwrap()]).collect();
             let at = ends.into_iter().find(|p| st.lines[..older].iter().any(|(l, _)| l.windows(2).any(|s| seg_dist(*p, s[0], s[1]) < 0.1)));
             if let Some(p) = at {
-                let ring = blob(p, rng.range(4.5, 7.0), 6, &mut rng);
+                let (rad, corners) = (rng.range(4.5, 7.0), 4 + rng.below(2) as u32);
+                let ring = blob(p, rad, corners, &mut rng);
                 st.land = st.land.minus(&Region::ring(&ring));
                 st.out.plazas.push(Plaza { ring, zone: st.zi, kind: PlazaKind::Paved });
             }
