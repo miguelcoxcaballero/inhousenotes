@@ -68,9 +68,35 @@ pub fn cascade_splits(near: f32, far: f32, lambda: f32) -> [f32; 4] {
     s
 }
 
+/// View-depth range the shadow cascades cover, fitted to the scene:
+/// `nearest` is the distance from the camera to the closest visible
+/// geometry (a lower bound is enough). Every visible point is then at least
+/// `nearest * cos(half diagonal fov)` deep, so cascades start there instead
+/// of at the near plane, and cover at least a 6x depth ratio beyond it.
+/// The fit only applies when that depth is at least a tenth of the shadow
+/// distance, so street-level views keep `(near, shadow_distance)` and their
+/// fine near cascades; from a rooftop or the air the resolution goes to the
+/// city instead of empty air and the shadows reach the buildings in view. The start is quantized in
+/// quarter octaves so a moving camera does not rescale the cascades (and
+/// make the shadows shimmer) every frame.
+pub fn fitted_shadow_range(near: f32, nearest: f32, fov_y: f32, aspect: f32, shadow_distance: f32) -> (f32, f32) {
+    let t = (fov_y * 0.5).tan();
+    let cos_diag = 1.0 / (1.0 + t * t * (1.0 + aspect * aspect)).sqrt();
+    let depth = nearest * cos_diag;
+    let start = if depth.is_finite() && depth > near * 1.19 && depth >= 0.1 * shadow_distance { near * 2f32.powf(((depth / near).log2() * 4.0).floor() / 4.0) } else { near };
+    (start, shadow_distance.max(start * 6.0))
+}
+
 /// Stable (rotation and translation invariant) cascade matrix: bounding
 /// sphere of the slice, texel-snapped in light space.
 pub fn cascade_matrix(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resolution: u32, caster_reach: f32) -> Mat4 {
+    cascade_fit(camera, near, far, sun_dir, resolution, caster_reach).0
+}
+
+/// [`cascade_matrix`] plus the radius of the fitted bounding sphere (world
+/// size of a shadow texel = 2 radius / resolution; light-space depth range =
+/// 2 radius + caster reach).
+pub fn cascade_fit(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resolution: u32, caster_reach: f32) -> (Mat4, f32) {
     let corners = camera.slice_corners(near, far);
     let center = corners.iter().copied().sum::<Vec3>() / 8.0;
     let radius = corners.iter().map(|c| (*c - center).length()).fold(0.0, f32::max);
@@ -86,7 +112,7 @@ pub fn cascade_matrix(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resol
     let eye = snapped + sun_dir * (radius + caster_reach);
     let view = Mat4::look_at_rh(eye, snapped, up);
     let proj = Mat4::orthographic_rh(-radius, radius, -radius, radius, 0.0, 2.0 * radius + caster_reach);
-    proj * view
+    (proj * view, radius)
 }
 
 /// Planes of an orthographic or perspective matrix for culling (standard Z).
@@ -104,6 +130,24 @@ mod tests {
     fn splits_increase() {
         let s = cascade_splits(0.1, 300.0, 0.75);
         assert!(s[0] > 0.1 && s[0] < s[1] && s[1] < s[2] && (s[3] - 300.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn shadow_range_fits_visible_depth() {
+        let fov = 60f32.to_radians();
+        // Street level (geometry at the camera): unchanged.
+        assert_eq!(fitted_shadow_range(0.1, -5.0, fov, 16.0 / 9.0, 120.0), (0.1, 120.0));
+        assert_eq!(fitted_shadow_range(0.1, f32::INFINITY, fov, 16.0 / 9.0, 120.0), (0.1, 120.0));
+        assert_eq!(fitted_shadow_range(0.1, 1.7, fov, 16.0 / 9.0, 120.0), (0.1, 120.0));
+        // From the air: starts before the closest visible point, never
+        // after it, and reaches 6x further.
+        let (a, b) = fitted_shadow_range(0.1, 180.0, fov, 16.0 / 9.0, 120.0);
+        let t = (fov * 0.5).tan();
+        let min_depth = 180.0 / (1.0 + t * t * (1.0 + (16.0f32 / 9.0).powi(2))).sqrt();
+        assert!(a <= min_depth && a > min_depth * 0.8, "{a} vs {min_depth}");
+        assert!((b - a * 6.0).abs() < 1e-3);
+        // Quantized: a small camera move keeps the same range.
+        assert_eq!(fitted_shadow_range(0.1, 181.0, fov, 16.0 / 9.0, 120.0).0, a);
     }
 
     #[test]

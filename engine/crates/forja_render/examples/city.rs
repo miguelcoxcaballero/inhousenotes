@@ -1,5 +1,9 @@
 //! Whole procedural Spanish city rendered from a few viewpoints:
 //! `cargo run --release -p forja_render --example city -- out_prefix [small]`
+//! (`CITY_SHOTS=boulevard,aerial` renders only those shots; `CITY_MOTION=30`
+//! also saves `<shot>_motion.png`, the last of 30 real-time 60 fps frames
+//! walking into the shot, to judge TAA and the screen-space effects in
+//! motion).
 
 use std::path::PathBuf;
 
@@ -74,12 +78,37 @@ fn main() {
         ("valencia_street2", v2_eye, v2_at),
         ("aerial", Vec3::new(-e.x * 0.8, 120.0, -e.y * 1.1), Vec3::new(0.0, 0.0, 0.0)),
     ];
+    let only = std::env::var("CITY_SHOTS").ok();
     for (name, eye, at) in shots {
+        if only.as_deref().is_some_and(|o| !o.split(',').any(|n| n.trim() == name)) {
+            continue;
+        }
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = 60f32.to_radians();
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}.png");
         img.save(&path).unwrap();
         println!("{path}: {:?}", r.stats);
+        if let Some(n) = std::env::var("CITY_MOTION").ok().and_then(|v| v.parse::<u32>().ok()) {
+            // Walk (1.4 m/s) toward the shot while turning slightly.
+            let fwd = (at - eye).normalize();
+            let side = fwd.cross(Vec3::Y).normalize();
+            r.reset_history();
+            let mut img = None;
+            for i in 0..n {
+                let k = (n - 1 - i) as f32 / 60.0;
+                let e = eye - fwd * 1.4 * k + Vec3::Y * (0.03 * (k * 11.0).sin());
+                frame.camera = Camera::look_at(e, at + side * (2.0 * k));
+                frame.camera.fov_y = 60f32.to_radians();
+                frame.time = i as f32 / 60.0;
+                img = Some(r.render_live_to_image(&frame, 1280, 720));
+            }
+            frame.time = 0.0;
+            if let Some(img) = img {
+                let path = format!("{prefix}_{name}_motion.png");
+                img.save(&path).unwrap();
+                println!("{path}");
+            }
+        }
     }
 }
