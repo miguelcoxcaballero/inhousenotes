@@ -97,7 +97,7 @@ test('native background sync resumes after gesture cooldown without another user
   window.stops=0;window.restarts=0;window.InhouseBackground={cancel:()=>stops++,schedule:()=>restarts++};
   noteInteractionActivity();
  });
- await page.waitForTimeout(350);
+ await page.waitForTimeout(50);
  expect(await page.evaluate(()=>({stops,restarts}))).toEqual({stops:1,restarts:0});
  await page.waitForFunction(()=>restarts>0);
 });

@@ -245,7 +245,7 @@
         captureTimer=setTimeout(()=>{
             if (host.busy()) {scheduleCapture();return;}
             capture().then(()=>kick()).catch(error=>host.error(error));
-        },600);
+        },180);
     }
     async function prepared(id,blob,version,session) {
         if (!account || isWorker) return;
@@ -316,7 +316,7 @@
     }
     let nativePausedForEditing = false;
     async function scheduleBackground() {
-        if (!account || (nativePausedForEditing && root.hasHotUserInteraction?.(1200))) return;
+        if (!account || (nativePausedForEditing && root.hasHotUserInteraction?.(root.getDocumentSaveIdleWindow?.() ?? 180))) return;
         nativePausedForEditing = false;
         try {root.InhouseBackground?.schedule?.();}catch(_){}
         try {const registration=await navigator.serviceWorker?.getRegistration();await registration?.sync?.register('inhouse-outbox');}catch(_){}
@@ -335,11 +335,11 @@
     }
     function resumeAfterEditing() {
         if (!nativePausedForEditing) return;
-        if (root.hasHotUserInteraction?.(1200)) {
+        if (root.hasHotUserInteraction?.(root.getDocumentSaveIdleWindow?.() ?? 180)) {
             if (!nativeEditingResumeTimer) nativeEditingResumeTimer = setTimeout(() => {
                 nativeEditingResumeTimer = null;
                 resumeAfterEditing();
-            }, 1200);
+            }, root.getDocumentSaveIdleWindow?.() ?? 180);
             return;
         }
         clearTimeout(nativeEditingResumeTimer); nativeEditingResumeTimer = null;

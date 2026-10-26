@@ -37,6 +37,7 @@ function harness() {
     collabPageOrderMutationInProgress: false,
     collabPageStoreRewritePending: false,
     STROKE_OP_FLUSH_BATCH_SIZE: 12,
+    DOCUMENT_SAVE_IDLE_MS: 180,
     hasPendingLegacyPageMigration: () => false,
     hasSmoothInteraction: () => false,
     waitForHotInteractionToSettle: async () => true,
