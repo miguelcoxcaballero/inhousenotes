@@ -1,0 +1,149 @@
+# Rocketbox avatars (3ds Max Biped rig: "Bip01 Pelvis", "Bip01 L Clavicle",
+# ...) driven by the CMU motion capture set (forja_anim::mocap::cmu_set),
+# retargeted per avatar.
+#
+# Parameters, set every frame by the sandbox (game/people.rs, Gait::drive):
+#   moving  1 while the body travels faster than ~0.15 m/s
+#   gait    1 = the walk clip at its natural speed, 2 = the run clip;
+#           in between the two cycles blend phase-locked
+#   stride  playback rate = speed / natural speed of the blended gait, so
+#           the planted foot never slides (clamped to [0.5, 1.8])
+#   stand   pose when standing: 0 idle, 1 talking, 2 waiting
+#   jump, melee  one-shots
+#   dead    1 once killed ("Death" is the Quaternius robot's fall,
+#           retargeted; mocap has none)
+name = "biped_humanoid"
+initial = "idle"
+
+[[state]]
+name = "idle"
+clip = "Idle"
+
+[[state]]
+name = "talk"
+clip = "Talk"
+
+[[state]]
+name = "wait"
+clip = "Wait"
+
+[[state]]
+name = "move"
+blend = { param = "gait", points = [[1.0, "Walking"], [2.0, "Running"]] }
+rate = "stride"
+
+[[state]]
+name = "jump"
+clip = "Jump"
+looping = false
+
+[[state]]
+name = "punch"
+clip = "Punch"
+looping = false
+
+[[state]]
+name = "dead"
+clip = "Death"
+looping = false
+
+[[transition]]
+from = "*"
+to = "dead"
+when = [{ param = "dead", gt = 0.5 }]
+fade = 0.12
+
+# One-shots interrupt anything.
+[[transition]]
+from = "*"
+to = "jump"
+when = [{ param = "jump", gt = 0.5 }]
+fade = 0.1
+
+[[transition]]
+from = "*"
+to = "punch"
+when = [{ param = "melee", gt = 0.5 }]
+fade = 0.08
+
+[[transition]]
+from = "jump"
+to = "move"
+on_finish = true
+when = [{ param = "moving", gt = 0.5 }]
+fade = 0.2
+
+[[transition]]
+from = "jump"
+to = "idle"
+on_finish = true
+fade = 0.3
+
+[[transition]]
+from = "punch"
+to = "idle"
+on_finish = true
+fade = 0.2
+
+# Start and stop walking. Weight shifts take a moment: fades are longer
+# into standing than into moving.
+[[transition]]
+from = "idle"
+to = "move"
+when = [{ param = "moving", gt = 0.5 }]
+fade = 0.25
+
+[[transition]]
+from = "talk"
+to = "move"
+when = [{ param = "moving", gt = 0.5 }]
+fade = 0.3
+
+[[transition]]
+from = "wait"
+to = "move"
+when = [{ param = "moving", gt = 0.5 }]
+fade = 0.3
+
+[[transition]]
+from = "move"
+to = "talk"
+when = [{ param = "moving", lt = 0.5 }, { param = "stand", gt = 0.5 }, { param = "stand", lt = 1.5 }]
+fade = 0.4
+
+[[transition]]
+from = "move"
+to = "wait"
+when = [{ param = "moving", lt = 0.5 }, { param = "stand", gt = 1.5 }]
+fade = 0.4
+
+[[transition]]
+from = "move"
+to = "idle"
+when = [{ param = "moving", lt = 0.5 }]
+fade = 0.35
+
+# Changing what a standing person does.
+[[transition]]
+from = "idle"
+to = "talk"
+when = [{ param = "stand", gt = 0.5 }, { param = "stand", lt = 1.5 }]
+fade = 0.6
+
+[[transition]]
+from = "idle"
+to = "wait"
+when = [{ param = "stand", gt = 1.5 }]
+fade = 0.6
+
+[[transition]]
+from = "talk"
+to = "idle"
+when = [{ param = "stand", lt = 0.5 }]
+fade = 0.6
+
+[[transition]]
+from = "wait"
+to = "idle"
+when = [{ param = "stand", lt = 0.5 }]
+fade = 0.6

@@ -1,5 +1,6 @@
-//! Realistic humans (MakeHuman CC0 bodies, clothes, hair) animated with
-//! clips retargeted from the Quaternius robot. Every character shares one
+//! MakeHuman humans (CC0 bodies, clothes, hair) animated with clips
+//! retargeted from the Quaternius robot: the fallback when no Rocketbox
+//! avatar is downloaded (see `people.rs`). Every character shares one
 //! skeleton layout, so clips are retargeted once and reused.
 
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use std::sync::Arc;
 use forja_anim::retarget::{RetargetMap, retarget_all};
 use forja_anim::{AnimController, Clip, ControllerDef, Skeleton};
 use forja_assets::makehuman::{HumanSpec, build_human};
-use forja_math::{Mat4, Quat, Vec3};
+use forja_math::{Mat4, Vec3};
 
 use super::{Paths, RenderScene};
 
@@ -60,36 +61,7 @@ pub fn npc_specs() -> Vec<HumanSpec> {
 /// Bends the right arm so the forearm points along `aim` (model space),
 /// blended by `weight`. Runs on model matrices after animation sampling.
 pub fn aim_arm(avatar: &HumanAvatar, model: &mut [Mat4], aim: Vec3, weight: f32) {
-    let Some((upper, wrist)) = avatar.right_arm else { return };
-    if weight <= 0.0 {
-        return;
-    }
-    let pos = |m: &Mat4| m.w_axis.truncate();
-    let shoulder = pos(&model[upper]);
-    // Rotate the whole arm chain around the shoulder so the wrist lies on
-    // the aim ray, then straighten the elbow along it.
-    let to_wrist = (pos(&model[wrist]) - shoulder).normalize_or_zero();
-    let target = aim.normalize_or_zero();
-    if to_wrist == Vec3::ZERO || target == Vec3::ZERO {
-        return;
-    }
-    let q = Quat::IDENTITY.slerp(Quat::from_rotation_arc(to_wrist, target), weight.min(1.0));
-    let pivot = Mat4::from_translation(shoulder) * Mat4::from_quat(q) * Mat4::from_translation(-shoulder);
-    // Every joint below the upper arm moves with it.
-    let below: Vec<usize> = (0..model.len()).filter(|&j| is_descendant(&avatar.skeleton, j, upper)).collect();
-    for j in below {
-        model[j] = pivot * model[j];
-    }
-}
-
-fn is_descendant(skel: &Skeleton, mut j: usize, ancestor: usize) -> bool {
-    loop {
-        if j == ancestor {
-            return true;
-        }
-        match skel.joints[j].parent {
-            Some(p) => j = p,
-            None => return false,
-        }
+    if let Some(arm) = avatar.right_arm {
+        super::people::aim_arm(&avatar.skeleton, arm, model, aim, weight);
     }
 }
