@@ -6,6 +6,7 @@
 //! testable and can run on background threads for streaming.
 
 pub mod lod;
+pub mod makehuman;
 pub mod manifest;
 mod obj;
 pub mod pbr;

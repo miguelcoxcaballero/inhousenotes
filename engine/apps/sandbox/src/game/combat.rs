@@ -74,8 +74,20 @@ fn fit(scene: &forja_assets::SceneData, size: f32) -> Mat4 {
     Mat4::from_scale(Vec3::splat(s)) * Mat4::from_translation(-b.center())
 }
 
-fn load_target(app: &mut App, position: Vec3, facing: f32) -> Option<Target> {
+fn load_target(app: &mut App, position: Vec3, facing: f32, variant: usize) -> Option<Target> {
     let paths = app.world.res::<Paths>().clone();
+    // Realistic people when the MakeHuman content is present.
+    if super::humans::HumanLibrary::available(&paths) {
+        let specs = super::humans::npc_specs();
+        let spec = specs[variant % specs.len()].clone();
+        let human = app.world.scope::<super::humans::HumanLibrary, _>(|w, lib| lib.spawn(&paths, w.res_mut::<RenderScene>(), &spec));
+        if let Some(h) = human {
+            let physics = app.world.res_mut::<PhysicsWorld>();
+            let body = physics.add_body(RigidBodyDesc::kinematic().position(position + Vec3::Y * 0.9));
+            physics.add_collider(ColliderDesc::new(Shape::capsule(0.5, 0.35)).groups(CollisionGroups::new(layers::CHARACTER, u32::MAX)), Some(body));
+            return Some(Target { body, health: Health { hp: 120.0, max_hp: 120.0, ..Default::default() }, model: h.model, skeleton: h.skeleton, anim: h.anim, scale: 1.0, facing });
+        }
+    }
     let rs = app.world.res_mut::<RenderScene>();
     let model = rs.load(&paths.asset("quaternius_robot_expressive/RobotExpressive.glb"))?;
     let scene = Arc::clone(&rs.models[model]);
@@ -123,8 +135,11 @@ impl Plugin for CombatPlugin {
         let mut spots: Vec<Vec3> = desc.spawns_of(SpawnKind::Weapon).map(|s| s.iso.pos).collect();
         let fwd = player.rot * Vec3::Z;
         let side = player.rot * Vec3::X;
-        while spots.len() < 5 {
-            let k = spots.len() as f32 - 2.0;
+        // Fan out in front of the player, the first (pistol) straight ahead.
+        for k in [0.0f32, -1.0, 1.0, -2.0, 2.0] {
+            if spots.len() >= 5 {
+                break;
+            }
             spots.push(player.pos + fwd * 4.0 + side * k * 1.6);
         }
         let loot: [(&str, Option<(&str, u32)>); 5] = [
@@ -144,11 +159,7 @@ impl Plugin for CombatPlugin {
                     match rs.load(&paths.asset(&p)) {
                         Some(m) => {
                             let size = if *item == "pistol" { 0.32 } else { 0.85 };
-                            let f = fit(rs.model(m), size);
-                            if let Some(w) = items.get(item).and_then(|d| d.weapon.clone()) {
-                                weapon_models.push((w, m, f));
-                            }
-                            (Some(m), f)
+                            (Some(m), fit(rs.model(m), size))
                         }
                         None => (None, Mat4::IDENTITY),
                     }
@@ -164,10 +175,20 @@ impl Plugin for CombatPlugin {
                 taken: false,
             });
         }
+        // In-hand models come from the weapon definitions.
+        let ids: Vec<(String, String)> = items.iter().filter_map(|d| d.weapon.clone()).filter_map(|w| weapons.get(&w).and_then(|d| d.model.clone()).map(|m| (w, m))).collect();
+        for (wid, model_path) in ids {
+            let rs = app.world.res_mut::<RenderScene>();
+            if let Some(m) = rs.load(&paths.asset(&model_path)) {
+                let size = if weapons.get(&wid).is_some_and(|d| d.category == WeaponCategory::Pistol || d.category == WeaponCategory::Smg) { 0.3 } else { 1.0 };
+                let f = fit(rs.model(m), size);
+                weapon_models.push((wid, m, f));
+            }
+        }
         let mut targets = Vec::new();
         for k in 0..3 {
             let p = player.pos + fwd * (14.0 + k as f32 * 3.0) + side * (k as f32 - 1.0) * 2.5;
-            if let Some(t) = load_target(app, p - Vec3::Y * 0.5, (-fwd).x.atan2((-fwd).z)) {
+            if let Some(t) = load_target(app, p - Vec3::Y * 0.5, (-fwd).x.atan2((-fwd).z), k) {
                 targets.push(t);
             }
         }
@@ -338,8 +359,8 @@ fn fire_system(w: &mut forja_core::World) {
     if let Some(q) = kick {
         let rig = w.res_mut::<CameraRig>();
         let (yaw, pitch, _) = q.to_euler(forja_math::EulerRot::YXZ);
-        rig.pitch = (rig.pitch + pitch).min(1.2);
-        rig.yaw += yaw;
+        rig.recoil.0 += yaw;
+        rig.recoil.1 = (rig.recoil.1 + pitch).min(0.35);
     }
 }
 
@@ -347,6 +368,8 @@ fn render_system(w: &mut forja_core::World) {
     let dt = w.res::<Time>().delta;
     let t = w.res::<Time>().elapsed as f32;
     let hand = w.res::<Player>().hand_world;
+    let human = w.res::<Player>().avatar.human.is_some();
+    let cam_fwd = w.res::<RenderScene>().camera.forward();
     let driving = w.res::<Driving>().0.is_some();
     let mut items = Vec::new();
     let mut lights = Vec::new();
@@ -367,10 +390,21 @@ fn render_system(w: &mut forja_core::World) {
             && let Some(eq) = &c.equipped
             && let Some((_, m, f)) = c.weapon_models.iter().find(|(id, _, _)| *id == eq.def.id)
         {
-            let grip = hand * Mat4::from_translation(Vec3::new(0.0, -0.85, 0.25)) * Mat4::from_rotation_y(-std::f32::consts::FRAC_PI_2);
-            // Undo the character scale so the gun keeps its real size.
-            let (_, r, p) = grip.to_scale_rotation_translation();
-            items.push(RenderItem::new(*m, Mat4::from_rotation_translation(r, p) * *f));
+            let placed = if human {
+                // Barrel (+X of the scanned guns) along the aim, grip down.
+                let aim = cam_fwd.normalize();
+                let side = aim.cross(Vec3::Y).normalize_or(Vec3::X);
+                let up = side.cross(aim);
+                let basis = Mat4::from_cols(aim.extend(0.0), up.extend(0.0), (-side).extend(0.0), Vec4::W);
+                let wrist = hand.w_axis.truncate();
+                Mat4::from_translation(wrist + aim * 0.06 - up * 0.02) * basis * *f
+            } else {
+                let grip = hand * Mat4::from_translation(Vec3::new(0.0, -0.85, 0.25)) * Mat4::from_rotation_y(-std::f32::consts::FRAC_PI_2);
+                // Undo the character scale so the gun keeps its real size.
+                let (_, r, p) = grip.to_scale_rotation_translation();
+                Mat4::from_rotation_translation(r, p) * *f
+            };
+            items.push(RenderItem::new(*m, placed));
         }
         for (a, b, _) in &c.tracers {
             debug::line(&mut lines, *a, *b, Vec4::new(1.0, 0.85, 0.4, 1.0));

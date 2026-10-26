@@ -44,8 +44,30 @@ pub struct BoundVehicle {
 /// chassis from the rest, so any car model with named wheels drives with any
 /// handling file. Wheel parts (tyre, rim, brake disc...) are grouped by
 /// position; models whose front wheels sit on -Z are turned around.
-pub fn bind_vehicle_model(mut config: VehicleConfig, scene: &SceneData, scale: f32) -> BoundVehicle {
-    let world = scene.world_matrices();
+pub fn bind_vehicle_model(config: VehicleConfig, scene: &SceneData, scale: f32) -> BoundVehicle {
+    bind_vehicle_model_oriented(config, scene, scale, forja_math::Quat::IDENTITY)
+}
+
+/// Rotation that turns a model's longest horizontal axis into +Z (for
+/// downloaded cars authored along X).
+pub fn auto_orient(scene: &SceneData) -> forja_math::Quat {
+    let b = scene.bounds();
+    let e = b.max - b.min;
+    if e.x > e.z * 1.2 { forja_math::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2) } else { forja_math::Quat::IDENTITY }
+}
+
+/// Scale that brings a car model to a plausible length (models come in cm,
+/// inches or arbitrary units).
+pub fn auto_scale(scene: &SceneData, target_length: f32) -> f32 {
+    let b = scene.bounds();
+    let len = (b.max - b.min).max_element().max(1e-3);
+    if (target_length * 0.6..target_length * 1.6).contains(&len) { 1.0 } else { target_length / len }
+}
+
+/// Like [`bind_vehicle_model`], with `pre` applied to the model first.
+pub fn bind_vehicle_model_oriented(mut config: VehicleConfig, scene: &SceneData, scale: f32, pre: forja_math::Quat) -> BoundVehicle {
+    let pre_m = forja_math::Mat4::from_quat(pre);
+    let world: Vec<forja_math::Mat4> = scene.world_matrices().into_iter().map(|m| pre_m * m).collect();
     let mut parts: Vec<(usize, forja_math::Aabb, bool)> = Vec::new();
     let mut body = forja_math::Aabb::EMPTY;
     for (i, n) in scene.nodes.iter().enumerate() {
@@ -60,7 +82,8 @@ pub fn bind_vehicle_model(mut config: VehicleConfig, scene: &SceneData, scale: f
             continue;
         }
         let lname = n.name.to_ascii_lowercase();
-        if lname.starts_with("wheel") {
+        let wheelish = ["wheel", "tire", "tyre", "rim", "reifen", "rueda"].iter().any(|k| lname.contains(k)) && !lname.contains("steer");
+        if wheelish {
             parts.push((i, b, lname.contains("front")));
         } else {
             body = body.union(&b);
@@ -92,7 +115,7 @@ pub fn bind_vehicle_model(mut config: VehicleConfig, scene: &SceneData, scale: f
     let flip = front_z < rear_z;
     let orient = if flip { forja_math::Mat4::from_rotation_y(std::f32::consts::PI) } else { forja_math::Mat4::IDENTITY };
     let center = all.center();
-    let model_to_body = orient * forja_math::Mat4::from_scale(Vec3::splat(scale)) * forja_math::Mat4::from_translation(-center);
+    let model_to_body = orient * forja_math::Mat4::from_scale(Vec3::splat(scale)) * forja_math::Mat4::from_translation(-center) * pre_m;
     let to_body = |p: Vec3| model_to_body.transform_point3(p);
     let body_half = (body.half_extents() * scale) * Vec3::new(1.0, 0.6, 1.0);
     let template_front = config.wheels.iter().find(|w| w.steer).cloned().unwrap_or_default();
@@ -108,7 +131,7 @@ pub fn bind_vehicle_model(mut config: VehicleConfig, scene: &SceneData, scale: f
             let t = if is_front(w) { &template_front } else { &template_rear };
             let h = w.1.half_extents() * scale;
             wheel_nodes.push(w.0.clone());
-            wheel_centers.push(w.1.center());
+            wheel_centers.push(pre.inverse() * w.1.center());
             WheelConfig { position: to_body(w.1.center()) + Vec3::Y * (t.suspension_length - sag), radius: h.y.max(h.z), ..t.clone() }
         })
         .collect();

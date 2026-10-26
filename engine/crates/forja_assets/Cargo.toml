@@ -13,3 +13,4 @@ gltf.workspace = true
 image.workspace = true
 log.workspace = true
 meshopt.workspace = true
+serde_json.workspace = true

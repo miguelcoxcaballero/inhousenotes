@@ -5,6 +5,7 @@
 pub mod camera;
 pub mod combat;
 pub mod env;
+pub mod humans;
 pub mod player;
 pub mod props;
 pub mod vehicles;
@@ -190,6 +191,7 @@ pub fn build(map: MapKind, paths: Paths) -> App {
         .insert_resource(Intent::default())
         .insert_resource(RenderScene { hdri: Some(paths.asset("hdri_wide_street/wide_street_01_2k.hdr")).filter(|p| p.exists()), ..Default::default() })
         .insert_resource(Hud::default())
+        .insert_resource(humans::HumanLibrary::default())
         .add_plugin(forja_physics::PhysicsPlugin::default())
         .add_plugin(world::WorldPlugin { map })
         .add_plugin(env::EnvPlugin)

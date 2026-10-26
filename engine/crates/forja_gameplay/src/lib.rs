@@ -13,7 +13,7 @@ pub mod weapons;
 pub use health::Health;
 pub use inventory::{Inventory, ItemStack, WeaponWheel};
 pub use items::{ItemCategory, ItemDef, ItemRegistry};
-pub use vehicles::{BoundVehicle, HandlingRegistry, bind_vehicle_model};
+pub use vehicles::{BoundVehicle, HandlingRegistry, auto_orient, auto_scale, bind_vehicle_model, bind_vehicle_model_oriented};
 pub use weapons::{FireMode, Hit, WeaponCategory, WeaponDef, WeaponRegistry, WeaponState};
 
 /// Loads every `*.toml` in a directory and merges the parsed values.

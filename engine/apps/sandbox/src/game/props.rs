@@ -59,7 +59,7 @@ impl Plugin for PropsPlugin {
         let half = Vec3::splat(0.4);
         let (model, offset) = {
             let rs = app.world.res_mut::<RenderScene>();
-            match rs.load(&paths.asset("kenney_blaster_kit/crate-medium.glb")) {
+            match rs.load(&paths.asset("polyhaven_wooden_crate/wooden_crate_02_1k.gltf")).or_else(|| rs.load(&paths.asset("kenney_blaster_kit/crate-medium.glb"))) {
                 Some(m) => {
                     let b = rs.model(m).bounds();
                     let s = (half * 2.0 / b.half_extents().max(Vec3::splat(1e-3)) / 2.0).min_element();
@@ -71,7 +71,21 @@ impl Plugin for PropsPlugin {
         let mut props = Props::default();
         {
             let physics = app.world.res_mut::<PhysicsWorld>();
-            for iso in spawns {
+            for mut iso in spawns {
+                // Slide sideways until the crate does not overlap scenery.
+                for _ in 0..12 {
+                    let probe = forja_math::Aabb::from_center_half(iso.pos, half * 1.05);
+                    let mut blocked = false;
+                    physics.query_aabb(&probe, Default::default(), |_, c| {
+                        if !matches!(c.shape, Shape::Cuboid { half: h } if h.x > 20.0) && !matches!(c.shape, Shape::TriMesh(_) | Shape::HeightField(_)) {
+                            blocked = true;
+                        }
+                    });
+                    if !blocked {
+                        break;
+                    }
+                    iso.pos.x += 1.3;
+                }
                 let (body, _) = physics.add_dynamic(
                     RigidBodyDesc::dynamic().position(iso.pos).rotation(iso.rot),
                     ColliderDesc::new(Shape::cuboid(half)).mass(25.0).friction(0.7).groups(CollisionGroups::new(layers::DYNAMIC, u32::MAX)),

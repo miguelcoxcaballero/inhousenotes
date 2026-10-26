@@ -1,0 +1,76 @@
+# MakeHuman characters driven by the Robot Expressive clips retargeted onto
+# the 163-bone MakeHuman skeleton (see forja_anim::retarget).
+name = "mh_humanoid"
+initial = "locomotion"
+
+[[state]]
+name = "locomotion"
+blend = { param = "speed", points = [[0.0, "Idle"], [1.8, "Walking"], [6.0, "Running"]] }
+
+[[state]]
+name = "jump"
+clip = "Jump"
+looping = false
+
+[[state]]
+name = "punch"
+clip = "Punch"
+looping = false
+
+[[state]]
+name = "sit"
+clip = "Sitting"
+looping = false
+
+[[state]]
+name = "dead"
+clip = "Death"
+looping = false
+
+[[transition]]
+from = "*"
+to = "dead"
+when = [{ param = "dead", gt = 0.5 }]
+fade = 0.12
+
+[[transition]]
+from = "locomotion"
+to = "jump"
+when = [{ param = "jump", gt = 0.5 }]
+fade = 0.1
+
+[[transition]]
+from = "jump"
+to = "locomotion"
+on_finish = true
+fade = 0.2
+
+[[transition]]
+from = "locomotion"
+to = "punch"
+when = [{ param = "melee", gt = 0.5 }]
+fade = 0.08
+
+[[transition]]
+from = "punch"
+to = "locomotion"
+on_finish = true
+fade = 0.15
+
+[[transition]]
+from = "locomotion"
+to = "sit"
+when = [{ param = "in_vehicle", gt = 0.5 }]
+fade = 0.25
+
+[[transition]]
+from = "sit"
+to = "locomotion"
+when = [{ param = "in_vehicle", lt = 0.5 }]
+fade = 0.25
+
+[[layer]]
+name = "wave"
+clip = "Wave"
+mask_root = "clavicle.R"
+weight_param = "wave"
