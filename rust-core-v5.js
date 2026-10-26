@@ -437,6 +437,39 @@
             }
         };
     }
-    root.InhouseRust = Object.freeze({ ready, documentWorkQueue, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
+    function pdfInk(strokes, bounds, rasterScale = 1) {
+        if (!core?.pdf_ink_path || !Array.isArray(strokes) || !bounds) return null;
+        let length = 0;
+        for (const stroke of strokes) {
+            if (stroke.tool === 'eraser-stroke') continue;
+            if (stroke.tool !== 'pen' || !/^#[0-9a-f]{6}$/i.test(stroke.color)
+                || !Array.isArray(stroke.points)) return null;
+            if (stroke.points.length >= 2) length += 5 + stroke.points.length * 2;
+        }
+        // Dense/repeated ink is cheaper as a cached lossless raster. Keep the
+        // vector fast path for ordinary sparse pen pages without dropping points.
+        if (!length || length > 8192) return null;
+        // A narrow line of tightly packed samples costs less to rasterize than
+        // to encode as thousands of PDF operators. Compare actual crop pixels.
+        const rasterPixels = bounds.width * bounds.height * rasterScale * rasterScale;
+        if (!Number.isFinite(rasterPixels) || rasterPixels < length * 32) return null;
+        let input, output;
+        try {
+            input = allocation(length * 8); output = allocation(length * 24 + 256);
+            const values = new Float64Array(core.memory.buffer, input.pointer, length);
+            let at = 0;
+            for (const stroke of strokes) {
+                if (stroke.tool === 'eraser-stroke' || stroke.points.length < 2) continue;
+                values[at++] = stroke.width;
+                for (let i=1;i<7;i+=2) values[at++] = parseInt(stroke.color.slice(i,i+2),16)/255;
+                values[at++] = stroke.points.length;
+                for (const point of stroke.points) { values[at++] = point.x; values[at++] = point.y; }
+            }
+            const used = core.pdf_ink_path(input.pointer, length, bounds.x, bounds.y + bounds.height, output.pointer, output.bytes);
+            return used ? view(output).slice(0,used) : null;
+        } catch (_) { return null; }
+        finally { release(input); release(output); }
+    }
+    root.InhouseRust = Object.freeze({ ready, pdfInk, documentWorkQueue, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
         folderMotion, folderFade, folderRows, available: () => !!core });
 })(globalThis);

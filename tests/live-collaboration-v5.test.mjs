@@ -226,6 +226,7 @@ globalThis.__liveTest = {
   configureChannel: ihnConfigureChannel,
   configureRealtime: ihnConfigureRealtimeChannel,
   sendControl: ihnSendControl,
+  publishCommit: publishDriveCommitHint,
   waitBackpressure: window.InhousePeerTransport.waitForCapacity,
   start: startLiveCollaboration,
   prewarm: prewarmLiveCollaboration,
@@ -3333,4 +3334,28 @@ test('full snapshots wait across short pen lifts without delaying live stroke pa
   await harness.api.broadcast();
   assert.ok(copies>0);
   assert.equal(harness.api.queued(),false);
+});
+
+
+test('confirmed Drive writes notify peers and tabs; hints only request a throttled authoritative poll', async () => {
+  let polls = 0;
+  const { api, state } = createHarness({ pollDriveRevision: async () => { polls++; } });
+  const channel = createChannel();
+  api.addPeer('other', peerWithChannel(channel));
+  api.publishCommit('file-1');
+  const message = JSON.parse(channel.sent.at(-1));
+  assert.deepEqual(message, {type:'drive-committed', fileId:'file-1'});
+  const tab = api.tabChannel();
+  assert.equal(tab.messages.at(-1).type, 'drive-committed');
+  const originalPages = state.pages;
+  tab.onmessage({data:{type:'drive-committed',fileId:'unrelated'}});
+  assert.equal(polls, 0);
+  await api.wire(JSON.stringify(message), 'other');
+  assert.equal(polls, 1);
+  tab.onmessage({data:message});
+  assert.equal(polls, 1, 'duplicate hints do not generate a request storm');
+  assert.equal(state.pages, originalPages, 'a hint never replaces document content');
+  const count = channel.sent.length;
+  api.publishCommit('another-file');
+  assert.equal(channel.sent.length, count);
 });

@@ -241,6 +241,10 @@ function ihnEnsureTabChannel() {
             }
             return;
         }
+        if (event.data?.type === 'drive-committed') {
+            ihnHandleDriveCommitHint(event.data);
+            return;
+        }
         if (event.data?.type === 'live-stroke') {
             ihnHandleRealtimeStrokePacket(event.data, 'tab');
             return;
@@ -1405,6 +1409,28 @@ function ihnSendControl(peer, payload) {
     } catch (error) {
         return false;
     }
+}
+
+// A hint only: recipients still fetch Drive's authenticated revision and merge.
+// It never acknowledges a local draft or trusts a peer-supplied document body.
+let ihnDriveCommitHintAt = 0;
+let ihnDriveCommitHintFile = '';
+function ihnHandleDriveCommitHint(message) {
+    if (!message?.fileId || message.fileId !== state.driveFileId
+        || typeof pollDriveRevision !== 'function') return;
+    const now = Date.now();
+    if (ihnDriveCommitHintFile === message.fileId && now - ihnDriveCommitHintAt < 400) return;
+    ihnDriveCommitHintAt = now;
+    ihnDriveCommitHintFile = message.fileId;
+    void pollDriveRevision();
+}
+
+function publishDriveCommitHint(fileId) {
+    if (!fileId || fileId !== state.driveFileId) return;
+    const message = {type:'drive-committed', fileId};
+    ihnEnsureTabChannel();
+    try { ihnLiveBroadcastChannel?.postMessage(message); } catch (_) {}
+    ihnLivePeers.forEach(peer => ihnSendControl(peer, message));
 }
 
 function ihnSendHealthPing(peer, payload = {}) {
@@ -3598,6 +3624,10 @@ async function ihnHandleWireMessage(
             targetPeerId: peerId,
             force: true
         });
+        return;
+    }
+    if (message?.type === 'drive-committed') {
+        ihnHandleDriveCommitHint(message);
         return;
     }
     if (message?.type === 'live-stroke') {

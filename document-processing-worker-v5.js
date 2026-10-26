@@ -129,6 +129,14 @@ function embedPreparedRaster(doc, raster) {
     return PDFLib.PDFImage.of(ref, doc, embedder);
 }
 
+function embedPreparedVector(doc, vector) {
+    const ref = doc.context.register(PDFLib.PDFRawStream.of(doc.context.obj({
+        Type:'XObject', Subtype:'Form', FormType:1,
+        BBox:[0,0,vector.width,vector.height], Resources:{}, Filter:'FlateDecode'
+    }), vector.contentBytes));
+    return {pdfVector:true, ref, width:vector.width, height:vector.height};
+}
+
 async function processTask(type, data) {
     if (type === 'packInkCheckpoint') {
         await InhouseRust.ready;
@@ -177,6 +185,12 @@ async function processTask(type, data) {
     }
     if (type === 'renderOverlay') {
         const page = JSON.parse(data.json);
+        if (data.pdfRaster && data.vectorInk && !page.images?.length) {
+            await InhouseRust.ready;
+            const paths = InhouseRust.pdfInk(page.strokes, data.bounds, data.scale);
+            if (paths) return {pdfVector:true, width:data.bounds.width, height:data.bounds.height,
+                contentBytes:await deflateBytes(paths)};
+        }
         const canvas = new OffscreenCanvas(Math.max(1, Math.round(data.bounds.width * data.scale)),
             Math.max(1, Math.round(data.bounds.height * data.scale)));
         const ctx = canvas.getContext('2d');
@@ -226,6 +240,10 @@ async function processTask(type, data) {
         if (type === 'pdfAddPage') return pageInfo(doc.addPage(data.page ? objectFor(data.page, data.id) : data.size));
         if (type === 'pdfEmbed') {
             if (!['embedPng', 'embedJpg'].includes(data.kind)) throw new Error('Unsupported image format');
+            if (data.bytes?.pdfVector) {
+                const image = embedPreparedVector(doc, data.bytes);
+                return {id:remember(image,data.id),ref:{objectNumber:image.ref.objectNumber}};
+            }
             let raster = data.bytes?.pdfRaster ? data.bytes : null;
             if (!raster && data.kind === 'embedPng') {
                 // Imported PNG backgrounds use exactly pdf-lib's decoder, but
@@ -239,6 +257,18 @@ async function processTask(type, data) {
         if (type === 'pdfDrawImage') {
             const page = objectFor(data.page, data.id);
             const image = objectFor(data.image, data.id);
+            if (image.pdfVector) {
+                const options = data.options || {};
+                const name = page.node.newXObject('Ink', image.ref);
+                page.pushOperators(...PDFLib.drawPage(name, {
+                    x:options.x || 0, y:options.y || 0,
+                    xScale:(options.width ?? image.width) / image.width,
+                    yScale:(options.height ?? image.height) / image.height,
+                    rotate:options.rotate || PDFLib.degrees(0),
+                    xSkew:PDFLib.degrees(0), ySkew:PDFLib.degrees(0)
+                }));
+                return name.toString().replace(/^\//, '');
+            }
             page.drawImage(image, data.options);
             const xobjects = page.node.lookup(PDFLib.PDFName.of('Resources')).lookup(PDFLib.PDFName.of('XObject'));
             for (const [name, ref] of xobjects.entries()) {
@@ -291,7 +321,8 @@ async function processTask(type, data) {
 self.onmessage = async ({ data: { id, type, data } }) => {
     try {
         const value = await processTask(type, data);
-        const transfers = value?.inkCheckpoint ? [value.bytes.buffer] : value instanceof Uint8Array ? [value.buffer]
+        const transfers = value?.pdfVector ? [value.contentBytes.buffer]
+            : value?.inkCheckpoint ? [value.bytes.buffer] : value instanceof Uint8Array ? [value.buffer]
             : value?.pdfRaster ? [value.colorBytes.buffer, ...(value.alphaBytes ? [value.alphaBytes.buffer] : [])] : [];
         self.postMessage({ id, value }, transfers);
     } catch (error) {
