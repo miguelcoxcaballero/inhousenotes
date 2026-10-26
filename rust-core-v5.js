@@ -498,6 +498,70 @@
     api.scanLight = scanLight;
     // <<< stream:scan_light
     // >>> stream:scan_color (only this area edits between its markers)
+    // Capture quality (scan_color/quality.rs): acutance, lattice preflight and readiness decision. Pure typed-array
+    // kernels; the host reads pixels. A raster is {width,height,rgba} (luma is computed in Rust) or {width,height,gray}.
+    const QUALITY_REASONS = ['sharp-page', 'focus-or-motion-blur', 'sharp-grid', 'page-clipped', 'page-texture', 'grid-not-found'];
+    function qualityMeasure(mode, raster, detection) {
+        if (!core?.scan_color_quality || !core.scan_color_luma) throw new Error('Rust core is unavailable: capture quality kernels are missing');
+        const quad = detection?.quad;
+        if (!Array.isArray(quad) || quad.length !== 4) {
+            if (mode === 1) return null;
+            throw new RangeError('Capture quality needs a four-corner page quad');
+        }
+        if (typeof raster === 'function') raster = raster();
+        const { width, height } = raster, pixels = width * height;
+        if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 2 || height < 2 || width > 16384 || height > 16384
+            || (raster.rgba ? raster.rgba.length !== pixels * 4 : !(raster.gray instanceof Float32Array) || raster.gray.length !== pixels)) {
+            throw new RangeError('Capture quality raster has invalid dimensions');
+        }
+        const coords = [], offsets = [0];
+        for (const edge of detection.frameEdges || []) {
+            if (mode === 1 && !(edge && typeof edge[Symbol.iterator] === 'function')) { offsets.push(coords.length / 2); continue; }
+            for (const point of edge) coords.push(point.x, point.y);
+            offsets.push(coords.length / 2);
+        }
+        const blocks = [];
+        const take = bytes => { const block = allocation(bytes); blocks.push(block); return block; };
+        try {
+            const grayBlock = take(pixels * 4), rgbaBlock = raster.rgba ? take(pixels * 4) : null;
+            const quadBlock = take(64), edgeBlock = take(Math.max(16, coords.length * 8)), offsetBlock = take((offsets.length) * 4 + 4), outBlock = take(160);
+            // Every allocation is done: memory can no longer grow, so these views stay valid.
+            if (rgbaBlock) view(rgbaBlock).set(new Uint8Array(raster.rgba.buffer, raster.rgba.byteOffset, raster.rgba.byteLength));
+            else new Float32Array(core.memory.buffer, grayBlock.pointer, pixels).set(raster.gray);
+            const quadView = new Float64Array(core.memory.buffer, quadBlock.pointer, 8);
+            quad.forEach((point, index) => { quadView[index * 2] = point.x; quadView[index * 2 + 1] = point.y; });
+            new Float64Array(core.memory.buffer, edgeBlock.pointer, Math.max(2, coords.length)).set(coords);
+            new Uint32Array(core.memory.buffer, offsetBlock.pointer, offsets.length).set(offsets);
+            if (rgbaBlock && core.scan_color_luma(rgbaBlock.pointer, grayBlock.pointer, pixels) !== 0) throw new Error('Capture quality luma kernel rejected its input');
+            const status = core.scan_color_quality(mode, grayBlock.pointer, width, height, quadBlock.pointer, edgeBlock.pointer,
+                offsetBlock.pointer, offsets.length - 1, coords.length / 2, outBlock.pointer);
+            if (status === -2) throw new RangeError('Capture frame edge has a non-finite coordinate');
+            if (status !== 0) throw new Error('Capture quality kernel rejected its input');
+            return Array.from(new Float64Array(core.memory.buffer, outBlock.pointer, 20));
+        } finally { blocks.forEach(release); }
+    }
+    const qualitySharpness = o => ({ valid: o[0] === 1, clarity: o[1], border: o[2], interior: Number.isNaN(o[3]) ? null : o[3], zones: o[4],
+        edges: o[5], interiorMinimum: Number.isNaN(o[6]) ? null : o[6], reason: QUALITY_REASONS[o[19]] });
+    function qualityGrid(o) {
+        const empty = { valid: false, dots: 0, matched: 0, rows: 0, columns: 0, coverage: 0, confidence: 0 };
+        switch (o[8]) {
+            case 1: return empty;
+            case 2: return { ...empty, reason: 'page-clipped' };
+            case 3: return { ...empty, dots: o[10], reason: 'page-texture' };
+            default: return { valid: o[9] === 1, dots: o[10], matched: o[11], cells: o[12], rows: o[13], columns: o[14],
+                coverage: o[15], confidence: o[16], contrast: o[17] };
+        }
+    }
+    api.captureQuality = {
+        inspect: (raster, detection) => qualitySharpness(qualityMeasure(0, raster, detection)),
+        inspectGrid: (raster, detection) => { const o = qualityMeasure(1, raster, detection); return o ? qualityGrid(o) : qualityGrid([0, 0, 0, 0, 0, 0, 0, 0, 1]); },
+        inspectReadiness(raster, detection) {
+            const o = qualityMeasure(2, raster, detection), sharpness = qualitySharpness(o);
+            if (o[7] === 1) return { ...sharpness, valid: false, grid: null };
+            const grid = qualityGrid(o);
+            return { ...sharpness, valid: grid.valid, grid };
+        }
+    };
     // <<< stream:scan_color
     // >>> stream:scan_geometry (only this area edits between its markers)
     // <<< stream:scan_geometry
