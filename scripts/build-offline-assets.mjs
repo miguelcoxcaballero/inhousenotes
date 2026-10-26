@@ -3,7 +3,7 @@ import { join } from 'node:path';
 const roots=['vendor/pdfjs','vendor/pdf-lib','vendor/jspdf','vendor/fonts','scanner'];
 const files=['index.html','boot-v5.js','app-v5.js','bullet-template.js','ink-palette.js','collaboration-core-v5.js','live-collaboration-v5.js','runtime-core-v5.js',
     'peer-transport-v5.js','security-core-v5.js','timeline-core-v5.js','document-processing-v5.js','document-processing-worker-v5.js','rust-core-v5.js','wasm/inhouse_notes_core.wasm',
-    'offline-media-v5.js','shared/inhouse-services-updater/updater.css','offline-store-v5.js','offline-sync-v5.js','offline-library-v5.js','offline-app-v5.js','offline-v5.css','shared/inhouse-services-updater/updater.js','icons/welcome-pages.svg'];
+    'offline-media-v5.js','shared/inhouse-services-updater/updater.css','offline-store-v5.js','offline-sync-v5.js','offline-library-v5.js','offline-app-v5.js','drive-ink-journal-v5.js','drive-ink-app-v5.js','offline-v5.css','shared/inhouse-services-updater/updater.js','icons/welcome-pages.svg'];
 async function walk(path){for(const entry of await readdir(path,{withFileTypes:true})){
     const name=join(path,entry.name);if(entry.isDirectory())await walk(name);else if(!/\.(md|map|py|zip|pdf)$/i.test(name)&&!name.includes('LICENSE'))files.push(name);
 }}
