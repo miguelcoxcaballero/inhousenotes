@@ -1,0 +1,570 @@
+//! Public space as surface classes, and its meshes: roadway, medians,
+//! shared cobbled surfaces, plazas and sidewalks, kerbs where heights
+//! differ, gutters and road markings.
+//!
+//! Every class is a region expression over the fabric's public space, so
+//! any street layout gets the same treatment:
+//!
+//! ```text
+//! J        = discs at nodes with two or more car arms (kerb radius)
+//! carriage = car roadways, with kerb fillets only inside J
+//! median   = boulevard medians (outside J)
+//! shared   = streets without a roadway, minus car streets (whose
+//!            sidewalk runs straight across alley mouths)
+//! plaza    = given plazas and every open area wider than 16 m
+//! walk     = the rest
+//! ```
+
+use std::collections::BTreeMap;
+
+use forja_math::{Vec2, Vec3};
+
+use crate::geom::Parts;
+use crate::kit::{Mat, hex};
+use crate::plan::line::left;
+use crate::plan::{End, Join, Located, NodeId, Polyline, Region, StreetGraph, StreetId};
+use crate::profile::{Class, Gutter, Markings, Parking, ProfileLibrary};
+
+/// A junction of car streets: centre, kerb-fillet radius and the disc
+/// radius that bounds markings and furniture.
+#[derive(Clone, Copy, Debug)]
+pub struct Junction {
+    pub node: NodeId,
+    pub c: Vec2,
+    pub kerb_radius: f32,
+    pub r: f32,
+}
+
+/// One piece of ground: a region at a height with a material.
+#[derive(Clone, Debug)]
+pub struct Surface {
+    pub region: Region,
+    pub h: f32,
+    pub mat: Mat,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Ground {
+    pub carriage: Region,
+    pub median: Region,
+    pub shared: Region,
+    pub plaza: Region,
+    pub walk: Region,
+    pub junctions: Vec<Junction>,
+    /// The height partition of public space, for meshes and kerbs.
+    pub surfaces: Vec<Surface>,
+    loc: Vec<Located>,
+    carriage_loc: Located,
+    plaza_loc: Located,
+    plaza_poles: Vec<(Located, f32)>,
+}
+
+fn disc(c: Vec2, r: f32, n: usize) -> Vec<Vec2> {
+    (0..n).map(|i| c + Vec2::from_angle(i as f32 / n as f32 * std::f32::consts::TAU) * r).collect()
+}
+
+/// Car arms: streets with vehicles and a roadway.
+fn car(g: &StreetGraph, lib: &ProfileLibrary, s: StreetId) -> bool {
+    let st = g.street(s);
+    lib.get(st.profile).vehicles && st.carriageway > 0.0
+}
+
+impl Ground {
+    /// Splits `public` into surface classes.
+    pub fn classes(g: &StreetGraph, lib: &ProfileLibrary, public: &Region, plazas: &Region) -> Ground {
+        let prof = |s: &crate::plan::Street| lib.get(s.profile);
+        // Junction discs.
+        let mut junctions = Vec::new();
+        for n in 0..g.nodes.len() as NodeId {
+            let arms: Vec<(StreetId, End)> = g.star(n).iter().filter(|a| car(g, lib, a.0)).map(|a| (a.0, a.1)).collect();
+            if arms.len() < 2 {
+                continue;
+            }
+            let half = arms.iter().map(|a| g.street(a.0).carriageway * 0.5).fold(0.0, f32::max);
+            let kr = arms.iter().map(|a| prof(g.street(a.0)).kerb_radius).fold(0.0, f32::max);
+            let shortest = arms.iter().map(|a| g.street(a.0).len()).fold(f32::INFINITY, f32::min);
+            let mouth = arms.iter().map(|a| g.mouth(a.0, a.1, lib)).fold(0.0, f32::max);
+            let r = (half + kr).max(mouth).min(shortest * 0.5);
+            junctions.push(Junction { node: n, c: g.nodes[n as usize].p, kerb_radius: kr, r });
+        }
+        let carriage0 = g.corridor(|s, _| if prof(s).vehicles { s.carriageway } else { 0.0 });
+        let mut fillets = Vec::new();
+        for j in &junctions {
+            if j.kerb_radius <= 0.0 {
+                continue;
+            }
+            let d = Region::ring(&disc(j.c, j.r, 32));
+            fillets.push(carriage0.and(&d).closing(j.kerb_radius).and(&d));
+        }
+        let carriage_all = carriage0.union(&Region::union_all(fillets.iter())).and(public);
+        let jdiscs = Region::rings(junctions.iter().map(|j| disc(j.c, j.r, 32)).collect::<Vec<_>>().iter().map(|r| r.as_slice()));
+        let median = g.corridor(|s, _| prof(s).median).minus(&jdiscs).and(&carriage_all);
+        let carriage = carriage_all.minus(&median);
+        let carroads = g.corridor(|s, i| if prof(s).vehicles && s.carriageway > 0.0 { s.width[i] } else { 0.0 });
+        let shared = g.corridor(|s, i| if s.carriageway <= 0.0 && prof(s).class != Class::Limit { s.width[i] } else { 0.0 }).and(public).minus(&carroads).minus(&carriage);
+        let open = public.minus(&carriage).minus(&median).minus(&shared).opening(8.0);
+        let plaza = plazas.union(&open).and(public).minus(&carriage).minus(&median).minus(&shared);
+        let walk = public.minus(&carriage).minus(&median).minus(&shared).minus(&plaza);
+        let plaza_poles = plaza.components().into_iter().map(|c| {
+            let r = c.pole().map(|p| p.1).unwrap_or(0.0);
+            (Located::new(c), r)
+        }).collect();
+        let mut gr = Ground { carriage, median, shared, plaza, walk, junctions, ..Default::default() };
+        gr.surfaces = surfaces(&gr, g, lib);
+        gr.loc = gr.surfaces.iter().map(|s| Located::new(s.region.clone())).collect();
+        gr.carriage_loc = Located::new(gr.carriage.clone());
+        gr.plaza_loc = Located::new(gr.plaza.clone());
+        gr.plaza_poles = plaza_poles;
+        gr
+    }
+
+    /// Ground height at a point of public space (0 outside).
+    pub fn height_at(&self, p: Vec2) -> f32 {
+        self.surface_at(p).map(|s| s.h).unwrap_or(0.0)
+    }
+
+    pub fn surface_at(&self, p: Vec2) -> Option<&Surface> {
+        self.loc.iter().position(|l| l.contains(p)).map(|i| &self.surfaces[i])
+    }
+
+    /// Distance along `dir` to the roadway, if within `max`.
+    pub fn to_carriage(&self, p: Vec2, dir: Vec2, max: f32) -> Option<f32> {
+        if self.carriage_loc.contains(p) {
+            return Some(0.0);
+        }
+        self.carriage_loc.ray(p, dir, max)
+    }
+
+    pub fn in_carriage(&self, p: Vec2) -> bool {
+        self.carriage_loc.contains(p)
+    }
+
+    pub fn in_plaza(&self, p: Vec2) -> bool {
+        self.plaza_loc.contains(p)
+    }
+
+    /// Inscribed radius of the plaza containing `p`.
+    pub fn plaza_radius(&self, p: Vec2) -> Option<f32> {
+        self.plaza_poles.iter().find(|(l, _)| l.contains(p)).map(|(_, r)| *r)
+    }
+}
+
+/// Height partition: each class split by the street that owns it (higher
+/// rank first), with that street's material and height.
+fn surfaces(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Vec<Surface> {
+    // Group streets by their ground signature so there are few regions.
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+    struct Sig {
+        rank: std::cmp::Reverse<u8>,
+        carriage: String,
+        walk: String,
+        shared: String,
+        kerb: i32,
+        shared_h: i32,
+    }
+    let mut groups: BTreeMap<Sig, Vec<StreetId>> = BTreeMap::new();
+    for (i, s) in g.streets.iter().enumerate() {
+        let p = lib.get(s.profile);
+        let shared_h = if p.vehicles { 0.02 } else { p.shared_height.max(0.02) };
+        let sig = Sig { rank: std::cmp::Reverse(p.rank), carriage: p.surface.carriage.clone(), walk: p.surface.walk.clone(), shared: p.surface.shared.clone(), kerb: (p.kerb * 1000.0) as i32, shared_h: (shared_h * 1000.0) as i32 };
+        groups.entry(sig).or_default().push(i as StreetId);
+    }
+    let mut out = Vec::new();
+    let mut taken = Region::empty();
+    let classes = [(&gr.carriage, 0usize), (&gr.walk, 1), (&gr.shared, 2)];
+    let mut cells = Vec::new();
+    for (sig, list) in &groups {
+        let set: std::collections::BTreeSet<u64> = list.iter().map(|&i| g.street(i).key).collect();
+        let own = g.corridor(|s, i| if set.contains(&s.key) { s.width[i] + 0.5 } else { 0.0 }).minus(&taken);
+        taken = taken.union(&own);
+        cells.push((sig.clone(), own));
+    }
+    for (class, k) in classes {
+        let mut rest = class.clone();
+        for (sig, own) in &cells {
+            let r = class.and(own);
+            rest = rest.minus(own);
+            if r.is_empty() {
+                continue;
+            }
+            let (h, m) = match k {
+                0 => (if sig.carriage == "Asphalt" { 0.0 } else { 0.002 }, crate::profile::mat(&sig.carriage).unwrap_or(Mat::Asphalt)),
+                1 => (sig.kerb as f32 / 1000.0, crate::profile::mat(&sig.walk).unwrap_or(Mat::SidewalkSlab)),
+                _ => (sig.shared_h as f32 / 1000.0, crate::profile::mat(&sig.shared).unwrap_or(Mat::Cobble)),
+            };
+            out.push(Surface { region: r, h, mat: m });
+        }
+        if !rest.is_empty() {
+            let (h, m) = match k {
+                0 => (0.0, Mat::Asphalt),
+                1 => (0.15, Mat::SidewalkSlab),
+                _ => (0.15, Mat::Cobble),
+            };
+            out.push(Surface { region: rest, h, mat: m });
+        }
+    }
+    if !gr.plaza.is_empty() {
+        out.push(Surface { region: gr.plaza.clone(), h: 0.15, mat: Mat::Cobble });
+    }
+    if !gr.median.is_empty() {
+        out.push(Surface { region: gr.median.clone(), h: 0.15, mat: Mat::SidewalkHex });
+    }
+    // Merge surfaces with the same height and material.
+    let mut merged: Vec<Surface> = Vec::new();
+    for s in out {
+        if let Some(m) = merged.iter_mut().find(|m| m.mat == s.mat && (m.h - s.h).abs() < 1e-4) {
+            m.region = m.region.union(&s.region);
+        } else {
+            merged.push(s);
+        }
+    }
+    merged
+}
+
+// ------------------------------------------------------------------ meshes
+
+/// A kerb face: a polyline along the boundary of a raised surface, from
+/// `lo` up to `hi`.
+#[derive(Clone, Debug)]
+pub struct Kerb {
+    pub line: Vec<Vec2>,
+    pub lo: f32,
+    pub hi: f32,
+}
+
+/// Kerb faces wherever neighbouring public surfaces differ in height.
+pub fn kerbs(gr: &Ground) -> Vec<Kerb> {
+    let mut out: Vec<Kerb> = Vec::new();
+    for s in &gr.surfaces {
+        if s.h < 0.02 {
+            continue;
+        }
+        for sh in s.region.shapes() {
+            for ring in sh.rings() {
+                let n = ring.len();
+                let mut cur: Option<Kerb> = None;
+                for i in 0..n {
+                    let (a, b) = (ring[i], ring[(i + 1) % n]);
+                    let d = (b - a).normalize_or(Vec2::X);
+                    let probe = (a + b) * 0.5 + Vec2::new(d.y, -d.x) * 0.05;
+                    let lo = gr.surface_at(probe).map(|o| o.h);
+                    let face = lo.filter(|lo| s.h - lo > 0.01);
+                    match (face, cur.as_mut()) {
+                        (Some(lo), Some(k)) if (k.lo - lo).abs() < 1e-3 && k.line.last() == Some(&a) => k.line.push(b),
+                        (Some(lo), _) => {
+                            if let Some(k) = cur.take() {
+                                out.push(k);
+                            }
+                            cur = Some(Kerb { line: vec![a, b], lo, hi: s.h });
+                        }
+                        (None, _) => {
+                            if let Some(k) = cur.take() {
+                                out.push(k);
+                            }
+                        }
+                    }
+                }
+                if let Some(k) = cur.take() {
+                    out.push(k);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Ground meshes per 64 m tile: every surface triangulated at its height,
+/// kerb faces with a granite top band, gutters. Colliders come from the
+/// same triangles. Returns tiles of parts plus collider triangles.
+pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, extent: [Vec2; 2]) -> (BTreeMap<(i32, i32), Parts<Mat>>, Vec<[Vec3; 3]>) {
+    const TILE: f32 = 64.0;
+    let mut tiles: BTreeMap<(i32, i32), Parts<Mat>> = BTreeMap::new();
+    let mut col: Vec<[Vec3; 3]> = Vec::new();
+    let tile_of = |p: Vec2| ((p.x / TILE).floor() as i32, (p.y / TILE).floor() as i32);
+    let (t0, t1) = (tile_of(extent[0]), tile_of(extent[1]));
+    for s in &gr.surfaces {
+        // Asphalt at 0 is the ground plane laid by the caller.
+        if s.h <= 0.0 && s.mat == Mat::Asphalt {
+            continue;
+        }
+        let Some([lo, hi]) = s.region.bbox() else { continue };
+        let (a, b) = (tile_of(lo).max(t0.min(tile_of(lo))), tile_of(hi));
+        for tx in a.0..=b.0 {
+            for tz in a.1..=b.1 {
+                let sq = [Vec2::new(tx as f32 * TILE, tz as f32 * TILE), Vec2::new((tx + 1) as f32 * TILE, tz as f32 * TILE), Vec2::new((tx + 1) as f32 * TILE, (tz + 1) as f32 * TILE), Vec2::new(tx as f32 * TILE, (tz + 1) as f32 * TILE)];
+                let piece = s.region.and(&Region::ring(&sq));
+                if piece.is_empty() {
+                    continue;
+                }
+                let (pts, tris) = piece.triangulate();
+                let prim = tiles.entry((tx, tz)).or_insert_with(Parts::new).get(s.mat);
+                let scale = s.mat.scale();
+                let base = prim.positions.len() as u32;
+                for p in &pts {
+                    prim.vertex(Vec3::new(p.x, s.h, p.y), Vec3::Y, *p / scale);
+                }
+                for t in &tris {
+                    // CCW in (x, z) faces -Y: flip to face up.
+                    prim.indices.extend([base + t[0], base + t[2], base + t[1]]);
+                    let v = |i: u32| Vec3::new(pts[i as usize].x, s.h, pts[i as usize].y);
+                    col.push([v(t[0]), v(t[2]), v(t[1])]);
+                }
+            }
+        }
+    }
+    let _ = t1;
+    // Kerb faces with a 0.3 m granite top band on the raised side.
+    for k in kerbs(gr) {
+        let mid = k.line[k.line.len() / 2];
+        let parts = tiles.entry(tile_of(mid)).or_insert_with(Parts::new);
+        let h = k.hi - k.lo;
+        for w in k.line.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let (pa, pb) = (Vec3::new(a.x, k.lo, a.y), Vec3::new(b.x, k.lo, b.y));
+            // The raised surface is on the left of a -> b (CCW ring): the
+            // face looks right (outward).
+            parts.get(Mat::Curb).quad(pb, pa, pa + Vec3::Y * (h + 0.003), pb + Vec3::Y * (h + 0.003), Mat::Curb.scale());
+            col.push([pb, pa, pa + Vec3::Y * h]);
+            col.push([pb, pa + Vec3::Y * h, pb + Vec3::Y * h]);
+        }
+        if h > 0.05 {
+            let path: Vec<Vec3> = k.line.iter().map(|p| Vec3::new(p.x, k.hi + 0.003, p.y)).collect();
+            let nrm = crate::geom::polyline_normals(&path, false, -1.0);
+            parts.get(Mat::Curb).sweep(&path, &nrm, &[(0.3, 0.0), (0.0, 0.0)], false, false, 1.0);
+        }
+    }
+    // Gutters: a granite strip along the centre of shared streets.
+    for s in &g.streets {
+        let p = lib.get(s.profile);
+        if p.gutter == Gutter::None || s.carriageway > 0.0 {
+            continue;
+        }
+        let lines: Vec<Vec<Vec2>> = match p.gutter {
+            Gutter::Centre => vec![s.line.pts().to_vec()],
+            _ => [1.0f32, -1.0].iter().map(|side| s.line.offset(side * (s.min_width() * 0.5 - 0.45).max(0.3)).pts().to_vec()).collect(),
+        };
+        for piece in gr.shared.clip(&lines) {
+            let pl = Polyline::new(piece);
+            if pl.len() < 0.5 {
+                continue;
+            }
+            let h = gr.height_at(pl.at(pl.len() * 0.5)) + 0.004;
+            let parts = tiles.entry(tile_of(pl.at(pl.len() * 0.5))).or_insert_with(Parts::new);
+            ribbon(parts.get(Mat::Granite), &pl, 0.35, h, 1.0);
+        }
+    }
+    (tiles, col)
+}
+
+/// Flat strip of half width `w/2` along a polyline at height `y`.
+pub fn ribbon(p: &mut crate::geom::Prim, line: &Polyline, w: f32, y: f32, scale: f32) {
+    let pts = line.pts();
+    let n = pts.len();
+    if n < 2 {
+        return;
+    }
+    let base = p.positions.len() as u32;
+    let mut s = 0.0;
+    for i in 0..n {
+        if i > 0 {
+            s += pts[i].distance(pts[i - 1]);
+        }
+        let nl = line.vertex_normal(i) * (w * 0.5);
+        p.vertex(Vec3::new(pts[i].x + nl.x, y, pts[i].y + nl.y), Vec3::Y, Vec2::new(0.0, s) / scale);
+        p.vertex(Vec3::new(pts[i].x - nl.x, y, pts[i].y - nl.y), Vec3::Y, Vec2::new(w, s) / scale);
+    }
+    for i in 0..n as u32 - 1 {
+        let k = base + i * 2;
+        // (left, right) pairs: wind to face up.
+        p.indices.extend([k, k + 2, k + 1, k + 1, k + 2, k + 3]);
+    }
+}
+
+// ------------------------------------------------------------------ markings
+
+const WHITE: u32 = 0xf2f2ec;
+const YELLOW: u32 = 0xe8b51c;
+
+/// Road markings on any layout: lines along offsets of each centreline,
+/// clipped to the roadway shrunk by 0.3 m minus the junction discs, so
+/// paint never reaches a sidewalk or a junction; zebras and stop lines at
+/// the mouths.
+pub fn markings(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Parts<Mat> {
+    let mut p: Parts<Mat> = Parts::new();
+    if gr.carriage.is_empty() {
+        return p;
+    }
+    let jd = Region::rings(gr.junctions.iter().map(|j| disc(j.c, j.r, 32)).collect::<Vec<_>>().iter().map(|r| r.as_slice()));
+    let paintable = gr.carriage.offset(-0.3, Join::Miter(0.5)).minus(&jd);
+    let white = Mat::Paint(hex(WHITE));
+    let yellow = Mat::Paint(hex(YELLOW));
+    for (si, s) in g.streets.iter().enumerate() {
+        let prof = lib.get(s.profile);
+        if !prof.vehicles || s.carriageway <= 0.0 || prof.markings == Markings::None {
+            continue;
+        }
+        let road = s.carriageway * 0.5;
+        let si = si as StreetId;
+        let (m0, m1) = (g.mouth(si, End::A, lib), s.len() - g.mouth(si, End::B, lib));
+        let line = &s.line;
+        // Solid and dashed lines along offsets, clipped.
+        let solid = |o: f32, w: f32, m: Mat, p: &mut Parts<Mat>| {
+            for piece in paintable.clip(&[line.offset(o).pts().to_vec()]) {
+                let pl = Polyline::new(piece);
+                ribbon(p.get(m), &pl, w, 0.008, 1.0);
+            }
+        };
+        let dashed = |o: f32, dash: f32, gap: f32, p: &mut Parts<Mat>| {
+            let off = line.offset(o);
+            let mut t = m0 + 6.5;
+            let mut segs = Vec::new();
+            while t < m1 - 6.5 {
+                segs.push(off.sub(t, (t + dash).min(m1 - 6.5)).pts().to_vec());
+                t += dash + gap;
+            }
+            for piece in paintable.clip(&segs) {
+                ribbon(p.get(white), &Polyline::new(piece), 0.12, 0.008, 1.0);
+            }
+        };
+        match prof.markings {
+            Markings::Avenue => {
+                let inner = prof.median * 0.5 + 0.3;
+                for side in [-1.0f32, 1.0] {
+                    solid(side * inner, 0.15, white, &mut p);
+                    solid(side * (road - 0.3), 0.15, white, &mut p);
+                    let lanes = prof.lanes.max(1) as f32;
+                    let lane = (road - 0.3 - inner) / lanes;
+                    for k in 1..prof.lanes.max(1) {
+                        dashed(side * (inner + lane * k as f32), 4.5, 7.5, &mut p);
+                    }
+                    if prof.bike {
+                        // Red bike lane beside the median.
+                        for piece in paintable.clip(&[line.offset(side * (inner + 1.0)).pts().to_vec()]) {
+                            ribbon(p.get(Mat::Paint(hex(0xa23b2c))), &Polyline::new(piece), 1.6, 0.007, 2.0);
+                        }
+                    }
+                }
+            }
+            Markings::Centre => dashed(0.0, 3.0, 4.5, &mut p),
+            Markings::ParkingOneWay | Markings::OneWay => {
+                if prof.parking != Parking::None && prof.markings == Markings::ParkingOneWay {
+                    let sides: &[f32] = if prof.parking == Parking::Both { &[-1.0, 1.0] } else { &[-1.0] };
+                    for &side in sides {
+                        let o = side * (road - 2.2);
+                        solid(o, 0.1, white, &mut p);
+                        // Bay ticks where the street is straight enough.
+                        let mut t = m0 + 8.0;
+                        let mut ticks = Vec::new();
+                        while t < m1 - 8.0 {
+                            if curvature(line, t) < 1.0 / 60.0 {
+                                let a = line.at(t) + line.normal(t) * o;
+                                let b = line.at(t) + line.normal(t) * side * road;
+                                ticks.push(vec![a, b]);
+                            }
+                            t += 4.8;
+                        }
+                        for piece in paintable.clip(&ticks) {
+                            ribbon(p.get(white), &Polyline::new(piece), 0.1, 0.008, 1.0);
+                        }
+                    }
+                }
+                if prof.lanes >= 2 {
+                    dashed(0.0, 3.0, 4.5, &mut p);
+                }
+            }
+            Markings::KerbLine => {
+                // One lane, parking on one side, a yellow line on the other.
+                if prof.parking != Parking::None && road > 2.5 {
+                    solid(-(road - 2.0), 0.1, white, &mut p);
+                }
+                solid(road - 0.25, 0.12, yellow, &mut p);
+            }
+            Markings::None => {}
+        }
+        // Arrows along one-way and avenue streets.
+        if s.oneway != 0 || prof.markings == Markings::Avenue {
+            let mut t = m0 + 14.0;
+            while t < m1 - 10.0 {
+                let fwd = line.tangent(t);
+                if curvature(line, t) < 1.0 / 40.0 {
+                    let offs: Vec<f32> = if prof.markings == Markings::Avenue {
+                        let inner = prof.median * 0.5 + 0.3;
+                        let lane = (road - 0.3 - inner) / prof.lanes.max(1) as f32;
+                        (0..prof.lanes.max(1)).flat_map(|k| [inner + lane * (k as f32 + 0.5), -(inner + lane * (k as f32 + 0.5))]).collect()
+                    } else if prof.lanes >= 2 {
+                        vec![-1.4, 1.4]
+                    } else {
+                        vec![if prof.parking == Parking::One { 1.0 } else { 0.0 }]
+                    };
+                    for o in offs {
+                        let c = line.at(t) + line.normal(t) * o;
+                        let dir = if prof.markings == Markings::Avenue { if o > 0.0 { -fwd } else { fwd } } else { fwd * s.oneway as f32 };
+                        if paintable.contains(c) {
+                            arrow(&mut p, c, dir);
+                        }
+                    }
+                }
+                t += if prof.markings == Markings::Avenue { 60.0 } else { 35.0 };
+            }
+        }
+        // Zebra crossings and stop lines at the mouths of real junctions.
+        if prof.crossings {
+            for e in [End::A, End::B] {
+                let n = s.node(e);
+                if g.star(n).iter().filter(|a| car(g, lib, a.0)).count() < 3 && g.degree(n) < 3 {
+                    continue;
+                }
+                let m = g.mouth(si, e, lib);
+                let sign = if e == End::A { 1.0 } else { -1.0 };
+                let at = |d: f32| if e == End::A { d } else { s.len() - d };
+                if s.len() < 2.0 * m + 12.0 {
+                    continue;
+                }
+                let mut stripes = Vec::new();
+                let (c0, c1) = (at(m + 1.0), at(m + 5.0));
+                let mut o = -road + 0.3;
+                while o < road - 0.3 {
+                    let c = o + 0.25;
+                    stripes.push(vec![line.at(c0) + line.normal(c0) * c, line.at(c1) + line.normal(c1) * c]);
+                    o += 1.0;
+                }
+                for piece in gr.carriage.offset(-0.2, Join::Miter(0.5)).clip(&stripes) {
+                    ribbon(p.get(white), &Polyline::new(piece), 0.5, 0.008, 1.0);
+                }
+                // Stop line across the lanes arriving here.
+                let arriving = match s.oneway {
+                    1 => e == End::B,
+                    -1 => e == End::A,
+                    _ => true,
+                };
+                if arriving {
+                    let ts = at(m + 6.0);
+                    let (oa, ob) = if s.oneway == 0 { if sign > 0.0 { (0.0, road) } else { (-road, 0.0) } } else { (-road, road) };
+                    let seg = vec![line.at(ts) + line.normal(ts) * (oa + 0.2), line.at(ts) + line.normal(ts) * (ob - 0.2)];
+                    for piece in paintable.clip(&[seg]) {
+                        ribbon(p.get(white), &Polyline::new(piece), 0.4, 0.008, 1.0);
+                    }
+                }
+            }
+        }
+    }
+    p
+}
+
+/// Turning rate (1/m) around arc length `t`.
+pub fn curvature(l: &Polyline, t: f32) -> f32 {
+    let (a, b) = (l.tangent((t - 3.0).max(0.0)), l.tangent((t + 3.0).min(l.len())));
+    a.perp_dot(b).atan2(a.dot(b)).abs() / 6.0
+}
+
+/// Straight-ahead lane arrow (5 m long) at `c` pointing along `fwd`.
+pub fn arrow(p: &mut Parts<Mat>, c: Vec2, fwd: Vec2) {
+    let side = left(fwd);
+    let m = Mat::Paint(hex(WHITE));
+    let (a, b) = (c - fwd * 2.5, c + fwd * 1.0);
+    let n = side * 0.09;
+    p.get(m).polygon(&[a - n, b - n, b + n, a + n], 0.008, true, 1.0);
+    let tip = c + fwd * 2.5;
+    let base = c + fwd * 0.9;
+    p.get(m).polygon(&[base - side * 0.45, base + side * 0.45, tip], 0.008, true, 1.0);
+}

@@ -20,8 +20,21 @@ pub struct GameWorld {
 
 fn load(map: MapKind, paths: &Paths) -> Result<WorldDescription, forja_world::WorldError> {
     let dl = &paths.downloaded;
+    let styles = paths.data.join("city/styles.toml");
+    let preset = |name: &str| SpanishCity::preset(dl, &styles, name).expect("built-in plan").build();
+    // Real tiles: map.json under osm/, or forja_fetch's map.osm.
+    let osm = |tile: &str, id: &str| {
+        let json = dl.join("osm").join(format!("{tile}.json"));
+        let path = if json.exists() { json } else { dl.join(id).join("map.osm") };
+        SpanishCity::from_osm(Some(dl), Some(&styles), &path)?.build()
+    };
     match map {
-        MapKind::Spain => SpanishCity::new(dl, paths.data.join("city/styles.toml")).build(),
+        MapKind::Spain => SpanishCity::new(dl, &styles).build(),
+        MapKind::SpainClassic => preset("classic"),
+        MapKind::Carmen => preset("carmen"),
+        MapKind::Austrias => preset("austrias"),
+        MapKind::CarmenOsm => osm("carmen", "map_valencia_carmen_osm"),
+        MapKind::AustriasOsm => osm("austrias", "map_madrid_austrias_osm"),
         MapKind::Track => TestTrack::default().build(),
         MapKind::Kit => KitCity::new(dl).build(),
         MapKind::Osm => OsmWorld::new(dl.join("map_miami_beach_osm/map.osm")).with_content(dl).build(),

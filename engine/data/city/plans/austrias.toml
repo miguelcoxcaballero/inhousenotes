@@ -1,0 +1,26 @@
+# Madrid de los Austrias on its own: crooked old streets with narrow
+# sidewalks and bollards, callejuelas, a large main square.
+
+name = "austrias"
+
+[[zone]]
+id = "madrid_austrias"
+city = "madrid"
+plaza_kind = "parterre"
+ronda = "calle_ancha"
+mask = { size = [300.0, 300.0], wobble = 22.0 }
+lots = { width = [5.5, 10.0], depth = 13.0, min_width = 3.8, min_area = 32.0, court_min = 90.0, neck = 1.8, min_tip = 2.5, jitter = 0.2, wobble = 0.3 }
+[zone.styles]
+street = [["madrid_popular", 0.45], ["madrid_austrias", 0.3], ["madrid_centro", 0.25]]
+alley = [["madrid_popular", 0.7], ["madrid_austrias", 0.3]]
+avenue = [["madrid_centro", 0.6], ["madrid_austrias", 0.4]]
+plaza = [["madrid_austrias", 1.0]]
+[zone.organic]
+plaza = { radius = [20.0, 28.0], vertices = [4, 5] }
+meander = 0.5
+lattice = 2.0
+tiers = [
+  { profile = "calle_vieja", d_max = 46.0, adarve = 0.0, loops = 0.25, plazuelas = 0.0 },
+  { profile = "callejuela_aceras", d_max = 24.0, adarve = 0.1, loops = 0.15, plazuelas = 0.2 },
+  { profile = "callejuela", d_max = 15.0, adarve = 0.25, loops = 0.05, plazuelas = 0.1 },
+]

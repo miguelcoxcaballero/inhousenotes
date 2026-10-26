@@ -57,6 +57,8 @@ sha2 = "0.10"
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 ureq = { version = "3", features = ["platform-verifier", "json"] }
 serde_json = "1"
+i_overlay = "=9.1.0"
+i_triangle = "=0.50.1"
 
 [profile.dev]
 opt-level = 1

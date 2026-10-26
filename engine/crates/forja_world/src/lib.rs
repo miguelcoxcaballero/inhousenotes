@@ -12,6 +12,7 @@ mod gltf_world;
 pub mod library;
 mod kit;
 pub mod osm;
+pub mod osm_city;
 pub mod spain;
 pub mod terrain;
 mod track;

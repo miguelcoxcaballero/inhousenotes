@@ -1,0 +1,332 @@
+# Street profiles for forja_city.
+#
+# A profile says what a street is: its cross-section (building line to
+# building line `width`, roadway `carriageway`, median), paving, kerb and
+# gutter, dressing (lamps, trees, bollards, bins, containers, benches,
+# terraces, catenaries), traffic control, and what it allows the facades
+# facing it (`front`, see forja_city::lot::FrontRules: reach_frac,
+# reach_max, mirador_reach, awning_walk, awning_clear, shops, narrow,
+# portal, height_ratio).
+#
+# `carriageway = 0` means a shared surface (plataforma única) at
+# `shared_height`: no kerbs, paint, traffic lights or poles.
+# Surfaces name ground materials: Asphalt, Cobble, Granite, SidewalkHex,
+# SidewalkSlab.
+
+# ------------------------------------------------------------ avenues
+
+[[profile]]
+id = "bulevar"
+class = "avenue"
+rank = 9
+width = [46.0, 46.0]
+carriageway = 34.0
+vehicles = true
+median = 9.0
+lanes = 3
+markings = "avenue"
+crossings = true
+control = "signals"
+surface = { carriage = "Asphalt", walk = "SidewalkHex", shared = "SidewalkHex" }
+walk_min = 4.0
+kerb_radius = 8.0
+lamps = { mount = "road", pitch = 30.0 }
+palms = true
+benches = 27.0
+bins = 45.0
+bike = true
+terraces = true
+speed = 50
+
+[[profile]]
+id = "avenida"
+class = "avenue"
+rank = 8
+width = [22.0, 30.0]
+carriageway = 14.0
+vehicles = true
+lanes = 2
+markings = "centre"
+crossings = true
+control = "signals"
+surface = { carriage = "Asphalt", walk = "SidewalkSlab", shared = "SidewalkSlab" }
+walk_min = 3.0
+kerb_radius = 6.0
+lamps = { mount = "candelabra", pitch = 24.0 }
+trees = 10.0
+bins = 40.0
+containers = true
+terraces = true
+speed = 50
+
+[[profile]]
+id = "ronda"
+class = "avenue"
+rank = 8
+width = [20.0, 28.0]
+carriageway = 12.0
+vehicles = true
+lanes = 2
+markings = "centre"
+crossings = true
+control = "signals"
+surface = { carriage = "Asphalt", walk = "SidewalkHex", shared = "SidewalkHex" }
+walk_min = 3.0
+kerb_radius = 6.0
+lamps = { mount = "candelabra", pitch = 22.0 }
+trees = 9.0
+bins = 40.0
+containers = true
+terraces = true
+speed = 50
+
+# ------------------------------------------------------------ streets
+
+[[profile]]
+id = "calle_ancha"
+class = "street"
+rank = 7
+width = [14.0, 18.0]
+carriageway = 9.0
+vehicles = true
+lanes = 1
+parking = "both"
+markings = "parking_one_way"
+crossings = true
+control = "signals"
+surface = { carriage = "Asphalt", walk = "SidewalkSlab", shared = "SidewalkSlab" }
+walk_min = 2.0
+kerb_radius = 4.0
+lamps = { mount = "pole", pitch = 22.0 }
+trees = 9.0
+bins = 40.0
+containers = true
+terraces = true
+speed = 50
+
+# Valencian Ensanche: 20 m streets, chaflanes, hexagonal tiles, trees.
+[[profile]]
+id = "ensanche"
+class = "street"
+rank = 6
+width = [20.0, 20.0]
+carriageway = 11.0
+vehicles = true
+lanes = 2
+parking = "both"
+markings = "parking_one_way"
+crossings = true
+control = "signals"
+surface = { carriage = "Asphalt", walk = "SidewalkHex", shared = "SidewalkHex" }
+walk_min = 3.0
+kerb_radius = 6.0
+chamfer = 9.0
+round_corners = 0.35
+lamps = { mount = "candelabra", pitch = 27.0 }
+trees = 9.0
+bins = 40.0
+containers = true
+terraces = true
+speed = 50
+
+# Madrid barrio: 11 m one-way streets, narrow slab sidewalks with bollards.
+[[profile]]
+id = "madrid_calle"
+class = "street"
+rank = 5
+width = [11.0, 11.0]
+carriageway = 7.0
+vehicles = true
+lanes = 1
+parking = "one"
+markings = "kerb_line"
+crossings = true
+control = "signs"
+surface = { carriage = "Asphalt", walk = "SidewalkSlab", shared = "SidewalkSlab" }
+walk_min = 1.5
+kerb_radius = 1.5
+lamps = { mount = "pole", pitch = 24.0 }
+bollards = "kerb"
+bins = 40.0
+containers = true
+speed = 30
+
+[[profile]]
+id = "madrid_borde"
+class = "street"
+pool = "outer"
+rank = 5
+width = [11.0, 11.0]
+carriageway = 7.0
+vehicles = true
+lanes = 1
+parking = "one"
+markings = "kerb_line"
+crossings = true
+control = "signs"
+surface = { carriage = "Asphalt", walk = "SidewalkSlab", shared = "SidewalkSlab" }
+walk_min = 1.5
+kerb_radius = 1.5
+lamps = { mount = "pole", pitch = 24.0 }
+bollards = "kerb"
+bins = 40.0
+containers = true
+speed = 30
+
+[[profile]]
+id = "ensanche_borde"
+class = "street"
+pool = "outer"
+rank = 6
+width = [20.0, 20.0]
+carriageway = 11.0
+vehicles = true
+lanes = 2
+parking = "both"
+markings = "parking_one_way"
+crossings = true
+control = "signals"
+surface = { carriage = "Asphalt", walk = "SidewalkHex", shared = "SidewalkHex" }
+walk_min = 3.0
+kerb_radius = 6.0
+chamfer = 9.0
+round_corners = 0.35
+lamps = { mount = "candelabra", pitch = 27.0 }
+trees = 9.0
+bins = 40.0
+containers = true
+terraces = true
+speed = 50
+
+# Pedestrian street (calle peatonal): flush slabs, terraces, benches.
+[[profile]]
+id = "calle_peatonal"
+class = "street"
+rank = 4
+width = [5.0, 9.0]
+surface = { carriage = "SidewalkSlab", walk = "SidewalkSlab", shared = "SidewalkSlab" }
+shared_height = 0.15
+gutter = "centre"
+lamps = { mount = "wall", pitch = 16.0 }
+bollards = "mouth"
+benches = 30.0
+bins = 35.0
+terraces = true
+catenary = true
+front = { shops = 1.3 }
+
+# ------------------------------------------------------------ old towns
+
+# Old-town street with a narrow sett roadway and tiny raised kerbs.
+[[profile]]
+id = "calle_vieja"
+class = "lane"
+pool = "alley"
+rank = 3
+width = [5.5, 8.0]
+carriageway = 3.5
+vehicles = true
+lanes = 1
+markings = "kerb_line"
+control = "signs"
+surface = { carriage = "Cobble", walk = "SidewalkSlab", shared = "Cobble" }
+kerb = 0.10
+walk_min = 0.9
+kerb_radius = 0.5
+lamps = { mount = "wall", pitch = 16.0 }
+bins = 45.0
+speed = 20
+front = { reach_max = 0.9 }
+
+[[profile]]
+id = "callejuela_aceras"
+class = "lane"
+pool = "alley"
+rank = 2
+width = [3.8, 6.0]
+carriageway = 2.8
+vehicles = true
+lanes = 1
+surface = { carriage = "Cobble", walk = "SidewalkSlab", shared = "Cobble" }
+kerb = 0.10
+walk_min = 0.5
+lamps = { mount = "wall", pitch = 14.0 }
+bollards = "kerb"
+speed = 20
+front = { reach_max = 0.7 }
+
+# Pedestrian alley: shared cobbles with a central gutter.
+[[profile]]
+id = "callejuela"
+class = "alley"
+rank = 1
+width = [3.5, 5.5]
+surface = { carriage = "Cobble", walk = "Cobble", shared = "Cobble" }
+shared_height = 0.15
+gutter = "centre"
+lamps = { mount = "wall", pitch = 14.0 }
+bollards = "mouth"
+catenary = true
+front = { reach_max = 0.6, shops = 0.6 }
+
+[[profile]]
+id = "callejon"
+class = "alley"
+rank = 0
+width = [2.2, 3.4]
+surface = { carriage = "Cobble", walk = "Cobble", shared = "Cobble" }
+shared_height = 0.15
+gutter = "centre"
+lamps = { mount = "wall", pitch = 14.0 }
+bollards = "mouth"
+catenary = true
+front = { reach_max = 0.45, shops = 0.35 }
+
+# ------------------------------------------------------------ open space
+
+[[profile]]
+id = "plaza"
+class = "plaza"
+rank = 4
+width = [8.0, 8.0]
+surface = { carriage = "Granite", walk = "Cobble", shared = "Cobble" }
+shared_height = 0.15
+lamps = { mount = "pole", pitch = 14.0 }
+benches = 14.0
+bins = 30.0
+terraces = true
+
+# Map edge: no frontage, nothing built.
+[[profile]]
+id = "limit"
+class = "limit"
+rank = 0
+width = [0.0, 0.0]
+surface = { carriage = "Asphalt", walk = "SidewalkSlab", shared = "SidewalkSlab" }
+
+# ------------------------------------------------------------ OpenStreetMap
+# Measured clearance (facade to facade, m) picks the profile.
+
+[[osm]]
+highway = ["pedestrian", "footway", "path", "steps"]
+profiles = [["callejon", 3.5], ["callejuela", 6.0], ["calle_peatonal", 1e9]]
+
+[[osm]]
+highway = ["living_street"]
+profiles = [["callejon", 3.2], ["callejuela_aceras", 7.0], ["calle_vieja", 1e9]]
+
+[[osm]]
+highway = ["residential", "unclassified"]
+profiles = [["callejuela_aceras", 6.0], ["calle_vieja", 9.0], ["madrid_calle", 13.0], ["calle_ancha", 1e9]]
+
+[[osm]]
+highway = ["service"]
+profiles = [["callejon", 3.5], ["callejuela_aceras", 1e9]]
+
+[[osm]]
+highway = ["tertiary", "tertiary_link"]
+profiles = [["calle_vieja", 8.0], ["calle_ancha", 1e9]]
+
+[[osm]]
+highway = ["primary", "secondary", "primary_link", "secondary_link", "trunk"]
+profiles = [["calle_ancha", 16.0], ["avenida", 1e9]]

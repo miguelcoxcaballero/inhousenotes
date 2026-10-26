@@ -1,0 +1,52 @@
+# Any layout: a leaning, bending Ensanche (acute and obtuse corners,
+# curved streets) along its own curved boulevard, and west of it an
+# irregular district grown by the accessibility rule with coarse tiers
+# only (wide winding streets, no medieval alleys). The district's mask
+# overlaps the grid; earlier zones win, so it fills up to the boulevard.
+
+name = "organic"
+
+[[zone]]
+id = "ensanche_curvo"
+city = "valencia"
+plaza_kind = "fountain"
+lots = { width = [12.0, 19.0], depth = 17.0, min_width = 4.0, min_area = 40.0, court_min = 120.0, neck = 3.5, min_tip = 3.0 }
+[zone.styles]
+street = [["valencia_ensanche", 0.45], ["valencia_ruzafa", 0.3], ["valencia_modernista", 0.15], ["desarrollismo", 0.1]]
+avenue = [["valencia_modernista", 0.55], ["valencia_ensanche", 0.45]]
+outer = [["valencia_ruzafa", 0.5], ["desarrollismo", 0.5]]
+plaza = [["valencia_modernista", 1.0]]
+[zone.grid]
+origin = [30.0, 0.0]
+dir = 1.0
+axis = 0.12
+shear = 0.45
+bend = 0.0015
+cols = 3
+rows = 3
+block = [80.0, 96.0]
+street = "ensanche"
+outer = "ensanche_borde"
+near = 23.0
+near_street = "bulevar"
+plaza = [1, 1]
+
+[[zone]]
+id = "barrio"
+city = "madrid"
+plaza_kind = "garden"
+mask = { ring = [[-300.0, -175.0], [130.0, -175.0], [130.0, 178.0], [-300.0, 178.0]] }
+lots = { width = [7.0, 13.0], depth = 14.0, min_width = 4.0, min_area = 35.0, court_min = 100.0, neck = 2.5, min_tip = 2.8, jitter = 0.1, wobble = 0.2 }
+[zone.styles]
+street = [["madrid_centro", 0.4], ["madrid_ladrillo", 0.35], ["desarrollismo", 0.25]]
+alley = [["madrid_popular", 0.6], ["madrid_ladrillo", 0.4]]
+avenue = [["madrid_centro", 0.6], ["valencia_ensanche", 0.4]]
+plaza = [["madrid_austrias", 1.0]]
+[zone.organic]
+plaza = { radius = [16.0, 24.0], vertices = [5, 8] }
+meander = 0.9
+lattice = 3.0
+tiers = [
+  { profile = "calle_ancha", d_max = 60.0, adarve = 0.0, loops = 0.3, plazuelas = 0.0 },
+  { profile = "madrid_calle", d_max = 30.0, adarve = 0.1, loops = 0.2, plazuelas = 0.15 },
+]

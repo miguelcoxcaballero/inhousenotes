@@ -30,7 +30,7 @@ fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .tls_config(tls)
         .timeout_global(Some(Duration::from_secs(300)))
-        .user_agent("forja_fetch/0.1 (+https://github.com/miguelcoxcaballero/inhousenotes)")
+        .user_agent("ForjaEngine/0.1 (https://github.com/miguelcoxcaballero/inhousenotes)")
         .build()
         .into()
 }
