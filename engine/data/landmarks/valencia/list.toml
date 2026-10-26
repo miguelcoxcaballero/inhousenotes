@@ -1,0 +1,1810 @@
+# Valencia: the 100 most emblematic buildings, ordered by rank.
+# Merged from three independent candidate lists (heritage registries, popularity/tourism,
+# architectural history): duplicates merged by Wikidata id / same building, scores summed,
+# then balanced for period, district and building type.
+# Every wikidata id, P625 coordinate (lat/lon below), P373 commons_category and the
+# municipality (P131 chain to Q8818 Valencia, or reverse geocoding) were verified on 2026-10-26.
+# period: islamic | gothic | renaissance | baroque | neoclassical | 19th_century | modernisme |
+#         early_20th_century | interwar | postwar | contemporary | vernacular
+# pilot = true marks the 6 framework stress-test landmarks. osm = [] until an outline id is confirmed.
+
+
+[[landmark]]
+rank = 1
+slug = "llotja_de_la_seda"
+name = "Lonja de la Seda"
+name_va = "Llotja de la Seda"
+wikidata = "Q588009"
+commons_category = "Llotja de la Seda"
+lat = 39.474444
+lon = -0.378333
+kind = "exchange"
+period = "gothic"
+style = "Valencian civil Gothic"
+built = "1482-1548"
+architect = "Pere Compte; Joan Ivarra; Domingo de Urteaga"
+osm = []
+pilot = true
+why = "Top of all three lists: UNESCO World Heritage silk exchange, the masterpiece of European civil Gothic with its hall of twisted columns, crenellated tower and Consolat del Mar wing."
+
+[[landmark]]
+rank = 2
+slug = "catedral_de_valencia"
+name = "Catedral de Santa María de Valencia (con el Miguelete)"
+name_va = "Catedral de València (amb el Micalet)"
+wikidata = "Q1466926"
+commons_category = "Saint Mary of Valencia Cathedral"
+lat = 39.475611
+lon = -0.375139
+kind = "cathedral"
+period = "gothic"
+style = "Gothic with Romanesque and Baroque portals; octagonal Gothic bell tower"
+built = "1262-1703 (Micalet 1381-1429)"
+architect = "Arnau Vidal; Andreu Julià; Pere Balaguer; Francesc Baldomar; Konrad Rudolf (Baroque portal)"
+osm = []
+pilot = true
+why = "Top-3 in all lists; one landmark that includes the octagonal Micalet bell tower (Q2975344, merged), the lantern (cimbori), the Romanesque, Gothic and Baroque portals and the Holy Grail chapel."
+
+[[landmark]]
+rank = 3
+slug = "torres_de_serrans"
+name = "Torres de Serranos"
+name_va = "Torres de Serrans"
+wikidata = "Q2455550"
+commons_category = "Torres de Serrans"
+lat = 39.4793
+lon = -0.375933
+kind = "city gate"
+period = "gothic"
+style = "Valencian Gothic"
+built = "1392-1398"
+architect = "Pere Balaguer"
+osm = []
+pilot = true
+why = "Top-3 in all lists: the monumental main gate of the 14th-century Christian wall, stage of the Crida that opens the Falles."
+
+[[landmark]]
+rank = 4
+slug = "palau_de_les_arts"
+name = "Palacio de las Artes Reina Sofía"
+name_va = "Palau de les Arts Reina Sofia"
+wikidata = "Q747342"
+commons_category = "Palau de les Arts Reina Sofia"
+lat = 39.45778
+lon = -0.35556
+kind = "opera house"
+period = "contemporary"
+style = "Neo-futurist (Calatrava)"
+built = "1996-2005"
+architect = "Santiago Calatrava"
+osm = []
+pilot = false
+why = "Highest-scoring contemporary building in all three lists; the opera house with the steel 'feather' crest is the postcard of the Ciutat de les Arts i les Ciències."
+
+[[landmark]]
+rank = 5
+slug = "mercat_central"
+name = "Mercado Central"
+name_va = "Mercat Central"
+wikidata = "Q2197068"
+commons_category = "Mercat Central de València"
+lat = 39.473503
+lon = -0.378942
+kind = "market hall"
+period = "modernisme"
+style = "Valencian Art Nouveau"
+built = "1914-1928"
+architect = "Alexandre Soler i March; Francesc Guàrdia i Vial; Ángel Romaní"
+osm = []
+pilot = true
+why = "Top-6 in all lists: one of Europe's largest covered markets, iron-and-glass domes, ceramic and trencadís decoration."
+
+[[landmark]]
+rank = 6
+slug = "estacio_del_nord"
+name = "Estación del Norte"
+name_va = "Estació del Nord"
+wikidata = "Q1102684"
+commons_category = "Estació del Nord de València"
+lat = 39.466994
+lon = -0.377125
+kind = "railway station"
+period = "modernisme"
+style = "Valencian Art Nouveau"
+built = "1906-1917"
+architect = "Demetrio Ribes"
+osm = []
+pilot = false
+why = "Strong in all three lists: modernista terminus with orange-and-tile decoration and iron train shed, the city's historic gateway."
+
+[[landmark]]
+rank = 7
+slug = "torres_de_quart"
+name = "Torres de Quart"
+name_va = "Torres de Quart"
+wikidata = "Q2343754"
+commons_category = "Torres de Quart"
+lat = 39.475686
+lon = -0.383975
+kind = "city gate"
+period = "gothic"
+style = "Late Valencian Gothic"
+built = "1441-1460"
+architect = "Francesc Baldomar; Pere Compte"
+osm = []
+pilot = false
+why = "Strong in all lists: twin cylindrical gate towers of the medieval wall still showing 1808 cannon impacts."
+
+[[landmark]]
+rank = 8
+slug = "palau_del_marques_de_dos_aigues"
+name = "Palacio del Marqués de Dos Aguas (Museo Nacional de Cerámica)"
+name_va = "Palau del Marqués de Dos Aigües"
+wikidata = "Q1993940"
+commons_category = "Palau del Marqués de Dos Aigües"
+lat = 39.472639
+lon = -0.374722
+kind = "palace"
+period = "baroque"
+style = "Rococo"
+built = "15th c.; portal 1740-1744; remodel 1854-1867"
+architect = "Hipólito Rovira; Ignacio Vergara (portal)"
+osm = []
+pilot = false
+why = "Strong in all lists: Spain's most celebrated Rococo alabaster portal; houses the Museo Nacional de Cerámica."
+
+[[landmark]]
+rank = 9
+slug = "museu_de_les_ciencies"
+name = "Museo de las Ciencias Príncipe Felipe"
+name_va = "Museu de les Ciències Príncep Felip"
+wikidata = "Q939288"
+commons_category = "Museo de las Ciencias Príncipe Felipe"
+lat = 39.455798
+lon = -0.35155
+kind = "science museum"
+period = "contemporary"
+style = "Neo-futurist (Calatrava)"
+built = "1996-2000"
+architect = "Santiago Calatrava"
+osm = []
+pilot = false
+why = "Core City of Arts and Sciences building in all three lists: ~220 m long skeletal white ribbed hall."
+
+[[landmark]]
+rank = 10
+slug = "hemisferic"
+name = "L'Hemisfèric"
+name_va = "L'Hemisfèric"
+wikidata = "Q2712673"
+commons_category = "L'Hemisfèric"
+lat = 39.456678
+lon = -0.353856
+kind = "planetarium"
+period = "contemporary"
+style = "Neo-futurist (Calatrava)"
+built = "1995-1998"
+architect = "Santiago Calatrava"
+osm = []
+pilot = true
+why = "The eye-shaped IMAX planetarium over its reflecting pool, first-built and most reproduced image of contemporary Valencia."
+
+[[landmark]]
+rank = 11
+slug = "estadi_de_mestalla"
+name = "Estadio de Mestalla"
+name_va = "Estadi de Mestalla"
+wikidata = "Q202762"
+commons_category = "Mestalla Stadium"
+lat = 39.474722
+lon = -0.358333
+kind = "stadium"
+period = "interwar"
+style = "Football stadium, steep stands"
+built = "1923; enlarged 1950s-1970s"
+architect = "Francisco Almenar Quinzá"
+osm = []
+pilot = false
+why = "Most-linked building of the city on Wikidata (49 sitelinks), top tourism score; Spain's oldest top-flight stadium. Wikidata lacks P131, coordinate verified in el Pla del Real by reverse geocoding."
+
+[[landmark]]
+rank = 12
+slug = "mercat_de_colom"
+name = "Mercado de Colón"
+name_va = "Mercat de Colom"
+wikidata = "Q3393246"
+commons_category = "Mercado de Colón"
+lat = 39.46885
+lon = -0.368364
+kind = "market hall"
+period = "modernisme"
+style = "Valencian Art Nouveau"
+built = "1914-1916"
+architect = "Francisco Mora Berenguer"
+osm = []
+pilot = false
+why = "Strong in all lists: brick-and-trencadís modernista market with iron roof, showpiece of the Eixample."
+
+[[landmark]]
+rank = 13
+slug = "oceanografic"
+name = "Oceanográfico"
+name_va = "L'Oceanogràfic"
+wikidata = "Q2447851"
+commons_category = "L'Oceanogràfic"
+lat = 39.452867
+lon = -0.348047
+kind = "aquarium"
+period = "contemporary"
+style = "Hyperbolic-paraboloid shell architecture"
+built = "1998-2003"
+architect = "Félix Candela; Alberto Domingo; Carlos Lázaro"
+osm = []
+pilot = false
+why = "Top tourism score and high architecture score: Europe's largest aquarium, Candela's water-lily concrete shell restaurant."
+
+[[landmark]]
+rank = 14
+slug = "ajuntament_de_valencia"
+name = "Casa Consistorial de Valencia"
+name_va = "Ajuntament de València"
+wikidata = "Q927284"
+commons_category = "Town hall of Valencia"
+lat = 39.469836
+lon = -0.376989
+kind = "city hall"
+period = "interwar"
+style = "Eclectic / Neo-Baroque"
+built = "1758 (Casa de Enseñanza); 1905-1930 façade and tower"
+architect = "Francisco Mora Berenguer; Carlos Carbonell Pañella"
+osm = []
+pilot = false
+why = "City hall on Plaça de l'Ajuntament (the city-frame origin) with clock tower and the mascletà balcony; strong in all lists."
+
+[[landmark]]
+rank = 15
+slug = "palau_de_la_generalitat"
+name = "Palacio de la Generalidad"
+name_va = "Palau de la Generalitat"
+wikidata = "Q3393221"
+commons_category = "Palau de la Generalitat Valenciana"
+lat = 39.4767
+lon = -0.376689
+kind = "palace"
+period = "gothic"
+style = "Valencian Gothic-Renaissance"
+built = "1421-1579; second tower 1952"
+architect = "Pere Compte; Joan Corbera"
+osm = []
+pilot = false
+why = "Seat of the Valencian government; Gothic palace with Renaissance tower, strong in all lists."
+
+[[landmark]]
+rank = 16
+slug = "placa_de_bous"
+name = "Plaza de Toros de Valencia"
+name_va = "Plaça de Bous de València"
+wikidata = "Q526528"
+commons_category = "Plaza de toros de Valencia"
+lat = 39.466667
+lon = -0.37625
+kind = "bullring"
+period = "19th_century"
+style = "Neoclassical, Colosseum-inspired brick arcades"
+built = "1851-1859"
+architect = "Sebastián Monleón"
+osm = []
+pilot = true
+why = "Strong in all lists: 384-arch polygonal brick bullring beside the Estació del Nord."
+
+[[landmark]]
+rank = 17
+slug = "basilica_dels_desemparats"
+name = "Basílica de la Virgen de los Desamparados"
+name_va = "Basílica de la Mare de Déu dels Desemparats"
+wikidata = "Q978306"
+commons_category = "Basílica de la Mare de Déu dels Desamparats"
+lat = 39.476211
+lon = -0.374817
+kind = "basilica"
+period = "baroque"
+style = "Baroque, oval plan with tiled dome"
+built = "1652-1667"
+architect = "Diego Martínez Ponce de Urrana"
+osm = []
+pilot = false
+why = "Strong in all lists: shrine of the city's patroness on Plaça de la Mare de Déu, joined to the cathedral by an arched bridge."
+
+[[landmark]]
+rank = 18
+slug = "sant_nicolau"
+name = "Iglesia de San Nicolás de Bari y San Pedro Mártir"
+name_va = "Església de Sant Nicolau"
+wikidata = "Q9007252"
+commons_category = "Church of Sant Nicolau, València"
+lat = 39.476133
+lon = -0.378836
+kind = "church"
+period = "gothic"
+style = "Gothic with Baroque fresco cycle"
+built = "13th-15th c.; frescoes 1690-1693"
+architect = "Antonio Palomino; Dionís Vidal (frescoes)"
+osm = []
+pilot = false
+why = "The 'Sistine Chapel of Valencia'; high in all three lists (tourism 92)."
+
+[[landmark]]
+rank = 19
+slug = "museu_de_belles_arts"
+name = "Museo de Bellas Artes de Valencia (Colegio de San Pío V)"
+name_va = "Museu de Belles Arts de València (Sant Pius V)"
+wikidata = "Q1748404"
+commons_category = "Museu de Belles Arts de València"
+lat = 39.479167
+lon = -0.370833
+kind = "museum"
+period = "baroque"
+style = "Baroque college with blue-tiled dome"
+built = "1683-1744"
+architect = "Juan Bautista Pérez Castiel"
+osm = []
+pilot = false
+why = "Baroque Colegio de San Pío V by the Túria, Spain's second art gallery; high in all lists."
+
+[[landmark]]
+rank = 20
+slug = "agora"
+name = "Ágora"
+name_va = "L'Àgora"
+wikidata = "Q2634180"
+commons_category = "L'Àgora"
+lat = 39.453611
+lon = -0.35
+kind = "multi-purpose hall"
+period = "contemporary"
+style = "Neo-futurist (Calatrava)"
+built = "2006-2009"
+architect = "Santiago Calatrava"
+osm = []
+pilot = false
+why = "Elliptical blue-trencadís covered hall of the City of Arts and Sciences (now CaixaForum); tourism 93."
+
+[[landmark]]
+rank = 21
+slug = "santa_caterina"
+name = "Iglesia de Santa Catalina"
+name_va = "Església de Santa Caterina"
+wikidata = "Q2839013"
+commons_category = "Església de Santa Caterina (València)"
+lat = 39.474078
+lon = -0.37655
+kind = "church"
+period = "gothic"
+style = "Gothic church with hexagonal Baroque bell tower"
+built = "14th c.; tower 1688-1705"
+architect = "Joan Baptista Viñes (tower)"
+osm = []
+pilot = false
+why = "Its hexagonal Baroque tower framing Plaça de la Reina is one of the city's iconic towers; strong in all lists."
+
+[[landmark]]
+rank = 22
+slug = "sants_joans"
+name = "Iglesia de los Santos Juanes"
+name_va = "Església dels Sants Joans (Sant Joan del Mercat)"
+wikidata = "Q3393224"
+commons_category = "Church of Sant Joan del Mercat (Valencia)"
+lat = 39.474217
+lon = -0.379158
+kind = "church"
+period = "baroque"
+style = "Gothic church with Baroque façade and frescoes"
+built = "14th c.; Baroque remodel 1693-1702"
+architect = "Antonio Palomino (frescoes)"
+osm = []
+pilot = false
+why = "Monumental Baroque façade facing the Mercat Central and the Llotja; strong in all lists."
+
+[[landmark]]
+rank = 23
+slug = "el_patriarca"
+name = "Real Colegio Seminario del Corpus Christi (El Patriarca)"
+name_va = "Reial Col·legi Seminari del Corpus Christi (el Patriarca)"
+wikidata = "Q4984364"
+commons_category = "Reial Col·legi del Corpus Christi de València"
+lat = 39.4725
+lon = -0.373333
+kind = "seminary church"
+period = "renaissance"
+style = "Renaissance"
+built = "1586-1610"
+architect = "Guillem del Rey"
+osm = []
+pilot = false
+why = "Renaissance seminary and church founded by Juan de Ribera, with celebrated cloister and bell tower; strong in all lists."
+
+[[landmark]]
+rank = 24
+slug = "edifici_de_correus"
+name = "Edificio de Correos"
+name_va = "Edifici de Correus"
+wikidata = "Q21711039"
+commons_category = "Edificio de Correos y Telégrafos (Valencia)"
+lat = 39.469475
+lon = -0.375531
+kind = "post office"
+period = "modernisme"
+style = "Eclectic with glass dome"
+built = "1915-1922"
+architect = "Miguel Ángel Navarro Pérez"
+osm = []
+pilot = false
+why = "Post office on Plaça de l'Ajuntament with stained-glass dome and crowning sculpture; high in all lists."
+
+[[landmark]]
+rank = 25
+slug = "sant_miquel_dels_reis"
+name = "Monasterio de San Miguel de los Reyes"
+name_va = "Monestir de Sant Miquel dels Reis"
+wikidata = "Q4891102"
+commons_category = "Sant Miquel dels Reis"
+lat = 39.498975
+lon = -0.3692
+kind = "monastery"
+period = "renaissance"
+style = "Renaissance (Herrerian)"
+built = "1548-1644"
+architect = "Alonso de Covarrubias; Juan de Vidanya"
+osm = []
+pilot = false
+why = "Renaissance 'Valencian Escorial' with twin towers, now Biblioteca Valenciana; covers the northern districts."
+
+[[landmark]]
+rank = 26
+slug = "palau_de_benicarlo"
+name = "Palacio de Benicarló (Cortes Valencianas)"
+name_va = "Palau de Benicarló (Corts Valencianes)"
+wikidata = "Q3068088"
+commons_category = "Palau de Benicarló"
+lat = 39.477847
+lon = -0.374639
+kind = "palace"
+period = "gothic"
+style = "Valencian Gothic with Renaissance additions"
+built = "15th c."
+architect = ""
+osm = []
+pilot = false
+why = "Gothic Borja palace, seat of the Valencian parliament; architecture score 85."
+
+[[landmark]]
+rank = 27
+slug = "la_nau"
+name = "La Nau (Universidad de Valencia)"
+name_va = "La Nau (Universitat de València)"
+wikidata = "Q4985226"
+commons_category = "La Nau (Universitat de València)"
+lat = 39.471944
+lon = -0.372778
+kind = "university"
+period = "neoclassical"
+style = "Neoclassical cloister block"
+built = "founded 1498; rebuilt 1830s"
+architect = ""
+osm = []
+pilot = false
+why = "Historic seat of the University of Valencia with neoclassical cloister; in all three lists."
+
+[[landmark]]
+rank = 28
+slug = "palau_de_la_musica"
+name = "Palacio de la Música"
+name_va = "Palau de la Música de València"
+wikidata = "Q9054601"
+commons_category = "Palau de la Música, Valencia"
+lat = 39.466111
+lon = -0.360278
+kind = "concert hall"
+period = "postwar"
+style = "Late-modern glass vault"
+built = "1984-1987"
+architect = "José María García de Paredes"
+osm = []
+pilot = false
+why = "Glass-vaulted concert hall on the Túria garden, the main late-20th-century civic landmark."
+
+[[landmark]]
+rank = 29
+slug = "convent_de_sant_domenec"
+name = "Convento de Santo Domingo (Capitanía General)"
+name_va = "Convent de Sant Domènec"
+wikidata = "Q8350474"
+commons_category = "Convent of Santo Domingo, Valencia"
+lat = 39.474167
+lon = -0.368889
+kind = "convent"
+period = "gothic"
+style = "Gothic, Renaissance Capella dels Reis, Baroque portal"
+built = "1239 founded; 14th-16th c."
+architect = ""
+osm = []
+pilot = false
+why = "Royal Dominican convent with Gothic chapter house, now Capitanía General; architecture score 82."
+
+[[landmark]]
+rank = 30
+slug = "almodi"
+name = "Almudín de Valencia"
+name_va = "Almodí de València"
+wikidata = "Q8196158"
+commons_category = "Almodí de València"
+lat = 39.476536
+lon = -0.373708
+kind = "granary"
+period = "gothic"
+style = "Gothic hall"
+built = "14th-16th c. (1307-1517)"
+architect = ""
+osm = []
+pilot = false
+why = "Medieval municipal granary, long Gothic hall beside the cathedral apse; in all lists."
+
+[[landmark]]
+rank = 31
+slug = "drassanes_del_grau"
+name = "Atarazanas del Grao"
+name_va = "Drassanes del Grau"
+wikidata = "Q8207890"
+commons_category = "Drassanes del Grau"
+lat = 39.461344
+lon = -0.333552
+kind = "shipyard"
+period = "gothic"
+style = "Valencian Gothic, five parallel gabled naves"
+built = "14th-15th c."
+architect = ""
+osm = []
+pilot = false
+why = "Gothic royal shipyards of the port district (Poblats Marítims); unusual repeated-nave geometry."
+
+[[landmark]]
+rank = 32
+slug = "teatre_principal"
+name = "Teatro Principal"
+name_va = "Teatre Principal"
+wikidata = "Q3329707"
+commons_category = "Teatre Principal (Valencia)"
+lat = 39.4705
+lon = -0.374458
+kind = "theatre"
+period = "neoclassical"
+style = "Neoclassical"
+built = "1808-1832"
+architect = "Filippo Fontana (design); José Zacarías Camaña (façade)"
+osm = []
+pilot = false
+why = "The city's main historic opera house and theatre; in all lists."
+
+[[landmark]]
+rank = 33
+slug = "umbracle"
+name = "L'Umbracle"
+name_va = "L'Umbracle"
+wikidata = "Q2437999"
+commons_category = "L'Umbracle"
+lat = 39.455472
+lon = -0.354008
+kind = "landscaped gallery"
+period = "contemporary"
+style = "Neo-futurist (Calatrava)"
+built = "1998-2001"
+architect = "Santiago Calatrava"
+osm = []
+pilot = false
+why = "320 m ribbed arch gallery over a car park closing the City of Arts and Sciences; Wikidata classes it as a sculpture garden but it is a large built structure with real mass (open arcade), kept as a structural landmark."
+
+[[landmark]]
+rank = 34
+slug = "veles_e_vents"
+name = "Edificio Veles e Vents"
+name_va = "Edifici Veles e Vents"
+wikidata = "Q3038292"
+commons_category = "Veles e Vents"
+lat = 39.46116
+lon = -0.32422
+kind = "pavilion"
+period = "contemporary"
+style = "Contemporary cantilevered terraces"
+built = "2005-2006"
+architect = "David Chipperfield; Fermín Vázquez (b720)"
+osm = []
+pilot = false
+why = "America's Cup building, icon of the Marina; architecture score 80."
+
+[[landmark]]
+rank = 35
+slug = "ivam"
+name = "Instituto Valenciano de Arte Moderno (IVAM)"
+name_va = "Institut Valencià d'Art Modern (IVAM)"
+wikidata = "Q1600831"
+commons_category = "Institut Valencià d'Art Modern"
+lat = 39.48
+lon = -0.382778
+kind = "museum"
+period = "postwar"
+style = "Late-modern stone-clad volume"
+built = "1986-1989"
+architect = "Emilio Giménez; Carlos Salvadores"
+osm = []
+pilot = false
+why = "Spain's first modern art museum, on the edge of the Carme quarter; in all lists."
+
+[[landmark]]
+rank = 36
+slug = "convent_del_carme"
+name = "Convento del Carmen (Centro del Carmen)"
+name_va = "Convent del Carme (Centre del Carme)"
+wikidata = "Q8200936"
+commons_category = "Convent del Carme (València)"
+lat = 39.479689
+lon = -0.379006
+kind = "convent"
+period = "gothic"
+style = "Gothic and Renaissance cloisters, Baroque church façade"
+built = "14th-17th c."
+architect = ""
+osm = []
+pilot = false
+why = "Carmelite convent, now Centre del Carme contemporary-art centre; in all lists."
+
+[[landmark]]
+rank = 37
+slug = "palau_de_justicia"
+name = "Palacio de Justicia (antigua Real Aduana)"
+name_va = "Palau de Justícia de València"
+wikidata = "Q3392747"
+commons_category = "Palau de Justícia de València"
+lat = 39.471972
+lon = -0.369758
+kind = "courthouse"
+period = "neoclassical"
+style = "Academic Neoclassical"
+built = "1758-1802"
+architect = "Felipe Rubio"
+osm = []
+pilot = false
+why = "Former Royal Customs House, now the high court, on Plaça de la Porta de la Mar; in all lists."
+
+[[landmark]]
+rank = 38
+slug = "banys_de_l_almirall"
+name = "Baños del Almirante"
+name_va = "Banys de l'Almirall"
+wikidata = "Q511925"
+commons_category = "Banys de l'Almirall"
+lat = 39.474969
+lon = -0.373461
+kind = "bathhouse"
+period = "gothic"
+style = "Islamic-tradition (Mudéjar) bathhouse"
+built = "c. 1313-1320"
+architect = ""
+osm = []
+pilot = false
+why = "Medieval bathhouse with star-pierced vaults, one of very few surviving in Spain; in all lists."
+
+[[landmark]]
+rank = 39
+slug = "sant_joan_de_l_hospital"
+name = "Iglesia de San Juan del Hospital"
+name_va = "Església de Sant Joan de l'Hospital"
+wikidata = "Q9007135"
+commons_category = "Sant Joan de l'Hospital (Valencia)"
+lat = 39.474292
+lon = -0.372914
+kind = "church"
+period = "gothic"
+style = "Romanesque-Gothic"
+built = "1238 onward"
+architect = ""
+osm = []
+pilot = false
+why = "The oldest church of the city, built by the Knights Hospitaller; in all lists."
+
+[[landmark]]
+rank = 40
+slug = "roig_arena"
+name = "Roig Arena"
+name_va = "Roig Arena"
+wikidata = "Q82992187"
+commons_category = "Roig Arena"
+lat = 39.449211
+lon = -0.364261
+kind = "indoor arena"
+period = "contemporary"
+style = "Contemporary, ceramic-wave skin"
+built = "2022-2025"
+architect = "HOK; ERRE Arquitectura"
+osm = []
+pilot = false
+why = "New 20,000-seat arena (2025), the newest landmark; in all three lists."
+
+[[landmark]]
+rank = 41
+slug = "edifici_del_rellotge"
+name = "Edificio del Reloj"
+name_va = "Edifici del Rellotge"
+wikidata = "Q50426705"
+commons_category = "Edifici del Rellotge (Port de València)"
+lat = 39.460139
+lon = -0.331833
+kind = "port office"
+period = "modernisme"
+style = "Eclectic with clock tower"
+built = "1914-1916"
+architect = ""
+osm = []
+pilot = false
+why = "Clock-tower port headquarters, symbol of the Marina de València."
+
+[[landmark]]
+rank = 42
+slug = "palau_de_congressos"
+name = "Palacio de Congresos de Valencia"
+name_va = "Palau de Congressos de València"
+wikidata = "Q9054458"
+commons_category = "Palau de Congressos de València"
+lat = 39.496239
+lon = -0.402092
+kind = "convention centre"
+period = "contemporary"
+style = "High-tech (Foster)"
+built = "1993-1998"
+architect = "Norman Foster"
+osm = []
+pilot = false
+why = "Foster's convention centre with long blade-like roof; architecture score 82; covers the north-west (Benicalap/Campanar)."
+
+[[landmark]]
+rank = 43
+slug = "finca_roja"
+name = "Finca Roja"
+name_va = "Finca Roja"
+wikidata = "Q8961711"
+commons_category = "Finca Roja"
+lat = 39.463378
+lon = -0.384817
+kind = "residential block"
+period = "interwar"
+style = "Expressionist / Amsterdam School brick"
+built = "1929-1933"
+architect = "Enrique Viedma Vidal"
+osm = []
+pilot = false
+why = "Red-brick perimeter block with towers, emblem of interwar social housing (Extramurs); architecture score 78."
+
+[[landmark]]
+rank = 44
+slug = "esglesia_del_temple"
+name = "Iglesia y Palacio del Temple"
+name_va = "Església i Palau del Temple"
+wikidata = "Q9054370"
+commons_category = "Església i Palau del Temple (València)"
+lat = 39.476464
+lon = -0.371239
+kind = "church and palace"
+period = "neoclassical"
+style = "Academic Neoclassical"
+built = "1761-1770"
+architect = "Miguel Fernández"
+osm = []
+pilot = false
+why = "Neoclassical church-palace of the Order of Montesa on the Templar site; in all lists."
+
+[[landmark]]
+rank = 45
+slug = "sant_marti"
+name = "Iglesia de San Martín"
+name_va = "Església de Sant Martí"
+wikidata = "Q9007196"
+commons_category = "Church of Sant Martí, València"
+lat = 39.473153
+lon = -0.375658
+kind = "church"
+period = "gothic"
+style = "Gothic with Baroque interior"
+built = "14th c.; 18th c. interior"
+architect = ""
+osm = []
+pilot = false
+why = "Gothic church with bronze equestrian Saint Martin over the portal; in all lists."
+
+[[landmark]]
+rank = 46
+slug = "casa_dels_dracs"
+name = "Casa de los Dragones"
+name_va = "Casa dels Dracs"
+wikidata = "Q8772077"
+commons_category = "Casa dels Dracs"
+lat = 39.470212
+lon = -0.36974
+kind = "apartment building"
+period = "modernisme"
+style = "Neo-Gothic modernista"
+built = "1901"
+architect = "José Manuel Cortina Pérez"
+osm = []
+pilot = false
+why = "One of the most photographed modernista façades, with dragon gargoyles; in all lists."
+
+[[landmark]]
+rank = 47
+slug = "monestir_de_la_trinitat"
+name = "Monasterio de la Trinidad"
+name_va = "Monestir de la Trinitat"
+wikidata = "Q11702312"
+commons_category = "Monestir de la Trinitat de València"
+lat = 39.480161
+lon = -0.372103
+kind = "monastery"
+period = "gothic"
+style = "Valencian Gothic"
+built = "15th c."
+architect = ""
+osm = []
+pilot = false
+why = "Gothic Poor Clares monastery with cloister across the Túria (la Saïdia); in all lists."
+
+[[landmark]]
+rank = 48
+slug = "ateneu_mercantil"
+name = "Edificio del Ateneo Mercantil"
+name_va = "Edifici de l'Ateneu Mercantil"
+wikidata = "Q8772084"
+commons_category = "Ateneu Mercantil de València building"
+lat = 39.470947
+lon = -0.376031
+kind = "club and offices"
+period = "interwar"
+style = "Eclectic / historicist with corner towers"
+built = "1928-1941"
+architect = "Fernando Arzadún Ibarrarán; Cayetano Borso di Carminati"
+osm = []
+pilot = false
+why = "Monumental block closing the north side of Plaça de l'Ajuntament; in all lists."
+
+[[landmark]]
+rank = 49
+slug = "escoles_pies"
+name = "Iglesia de las Escuelas Pías"
+name_va = "Església de les Escoles Pies"
+wikidata = "Q11682927"
+commons_category = "Escoles Pies de València"
+lat = 39.473806
+lon = -0.381806
+kind = "church"
+period = "neoclassical"
+style = "Baroque-Neoclassical rotunda with large dome"
+built = "1767-1773"
+architect = "Antonio Gilabert"
+osm = []
+pilot = false
+why = "Rotunda church with one of the largest domes of the city; a distinct circular-domed geometry."
+
+[[landmark]]
+rank = 50
+slug = "bombas_gens"
+name = "Bombas Gens"
+name_va = "Bombas Gens"
+wikidata = "Q16911704"
+commons_category = "Fàbrica de Bombas Gens"
+lat = 39.485611
+lon = -0.384917
+kind = "factory"
+period = "interwar"
+style = "Art Deco industrial"
+built = "1930"
+architect = "Cayetano Borso di Carminati"
+osm = []
+pilot = false
+why = "Art Deco pump factory turned art centre; best industrial heritage of the north (Marxalenes)."
+
+[[landmark]]
+rank = 51
+slug = "beneficencia"
+name = "Centro Cultural la Beneficencia"
+name_va = "Centre Cultural la Beneficència"
+wikidata = "Q8343592"
+commons_category = "Centre Cultural la Beneficència (València)"
+lat = 39.478422
+lon = -0.383128
+kind = "cultural centre"
+period = "19th_century"
+style = "Eclectic with neo-Byzantine church"
+built = "1876-1886"
+architect = "Joaquín María Belda; José Camaña"
+osm = []
+pilot = false
+why = "Former charity house holding the Prehistory museum and L'ETNO; in all lists."
+
+[[landmark]]
+rank = 52
+slug = "sant_esteve"
+name = "Iglesia de San Esteban"
+name_va = "Església de Sant Esteve"
+wikidata = "Q9007046"
+commons_category = "Church of Sant Esteve de València"
+lat = 39.476131
+lon = -0.373158
+kind = "church"
+period = "baroque"
+style = "Gothic origin, Baroque remodel"
+built = "13th c.; 17th c."
+architect = ""
+osm = []
+pilot = false
+why = "Baroque parish where Saint Vincent Ferrer was baptised; in all lists."
+
+[[landmark]]
+rank = 53
+slug = "palau_de_cervello"
+name = "Palacio de Cervelló"
+name_va = "Palau de Cervelló"
+wikidata = "Q9054454"
+commons_category = "Palau de Cervelló"
+lat = 39.474233
+lon = -0.370328
+kind = "palace"
+period = "baroque"
+style = "18th-c. palace, neoclassical façade"
+built = "18th c."
+architect = ""
+osm = []
+pilot = false
+why = "Palace that hosted the Spanish royal family, now municipal archive on Plaça de Tetuan; in all lists."
+
+[[landmark]]
+rank = 54
+slug = "palau_de_l_almirall"
+name = "Palacio del Almirante"
+name_va = "Palau de l'Almirall"
+wikidata = "Q608414"
+commons_category = "Palau de l'Almirall"
+lat = 39.475147
+lon = -0.373297
+kind = "palace"
+period = "gothic"
+style = "Valencian Gothic"
+built = "15th c.; 18th c. remodel"
+architect = ""
+osm = []
+pilot = false
+why = "Gothic palace of the Admirals of Aragon; architecture score 72."
+
+[[landmark]]
+rank = 55
+slug = "palau_de_l_exposicio"
+name = "Palacio de la Exposición"
+name_va = "Palau de l'Exposició"
+wikidata = "Q48975834"
+commons_category = "Palau de l'Exposició"
+lat = 39.473444
+lon = -0.362639
+kind = "exhibition pavilion"
+period = "modernisme"
+style = "Neo-Gothic / neo-Mudéjar modernista"
+built = "1908-1909"
+architect = "Francisco Mora Berenguer"
+osm = []
+pilot = false
+why = "Pavilion of the 1909 Regional Exhibition (Pla del Real); in all lists."
+
+[[landmark]]
+rank = 56
+slug = "estadi_ciutat_de_valencia"
+name = "Estadio Ciudad de Valencia"
+name_va = "Estadi Ciutat de València"
+wikidata = "Q1122715"
+commons_category = "Estadi Ciutat de València"
+lat = 39.494722
+lon = -0.364167
+kind = "stadium"
+period = "postwar"
+style = "Football stadium"
+built = "1969"
+architect = ""
+osm = []
+pilot = false
+why = "Levante UD stadium (27 sitelinks, tourism 73), covers Orriols."
+
+[[landmark]]
+rank = 57
+slug = "sant_agusti"
+name = "Iglesia de San Agustín"
+name_va = "Església de Sant Agustí"
+wikidata = "Q9007399"
+commons_category = "Church of Sant Agustí, Valencia"
+lat = 39.468625
+lon = -0.380133
+kind = "church"
+period = "gothic"
+style = "Gothic with Baroque additions"
+built = "14th c."
+architect = ""
+osm = []
+pilot = false
+why = "Gothic Augustinian church on the busy Plaça de Sant Agustí; in all lists."
+
+[[landmark]]
+rank = 58
+slug = "la_union_y_el_fenix"
+name = "Edificio de la Unión y el Fénix"
+name_va = "Edifici La Unión y el Fénix"
+wikidata = "Q28777648"
+commons_category = "La Unión y el Fénix building, València"
+lat = 39.46775
+lon = -0.376636
+kind = "office building"
+period = "interwar"
+style = "Eclectic, domed corner with phoenix"
+built = "1929"
+architect = "Enrique Viedma Vidal"
+osm = []
+pilot = false
+why = "Domed corner office block crowned by the phoenix, skyline marker by Plaça de l'Ajuntament; in all lists."
+
+[[landmark]]
+rank = 59
+slug = "tabacalera"
+name = "Fábrica de Tabacos"
+name_va = "Tabacalera de València"
+wikidata = "Q50309302"
+commons_category = "Tabacalera, València"
+lat = 39.47375
+lon = -0.361556
+kind = "factory"
+period = "modernisme"
+style = "Industrial modernista brick"
+built = "1909-1914"
+architect = "Ramón Lucini Callejo"
+osm = []
+pilot = false
+why = "Huge brick tobacco factory, now municipal offices (Pla del Real); in all lists."
+
+[[landmark]]
+rank = 60
+slug = "edifici_rialto"
+name = "Edificio Rialto"
+name_va = "Edifici Rialto"
+wikidata = "Q8346282"
+commons_category = "Rialto Building (València)"
+lat = 39.470978
+lon = -0.376303
+kind = "cinema"
+period = "interwar"
+style = "Art Deco / rationalist"
+built = "1935-1939"
+architect = "Cayetano Borso di Carminati"
+osm = []
+pilot = false
+why = "Former cinema on Plaça de l'Ajuntament, now Filmoteca; in all lists."
+
+[[landmark]]
+rank = 61
+slug = "palau_del_marques_de_campo"
+name = "Palacio del Marqués de Campo (Museo de la Ciudad)"
+name_va = "Palau del Marqués de Campo (Museu de la Ciutat)"
+wikidata = "Q5644720"
+commons_category = "Palau del Marqués de Campo"
+lat = 39.476025
+lon = -0.373842
+kind = "palace"
+period = "neoclassical"
+style = "17th-18th c. palace, 19th c. neoclassical remodel"
+built = "17th c.; 19th c. remodel"
+architect = ""
+osm = []
+pilot = false
+why = "Palace on Plaça de l'Arquebisbe housing the Museu de la Ciutat; in all lists."
+
+[[landmark]]
+rank = 62
+slug = "estacio_joaquim_sorolla"
+name = "Estación Joaquín Sorolla"
+name_va = "Estació Joaquim Sorolla"
+wikidata = "Q801550"
+commons_category = "Valencia-Joaquín Sorolla station"
+lat = 39.460497
+lon = -0.382306
+kind = "railway station"
+period = "contemporary"
+style = "Contemporary"
+built = "2010"
+architect = ""
+osm = []
+pilot = false
+why = "High-speed (AVE) terminus, main arrival point from Madrid (tourism 66); covers Jesús/Quatre Carreres."
+
+[[landmark]]
+rank = 63
+slug = "cases_xapa"
+name = "Casas Chapa"
+name_va = "Cases Xapa"
+wikidata = "Q8771991"
+commons_category = "Cases Chapa (València)"
+lat = 39.468625
+lon = -0.366247
+kind = "apartment building"
+period = "modernisme"
+style = "Valencian Art Nouveau"
+built = "1909-1916"
+architect = "Emilio Ferrer Gisbert; Antonio Martorell Trilles"
+osm = []
+pilot = false
+why = "Group of modernista apartment blocks on Plaça de Cànovas (Eixample); in all lists."
+
+[[landmark]]
+rank = 64
+slug = "torre_hilton"
+name = "Torre Hilton (Hotel Meliá Valencia)"
+name_va = "Torre Hilton (Hotel Meliá València)"
+wikidata = "Q3062297"
+commons_category = "Hotel Meliá Valencia (Torre Hilton)"
+lat = 39.494444
+lon = -0.401111
+kind = "hotel tower"
+period = "contemporary"
+style = "Contemporary high-rise"
+built = "2006"
+architect = ""
+osm = []
+pilot = false
+why = "One of the tallest towers of the city on Avinguda de les Corts Valencianes; represents the high-rise skyline (Campanar)."
+
+[[landmark]]
+rank = 65
+slug = "torre_de_franca"
+name = "Torre de Francia"
+name_va = "Torre de França"
+wikidata = "Q7826984"
+commons_category = "Torre de Francia"
+lat = 39.4597
+lon = -0.3525
+kind = "residential tower"
+period = "contemporary"
+style = "Contemporary high-rise"
+built = "2002-2006"
+architect = ""
+osm = []
+pilot = false
+why = "~115 m residential skyscraper beside the City of Arts and Sciences, in skyline views."
+
+[[landmark]]
+rank = 66
+slug = "sant_tomas_i_sant_felip_neri"
+name = "Iglesia de Santo Tomás y San Felipe Neri"
+name_va = "Església de Sant Tomàs i Sant Felip Neri"
+wikidata = "Q598219"
+commons_category = "Church of Sant Tomàs i Sant Felip Neri (València)"
+lat = 39.474056
+lon = -0.372436
+kind = "church"
+period = "baroque"
+style = "Baroque with large dome"
+built = "1725-1736"
+architect = "Tomás Vicente Tosca"
+osm = []
+pilot = false
+why = "Baroque Oratorian church with imposing dome on Plaça de Sant Vicent Ferrer."
+
+[[landmark]]
+rank = 67
+slug = "alqueria_del_moro"
+name = "Alquería del Moro"
+name_va = "Alqueria del Moro"
+wikidata = "Q5670595"
+commons_category = "Alqueria del Moro"
+lat = 39.499119
+lon = -0.396011
+kind = "farmhouse"
+period = "gothic"
+style = "Gothic fortified farmhouse"
+built = "14th-16th c."
+architect = ""
+osm = []
+pilot = false
+why = "Oldest surviving Gothic alqueria of the Horta (Benicalap); architecture score 72; rural type."
+
+[[landmark]]
+rank = 68
+slug = "banc_de_valencia"
+name = "Edificio del Banco de Valencia"
+name_va = "Edifici del Banc de València"
+wikidata = "Q8772089"
+commons_category = "Banco de Valencia building, Valencia"
+lat = 39.470522
+lon = -0.373617
+kind = "bank"
+period = "postwar"
+style = "Eclectic monumental with dome"
+built = "1942"
+architect = "Javier Goerlich; Antonio Gómez Davó"
+osm = []
+pilot = false
+why = "Domed bank headquarters on Carrer Pintor Sorolla; in all lists."
+
+[[landmark]]
+rank = 69
+slug = "tinglado_2_del_port"
+name = "Tinglado nº 2 del Puerto"
+name_va = "Cobert número 2 del Port"
+wikidata = "Q42884707"
+commons_category = "Cobert n. 2 del Port de València"
+lat = 39.461022
+lon = -0.330986
+kind = "warehouse"
+period = "modernisme"
+style = "Modernista iron, glass and ceramic"
+built = "1910-1914"
+architect = ""
+osm = []
+pilot = false
+why = "Best-preserved of the modernista port warehouses (Tinglados group Q50495240, merged), on the Marina waterfront; in all lists."
+
+[[landmark]]
+rank = 70
+slug = "antic_hospital"
+name = "Antiguo Hospital General (Biblioteca Pública)"
+name_va = "Antic Hospital de València (Biblioteca Pública)"
+wikidata = "Q114959415"
+commons_category = "Biblioteca Pública de València (antic Hospital)"
+lat = 39.47089
+lon = -0.38173
+kind = "hospital infirmary"
+period = "renaissance"
+style = "Renaissance cruciform infirmary"
+built = "16th c. (founded 1409)"
+architect = "Gaspar Gregori"
+osm = []
+pilot = false
+why = "Cruciform Renaissance infirmary, now the Public Library (Q4687025 merged); in all lists."
+
+[[landmark]]
+rank = 71
+slug = "sant_joan_de_la_creu"
+name = "Iglesia de San Juan de la Cruz (antigua San Andrés)"
+name_va = "Església de Sant Joan de la Creu (Sant Andreu)"
+wikidata = "Q5657503"
+commons_category = "Església de Sant Joan de la Creu de València"
+lat = 39.472094
+lon = -0.374636
+kind = "church"
+period = "baroque"
+style = "Baroque-Rococo"
+built = "17th-18th c."
+architect = ""
+osm = []
+pilot = false
+why = "Rococo portal next to the Palau de Dos Aigües; in all lists."
+
+[[landmark]]
+rank = 72
+slug = "palau_dels_catala_de_valeriola"
+name = "Palacio de los Català de Valeriola"
+name_va = "Palau dels Català de Valeriola"
+wikidata = "Q9054644"
+commons_category = "Palau dels Català de Valeriola"
+lat = 39.477597
+lon = -0.3753
+kind = "palace"
+period = "gothic"
+style = "Gothic with Baroque and 20th-c. layers"
+built = "15th c."
+architect = ""
+osm = []
+pilot = false
+why = "Gothic noble palace of Ciutat Vella; in all lists. (A different building from the Palau de Valeriola of the Hortensia Herrero centre: Wikidata coordinates ~450 m apart.)"
+
+[[landmark]]
+rank = 73
+slug = "art_major_de_la_seda"
+name = "Colegio del Arte Mayor de la Seda (Museo de la Seda)"
+name_va = "Col·legi de l'Art Major de la Seda"
+wikidata = "Q8347734"
+commons_category = "Col·legi de l'Art Major de la Seda (València)"
+lat = 39.470853
+lon = -0.380917
+kind = "guild house"
+period = "baroque"
+style = "Gothic origin, Baroque remodel"
+built = "15th c.; 18th c."
+architect = ""
+osm = []
+pilot = false
+why = "Silk weavers' guild house and Silk Museum (Velluters); strong in heritage and tourism, missed by the architecture list."
+
+[[landmark]]
+rank = 74
+slug = "esglesia_del_salvador"
+name = "Iglesia del Salvador"
+name_va = "Església del Salvador"
+wikidata = "Q9007728"
+commons_category = "Església del Salvador de València"
+lat = 39.477222
+lon = -0.373889
+kind = "church"
+period = "baroque"
+style = "Gothic origin, Baroque remodel"
+built = "13th c.; 17th-18th c."
+architect = ""
+osm = []
+pilot = false
+why = "Church of the venerated Cristo del Salvador near the Túria; in all lists."
+
+[[landmark]]
+rank = 75
+slug = "mercat_d_abastos"
+name = "Mercado de Abastos"
+name_va = "Antic Mercat d'Abastiments"
+wikidata = "Q8200942"
+commons_category = "Mercat d'Abastos de València"
+lat = 39.467856
+lon = -0.388136
+kind = "market hall"
+period = "interwar"
+style = "Rationalist"
+built = "1935-1948"
+architect = "Javier Goerlich"
+osm = []
+pilot = false
+why = "Huge rationalist wholesale market (Arrancapins), now a sports centre; in all lists."
+
+[[landmark]]
+rank = 76
+slug = "sant_miquel_i_sant_sebastia"
+name = "Iglesia de San Miguel y San Sebastián"
+name_va = "Església de Sant Miquel i Sant Sebastià"
+wikidata = "Q11920536"
+commons_category = "Church of Sant Sebastià, València"
+lat = 39.4751
+lon = -0.386956
+kind = "church"
+period = "baroque"
+style = "Baroque with tiled dome"
+built = "1726-1739"
+architect = ""
+osm = []
+pilot = false
+why = "Baroque church closing Carrer de Quart (Extramurs); in all lists."
+
+[[landmark]]
+rank = 77
+slug = "casa_museu_blasco_ibanez"
+name = "Casa-Museo Blasco Ibáñez"
+name_va = "Casa-museu de Blasco Ibáñez"
+wikidata = "Q13548107"
+commons_category = "Casa-Museu Blasco Ibáñez"
+lat = 39.482681
+lon = -0.325939
+kind = "house museum"
+period = "19th_century"
+style = "Pompeian-style neoclassical chalet"
+built = "1902; rebuilt 1997"
+architect = "Vicente Bochons y Llorente"
+osm = []
+pilot = false
+why = "The novelist's seafront chalet at the Malva-rosa; in all lists; covers the beach front."
+
+[[landmark]]
+rank = 78
+slug = "portal_de_la_valldigna"
+name = "Portal de la Valldigna"
+name_va = "Portal de la Valldigna"
+wikidata = "Q594815"
+commons_category = "Portal de la Valldigna"
+lat = 39.477536
+lon = -0.378728
+kind = "gate"
+period = "gothic"
+style = "Gothic gateway with chapel"
+built = "1400"
+architect = ""
+osm = []
+pilot = false
+why = "Gate of the old Moorish-quarter wall; small gate type, architecture score 62."
+
+[[landmark]]
+rank = 79
+slug = "casa_jueva"
+name = "Casa Judía"
+name_va = "Casa Jueva"
+wikidata = "Q50419723"
+commons_category = "Casa Jueva (València)"
+lat = 39.46475
+lon = -0.375889
+kind = "house"
+period = "interwar"
+style = "Art Deco with Hebrew motifs"
+built = "1930"
+architect = "Juan Francisco Guardiola"
+osm = []
+pilot = false
+why = "Singular Art Deco house on Carrer de Castelló; in all lists."
+
+[[landmark]]
+rank = 80
+slug = "preso_model"
+name = "Prisión Modelo (Ciudad Administrativa 9 de Octubre)"
+name_va = "Presó Model de València (Ciutat Administrativa 9 d'Octubre)"
+wikidata = "Q5214839"
+commons_category = "Presó Model de València"
+lat = 39.471667
+lon = -0.40405
+kind = "prison / offices"
+period = "early_20th_century"
+style = "Radial panoptic prison with 2010 towers"
+built = "1901-1903; converted 2010"
+architect = "Joaquín María Belda"
+osm = []
+pilot = false
+why = "Radial prison converted into the Generalitat's administrative city (Nou Moles); in all lists."
+
+[[landmark]]
+rank = 81
+slug = "sant_valer"
+name = "Iglesia de San Valero y San Vicente Mártir (Ruzafa)"
+name_va = "Església de Sant Valer i Sant Vicent Màrtir (Russafa)"
+wikidata = "Q28608881"
+commons_category = "Església de Sant Valeri i Sant Vicent Màrtir"
+lat = 39.46253
+lon = -0.3722
+kind = "church"
+period = "baroque"
+style = "Baroque with tiled domes"
+built = "1690s"
+architect = ""
+osm = []
+pilot = false
+why = "Baroque landmark of Russafa with blue-tiled domes; in all lists."
+
+[[landmark]]
+rank = 82
+slug = "teatre_olympia"
+name = "Edificio y Teatro Olympia"
+name_va = "Edifici i Teatre Olympia"
+wikidata = "Q8772032"
+commons_category = "Teatre Olympia (València)"
+lat = 39.470914
+lon = -0.378014
+kind = "theatre"
+period = "modernisme"
+style = "Modernista-eclectic"
+built = "1915"
+architect = "Vicente Rodríguez Martín"
+osm = []
+pilot = false
+why = "Theatre and apartment block on Carrer de Sant Vicent; in all lists."
+
+[[landmark]]
+rank = 83
+slug = "misericordia_de_campanar"
+name = "Iglesia de Nuestra Señora de la Misericordia (Campanar)"
+name_va = "Església de la Mare de Déu de la Misericòrdia (Campanar)"
+wikidata = "Q5661486"
+commons_category = "Església de la Mare de Déu de la Misericòrdia de Campanar"
+lat = 39.481922
+lon = -0.39745
+kind = "church"
+period = "baroque"
+style = "Baroque with bell tower"
+built = "1603 onward"
+architect = ""
+osm = []
+pilot = false
+why = "Parish church and bell tower of the historic village core of Campanar; in all lists."
+
+[[landmark]]
+rank = 84
+slug = "mercat_de_russafa"
+name = "Mercado de Ruzafa"
+name_va = "Mercat de Russafa"
+wikidata = "Q59429024"
+commons_category = "Mercat de Russafa"
+lat = 39.461806
+lon = -0.371083
+kind = "market hall"
+period = "postwar"
+style = "Mid-century modern"
+built = "1957"
+architect = "Julio Bellot Senent"
+osm = []
+pilot = false
+why = "Colourful mid-century market, symbol of Russafa; in all lists."
+
+[[landmark]]
+rank = 85
+slug = "banc_d_espanya"
+name = "Edificio del Banco de España"
+name_va = "Edifici del Banc d'Espanya"
+wikidata = "Q28976650"
+commons_category = "Banc d'Espanya (València)"
+lat = 39.470211
+lon = -0.374614
+kind = "bank"
+period = "early_20th_century"
+style = "Classicist"
+built = "1917-1930s"
+architect = "José de Astiz"
+osm = []
+pilot = false
+why = "Classicist bank building on Carrer de les Barques; in all lists."
+
+[[landmark]]
+rank = 86
+slug = "palau_de_la_batlia"
+name = "Palacio de la Baylía"
+name_va = "Palau de la Batlia"
+wikidata = "Q6057590"
+commons_category = "Palau de la Batlia"
+lat = 39.477222
+lon = -0.376667
+kind = "palace"
+period = "renaissance"
+style = "16th c. palace with 19th-c. eclectic remodel"
+built = "16th c.; 19th c."
+architect = ""
+osm = []
+pilot = false
+why = "Former royal bailiff's palace, seat of the Diputació on Plaça de Manises; in all lists."
+
+[[landmark]]
+rank = 87
+slug = "palauet_d_aiora"
+name = "Palacete de Ayora"
+name_va = "Palauet d'Aiora"
+wikidata = "Q9054302"
+commons_category = "Palauet d'Aiora"
+lat = 39.468361
+lon = -0.344003
+kind = "villa"
+period = "modernisme"
+style = "Eclectic / Art Nouveau villa"
+built = "1899"
+architect = "Peregrín Mustieles Cano"
+osm = []
+pilot = false
+why = "Rare suburban palace in the Parc d'Aiora (Camins al Grau); in all lists."
+
+[[landmark]]
+rank = 88
+slug = "centre_d_art_hortensia_herrero"
+name = "Centro de Arte Hortensia Herrero (Palacio de Valeriola)"
+name_va = "Centre d'Art Hortensia Herrero (Palau de Valeriola)"
+wikidata = "Q131351470"
+commons_category = "Centro de Arte Hortensia Herrero"
+lat = 39.473901
+lon = -0.373237
+kind = "art centre"
+period = "baroque"
+style = "17th-c. palace restored 2023"
+built = "17th c.; restored 2020-2023"
+architect = ""
+osm = []
+pilot = false
+why = "New art centre in the restored Palau de Valeriola on Carrer del Mar, already a must-see (tourism 68, architecture 55)."
+
+[[landmark]]
+rank = 89
+slug = "almoina"
+name = "Centro Arqueológico de la Almoina"
+name_va = "Centre Arqueològic de l'Almoina"
+wikidata = "Q3867999"
+commons_category = "Centre Arqueològic de l'Almoina"
+lat = 39.476258
+lon = -0.374156
+kind = "archaeological museum"
+period = "contemporary"
+style = "Contemporary glass-and-water canopy over Roman remains"
+built = "2007"
+architect = "José María Herrera"
+osm = []
+pilot = false
+why = "Glass-roofed museum over Roman Valentia behind the cathedral; heritage and tourism lists."
+
+[[landmark]]
+rank = 90
+slug = "alqueria_de_julia"
+name = "Alquería de Julià"
+name_va = "Alqueria de Julià"
+wikidata = "Q5488956"
+commons_category = "Alqueria de Julià"
+lat = 39.473033
+lon = -0.401289
+kind = "farmhouse"
+period = "baroque"
+style = "Mannerist-Baroque farmhouse with tower"
+built = "1713"
+architect = ""
+osm = []
+pilot = false
+why = "Baroque farmhouse with tower, unique in the Horta (L'Olivereta); in all lists."
+
+[[landmark]]
+rank = 91
+slug = "palau_arquebisbal"
+name = "Palacio Arzobispal"
+name_va = "Palau Arquebisbal de València"
+wikidata = "Q18005297"
+commons_category = "Palau Arquebisbal de València"
+lat = 39.4752
+lon = -0.374197
+kind = "palace"
+period = "postwar"
+style = "Historicist rebuild"
+built = "1946 (rebuilt after 1936 fire)"
+architect = "Vicente Traver Tomás"
+osm = []
+pilot = false
+why = "Archbishop's palace attached to the cathedral; in all lists."
+
+[[landmark]]
+rank = 92
+slug = "torre_de_l_angel"
+name = "Torre del Ángel"
+name_va = "Torre de l'Àngel"
+wikidata = "Q11952297"
+commons_category = "Àngel Tower"
+lat = 39.478161
+lon = -0.3777
+kind = "wall tower"
+period = "islamic"
+style = "Islamic (Andalusí) wall tower"
+built = "11th c."
+architect = ""
+osm = []
+pilot = false
+why = "Best-preserved tower of the 11th-century Muslim wall; the only Islamic-period structure in the list."
+
+[[landmark]]
+rank = 93
+slug = "trinquet_de_pelayo"
+name = "Trinquete de Pelayo"
+name_va = "Trinquet de Pelayo"
+wikidata = "Q3325660"
+commons_category = "Trinquet de Pelayo"
+lat = 39.467061
+lon = -0.378836
+kind = "pilota court"
+period = "19th_century"
+style = "19th-c. trinquet"
+built = "1868"
+architect = ""
+osm = []
+pilot = false
+why = "Oldest active trinquet, 'cathedral' of Valencian pilota; in all lists; unique building type."
+
+[[landmark]]
+rank = 94
+slug = "la_companyia"
+name = "Iglesia de la Compañía (Sagrado Corazón)"
+name_va = "Església de la Companyia (Sagrat Cor)"
+wikidata = "Q42884300"
+commons_category = "Iglesia del Sagrado Corazón de Jesús, Valencia"
+lat = 39.474971
+lon = -0.378328
+kind = "church"
+period = "19th_century"
+style = "Historicist (neo-Renaissance)"
+built = "1879-1886"
+architect = ""
+osm = []
+pilot = false
+why = "Jesuit basilica on Plaça de la Companyia next to the Mercat Central; in all lists."
+
+[[landmark]]
+rank = 95
+slug = "edifici_ferrer"
+name = "Edificio Ferrer"
+name_va = "Edifici Ferrer"
+wikidata = "Q5640392"
+commons_category = "Ferrer Building"
+lat = 39.467194
+lon = -0.372203
+kind = "apartment building"
+period = "modernisme"
+style = "Valencian Art Nouveau, floral ceramic façade"
+built = "1908"
+architect = "Vicente Ferrer Pérez"
+osm = []
+pilot = false
+why = "Modernista building with floral ceramic façade on Carrer Cirilo Amorós; in all lists."
+
+[[landmark]]
+rank = 96
+slug = "muvim"
+name = "Museo Valenciano de la Ilustración y la Modernidad (MuVIM)"
+name_va = "Museu Valencià de la Il·lustració i de la Modernitat (MuVIM)"
+wikidata = "Q7883975"
+commons_category = "Museu Valencià de la Il·lustració i de la Modernitat"
+lat = 39.469722
+lon = -0.381111
+kind = "museum"
+period = "contemporary"
+style = "Contemporary"
+built = "1997-2001"
+architect = "Guillermo Vázquez Consuegra"
+osm = []
+pilot = false
+why = "Award-winning contemporary museum on Carrer Quevedo; heritage and tourism lists."
+
+[[landmark]]
+rank = 97
+slug = "casa_del_punt_de_ganxo"
+name = "Casa del Punto de Gancho"
+name_va = "Casa del Punt de Ganxo"
+wikidata = "Q48905572"
+commons_category = "Casa del Punt de Ganxo"
+lat = 39.475944
+lon = -0.374306
+kind = "apartment building"
+period = "modernisme"
+style = "Valencian Art Nouveau"
+built = "1906"
+architect = "Manuel Peris Ferrando"
+osm = []
+pilot = false
+why = "'Crochet house', the most photographed modernista façade of the old town; heritage and tourism lists."
+
+[[landmark]]
+rank = 98
+slug = "casa_ortega"
+name = "Casa Ortega"
+name_va = "Casa Ortega"
+wikidata = "Q48913023"
+commons_category = "Casa Ortega"
+lat = 39.465417
+lon = -0.373194
+kind = "apartment building"
+period = "modernisme"
+style = "Late modernista with Art Deco touches"
+built = "1906-1928 (sources differ)"
+architect = "Manuel Peris Ferrando"
+osm = []
+pilot = false
+why = "Most ornate late-modernista façade of Gran Via Marqués del Túria; heritage and architecture (72) lists."
+
+[[landmark]]
+rank = 99
+slug = "llotja_de_peixcadors"
+name = "Lonja de Pescadores del Cabañal"
+name_va = "Llotja de Peixcadors del Cabanyal"
+wikidata = "Q52161674"
+commons_category = "Llotja del peix, Cabanyal"
+lat = 39.469361
+lon = -0.325861
+kind = "fish market"
+period = "modernisme"
+style = "Valencian Art Nouveau brick"
+built = "1901-1909"
+architect = "Juan Bautista Gosálvez Navarro"
+osm = []
+pilot = false
+why = "Modernista fishermen's market block, key building of the Cabanyal; in all lists."
+
+[[landmark]]
+rank = 100
+slug = "barraca_genuina_pinedo"
+name = "Barraca Genuina (Pinedo)"
+name_va = "Barraca Genuïna (Pinedo)"
+wikidata = "Q90309198"
+commons_category = "Barraca Genuina"
+lat = 39.422639
+lon = -0.340531
+kind = "vernacular dwelling"
+period = "vernacular"
+style = "Traditional thatched Valencian barraca"
+built = "19th-20th c."
+architect = "Vernacular"
+osm = []
+pilot = false
+why = "The traditional thatched barraca of the Horta, the only vernacular dwelling in the list (Pobles del Sud); chosen over the El Palmar four-barraca group because it is a single building."
