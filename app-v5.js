@@ -2177,6 +2177,8 @@
         }
 
         async function init() {
+            // Palette and other ported maths run in the Rust core; never start without it.
+            if (!(await window.InhouseRust?.ready)) throw new Error('The Rust core failed to load, so Inhouse Notes cannot start.');
             pendingViewState = loadViewState();
             initTheme();
             loadDriveSession();
@@ -9537,110 +9539,39 @@
             return !!driveReducedMotionQuery?.matches;
         }
 
+        // Folder colour maths lives in Rust (rust-core/src/drive_home/palette.rs); this is only glue.
         function resolveDriveFolderColor(item) {
-            const raw = String(item?.folderColorRgb || '').trim().toLowerCase();
-            // Drive reports #8f8f8f for folders nobody coloured: show them as manila.
-            if (!/^#[0-9a-f]{6}$/.test(raw) || raw === '#8f8f8f') return DRIVE_DEFAULT_FOLDER_COLOR;
-            return raw;
-        }
-
-        function driveRelativeLuminance(hex) {
-            const n = parseInt(hex.slice(1), 16);
-            const linear = (value) => {
-                const c = value / 255;
-                return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-            };
-            return 0.2126 * linear(n >> 16) + 0.7152 * linear((n >> 8) & 255) + 0.0722 * linear(n & 255);
-        }
-
-        function driveHexToHsl(hex) {
-            const n = parseInt(hex.slice(1), 16);
-            const r = (n >> 16) / 255;
-            const g = ((n >> 8) & 255) / 255;
-            const b = (n & 255) / 255;
-            const max = Math.max(r, g, b);
-            const min = Math.min(r, g, b);
-            const l = (max + min) / 2;
-            const d = max - min;
-            if (!d) return [0, 0, l * 100];
-            const s = d / (1 - Math.abs(2 * l - 1));
-            let h;
-            if (max === r) h = ((g - b) / d) % 6;
-            else if (max === g) h = (b - r) / d + 2;
-            else h = (r - g) / d + 4;
-            return [(h * 60 + 360) % 360, s * 100, l * 100];
-        }
-
-        function driveHslToHex(h, s, l) {
-            const sat = Math.max(0, Math.min(100, s)) / 100;
-            const light = Math.max(0, Math.min(100, l)) / 100;
-            const k = (n) => (n + h / 30) % 12;
-            const a = sat * Math.min(light, 1 - light);
-            const channel = (n) => Math.round(255 * (light - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
-            return '#' + ((1 << 24) | (channel(0) << 16) | (channel(8) << 8) | channel(4)).toString(16).slice(1);
-        }
-
-        // Yellows turn snot green when their hue leans towards green, and
-        // muddy brown when they are darkened. Pull them towards amber/gold
-        // (by `pull`, 0..1) before any shading, so they stay honey and gold.
-        function warmDriveFolderHue(h, pull) {
-            if (h <= 42 || h >= 72) return h;
-            return h - (h - 42) * pull;
+            return window.InhouseRust.driveFolderColors([String(item?.folderColorRgb || '')], DRIVE_DEFAULT_FOLDER_COLOR)[0];
         }
 
         function isDriveNightTheme() {
             return document.documentElement.dataset.theme === 'dark';
         }
 
-        // The colour a folder is drawn in. By day it is the Drive colour
-        // (yellows nudged warmer); at night it is quieter: less saturated and
-        // darker, but warm hues keep enough light to read as gold, not brown.
-        function displayDriveFolderColor(base) {
-            const [h0, s0, l0] = driveHexToHsl(base);
-            const warm = s0 > 8 && h0 >= 28 && h0 < 72;
-            if (!isDriveNightTheme()) {
-                return warm ? driveHslToHex(warmDriveFolderHue(h0, 0.45), s0, l0) : base;
-            }
-            if (warm) {
-                return driveHslToHex(warmDriveFolderHue(h0, 0.85), Math.min(s0, 70) * 0.78, Math.max(53, Math.min(58, l0 * 0.8)));
-            }
-            return driveHslToHex(h0, s0 * 0.68, Math.max(28, Math.min(l0, 62) * 0.8));
-        }
-
-        // A darker shade for the back and tab. Warm hues drift towards orange
-        // as they darken, the way a real manila folder's shadow does.
-        function shadeDriveFolderColor(color, amount) {
-            const [h, s, l] = driveHexToHsl(color);
-            const warm = s > 8 && h >= 28 && h < 72;
-            return driveHslToHex(warm ? h - amount * 0.25 : h, s, l - amount);
+        function setDriveFolderPaletteVars(el, palette) {
+            el.style.setProperty('--folder-color', palette.color);
+            el.style.setProperty('--folder-cover', palette.cover);
+            el.style.setProperty('--folder-inside', palette.inside);
+            el.style.setProperty('--folder-tab', palette.tab);
+            el.style.setProperty('--folder-ink', palette.ink);
+            el.style.setProperty('--folder-hl', palette.hl);
+            el.style.setProperty('--folder-hl-strong', palette.hlStrong);
+            el.style.setProperty('--folder-line', palette.line);
         }
 
         // Paints a folder from its colour: either a Drive colour (`base`), or,
         // with `exact`, a colour that is already what should be shown.
         function applyDriveFolderPalette(el, base, options = {}) {
             if (!el) return;
-            const color = options.exact ? base : displayDriveFolderColor(base);
-            const night = isDriveNightTheme();
-            const [h, s, l] = driveHexToHsl(color);
-            const luminance = driveRelativeLuminance(color);
-            // Pick whichever ink has the higher contrast on this folder colour.
-            const darkInk = (luminance + 0.05) / 0.0614 >= 1.05 / (luminance + 0.05);
-            el.style.setProperty('--folder-color', color);
-            el.style.setProperty('--folder-cover', driveHslToHex(h, s, l + 2));
-            el.style.setProperty('--folder-inside', driveHslToHex(h, s * 0.85, Math.min(94, l + (night ? 9 : 14))));
-            el.style.setProperty('--folder-tab', shadeDriveFolderColor(color, night ? 6 : 12));
-            el.style.setProperty('--folder-ink', darkInk ? '#1f1a14' : '#ffffff');
-            el.style.setProperty('--folder-hl', darkInk ? 'rgba(0, 0, 0, 0.07)' : 'rgba(255, 255, 255, 0.2)');
-            el.style.setProperty('--folder-hl-strong', darkInk ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.3)');
-            el.style.setProperty('--folder-line', darkInk ? 'rgba(0, 0, 0, 0.25)' : 'rgba(255, 255, 255, 0.55)');
+            setDriveFolderPaletteVars(el, window.InhouseRust.driveFolderPalettes([base], isDriveNightTheme(), !!options.exact)[0]);
             if (!options.exact) el.dataset.folderColor = base;
         }
 
-        // Re-shades every folder on screen after a theme switch.
+        // Re-shades every folder on screen after a theme switch (one batched Rust call).
         function repaintDriveFolders() {
-            document.querySelectorAll('.drive-folder-art[data-folder-color]').forEach((art) => {
-                applyDriveFolderPalette(art, art.dataset.folderColor);
-            });
+            const arts = [...document.querySelectorAll('.drive-folder-art[data-folder-color]')];
+            const palettes = window.InhouseRust.driveFolderPalettes(arts.map((art) => art.dataset.folderColor), isDriveNightTheme());
+            arts.forEach((art, index) => setDriveFolderPaletteVars(art, palettes[index]));
             if (isDriveFolderViewOpen() && driveFolderViewEl.dataset.folderColor) {
                 applyDriveFolderViewPalette(driveFolderViewEl.dataset.folderColor);
             }
@@ -9651,30 +9582,9 @@
         // The opened folder sits on a softer version of its colour: a pastel
         // in light mode, a warm near-black at night, so a full screen of it
         // is calm rather than loud. The opening animation fades towards it.
-        function getDriveFolderViewTint(color) {
-            const [h0, s0] = driveHexToHsl(color);
-            if (isDriveNightTheme()) {
-                // Dark yellows read as olive, so the night tint leans amber.
-                const h = warmDriveFolderHue(h0, 0.9);
-                const s = Math.min(s0 * 0.3, 18);
-                return {
-                    bg: driveHslToHex(h, s, 14),
-                    inside: driveHslToHex(h, s, 18),
-                    tab: displayDriveFolderColor(color)
-                };
-            }
-            const h = warmDriveFolderHue(h0, 0.6);
-            const s = Math.min(s0, 85) * 0.62;
-            return {
-                bg: driveHslToHex(h, s, 89),
-                inside: driveHslToHex(h, s, 94),
-                tab: driveHslToHex(h, s * 1.2, 78)
-            };
-        }
-
         function applyDriveFolderViewPalette(color) {
             if (!driveFolderViewEl) return;
-            const tint = getDriveFolderViewTint(color);
+            const tint = window.InhouseRust.driveFolderViewTint(color, isDriveNightTheme());
             applyDriveFolderPalette(driveFolderViewEl, tint.bg, { exact: true });
             driveFolderViewEl.style.setProperty('--folder-inside', tint.inside);
             driveFolderViewEl.style.setProperty('--folder-tab', tint.tab);
