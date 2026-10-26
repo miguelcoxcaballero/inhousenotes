@@ -160,12 +160,28 @@ impl Aabb {
 
     /// Slab test. Returns the entry distance along the ray in `[0, max_t]`.
     pub fn ray_hit(&self, ray: &Ray, max_t: f32) -> Option<f32> {
-        let inv = ray.inv_dir();
-        let t0 = (self.min - ray.origin) * inv;
-        let t1 = (self.max - ray.origin) * inv;
-        let tmin = t0.min(t1).max_element().max(0.0);
-        let tmax = t0.max(t1).min_element().min(max_t);
-        (tmin <= tmax).then_some(tmin)
+        let (mut tmin, mut tmax) = (0.0f32, max_t);
+        for a in 0..3 {
+            let (o, d) = (ray.origin[a], ray.dir[a]);
+            if d == 0.0 {
+                // Parallel to the slab: inside or miss (avoids 0 * inf = NaN).
+                if o < self.min[a] || o > self.max[a] {
+                    return None;
+                }
+                continue;
+            }
+            let inv = 1.0 / d;
+            let (mut t0, mut t1) = ((self.min[a] - o) * inv, (self.max[a] - o) * inv);
+            if t0 > t1 {
+                std::mem::swap(&mut t0, &mut t1);
+            }
+            tmin = tmin.max(t0);
+            tmax = tmax.min(t1);
+            if tmin > tmax {
+                return None;
+            }
+        }
+        Some(tmin)
     }
 }
 
@@ -286,6 +302,11 @@ mod tests {
         assert!((b.ray_hit(&r, 100.0).unwrap() - 4.0).abs() < 1e-5);
         let miss = Ray::new(vec3(-5.0, 3.0, 0.0), Vec3::X);
         assert!(b.ray_hit(&miss, 100.0).is_none());
+        // Axis-aligned ray grazing a face must not produce NaN.
+        let graze = Ray::new(vec3(-1.0, 5.0, -1.0), Vec3::NEG_Y);
+        assert!(b.ray_hit(&graze, 100.0).is_some());
+        let flat = Aabb::new(vec3(-1.0, 0.0, -1.0), vec3(1.0, 0.0, 1.0));
+        assert!(flat.ray_hit(&graze, 100.0).is_some());
     }
 
     #[test]
