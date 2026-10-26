@@ -1198,9 +1198,10 @@ assert.match(app, /function playDriveFolderClose\(/);
 assert.match(app, /if \(requestedFolderId !== driveCurrentFolderId \|\| navigationId !== driveFolderNavigationId\) return;/);
 assert.match(app, /document\.body\.appendChild\(menuEl\)/);
 assert.match(app, /are printed on the front of the\n        \/\/ cover/);
-assert.match(app, /function getDriveFolderViewTint\(color\)/);
-assert.match(app, /function displayDriveFolderColor\(base\)/);
-assert.match(app, /function warmDriveFolderHue\(h, pull\)/);
+// Folder colour maths moved to Rust (drive_home.palette / view_tint); app-v5.js keeps only glue.
+assert.match(app, /window\.InhouseRust\.driveFolderViewTint\(color, isDriveNightTheme\(\)\)/);
+assert.match(app, /window\.InhouseRust\.driveFolderPalettes\(/);
+assert.doesNotMatch(app, /function (getDriveFolderViewTint|displayDriveFolderColor|warmDriveFolderHue|driveHexToHsl|driveHslToHex|shadeDriveFolderColor)\(/);
 assert.match(app, /function repaintDriveFolders\(\)/);
 assert.match(app, /function getDriveSheetRatio\(width, height\)/);
 // Folder covers carry only the name; the tab is cut from the back panel.
