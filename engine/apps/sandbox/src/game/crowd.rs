@@ -27,6 +27,8 @@ const RADIUS: f32 = 60.0;
 /// Walkway area per person (m²): a lively Spanish barrio street.
 const AREA_PER_PERSON: f32 = 38.0;
 const MAX_PEOPLE: usize = 56;
+/// Weight of the conversation gestures while someone is speaking.
+const TALK: f32 = 0.45;
 /// Life detail (blinks, eyes, breathing) only where it can be seen (m).
 const DETAIL_DISTANCE: f32 = 22.0;
 
@@ -283,6 +285,10 @@ impl Crowd {
         let along = self.along(p);
         let gap = self.rng.range(0.45, 0.6);
         let (a, b) = (p - along * gap, p + along * gap);
+        let walk = self.walk.as_ref().expect("walkway");
+        if walk.sample(a).sdf < 0.7 || walk.sample(b).sdf < 0.7 {
+            return;
+        }
         let (Some(mut x), Some(mut y)) = (self.new_ped(w, paths, a, along, false), self.new_ped(w, paths, b, -along, false)) else { return };
         let left = self.rng.range(30.0, 120.0);
         x.yaw = along.x.atan2(along.y);
@@ -293,7 +299,7 @@ impl Crowd {
         y.look = Look::Ped(x.id);
         for (q, talking) in [(&mut x, true), (&mut y, false)] {
             q.decide_in = self.rng.range(3.0, 8.0);
-            q.person.anim.set("stand", if talking { 1.0 } else { 0.0 });
+            q.person.anim.set("talk", if talking { TALK } else { 0.0 });
         }
         self.peds.push(x);
         self.peds.push(y);
@@ -321,7 +327,7 @@ impl Crowd {
                     if along.dot(ped.heading) < 0.0 {
                         along = -along;
                     }
-                    let lane = (ped.lane * s.half).clamp(0.4, (s.half - 0.2).max(0.4));
+                    let lane = (ped.lane * s.half).clamp(0.55, (s.half - 0.2).max(0.55));
                     let err = lane - s.sdf;
                     let mut desire = along + s.inward * (err * 1.4).clamp(-1.2, 1.2);
                     // Make room for people ahead and the player.
@@ -388,6 +394,7 @@ impl Crowd {
                     if left <= 0.0 {
                         ped.mode = Mode::Walk;
                         ped.person.anim.set("stand", 0.0);
+                        ped.person.anim.set("talk", 0.0);
                         let along = Vec2::new(-s.inward.y, s.inward.x).normalize_or(ped.heading);
                         ped.heading = if rng.chance(0.5) { along } else { -along };
                         ped.decide_in = rng.range(10.0, 30.0);
@@ -462,6 +469,28 @@ impl Crowd {
             let speed = ped.speed;
             ped.person.update(dt, speed, &transform, look);
         }
+        // Bodies never overlap: walkers are pushed apart (people standing
+        // still hold their ground), then the lane keeping takes over again.
+        for i in 0..self.peds.len() {
+            for j in i + 1..self.peds.len() {
+                let rel = self.peds[j].pos - self.peds[i].pos;
+                let d = rel.length();
+                const BODY: f32 = 0.62;
+                if d >= BODY {
+                    continue;
+                }
+                let n = if d > 1e-4 { rel / d } else { Vec2::X };
+                let (mi, mj) = (self.peds[i].speed > 0.05, self.peds[j].speed > 0.05);
+                let (wi, wj) = match (mi, mj) {
+                    (true, false) => (1.0, 0.0),
+                    (false, true) => (0.0, 1.0),
+                    _ => (0.5, 0.5),
+                };
+                let push = BODY - d;
+                self.peds[i].pos -= n * push * wi;
+                self.peds[j].pos += n * push * wj;
+            }
+        }
         // Conversation turns: the speaker listens, the listener talks.
         for id in turn_taking {
             if let Some(p) = self.peds.iter_mut().find(|p| p.id == id)
@@ -469,7 +498,7 @@ impl Crowd {
             {
                 p.mode = Mode::Stand { left, partner, talking: !talking };
                 p.decide_in = self.rng.range(3.0, 9.0);
-                p.person.anim.set("stand", if talking { 0.0 } else { 1.0 });
+                p.person.anim.set("talk", if talking { 0.0 } else { TALK });
             }
         }
         self.walk = Some(walk);

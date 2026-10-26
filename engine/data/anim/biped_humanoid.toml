@@ -8,7 +8,10 @@
 #           in between the two cycles blend phase-locked
 #   stride  playback rate = speed / natural speed of the blended gait, so
 #           the planted foot never slides (clamped to [0.5, 1.8])
-#   stand   pose when standing: 0 idle, 1 talking, 2 waiting
+#   stand   pose when standing: 0 idle, 2 waiting
+#   talk    0..1 weight of the conversation gestures on the upper body
+#           (the CMU talk take, layered at partial weight over the idle:
+#           at full weight its wide arm gestures look theatrical)
 #   jump, melee  one-shots
 #   dead    1 once killed ("Death" is the Quaternius robot's fall,
 #           retargeted; mocap has none)
@@ -18,10 +21,6 @@ initial = "idle"
 [[state]]
 name = "idle"
 clip = "Idle"
-
-[[state]]
-name = "talk"
-clip = "Talk"
 
 [[state]]
 name = "wait"
@@ -94,22 +93,10 @@ when = [{ param = "moving", gt = 0.5 }]
 fade = 0.25
 
 [[transition]]
-from = "talk"
-to = "move"
-when = [{ param = "moving", gt = 0.5 }]
-fade = 0.3
-
-[[transition]]
 from = "wait"
 to = "move"
 when = [{ param = "moving", gt = 0.5 }]
 fade = 0.3
-
-[[transition]]
-from = "move"
-to = "talk"
-when = [{ param = "moving", lt = 0.5 }, { param = "stand", gt = 0.5 }, { param = "stand", lt = 1.5 }]
-fade = 0.4
 
 [[transition]]
 from = "move"
@@ -126,20 +113,8 @@ fade = 0.35
 # Changing what a standing person does.
 [[transition]]
 from = "idle"
-to = "talk"
-when = [{ param = "stand", gt = 0.5 }, { param = "stand", lt = 1.5 }]
-fade = 0.6
-
-[[transition]]
-from = "idle"
 to = "wait"
 when = [{ param = "stand", gt = 1.5 }]
-fade = 0.6
-
-[[transition]]
-from = "talk"
-to = "idle"
-when = [{ param = "stand", lt = 0.5 }]
 fade = 0.6
 
 [[transition]]
@@ -147,3 +122,9 @@ from = "wait"
 to = "idle"
 when = [{ param = "stand", lt = 0.5 }]
 fade = 0.6
+
+[[layer]]
+name = "conversation"
+clip = "Talk"
+mask_root = "Bip01 Spine1"
+weight_param = "talk"
