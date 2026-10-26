@@ -3,6 +3,13 @@
 
 name = "austrias"
 
+[[hill]]
+zone = "madrid_austrias"
+radius = 1.25
+offset = [25.0, 10.0]
+height = 22.0
+noise = 4.0
+
 [[zone]]
 id = "madrid_austrias"
 city = "madrid"

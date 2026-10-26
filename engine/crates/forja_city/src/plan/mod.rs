@@ -7,9 +7,11 @@ pub mod graph;
 pub mod index;
 pub mod line;
 pub mod region;
+pub mod relief;
 
 pub use draft::{Draft, Footprint, Mask, NodeMark, Plaza, PlazaKind, Way};
 pub use index::{Located, SegIndex};
 pub use graph::{End, Node, NodeId, Street, StreetGraph, StreetId};
 pub use line::{Polyline, noise1, noise2};
-pub use region::{Join, Region, Shape};
+pub use region::{Join, Region, Shape, Tiled};
+pub use relief::{Hill, Relief, Steps};
