@@ -41,7 +41,7 @@ fn main() {
     let (x0, x1) = (-(list.len() as f32) * 17.0 * 0.5 - 40.0, x + 40.0);
     p.get(Mat::SidewalkHex).polygon(&[Vec2::new(x0, 0.0), Vec2::new(x1, 0.0), Vec2::new(x1, 4.5), Vec2::new(x0, 4.5)], 0.15, true, Mat::SidewalkHex.scale());
     p.get(Mat::Curb).aabox(Vec3::new(x0, 0.0, 4.5), Vec3::new(x1, 0.15, 4.75), 1.0);
-    p.get(Mat::Asphalt).polygon(&[Vec2::new(x0, 4.75), Vec2::new(x1, 4.75), Vec2::new(x1, 40.0), Vec2::new(x0, 40.0)], 0.0, true, 5.0);
+    p.get(Mat::Asphalt).polygon(&[Vec2::new(x0, 4.75), Vec2::new(x1, 4.75), Vec2::new(x1, 40.0), Vec2::new(x0, 40.0)], 0.0, true, Mat::Asphalt.scale());
     let mut k = x0;
     while k < x1 {
         p.get(Mat::Paint([235, 235, 230])).aabox(Vec3::new(k, 0.0, 9.9), Vec3::new(k + 3.5, 0.006, 10.05), 1.0);

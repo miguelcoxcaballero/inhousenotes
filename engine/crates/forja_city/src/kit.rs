@@ -13,7 +13,10 @@ use std::sync::Arc;
 use forja_assets::{AlphaMode, MaterialData, NodeData, PbrSet, SceneData, TextureData};
 use forja_math::{Vec3, Vec4};
 
+use rayon::prelude::*;
+
 use crate::geom::{Parts, Prim};
+use crate::macrotex::{self, Recipe};
 use crate::texgen::{self, GenSet, SignKind, TilePattern};
 
 pub type Rgb = [u8; 3];
@@ -69,30 +72,127 @@ pub enum Mat {
 }
 
 impl Mat {
-    /// Meters per texture repeat for planar UVs.
+    /// Meters per texture repeat for planar UVs. Scanned sets repeat once
+    /// per macro texture (several scan repeats, see [`scan_layout`]).
     pub fn scale(self) -> f32 {
         match self {
-            Mat::Stucco(_) | Mat::Plaster(_) => 2.5,
-            Mat::Brick(_) => 1.4,
-            Mat::Ashlar(_) => 1.6,
-            Mat::Moulding(_) => 1.2,
-            Mat::Granite => 1.5,
-            Mat::RoofClay => 2.0,
-            Mat::RoofSlate => 1.6,
-            Mat::RoofTerrace => 3.0,
+            Mat::Stucco(_) => macro_scale("arch_stucco"),
+            Mat::Plaster(_) => macro_scale("arch_plaster_ochre"),
+            Mat::Brick(_) => macro_scale("arch_brick_red"),
+            Mat::Ashlar(_) => macro_scale("arch_ashlar"),
+            Mat::Moulding(_) => macro_scale("arch_moulding"),
+            Mat::Granite => macro_scale("arch_granite"),
+            Mat::RoofClay => macro_scale("arch_roof_clay"),
+            Mat::RoofSlate => macro_scale("arch_roof_slate"),
+            Mat::RoofTerrace => macro_scale("pbr_roof"),
             Mat::Tiles(_) => 0.6,
             Mat::PaintedWood(_) | Mat::Wood(_) => 1.2,
             Mat::MetalShutter(_) => 1.0,
-            Mat::Asphalt => 5.0,
-            Mat::SidewalkHex => 1.6,
-            Mat::SidewalkSlab => 2.0,
-            Mat::Curb => 1.0,
-            Mat::Cobble => 2.0,
+            Mat::Asphalt => macro_scale("pbr_asphalt"),
+            Mat::SidewalkHex => macro_scale("street_sidewalk_hex"),
+            Mat::SidewalkSlab => macro_scale("street_sidewalk_tiles"),
+            Mat::Curb => macro_scale("street_curb"),
+            Mat::Cobble => macro_scale("street_cobble"),
             Mat::Grass => 3.0,
             Mat::Awning(_) => 1.0,
             _ => 1.0,
         }
     }
+}
+
+/// Meters per repeat of one scan and how many repeats per side its macro
+/// texture holds (1 = used as is).
+pub fn scan_layout(id: &str) -> (f32, u32) {
+    match id {
+        "arch_stucco" | "arch_plaster_ochre" => (2.5, 4),
+        "arch_brick_red" => (1.4, 3),
+        "arch_ashlar" => (1.6, 2),
+        "arch_moulding" => (1.2, 3),
+        "arch_granite" => (1.5, 2),
+        "arch_roof_clay" => (2.0, 2),
+        "arch_roof_slate" => (1.6, 2),
+        "pbr_roof" => (3.0, 2),
+        "pbr_asphalt" => (5.0, 3),
+        "street_sidewalk_hex" => (1.6, 3),
+        "street_sidewalk_tiles" => (2.0, 3),
+        "street_curb" => (1.0, 2),
+        "street_cobble" => (2.0, 2),
+        _ => (1.0, 1),
+    }
+}
+
+fn macro_scale(id: &str) -> f32 {
+    let (m, t) = scan_layout(id);
+    m * t as f32
+}
+
+/// Weathering and calibration of each scanned set (see [`macrotex`]).
+/// Roughness targets: weathered stucco and lime plaster 0.85–0.95, brick
+/// and sandstone 0.75–0.85, sawn granite 0.7 with foot-polished slabs
+/// near 0.6, asphalt 0.75–0.9 with glossy tar seams and oil.
+pub fn recipe(id: &str) -> Option<Recipe> {
+    let (base, tiles) = scan_layout(id);
+    if tiles <= 1 {
+        return None;
+    }
+    let seed = id.bytes().fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32));
+    let r = Recipe { tiles, meters: base * tiles as f32, seed, ..Default::default() };
+    Some(match id {
+        "arch_stucco" | "arch_plaster_ochre" => Recipe {
+            remix: true,
+            rotate: true,
+            mottle: 0.07,
+            mottle_m: 3.0,
+            hue: 0.025,
+            streaks: 0.05,
+            rough_var: 0.05,
+            patches: 6,
+            patch_value: 0.07,
+            patch_rough: -0.06,
+            patch_m: [0.5, 2.2],
+            patch_flat: 0.55,
+            stains: 3,
+            stain_dark: 0.12,
+            stain_m: [0.6, 2.0],
+            cracks: 4,
+            crack_w: 0.0025,
+            crack_dark: 0.35,
+            normal: 0.9,
+            ..r
+        },
+        "arch_brick_red" => Recipe { saturation: 0.9, mottle: 0.1, mottle_m: 2.0, hue: 0.03, rough_mul: 1.55, rough_var: 0.06, stains: 4, stain_dark: 0.25, patches: 2, patch_value: 0.08, patch_m: [0.4, 1.2], ..r },
+        "arch_ashlar" => Recipe { saturation: 0.55, mottle: 0.08, mottle_m: 1.5, rough_mul: 1.45, rough_var: 0.05, stains: 3, stain_dark: 0.15, stain_m: [0.3, 1.0], ..r },
+        "arch_moulding" => Recipe { remix: true, rotate: true, saturation: 0.6, mean: Some(0.5), mottle: 0.06, mottle_m: 1.5, rough_var: 0.04, ..r },
+        "arch_granite" => Recipe { remix: true, rotate: true, mottle: 0.06, mottle_m: 1.2, rough_mul: 0.82, rough_var: 0.06, stains: 2, stain_dark: 0.12, ..r },
+        "arch_roof_clay" => Recipe { mottle: 0.12, mottle_m: 1.5, hue: 0.04, stains: 4, stain_dark: 0.22, rough_var: 0.04, ..r },
+        "arch_roof_slate" | "pbr_roof" => Recipe { mottle: 0.08, mottle_m: 1.5, stains: 3, stain_dark: 0.12, rough_var: 0.05, ..r },
+        "pbr_asphalt" => Recipe {
+            remix: true,
+            rotate: true,
+            mottle: 0.1,
+            mottle_m: 4.0,
+            rough_var: 0.06,
+            patches: 4,
+            patch_value: 0.12,
+            patch_rough: -0.05,
+            patch_m: [1.2, 3.5],
+            patch_flat: 0.3,
+            stains: 6,
+            stain_dark: 0.2,
+            stain_m: [0.4, 1.5],
+            oil: 8,
+            cracks: 10,
+            crack_w: 0.012,
+            crack_dark: 0.6,
+            crack_rough: 0.35,
+            ..r
+        },
+        "street_sidewalk_hex" => Recipe { saturation: 0.4, mean: Some(0.24), mottle: 0.08, mottle_m: 1.2, stains: 5, stain_dark: 0.18, gum: 150, oil: 1, rough_var: 0.05, ..r },
+        "street_sidewalk_tiles" => Recipe { saturation: 0.6, mottle: 0.08, mottle_m: 1.5, stains: 5, stain_dark: 0.18, gum: 200, rough_add: -0.1, rough_var: 0.06, ..r },
+        "street_curb" => Recipe { mottle: 0.08, mottle_m: 0.8, stains: 2, stain_dark: 0.15, rough_var: 0.05, ..r },
+        "street_cobble" => Recipe { mottle: 0.1, mottle_m: 1.2, stains: 4, stain_dark: 0.18, gum: 30, rough_var: 0.05, ..r },
+        _ => r,
+    })
 }
 
 /// Names on the street plates (`Mat::Plate(i)`).
@@ -137,20 +237,25 @@ impl Kit {
     /// Loads scanned sets from `downloaded` (missing ones fall back to flat
     /// colors) and generates the procedural textures.
     pub fn load(downloaded: Option<&Path>) -> Self {
-        let mut pbr = HashMap::new();
-        if let Some(root) = downloaded {
-            for id in SETS {
-                let dir = root.join(id);
-                if dir.exists() {
-                    match forja_assets::load_pbr_set(&dir) {
-                        Ok(s) => {
-                            pbr.insert(id, s);
-                        }
-                        Err(e) => log::warn!("{id}: {e}"),
-                    }
+        // Decode and weather the scans in parallel (macro textures take a
+        // fraction of a second each in release builds).
+        let found: Vec<(&'static str, std::path::PathBuf)> = match downloaded {
+            Some(root) => SETS.iter().map(|id| (*id, root.join(id))).filter(|(_, d)| d.exists()).collect(),
+            None => Vec::new(),
+        };
+        let mut pbr: HashMap<&'static str, PbrSet> = found
+            .into_par_iter()
+            .filter_map(|(id, dir)| match forja_assets::load_pbr_set(&dir) {
+                Ok(s) => Some((id, match recipe(id) {
+                    Some(r) => macrotex::build(&s, &r),
+                    None => s,
+                })),
+                Err(e) => {
+                    log::warn!("{id}: {e}");
+                    None
                 }
-            }
-        }
+            })
+            .collect();
         // Grain without hue: paint and stain colors come from the tint.
         if let Some(w) = pbr.get("arch_wood_shutter").cloned() {
             let mut gray = w.clone();
@@ -293,8 +398,11 @@ impl<'a> Assembler<'a> {
             Mat::RoofClay => self.scanned("arch_roof_clay", white, hex(0xb5603a), 0.85),
             Mat::RoofSlate => self.scanned("arch_roof_slate", hex(0xb8bcc4), hex(0x4a4e55), 0.6),
             Mat::RoofTerrace => self.scanned("pbr_roof", hex(0xd8d0c4), hex(0x9a948a), 0.9),
-            Mat::Zinc => flat("zinc", hex(0x8d9399), 0.45, 0.9),
-            Mat::Iron => flat("iron", hex(0x191919), 0.45, 0.3),
+            // Weathered zinc: dull grey patina, half metallic.
+            Mat::Zinc => flat("zinc", hex(0x8d9399), 0.62, 0.6),
+            // Wrought iron is painted: a dielectric, satin black paint
+            // (albedo ~0.02, never pure black).
+            Mat::Iron => flat("iron", hex(0x2a2a28), 0.55, 0.0),
             Mat::Glass => MaterialData { name: "glass".into(), base_color: Vec4::new(0.30, 0.34, 0.33, 1.0), roughness: 0.03, transmission: 0.94, ..Default::default() },
             Mat::Interior => {
                 let t = kit.interiors.clone();
@@ -345,8 +453,9 @@ impl<'a> Assembler<'a> {
             Mat::Curb => self.scanned("street_curb", hex(0xe0e0e0), hex(0x8e8e8e), 0.75),
             Mat::Cobble => self.scanned("street_cobble", white, hex(0x8a8a88), 0.8),
             Mat::Paint(c) => flat("paint", c, 0.55, 0.0),
-            Mat::Galvanized => flat("galvanized", hex(0xa8acb0), 0.35, 1.0),
-            Mat::Plastic(c) => flat("plastic", c, 0.45, 0.0),
+            // Hot-dip galvanizing weathers to a dull spangled grey.
+            Mat::Galvanized => flat("galvanized", hex(0xa8acb0), 0.52, 1.0),
+            Mat::Plastic(c) => flat("plastic", c, 0.5, 0.0),
             Mat::SignFace(k) => {
                 let t = kit.signs[&k].clone();
                 self.textured(&t, "sign", 0.35, 0.08)
