@@ -92,10 +92,11 @@ impl<'k> ModuleLib<'k> {
         out.add_scene(assemble(self.kit, name, p, Some(400)))
     }
 
-    /// Instanced pieces of a window (base, shutter, balcony).
+    /// Instanced pieces of a window (surround, glazing, interior, shutter,
+    /// balcony).
     pub fn window(&mut self, out: &mut CityOut, k: WindowKey) -> Vec<usize> {
-        let mut ids = Vec::with_capacity(3);
-        for piece in [Piece::Base, Piece::Shutter, Piece::Balcony] {
+        let mut ids = Vec::with_capacity(5);
+        for piece in Piece::ALL {
             let pk = k.for_piece(piece);
             let key = (pk, piece);
             if let Some(&i) = self.windows.get(&key) {
@@ -111,8 +112,8 @@ impl<'k> ModuleLib<'k> {
     }
 
     pub fn shop(&mut self, out: &mut CityOut, k: ShopKey) -> Vec<usize> {
-        let mut ids = Vec::with_capacity(4);
-        for piece in [ShopPiece::Base, ShopPiece::Sign, ShopPiece::Shutter, ShopPiece::Awning] {
+        let mut ids = Vec::with_capacity(6);
+        for piece in ShopPiece::ALL {
             let pk = k.for_piece(piece);
             let key = (pk, piece);
             if let Some(&i) = self.shops.get(&key) {
@@ -337,20 +338,77 @@ struct Choices {
     ground: Mat,
     surround: Mat,
     sk: SurroundKind,
+    /// Richer surround of the piso principal.
+    sk_principal: SurroundKind,
     frame: Rgb,
     shutter: (ShutterKind, Rgb),
     belly: bool,
     floors: u32,
     gh: f32,
     fh: f32,
+    /// `(base, height)` of every upper floor, piso principal first.
+    levels: Vec<(f32, f32)>,
     ww: f32,
     wh: f32,
     mirador: bool,
 }
 
+impl Choices {
+    /// Facade height above the lot base (top of the last floor).
+    fn top(&self) -> f32 {
+        self.levels.last().map_or(self.gh, |(y, h)| y + h)
+    }
+
+    /// Opening height on floor `fl` (taller on the principal, shorter on top).
+    fn door_h(&self, fl: usize) -> f32 {
+        let h = self.levels[fl].1;
+        (self.wh + (h - self.fh) * 0.8).min(h - 0.75)
+    }
+
+    fn surround_on(&self, fl: usize) -> SurroundKind {
+        if fl == 0 && self.levels.len() >= 3 {
+            self.sk_principal
+        } else if fl + 1 == self.levels.len() && self.levels.len() >= 4 {
+            match self.sk {
+                SurroundKind::Pediment => SurroundKind::Lintel,
+                SurroundKind::None => SurroundKind::None,
+                _ => SurroundKind::Plain,
+            }
+        } else {
+            self.sk
+        }
+    }
+}
+
+/// Upper floors as `(base, height)`: a taller piso principal, regular
+/// floors and a lower top floor, like real 19th-century fronts. Heights
+/// are quantised to 5 cm so window modules keep repeating.
+pub fn floor_levels(gh: f32, fh: f32, floors: u32) -> Vec<(f32, f32)> {
+    let q = |x: f32| (x * 20.0).round() / 20.0;
+    let mut y = gh;
+    (0..floors as usize)
+        .map(|i| {
+            let n = floors as usize;
+            let h = if n >= 3 && i == 0 {
+                fh + 0.35
+            } else if n >= 4 && i + 1 == n {
+                fh - 0.3
+            } else if n >= 6 && i + 2 == n {
+                fh - 0.1
+            } else {
+                fh
+            };
+            let l = (y, q(h));
+            y += q(h);
+            l
+        })
+        .collect()
+}
+
 fn choose(style: &Style, rng: &mut Rng) -> Choices {
     let wall = parse_material(rng.pick(&style.walls));
-    let ground = match style.ground.as_str() {
+    let ground_spec = if style.grounds.is_empty() { style.ground.as_str() } else { rng.pick(&style.grounds).as_str() };
+    let ground = match ground_spec {
         "" => Mat::Ashlar([255; 3]),
         "wall" => wall,
         g => parse_material(g),
@@ -360,17 +418,29 @@ fn choose(style: &Style, rng: &mut Rng) -> Choices {
     let frame = style.frames.get(rng.below(style.frames.len().max(1))).and_then(|s| parse_rgb(s)).unwrap_or(hex(0xf1eee6));
     let shutter = style.shutters.get(rng.below(style.shutters.len().max(1))).map(|s| parse_shutter(s)).unwrap_or((ShutterKind::Louvre, hex(0x4e3420)));
     let floors = style.floors[0] + rng.below((style.floors[1] - style.floors[0] + 1) as usize) as u32;
+    let sk = SurroundKind::parse(&style.surround_kind);
+    let sk_principal = if rng.chance(0.75) {
+        match sk {
+            SurroundKind::Plain => SurroundKind::Lintel,
+            SurroundKind::Lintel | SurroundKind::Keystone | SurroundKind::Eared => SurroundKind::Pediment,
+            k => k,
+        }
+    } else {
+        sk
+    };
     Choices {
         wall,
         ground,
         surround,
-        sk: SurroundKind::parse(&style.surround_kind),
+        sk,
+        sk_principal,
         frame,
         shutter,
         belly: style.railing == "belly",
         floors,
         gh: style.ground_height,
         fh: style.floor_height,
+        levels: floor_levels(style.ground_height, style.floor_height, floors),
         ww: style.window_width,
         wh: style.window_height,
         mirador: rng.chance(style.miradores),
@@ -394,7 +464,7 @@ pub fn build_into(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>
     let mut rng = Rng::new(seed);
     let c = choose(style, &mut rng);
     let base = lot.base;
-    let top = c.gh + c.floors as f32 * c.fh; // facade height above base
+    let top = c.top(); // facade height above base
     let n = lot.ring.len();
     let party = Mat::Plaster(hex(0xd9d0c2));
     let court = Mat::Stucco(hex(0xe9e3d6));
@@ -423,8 +493,14 @@ pub fn build_into(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>
                 let bays = ((f.len - 1.0) / 3.2).floor().max(0.0) as usize;
                 for k in 0..bays {
                     let u = 0.5 + (k as f32 + 0.5) * (f.len - 1.0) / bays as f32;
-                    for fl in 0..c.floors {
-                        let y = c.gh + fl as f32 * c.fh + 0.9;
+                    for fl in 0..c.floors as usize {
+                        let y = c.levels[fl].0 + 0.9;
+                        // Washing hung out on the patio side.
+                        if rng.chance(0.3 * style.clutter.max(0.3)) {
+                            let v = rng.below(6) as u8;
+                            let m = lib.named(out, &format!("clothes_rack_{v}"), || modules::clothes_rack(v));
+                            out.placements.push((m, facade_frame(f.p(u, y - 0.08, 0.0), f.t, f.n)));
+                        }
                         let key = WindowKey {
                             w_cm: 100,
                             h_cm: 140,
@@ -472,10 +548,12 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
     let mut upper_holes = Vec::new();
     let portal_bay = bays / 2;
     let center = |k: usize| margin + (k as f32 + 0.5) * bay_w;
+    let mut portal_u = None;
     // Ground floor.
     for k in 0..bays {
         let u = center(k);
         if has_portal && k == portal_bay {
+            portal_u = Some(u);
             let (w, h) = (1.9f32.min(bay_w - 0.6), (c.gh - 0.55).min(3.7));
             let key = PortalKey { w_cm: (w * 100.0) as u16, h_cm: (h * 100.0) as u16, surround: if c.ground == c.wall { c.surround } else { c.ground }, door: *rng.pick(&[hex(0x4a2e1c), hex(0x2f3d2e), hex(0x5b3a26), hex(0x6b2a22)]) };
             ground_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: 0.0, v1: h });
@@ -529,27 +607,34 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
     }
     // Upper floors.
     let mirador_bay = if c.mirador && bays >= 3 { Some(bays / 2) } else if corner && c.mirador && bays >= 1 { Some(0) } else { None };
-    for fl in 0..c.floors {
-        let y = c.gh + fl as f32 * c.fh;
+    let clutter = style.clutter;
+    for fl in 0..c.floors as usize {
+        let (y, fh) = c.levels[fl];
         let first = fl == 0;
-        let last = fl + 1 == c.floors;
+        let last = fl + 1 == c.floors as usize;
         let corrido = match style.balcony.as_str() {
             "noble" => first,
             "corrido" => first || (last && c.floors > 3),
             _ => false,
         };
         let has_balcony = style.balcony != "none";
+        // Each floor is two flats (left and right of the stair); a flat may
+        // have swapped its old joinery for white aluminium and roller blinds.
+        let reformed = [rng.chance(style.reformed), rng.chance(style.reformed)];
+        let alu = *rng.pick(&[hex(0xf1f1ee), hex(0xf1f1ee), hex(0xb9bcbe), hex(0x6b5442)]);
         for k in 0..bays {
             let u = center(k);
+            let flat = (u > f.len * 0.5) as usize;
             let mirador = mirador_bay == Some(k) && !last && bays_have_room(bay_w);
             let door = has_balcony || mirador;
-            let (w, h) = if door { (ww, c.wh.min(c.fh - 0.75)) } else { (ww, 1.55) };
+            let (w, h) = if door { (ww, c.door_h(fl)) } else { (ww, 1.55) };
             let wy = if door { y } else { y + 0.9 };
+            let principal = first && c.floors >= 3;
             let balcony = (has_balcony && !mirador).then(|| {
-                let (width, ends) = if corrido { (bay_w + 0.01, (k == 0, k + 1 == bays)) } else { (w + 0.75, (true, true)) };
+                let (width, ends) = if corrido { (bay_w + 0.01, (k == 0, k + 1 == bays)) } else if principal { (w + 1.05, (true, true)) } else { (w + 0.75, (true, true)) };
                 BalconyKey {
                     width_cm: (width * 10.0).round() as u16 * 10,
-                    depth_cm: if corrido { 70 } else if c.belly { 45 } else { 50 },
+                    depth_cm: if corrido { 70 } else if principal { 60 } else if c.belly { 45 } else { 50 },
                     belly: c.belly && !corrido,
                     ends,
                     pots: 0,
@@ -567,17 +652,17 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 }
             }
             let state = rng.below(4) as u8;
-            let shutter = Some((c.shutter.0, c.shutter.1, state));
+            let (frame, shutter) = if reformed[flat] && !mirador { (alu, (ShutterKind::Roller, hex(0xe8e6e0))) } else { (c.frame, c.shutter) };
             let key = WindowKey {
                 w_cm: (w * 100.0) as u16,
                 h_cm: (h * 100.0) as u16,
                 door,
                 surround: c.surround,
-                surround_kind: c.sk,
-                frame: c.frame,
-                shutter: if mirador { None } else { shutter },
+                surround_kind: c.surround_on(fl),
+                frame,
+                shutter: if mirador { None } else { Some((shutter.0, shutter.1, state)) },
                 balcony,
-                mirador: mirador.then(|| ((c.fh - 0.35) * 100.0) as u16),
+                mirador: mirador.then(|| ((fh - 0.35) * 100.0) as u16),
                 interior: state,
                 grille: false,
             };
@@ -586,17 +671,20 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             for m in lib.window(out, key) {
                 out.placements.push((m, at));
             }
+            if !mirador {
+                facade_clutter(lib, out, f, rng, clutter, u, wy, w, balcony.as_ref(), bay_w, k + 1 < bays);
+            }
         }
     }
     // Walls: ground floor (optionally rusticated) and upper floors.
     let rustic = style.rustication;
     wall(parts.get(c.ground), c.ground, f, 0.0, c.gh, &ground_holes, uv_off, rustic);
     wall(parts.get(c.wall), c.wall, f, c.gh, top, &upper_holes, uv_off, false);
+    services(parts, f, c, style, rng, top, portal_u);
     // Tile bands under each upper floor and panels between bays.
     if let Some(p) = &style.tile_bands {
         let m = Mat::Tiles(parse_pattern(p));
-        for fl in 1..c.floors {
-            let y = c.gh + fl as f32 * c.fh;
+        for &(y, _) in c.levels.iter().skip(1) {
             band(parts.get(m), m, f, y - 0.45, y - 0.2, 0.0, f.len, &upper_holes);
         }
     }
@@ -607,9 +695,8 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             if bay_w - ww < 1.1 {
                 break;
             }
-            for fl in 0..c.floors {
-                let y = c.gh + fl as f32 * c.fh + 1.0;
-                band(parts.get(m), m, f, y, y + 0.6, u - 0.3, u + 0.3, &[]);
+            for &(y, _) in &c.levels {
+                band(parts.get(m), m, f, y + 1.0, y + 1.6, u - 0.3, u + 0.3, &[]);
             }
         }
     }
@@ -643,6 +730,99 @@ fn bays_have_room(bay_w: f32) -> bool {
     bay_w > 2.2
 }
 
+/// Lived-in clutter around one upper-floor opening at `u` (bottom `wy`,
+/// width `w`): an AC condenser standing on the balcony or bracketed to the
+/// wall, a satellite dish, laundry over the railing.
+#[allow(clippy::too_many_arguments)]
+fn facade_clutter(lib: &mut ModuleLib, out: &mut CityOut, f: &Frame, rng: &mut Rng, clutter: f32, u: f32, wy: f32, w: f32, balcony: Option<&BalconyKey>, bay_w: f32, pier_right: bool) {
+    if clutter <= 0.0 {
+        return;
+    }
+    let side = if rng.chance(0.5) { 1.0 } else { -1.0 };
+    let at = |du: f32, y: f32, o: f32| facade_frame(f.p(u + du, y, o), f.t, f.n);
+    if rng.chance(0.17 * clutter) {
+        let variant = rng.below(3) as u8;
+        match balcony {
+            Some(b) if rng.chance(0.55) => {
+                let half = b.width_cm as f32 / 200.0;
+                let x = if b.depth_cm >= 70 { (w * 0.5 + 0.45).min(half - 0.42) } else { half - 0.42 };
+                let m = lib.named(out, &format!("ac_floor_{variant}"), || modules::ac_unit(false, variant));
+                out.placements.push((m, at(side * x, wy + 0.06, 0.04)));
+            }
+            _ if balcony.is_some() || rng.chance(0.4) => {
+                // High on the pier between two bays.
+                if bay_w >= 2.6 {
+                    let x = if pier_right { bay_w * 0.5 } else { -bay_w * 0.5 };
+                    let m = lib.named(out, &format!("ac_wall_{variant}"), || modules::ac_unit(true, variant));
+                    out.placements.push((m, at(x, wy + 1.75, 0.0)));
+                }
+            }
+            _ => {
+                // Under the sill of a plain window.
+                let m = lib.named(out, &format!("ac_wall_{variant}"), || modules::ac_unit(true, variant));
+                out.placements.push((m, at(0.0, wy - 0.78, 0.0)));
+            }
+        }
+    }
+    if rng.chance(0.05 * clutter) {
+        let variant = rng.below(3) as u8;
+        let m = lib.named(out, &format!("dish_{variant}"), || modules::dish(variant));
+        match balcony {
+            // Clamped to the railing post.
+            Some(b) if rng.chance(0.5) => out.placements.push((m, at(side * (b.width_cm as f32 / 200.0 - 0.06), wy + 0.75, b.depth_cm as f32 / 100.0 - 0.05))),
+            _ => out.placements.push((m, at(side * (w * 0.5 + 0.55), wy + 1.6, 0.0))),
+        }
+    }
+    if let Some(b) = balcony {
+        if rng.chance(0.11 * clutter) {
+            let variant = rng.below(6) as u8;
+            let m = lib.named(out, &format!("laundry_{variant}_{}", b.depth_cm), || modules::laundry(variant, b.depth_cm));
+            out.placements.push((m, at(0.0, wy, 0.0)));
+        }
+    }
+}
+
+/// Building services on a street front: a zinc downpipe with its cast-iron
+/// boot next to the party wall and the telephone/power cables that run
+/// along every old Spanish facade under the first-floor balconies.
+fn services(parts: &mut Parts<Mat>, f: &Frame, c: &Choices, style: &Style, rng: &mut Rng, top: f32, portal_u: Option<f32>) {
+    let gutter = matches!(style.roof.as_str(), "clay" | "mansard");
+    if f.len > 4.0 && (gutter || rng.chance(style.clutter * 0.5)) {
+        let u = if rng.chance(0.5) { 0.16 } else { f.len - 0.16 };
+        let (r, o) = (0.055, 0.09);
+        let p = |y: f32| f.p(u, y, o);
+        parts.get(Mat::Zinc).cylinder(p(2.2), p(top + 0.12), r, 8, false);
+        parts.get(Mat::Iron).cylinder(p(0.22), p(2.25), r + 0.012, 8, true);
+        // Boot turning out over the sidewalk.
+        parts.get(Mat::Iron).beam(p(0.3), f.p(u, 0.16, o + 0.14), f.t, 0.11, 0.11, 1.0);
+        let mut y = 1.0;
+        while y < top {
+            parts.get(Mat::Galvanized).obox(f.p(u, y, o * 0.5), [f.t, Vec3::Y, f.n], Vec3::new(0.075, 0.025, o * 0.5 + r), 1.0);
+            y += 1.7;
+        }
+    }
+    if style.clutter > 0.0 && f.len > 3.0 {
+        // Two cables tucked under the ground-floor cornice.
+        let y = c.gh - 0.42;
+        let iron = parts.get(Mat::Iron);
+        for (dy, o) in [(0.0, 0.03), (-0.06, 0.035)] {
+            iron.beam(f.p(0.0, y + dy, o), f.p(f.len, y + dy, o), Vec3::Y, 0.014, 0.014, 1.0);
+        }
+        let mut u = 0.4;
+        while u < f.len {
+            iron.obox(f.p(u, y - 0.03, 0.02), [f.t, Vec3::Y, f.n], Vec3::new(0.012, 0.05, 0.02), 1.0);
+            u += 0.9;
+        }
+        // A drop down to the meter box beside the portal.
+        if let Some(pu) = portal_u {
+            let du = pu + if rng.chance(0.5) { 1.25 } else { -1.25 };
+            if du > 0.3 && du < f.len - 0.3 {
+                iron.beam(f.p(du, y, 0.03), f.p(du, 2.75, 0.03), f.t, 0.014, 0.014, 1.0);
+            }
+        }
+    }
+}
+
 /// Floor bands, ground-floor cornice, main cornice with brackets, quoins.
 #[allow(clippy::too_many_arguments)]
 fn mouldings(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lot, style: &Style, c: &Choices, top: f32, rng: &mut Rng) {
@@ -661,10 +841,12 @@ fn mouldings(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot
         // Ground floor cornice.
         let gprof = [(0.0, -0.32), (0.08, -0.32), (0.08, -0.24), (0.15, -0.17), (0.15, -0.06), (0.21, -0.03), (0.21, 0.04), (0.0, 0.04)];
         parts.get(m).sweep(&at(c.gh), &normals, &gprof, false, true, s);
-        // Floor bands.
+        // Floor bands; the one above the piso principal is a deeper impost.
         let bprof = [(0.0, -0.2), (0.05, -0.2), (0.05, -0.12), (0.08, -0.09), (0.08, -0.03), (0.0, -0.03)];
-        for fl in 1..c.floors {
-            parts.get(m).sweep(&at(c.gh + fl as f32 * c.fh), &normals, &bprof, false, true, s);
+        let iprof = [(0.0, -0.3), (0.05, -0.3), (0.05, -0.2), (0.1, -0.16), (0.13, -0.1), (0.13, -0.03), (0.0, -0.03)];
+        for (fl, &(y, _)) in c.levels.iter().enumerate().skip(1) {
+            let prof: &[(f32, f32)] = if fl == 1 && c.levels.len() >= 3 { &iprof } else { &bprof };
+            parts.get(m).sweep(&at(y), &normals, prof, false, true, s);
         }
         // Main cornice.
         let corona = match style.cornice.as_str() {
@@ -1007,6 +1189,72 @@ mod tests {
                 assert!(c.y > -0.5 && c.x > -4.0 && c.x < 22.0, "{}: module at {c:?}", s.id);
             }
         }
+    }
+
+    #[test]
+    fn floors_have_a_principal_and_a_lower_top() {
+        let l = floor_levels(4.2, 3.2, 5);
+        assert_eq!(l.len(), 5);
+        assert!((l[0].0 - 4.2).abs() < 1e-5);
+        assert!(l[0].1 > l[1].1 && l[1].1 > l[4].1, "{l:?}");
+        for w in l.windows(2) {
+            assert!((w[0].0 + w[0].1 - w[1].0).abs() < 1e-4, "floors stack: {l:?}");
+        }
+        // Heights are quantised to 5 cm so window modules repeat.
+        for (_, h) in &l {
+            assert!(((h * 20.0).round() - h * 20.0).abs() < 1e-3);
+        }
+        // Low houses keep regular floors.
+        let low = floor_levels(3.9, 3.3, 2);
+        assert!(low.iter().all(|(_, h)| (*h - 3.3).abs() < 1e-5));
+    }
+
+    #[test]
+    fn clutter_follows_the_style() {
+        let kit = Kit::load(None);
+        let styles = StyleLibrary::builtin();
+        let count = |id: &str| {
+            let mut lib = ModuleLib::new(&kit);
+            let mut out = CityOut::default();
+            for seed in 0..6 {
+                build(&mut lib, &mut out, &lot(), styles.get(id).unwrap(), seed);
+            }
+            let ids: Vec<usize> = out.scenes.iter().enumerate().filter(|(_, s)| ["ac_", "dish_", "laundry_"].iter().any(|p| s.name.starts_with(p))).map(|(i, _)| i).collect();
+            out.placements.iter().filter(|(s, _)| ids.contains(s)).count()
+        };
+        let lavapies = count("madrid_centro");
+        let modernista = count("valencia_modernista");
+        assert!(lavapies >= 6, "{lavapies} clutter items in Lavapiés");
+        assert!(lavapies > modernista * 2, "{lavapies} vs {modernista}");
+    }
+
+    #[test]
+    fn window_pieces_are_shared_between_variants() {
+        let kit = Kit::load(None);
+        let mut lib = ModuleLib::new(&kit);
+        let mut out = CityOut::default();
+        let k = WindowKey {
+            w_cm: 110,
+            h_cm: 230,
+            door: true,
+            surround: Mat::Moulding([240; 3]),
+            surround_kind: SurroundKind::Lintel,
+            frame: hex(0xf1eee6),
+            shutter: Some((ShutterKind::Louvre, hex(0x4e3420), 1)),
+            balcony: Some(BalconyKey { width_cm: 190, depth_cm: 50, belly: false, ends: (true, true), pots: 0, awning: None }),
+            mirador: None,
+            interior: 0,
+            grille: false,
+        };
+        let a = lib.window(&mut out, k);
+        let b = lib.window(&mut out, WindowKey { interior: 3, frame: hex(0xffffff), ..k });
+        assert_eq!(a.len(), 5);
+        // Same surround, shutter and balcony; only glazing and interior differ.
+        assert_eq!(a[0], b[0]);
+        assert_ne!(a[1], b[1]);
+        assert_ne!(a[2], b[2]);
+        assert_eq!((a[3], a[4]), (b[3], b[4]));
+        assert_eq!(out.scenes.len(), 7);
     }
 
     #[test]
