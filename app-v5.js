@@ -798,7 +798,6 @@
         const lastSyncedStrokeIds = new Map(); // pageIndex -> Set<id>
         const lastSyncedPageIds = new Set(); // pageIds known to exist on the remote at last sync
         let lastSyncedPageCount = 0;
-        const strokeBoundsCache = new WeakMap();
         function createCollabItemStamp() {
             const structure = ensureCollabStructureMetadata();
             const clock = Math.max(
@@ -2183,6 +2182,7 @@
             loadDriveSession();
             restoreCachedDriveProfile();
             showFastInitialView();
+            if (!await window.InhouseRust.ready) throw new Error('Rust core (WebAssembly) failed to load; the editor cannot start');
             const offlineLibraryReady = window.InhouseOfflineApp.initialize().catch(error=>{
                 window.InhouseOfflineLibrary.disable();console.warn('Offline library unavailable:',error);
             });
@@ -12917,7 +12917,7 @@
                 const inside = dist <= r;
                 if (i > 0) {
                     const prev = pts[i - 1];
-                    const crosses = !inside && distancePointToSegment(x, y, prev.x, prev.y, pt.x, pt.y) <= r;
+                    const crosses = !inside && window.InhouseRust.segmentDistance(x, y, prev.x, prev.y, pt.x, pt.y) <= r;
                     if (crosses) {
                         if (current.length > 1) {
                             segments.push({
@@ -12960,95 +12960,13 @@
             return segments;
         }
 
+        // Geometry runs in Rust (rust-core/src/editor_input.rs); these are thin glue over the resident stroke store.
         function getStrokeBounds(stroke) {
-            if (!stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) {
-                return null;
-            }
-            const points = stroke.points;
-            const first = points[0];
-            const last = points[points.length - 1];
-            const cached = strokeBoundsCache.get(stroke);
-            if (
-                cached
-                && cached.points === points
-                && cached.pointCount === points.length
-                && cached.firstX === first.x
-                && cached.firstY === first.y
-                && cached.lastX === last.x
-                && cached.lastY === last.y
-            ) {
-                return cached;
-            }
-            let minX = Infinity;
-            let minY = Infinity;
-            let maxX = -Infinity;
-            let maxY = -Infinity;
-            for (const pt of points) {
-                if (!pt) continue;
-                if (pt.x < minX) minX = pt.x;
-                if (pt.y < minY) minY = pt.y;
-                if (pt.x > maxX) maxX = pt.x;
-                if (pt.y > maxY) maxY = pt.y;
-            }
-            const bounds = {
-                minX,
-                minY,
-                maxX,
-                maxY,
-                points,
-                pointCount: points.length,
-                firstX: first.x,
-                firstY: first.y,
-                lastX: last.x,
-                lastY: last.y
-            };
-            strokeBoundsCache.set(stroke, bounds);
-            return bounds;
+            return window.InhouseRust.strokeBounds(stroke);
         }
 
         function strokeMayIntersectCircle(stroke, x, y, radius, extraPadding = 0) {
-            const bounds = getStrokeBounds(stroke);
-            if (!bounds) return false;
-            const pad = Math.max(0, radius + extraPadding + ((stroke.width || 0) * 0.5));
-            return !(
-                x < bounds.minX - pad
-                || x > bounds.maxX + pad
-                || y < bounds.minY - pad
-                || y > bounds.maxY + pad
-            );
-        }
-
-        function strokeHitsPoint(stroke, x, y, hitRadius) {
-            if (!stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) return false;
-            if (!strokeMayIntersectCircle(stroke, x, y, hitRadius, 2)) return false;
-            const points = stroke.points;
-            const nativeHit = points.length >= 256
-                ? window.InhouseRust?.strokeHitTest(points, x, y, hitRadius, `${getDocumentSessionToken()}:${pageMutationGeneration}`) : null;
-            if (nativeHit !== null && nativeHit !== undefined) return nativeHit;
-            if (points.length === 1) {
-                return Math.hypot(points[0].x - x, points[0].y - y) <= hitRadius;
-            }
-            for (let i = 1; i < points.length; i++) {
-                const prev = points[i - 1];
-                const curr = points[i];
-                if (distancePointToSegment(x, y, prev.x, prev.y, curr.x, curr.y) <= hitRadius) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        function distancePointToSegment(px, py, x1, y1, x2, y2) {
-            const dx = x2 - x1;
-            const dy = y2 - y1;
-            if (dx === 0 && dy === 0) {
-                return Math.hypot(px - x1, py - y1);
-            }
-            const t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
-            const clamped = Math.max(0, Math.min(1, t));
-            const cx = x1 + clamped * dx;
-            const cy = y1 + clamped * dy;
-            return Math.hypot(px - cx, py - cy);
+            return window.InhouseRust.strokeMayIntersect(stroke, x, y, radius, extraPadding);
         }
 
         function eraseAreaAtPoint(pageIndex, x, y, radius, options = {}) {
@@ -13104,10 +13022,9 @@
             if (!page || !Array.isArray(page.strokes)) return;
             let changed = false;
 
-            for (let i = page.strokes.length - 1; i >= 0; i--) {
-                const stroke = page.strokes[i];
-                if (stroke.tool && stroke.tool.startsWith('eraser')) continue;
-                if (!strokeHitsPoint(stroke, x, y, hitRadius)) continue;
+            const hitIndices = window.InhouseRust.strokesHitCircle(page.strokes, x, y, hitRadius,
+                `${getDocumentSessionToken()}:${pageMutationGeneration}`);
+            for (const i of hitIndices) {
                 const removed = page.strokes.splice(i, 1)[0];
                 recordEraserDamage(pageIndex, removed);
                 erasedList.push({ index: i, stroke: cloneStroke(removed) });
