@@ -5,7 +5,7 @@
 
 use forja_math::{Mat4, Quat, Vec2, Vec3};
 
-use crate::building::{self, CityOut, EdgeKind, Lot, ModuleLib, inset};
+use crate::building::{self, CityOut, EdgeKind, Frontage, Lot, ModuleLib, inset};
 use crate::furniture::{self, Aspect};
 use crate::geom::{Parts, Rng};
 use crate::kit::{Kit, Mat, assemble, hex};
@@ -78,9 +78,9 @@ impl District {
             rounded: 0.0,
             depth: 13.0,
             lot_width: [8.0, 14.0],
-            styles: vec![("madrid_centro", 0.6), ("madrid_ladrillo", 0.4)],
+            styles: vec![("madrid_centro", 0.55), ("madrid_ladrillo", 0.35), ("desarrollismo", 0.1)],
             avenue_styles: vec![("madrid_centro", 0.5), ("valencia_ensanche", 0.5)],
-            outer_styles: vec![("madrid_ladrillo", 0.6), ("madrid_centro", 0.4)],
+            outer_styles: vec![("madrid_ladrillo", 0.5), ("madrid_centro", 0.35), ("desarrollismo", 0.15)],
             plaza_styles: vec![("madrid_austrias", 1.0)],
             traffic_lights: false,
             valencia: false,
@@ -101,9 +101,9 @@ impl District {
             rounded: 0.35,
             depth: 19.0,
             lot_width: [13.0, 21.0],
-            styles: vec![("valencia_ensanche", 0.45), ("valencia_ruzafa", 0.35), ("valencia_modernista", 0.2)],
+            styles: vec![("valencia_ensanche", 0.4), ("valencia_ruzafa", 0.32), ("valencia_modernista", 0.16), ("desarrollismo", 0.12)],
             avenue_styles: vec![("valencia_modernista", 0.55), ("valencia_ensanche", 0.45)],
-            outer_styles: vec![("cabanyal", 0.75), ("valencia_ruzafa", 0.25)],
+            outer_styles: vec![("cabanyal", 0.65), ("valencia_ruzafa", 0.23), ("desarrollismo", 0.12)],
             plaza_styles: vec![("valencia_modernista", 0.6), ("valencia_ensanche", 0.4)],
             traffic_lights: true,
             valencia: true,
@@ -352,6 +352,7 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
         }
         // One scene per block for all the buildings' unique geometry.
         let mut parts: Parts<Mat> = Parts::new();
+        let first_wall = lay.out.party_walls.len();
         for (lot, facing) in split_block(b, d, &mut rng) {
             let pool = match facing {
                 Facing::Avenue => &d.avenue_styles,
@@ -361,10 +362,20 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
             };
             let id = pick(&mut rng, pool);
             if let Some(style) = styles.get(id) {
+                let first = lay.out.frontages.len();
                 building::build_into(&mut lib, &mut lay.out, &mut parts, &lot, style, rng.next_u32() as u64);
                 lots += 1;
+                // Bars spill onto sidewalks wide enough for a terrace.
+                let fronts: Vec<Frontage> = lay.out.frontages[first..].to_vec();
+                for fr in fronts.iter().filter(|fr| fr.bar && !fr.closed) {
+                    if d.sidewalk >= 3.5 && rng.chance(0.85) {
+                        terrace(&mut lib, &mut lay, fr, d.sidewalk, &mut rng);
+                    }
+                }
             }
         }
+        // Medianeras once every neighbour in the block is known.
+        building::medianeras(&mut lib, &mut lay.out, &mut parts, first_wall);
         let si = lay.out.add_scene(assemble(kit, "block", parts, None));
         lay.out.placements.push((si, Mat4::IDENTITY));
     }
@@ -404,6 +415,23 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
     lay.stats.push(("streets".into(), segments.len()));
     lay.stats.push(("modules".into(), lay.out.scenes.len()));
     lay
+}
+
+/// Table sets (some under parasols) in front of an open bar, between the
+/// pedestrian strip along the facade and the trees at the kerb.
+fn terrace(lib: &mut ModuleLib, lay: &mut CityLayout, fr: &Frontage, sidewalk: f32, rng: &mut Rng) {
+    let parasols = rng.chance(0.5);
+    let pitch = if parasols { 2.1 } else { 1.75 };
+    let n = ((fr.width + 1.2) / pitch).floor().clamp(1.0, 3.0) as i32;
+    let dist = (sidewalk * 0.52).clamp(1.6, 2.5);
+    let yaw0 = fr.out.x.atan2(fr.out.z);
+    for k in 0..n {
+        let off = (k as f32 - (n - 1) as f32 * 0.5) * pitch;
+        let v = rng.below(3) as u8 * 2 + parasols as u8;
+        let m = lib.named(&mut lay.out, &format!("terrace_{v}"), || furniture::terrace_set(v));
+        let p = fr.pos + fr.right * off + fr.out * dist;
+        lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw0 + rng.range(-0.25, 0.25)), p)));
+    }
 }
 
 /// Raised paved area with a granite curb, plus its collider.
@@ -614,13 +642,13 @@ fn flower_bed(p: &mut Parts<Mat>, c: Vec2, r: f32, rng: &mut Rng) {
     let leaves = p.get(Mat::Leaves);
     let n = (r * r * 5.0) as i32;
     for _ in 0..n {
-        let q = c + Vec2::from_angle(rng.range(0.0, 6.28)) * r * rng.f().sqrt();
+        let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
         let s = rng.range(0.14, 0.24);
         leaves.lathe(Vec3::new(q.x, 0.2, q.y), &[(0.0, 0.0), (s, s * 0.4), (s * 0.8, s * 1.1), (0.0, s * 1.4)], 5);
     }
     let reds = p.get(Mat::Flowers(hex(0xd31f2a)));
     for _ in 0..n * 3 {
-        let q = c + Vec2::from_angle(rng.range(0.0, 6.28)) * r * rng.f().sqrt();
+        let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
         let y = 0.2 + rng.range(0.2, 0.34);
         reds.aabox(Vec3::new(q.x - 0.035, y, q.y - 0.035), Vec3::new(q.x + 0.035, y + 0.05, q.y + 0.035), 1.0);
     }
@@ -768,7 +796,7 @@ fn street_furniture(lib: &mut ModuleLib, lay: &mut CityLayout, s: &Segment, d: &
                 } else {
                     let qt = at(t, side * (road + 1.0));
                     place(lay, grate, qt, 0.15, dir);
-                    lay.props.push((PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, 6.28)), Vec3::new(qt.x, 0.14, qt.y))));
+                    lay.props.push((PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)), Vec3::new(qt.x, 0.14, qt.y))));
                 }
                 t += 9.0;
                 k += 1;
@@ -899,6 +927,27 @@ mod tests {
             let outline = crate::geom::signed_area(&ring);
             let court = (100.0 - 2.0 * depth) * (96.0 - 2.0 * depth);
             assert!((area - (outline - court)).abs() < 2.0, "area {area} expected {}", outline - court);
+        }
+    }
+
+    #[test]
+    fn terraces_stay_on_the_sidewalk() {
+        let kit = Kit::load(None);
+        let mut lib = ModuleLib::new(&kit);
+        let mut lay = CityLayout::default();
+        let fr = Frontage { pos: Vec3::new(0.0, 0.15, 0.0), right: Vec3::X, out: Vec3::Z, width: 3.0, bar: true, closed: false };
+        for seed in 0..8 {
+            terrace(&mut lib, &mut lay, &fr, 4.5, &mut Rng::new(seed));
+        }
+        assert!(lay.out.placements.len() >= 8);
+        for (s, m) in &lay.out.placements {
+            let b = lay.out.scenes[*s].bounds();
+            for c in [b.min, b.max, Vec3::new(b.min.x, 0.0, b.max.z), Vec3::new(b.max.x, 0.0, b.min.z)] {
+                let w = m.transform_point3(c);
+                // Clear of the facade and of the tree line 1 m from the kerb.
+                assert!(w.z > 0.5 && w.z < 3.5, "terrace piece at {w:?}");
+                assert!((w.y - 0.15).abs() < 3.0);
+            }
         }
     }
 

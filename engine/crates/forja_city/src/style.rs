@@ -53,7 +53,7 @@ pub struct Style {
     /// plain | lintel | keystone | pediment | eared
     #[serde(default)]
     pub surround_kind: String,
-    /// individual | noble | corrido | none
+    /// individual | noble | corrido | terrace | none
     #[serde(default)]
     pub balcony: String,
     /// bars | belly
@@ -68,7 +68,7 @@ pub struct Style {
     /// clay | mansard | balustrade | parapet
     #[serde(default)]
     pub roof: String,
-    /// eave | classic | modillions
+    /// eave | classic | modillions | slab
     #[serde(default)]
     pub cornice: String,
     #[serde(default)]
@@ -107,6 +107,26 @@ pub struct Style {
     pub grilles: bool,
     #[serde(default)]
     pub dormers: bool,
+    /// Chance that a flat (one floor, one half of the front) has replaced
+    /// its joinery with white aluminium and roller blinds.
+    #[serde(default)]
+    pub reformed: f32,
+    /// Density of lived-in facade clutter: AC condensers, satellite
+    /// dishes, laundry, cables (0 = pristine, 1 = Lavapiés).
+    #[serde(default)]
+    pub clutter: f32,
+    /// Alternative ground-floor treatments (one picked per building, `wall`
+    /// = same as the upper wall with a stone plinth); empty uses `ground`.
+    #[serde(default)]
+    pub grounds: Vec<String>,
+    /// Chance of an extra storey set back from the street behind a terrace
+    /// (ático retranqueado), the usual later addition on old fronts.
+    #[serde(default)]
+    pub atico: f32,
+    /// A 1960s-80s block (desarrollismo): even floors, slab edges instead
+    /// of mouldings, terraces with solid parapets.
+    #[serde(default)]
+    pub modern: bool,
 }
 
 #[derive(Deserialize)]

@@ -232,6 +232,125 @@ pub fn street_plate(name: u8) -> P {
     p
 }
 
+// ------------------------------------------------------------ bars and shops
+
+/// Bar terrace set: round aluminium table with chairs around it and,
+/// for odd variants, a square parasol. Origin at the table foot.
+pub fn terrace_set(variant: u8) -> P {
+    let mut p = P::new();
+    let alu = Mat::Galvanized;
+    p.get(alu).lathe(Vec3::ZERO, &[(0.0, 0.0), (0.24, 0.0), (0.22, 0.03), (0.04, 0.05), (0.03, 0.7), (0.06, 0.72), (0.0, 0.72)], 12);
+    let top = Mat::Plastic([hex(0xe8e4da), hex(0x2b2b2b), hex(0xb0b4b6), hex(0xe8e4da)][variant as usize % 4]);
+    p.get(top).cylinder(v(0.0, 0.72, 0.0), v(0.0, 0.75, 0.0), 0.34, 18, true);
+    let seat = [hex(0x2f4a35), hex(0x1d1d1d), hex(0x7a4a2a), hex(0xd8d4c8)][(variant as usize / 2) % 4];
+    let chairs = 2 + (variant as usize % 3);
+    for k in 0..chairs {
+        let a = std::f32::consts::TAU * k as f32 / chairs as f32 + 0.4;
+        let d = v(a.cos(), 0.0, a.sin());
+        let m = forja_math::Mat4::from_translation(d * 0.62) * forja_math::Mat4::from_rotation_y(-a - std::f32::consts::FRAC_PI_2 + 0.15 * (k as f32 - 1.0));
+        p.append(&chair(seat), &m);
+    }
+    if variant % 2 == 1 {
+        parasol(&mut p, [hex(0xf1ead8), hex(0xb3261e), hex(0x2e5d8a)][variant as usize % 3]);
+    }
+    p
+}
+
+/// Stacking terrace chair: aluminium tubes, coloured slatted seat and back.
+/// Faces +Z (the sitter looks along +Z).
+fn chair(seat: [u8; 3]) -> P {
+    let mut p = P::new();
+    let alu = Mat::Galvanized;
+    let (hw, d) = (0.21, 0.2);
+    {
+        let g = p.get(alu);
+        for (x, z) in [(-hw, -d), (hw, -d), (-hw, d), (hw, d)] {
+            g.beam(v(x, 0.0, z), v(x, 0.45, z), Vec3::X, 0.022, 0.022, 1.0);
+        }
+        for x in [-hw, hw] {
+            g.beam(v(x, 0.45, -d), v(x, 0.88, -d - 0.06), Vec3::X, 0.022, 0.022, 1.0);
+            g.beam(v(x, 0.66, -d), v(x, 0.66, d), Vec3::Y, 0.02, 0.02, 1.0);
+        }
+    }
+    let s = p.get(Mat::Plastic(seat));
+    for k in 0..4 {
+        let z = -d + 0.03 + k as f32 * 0.11;
+        s.aabox(v(-hw, 0.44, z), v(hw, 0.47, z + 0.08), 1.0);
+    }
+    for k in 0..3 {
+        let y = 0.58 + k as f32 * 0.1;
+        let z = -d - 0.06 * (y - 0.45) / 0.43;
+        s.aabox(v(-hw, y, z - 0.03), v(hw, y + 0.07, z), 1.0);
+    }
+    p
+}
+
+fn parasol(p: &mut P, color: [u8; 3]) {
+    p.get(Mat::Galvanized).cylinder(v(0.0, 0.0, 0.0), v(0.0, 2.45, 0.0), 0.025, 8, true);
+    let half = 0.95;
+    let (h0, h1) = (2.05, 2.4);
+    let c = v(0.0, h1, 0.0);
+    let corners = [v(-half, h0, -half), v(half, h0, -half), v(half, h0, half), v(-half, h0, half)];
+    let m = Mat::Plastic(color);
+    let prim = p.get(m);
+    for i in 0..4 {
+        let (a, b) = (corners[i], corners[(i + 1) % 4]);
+        // Both sides of the canopy, and a short valance.
+        prim.tri(a, c, b, [Vec2::ZERO, Vec2::new(0.5, 1.0), Vec2::X]);
+        prim.tri(a, b, c, [Vec2::ZERO, Vec2::X, Vec2::new(0.5, 1.0)]);
+        let dn = Vec3::Y * -0.16;
+        prim.quad(b, a, a + dn, b + dn, 1.0);
+        prim.quad(a, b, b + dn, a + dn, 1.0);
+    }
+}
+
+/// Wine barrel used as a standing table outside Madrid bars.
+pub fn barrel() -> P {
+    let mut p = P::new();
+    let prof = [(0.0, 0.0), (0.27, 0.0), (0.31, 0.25), (0.33, 0.5), (0.31, 0.75), (0.27, 1.0), (0.0, 1.0)];
+    p.get(Mat::Wood(hex(0x7a5232))).lathe(Vec3::ZERO, &prof, 16);
+    for y in [0.08, 0.3, 0.7, 0.92] {
+        let r = 0.27 + 0.06 * (1.0 - ((y - 0.5) / 0.5f32).powi(2)) + 0.006;
+        p.get(Mat::Iron).lathe(Vec3::ZERO, &[(r, y - 0.025), (r, y + 0.025)], 16);
+    }
+    p
+}
+
+/// Green LED pharmacy cross on a wall arm, perpendicular to the facade
+/// (+Z out of the wall), double-sided.
+pub fn pharmacy_cross() -> P {
+    let mut p = P::new();
+    let g = Mat::Galvanized;
+    p.get(g).aabox(v(-0.06, -0.15, 0.0), v(0.06, 0.15, 0.03), 1.0);
+    p.get(g).beam(v(0.0, 0.0, 0.0), v(0.0, 0.0, 0.2), Vec3::Y, 0.05, 0.05, 1.0);
+    let (c, s, t) = (v(0.0, 0.0, 0.52), 0.32, 0.11);
+    p.get(Mat::Plastic(hex(0x202020))).aabox(c + v(-0.03, -s - 0.02, -s - 0.02), c + v(0.03, s + 0.02, s + 0.02), 1.0);
+    let lit = p.get(Mat::Lamp(hex(0x20d860)));
+    for side in [-1.0f32, 1.0] {
+        let x = side * 0.035;
+        lit.aabox(c + v(x - 0.005, -t, -s), c + v(x + 0.005, t, s), 1.0);
+        lit.aabox(c + v(x - 0.005, -s, -t), c + v(x + 0.005, s, t), 1.0);
+    }
+    p
+}
+
+/// Projecting blade sign (banderola) carrying the centre of a shop-sign
+/// atlas row, double-sided, perpendicular to the facade.
+pub fn blade_sign(row: u8) -> P {
+    let mut p = P::new();
+    let g = Mat::Iron;
+    p.get(g).beam(v(0.0, 0.36, 0.0), v(0.0, 0.36, 1.05), Vec3::Y, 0.03, 0.03, 1.0);
+    p.get(g).beam(v(0.0, -0.05, 0.0), v(0.0, 0.34, 0.35), Vec3::X, 0.025, 0.025, 1.0);
+    let (z0, z1, y0, y1) = (0.15, 1.0, 0.0, 0.3);
+    p.get(Mat::Plastic(hex(0x1a1a1a))).aabox(v(-0.035, y0 - 0.02, z0 - 0.02), v(0.035, y1 + 0.02, z1 + 0.02), 1.0);
+    let (r0, r1) = (row as f32 / 16.0, (row as f32 + 1.0) / 16.0);
+    let (ua, ub) = (0.34, 0.66);
+    let face = p.get(Mat::ShopSign);
+    face.quad_uv([v(0.04, y0, z1), v(0.04, y0, z0), v(0.04, y1, z0), v(0.04, y1, z1)], [Vec2::new(ua, r1), Vec2::new(ub, r1), Vec2::new(ub, r0), Vec2::new(ua, r0)]);
+    face.quad_uv([v(-0.04, y0, z0), v(-0.04, y0, z1), v(-0.04, y1, z1), v(-0.04, y1, z0)], [Vec2::new(ua, r1), Vec2::new(ub, r1), Vec2::new(ub, r0), Vec2::new(ua, r0)]);
+    p
+}
+
 /// Stone fountain with two basins.
 pub fn fountain(radius: f32) -> P {
     let mut p = P::new();
@@ -259,7 +378,7 @@ mod tests {
             let p = sign(k, 2.3);
             assert!(p.prims.contains_key(&Mat::SignFace(k)));
         }
-        for m in [street_lamp(true), street_lamp(false), road_light(), bollard(true), bollard(false), litter_bin(), container(0), container(2), tree_grate(), street_plate(1), fountain(5.0)] {
+        for m in [street_lamp(true), street_lamp(false), road_light(), bollard(true), bollard(false), litter_bin(), container(0), container(2), tree_grate(), street_plate(1), fountain(5.0), terrace_set(0), terrace_set(3), barrel(), pharmacy_cross(), blade_sign(4)] {
             assert!(prim_count(&m) > 10);
         }
     }
