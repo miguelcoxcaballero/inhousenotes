@@ -16,41 +16,69 @@
         await reload();
         host?.refreshed?.();
     }
-    function compareEntries(a,b) {
-        const af=a.mimeType===folderType,bf=b.mimeType===folderType;
-        if(af!==bf)return af?-1:1;
-        const order=af?(a.name||'').localeCompare(b.name||''):modifiedTime(b)-modifiedTime(a);
-        const ak=String(a.remoteId||a.id),bk=String(b.remoteId||b.id);
-        return order||(ak<bk?-1:ak>bk?1:0);
+    const NONE=0xFFFFFFFF,pdfType='application/pdf';
+    // The catalogue index lives in Rust (rust-core/src/offline/library.rs). It answers with indexes into `entries`;
+    // JS keeps the entry objects. Folder names are ranked here because only the browser's ICU can collate.
+    let folderIds=new Set(), documentAliases=new Map(), indexed=false, ranked=false, named=false, shadowModified=[], shadowStarred=[], handed=[], handedFlags=new Uint8Array(0);
+    function rustLibrary() {
+        const core=root.InhouseRust;
+        if(!core?.available?.()||!core.offlineLibrary)throw new Error('Rust core is unavailable; reload the app');
+        return core.offlineLibrary;
     }
-    let folderEntries=new Map(), folderIds=new Set(), activeEntries=[], activeAliases=new Map();
-    let documentAliases=new Map(), modifiedTimes=new WeakMap();
+    const parsedTime=value=>Date.parse(value)||0;
+    const wellFormed=text=>text.isWellFormed?.()===false?text.toWellFormed():text;
+    // Only entries given to callers can be changed behind our back (cards update observed records in place).
+    function handOut(at) {
+        const entry=entries[at];
+        if(!handedFlags[at]) {handedFlags[at]=1;handed.push(at);shadowModified[at]=entry.modifiedTime;shadowStarred[at]=!!entry.starred;}
+        return entry;
+    }
+    // Equal rank exactly when localeCompare reports 0; names that are not folders are passed as undefined.
+    function collationRanks(names) {
+        const collator=new Intl.Collator(),distinct=[...new Set(names.filter(name=>name!==undefined))].sort(collator.compare);
+        const rank=new Map();let current=-1;
+        distinct.forEach((name,at)=>{if(!at||collator.compare(distinct[at-1],name)!==0)current++;rank.set(name,current);});
+        return names.map(name=>rank.get(name)??0);
+    }
+    const folderName=entry=>entry.mimeType===folderType?(entry.name||''):undefined;
     function indexCatalogue() {
-        folderEntries=new Map();folderIds=new Set();activeEntries=[];activeAliases=new Map();
-        documentAliases=new Map();modifiedTimes=new WeakMap();
-        for (const entry of entries) {
-            if(entry.mimeType===folderType)folderIds.add(entry.id);
-            if(entry.trashed)continue;
-            activeEntries.push(entry);
-            // Saved Home views historically resolve the first matching ID or
-            // remote alias. Preserve that priority when aliases overlap.
-            for(const id of [entry.id,entry.remoteId])if(id&&!activeAliases.has(id))activeAliases.set(id,entry);
-            for(const parent of new Set(entry.parents||[])) {
-                if(!folderEntries.has(parent))folderEntries.set(parent,[]);
-                folderEntries.get(parent).push(entry);
-            }
-        }
+        folderIds=new Set();documentAliases=new Map();ranked=false;named=false;handed=[];handedFlags=new Uint8Array(entries.length);
         for(const doc of documents.values())if(doc.remoteId&&!documentAliases.has(doc.remoteId))documentAliases.set(doc.remoteId,doc);
-    }
-    function modifiedTime(entry) {
-        let cached=modifiedTimes.get(entry);
-        // Cards can update an observed record before the next reload. Cache
-        // parsing, not the record's mutable timestamp or its resulting order.
-        if(!cached||cached.source!==entry.modifiedTime) {
-            cached={source:entry.modifiedTime,value:Date.parse(entry.modifiedTime)||0};
-            modifiedTimes.set(entry,cached);
+        if(!indexed&&!entries.length)return;
+        const library=rustLibrary(),columns={fl:[],t:[],views:savedViews,docs:Array.from(documents.values(),({id,remoteId,lastOpenedAt})=>({id,remoteId,lastOpenedAt}))};
+        for(const entry of entries) {
+            const folder=entry.mimeType===folderType;
+            if(folder)folderIds.add(entry.id);
+            columns.fl.push((entry.trashed?1:0)|(folder?2:0)|(entry.mimeType===pdfType?4:0)|(entry.pending?8:0)|(entry.starred?16:0)|(entry.ownedByMe===false?32:0));
+            columns.t.push(entry.trashed?null:entry.modifiedTime);
         }
-        return cached.value;
+        const unparsed=library.load(columns);
+        if(unparsed.length)library.touch(Array.from(unparsed,at=>[at,parsedTime(entries[at].modifiedTime),!!entries[at].starred]));
+        indexed=true;
+    }
+    // Cards can update an observed record before the next reload: hand Rust the timestamps and stars that moved.
+    function refreshObserved(only=handed) {
+        let changes=null;
+        for(const at of only) {
+            if(!handedFlags[at])continue;
+            const entry=entries[at];
+            if(entry.modifiedTime===shadowModified[at]&&!!entry.starred===shadowStarred[at])continue;
+            (changes||=[]).push([at,parsedTime(entry.modifiedTime),!!entry.starred]);
+            shadowModified[at]=entry.modifiedTime;shadowStarred[at]=!!entry.starred;
+        }
+        if(changes)rustLibrary().touch(changes);
+        return !!changes;
+    }
+    function ensureRanks() {
+        if(ranked)return;
+        const ranks=collationRanks(entries.map(entry=>entry.trashed?undefined:folderName(entry)));
+        if(ranks.some(Boolean))rustLibrary().ranks(ranks);
+        ranked=true;
+    }
+    function ensureNames() {
+        if(named)return;
+        rustLibrary().names(entries.map(entry=>entry.trashed||typeof entry.name!=='string'?null:wellFormed(entry.name.toLowerCase())));
+        named=true;
     }
     const isWorker=new URLSearchParams(location.search).has('offline-worker');
     const folderType='application/vnd.google-apps.folder';
@@ -92,17 +120,40 @@
     async function reload() {
         if (!account) return;
         const requestedAccount=account;
-        const [items,docs,driveRoot,views,outbox]=await Promise.all([S.list('entries',requestedAccount),S.list('document-index',requestedAccount),S.read('settings',requestedAccount,'drive-root'),S.read('settings',requestedAccount,'home-views'),S.list('outbox',requestedAccount)]);
+        const [items,docs,driveRoot,views,outbox]=await Promise.all([S.list('entries',requestedAccount),S.list('document-index',requestedAccount),S.read('settings',requestedAccount,'drive-root'),S.read('settings',requestedAccount,'home-views'),S.list('outbox',requestedAccount),root.InhouseRust?.ready]);
         if(account!==requestedAccount)return;
-        const aliases=new Map(items.filter(e=>e.remoteId && e.remoteId!==e.id).map(e=>[e.remoteId,e.id]));
-        if(driveRoot?.remoteId)aliases.set(driveRoot.remoteId,'root');
-        const byId=new Map(items.map(e=>[e.id,e]));
-        entries=items.filter(e=>!aliases.has(e.id)).map(e=>{
-            const remote=!e.pending&&e.remoteId?byId.get(e.remoteId):null;
-            const remoteIsNewer=remote&&(Date.parse(remote.modifiedTime)||0)>=(Date.parse(e.modifiedTime)||0);
-            const item=remoteIsNewer?{...e,...remote,id:e.id,remoteId:e.remoteId}:e;
-            return {...item,parents:(item.parents||['root']).map(p=>aliases.get(p)||p)};
+        const library=rustLibrary();
+        // Rust decides which records survive, which remote copy overlays them and which parents are aliases.
+        const pointed=new Set(),bare=[],merge={i:items.map(e=>e.id),r:[],p:[],m:[],a:[],np:[],root:driveRoot?.remoteId||''};
+        for(let at=0;at<items.length;at++) {
+            const e=items[at];
+            if(e.remoteId) {merge.r.push([at,String(e.remoteId)]);pointed.add(e.remoteId);}
+            if(e.pending)merge.p.push(at);
+            if(Array.isArray(e.parents))merge.a.push(e.parents);else {merge.a.push(null);bare.push(at);}
+        }
+        // the remote-newer test only compares records that name a remote copy and the copies they name
+        if(pointed.size)items.forEach((e,at)=>{
+            if(e.remoteId||pointed.has(e.id))merge.m.push([at,parsedTime(e.modifiedTime)]);
+            if(pointed.has(e.id)&&!Object.hasOwn(e,'parents'))merge.np.push(at);
         });
+        const plan=library.merge(merge);
+        if(plan.identity) {
+            entries=items.slice();
+            for(const at of bare)entries[at]={...items[at],parents:['root']};
+        } else {
+            entries=Array.from(plan.kept,(source,at)=>{
+                const e=items[source],remote=plan.overlay[at];
+                if(remote===NONE&&Array.isArray(e.parents))return e;
+                const item=remote===NONE?e:{...e,...items[remote],id:e.id,remoteId:e.remoteId};
+                return {...item,parents:(item.parents||['root']).slice()};
+            });
+            let copied=-1;
+            for(let at=0;at<plan.patches.length;at+=3) {
+                const position=plan.patches[at],target=plan.patches[at+2];
+                if(copied!==position) {entries[position]={...entries[position],parents:entries[position].parents.slice()};copied=position;}
+                entries[position].parents[plan.patches[at+1]]=target===NONE?'root':items[target].id;
+            }
+        }
         documents=new Map(docs.map(doc=>[doc.id,doc]));
         savedViews=views||{};indexCatalogue();loaded=true;
         pendingOperations=new Map(outbox.map(op=>[op.id,op]));
@@ -163,42 +214,37 @@
         if(error.code==='needs-merge')return 'Waiting to verify the Drive revision. Your local copy is safe.';
         return 'Upload failed: '+(text.replace(/Drive API error \d+:.*$/s,'Drive request failed').slice(0,160)||'Check your connection and retry.');
     }
-    function folder(id, search='') {
-        const needle=search.toLowerCase();
-        // Read this directory only; rebuilding every card no longer searches
-        // the entire Drive catalogue. Filter returns a fresh sortable array.
-        return (folderEntries.get(id||'root')||[]).filter(e=>!needle||e.name?.toLowerCase().includes(needle))
-            .sort(compareEntries);
+    function select(parent,needle,local) {
+        if(!indexed)return [];
+        ensureRanks();
+        if(needle)ensureNames();
+        const ask=()=>rustLibrary().folder(parent,wellFormed(needle),local);
+        let found=ask();
+        // Only listed entries can reorder this answer; ask again when an observed one moved.
+        if(refreshObserved(found))found=ask();
+        return Array.from(found,handOut);
     }
+    function folder(id, search='') {return select(id||'root',search.toLowerCase(),false);}
     function combine(remote,parent,search='') {
-        const local=folder(parent,search).filter(e=>e.pending||e.id.startsWith('local-'));
-        const ids=new Set(local.flatMap(e=>[e.id,e.remoteId]));
-        return [...local,...remote.filter(e=>!ids.has(e.id))].sort(compareEntries);
+        const local=select(parent||'root',search.toLowerCase(),true),rows=[...local,...remote];
+        const ranks=collationRanks(rows.map(folderName));
+        const order=rustLibrary().sort({local:local.length,i:rows.map(e=>String(e.id)),r:rows.map(e=>e.remoteId?String(e.remoteId):''),
+            k:rows.map(e=>String(e.remoteId||e.id)),f:rows.map(e=>e.mimeType===folderType),m:rows.map(e=>parsedTime(e.modifiedTime)),n:ranks});
+        return Array.from(order,at=>rows[at]);
     }
     function home() {
-        const active=activeEntries;
-        const ordered=list=>list.sort(compareRecents);
-        const view=(name,fallback)=>Array.isArray(savedViews[name])
-            ? savedViews[name].map(id=>activeAliases.get(id)).filter(Boolean) : fallback;
-        const files=active.filter(e=>e.mimeType==='application/pdf'&&!host.quickAccess?.(e));
-        const recents=view('recents',ordered(files).slice(0,12));
-        return {recents:recentItems(recents),
-            starred:view('starred',ordered(active.filter(e=>e.starred)).slice(0,12)),
-            shared:view('shared',ordered(active.filter(e=>e.ownedByMe===false)).slice(0,24))};
-    }
-    function compareRecents(a,b) {
-        const openedA=record(a.id)?.lastOpenedAt||0,openedB=record(b.id)?.lastOpenedAt||0;
-        const delta=openedB-openedA||modifiedTime(b)-modifiedTime(a);
-        const ak=String(a.remoteId||a.id),bk=String(b.remoteId||b.id);
-        return delta||(ak<bk?-1:ak>bk?1:0);
+        if(!indexed)return {recents:[],starred:[],shared:[]};
+        refreshObserved();
+        const quick=[];
+        entries.forEach((entry,at)=>{if(!entry.trashed&&entry.mimeType===pdfType&&host.quickAccess?.(entry))quick.push(at);});
+        const [recents,starred,shared]=rustLibrary().home(quick).map(list=>Array.from(list,handOut));
+        return {recents,starred,shared};
     }
     function recentItems(remote) {
-        const byId=new Map();
-        // Both cached and network renders use the same ordering and pending
-        // aliases. Never prepend the outbox in IndexedDB key order.
-        for(const entry of remote)byId.set(entry.remoteId||entry.id,entry);
-        for(const entry of activeEntries)if(entry.mimeType==='application/pdf'&&(entry.pending||entry.id.startsWith('local-')))byId.set(entry.remoteId||entry.id,entry);
-        return [...byId.values()].sort(compareRecents).slice(0,12);
+        const library=rustLibrary(),listed=Array.from(remote);
+        if(indexed)refreshObserved();
+        const order=library.recents({i:listed.map(e=>String(e.id)),k:listed.map(e=>String(e.remoteId||e.id)),m:listed.map(e=>parsedTime(e.modifiedTime))});
+        return Array.from(order,at=>at<entries.length?handOut(at):listed[at-entries.length]);
     }
     async function observed(items,parent,view) {
         if (!account) return;
