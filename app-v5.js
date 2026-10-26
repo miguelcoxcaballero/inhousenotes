@@ -4394,6 +4394,12 @@
                     // Anchor the stroke to its page identity so it follows the
                     // page across remote reorders that may land mid-draw.
                     currentStrokePageId = state.pages[pageIndex]?.pageId || null;
+                    if (lassoCanvas && currentStroke.tool !== 'highlighter') {
+                        clearLassoCanvas(pageIndex);
+                        const scale = getOverlayCanvasRenderScale(lassoCanvas, drawGeometry.pageWidth, LASSO_OVERLAY_BASE_SCALE);
+                        lassoCanvas.getContext('2d').setTransform(scale, 0, 0, scale, 0, 0);
+                        livePenSurfaces.set(currentStroke, lassoCanvas);
+                    }
                     updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
                     if (typeof publishLiveStrokePreview === 'function') {
                         publishLiveStrokePreview(currentStrokePageId, currentStroke);
@@ -4455,6 +4461,7 @@
                     if (currentStroke && typeof publishLiveStrokePreview === 'function') {
                         publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
                     }
+                    releaseLivePenSurface(currentStroke);
                     isDrawing = false;
                     if (isLassoing) {
                         isLassoing = false;
@@ -4559,6 +4566,7 @@
                             publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
                         }
                         // Page was deleted while we were drawing — drop the stroke.
+                        releaseLivePenSurface(currentStroke);
                         currentStroke = null;
                         currentStrokePageId = null;
                         drawGeometry = null;
@@ -4728,6 +4736,17 @@
         }
 
         const liveCursorPreviewBounds = new WeakMap();
+        // Keep the large page bitmap unchanged during contact. The existing
+        // lasso layer is otherwise idle while writing and has a bounded size.
+        const livePenSurfaces = new WeakMap();
+        function releaseLivePenSurface(stroke) {
+            const surface = stroke && livePenSurfaces.get(stroke);
+            if (!surface) return;
+            const ctx = surface.getContext('2d');
+            ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, surface.width, surface.height); ctx.restore();
+            livePenSurfaces.delete(stroke);
+        }
 
         function drawStrokePreviewTail(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
             const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
@@ -4836,6 +4855,16 @@
         function commitLiveStrokeToCanvas(pageIndex, canvas, stroke) {
             if (!canvas || !stroke || !stroke.points || stroke.points.length === 0) return;
             const ctx = canvas.getContext('2d');
+            if (livePenSurfaces.has(stroke)) {
+                // Commit original geometry once, at page resolution. No raster
+                // copy or simplification of the live layer enters saved ink.
+                stroke.finalizedIndex = -1;
+                stroke.lastMid = null;
+                if (stroke.points.length === 1) drawSinglePointStroke(ctx, stroke);
+                else drawStrokeTailSegment(ctx, stroke);
+                releaseLivePenSurface(stroke);
+                return;
+            }
             if (stroke.points.length === 1) {
                 drawSinglePointStroke(ctx, stroke);
                 return;
@@ -4898,7 +4927,7 @@
             }
             const pending = stroke.points.length - 1 - stroke.finalizedIndex;
             if (pending > LIVE_PREVIEW_POINTS + FINALIZE_STEP_POINTS) {
-                finalizeStrokeSegments(pageIndex, canvas, stroke);
+                finalizeStrokeSegments(pageIndex, livePenSurfaces.get(stroke) || canvas, stroke);
             }
             drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
         }
@@ -26935,6 +26964,7 @@
 
         function detectDeviceType() {
             const ua = navigator.userAgent || '';
+            if (/Android/i.test(ua) && !/Mobile/i.test(ua)) return 'tablet';
             if (/iPad|tablet|PlayBook/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua) && screen.width >= 768)) return 'tablet';
             if (/Mobi|Android.*Mobile|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return 'mobile';
             return 'pc';
