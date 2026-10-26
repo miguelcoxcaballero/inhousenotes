@@ -1369,11 +1369,44 @@ impl Renderer {
         // Rendering uses the jittered matrix; culling is unaffected by a
         // sub-pixel shift.
         let view_proj = tf.view_proj;
-        let splits = camera::cascade_splits(cam.near.max(0.1), env.shadow_distance, 0.8);
+        let frustum = Frustum::from_view_proj(&view_proj);
+        // Fit the cascades to the visible depth range from a lower bound of
+        // the distance to the closest visible geometry: bounding spheres for
+        // ordinary instances, the box for large ones (a ground plane's
+        // sphere would contain an aerial camera). Bounded cost: one point
+        // transform and a sphere test per instance, stopping as soon as
+        // something is near the camera, as it always is at street level.
+        let near = cam.near.max(0.1);
+        let mut nearest = f32::INFINITY;
+        for inst in &frame.instances {
+            let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
+            if model.bounds.is_empty() {
+                continue;
+            }
+            let m = &inst.transform;
+            let scale = m.x_axis.truncate().length().max(m.y_axis.truncate().length()).max(m.z_axis.truncate().length());
+            let animated = inst.joints.is_some() || inst.nodes.is_some();
+            let r = model.bounds.half_extents().length() * scale + if animated { 0.5 } else { 0.0 };
+            let c = m.transform_point3(model.bounds.center());
+            if frustum.intersects_sphere(c, r) {
+                let d = if r > 50.0 {
+                    let b = transform_aabb(&model.bounds, m);
+                    (b.min - cam.position).max(cam.position - b.max).max(Vec3::ZERO).length()
+                } else {
+                    (c - cam.position).length() - r
+                };
+                nearest = nearest.min(d);
+                if nearest <= near * 1.2 {
+                    break;
+                }
+            }
+        }
+        let (shadow_near, shadow_far) = camera::fitted_shadow_range(near, nearest, cam.fov_y, cam.aspect, env.shadow_distance);
+        let splits = camera::cascade_splits(shadow_near, shadow_far, 0.8);
         let mut cascade_vp = [Mat4::IDENTITY; 4];
         let mut cascade_texel = [0.0f32; 4];
         let mut cascade_range = [0.0f32; 4];
-        let mut prev = cam.near;
+        let mut prev = shadow_near.max(cam.near);
         let caster_reach = 400.0;
         for (i, s) in splits.iter().enumerate() {
             let (m, radius) = camera::cascade_fit(&cam, prev, *s, sun, self.shadow_size, caster_reach);
@@ -1423,7 +1456,6 @@ impl Renderer {
         }
 
         // Build instance batches: main view + one list per cascade.
-        let frustum = Frustum::from_view_proj(&view_proj);
         let tan_half_fov = (cam.fov_y * 0.5).tan();
         let cascade_planes: Vec<[Vec4; 6]> = cascade_vp.iter().map(camera::frustum_planes_standard).collect();
         let mut joints: Vec<[[f32; 4]; 4]> = Vec::new();
@@ -1442,11 +1474,14 @@ impl Renderer {
             let dist = (wbi.center() - cam.position).length().max(0.1);
             let px_radius = radius / (dist * tan_half_fov) * height as f32 * 0.5;
             let in_main = px_radius > 0.6 && frustum.intersects_aabb(&wbi);
-            let shadow_ok = inst.cast_shadows && !(radius < 0.8 && dist > 35.0) && !(radius < 3.0 && dist > 90.0);
+            // Shadow casters are culled by their size in shadow texels of
+            // each cascade, not by camera distance: buildings are assembled
+            // from many small modules, which together cast the large shadows
+            // that still matter far away and from the air.
             let mut cmask = 0u8;
-            if shadow_ok {
+            if inst.cast_shadows {
                 for (c, planes) in cascade_planes.iter().enumerate() {
-                    if aabb_in_planes(&wbi, planes) {
+                    if radius >= 2.5 * cascade_texel[c] && aabb_in_planes(&wbi, planes) {
                         cmask |= 1 << c;
                     }
                 }
