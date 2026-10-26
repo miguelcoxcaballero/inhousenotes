@@ -24,6 +24,86 @@ pub struct HumanSpec {
     pub skin: String,
     pub proxies: Vec<String>,
     pub eye_color: String,
+    pub macros: Macros,
+}
+
+/// MakeHuman macro sliders (0..1). The base mesh alone is a neutral,
+/// unrealistic average; these blend the CC0 macro targets on top.
+#[derive(Clone, Copy, Debug)]
+pub struct Macros {
+    /// 0 female, 1 male.
+    pub gender: f32,
+    /// 0.5 = 25 years, 1.0 = 90 years (adults only).
+    pub age: f32,
+    pub muscle: f32,
+    pub weight: f32,
+    /// Ethnic mix, normalised internally.
+    pub african: f32,
+    pub asian: f32,
+    pub caucasian: f32,
+}
+
+impl Default for Macros {
+    fn default() -> Self {
+        Self { gender: 0.5, age: 0.5, muscle: 0.5, weight: 0.5, african: 1.0 / 3.0, asian: 1.0 / 3.0, caucasian: 1.0 / 3.0 }
+    }
+}
+
+impl Macros {
+    pub fn adult(gender: f32, years: f32) -> Self {
+        Self { gender, age: (0.5 + (years - 25.0) / 65.0 * 0.5).clamp(0.5, 1.0), ..Default::default() }
+    }
+
+    /// `(target file, weight)` pairs, following MakeHuman's macro modifier.
+    pub fn targets(&self) -> Vec<(String, f32)> {
+        let g = [("female", 1.0 - self.gender), ("male", self.gender)];
+        let a = self.age.clamp(0.5, 1.0);
+        let ages = [("young", (1.0 - a) / 0.5), ("old", (a - 0.5) / 0.5)];
+        let tri = |v: f32, lo: &'static str, mid: &'static str, hi: &'static str| -> [(&'static str, f32); 3] {
+            if v < 0.5 { [(lo, 1.0 - 2.0 * v), (mid, 2.0 * v), (hi, 0.0)] } else { [(lo, 0.0), (mid, 2.0 - 2.0 * v), (hi, 2.0 * v - 1.0)] }
+        };
+        let m = tri(self.muscle, "minmuscle", "averagemuscle", "maxmuscle");
+        let w = tri(self.weight, "minweight", "averageweight", "maxweight");
+        let total = (self.african + self.asian + self.caucasian).max(1e-6);
+        let races = [("african", self.african / total), ("asian", self.asian / total), ("caucasian", self.caucasian / total)];
+        let mut out = Vec::new();
+        for (gn, gw) in g {
+            for (an, aw) in ages {
+                for (rn, rw) in races {
+                    out.push((format!("{rn}-{gn}-{an}.target"), gw * aw * rw));
+                }
+                for (mn, mw) in m {
+                    for (wn, ww) in w {
+                        out.push((format!("universal-{gn}-{an}-{mn}-{wn}.target"), gw * aw * mw * ww));
+                    }
+                }
+            }
+        }
+        out.retain(|(_, w)| *w > 1e-4);
+        out
+    }
+}
+
+/// Adds weighted MakeHuman targets (`index dx dy dz` lines) to the base
+/// positions. Missing files are skipped.
+fn apply_targets(positions: &mut [Vec3], dir: &Path, macros: &Macros) -> usize {
+    let mut applied = 0;
+    for (file, w) in macros.targets() {
+        let Ok(text) = std::fs::read_to_string(dir.join(&file)) else { continue };
+        for line in text.lines() {
+            if line.starts_with('#') {
+                continue;
+            }
+            let mut it = line.split_whitespace();
+            let (Some(i), Some(x), Some(y), Some(z)) = (it.next(), it.next(), it.next(), it.next()) else { continue };
+            let (Ok(i), Ok(x), Ok(y), Ok(z)) = (i.parse::<usize>(), x.parse::<f32>(), y.parse::<f32>(), z.parse::<f32>()) else { continue };
+            if let Some(p) = positions.get_mut(i) {
+                *p += Vec3::new(x, y, z) * w;
+            }
+        }
+        applied += 1;
+    }
+    applied
 }
 
 impl HumanSpec {
@@ -40,6 +120,7 @@ impl HumanSpec {
                 "eyes/high-poly".into(),
             ],
             eye_color: "brown".into(),
+            macros: Macros { muscle: 0.55, caucasian: 0.8, african: 0.05, asian: 0.15, ..Macros::adult(1.0, 32.0) },
         }
     }
 
@@ -47,18 +128,19 @@ impl HumanSpec {
     pub fn presets() -> Vec<HumanSpec> {
         let base = Self::casual_male();
         let face = |hair: &str| vec![hair.to_string(), "eyebrows/eyebrow001".into(), "eyelashes/eyelashes01".into(), "eyes/high-poly".into()];
-        let spec = |name: &str, skin: &str, clothes: &[&str], hair: &str, eyes: &str| HumanSpec {
+        let spec = |name: &str, skin: &str, clothes: &[&str], hair: &str, eyes: &str, macros: Macros| HumanSpec {
             name: name.into(),
             skin: skin.into(),
             proxies: clothes.iter().map(|c| c.to_string()).chain(face(hair)).collect(),
             eye_color: eyes.into(),
+            macros,
         };
         vec![
             base.clone(),
-            spec("worker", "skins/young_african_male", &["clothes/male_worksuit01", "clothes/shoes06"], "hair/short04", "brown"),
-            spec("tourist", "skins/young_caucasian_female", &["clothes/female_casualsuit01", "clothes/shoes02"], "hair/ponytail01", "blue"),
-            spec("local", "skins/middleage_asian_female", &["clothes/female_casualsuit01", "clothes/shoes02"], "hair/bob02", "brownlight"),
-            HumanSpec { name: "commuter".into(), proxies: { let mut p = base.proxies.clone(); p[0] = "clothes/male_casualsuit02".into(); p }, ..base },
+            spec("worker", "skins/young_african_male", &["clothes/male_worksuit01", "clothes/shoes06"], "hair/short04", "brown", Macros { muscle: 0.7, african: 0.9, asian: 0.0, caucasian: 0.1, ..Macros::adult(1.0, 38.0) }),
+            spec("tourist", "skins/young_caucasian_female", &["clothes/female_casualsuit01", "clothes/shoes02"], "hair/ponytail01", "blue", Macros { caucasian: 0.9, african: 0.0, asian: 0.1, ..Macros::adult(0.0, 27.0) }),
+            spec("local", "skins/middleage_asian_female", &["clothes/female_casualsuit01", "clothes/shoes02"], "hair/bob02", "brownlight", Macros { weight: 0.6, caucasian: 0.7, asian: 0.3, african: 0.0, ..Macros::adult(0.0, 52.0) }),
+            HumanSpec { name: "commuter".into(), proxies: { let mut p = base.proxies.clone(); p[0] = "clothes/male_casualsuit02".into(); p }, macros: Macros { weight: 0.62, muscle: 0.45, caucasian: 0.85, african: 0.05, asian: 0.1, ..Macros::adult(1.0, 46.0) }, ..base },
         ]
     }
 }
@@ -294,7 +376,12 @@ fn bone_frames(skel: &serde_json::Value, base: &[Vec3]) -> Result<(Vec<String>, 
 /// assets (skins, clothes, hair, ...).
 pub fn build_human(base_dir: &Path, pack_dir: &Path, spec: &HumanSpec) -> Result<SceneData, AssetError> {
     let read = |p: PathBuf| std::fs::read_to_string(&p).map_err(|e| AssetError::Io(format!("{}: {e}", p.display())));
-    let base = parse_obj(&read(base_dir.join("base.obj"))?);
+    let mut base = parse_obj(&read(base_dir.join("base.obj"))?);
+    // Shape the body with the macro targets before anything reads it, so
+    // the skeleton and every proxy follow the new shape.
+    let targets = base_dir.parent().map(|p| p.join("makehuman_targets")).unwrap_or_default();
+    let n = apply_targets(&mut base.positions, &targets, &spec.macros);
+    log::debug!("{}: {n} macro targets", spec.name);
     let skel: serde_json::Value = serde_json::from_str(&read(base_dir.join("default.mhskel"))?).map_err(|e| AssetError::Format(format!("mhskel: {e}")))?;
     let body_weights = parse_weights(&read(base_dir.join("default_weights.mhw"))?)?;
     let (bone_names, parents, bone_world) = bone_frames(&skel, &base.positions)?;

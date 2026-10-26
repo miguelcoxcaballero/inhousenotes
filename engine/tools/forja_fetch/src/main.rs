@@ -207,7 +207,16 @@ fn fetch_entry(ctx: &mut Ctx, entry: &AssetEntry) -> Result<usize> {
     if !entry.files.is_empty() {
         for f in &entry.files {
             let rel = safe_rel(&f.path).ok_or(format!("unsafe path {}", f.path))?;
-            let bytes = get(ctx, &f.url)?;
+            let mut bytes = get(ctx, &f.url)?;
+            // A zipped single file (e.g. a BVH clip) stored unzipped.
+            if f.url.ends_with(".zip") && !rel.ends_with(".zip") {
+                let mut zip = zip::ZipArchive::new(Cursor::new(&bytes[..])).map_err(|e| format!("{}: bad zip: {e}", entry.id))?;
+                let ext = rel.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+                let idx = (0..zip.len()).find(|&i| zip.by_index(i).map(|z| z.name().to_ascii_lowercase().ends_with(&ext)).unwrap_or(false)).ok_or(format!("{}: no .{ext} inside {}", entry.id, f.url))?;
+                let mut out = Vec::new();
+                std::io::Read::read_to_end(&mut zip.by_index(idx).map_err(|e| e.to_string())?, &mut out).map_err(|e| e.to_string())?;
+                bytes = out;
+            }
             store(ctx, entry, &rel, &bytes)?;
         }
         return Ok(entry.files.len());

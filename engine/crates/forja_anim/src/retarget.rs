@@ -150,6 +150,16 @@ pub fn humanoid_roles(skel: &Skeleton) -> std::collections::HashMap<Role, usize>
             roles.entry(r).or_insert(j);
         }
     }
+    // Rigs without a "chest" name (CMU: Spine, Spine1): the spine joint the
+    // neck hangs from is the chest.
+    if let (None, Some(&neck)) = (roles.get(&Role::Chest), roles.get(&Role::Neck)) {
+        if let Some(p) = skel.joints[neck].parent {
+            let n = clean(&skel.joints[p].name);
+            if Some(&p) != roles.get(&Role::Spine) && has(&n, &["spine", "back"]) {
+                roles.insert(Role::Chest, p);
+            }
+        }
+    }
     roles
 }
 
@@ -230,28 +240,17 @@ pub fn retarget(clip: &Clip, source: &Skeleton, target: &Skeleton, map: &Retarge
     let touched: Vec<usize> = rules.iter().map(|r| match r {
         R::Dir(_, _, t, _) | R::Ori(_, t) => *t,
     }).collect();
-    let mut rotations: Vec<Vec<Quat>> = vec![Vec::with_capacity(frames); target.len()];
-    let mut root_t: Vec<Vec3> = Vec::with_capacity(frames);
-    let mut src_pose = source.rest_pose();
-    let mut src_m = Vec::new();
-    for f in 0..frames {
-        let t = f as f32 * dt;
-        src_pose.local.clone_from(&source.rest_pose().local);
-        clip.sample(t, false, &mut src_pose);
-        source.model_matrices(&src_pose, &mut src_m);
-        // Target world rotations, parents first.
+    // Target world rotations that make each mapped bone point where the
+    // source bone points, solved parents first.
+    let solve_directions = |src_m: &[Mat4]| -> Vec<Quat> {
         let mut world_rot: Vec<Quat> = vec![Quat::IDENTITY; target.len()];
-        let mut local_rot: Vec<Quat> = target.joints.iter().map(|j| j.rest.r).collect();
         for &i in &target.order {
             let parent = target.joints[i].parent.map(|p| world_rot[p]).unwrap_or_else(|| rot(&target.root_parent));
             let mut w = parent * target.joints[i].rest.r;
             for r in &rules {
                 match *r {
                     R::Dir(s, sc, tt, tc) if tt == i => {
-                        // Point exactly where the source bone points now; this
-                        // is independent of either rest pose (T vs A pose).
                         let desired = (pos(&src_m[sc]) - pos(&src_m[s])).normalize_or_zero();
-                        // Target direction if only its parents had moved.
                         let rest_world = rot(&tgt_rest[i]);
                         let rest_dir_local = rest_world.inverse() * (pos(&tgt_rest[tc]) - pos(&tgt_rest[i]));
                         let current = (w * rest_dir_local).normalize_or_zero();
@@ -267,16 +266,68 @@ pub fn retarget(clip: &Clip, source: &Skeleton, target: &Skeleton, map: &Retarge
                 }
             }
             world_rot[i] = w.normalize();
+        }
+        world_rot
+    };
+    // 1) Pose the target like the source's rest pose (T vs A pose), using
+    //    bone directions only. 2) Every frame, apply each source bone's full
+    //    world rotation change since its rest (swing and twist) on top of
+    //    that aligned pose. Twist then follows the performer instead of
+    //    being left arbitrary, which is what kept forearms and hands
+    //    wrung out.
+    let aligned = solve_directions(&src_rest);
+    let source_of: Vec<Option<usize>> = (0..target.len())
+        .map(|i| {
+            rules.iter().find_map(|r| match *r {
+                R::Dir(s, _, t, _) | R::Ori(s, t) if t == i => Some(s),
+                _ => None,
+            })
+        })
+        .collect();
+    let mut rotations: Vec<Vec<Quat>> = vec![Vec::with_capacity(frames); target.len()];
+    let mut root_t: Vec<Vec3> = Vec::with_capacity(frames);
+    let mut src_pose = source.rest_pose();
+    let mut src_m = Vec::new();
+    // Floors: the source's lowest joint over the whole take, the target's
+    // lowest joint at rest.
+    let src_floor = (0..frames)
+        .map(|f| {
+            src_pose.local.clone_from(&source.rest_pose().local);
+            clip.sample(f as f32 * dt, false, &mut src_pose);
+            source.model_matrices(&src_pose, &mut src_m);
+            floor(&src_m)
+        })
+        .fold(f32::MAX, f32::min);
+    let tgt_floor = floor(&tgt_rest);
+    for f in 0..frames {
+        let t = f as f32 * dt;
+        src_pose.local.clone_from(&source.rest_pose().local);
+        clip.sample(t, false, &mut src_pose);
+        source.model_matrices(&src_pose, &mut src_m);
+        let mut world_rot: Vec<Quat> = vec![Quat::IDENTITY; target.len()];
+        let mut local_rot: Vec<Quat> = target.joints.iter().map(|j| j.rest.r).collect();
+        for &i in &target.order {
+            let parent = target.joints[i].parent.map(|p| world_rot[p]).unwrap_or_else(|| rot(&target.root_parent));
+            let w = match source_of[i] {
+                Some(s) => (rot(&src_m[s]) * rot(&src_rest[s]).inverse()) * aligned[i],
+                // Unmapped bones (fingers, twist helpers) follow their parent.
+                None => parent * target.joints[i].rest.r,
+            };
+            world_rot[i] = w.normalize();
             local_rot[i] = (parent.inverse() * world_rot[i]).normalize();
         }
         for (k, q) in local_rot.into_iter().enumerate() {
             rotations[k].push(q);
         }
         if let (Some(s), Some(t)) = root {
-            let delta = pos(&src_m[s]) - pos(&src_rest[s]);
+            let mut delta = (pos(&src_m[s]) - pos(&src_rest[s])) * ratio;
+            // Height: the source hips above the source's floor, scaled,
+            // above the target's floor, so the feet stay on the ground
+            // whatever either rig's rest pose was.
+            delta.y = tgt_floor + (pos(&src_m[s]).y - src_floor) * ratio - pos(&tgt_rest[t]).y;
             // Back into the target root's parent space.
             let parent_inv = target.joints[t].parent.map(|_| Quat::IDENTITY).unwrap_or_else(|| rot(&target.root_parent).inverse());
-            root_t.push(target.joints[t].rest.t + parent_inv * (delta * ratio));
+            root_t.push(target.joints[t].rest.t + parent_inv * delta);
         }
     }
     let times: Vec<f32> = (0..frames).map(|f| f as f32 * dt).collect();

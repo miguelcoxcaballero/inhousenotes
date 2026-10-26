@@ -49,12 +49,21 @@ fn main() {
     // Optional: pose the human with a retargeted robot clip at a time.
     if let (Some(clip_name), true) = (args.get(5), is_human) {
         let t: f32 = args.get(6).and_then(|v| v.parse().ok()).unwrap_or(0.3);
-        let robot = forja_assets::load_gltf(&dl.join("quaternius_robot_expressive/RobotExpressive.glb")).unwrap();
-        let src = forja_anim::Skeleton::from_scene(&robot, 0).unwrap();
         let tgt = forja_anim::Skeleton::from_scene(&scene, 0).unwrap();
-        let clips = forja_anim::Clip::bind_all(&robot, &src, None);
-        let clip = clips.iter().find(|c| c.name == *clip_name).expect("clip");
-        let rc = forja_anim::retarget::retarget(clip, &src, &tgt, &forja_anim::retarget::RetargetMap::auto(&src, &tgt), 30.0);
+        let (source, src) = if let Some(file) = clip_name.strip_prefix("cmu:") {
+            let bvh = forja_assets::bvh::load_bvh(&dl.join(format!("cmu_mocap/{file}.bvh")), forja_assets::bvh::CMU_SCALE).unwrap();
+            let src = forja_anim::Skeleton::from_scene_any(&bvh);
+            (bvh, src)
+        } else {
+            let robot = forja_assets::load_gltf(&dl.join("quaternius_robot_expressive/RobotExpressive.glb")).unwrap();
+            let src = forja_anim::Skeleton::from_scene(&robot, 0).unwrap();
+            (robot, src)
+        };
+        let clips = forja_anim::Clip::bind_all(&source, &src, None);
+        let clip = clips.iter().find(|c| c.name == *clip_name || clip_name.ends_with(&format!(":{}", c.name))).expect("clip");
+        let map = forja_anim::retarget::RetargetMap::auto(&src, &tgt);
+        println!("retarget rules: {}", map.rules.len());
+        let rc = forja_anim::retarget::retarget(clip, &src, &tgt, &map, 30.0);
         let mut pose = tgt.rest_pose();
         rc.sample(t, true, &mut pose);
         let mut mats = Vec::new();
