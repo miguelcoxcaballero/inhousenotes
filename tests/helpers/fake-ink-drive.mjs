@@ -34,7 +34,8 @@ export function fakeInkDrive(){
     if(api.failSearch)return json({},503);
     if(api.hideSearch)return json({files:[]});
     const doc=query.match(/key='ihnDoc' and value='([^']+)'/)?.[1];
-    return json({files:[...files.values()].filter(f=>f.appProperties?.ihnDoc===doc).map(({id})=>({id}))});
+    const kind=query.match(/key='ihnKind' and value='([^']+)'/)?.[1];
+    return json({files:[...files.values()].filter(f=>f.appProperties?.ihnDoc===doc&&f.appProperties?.ihnKind===kind).map(({id})=>({id}))});
    }
    return json({files:[...files.values()].filter(f=>f.mimeType==='application/vnd.google-apps.folder').map(({id})=>({id}))});
   }

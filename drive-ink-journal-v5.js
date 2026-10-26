@@ -68,7 +68,7 @@
             if(typeof id!=='string'||!/^[\w-]{1,200}$/.test(id))return;
             if(!this.sources.has(id)&&this.sources.size<4096)this.sources.set(id,{next:0,rev:0,hotUntil:0,idleReads:0});
             const source=this.sources.get(id);
-            if(source&&active){source.hotUntil=Date.now()+6000;if(source.next!==Infinity)source.next=Math.min(source.next,Date.now()+450);}
+            if(source&&active){source.hotUntil=Date.now()+6000;if(source.next!==Infinity)source.next=Math.min(source.next,Date.now()+120);}
         }
         async ensureFolder(){
             if(this.folder)return this.folder;
@@ -147,7 +147,7 @@
             try{await this.host.announce?.(record.docId,id,record.actor);}catch(error){this.host.warning?.(error);}
         }
         async flush(){
-            if(this.stopped||this.writing||Date.now()-this.lastWrite<600)return;
+            if(this.stopped||this.writing||Date.now()-this.lastWrite<120)return;
             this.writing=true;
             try{
                 await this.persistChain;
@@ -209,10 +209,10 @@
                 const due=[...this.sources.entries()].filter(([,source])=>source.next<=now).sort((a,b)=>(b[1].hotUntil>now?1:0)-(a[1].hotUntil>now?1:0)||a[1].next-b[1].next).slice(0,4);
                 for(const [id,source] of due){
                     try {
-                    source.next=now+(source.hotUntil>now?450:1800);
+                    source.next=now+(source.hotUntil>now?120:1800);
                     const response=await this.request(`${API}/${encodeURIComponent(id)}?alt=media`,{headers:{'Cache-Control':'no-cache'}});
                     const raw=await response.text();if(raw.length>MAX_BODY)throw new Error('Ink journal is too large');
-                    if(raw===source.raw){source.idleReads++;source.next=now+(source.hotUntil>now?450:Math.min(30000,1800*2**Math.floor(source.idleReads/3)));continue;}
+                    if(raw===source.raw){source.idleReads++;source.next=now+(source.hotUntil>now?120:Math.min(30000,1800*2**Math.floor(source.idleReads/3)));continue;}
                     await this.host.idle?.();if(this.stopped)return;
                     const value=JSON.parse(raw);
                     if(value.v!==1||value.docId!==this.docId||typeof value.actor!=='string'||!Number.isSafeInteger(value.rev)
@@ -230,7 +230,7 @@
                     if(value.rev<=seen)continue; // An out-of-order read cannot roll back the replica.
                     if(value.rev>seen&&value.actor!==this.actor)await this.host.apply(value.ops.slice(seen),{id,actor:value.actor,rev:value.rev});
                     if(this.stopped)return;
-                    this.seen.set(id,value.rev);source.raw=raw;source.idleReads=0;source.rev=value.rev;source.hotUntil=now+6000;source.next=now+450;
+                    this.seen.set(id,value.rev);source.raw=raw;source.idleReads=0;source.rev=value.rev;source.hotUntil=now+6000;source.next=now+120;
                     for(const entry of this.sources.values())if(entry.actor===value.actor&&entry.part<latest&&entry.requiredRev&&entry.rev>=entry.requiredRev){entry.next=Infinity;delete entry.raw;}
                     }catch(error){source.next=Date.now()+5000;this.fail(error);}
                 }
@@ -238,8 +238,15 @@
             finally{this.reading=false;}
         }
         fail(error){if(error?.name!=='AbortError'){this.lastError=String(error?.message||error);this.host.error?.(error);}}
-        wake(){if(this.stopped||this.timer||this.ticking)return;this.timer=setTimeout(()=>{this.timer=null;void this.tick();},60);}
-        async tick(){if(this.stopped||this.ticking)return;this.ticking=true;try{await Promise.allSettled([this.flush(),this.poll()]);}finally{this.ticking=false;if(!this.stopped)this.timer=setTimeout(()=>{this.timer=null;void this.tick();},450);}}
+        wake(){if(this.stopped||this.timer||this.ticking)return;this.timer=setTimeout(()=>{this.timer=null;void this.tick();},0);}
+        tick(){
+            if(this.stopped)return;
+            // Receiving may wait for the local pen to lift. It must never hold
+            // the independent durable upload queue behind that wait.
+            void this.flush().catch(error=>this.fail(error));
+            void this.poll().catch(error=>this.fail(error));
+            this.timer=setTimeout(()=>{this.timer=null;this.tick();},120);
+        }
         async retry(){
             this.lastWrite=0;
             const index=await this.read(OUTBOX);
