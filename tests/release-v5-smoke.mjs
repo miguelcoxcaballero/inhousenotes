@@ -569,7 +569,7 @@ vm.runInContext(readText('../rust-core-v5.js'), rustScope);
 assert.equal(await rustScope.InhouseRust.ready, true, 'Rust core must load for the PDF export checks');
 const rustDocio = rustScope.InhouseRust.docio;
 const sparseBounds = rustDocio.overlayBounds(
-  JSON.stringify([{ tool: 'pen', width: 4, points: [{ x: 100, y: 200 }, { x: 140, y: 240 }] }]),
+  [{ tool: 'pen', width: 4, points: [{ x: 100, y: 200 }, { x: 140, y: 240 }] }],
   [],
   794,
   1123,
@@ -578,7 +578,7 @@ const sparseBounds = rustDocio.overlayBounds(
 assert.ok(sparseBounds.width < 60 && sparseBounds.height < 60, 'sparse overlay must be tightly cropped');
 assert.equal(
   rustDocio.overlayBounds(
-    JSON.stringify([{ tool: 'eraser-stroke', width: 40, points: [{ x: 10, y: 10 }, { x: 50, y: 50 }] }]),
+    [{ tool: 'eraser-stroke', width: 40, points: [{ x: 10, y: 10 }, { x: 50, y: 50 }] }],
     [],
     794,
     1123,

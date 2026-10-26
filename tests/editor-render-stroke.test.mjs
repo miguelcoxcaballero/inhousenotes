@@ -198,12 +198,12 @@ test('numeric strings as coordinates still draw the same path; bounds are numeri
 });
 
 test('Rust boundary refuses invalid input loudly', () => {
-    assert.throws(() => rust.strokeCoords(0), {name: "RangeError"});
-    assert.throws(() => rust.strokeCoords(4194305), {name: "RangeError"});
-    assert.throws(() => rust.strokeCoords(1.5), {name: "RangeError"});
-    rust.strokeCoords(8);
-    assert.throws(() => rust.strokeBounds(9999999), {name: "RangeError"});
-    assert.throws(() => rust.strokeBounds(0), {name: "RangeError"});
+    assert.throws(() => rust.renderStrokeCoords(0), {name: "RangeError"});
+    assert.throws(() => rust.renderStrokeCoords(4194305), {name: "RangeError"});
+    assert.throws(() => rust.renderStrokeCoords(1.5), {name: "RangeError"});
+    rust.renderStrokeCoords(8);
+    assert.throws(() => rust.renderStrokeBounds(9999999), {name: "RangeError"});
+    assert.throws(() => rust.renderStrokeBounds(0), {name: "RangeError"});
     assert.deepEqual([...rust.legacyCoverWidths([])], []);
     const widths = rust.legacyCoverWidths([{tool: 'pen', width: 4, points: [{}, {}]}, {tool: 'eraser-stroke'}, null]);
     assert.deepEqual([...widths], [4 * 1.35, -1, -1]);

@@ -710,7 +710,7 @@
         if (coverCapacity > 4096) { release(coverBlock); coverBlock = null; coverCapacity = 0; }
         return widths;
     }
-    Object.assign(api, { strokeCoords, strokeBounds, legacyCoverWidths });
+    Object.assign(api, { renderStrokeCoords: strokeCoords, renderStrokeBounds: strokeBounds, legacyCoverWidths });
     // <<< stream:editor_render
     // >>> stream:editor_view (only this area edits between its markers)
     // Page layout cache and visible-window planner. Rust owns the layout; there is no JavaScript fallback.

@@ -12747,8 +12747,17 @@
         }
 
         // Geometry runs in Rust (rust-core/src/editor_input.rs); these are thin glue over the resident stroke store.
+        // Bounds seeded by drawSmoothStroke (Rust render core) are reused while the stroke is unchanged; otherwise the
+        // resident Rust stroke store computes them.
+        const strokeBoundsCache = new WeakMap();
         function getStrokeBounds(stroke) {
-            return window.InhouseRust.strokeBounds(stroke);
+            const seeded = stroke && strokeBoundsCache.get(stroke), points = stroke && stroke.points;
+            if (seeded && points === seeded.points && points.length === seeded.pointCount && points.length > 0
+                && points[0].x === seeded.firstX && points[0].y === seeded.firstY
+                && points[points.length - 1].x === seeded.lastX && points[points.length - 1].y === seeded.lastY) return seeded;
+            const bounds = window.InhouseRust.strokeBounds(stroke);
+            if (bounds) strokeBoundsCache.delete(stroke);
+            return bounds;
         }
 
         function strokeMayIntersectCircle(stroke, x, y, radius, extraPadding = 0) {
@@ -13023,7 +13032,7 @@
                 // WASM memory; Rust derives the hit-test bounds from the packed array,
                 // so the first eraser contact never scans every point in the document.
                 const rust = strokeRustCore();
-                const coords = rust.strokeCoords(points.length);
+                const coords = rust.renderStrokeCoords(points.length);
                 const path = new Path2D();
                 path.moveTo(first.x, first.y);
                 coords[0] = first.x; coords[1] = first.y;
@@ -13034,7 +13043,7 @@
                     path.lineTo(x, y);
                     coords[i * 2] = x; coords[i * 2 + 1] = y;
                 }
-                const [minX, minY, maxX, maxY] = rust.strokeBounds(points.length);
+                const [minX, minY, maxX, maxY] = rust.renderStrokeBounds(points.length);
                 cached = { path, length: points.length, firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y,
                     bounds: { minX, minY, maxX, maxY, points, pointCount: points.length,
                         firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y } };
