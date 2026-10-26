@@ -439,6 +439,63 @@
     const api = { ready, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
         folderMotion, folderFade, folderRows, callBytes, callJson, runtime, available: () => !!core };
     // >>> stream:scan_light (only this area edits between its markers)
+    const scanLight = {};
+    // Stencil removal (rust-core/src/scan_light/stencil.rs). `geometric` and `photographed` are the dot observation
+    // lists of the scanner; the pixels are edited by calling step() until it returns false and then copyTo().
+    scanLight.stencil = function stencil(rgba, width, height, pxPerCm, targetPaper, geometric, photographed) {
+        if (!core?.scan_stencil_new) return null;
+        if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width > 16384 || height > 16384
+            || !ArrayBuffer.isView(rgba) || rgba.BYTES_PER_ELEMENT !== 1 || rgba.length !== width * height * 4
+            || !Number.isFinite(pxPerCm) || pxPerCm <= 0 || !Number.isFinite(targetPaper)) return null;
+        const first = Array.isArray(geometric) ? geometric : [], second = Array.isArray(photographed) ? photographed : [];
+        const count = first.length + second.length;
+        // The algorithm ignores observation lists outside this size range, so nothing is marshalled for them.
+        const used = count >= 600 && count <= 6000 ? count : 0;
+        const records = new Float64Array(used * 5);
+        for (let i = 0; i < used; i++) {
+            const point = i < first.length ? first[i] : second[i - first.length];
+            const column = point.col ?? point.column, row = point.row;
+            records[i * 5] = typeof column === 'number' ? column : NaN;
+            records[i * 5 + 1] = typeof row === 'number' ? row : NaN;
+            records[i * 5 + 2] = typeof point.x === 'number' ? point.x : NaN;
+            records[i * 5 + 3] = typeof point.y === 'number' ? point.y : NaN;
+            records[i * 5 + 4] = point.centerRefined === true && Number.isFinite(point.dotContrast) && point.dotContrast > 0 ? 1 : 0;
+        }
+        let pixels = null, input = null, output = null, context = 0, disposed = false;
+        const dispose = () => {
+            if (disposed) return;
+            disposed = true;
+            if (context) core.scan_stencil_drop(context);
+            release(pixels); release(input); release(output);
+        };
+        try {
+            pixels = allocation(rgba.length); view(pixels).set(new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.length));
+            if (used) { input = allocation(records.byteLength); view(input).set(new Uint8Array(records.buffer)); }
+            output = allocation(7 * 8);
+            context = core.scan_stencil_new(pixels.pointer, rgba.length, width, height, pxPerCm, targetPaper,
+                input ? input.pointer : 0, used, used ? first.length : 0);
+            if (!context) throw new Error('Stencil input rejected');
+        } catch (_) { dispose(); return null; }
+        return {
+            // True while more work remains. Each call is one bounded slice, so the caller can yield and cancel between calls.
+            step() {
+                if (disposed) throw new Error('Stencil buffer released');
+                const status = core.scan_stencil_step(context);
+                if (status < 0) throw new Error('Rust stencil removal failed');
+                return status === 1;
+            },
+            copyTo(destination) { if (!disposed) destination.set(view(pixels)); },
+            result() {
+                if (disposed || core.scan_stencil_result(context, output.pointer) !== 0) throw new Error('Rust stencil result unavailable');
+                const v = new Float64Array(core.memory.buffer, output.pointer, 7);
+                return { method: v[0] === 1 ? 'observed-dots' : 'recovered-dot-phase', observations: v[1], photographedObservations: v[2],
+                    confirmed: v[3], isolatedRemoved: v[4], isolatedRejected: v[5], protectedComponents: v[6] };
+            },
+            dispose
+        };
+    };
+    scanLight.isYellow = (r, g, b) => !!core?.scan_is_yellow?.(r, g, b); // one call per colour: for tests, not for pixel loops
+    api.scanLight = scanLight;
     // <<< stream:scan_light
     // >>> stream:scan_color (only this area edits between its markers)
     // <<< stream:scan_color
