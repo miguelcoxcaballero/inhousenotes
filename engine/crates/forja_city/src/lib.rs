@@ -19,6 +19,7 @@ pub mod furniture;
 pub mod layout;
 pub mod geom;
 pub mod kit;
+pub mod landmark;
 pub mod modules;
 pub mod style;
 pub mod texgen;
