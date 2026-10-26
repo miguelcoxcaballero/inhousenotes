@@ -130,6 +130,8 @@ fn macro_scale(id: &str) -> f32 {
 }
 
 /// Weathering and calibration of each scanned set (see [`macrotex`]).
+/// Albedo targets (linear): aged asphalt ~0.12, granite slabs, curbs and
+/// ashlar 0.18–0.2, concrete paving ~0.24, painted stucco ≤ 0.7.
 /// Roughness targets: weathered stucco and lime plaster 0.85–0.95, brick
 /// and sandstone 0.75–0.85, sawn granite 0.7 with foot-polished slabs
 /// near 0.6, asphalt 0.75–0.9 with glossy tar seams and oil.
@@ -160,16 +162,21 @@ pub fn recipe(id: &str) -> Option<Recipe> {
             cracks: 4,
             crack_w: 0.0025,
             crack_dark: 0.35,
-            normal: 0.9,
+            // Lime render is floated smooth: keep the scan's sand grain
+            // but not its orange-peel relief.
+            normal: 0.6,
             ..r
         },
-        "arch_brick_red" => Recipe { saturation: 0.9, mottle: 0.1, mottle_m: 2.0, hue: 0.03, rough_mul: 1.55, rough_var: 0.06, stains: 4, stain_dark: 0.25, patches: 2, patch_value: 0.08, patch_m: [0.4, 1.2], ..r },
-        "arch_ashlar" => Recipe { saturation: 0.55, mottle: 0.08, mottle_m: 1.5, rough_mul: 1.45, rough_var: 0.05, stains: 3, stain_dark: 0.15, stain_m: [0.3, 1.0], ..r },
+        "arch_brick_red" => Recipe { saturation: 0.9, mottle: 0.1, mottle_m: 2.0, hue: 0.03, rough_mul: 1.55, rough_var: 0.06, stains: 4, stain_dark: 0.25, patches: 2, patch_value: 0.08, patch_m: [0.4, 1.2], tile_tone: 0.08, joint_q: 0.15, cavity: 0.25, ..r },
+        "arch_ashlar" => Recipe { saturation: 0.55, mottle: 0.08, mottle_m: 1.5, rough_mul: 1.45, rough_var: 0.05, stains: 3, stain_dark: 0.15, stain_m: [0.3, 1.0], tile_tone: 0.05, joint_q: 0.12, cavity: 0.3, ..r },
         "arch_moulding" => Recipe { remix: true, rotate: true, saturation: 0.6, mean: Some(0.5), mottle: 0.06, mottle_m: 1.5, rough_var: 0.04, ..r },
-        "arch_granite" => Recipe { remix: true, rotate: true, mottle: 0.06, mottle_m: 1.2, rough_mul: 0.82, rough_var: 0.06, stains: 2, stain_dark: 0.12, ..r },
+        "arch_granite" => Recipe { remix: true, rotate: true, mean: Some(0.2), mottle: 0.06, mottle_m: 1.2, rough_mul: 0.82, rough_var: 0.06, stains: 2, stain_dark: 0.12, ..r },
         "arch_roof_clay" => Recipe { mottle: 0.12, mottle_m: 1.5, hue: 0.04, stains: 4, stain_dark: 0.22, rough_var: 0.04, ..r },
         "arch_roof_slate" | "pbr_roof" => Recipe { mottle: 0.08, mottle_m: 1.5, stains: 3, stain_dark: 0.12, rough_var: 0.05, ..r },
+        // Sun-bleached, aged asphalt is mid grey (albedo ~0.12), not the
+        // near-black of a freshly laid road.
         "pbr_asphalt" => Recipe {
+            mean: Some(0.12),
             remix: true,
             rotate: true,
             mottle: 0.1,
@@ -184,16 +191,18 @@ pub fn recipe(id: &str) -> Option<Recipe> {
             stain_dark: 0.2,
             stain_m: [0.4, 1.5],
             oil: 8,
-            cracks: 10,
-            crack_w: 0.012,
+            cracks: 7,
+            crack_w: 0.009,
             crack_dark: 0.6,
             crack_rough: 0.35,
             ..r
         },
-        "street_sidewalk_hex" => Recipe { saturation: 0.4, mean: Some(0.24), mottle: 0.08, mottle_m: 1.2, stains: 5, stain_dark: 0.18, gum: 150, oil: 1, rough_var: 0.05, ..r },
-        "street_sidewalk_tiles" => Recipe { saturation: 0.6, mottle: 0.08, mottle_m: 1.5, stains: 5, stain_dark: 0.18, gum: 200, rough_add: -0.1, rough_var: 0.06, ..r },
-        "street_curb" => Recipe { mottle: 0.08, mottle_m: 0.8, stains: 2, stain_dark: 0.15, rough_var: 0.05, ..r },
-        "street_cobble" => Recipe { mottle: 0.1, mottle_m: 1.2, stains: 4, stain_dark: 0.18, gum: 30, rough_var: 0.05, ..r },
+        // Paving: every tile, slab or cobble has its own tone (a few are
+        // replacements), and the joints are packed with grime.
+        "street_sidewalk_hex" => Recipe { saturation: 0.4, mean: Some(0.24), mottle: 0.08, mottle_m: 1.2, stains: 5, stain_dark: 0.18, gum: 150, oil: 1, rough_var: 0.05, tile_tone: 0.07, joint_q: 0.1, cavity: 0.5, ..r },
+        "street_sidewalk_tiles" => Recipe { saturation: 0.6, mean: Some(0.18), mottle: 0.08, mottle_m: 1.5, stains: 5, stain_dark: 0.18, gum: 200, rough_add: -0.1, rough_var: 0.06, tile_tone: 0.07, joint_q: 0.06, cavity: 0.45, ..r },
+        "street_curb" => Recipe { mean: Some(0.2), mottle: 0.08, mottle_m: 0.8, stains: 2, stain_dark: 0.15, rough_var: 0.05, ..r },
+        "street_cobble" => Recipe { mottle: 0.1, mottle_m: 1.2, stains: 4, stain_dark: 0.18, gum: 30, rough_var: 0.05, tile_tone: 0.1, joint_q: 0.2, cavity: 0.35, ..r },
         _ => r,
     })
 }
@@ -211,9 +220,11 @@ pub struct Kit {
     awnings: Vec<TextureData>,
     interiors: TextureData,
     shop_interiors: TextureData,
+    shop_lights: TextureData,
     plates: Vec<TextureData>,
     decals: DecalTextures,
     glass: GenSet,
+    road_paint: GenSet,
     /// Sky visibility inside the fake rooms behind windows.
     interior_ao: TextureData,
 }
@@ -285,9 +296,11 @@ impl Kit {
             awnings: vec![texgen::awning(0x2e6b3a, 0xf1ead8), texgen::awning(0xb3261e, 0xf3eee2), texgen::awning(0xd9b779, 0xd9b779)],
             interiors: texgen::window_interiors(),
             shop_interiors: texgen::shop_interiors(),
+            shop_lights: texgen::shop_interior_lights(),
             plates: STREETS.iter().map(|s| texgen::street_plate(s)).collect(),
             decals: DecalTextures::generate(),
             glass: texgen::glass(),
+            road_paint: texgen::road_paint(),
             interior_ao: texgen::solid("interior_ao", 0.22),
             pbr,
         };
@@ -444,9 +457,12 @@ impl<'a> Assembler<'a> {
             Mat::ShopInterior => {
                 let t = kit.shop_interiors.clone();
                 let ao = kit.interior_ao.clone();
-                let mut d = self.textured(&t, "shop_interior", 0.7, 0.035);
+                let lights = kit.shop_lights.clone();
+                let mut d = self.textured(&t, "shop_interior", 0.7, 0.0);
                 d.base_color = Vec4::new(0.7, 0.7, 0.7, 1.0);
                 d.occlusion_tex = Some(self.tex(&ao));
+                d.emissive_tex = Some(self.tex(&lights));
+                d.emissive = Vec3::splat(0.6);
                 d
             }
             Mat::PaintedWood(c) => {
@@ -483,12 +499,22 @@ impl<'a> Assembler<'a> {
             Mat::Terracotta => flat("terracotta", hex(0xa9542f), 0.85, 0.0),
             Mat::Leaves => MaterialData { double_sided: true, ..flat("leaves", hex(0x2f5a22), 0.75, 0.0) },
             Mat::Flowers(c) => flat("flowers", c, 0.6, 0.0),
-            Mat::Asphalt => self.scanned("pbr_asphalt", hex(0xb0b0b0), hex(0x2a2a2c), 0.85),
+            Mat::Asphalt => self.scanned("pbr_asphalt", white, hex(0x5a5a5c), 0.85),
             Mat::SidewalkHex => self.scanned("street_sidewalk_hex", white, hex(0xb9b2a4), 0.85),
-            Mat::SidewalkSlab => self.scanned("street_sidewalk_tiles", hex(0xd0d0d0), hex(0x9c9a96), 0.85),
-            Mat::Curb => self.scanned("street_curb", hex(0xe0e0e0), hex(0x8e8e8e), 0.75),
+            Mat::SidewalkSlab => self.scanned("street_sidewalk_tiles", white, hex(0x9c9a96), 0.85),
+            Mat::Curb => self.scanned("street_curb", white, hex(0x8e8e8e), 0.75),
             Mat::Cobble => self.scanned("street_cobble", white, hex(0x8a8a88), 0.8),
-            Mat::Paint(c) => flat("paint", c, 0.55, 0.0),
+            // Road paint: worn through to the asphalt in places (masked),
+            // greyed by tyres and dirt; white thermoplastic is ~0.65
+            // albedo when clean, never 0.9.
+            Mat::Paint(c) => {
+                let g = kit.road_paint.clone();
+                let mut d = self.generated(&g, "paint");
+                let t = tint(c) * 0.75;
+                d.base_color = Vec4::new(t.x, t.y, t.z, 1.0);
+                d.alpha = AlphaMode::Mask(128);
+                d
+            }
             // Hot-dip galvanizing weathers to a dull spangled grey.
             Mat::Galvanized => flat("galvanized", hex(0xa8acb0), 0.52, 1.0),
             Mat::Plastic(c) => flat("plastic", c, 0.5, 0.0),

@@ -79,6 +79,15 @@ pub struct Recipe {
     pub gum: u32,
     /// Normal map strength multiplier.
     pub normal: f32,
+    /// Grime packed into joints and pores: albedo darkening where the
+    /// scan's ambient occlusion is low (0 = off).
+    pub cavity: f32,
+    /// Per-unit tone variation of tiled materials (paving tiles, slabs,
+    /// cobbles, bricks): each piece between joints gets its own value, and
+    /// a few are replacements from another batch (0 = off).
+    pub tile_tone: f32,
+    /// Fraction of pixels (lowest AO) that are joints between pieces.
+    pub joint_q: f32,
 }
 
 impl Default for Recipe {
@@ -114,6 +123,9 @@ impl Default for Recipe {
             crack_rough: 0.0,
             gum: 0,
             normal: 1.0,
+            cavity: 0.0,
+            tile_tone: 0.0,
+            joint_q: 0.1,
         }
     }
 }
@@ -402,6 +414,91 @@ fn gum_mask(n: u32, count: u32, px_per_m: f32, rng: &mut Rng) -> Vec<f32> {
     mask
 }
 
+/// Value at quantile `q` of `v` (from a strided sample, plenty for maps).
+fn quantile(v: &[f32], q: f32) -> f32 {
+    let step = (v.len() / 65536).max(1);
+    let mut s: Vec<f32> = v.iter().step_by(step).copied().collect();
+    s.sort_by(f32::total_cmp);
+    s[((s.len() - 1) as f32 * q.clamp(0.0, 1.0)) as usize]
+}
+
+/// Labels the pieces of a tiled material: connected regions (wrapping at
+/// the border) of pixels whose AO is at least `thr`. Joints, pores and
+/// fragments too small to be a piece are filled from their neighbours;
+/// returns the label per pixel and the number of labels.
+fn label_pieces(ao: &[f32], n: u32, thr: f32) -> (Vec<u32>, usize) {
+    let n = n as usize;
+    let solid: Vec<bool> = ao.iter().map(|&a| a >= thr).collect();
+    let mut parent: Vec<u32> = (0..(n * n) as u32).collect();
+    fn find(p: &mut [u32], mut x: u32) -> u32 {
+        while p[x as usize] != x {
+            p[x as usize] = p[p[x as usize] as usize];
+            x = p[x as usize];
+        }
+        x
+    }
+    for y in 0..n {
+        for x in 0..n {
+            let i = y * n + x;
+            if !solid[i] {
+                continue;
+            }
+            for j in [y * n + (x + 1) % n, ((y + 1) % n) * n + x] {
+                if solid[j] {
+                    let (a, b) = (find(&mut parent, i as u32), find(&mut parent, j as u32));
+                    if a != b {
+                        parent[a.max(b) as usize] = a.min(b);
+                    }
+                }
+            }
+        }
+    }
+    let mut size = vec![0u32; n * n];
+    let mut root = vec![u32::MAX; n * n];
+    for i in 0..n * n {
+        if solid[i] {
+            let r = find(&mut parent, i as u32);
+            root[i] = r;
+            size[r as usize] += 1;
+        }
+    }
+    // A piece covers at least ~0.02 % of the texture.
+    let min = ((n * n) as f32 * 2e-4) as u32;
+    let mut id = vec![u32::MAX; n * n];
+    let mut count = 0usize;
+    let mut labels = vec![u32::MAX; n * n];
+    for i in 0..n * n {
+        let r = root[i];
+        if r == u32::MAX || size[r as usize] < min {
+            continue;
+        }
+        if id[r as usize] == u32::MAX {
+            id[r as usize] = count as u32;
+            count += 1;
+        }
+        labels[i] = id[r as usize];
+    }
+    // Grow pieces over joints and pores so every pixel has a tone.
+    for _ in 0..6 {
+        let prev = labels.clone();
+        for y in 0..n {
+            for x in 0..n {
+                let i = y * n + x;
+                if prev[i] != u32::MAX {
+                    continue;
+                }
+                for j in [y * n + (x + 1) % n, y * n + (x + n - 1) % n, ((y + 1) % n) * n + x, ((y + n - 1) % n) * n + x] {
+                    if prev[j] != u32::MAX {
+                        labels[i] = prev[j];
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    (labels, count)
+}
+
 /// Builds the macro version of `set` following `r`.
 pub fn build(set: &PbrSet, r: &Recipe) -> PbrSet {
     let tiles = r.tiles.max(1);
@@ -442,6 +539,21 @@ pub fn build(set: &PbrSet, r: &Recipe) -> PbrSet {
             spot(&mut rng, [0.15, 0.7], false, d, 0.0)
         })
         .collect();
+    // Joints and pores from the scan's AO; per-piece tones.
+    let ao: Vec<f32> = m.orm.iter().map(|o| o[0]).collect();
+    let (ao_lo, ao_hi) = (quantile(&ao, 0.02), quantile(&ao, 0.3));
+    let pieces = (r.tile_tone > 0.0).then(|| {
+        let (labels, count) = label_pieces(&ao, n, quantile(&ao, r.joint_q));
+        let mut prng = Rng::new(r.seed as u64 ^ 0x711e);
+        let tones: Vec<(f32, f32)> = (0..count)
+            .map(|_| {
+                let v = 1.0 + r.tile_tone * (2.0 * prng.f() - 1.0);
+                // A few replacement pieces from another batch.
+                if prng.chance(0.05) { (v * (1.0 + r.tile_tone * if prng.chance(0.5) { 2.5 } else { -2.5 }), prng.range(-0.06, 0.06)) } else { (v, 0.0) }
+            })
+            .collect();
+        (labels, tones)
+    });
     let cracks = (r.cracks > 0).then(|| crack_mask(n, r.cracks, r.crack_w * px_per_m, px_per_m, &mut rng));
     let gum = (r.gum > 0).then(|| gum_mask(n, r.gum, px_per_m, &mut rng));
     let cells = |m_feature: f32| ((r.meters / m_feature).round() as i32).max(1);
@@ -512,6 +624,17 @@ pub fn build(set: &PbrSet, r: &Recipe) -> PbrSet {
                 c[0] *= 1.0 + fl[1];
                 c[2] *= 1.0 - fl[1];
                 let mut rough = o[1] * r.rough_mul + r.rough_add + fl[2];
+                if let Some((labels, tones)) = &pieces {
+                    if let Some(&(f, dr)) = tones.get(labels[i] as usize) {
+                        val *= f;
+                        rough += dr;
+                    }
+                }
+                if r.cavity > 0.0 && ao_hi > ao_lo {
+                    let k = smoothstep(ao_hi, ao_lo, o[0]);
+                    val *= 1.0 - r.cavity * k;
+                    rough += 0.05 * r.cavity * k;
+                }
                 let mut flat = 0.0f32;
                 for p in &patches {
                     let k = p.cover(u, v, 0.08);
@@ -661,6 +784,34 @@ mod tests {
         let r: Vec<u8> = m.orm.as_ref().unwrap().rgba8.chunks_exact(4).map(|p| p[1]).collect();
         let (lo, hi) = (*r.iter().min().unwrap(), *r.iter().max().unwrap());
         assert!(hi - lo > 40, "roughness range {lo}..{hi}");
+    }
+
+    #[test]
+    fn pieces_get_their_own_tone_and_joints_get_dirt() {
+        // 4 x 4 square tiles separated by 2 px joints of low AO.
+        let n = 64u32;
+        let mut c = Vec::new();
+        let mut o = Vec::new();
+        for y in 0..n {
+            for x in 0..n {
+                let joint = x % 16 < 2 || y % 16 < 2;
+                c.extend([150u8, 150, 150, 255]);
+                o.extend([if joint { 90u8 } else { 250 }, 180, 0, 255]);
+            }
+        }
+        let t = |rgba: Vec<u8>, srgb| TextureData { name: "t".into(), width: n, height: n, rgba8: rgba.into(), srgb };
+        let s = PbrSet { name: "tiles".into(), color: t(c, true), normal: None, orm: Some(t(o, false)), emission: None };
+        let (labels, count) = label_pieces(&tile_maps(&s, n).orm.iter().map(|o| o[0]).collect::<Vec<_>>(), n, 0.5);
+        assert_eq!(count, 16, "one label per tile");
+        assert!(labels.iter().all(|&l| l != u32::MAX));
+        let r = Recipe { tiles: 1, size: 64, meters: 1.0, tile_tone: 0.1, joint_q: 0.3, cavity: 0.6, seed: 3, ..Default::default() };
+        let m = build(&s, &r);
+        let px = |x: u32, y: u32| m.color.rgba8[((y * n + x) * 4) as usize];
+        // Joints darker than tile centres; tile centres differ.
+        assert!((px(0, 8) as i32) < px(8, 8) as i32 - 20, "{} {}", px(0, 8), px(8, 8));
+        let centres: Vec<u8> = (0..4).flat_map(|j| (0..4).map(move |i| (i * 16 + 8, j * 16 + 8))).map(|(x, y)| px(x, y)).collect();
+        let (lo, hi) = (centres.iter().min().unwrap(), centres.iter().max().unwrap());
+        assert!(hi - lo > 6, "tones {centres:?}");
     }
 
     #[test]
