@@ -463,6 +463,37 @@
     // >>> stream:storage (only this area edits between its markers)
     // <<< stream:storage
     // >>> stream:drive_home (only this area edits between its markers)
+    const driveCall = (name, value) => {
+        if (!core?.bridge_call) throw new Error(`Rust core is not loaded (${name})`);
+        return callJson(name, value);
+    };
+    const wellFormed = value => { const text = String(value ?? ''); return text.toWellFormed ? text.toWellFormed() : text; };
+    // Folder palettes depend only on (colour, night, exact); a Drive account has a couple of dozen colours,
+    // so repeated cards cost a Map lookup and one batched Rust call serves every miss.
+    const paletteCache = new Map();
+    // Fixed CSS values chosen by the Rust contrast decision (dark ink on light folders, white ink on dark ones).
+    const DARK_INK = { ink: '#1f1a14', hl: 'rgba(0, 0, 0, 0.07)', hlStrong: 'rgba(0, 0, 0, 0.12)', line: 'rgba(0, 0, 0, 0.25)' };
+    const LIGHT_INK = { ink: '#ffffff', hl: 'rgba(255, 255, 255, 0.2)', hlStrong: 'rgba(255, 255, 255, 0.3)', line: 'rgba(255, 255, 255, 0.55)' };
+    api.driveFolderColors = (rawValues, fallback) => driveCall('drive_home.resolve_color', { fallback, items: rawValues.map(wellFormed) });
+    api.driveFolderPalettes = (bases, night, exact = false) => {
+        const mode = `${night ? 'n' : 'd'}${exact ? 'x' : 'b'}`, found = new Map(), misses = [];
+        for (const base of bases) {
+            if (found.has(base)) continue;
+            const hit = paletteCache.get(mode + base);
+            if (hit) found.set(base, hit); else { found.set(base, null); misses.push(base); }
+        }
+        if (misses.length) {
+            const batch = driveCall('drive_home.palette', { night: !!night, exact: !!exact, items: misses });
+            if (paletteCache.size + misses.length > 1024) paletteCache.clear();
+            misses.forEach((base, index) => {
+                const dark = batch.dark[index], at = index * 4;
+                const palette = Object.freeze({ color: batch.colors[at], cover: batch.colors[at + 1], inside: batch.colors[at + 2], tab: batch.colors[at + 3], ...(dark ? DARK_INK : LIGHT_INK) });
+                found.set(base, palette); paletteCache.set(mode + base, palette);
+            });
+        }
+        return bases.map(base => found.get(base));
+    };
+    api.driveFolderViewTint = (color, night) => driveCall('drive_home.view_tint', { night: !!night, color });
     // <<< stream:drive_home
     // >>> stream:calendar (only this area edits between its markers)
     // <<< stream:calendar
