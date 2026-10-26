@@ -15,6 +15,8 @@
 //! variant, a style is data, and the city layout only hands out lots.
 
 pub mod building;
+pub mod furniture;
+pub mod layout;
 pub mod geom;
 pub mod kit;
 pub mod modules;

@@ -42,6 +42,25 @@ impl HumanSpec {
             eye_color: "brown".into(),
         }
     }
+
+    /// Ready-made outfits: casual_male, worker, tourist, local, commuter.
+    pub fn presets() -> Vec<HumanSpec> {
+        let base = Self::casual_male();
+        let face = |hair: &str| vec![hair.to_string(), "eyebrows/eyebrow001".into(), "eyelashes/eyelashes01".into(), "eyes/high-poly".into()];
+        let spec = |name: &str, skin: &str, clothes: &[&str], hair: &str, eyes: &str| HumanSpec {
+            name: name.into(),
+            skin: skin.into(),
+            proxies: clothes.iter().map(|c| c.to_string()).chain(face(hair)).collect(),
+            eye_color: eyes.into(),
+        };
+        vec![
+            base.clone(),
+            spec("worker", "skins/young_african_male", &["clothes/male_worksuit01", "clothes/shoes06"], "hair/short04", "brown"),
+            spec("tourist", "skins/young_caucasian_female", &["clothes/female_casualsuit01", "clothes/shoes02"], "hair/ponytail01", "blue"),
+            spec("local", "skins/middleage_asian_female", &["clothes/female_casualsuit01", "clothes/shoes02"], "hair/bob02", "brownlight"),
+            HumanSpec { name: "commuter".into(), proxies: { let mut p = base.proxies.clone(); p[0] = "clothes/male_casualsuit02".into(); p }, ..base },
+        ]
+    }
 }
 
 struct ObjMesh {

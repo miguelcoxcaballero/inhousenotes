@@ -10,7 +10,7 @@ use forja_math::{Mat4, Vec2, Vec3};
 
 use crate::geom::{Parts, Prim, Rng, polyline_normals, signed_area};
 use crate::kit::{Kit, Mat, Rgb, assemble, hex};
-use crate::modules::{self, BalconyKey, P, PortalKey, REVEAL, ShopKey, SurroundKind, WindowKey, facade_frame};
+use crate::modules::{self, BalconyKey, P, Piece, PortalKey, REVEAL, ShopKey, ShopPiece, SurroundKind, WindowKey, facade_frame};
 use crate::style::{ShutterKind, Style, parse_material, parse_pattern, parse_rgb, parse_shutter};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,8 +77,8 @@ impl CityOut {
 /// Cache of instanced modules (each a render scene).
 pub struct ModuleLib<'k> {
     pub kit: &'k Kit,
-    windows: HashMap<WindowKey, usize>,
-    shops: HashMap<ShopKey, usize>,
+    windows: HashMap<(WindowKey, Piece), Option<usize>>,
+    shops: HashMap<(ShopKey, ShopPiece), Option<usize>>,
     portals: HashMap<PortalKey, usize>,
     named: HashMap<String, usize>,
 }
@@ -92,22 +92,39 @@ impl<'k> ModuleLib<'k> {
         out.add_scene(assemble(self.kit, name, p, Some(400)))
     }
 
-    pub fn window(&mut self, out: &mut CityOut, k: WindowKey) -> usize {
-        if let Some(&i) = self.windows.get(&k) {
-            return i;
+    /// Instanced pieces of a window (base, shutter, balcony).
+    pub fn window(&mut self, out: &mut CityOut, k: WindowKey) -> Vec<usize> {
+        let mut ids = Vec::with_capacity(3);
+        for piece in [Piece::Base, Piece::Shutter, Piece::Balcony] {
+            let pk = k.for_piece(piece);
+            let key = (pk, piece);
+            if let Some(&i) = self.windows.get(&key) {
+                ids.extend(i);
+                continue;
+            }
+            let p = modules::window_piece(&pk, piece);
+            let i = (!p.prims.is_empty() && p.tri_count() > 0).then(|| self.make(out, "window", p));
+            self.windows.insert(key, i);
+            ids.extend(i);
         }
-        let i = self.make(out, "window", modules::window(&k));
-        self.windows.insert(k, i);
-        i
+        ids
     }
 
-    pub fn shop(&mut self, out: &mut CityOut, k: ShopKey) -> usize {
-        if let Some(&i) = self.shops.get(&k) {
-            return i;
+    pub fn shop(&mut self, out: &mut CityOut, k: ShopKey) -> Vec<usize> {
+        let mut ids = Vec::with_capacity(4);
+        for piece in [ShopPiece::Base, ShopPiece::Sign, ShopPiece::Shutter, ShopPiece::Awning] {
+            let pk = k.for_piece(piece);
+            let key = (pk, piece);
+            if let Some(&i) = self.shops.get(&key) {
+                ids.extend(i);
+                continue;
+            }
+            let p = modules::shop_piece(&pk, piece);
+            let i = (p.tri_count() > 0).then(|| self.make(out, "shop", p));
+            self.shops.insert(key, i);
+            ids.extend(i);
         }
-        let i = self.make(out, "shop", modules::shop(&k));
-        self.shops.insert(k, i);
-        i
+        ids
     }
 
     pub fn portal(&mut self, out: &mut CityOut, k: PortalKey) -> usize {
@@ -360,11 +377,22 @@ fn choose(style: &Style, rng: &mut Rng) -> Choices {
     }
 }
 
-/// Builds one building into `out` and returns its eave height.
+/// Builds one building as its own scene and returns its eave height.
 pub fn build(lib: &mut ModuleLib, out: &mut CityOut, lot: &Lot, style: &Style, seed: u64) -> f32 {
+    let mut parts: Parts<Mat> = Parts::new();
+    let h = build_into(lib, out, &mut parts, lot, style, seed);
+    let scene = assemble(lib.kit, "building", parts, None);
+    let si = out.add_scene(scene);
+    out.placements.push((si, Mat4::IDENTITY));
+    h
+}
+
+/// Builds one building, adding its unique geometry (walls, mouldings,
+/// roof) to `parts` so a whole block can share one scene, and its
+/// instanced modules to `out`.
+pub fn build_into(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lot, style: &Style, seed: u64) -> f32 {
     let mut rng = Rng::new(seed);
     let c = choose(style, &mut rng);
-    let mut parts: Parts<Mat> = Parts::new();
     let base = lot.base;
     let top = c.gh + c.floors as f32 * c.fh; // facade height above base
     let n = lot.ring.len();
@@ -411,25 +439,24 @@ pub fn build(lib: &mut ModuleLib, out: &mut CityOut, lot: &Lot, style: &Style, s
                             grille: false,
                         };
                         holes.push(Hole { u0: u - 0.5, u1: u + 0.5, v0: y, v1: y + 1.4 });
-                        let m = lib.window(out, key);
-                        out.placements.push((m, facade_frame(f.p(u, y, 0.0), f.t, f.n)));
+                        let at = facade_frame(f.p(u, y, 0.0), f.t, f.n);
+                        for m in lib.window(out, key) {
+                            out.placements.push((m, at));
+                        }
                     }
                 }
                 wall(parts.get(court), court, &f, 0.0, top + 0.9, &holes, uv_off, false);
             }
             EdgeKind::Street | EdgeKind::Corner => {
-                street_facade(lib, out, &mut parts, &f, style, &c, &mut rng, Some(i) == portal_edge, kind == EdgeKind::Corner, top, uv_off, &mut lamps_placed);
+                street_facade(lib, out, parts, &f, style, &c, &mut rng, Some(i) == portal_edge, kind == EdgeKind::Corner, top, uv_off, &mut lamps_placed);
             }
         }
         // Collider wall.
         out.collider_quad([f.p(0.0, 0.0, 0.0), f.p(f.len, 0.0, 0.0), f.p(f.len, top, 0.0), f.p(0.0, top, 0.0)]);
     }
     out.collider_polygon(&lot.ring, base + top);
-    mouldings(lib, out, &mut parts, lot, style, &c, top, &mut rng);
-    roof(lib, out, &mut parts, lot, style, &c, top, &mut rng);
-    let scene = assemble(lib.kit, "building", parts, None);
-    let si = out.add_scene(scene);
-    out.placements.push((si, Mat4::IDENTITY));
+    mouldings(lib, out, parts, lot, style, &c, top, &mut rng);
+    roof(lib, out, parts, lot, style, &c, top, &mut rng);
     out.buildings += 1;
     base + top
 }
@@ -455,25 +482,28 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             let m = lib.portal(out, key);
             out.placements.push((m, facade_frame(f.p(u, 0.0, 0.0), f.t, f.n)));
         } else if rng.chance(style.shops) && bay_w > 2.0 {
-            let w = (bay_w - 0.7).min(3.3);
-            let h = (c.gh - 0.75).min(3.6);
+            // Standard shopfront sizes keep the module count small.
+            let w = [3.3f32, 3.0, 2.6, 2.2].into_iter().find(|w| *w <= bay_w - 0.6).unwrap_or(2.2);
+            let h: f32 = if c.gh >= 4.4 { 3.6 } else { 3.2 };
             let shutter = if rng.chance(0.55) { 0 } else { 1 + rng.below(3) as u8 };
             let graffiti = if shutter == 3 && rng.chance(style.graffiti.max(0.05)) { 1 + rng.below(3) as u8 } else { 0 };
             let key = ShopKey {
-                w_cm: (w * 20.0).round() as u16 * 5,
-                h_cm: (h * 20.0).round() as u16 * 5,
+                w_cm: (w * 100.0).round() as u16,
+                h_cm: (h * 100.0).round() as u16,
                 surround: if c.ground == c.wall { c.surround } else { c.ground },
                 sign: rng.below(16) as u8,
                 shutter,
                 graffiti,
                 frame: *rng.pick(&[hex(0x1d1d1d), hex(0x3b2a20), hex(0x5a1e1e), hex(0x24402e), hex(0x9aa0a6)]),
                 awning: rng.chance(style.awnings * 2.0).then(|| rng.below(3) as u8),
-                interior: rng.below(4) as u8,
+                interior: 0,
             };
             let (w, h) = (key.w_cm as f32 / 100.0, key.h_cm as f32 / 100.0);
             ground_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: 0.0, v1: h });
-            let m = lib.shop(out, key);
-            out.placements.push((m, facade_frame(f.p(u, 0.0, 0.0), f.t, f.n)));
+            let at = facade_frame(f.p(u, 0.0, 0.0), f.t, f.n);
+            for m in lib.shop(out, key) {
+                out.placements.push((m, at));
+            }
         } else {
             // House window with a grille (or a plain one high up).
             let (w, h, y) = (ww.min(1.1), 1.65, 0.95);
@@ -491,8 +521,10 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 grille: true,
             };
             ground_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: y, v1: y + h });
-            let m = lib.window(out, key);
-            out.placements.push((m, facade_frame(f.p(u, y, 0.0), f.t, f.n)));
+            let at = facade_frame(f.p(u, y, 0.0), f.t, f.n);
+            for m in lib.window(out, key) {
+                out.placements.push((m, at));
+            }
         }
     }
     // Upper floors.
@@ -516,15 +548,26 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             let balcony = (has_balcony && !mirador).then(|| {
                 let (width, ends) = if corrido { (bay_w + 0.01, (k == 0, k + 1 == bays)) } else { (w + 0.75, (true, true)) };
                 BalconyKey {
-                    width_cm: (width * 20.0).round() as u16 * 5,
+                    width_cm: (width * 10.0).round() as u16 * 10,
                     depth_cm: if corrido { 70 } else if c.belly { 45 } else { 50 },
                     belly: c.belly && !corrido,
                     ends,
-                    pots: if rng.chance(style.flower_pots) { 1 + rng.below(250) as u8 } else { 0 },
+                    pots: 0,
                     awning: (!corrido && rng.chance(style.awnings)).then(|| 2),
                 }
             });
-            let shutter = Some((c.shutter.0, c.shutter.1, rng.below(4) as u8));
+            // Flower pots are their own small instanced module.
+            if let Some(b) = &balcony {
+                if rng.chance(style.flower_pots) {
+                    let k = 1 + rng.below(3) as u8;
+                    let key = BalconyKey { pots: k, ..*b };
+                    let key = BalconyKey { width_cm: 120, ..key };
+                    let m = lib.named(out, &format!("pots_{k}_{}", b.depth_cm), || modules::pots(&key));
+                    out.placements.push((m, facade_frame(f.p(u, wy, 0.0), f.t, f.n)));
+                }
+            }
+            let state = rng.below(4) as u8;
+            let shutter = Some((c.shutter.0, c.shutter.1, state));
             let key = WindowKey {
                 w_cm: (w * 100.0) as u16,
                 h_cm: (h * 100.0) as u16,
@@ -535,12 +578,14 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 shutter: if mirador { None } else { shutter },
                 balcony,
                 mirador: mirador.then(|| ((c.fh - 0.35) * 100.0) as u16),
-                interior: rng.below(4) as u8,
+                interior: state,
                 grille: false,
             };
             upper_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: wy, v1: wy + h });
-            let m = lib.window(out, key);
-            out.placements.push((m, facade_frame(f.p(u, wy, 0.0), f.t, f.n)));
+            let at = facade_frame(f.p(u, wy, 0.0), f.t, f.n);
+            for m in lib.window(out, key) {
+                out.placements.push((m, at));
+            }
         }
     }
     // Walls: ground floor (optionally rusticated) and upper floors.
@@ -734,7 +779,8 @@ fn roof(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lo
                     }
                 }
                 // Chimneys.
-                let chim = lib.named(out, &format!("chimney_{:?}", c.wall), || modules::chimney(if matches!(c.wall, Mat::Tiles(_)) { Mat::Stucco(hex(0xeeeeee)) } else { c.wall }));
+                let cm = if matches!(c.wall, Mat::Brick(_)) { Mat::Brick([255; 3]) } else { Mat::Stucco(hex(0xe6ddcc)) };
+                let chim = lib.named(out, &format!("chimney_{cm:?}"), || modules::chimney(cm));
                 for _ in 0..rng.below(3) + 1 {
                     let k = rng.below(inner.len());
                     let p = inner[k].lerp(inner[(k + 1) % inner.len()], rng.range(0.2, 0.8));
@@ -807,7 +853,7 @@ fn roof(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lo
             let ctr = lot.ring.iter().copied().sum::<Vec2>() / n as f32;
             for k in 0..rng.below(3) + 1 {
                 let kind = rng.below(4) as u8;
-                let m = lib.named(out, &format!("rooftop_{kind}_{:?}", c.wall), || modules::rooftop(kind, if matches!(c.wall, Mat::Tiles(_)) { Mat::Stucco(hex(0xeeeeee)) } else { c.wall }));
+                let m = lib.named(out, &format!("rooftop_{kind}"), || modules::rooftop(kind, Mat::Stucco(hex(0xece8df))));
                 let off = Vec2::new(rng.range(-2.5, 2.5), rng.range(-2.5, 2.5)) * if k == 0 { 0.3 } else { 1.0 };
                 let p = ctr + off;
                 if crate::geom::signed_area(&lot.ring) > 0.0 && point_in(&lot.ring, p) {
@@ -909,10 +955,11 @@ fn corner_tower(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, 
             interior: (k + 2) as u8 % 4,
             grille: false,
         };
-        let m = lib.window(out, key);
         // Dark backing so the window reads on the curved wall.
         parts.get(Mat::Iron).quad(p - right * 0.45 + dir * 0.005, p + right * 0.45 + dir * 0.005, p + right * 0.45 + Vec3::Y * 1.9 + dir * 0.005, p - right * 0.45 + Vec3::Y * 1.9 + dir * 0.005, 1.0);
-        out.placements.push((m, facade_frame(p + dir * 0.01, right, dir)));
+        for m in lib.window(out, key) {
+            out.placements.push((m, facade_frame(p + dir * 0.01, right, dir)));
+        }
     }
 }
 

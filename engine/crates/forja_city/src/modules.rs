@@ -311,22 +311,30 @@ fn balcony(p: &mut P, slab: Mat, b: &BalconyKey, h_window: f32) {
             prim.beam(s[0], s[1], Vec3::Z, 0.01, 0.01, 1.0);
         }
     }
-    if b.pots > 0 {
-        let mut rng = Rng::new(b.pots as u64 * 7919 + b.width_cm as u64);
-        let count = 1 + rng.below(3);
-        for k in 0..count {
-            let x = -hw + 0.25 + (w - 0.5) * (k as f32 + rng.range(0.2, 0.8)) / count as f32;
-            if rng.chance(0.5) {
-                flower_pot(p, v(x, 0.0, d * 0.55), 1.0, &mut rng);
-            } else {
-                // Hanging over the railing, the Madrid way.
-                flower_pot(p, v(x, 0.82, zf + 0.16), 0.8, &mut rng);
-            }
-        }
-    }
     if let Some(a) = b.awning {
         awning(p, a, w + 0.1, h_window + 0.3, d + 0.45, h_window - 0.6);
     }
+}
+
+/// Flower pots on a balcony slab and hanging on its railing.
+pub fn pots(b: &BalconyKey) -> P {
+    let mut p = P::new();
+    let w = b.width_cm as f32 / 100.0;
+    let d = b.depth_cm as f32 / 100.0;
+    let hw = w * 0.5;
+    let zf = d - 0.03;
+    let mut rng = Rng::new(b.pots as u64 * 7919 + b.width_cm as u64);
+    let count = 1 + rng.below(3);
+    for k in 0..count {
+        let x = -hw + 0.25 + (w - 0.5) * (k as f32 + rng.range(0.2, 0.8)) / count as f32;
+        if rng.chance(0.5) {
+            flower_pot(&mut p, v(x, 0.0, d * 0.55), 1.0, &mut rng);
+        } else {
+            // Hanging over the railing, the Madrid way.
+            flower_pot(&mut p, v(x, 0.82, zf + 0.16), 0.8, &mut rng);
+        }
+    }
+    p
 }
 
 /// Fabric awning from the wall (`top` height) out to `reach`, front edge at
@@ -420,31 +428,73 @@ pub struct WindowKey {
     pub grille: bool,
 }
 
+/// Separately instanced pieces of an opening, so variants combine at
+/// placement time instead of multiplying into unique meshes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Piece {
+    /// Mouldings, joinery, glass, interior, mirador and grille.
+    Base,
+    Shutter,
+    Balcony,
+}
+
+impl WindowKey {
+    /// The key reduced to what `piece` depends on.
+    pub fn for_piece(&self, piece: Piece) -> WindowKey {
+        let blank = WindowKey { w_cm: self.w_cm, h_cm: self.h_cm, door: self.door, surround: Mat::Iron, surround_kind: SurroundKind::None, frame: [0; 3], shutter: None, balcony: None, mirador: None, interior: 0, grille: false };
+        match piece {
+            Piece::Base => WindowKey { shutter: None, balcony: self.balcony.map(|_| BalconyKey { width_cm: 0, depth_cm: 0, belly: false, ends: (false, false), pots: 0, awning: None }), ..*self },
+            Piece::Shutter => WindowKey {
+                shutter: self.shutter,
+                balcony: if self.mirador.is_some() { None } else { self.balcony.map(|b| BalconyKey { width_cm: 0, depth_cm: b.depth_cm, belly: false, ends: (false, false), pots: 0, awning: None }) },
+                ..blank
+            },
+            Piece::Balcony => WindowKey { surround: self.surround, balcony: if self.mirador.is_some() { None } else { self.balcony }, ..blank },
+        }
+    }
+}
+
 pub fn window(k: &WindowKey) -> P {
+    let mut p = window_piece(k, Piece::Base);
+    for piece in [Piece::Shutter, Piece::Balcony] {
+        p.append(&window_piece(k, piece), &Mat4::IDENTITY);
+    }
+    p
+}
+
+pub fn window_piece(k: &WindowKey, piece: Piece) -> P {
     let mut p = P::new();
     let (w, h) = (k.w_cm as f32 / 100.0, k.h_cm as f32 / 100.0);
     let frame = Mat::PaintedWood(k.frame);
-    surround(&mut p, k.surround, k.surround_kind, w, h, if k.door { 0.0 } else { -0.02 }, !k.door && k.balcony.is_none());
-    glazing(&mut p, frame, w, h, k.door);
-    interior(&mut p, Mat::Interior, w, h, k.interior, 1.6);
-    if let Some(hcm) = k.mirador {
-        mirador(&mut p, frame, k.surround, w, hcm as f32 / 100.0);
-    } else if let Some(b) = &k.balcony {
-        balcony(&mut p, k.surround, b, h);
-    }
-    if let Some((kind, c, state)) = k.shutter {
-        match kind {
-            ShutterKind::Alicantina => {
-                let lowered = [0.35, 0.6, 0.85, 1.0][state as usize % 4];
-                let bal = if k.mirador.is_some() { None } else { k.balcony.map(|b| b.depth_cm as f32 / 100.0) };
-                alicantina(&mut p, Mat::Wood(c), w, h, lowered, bal);
+    match piece {
+        Piece::Base => {
+            surround(&mut p, k.surround, k.surround_kind, w, h, if k.door { 0.0 } else { -0.02 }, !k.door && k.balcony.is_none());
+            glazing(&mut p, frame, w, h, k.door);
+            interior(&mut p, Mat::Interior, w, h, k.interior, 1.6);
+            if let Some(hcm) = k.mirador {
+                mirador(&mut p, frame, k.surround, w, hcm as f32 / 100.0);
             }
-            ShutterKind::Louvre => louvres(&mut p, Mat::PaintedWood(c), w - 0.02, h - 0.02, state),
-            ShutterKind::Roller => roller(&mut p, w - 0.02, h - 0.02, [0.2, 0.45, 0.7, 1.0][state as usize % 4]),
+            if k.grille {
+                grille(&mut p, w, h);
+            }
         }
-    }
-    if k.grille {
-        grille(&mut p, w, h);
+        Piece::Balcony => {
+            if let (Some(b), None) = (&k.balcony, k.mirador) {
+                balcony(&mut p, k.surround, b, h);
+            }
+        }
+        Piece::Shutter => {
+            if let (Some((kind, c, state)), None) = (k.shutter, k.mirador) {
+                match kind {
+                    ShutterKind::Alicantina => {
+                        let lowered = [0.35, 0.6, 0.85, 1.0][state as usize % 4];
+                        alicantina(&mut p, Mat::Wood(c), w, h, lowered, k.balcony.map(|b| b.depth_cm as f32 / 100.0));
+                    }
+                    ShutterKind::Louvre => louvres(&mut p, Mat::PaintedWood(c), w - 0.02, h - 0.02, state),
+                    ShutterKind::Roller => roller(&mut p, w - 0.02, h - 0.02, [0.2, 0.45, 0.7, 1.0][state as usize % 4]),
+                }
+            }
+        }
     }
     p
 }
@@ -495,48 +545,85 @@ pub struct ShopKey {
     pub interior: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShopPiece {
+    Base,
+    Sign,
+    Shutter,
+    Awning,
+}
+
+impl ShopKey {
+    pub fn for_piece(&self, piece: ShopPiece) -> ShopKey {
+        let blank = ShopKey { w_cm: self.w_cm, h_cm: self.h_cm, surround: Mat::Iron, sign: 0, shutter: 0, graffiti: 0, frame: [0; 3], awning: None, interior: 0 };
+        match piece {
+            ShopPiece::Base => ShopKey { sign: self.sign % 3, shutter: 0, graffiti: 0, awning: None, interior: self.sign % 4, ..*self },
+            ShopPiece::Sign => ShopKey { sign: self.sign, ..blank },
+            ShopPiece::Shutter => ShopKey { shutter: self.shutter, graffiti: if self.shutter == 3 { self.graffiti } else { 0 }, ..blank },
+            ShopPiece::Awning => ShopKey { awning: self.awning, ..blank },
+        }
+    }
+}
+
 pub fn shop(k: &ShopKey) -> P {
+    let mut p = shop_piece(k, ShopPiece::Base);
+    for piece in [ShopPiece::Sign, ShopPiece::Shutter, ShopPiece::Awning] {
+        p.append(&shop_piece(k, piece), &Mat4::IDENTITY);
+    }
+    p
+}
+
+pub fn shop_piece(k: &ShopKey, piece: ShopPiece) -> P {
     let mut p = P::new();
     let (w, h) = (k.w_cm as f32 / 100.0, k.h_cm as f32 / 100.0);
     let hw = w * 0.5;
-    let (bw, pr) = (0.22, 0.05);
-    bx(&mut p, k.surround, v(-hw - bw, 0.0, 0.0), v(-hw, h, pr));
-    bx(&mut p, k.surround, v(hw, 0.0, 0.0), v(hw + bw, h, pr));
-    bx(&mut p, k.surround, v(-hw - bw, h, 0.0), v(hw + bw, h + 0.18, pr + 0.02));
     let sign_h = 0.55;
     let ys = h - sign_h;
-    // Sign band.
-    let row = (k.sign % 16) as f32;
-    let sgn = p.get(Mat::ShopSign);
-    sgn.quad_uv([v(-hw, ys, -0.06), v(hw, ys, -0.06), v(hw, h, -0.06), v(-hw, h, -0.06)], [Vec2::new(0.0, (row + 1.0) / 16.0), Vec2::new(1.0, (row + 1.0) / 16.0), Vec2::new(1.0, row / 16.0), Vec2::new(0.0, row / 16.0)]);
-    let frame = Mat::PaintedWood(k.frame);
-    bx(&mut p, frame, v(-hw, ys - 0.06, -0.08), v(hw, ys, -0.02));
-    // Shopfront: kick plate, mullions, door.
-    let z = -0.24;
-    bx(&mut p, frame, v(-hw, 0.0, z - 0.03), v(hw, 0.35, z + 0.03));
-    let door_x = if k.sign % 3 == 0 { 0.0 } else if k.sign % 3 == 1 { -hw + 0.7 } else { hw - 0.7 };
-    for x in [-hw + 0.03, hw - 0.03, door_x - 0.52, door_x + 0.52] {
-        bx(&mut p, frame, v(x - 0.04, 0.0, z - 0.04), v(x + 0.04, ys - 0.06, z + 0.04));
-    }
-    bx(&mut p, frame, v(-hw, ys - 0.12, z - 0.03), v(hw, ys - 0.06, z + 0.03));
-    // The door itself: glazed leaf with a push bar.
-    bx(&mut p, frame, v(door_x - 0.48, 0.0, z - 0.02), v(door_x + 0.48, 0.08, z + 0.02));
-    bx(&mut p, Mat::Galvanized, v(door_x - 0.3, 1.0, z + 0.02), v(door_x + 0.3, 1.04, z + 0.06));
-    let g = p.get(Mat::Glass);
-    let uv = [Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 0.0), Vec2::ZERO];
-    g.quad_uv([v(-hw, 0.08, z - 0.01), v(hw, 0.08, z - 0.01), v(hw, ys - 0.12, z - 0.01), v(-hw, ys - 0.12, z - 0.01)], uv);
-    interior(&mut p, Mat::ShopInterior, w, ys, k.interior, 4.0);
-    if k.shutter > 0 {
-        let lowered = [0.0, 0.3, 0.65, 1.0][k.shutter as usize % 4];
-        let yb = ys - lowered * ys;
-        let m = Mat::MetalShutter(if k.shutter == 3 { k.graffiti } else { 0 });
-        let s = p.get(m);
-        let uv = [Vec2::new(0.0, (ys - yb) / ys), Vec2::new(1.0, (ys - yb) / ys), Vec2::new(1.0, 0.0), Vec2::ZERO];
-        s.quad_uv([v(-hw, yb, -0.1), v(hw, yb, -0.1), v(hw, ys, -0.1), v(-hw, ys, -0.1)], uv);
-        bx(&mut p, Mat::Iron, v(-hw, yb - 0.05, -0.12), v(hw, yb, -0.08));
-    }
-    if let Some(a) = k.awning {
-        awning(&mut p, a, w + 0.2, h + 0.12, 1.3, h - 0.55);
+    match piece {
+        ShopPiece::Base => {
+            let (bw, pr) = (0.22, 0.05);
+            bx(&mut p, k.surround, v(-hw - bw, 0.0, 0.0), v(-hw, h, pr));
+            bx(&mut p, k.surround, v(hw, 0.0, 0.0), v(hw + bw, h, pr));
+            bx(&mut p, k.surround, v(-hw - bw, h, 0.0), v(hw + bw, h + 0.18, pr + 0.02));
+            let frame = Mat::PaintedWood(k.frame);
+            bx(&mut p, frame, v(-hw, ys - 0.06, -0.08), v(hw, ys, -0.02));
+            // Shopfront: kick plate, mullions, door.
+            let z = -0.24;
+            bx(&mut p, frame, v(-hw, 0.0, z - 0.03), v(hw, 0.35, z + 0.03));
+            let door_x = if k.sign % 3 == 0 { 0.0 } else if k.sign % 3 == 1 { -hw + 0.7 } else { hw - 0.7 };
+            for x in [-hw + 0.03, hw - 0.03, door_x - 0.52, door_x + 0.52] {
+                bx(&mut p, frame, v(x - 0.04, 0.0, z - 0.04), v(x + 0.04, ys - 0.06, z + 0.04));
+            }
+            bx(&mut p, frame, v(-hw, ys - 0.12, z - 0.03), v(hw, ys - 0.06, z + 0.03));
+            // The door itself: glazed leaf with a push bar.
+            bx(&mut p, frame, v(door_x - 0.48, 0.0, z - 0.02), v(door_x + 0.48, 0.08, z + 0.02));
+            bx(&mut p, Mat::Galvanized, v(door_x - 0.3, 1.0, z + 0.02), v(door_x + 0.3, 1.04, z + 0.06));
+            let g = p.get(Mat::Glass);
+            let uv = [Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 0.0), Vec2::ZERO];
+            g.quad_uv([v(-hw, 0.08, z - 0.01), v(hw, 0.08, z - 0.01), v(hw, ys - 0.12, z - 0.01), v(-hw, ys - 0.12, z - 0.01)], uv);
+            interior(&mut p, Mat::ShopInterior, w, ys, k.interior, 4.0);
+        }
+        ShopPiece::Sign => {
+            let row = (k.sign % 16) as f32;
+            let sgn = p.get(Mat::ShopSign);
+            sgn.quad_uv([v(-hw, ys, -0.06), v(hw, ys, -0.06), v(hw, h, -0.06), v(-hw, h, -0.06)], [Vec2::new(0.0, (row + 1.0) / 16.0), Vec2::new(1.0, (row + 1.0) / 16.0), Vec2::new(1.0, row / 16.0), Vec2::new(0.0, row / 16.0)]);
+        }
+        ShopPiece::Shutter => {
+            if k.shutter > 0 {
+                let lowered = [0.0, 0.3, 0.65, 1.0][k.shutter as usize % 4];
+                let yb = ys - lowered * ys;
+                let m = Mat::MetalShutter(if k.shutter == 3 { k.graffiti } else { 0 });
+                let s = p.get(m);
+                let uv = [Vec2::new(0.0, (ys - yb) / ys), Vec2::new(1.0, (ys - yb) / ys), Vec2::new(1.0, 0.0), Vec2::ZERO];
+                s.quad_uv([v(-hw, yb, -0.1), v(hw, yb, -0.1), v(hw, ys, -0.1), v(-hw, ys, -0.1)], uv);
+                bx(&mut p, Mat::Iron, v(-hw, yb - 0.05, -0.12), v(hw, yb, -0.08));
+            }
+        }
+        ShopPiece::Awning => {
+            if let Some(a) = k.awning {
+                awning(&mut p, a, w + 0.2, h + 0.12, 1.3, h - 0.55);
+            }
+        }
     }
     p
 }

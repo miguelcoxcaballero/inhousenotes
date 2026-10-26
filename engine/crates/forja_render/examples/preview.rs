@@ -13,8 +13,11 @@ fn main() {
     let yaw: f32 = args.get(3).and_then(|v| v.parse().ok()).unwrap_or(25.0);
     let dist_mul: f32 = args.get(4).and_then(|v| v.parse().ok()).unwrap_or(1.0);
     let dl = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/downloaded");
-    let mut scene = if target == "human" {
-        forja_assets::makehuman::build_human(&dl.join("makehuman_base"), &dl.join("makehuman_assets"), &forja_assets::makehuman::HumanSpec::casual_male()).unwrap()
+    let is_human = target == "human" || target.starts_with("human:");
+    let mut scene = if is_human {
+        let name = target.strip_prefix("human:").unwrap_or("casual_male");
+        let spec = forja_assets::makehuman::HumanSpec::presets().into_iter().find(|s| s.name == name).expect("preset");
+        forja_assets::makehuman::build_human(&dl.join("makehuman_base"), &dl.join("makehuman_assets"), &spec).unwrap()
     } else {
         forja_assets::load_model(std::path::Path::new(target)).unwrap()
     };
@@ -44,14 +47,14 @@ fn main() {
     frame.instances.push(DrawInstance::new(g, Mat4::from_translation(Vec3::new(0.0, b.min.y, 0.0))));
     let mut inst = DrawInstance::new(h, Mat4::from_quat(Quat::IDENTITY));
     // Optional: pose the human with a retargeted robot clip at a time.
-    if let (Some(clip_name), true) = (args.get(5), target == "human") {
+    if let (Some(clip_name), true) = (args.get(5), is_human) {
         let t: f32 = args.get(6).and_then(|v| v.parse().ok()).unwrap_or(0.3);
         let robot = forja_assets::load_gltf(&dl.join("quaternius_robot_expressive/RobotExpressive.glb")).unwrap();
         let src = forja_anim::Skeleton::from_scene(&robot, 0).unwrap();
         let tgt = forja_anim::Skeleton::from_scene(&scene, 0).unwrap();
         let clips = forja_anim::Clip::bind_all(&robot, &src, None);
         let clip = clips.iter().find(|c| c.name == *clip_name).expect("clip");
-        let rc = forja_anim::retarget::retarget(clip, &src, &tgt, &forja_anim::retarget::RetargetMap::robot_to_makehuman(), 30.0);
+        let rc = forja_anim::retarget::retarget(clip, &src, &tgt, &forja_anim::retarget::RetargetMap::auto(&src, &tgt), 30.0);
         let mut pose = tgt.rest_pose();
         rc.sample(t, true, &mut pose);
         let mut mats = Vec::new();

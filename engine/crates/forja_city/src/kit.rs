@@ -302,7 +302,7 @@ impl<'a> Assembler<'a> {
             }
             Mat::ShopInterior => {
                 let t = kit.shop_interiors.clone();
-                let d = self.textured(&t, "shop_interior", 0.7, 0.22);
+                let d = self.textured(&t, "shop_interior", 0.7, 0.12);
                 d
             }
             Mat::PaintedWood(c) => {

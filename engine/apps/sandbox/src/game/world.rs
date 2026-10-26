@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use forja_core::{App, Plugin};
 use forja_physics::PhysicsWorld;
-use forja_world::{KitCity, OsmWorld, TerrainWorld, TestTrack, WorldDescription, WorldSource};
+use forja_world::{KitCity, OsmWorld, SpanishCity, TerrainWorld, TestTrack, WorldDescription, WorldSource};
 
 use super::{Hud, MapKind, Paths, RenderItem, RenderScene};
 
@@ -21,6 +21,7 @@ pub struct GameWorld {
 fn load(map: MapKind, paths: &Paths) -> Result<WorldDescription, forja_world::WorldError> {
     let dl = &paths.downloaded;
     match map {
+        MapKind::Spain => SpanishCity::new(dl, paths.data.join("city/styles.toml")).build(),
         MapKind::Track => TestTrack::default().build(),
         MapKind::Kit => KitCity::new(dl).build(),
         MapKind::Osm => OsmWorld::new(dl.join("map_miami_beach_osm/map.osm")).with_content(dl).build(),

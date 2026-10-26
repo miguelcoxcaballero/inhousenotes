@@ -12,6 +12,7 @@ mod gltf_world;
 pub mod library;
 mod kit;
 pub mod osm;
+pub mod spain;
 pub mod terrain;
 mod track;
 
@@ -25,6 +26,7 @@ pub use gltf_world::GltfWorld;
 pub use kit::KitCity;
 pub use library::ContentLibrary;
 pub use osm::OsmWorld;
+pub use spain::SpanishCity;
 pub use terrain::TerrainWorld;
 pub use track::TestTrack;
 

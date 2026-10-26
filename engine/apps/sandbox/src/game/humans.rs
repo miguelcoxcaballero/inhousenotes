@@ -54,28 +54,7 @@ impl HumanLibrary {
 
 /// Outfits for non-player characters.
 pub fn npc_specs() -> Vec<HumanSpec> {
-    let base = HumanSpec::casual_male();
-    vec![
-        HumanSpec {
-            name: "worker".into(),
-            skin: "skins/young_african_male".into(),
-            proxies: vec!["clothes/male_worksuit01".into(), "clothes/shoes06".into(), "hair/short04".into(), "eyebrows/eyebrow010".into(), "eyelashes/eyelashes01".into(), "eyes/high-poly".into()],
-            eye_color: "brown".into(),
-        },
-        HumanSpec {
-            name: "tourist".into(),
-            skin: "skins/young_caucasian_female".into(),
-            proxies: vec!["clothes/female_casualsuit01".into(), "clothes/shoes02".into(), "hair/ponytail01".into(), "eyebrows/eyebrow001".into(), "eyelashes/eyelashes01".into(), "eyes/high-poly".into()],
-            eye_color: "blue".into(),
-        },
-        HumanSpec {
-            name: "local".into(),
-            skin: "skins/middleage_asian_female".into(),
-            proxies: vec!["clothes/female_casualsuit01".into(), "clothes/shoes02".into(), "hair/bob02".into(), "eyebrows/eyebrow001".into(), "eyelashes/eyelashes01".into(), "eyes/high-poly".into()],
-            eye_color: "brownlight".into(),
-        },
-        HumanSpec { name: "commuter".into(), proxies: { let mut p = base.proxies.clone(); p[0] = "clothes/male_casualsuit02".into(); p }, ..base },
-    ]
+    HumanSpec::presets().into_iter().skip(1).collect()
 }
 
 /// Bends the right arm so the forearm points along `aim` (model space),
