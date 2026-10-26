@@ -5,6 +5,7 @@
 //! world importers consume. Nothing here touches the GPU, so it is fully
 //! testable and can run on background threads for streaming.
 
+pub mod bvh;
 pub mod lod;
 pub mod makehuman;
 pub mod manifest;

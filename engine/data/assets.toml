@@ -157,6 +157,27 @@ strip = "Models/GLB format/"
 # --------------------------------------------------- characters & animation
 
 [[asset]]
+id = "cmu_mocap"
+name = "CMU motion capture (BVH, cgspeed conversion): walk, run, idle, jump, talk, wait, draw gun, shoot, punch"
+kind = "animation"
+license = "CMU Graphics Lab Motion Capture Database: free for all uses (please credit mocap.cs.cmu.edu, NSF EIA-0196217)"
+author = "Carnegie Mellon University Graphics Lab; BVH conversion by Bruce Hahne (cgspeed)"
+homepage = "https://github.com/Shriinivas/cmubvh"
+files = [
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-001-009/07/Data/07_01.zip", path = "walk.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-001-009/09/Data/09_01.zip", path = "run.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-136-140/140/Data/140_07.zip", path = "idle.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-102-111/111/Data/111_28.zip", path = "idle_stand.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-015-019/16/Data/16_05.zip", path = "jump.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-015-019/18/Data/18_08.zip", path = "talk.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-040-045/40/Data/40_10.zip", path = "wait.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-136-140/139/Data/139_05.zip", path = "draw_gun.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-076-080/80/Data/80_03.zip", path = "shoot.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-001-009/02/Data/02_05.zip", path = "punch.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-001-009/08/Data/08_01.zip", path = "walk_casual.bvh" },
+]
+
+[[asset]]
 id = "quaternius_robot_expressive"
 name = "Robot Expressive: humanoid with 14 clips (idle, walk, run, jump, punch, death, ...)"
 kind = "animation"
@@ -559,6 +580,64 @@ files = [
     { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/3dobjs/base.obj", path = "base.obj" },
     { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default.mhskel", path = "default.mhskel" },
     { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/rigs/default_weights.mhw", path = "default_weights.mhw" },
+]
+
+[[asset]]
+id = "makehuman_targets"
+name = "MakeHuman macro targets: gender, age, muscle, weight and ethnic shape for adults"
+kind = "character"
+license = "CC0-1.0"
+author = "Data Collection AB, Joel Palmius, Jonas Hauquier (MakeHuman)"
+homepage = "https://github.com/makehumancommunity/makehuman"
+files = [
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/african-female-young.target", path = "african-female-young.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/african-female-old.target", path = "african-female-old.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/african-male-young.target", path = "african-male-young.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/african-male-old.target", path = "african-male-old.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/asian-female-young.target", path = "asian-female-young.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/asian-female-old.target", path = "asian-female-old.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/asian-male-young.target", path = "asian-male-young.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/asian-male-old.target", path = "asian-male-old.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/caucasian-female-young.target", path = "caucasian-female-young.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/caucasian-female-old.target", path = "caucasian-female-old.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/caucasian-male-young.target", path = "caucasian-male-young.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/caucasian-male-old.target", path = "caucasian-male-old.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-minmuscle-minweight.target", path = "universal-female-young-minmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-minmuscle-averageweight.target", path = "universal-female-young-minmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-minmuscle-maxweight.target", path = "universal-female-young-minmuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-averagemuscle-minweight.target", path = "universal-female-young-averagemuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-averagemuscle-averageweight.target", path = "universal-female-young-averagemuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-averagemuscle-maxweight.target", path = "universal-female-young-averagemuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-maxmuscle-minweight.target", path = "universal-female-young-maxmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-maxmuscle-averageweight.target", path = "universal-female-young-maxmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-young-maxmuscle-maxweight.target", path = "universal-female-young-maxmuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-minmuscle-minweight.target", path = "universal-female-old-minmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-minmuscle-averageweight.target", path = "universal-female-old-minmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-minmuscle-maxweight.target", path = "universal-female-old-minmuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-averagemuscle-minweight.target", path = "universal-female-old-averagemuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-averagemuscle-averageweight.target", path = "universal-female-old-averagemuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-averagemuscle-maxweight.target", path = "universal-female-old-averagemuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-maxmuscle-minweight.target", path = "universal-female-old-maxmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-maxmuscle-averageweight.target", path = "universal-female-old-maxmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-female-old-maxmuscle-maxweight.target", path = "universal-female-old-maxmuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-minmuscle-minweight.target", path = "universal-male-young-minmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-minmuscle-averageweight.target", path = "universal-male-young-minmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-minmuscle-maxweight.target", path = "universal-male-young-minmuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-averagemuscle-minweight.target", path = "universal-male-young-averagemuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-averagemuscle-averageweight.target", path = "universal-male-young-averagemuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-averagemuscle-maxweight.target", path = "universal-male-young-averagemuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-maxmuscle-minweight.target", path = "universal-male-young-maxmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-maxmuscle-averageweight.target", path = "universal-male-young-maxmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-young-maxmuscle-maxweight.target", path = "universal-male-young-maxmuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-minmuscle-minweight.target", path = "universal-male-old-minmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-minmuscle-averageweight.target", path = "universal-male-old-minmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-minmuscle-maxweight.target", path = "universal-male-old-minmuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-averagemuscle-minweight.target", path = "universal-male-old-averagemuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-averagemuscle-averageweight.target", path = "universal-male-old-averagemuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-averagemuscle-maxweight.target", path = "universal-male-old-averagemuscle-maxweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-maxmuscle-minweight.target", path = "universal-male-old-maxmuscle-minweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-maxmuscle-averageweight.target", path = "universal-male-old-maxmuscle-averageweight.target" },
+    { url = "https://raw.githubusercontent.com/makehumancommunity/makehuman/master/makehuman/data/targets/macrodetails/universal-male-old-maxmuscle-maxweight.target", path = "universal-male-old-maxmuscle-maxweight.target" },
 ]
 
 [[asset]]
