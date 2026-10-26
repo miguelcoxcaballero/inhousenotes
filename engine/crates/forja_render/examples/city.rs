@@ -3,7 +3,10 @@
 //! (`CITY_SHOTS=boulevard,aerial` renders only those shots; `CITY_MOTION=30`
 //! also saves `<shot>_motion.png`, the last of 30 real-time 60 fps frames
 //! walking into the shot, to judge TAA and the screen-space effects in
-//! motion).
+//! motion). `NIGHT=1` renders the city at 22:30 (`HOUR=<0..24>` picks the
+//! time) with lamps, lit windows, shops, neon and floodlights; until the
+//! renderer has clustered lighting the shots get the 64 most important
+//! lights ([`forja_city::nightlight::select`]) plus far glow points.
 
 use std::path::PathBuf;
 
@@ -19,7 +22,11 @@ fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
-    let kit = Kit::load(Some(&dl));
+    let mut kit = Kit::load(Some(&dl));
+    let hour = night_hour();
+    if let Some(h) = hour {
+        kit.set_hour(h);
+    }
     let styles = StyleLibrary::load(Some(&root.join("data/city/styles.toml")));
     let cfg = if small { CityConfig::small() } else { CityConfig::default() };
     let city = build_city(&kit, &styles, &cfg);
@@ -55,6 +62,12 @@ fn main() {
         }
     }
     frame.env.shadow_distance = 120.0;
+    let night = hour.is_some_and(|_| kit.night.is_night());
+    if night {
+        night_env(&mut frame.env, kit.night.dark);
+        println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
+    }
+    let base_instances = frame.instances.clone();
     let e = city.extent;
     // Eye-level shots along real streets of each district.
     let street_shot = |district: usize, along_z: bool, pick: usize| {
@@ -85,6 +98,13 @@ fn main() {
         }
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = 60f32.to_radians();
+        if night {
+            frame.instances = base_instances.clone();
+            frame.lights = night_lights(&out.city_lights, eye, at - eye);
+            let glow = forja_city::nightlight::glow_parts(&out.city_lights, eye, 45.0, 2.0 * (frame.camera.fov_y * 0.5).tan() / 720.0, 1.6);
+            let h = r.upload_scene(&forja_city::kit::assemble(&kit, "glow", glow, None));
+            frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(h, Mat4::IDENTITY) });
+        }
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}.png");
         img.save(&path).unwrap();
@@ -111,4 +131,33 @@ fn main() {
             }
         }
     }
+}
+
+/// `NIGHT=1` (22:30) or `HOUR=<h>`.
+fn night_hour() -> Option<f32> {
+    if let Some(h) = std::env::var("HOUR").ok().and_then(|v| v.parse::<f32>().ok()) {
+        return Some(h);
+    }
+    std::env::var("NIGHT").ok().filter(|v| v != "0").map(|_| 22.5)
+}
+
+/// Test night for the current renderer: a dim moon as the sun, a dark
+/// analytic sky, exposure for streets lit at ~15 lux.
+fn night_env(env: &mut Environment, dark: f32) {
+    env.use_ibl = false;
+    env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
+    env.sun_illuminance = 0.06 + 14.0 * (1.0 - dark).powi(3);
+    env.exposure = 0.55 + 3.0 * dark;
+    env.bloom = 0.04 + 0.04 * dark;
+}
+
+/// The 64 lights the current renderer can take, chosen by importance.
+fn night_lights(all: &[forja_city::CityLight], eye: Vec3, fwd: Vec3) -> Vec<PointLight> {
+    forja_city::nightlight::select(all, eye, fwd, MAX_LIGHTS)
+        .into_iter()
+        .map(|i| {
+            let (position, color, intensity, radius) = all[i].as_point();
+            PointLight { position, radius, color, intensity }
+        })
+        .collect()
 }
