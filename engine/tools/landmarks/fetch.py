@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import errno
 import io
 import json
 import math
@@ -1863,6 +1864,8 @@ def step_photos(ctx, com, fp):
             path, _, _ = save_image(data, os.path.join(pdir, "_dl_" + u))
             got.append((r, os.path.basename(path)))
         except Exception as ex:  # noqa: BLE001
+            if isinstance(ex, OSError) and ex.errno == errno.ENOSPC:
+                raise  # disk full: fail the landmark instead of marking the step done
             warns.append(f"download failed {r['title']}: {ex}")
     # number them in rank order (two-phase rename so names never collide)
     moves = []
@@ -1956,6 +1959,8 @@ def step_plans(ctx, com, cat):
                 data, _ = download_thumb(ctx, r["title"], w)
                 path, _, _ = save_image(data, stem, force_jpeg=False)
             except Exception as ex:  # noqa: BLE001
+                if isinstance(ex, OSError) and ex.errno == errno.ENOSPC:
+                    raise  # disk full: fail the landmark instead of marking the step done
                 warns.append(f"download failed {r['title']}: {ex}")
                 idx -= 1
                 continue
