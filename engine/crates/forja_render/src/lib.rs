@@ -26,6 +26,7 @@
 //! with instances every frame.
 
 pub mod atmosphere;
+pub mod capture;
 pub mod camera;
 pub mod env;
 
@@ -91,6 +92,8 @@ struct MaterialUniforms {
     emissive: [f32; 4],
     params: [f32; 4],
     layers: [f32; 4],
+    /// x: translucency, y: back faces above this v are discarded, z: foliage on.
+    foliage: [f32; 4],
 }
 
 #[repr(C)]
@@ -1194,23 +1197,19 @@ impl Renderer {
     // ---------------------------------------------------------------- upload
 
     /// Uploads a texture once per shared pixel buffer.
-    fn cached_texture(&mut self, t: &TextureData) -> wgpu::TextureView {
+    fn cached_texture(&mut self, t: &TextureData, alpha_cutoff: Option<f32>) -> wgpu::TextureView {
         let key = (t.rgba8.as_ptr() as usize, t.srgb);
         if let Some((_, view)) = self.texture_cache.get(&key) {
             return view.clone();
         }
-        let view = self.upload_texture(t);
+        let view = Self::upload_texture_with(&self.device, &self.queue, t, alpha_cutoff);
         self.texture_cache.insert(key, (t.rgba8.clone(), view.clone()));
         view
     }
 
-    fn upload_texture(&self, t: &TextureData) -> wgpu::TextureView {
-        Self::upload_texture_with(&self.device, &self.queue, t)
-    }
-
-    fn upload_texture_with(device: &wgpu::Device, queue: &wgpu::Queue, t: &TextureData) -> wgpu::TextureView {
+    fn upload_texture_with(device: &wgpu::Device, queue: &wgpu::Queue, t: &TextureData, alpha_cutoff: Option<f32>) -> wgpu::TextureView {
         let format = if t.srgb { wgpu::TextureFormat::Rgba8UnormSrgb } else { wgpu::TextureFormat::Rgba8Unorm };
-        let mips = generate_mips(t);
+        let mips = generate_mips(t, alpha_cutoff);
         let tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(&t.name),
             size: wgpu::Extent3d { width: t.width, height: t.height, depth_or_array_layers: 1 },
@@ -1233,7 +1232,7 @@ impl Renderer {
     }
 
     fn solid_view(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4], srgb: bool) -> wgpu::TextureView {
-        Self::upload_texture_with(device, queue, &TextureData { name: "solid".into(), width: 1, height: 1, rgba8: rgba.to_vec().into(), srgb })
+        Self::upload_texture_with(device, queue, &TextureData { name: "solid".into(), width: 1, height: 1, rgba8: rgba.to_vec().into(), srgb }, None)
     }
 
     fn upload_material(&self, m: &MaterialData, textures: &[wgpu::TextureView], defaults: &[wgpu::TextureView; 3]) -> GpuMaterial {
@@ -1254,6 +1253,10 @@ impl Renderer {
                 m.unlit as u32 as f32,
             ],
             layers: [m.clearcoat, m.clearcoat_roughness, m.transmission, m.subsurface],
+            foliage: match m.foliage {
+                Some(f) => [f.translucency, f.backface_cull_v, 1.0, 0.0],
+                None => [0.0, 2.0, 0.0, 0.0],
+            },
         };
         let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(&m.name), contents: bytemuck::bytes_of(&uniforms), usage: wgpu::BufferUsages::UNIFORM });
         let base = pick(m.base_color_tex, white_srgb);
@@ -1280,7 +1283,17 @@ impl Renderer {
 
     /// Uploads a scene once; draw it with [`DrawInstance`]s.
     pub fn upload_scene(&mut self, scene: &SceneData) -> ModelHandle {
-        let textures: Vec<wgpu::TextureView> = scene.textures.iter().map(|t| self.cached_texture(t)).collect();
+        // Base colour maps of alpha-tested materials get coverage-preserving
+        // mips so foliage and hair cards do not thin out with distance.
+        let mut cutoffs: Vec<Option<f32>> = vec![None; scene.textures.len()];
+        for m in &scene.materials {
+            if let (AlphaMode::Mask(c), Some(i)) = (m.alpha, m.base_color_tex)
+                && i < cutoffs.len()
+            {
+                cutoffs[i] = Some(c as f32 / 255.0);
+            }
+        }
+        let textures: Vec<wgpu::TextureView> = scene.textures.iter().zip(cutoffs).map(|(t, c)| self.cached_texture(t, c)).collect();
         let defaults = self.default_textures.get_or_insert_with(|| [Self::solid_view(&self.device, &self.queue, [255; 4], true), Self::solid_view(&self.device, &self.queue, [255; 4], false), Self::solid_view(&self.device, &self.queue, [128, 128, 255, 255], false)]).clone();
         let mat_base = self.materials.len() as u32;
         for m in &scene.materials {
@@ -1990,7 +2003,12 @@ fn aabb_in_planes(b: &Aabb, planes: &[Vec4; 6]) -> bool {
 }
 
 /// Box-filtered mip chain; sRGB data is averaged in linear space.
-fn generate_mips(t: &TextureData) -> Vec<(u32, u32, Vec<u8>)> {
+/// Full mip chain, filtered in linear space. With `alpha_cutoff` (alpha
+/// tested materials) each level's alpha is rescaled so the share of texels
+/// passing the test matches level 0 (Castaño 2010), region by region so an
+/// atlas of sparse leaf cards next to solid impostor views keeps both: leaf
+/// cards keep their density at distance instead of dissolving.
+fn generate_mips(t: &TextureData, alpha_cutoff: Option<f32>) -> Vec<(u32, u32, Vec<u8>)> {
     let to_lin: Vec<f32> = (0..256).map(|i| {
         let c = i as f32 / 255.0;
         if !t.srgb { c } else if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
@@ -2000,10 +2018,30 @@ fn generate_mips(t: &TextureData) -> Vec<(u32, u32, Vec<u8>)> {
         let e = if !t.srgb { v } else if v <= 0.0031308 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
         (e * 255.0 + 0.5) as u8
     };
+    // Level-0 coverage on a grid of CELL-pixel cells.
+    const CELL: u32 = 64;
+    let (w0, h0) = (t.width, t.height);
+    let (gx, gy) = (w0.div_ceil(CELL), h0.div_ceil(CELL));
+    let cov0: Option<(f32, Vec<f32>)> = alpha_cutoff.map(|cut| {
+        let mut pass = vec![0u32; (gx * gy) as usize];
+        let mut cnt = vec![0u32; (gx * gy) as usize];
+        for y in 0..h0 {
+            for x in 0..w0 {
+                let c = ((y / CELL) * gx + x / CELL) as usize;
+                cnt[c] += 1;
+                if t.rgba8[((y * w0 + x) * 4 + 3) as usize] as f32 / 255.0 >= cut {
+                    pass[c] += 1;
+                }
+            }
+        }
+        (cut, pass.iter().zip(&cnt).map(|(p, c)| *p as f32 / (*c).max(1) as f32).collect())
+    });
     let mut out = vec![(t.width, t.height, t.rgba8.to_vec())];
     let (mut w, mut h) = (t.width, t.height);
+    let mut level = 0u32;
     while w > 1 || h > 1 {
         let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        level += 1;
         let prev = &out.last().expect("non-empty").2;
         let mut next = vec![0u8; (nw * nh * 4) as usize];
         for y in 0..nh {
@@ -2021,11 +2059,108 @@ fn generate_mips(t: &TextureData) -> Vec<(u32, u32, Vec<u8>)> {
                 }
             }
         }
+        if let Some((cut, cov)) = &cov0
+            && nw * nh >= 16
+        {
+            // Blocks of `bs` texels at this level (at least 4), each matched
+            // to the mean level-0 coverage of the cells it covers.
+            let bs = (CELL >> level.min(31)).max(4);
+            let (bx, by) = (nw.div_ceil(bs), nh.div_ceil(bs));
+            for j in 0..by {
+                for i in 0..bx {
+                    let (x0, y0) = (i * bs, j * bs);
+                    let (x1, y1) = ((x0 + bs).min(nw), (y0 + bs).min(nh));
+                    // Matching level-0 cells.
+                    let cx0 = (x0 as u64 * w0 as u64 / nw as u64 / CELL as u64) as u32;
+                    let cy0 = (y0 as u64 * h0 as u64 / nh as u64 / CELL as u64) as u32;
+                    let cx1 = ((x1 as u64 * w0 as u64).div_ceil(nw as u64).div_ceil(CELL as u64) as u32).clamp(cx0 + 1, gx);
+                    let cy1 = ((y1 as u64 * h0 as u64).div_ceil(nh as u64).div_ceil(CELL as u64) as u32).clamp(cy0 + 1, gy);
+                    let mut target = 0.0;
+                    for cy in cy0..cy1 {
+                        for cx in cx0..cx1 {
+                            target += cov[(cy * gx + cx) as usize];
+                        }
+                    }
+                    target /= ((cx1 - cx0) * (cy1 - cy0)).max(1) as f32;
+                    if target <= 0.0 {
+                        continue;
+                    }
+                    let block_cov = |next: &[u8], k: f32| {
+                        let mut p = 0u32;
+                        for y in y0..y1 {
+                            for x in x0..x1 {
+                                if (next[((y * nw + x) * 4 + 3) as usize] as f32 / 255.0 * k).min(1.0) >= *cut {
+                                    p += 1;
+                                }
+                            }
+                        }
+                        p as f32 / ((x1 - x0) * (y1 - y0)) as f32
+                    };
+                    let (mut lo, mut hi) = (0.25f32, 8.0f32);
+                    for _ in 0..12 {
+                        let mid = (lo + hi) * 0.5;
+                        if block_cov(&next, mid) < target { lo = mid } else { hi = mid }
+                    }
+                    let k = (lo + hi) * 0.5;
+                    for y in y0..y1 {
+                        for x in x0..x1 {
+                            let a = &mut next[((y * nw + x) * 4 + 3) as usize];
+                            *a = ((*a as f32 * k).min(255.0) + 0.5) as u8;
+                        }
+                    }
+                }
+            }
+        }
         out.push((nw, nh, next));
         w = nw;
         h = nh;
     }
     out
+}
+
+#[cfg(test)]
+mod mip_tests {
+    use super::*;
+
+    #[test]
+    fn alpha_tested_mips_keep_coverage() {
+        // Small leaf-like blobs: box filtering averages them below the
+        // cutoff and the crown thins out; coverage-preserving mips keep them.
+        let (w, h) = (128u32, 128u32);
+        let mut px = vec![0u8; (w * h * 4) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y * w + x) * 4) as usize;
+                let v = ((x as f32 * 0.9).sin() * (y as f32 * 0.7).sin() * 1.6).clamp(0.0, 1.0);
+                px[i] = 40;
+                px[i + 1] = 120;
+                px[i + 2] = 30;
+                px[i + 3] = (v * 255.0) as u8;
+            }
+        }
+        let t = TextureData { name: "t".into(), width: w, height: h, rgba8: px.into(), srgb: true };
+        let cov = |d: &[u8]| d.chunks_exact(4).filter(|p| p[3] >= 128).count() as f32 / (d.len() / 4) as f32;
+        let plain = generate_mips(&t, None);
+        let kept = generate_mips(&t, Some(0.5));
+        let c0 = cov(&plain[0].2);
+        // The left half of an atlas is solid: its coverage must not mask
+        // the thinning of the right half.
+        let mut px2 = t.rgba8.to_vec();
+        for y in 0..h {
+            for x in 0..w / 2 {
+                px2[((y * w + x) * 4 + 3) as usize] = 255;
+            }
+        }
+        let atlas = TextureData { name: "a".into(), width: w, height: h, rgba8: px2.into(), srgb: true };
+        let am = generate_mips(&atlas, Some(0.5));
+        let half_cov = |d: &[u8], lw: u32| d.chunks_exact(4).enumerate().filter(|(i, p)| (*i as u32 % lw) >= lw / 2 && p[3] >= 128).count() as f32 / (d.len() / 8) as f32;
+        let right0 = half_cov(&am[0].2, w);
+        assert!((half_cov(&am[3].2, w >> 3) - right0).abs() < 0.08, "atlas right half {} vs {right0}", half_cov(&am[3].2, w >> 3));
+        assert!(cov(&plain[3].2) < c0 * 0.6, "box mips should thin out: {} vs {c0}", cov(&plain[3].2));
+        for l in 1..5 {
+            assert!((cov(&kept[l].2) - c0).abs() < 0.05, "level {l}: {} vs {c0}", cov(&kept[l].2));
+        }
+    }
 }
 
 /// Wireframe helpers for debug drawing.

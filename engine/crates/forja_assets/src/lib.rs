@@ -165,6 +165,26 @@ pub struct MaterialData {
     pub clearcoat_roughness: f32,
     /// Skin-like subsurface scattering amount (0..1).
     pub subsurface: f32,
+    /// Leaf / frond / impostor shading (see [`FoliageShading`]).
+    pub foliage: Option<FoliageShading>,
+}
+
+/// Foliage shading for alpha-tested cards: normals are not flipped on back
+/// faces (cards carry bent crown normals), diffuse wraps around and light
+/// passing through the leaves (`translucency`) brightens the shadowed side.
+/// Back faces whose `v` texture coordinate is above `backface_cull_v` are
+/// discarded, so one-sided impostor quads can share a double-sided
+/// material with the leaf cards.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FoliageShading {
+    pub translucency: f32,
+    pub backface_cull_v: f32,
+}
+
+impl Default for FoliageShading {
+    fn default() -> Self {
+        Self { translucency: 0.5, backface_cull_v: 2.0 }
+    }
 }
 
 impl Default for MaterialData {
@@ -188,6 +208,7 @@ impl Default for MaterialData {
             clearcoat: 0.0,
             clearcoat_roughness: 0.03,
             subsurface: 0.0,
+            foliage: None,
         }
     }
 }
@@ -410,6 +431,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
             clearcoat: clearcoat(&doc, m.index()).0,
             clearcoat_roughness: clearcoat(&doc, m.index()).1,
             subsurface: 0.0,
+            foliage: None,
         });
     }
     let default_material = scene.materials.len();
