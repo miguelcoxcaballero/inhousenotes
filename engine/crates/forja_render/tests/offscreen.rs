@@ -91,7 +91,8 @@ fn sunset_is_warm() {
         frame.instances.push(DrawInstance::new(h, m));
     }
     frame.env.sun_dir = Vec3::new(1.0, 0.06, 0.2).normalize();
-    frame.env.exposure = 2.5;
+    // The metered camera opens up for the low sun; push it a little more.
+    frame.env.exposure_compensation = 0.5;
     frame.camera = Camera::look_at(Vec3::new(-20.0, 2.0, 0.0), Vec3::new(10.0, 2.0, 2.0));
     let img = r.render_to_image(&frame, 640, 360);
     save(&img, "sunset.png");

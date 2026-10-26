@@ -260,8 +260,10 @@ fn render_shot(st: &mut Studio, handles: &[(ModelHandle, Mat4)], s: &Shot, expos
     for (h, m) in handles {
         frame.instances.push(DrawInstance::new(*h, world * *m));
     }
+    // Specs give a linear exposure relative to the old fixed camera (0.55);
+    // the physical camera meters itself and takes it as compensation.
     if let Some(e) = exposure {
-        frame.env.exposure = e;
+        frame.env.exposure_compensation = (e.max(1e-3) / 0.55).log2();
     }
     if s.plan {
         frame.env.fog_density = 0.0;

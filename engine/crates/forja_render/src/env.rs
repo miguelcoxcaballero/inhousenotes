@@ -40,8 +40,26 @@ fn f16(v: f32) -> u16 {
     ((exp as u32) << 10 | mant) as u16
 }
 
+/// Albedo of the synthetic ground that replaces the photo's lower
+/// hemisphere in the diffuse light: warm Spanish paving, dry soil and
+/// asphalt in partial shade. The renderer has no bounce light, so this one
+/// bounce from an infinite Lambertian ground lit by the photo's own sun and
+/// sky is what lifts shaded facades with the warm glow of a sunlit street
+/// (the street in the photo reflects only ~6%).
+pub const GROUND_ALBEDO: Vec3 = Vec3::new(0.17, 0.15, 0.125);
+
 impl EnvMap {
+    /// Environment from an HDR photo whose sun is normalised to `target_sun`
+    /// renderer units of illuminance at normal incidence (14 ~ 105 klx, see
+    /// [`crate::exposure`]). Diffuse light from below the horizon comes from
+    /// a ground of [`GROUND_ALBEDO`].
     pub fn from_hdr(img: &HdrImage, target_sun: f32) -> Self {
+        Self::from_hdr_with_ground(img, target_sun, Some(GROUND_ALBEDO))
+    }
+
+    /// Like [`EnvMap::from_hdr`]; `ground_albedo: None` keeps the photo's
+    /// own lower hemisphere for the diffuse light.
+    pub fn from_hdr_with_ground(img: &HdrImage, target_sun: f32, ground_albedo: Option<Vec3>) -> Self {
         let (w, h) = (img.width as usize, img.height as usize);
         let px = |x: usize, y: usize| Vec3::from(img.rgb[y * w + x]);
         // Sun: brightest texel of a 4x downsample (robust to single hot pixels).
@@ -61,7 +79,10 @@ impl EnvMap {
         let mut sky_ring = Vec3::ZERO;
         let mut ring_n = 0.0;
         let mut sun_e = Vec3::ZERO;
-        let dw = 4.0 * std::f32::consts::PI * std::f32::consts::PI / (w * h) as f32 / 2.0;
+        // Solid angle of an equirect texel: (2pi / w) * (pi / h) * sin(theta).
+        // (It used to be counted twice, which halved the sky and IBL next to
+        // the sun: 13:1 instead of the photo's 6.5:1 on flat ground.)
+        let dw = 2.0 * std::f32::consts::PI * std::f32::consts::PI / (w * h) as f32;
         let mut in_cone = vec![false; w * h];
         for y in 0..h / 2 {
             let theta = (y as f32 + 0.5) / h as f32 * std::f32::consts::PI;
@@ -69,7 +90,7 @@ impl EnvMap {
                 let d = dir_from_uv((x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32);
                 let c = d.dot(sun_dir);
                 if c > cos_cone {
-                    sun_e += px(x, y) * dw * theta.sin() * 2.0;
+                    sun_e += px(x, y) * dw * theta.sin();
                     in_cone[y * w + x] = true;
                 } else if c > (6f32).to_radians().cos() {
                     sky_ring += px(x, y);
@@ -90,24 +111,39 @@ impl EnvMap {
             }
         }
         // SH9 projection of radiance (on a 128x64 subsample).
-        let mut sh = [Vec3::ZERO; 9];
         let (sw, shh) = (128usize, 64usize);
+        let sample = |u: f32, v: f32| clamped[((v * h as f32) as usize).min(h - 1) * w + ((u * w as f32) as usize).min(w - 1)];
         let mut wsum = 0.0;
+        let mut sky_h = Vec3::ZERO;
+        for y in 0..shh {
+            let v = (y as f32 + 0.5) / shh as f32;
+            let sin_t = (v * std::f32::consts::PI).sin();
+            for x in 0..sw {
+                let u = (x as f32 + 0.5) / sw as f32;
+                sky_h += sample(u, v) * dir_from_uv(u, v).y.max(0.0) * sin_t;
+                wsum += sin_t;
+            }
+        }
+        let norm = 4.0 * std::f32::consts::PI / wsum;
+        // Horizontal illuminance of sun plus sky lights the synthetic ground.
+        let ground = ground_albedo.map(|a| (sun_e * scale * sun_dir.y.max(0.0) + sky_h * norm) * a / std::f32::consts::PI);
+        let mut sh = [Vec3::ZERO; 9];
         for y in 0..shh {
             let v = (y as f32 + 0.5) / shh as f32;
             let sin_t = (v * std::f32::consts::PI).sin();
             for x in 0..sw {
                 let u = (x as f32 + 0.5) / sw as f32;
                 let d = dir_from_uv(u, v);
-                let c = clamped[((v * h as f32) as usize).min(h - 1) * w + ((u * w as f32) as usize).min(w - 1)];
+                let mut c = sample(u, v);
+                if let Some(g) = ground {
+                    c = c.lerp(g, (-d.y / 0.08).clamp(0.0, 1.0));
+                }
                 let basis = sh_basis(d);
                 for k in 0..9 {
                     sh[k] += c * basis[k] * sin_t;
                 }
-                wsum += sin_t;
             }
         }
-        let norm = 4.0 * std::f32::consts::PI / wsum;
         // Convolve with the clamped cosine lobe and divide by pi:
         // band factors pi, 2pi/3, pi/4 -> 1, 2/3, 1/4.
         let band = [1.0, 2.0 / 3.0, 2.0 / 3.0, 2.0 / 3.0, 0.25, 0.25, 0.25, 0.25, 0.25];
@@ -176,7 +212,7 @@ mod tests {
                 }
             }
         }
-        let env = EnvMap::from_hdr(&HdrImage { width: w, height: h, rgb }, 10.0);
+        let env = EnvMap::from_hdr_with_ground(&HdrImage { width: w, height: h, rgb }, 10.0, None);
         assert!(env.sun_dir.dot(sun) > 0.99, "sun at {:?}", env.sun_dir);
         assert!((lum(env.sun_color) - 10.0).abs() < 0.5);
         // Uniform sky of radiance L gives irradiance/pi = L in every direction.
@@ -185,6 +221,38 @@ mod tests {
             let e = env.irradiance(n);
             assert!((e.x - l).abs() / l < 0.08, "{n}: {e} vs {l}");
         }
+    }
+
+    /// The extracted sun must carry the disc's real irradiance, so that the
+    /// sky keeps its measured ratio to the sun after normalisation.
+    #[test]
+    fn sun_irradiance_is_physical() {
+        let (w, h) = (1024u32, 512u32);
+        let (sky, disc, cos_disc) = (0.5f32, 10000.0f32, 0.9998f32);
+        let sun = vec3(0.3, 0.8, -0.5).normalize();
+        let mut rgb = vec![[sky; 3]; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let d = dir_from_uv((x as f32 + 0.5) / w as f32, (y as f32 + 0.5) / h as f32);
+                if d.dot(sun) > cos_disc {
+                    rgb[(y * w + x) as usize] = [disc; 3];
+                }
+            }
+        }
+        let env = EnvMap::from_hdr(&HdrImage { width: w, height: h, rgb }, 14.0);
+        // Irradiance of the disc above the sky level: L * solid angle.
+        let e_true = (disc - sky) * std::f32::consts::TAU * (1.0 - cos_disc);
+        let scale_true = 14.0 / e_true;
+        assert!((env.scale - scale_true).abs() / scale_true < 0.06, "scale {} vs {}", env.scale, scale_true);
+        // Sky radiance relative to the sun survives: irradiance/pi of the
+        // uniform sky is its radiance.
+        let up = env.irradiance(Vec3::Y).x;
+        assert!((up - sky * scale_true).abs() / (sky * scale_true) < 0.1, "{up} vs {}", sky * scale_true);
+        // The synthetic ground reflects GROUND_ALBEDO of sun plus sky.
+        let e_h = 14.0 * sun.y + std::f32::consts::PI * sky * scale_true;
+        let down = env.irradiance(-Vec3::Y).x;
+        let want = GROUND_ALBEDO.x * e_h / std::f32::consts::PI;
+        assert!((down - want).abs() / want < 0.12, "{down} vs {want}");
     }
 
     #[test]

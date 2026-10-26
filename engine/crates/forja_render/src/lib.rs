@@ -18,8 +18,18 @@
 //! 5. **Sky**: HDRI or per-pixel Rayleigh + Mie single scattering.
 //! 6. **TAA**: Halton-jittered frames resolved with reprojected, variance
 //!    clipped history; still cameras converge to a supersampled image.
-//! 7. **Post**: bloom chain, AgX tonemapping, vignette, CAS sharpening (FXAA
-//!    when TAA is off).
+//! 7. **Post**: energy-conserving lens glare (bloom), physical camera
+//!    exposure (EV100, metered), hue-preserving camera tone curve, vignette,
+//!    CAS sharpening (FXAA when TAA is off).
+//!
+//! Lighting is photometric ([`exposure`]): the HDRI sun is ~105 klx and the
+//! sky keeps the photo's own ratio to it. Cost of the camera model: the
+//! meter is one extra fragment over the 1/64-resolution bloom mip (~220
+//! texel reads at 720p) per frame, the tone curve is cheaper than the AgX
+//! it replaced (two `pow` instead of three `log2`, a polynomial and two
+//! matrices), and the aerial perspective adds a few ALU ops (one HG phase,
+//! three `exp`) to the forward pass. No per-frame CPU work beyond a handful
+//! of scalars.
 //!
 //! The renderer knows nothing about worlds or gameplay: callers upload
 //! [`SceneData`] once ([`Renderer::upload_scene`]) and submit a [`FrameDesc`]
@@ -28,6 +38,8 @@
 pub mod atmosphere;
 pub mod camera;
 pub mod env;
+pub mod exposure;
+pub mod tonemap;
 
 use std::sync::Arc;
 
@@ -94,10 +106,14 @@ struct MaterialUniforms {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Default, Pod, Zeroable)]
 struct PostUniforms {
     texel: [f32; 4],
     params: [f32; 4],
+    curve: [f32; 4],
+    look: [f32; 4],
+    /// Camera white balance gains (linear RGB).
+    white: [f32; 4],
 }
 
 #[repr(C)]
@@ -167,12 +183,40 @@ impl DrawInstance {
 pub struct Environment {
     /// Direction toward the sun.
     pub sun_dir: Vec3,
+    /// Analytic sky: sun illuminance at normal incidence in renderer units
+    /// ([`exposure::LUX_PER_UNIT`] lux each; 14 is ~105 klx).
     pub sun_illuminance: f32,
-    pub exposure: f32,
+    /// Physical camera exposure value at ISO 100 ("sunny 16" is 15).
+    /// `None` exposes automatically: an incident-light reading of the sun
+    /// and sky (which follows the time of day), refined per view by the
+    /// GPU meter within `auto_exposure_range`.
+    pub ev100: Option<f32>,
+    /// Stops added to the camera exposure (negative is darker).
+    pub exposure_compensation: f32,
+    /// Auto exposure (`ev100: None`): a center-weighted average meter on the
+    /// GPU (like a camera's reflected-light meter) may open up by `[0]`
+    /// stops or close down by `[1]` stops from the incident reading of the
+    /// sun and sky, so shaded views read like a photographer exposed them
+    /// without losing the sunlit highlights. `[0, 0]` meters only the
+    /// incident light.
+    pub auto_exposure_range: [f32; 2],
+    /// Time constant (s) of the camera adapting to a new exposure.
+    pub exposure_adaptation: f32,
+    /// Aerosol extinction at ground level (1/m). Visibility is 3.912 / it:
+    /// 1.3e-4 is the ~30 km of a clear, dry summer day.
     pub fog_density: f32,
+    /// Inverse scale height of the aerosol (1/m).
     pub fog_falloff: f32,
+    /// Share of the light spread by the lens' veiling glare (0.02-0.04 for
+    /// a good lens); the blur is energy conserving.
     pub bloom: f32,
     pub vignette: f32,
+    /// Camera response (display transform).
+    pub tone: tonemap::ToneCurve,
+    /// Auto white balance: how far the camera neutralises the metered sun
+    /// and sky colour (0 renders for a D65 white, 1 fully neutral). Partial
+    /// adaptation keeps the warmth of sunlight and the blue of open shade.
+    pub white_balance: f32,
     pub shadow_distance: f32,
     /// Light with the loaded HDRI ([`Renderer::set_environment`]) instead of
     /// the analytic atmosphere. Its sun drives the shadows.
@@ -196,11 +240,16 @@ impl Default for Environment {
         Self {
             sun_dir: Vec3::new(0.35, 0.6, 0.25).normalize(),
             sun_illuminance: 14.0,
-            exposure: 0.55,
-            fog_density: 0.0012,
-            fog_falloff: 0.012,
-            bloom: 0.04,
-            vignette: 0.35,
+            ev100: None,
+            exposure_compensation: 0.0,
+            auto_exposure_range: [1.5, 0.5],
+            exposure_adaptation: 0.4,
+            fog_density: 1.3e-4,
+            fog_falloff: 1.0e-3,
+            bloom: 0.02,
+            vignette: 0.3,
+            tone: tonemap::ToneCurve::default(),
+            white_balance: 0.6,
             shadow_distance: 220.0,
             use_ibl: true,
             ao_radius: 1.5,
@@ -285,6 +334,16 @@ impl RenderSettings {
     }
 }
 
+impl Environment {
+    /// Manual or incident-metered linear exposure, before the GPU meter's
+    /// correction. `meter_illuminance` is what the incident meter's dome
+    /// receives in renderer units ([`exposure::dome_illuminance`]).
+    pub fn exposure(&self, meter_illuminance: f32) -> f32 {
+        let ev = self.ev100.unwrap_or_else(|| exposure::incident_ev100(meter_illuminance));
+        exposure::exposure_from_ev100(ev - self.exposure_compensation)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct FrameDesc {
     pub camera: Camera,
@@ -303,6 +362,10 @@ pub struct RenderStats {
     pub triangles: u64,
     pub shadow_draws: u32,
     pub cpu_ms: f32,
+    /// EV100 of the manual setting or the incident meter, with the
+    /// compensation applied (the GPU meter may still shift it within
+    /// `Environment::auto_exposure_range`).
+    pub ev100: f32,
 }
 
 struct GpuMesh {
@@ -360,6 +423,8 @@ struct Targets {
     history_tex: wgpu::Texture,
     ldr: wgpu::TextureView,
     bloom: Vec<(wgpu::TextureView, u32, u32)>,
+    /// 1x1: the camera's adapted EV100 (R), written by the meter pass.
+    exposure: wgpu::TextureView,
     post_bind: PostBinds,
     gtao_bind: wgpu::BindGroup,
     blur_bind: wgpu::BindGroup,
@@ -372,6 +437,8 @@ struct PostBinds {
     up: Vec<wgpu::BindGroup>,
     tonemap: wgpu::BindGroup,
     fxaa: wgpu::BindGroup,
+    meter: wgpu::BindGroup,
+    meter_uniform: wgpu::Buffer,
     uniforms: Vec<wgpu::Buffer>,
 }
 
@@ -394,6 +461,7 @@ struct Pipelines {
     lines: wgpu::RenderPipeline,
     down: wgpu::RenderPipeline,
     up: wgpu::RenderPipeline,
+    meter: wgpu::RenderPipeline,
     tonemap: wgpu::RenderPipeline,
     fxaa: wgpu::RenderPipeline,
 }
@@ -406,6 +474,9 @@ struct EnvInfo {
     zenith: Vec3,
     horizon: Vec3,
     ground: Vec3,
+    /// Sun irradiance above the atmosphere that matches the photo's sun, for
+    /// the analytic sky shown from high viewpoints.
+    sun_top: f32,
 }
 
 pub struct Renderer {
@@ -447,6 +518,8 @@ pub struct Renderer {
     line_buf: wgpu::Buffer,
     line_cap: u64,
     targets: Option<Targets>,
+    /// Frame time of the last metered exposure (`None`: snap next frame).
+    exposure_time: Option<f32>,
     pub stats: RenderStats,
     pub settings: RenderSettings,
     temporal: TemporalState,
@@ -607,7 +680,7 @@ impl Renderer {
         let cascade_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("cascade"), entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX)] });
         let post_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("post"),
-            entries: &[texture_entry(0), sampler_entry(1), uniform_entry(2, wgpu::ShaderStages::FRAGMENT), texture_entry(3)],
+            entries: &[texture_entry(0), sampler_entry(1), uniform_entry(2, wgpu::ShaderStages::FRAGMENT), texture_entry(3), texture_entry(4)],
         });
         let depth_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
@@ -797,11 +870,15 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
-        let post_pipeline = |entry: &str, format: wgpu::TextureFormat, additive: bool| {
-            let blend = additive.then_some(wgpu::BlendState {
-                color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
-                alpha: wgpu::BlendComponent::OVER,
-            });
+        let additive = wgpu::BlendState {
+            color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+            alpha: wgpu::BlendComponent::OVER,
+        };
+        // Exposure adaptation: new = metered * k + previous * (1 - k), with k
+        // the blend constant set per frame.
+        let adapt = wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Constant, dst_factor: wgpu::BlendFactor::OneMinusConstant, operation: wgpu::BlendOperation::Add };
+        let adapt = wgpu::BlendState { color: adapt, alpha: adapt };
+        let post_pipeline = |entry: &str, format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(entry),
                 layout: Some(&post_layout),
@@ -835,10 +912,11 @@ impl Renderer {
             taa: taa_pipeline,
             sky: sky_pipeline,
             lines: lines_pipeline,
-            down: post_pipeline("fs_downsample", HDR_FORMAT, false),
-            up: post_pipeline("fs_upsample", HDR_FORMAT, true),
-            tonemap: post_pipeline("fs_tonemap", wgpu::TextureFormat::Rgba8UnormSrgb, false),
-            fxaa: post_pipeline("fs_fxaa", output_format, false),
+            down: post_pipeline("fs_downsample", HDR_FORMAT, None),
+            up: post_pipeline("fs_upsample", HDR_FORMAT, Some(additive)),
+            meter: post_pipeline("fs_meter", HDR_FORMAT, Some(adapt)),
+            tonemap: post_pipeline("fs_tonemap", wgpu::TextureFormat::Rgba8UnormSrgb, None),
+            fxaa: post_pipeline("fs_fxaa", output_format, None),
         };
 
         let shadow_size = 2048;
@@ -959,6 +1037,7 @@ impl Renderer {
             line_buf,
             line_cap,
             targets: None,
+            exposure_time: None,
             stats: RenderStats::default(),
             settings: RenderSettings::from_env(),
             temporal: TemporalState::default(),
@@ -1059,6 +1138,10 @@ impl Renderer {
             zenith: e.irradiance(Vec3::Y),
             horizon,
             ground: e.irradiance(Vec3::NEG_Y),
+            sun_top: {
+                let t = atmosphere::sun_transmittance(Vec3::new(0.0, 6360.001, 0.0), e.sun_dir).dot(Vec3::new(0.2126, 0.7152, 0.0722));
+                if t > 1e-3 { e.sun_color.dot(Vec3::new(0.2126, 0.7152, 0.0722)) / t } else { 0.0 }
+            },
         });
     }
 
@@ -1129,11 +1212,11 @@ impl Renderer {
         let mk_uniform = |texel: [f32; 2], params: [f32; 4]| {
             self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("post"),
-                contents: bytemuck::bytes_of(&PostUniforms { texel: [texel[0], texel[1], 0.0, 0.0], params }),
+                contents: bytemuck::bytes_of(&PostUniforms { texel: [texel[0], texel[1], 0.0, 0.0], params, ..Default::default() }),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             })
         };
-        let bind = |src: &wgpu::TextureView, u: &wgpu::Buffer, extra: &wgpu::TextureView| {
+        let bind = |src: &wgpu::TextureView, u: &wgpu::Buffer, extra: &wgpu::TextureView, exposure: &wgpu::TextureView| {
             self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("post"),
                 layout: &self.post_bgl,
@@ -1142,34 +1225,42 @@ impl Renderer {
                     wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
                     wgpu::BindGroupEntry { binding: 2, resource: u.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(extra) },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(exposure) },
                 ],
             })
         };
         // Passes that render into bloom mips must not also bind mip 0.
         let dummy = tex("dummy", 1, 1, HDR_FORMAT);
+        let exposure = tex("exposure", 1, 1, HDR_FORMAT);
+        // A new exposure texture has no history: the next frame snaps.
+        self.exposure_time = None;
         let mut uniforms = Vec::new();
         let mut down = Vec::new();
         for i in 0..BLOOM_MIPS {
             let (src, sw, sh) = if i == 0 { (&resolved, width, height) } else { (&bloom[i - 1].0, bloom[i - 1].1, bloom[i - 1].2) };
             let u = mk_uniform([1.0 / sw as f32, 1.0 / sh as f32], [0.0, 0.0, 0.0, if i == 0 { 1.0 } else { 0.0 }]);
-            down.push(bind(src, &u, &dummy));
+            down.push(bind(src, &u, &dummy, &dummy));
             uniforms.push(u);
         }
         let mut up = Vec::new();
         for i in (1..BLOOM_MIPS).rev() {
             let (src, sw, sh) = (&bloom[i].0, bloom[i].1, bloom[i].2);
             let u = mk_uniform([1.0 / sw as f32, 1.0 / sh as f32], [0.0; 4]);
-            up.push(bind(src, &u, &dummy));
+            up.push(bind(src, &u, &dummy, &dummy));
             uniforms.push(u);
         }
         // Tonemap uniform is rewritten each frame (exposure, bloom, vignette).
         let tu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.04, 0.3, 0.0]);
-        let tonemap = bind(&resolved, &tu, &bloom[0].0);
+        let tonemap = bind(&resolved, &tu, &bloom[0].0, &exposure);
         uniforms.push(tu);
         // Final pass uniform is rewritten each frame (FXAA or sharpening).
         let fu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.0, 0.0, 0.0]);
-        let fxaa = bind(&ldr, &fu, &dummy);
+        let fxaa = bind(&ldr, &fu, &dummy, &dummy);
         uniforms.push(fu);
+        // The meter reads the smallest bloom mip (written by the down chain
+        // only) and the per-frame metering uniform.
+        let meter_uniform = mk_uniform([0.0; 2], [0.0; 4]);
+        let meter = bind(&bloom[BLOOM_MIPS - 1].0, &meter_uniform, &dummy, &dummy);
         self.targets = Some(Targets {
             width,
             height,
@@ -1183,7 +1274,8 @@ impl Renderer {
             history_tex,
             ldr,
             bloom,
-            post_bind: PostBinds { down, up, tonemap, fxaa, uniforms },
+            exposure,
+            post_bind: PostBinds { down, up, tonemap, fxaa, meter, meter_uniform, uniforms },
             gtao_bind,
             blur_bind,
             taa_bind,
@@ -1359,6 +1451,11 @@ impl Renderer {
                 (sun, atmosphere::sky_lighting(sun, env.sun_illuminance, Vec3::new(0.25, 0.24, 0.22)))
             }
         };
+        // Physical camera: meter the sun and sky on open ground.
+        let lum = |c: Vec3| c.dot(Vec3::new(0.2126, 0.7152, 0.0722));
+        let meter_light = exposure::dome_illuminance(sky.sun_color, sun.y, sky.zenith * std::f32::consts::PI);
+        let meter_illuminance = lum(meter_light);
+        let exposure = env.exposure(meter_illuminance);
         let mut sh = [[0.0f32; 4]; 9];
         if let Some(e) = ibl {
             for k in 0..9 {
@@ -1430,7 +1527,7 @@ impl Renderer {
             inv_view_proj: view_proj.inverse().to_cols_array_2d(),
             camera_pos: [cam.position.x, cam.position.y, cam.position.z, frame.time],
             sun_dir: [sun.x, sun.y, sun.z, env.sun_illuminance],
-            sun_color: [sky.sun_color.x, sky.sun_color.y, sky.sun_color.z, env.exposure],
+            sun_color: [sky.sun_color.x, sky.sun_color.y, sky.sun_color.z, exposure],
             sky_zenith: sky.zenith.extend(0.0).to_array(),
             sky_horizon: sky.horizon.extend(env.fog_density).to_array(),
             ground_color: sky.ground.extend(env.fog_falloff).to_array(),
@@ -1439,7 +1536,7 @@ impl Renderer {
             params: [sorted.len().min(MAX_LIGHTS) as f32, 1.0 / self.shadow_size as f32, env.bloom, 0.0],
             screen: [width as f32, height as f32, 1.0 / width as f32, 1.0 / height as f32],
             sh,
-            env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, 0.0],
+            env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, ibl.map_or(0.0, |e| e.sun_top)],
             prev_view_proj: tf.prev_view_proj.to_cols_array_2d(),
             proj_params: [1.0 / proj.x_axis.x, 1.0 / proj.y_axis.y, cam.near, proj.y_axis.y * height as f32 * 0.5],
             jitter: [tf.jitter.x, tf.jitter.y, tf.frame_index as f32, fx_on(tf.history_valid)],
@@ -1590,11 +1687,39 @@ impl Renderer {
         }
         let t = self.targets.as_ref().expect("resized");
         let pu = &t.post_bind.uniforms;
+        // The first downsample weights its Karis average by exposed luma.
+        self.queue.write_buffer(&pu[0], 0, bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [exposure, 0.0, 0.0, 1.0], ..Default::default() }));
+        // Camera meter: EV of the center-weighted average luminance, clamped
+        // around the incident reading (or the manual EV), minus compensation.
+        let ev_incident = exposure::incident_ev100(meter_illuminance);
+        let lux_ev = exposure::LUX_PER_UNIT * 100.0 / exposure::METER_K;
+        let (open, close) = (env.auto_exposure_range[0].max(0.0), env.auto_exposure_range[1].max(0.0));
+        self.queue.write_buffer(
+            &t.post_bind.meter_uniform,
+            0,
+            bytemuck::bytes_of(&PostUniforms {
+                texel: [env.ev100.is_some() as u32 as f32, env.ev100.unwrap_or(0.0), env.exposure_compensation, 0.0],
+                params: [lux_ev, ev_incident, open, close],
+                ..Default::default()
+            }),
+        );
+        // Stills, the first frame and hitches snap; a running clock adapts.
+        let adapt = match self.exposure_time.map(|t0| frame.time - t0) {
+            Some(dt) if dt > 0.0 && dt < 0.25 => 1.0 - (-dt / env.exposure_adaptation.max(1e-3)).exp(),
+            _ => 1.0,
+        } as f64;
+        self.exposure_time = Some(frame.time);
         let tonemap_u = &pu[pu.len() - 2];
         self.queue.write_buffer(
             tonemap_u,
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [env.exposure, env.bloom, env.vignette, 0.0] }),
+            bytemuck::bytes_of(&PostUniforms {
+                texel: [1.0 / width as f32, 1.0 / height as f32, 1.0 / BLOOM_MIPS as f32, 0.0],
+                params: [exposure::exposure_from_ev100(0.0), env.bloom, env.vignette, 0.0],
+                curve: env.tone.coefficients(),
+                look: [env.tone.saturation, env.tone.highlight_desaturation, 0.0, 0.0],
+                white: exposure::white_balance(meter_light, env.white_balance).extend(0.0).to_array(),
+            }),
         );
         // Final pass: FXAA without TAA, CAS sharpening with it (stronger
         // while the camera moves, when the temporal filter is softer).
@@ -1603,11 +1728,12 @@ impl Renderer {
         self.queue.write_buffer(
             &pu[pu.len() - 1],
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0] }),
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, (!self.output_format.is_srgb()) as u32 as f32, 0.0], ..Default::default() }),
         );
 
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
-        let mut stats = RenderStats { instances_culled: culled, ..Default::default() };
+        let ev100 = env.ev100.unwrap_or_else(|| exposure::incident_ev100(meter_illuminance)) - env.exposure_compensation;
+        let mut stats = RenderStats { instances_culled: culled, ev100, ..Default::default() };
         // 1. Shadows (alpha-masked casters are alpha tested).
         for c in 0..4 {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1847,6 +1973,22 @@ impl Renderer {
         };
         for i in 0..BLOOM_MIPS {
             fullscreen(&mut enc, &t.bloom[i].0, &self.pipelines.down, &t.post_bind.down[i], wgpu::LoadOp::Clear(wgpu::Color::BLACK));
+        }
+        // Meter the frame (the smallest mip is final once the down chain ran)
+        // and adapt the camera's EV toward it.
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("meter"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &t.exposure, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipelines.meter);
+            pass.set_bind_group(0, &t.post_bind.meter, &[]);
+            pass.set_blend_constant(wgpu::Color { r: adapt, g: adapt, b: adapt, a: adapt });
+            pass.draw(0..3, 0..1);
         }
         for (k, i) in (1..BLOOM_MIPS).rev().enumerate() {
             fullscreen(&mut enc, &t.bloom[i - 1].0, &self.pipelines.up, &t.post_bind.up[k], wgpu::LoadOp::Load);

@@ -20,7 +20,7 @@ struct Frame {
     params: vec4<f32>,          // x: light count, y: 1 / shadow size, z: bloom strength, w: debug view
     screen: vec4<f32>,          // xy: size, zw: 1 / size
     sh: array<vec4<f32>, 9>,    // irradiance / pi (HDRI mode)
-    env_params: vec4<f32>,      // x: 1 = HDRI image lighting, y: max mip, z: intensity
+    env_params: vec4<f32>,      // x: 1 = HDRI image lighting, y: max mip, z: ambient intensity, w: HDRI sun above the atmosphere
     prev_view_proj: mat4x4<f32>,// previous frame, unjittered (TAA / SSR reprojection)
     proj_params: vec4<f32>,     // x: 1/P00, y: 1/P11, z: near, w: pixels per world unit at distance 1
     jitter: vec4<f32>,          // xy: sub-pixel jitter (NDC), z: frame index, w: 1 = history valid
@@ -192,6 +192,28 @@ fn env_reflection(r: vec3<f32>, rough: f32) -> vec3<f32> {
     return mix(env, ambient_sky(r), rough) + sun_glint;
 }
 
+// Henyey-Greenstein phase function (1/sr).
+fn phase_hg(c: f32, g: f32) -> f32 {
+    let d = 1.0 + g * g - 2.0 * g * c;
+    return (1.0 - g * g) / (4.0 * PI * d * sqrt(d));
+}
+
+// Mean radiance of the environment over the sphere (what an isotropic
+// scatterer sees).
+fn ambient_mean() -> vec3<f32> {
+    if (frame.env_params.x > 0.5) {
+        return frame.sh[0].rgb * 0.282095;
+    }
+    return (frame.sky_zenith.rgb + frame.sky_horizon.rgb * 2.0 + frame.ground_color.rgb) * 0.25;
+}
+
+// Aerial perspective: single scattering in an exponential aerosol layer
+// (density `sky_horizon.w` at sea level, inverse scale height
+// `ground_color.w`) plus clear-air Rayleigh. Light scattered in comes from
+// the sun through a Henyey-Greenstein lobe and from the sky's mean
+// radiance, so the haze is blue-grey away from the sun and brighter toward
+// it, and it only shows over real distances (30 km visibility: 1.3% at
+// 100 m, 5% at 400 m).
 fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
     let cam = frame.camera_pos.xyz;
     let dist = length(world_pos - cam);
@@ -199,11 +221,20 @@ fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> ve
     let falloff = frame.ground_color.w;
     let dy = world_pos.y - cam.y;
     var integral = dist * exp(-falloff * max(cam.y, 0.0));
-    if (abs(dy) > 0.01) {
+    if (abs(dy * falloff) > 1e-4) {
         integral *= (1.0 - exp(-falloff * dy)) / (falloff * dy);
     }
-    let fog = 1.0 - exp(-density * integral);
-    let sun_amount = pow(max(dot(view_dir, frame.sun_dir.xyz), 0.0), 8.0);
-    let fog_color = mix(frame.sky_horizon.rgb, frame.sun_color.rgb * 0.5, sun_amount * 0.5);
-    return mix(color, fog_color, clamp(fog, 0.0, 1.0));
+    // Optical depths: aerosol (grey) and Rayleigh (per channel, 1/m).
+    let tau_m = density * integral;
+    let tau_r = vec3<f32>(5.8e-6, 13.6e-6, 33.1e-6) * dist;
+    let tau = vec3<f32>(tau_m) + tau_r;
+    let trans = exp(-tau);
+    let c = dot(view_dir, frame.sun_dir.xyz);
+    let sun = frame.sun_color.rgb;
+    let amb = ambient_mean();
+    // Source functions: aerosol single-scattering albedo 0.9, g = 0.7.
+    let j_m = (sun * phase_hg(c, 0.7) + amb) * 0.9;
+    let j_r = sun * phase_rayleigh(c) + amb;
+    let inscatter = (j_m * tau_m + j_r * tau_r) / max(tau, vec3<f32>(1e-9));
+    return color * trans + inscatter * (vec3<f32>(1.0) - trans);
 }

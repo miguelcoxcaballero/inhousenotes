@@ -54,16 +54,20 @@ impl Plugin for EnvPlugin {
             let photo = tod.photo_sky;
             let env = &mut w.res_mut::<RenderScene>().env;
             env.use_ibl = photo;
+            // The physical camera meters the sun and sky (Environment::ev100
+            // = None), so the photo sky and every time of day expose
+            // themselves; night is kept darker than the meter's mid grey.
+            let defaults = forja_render::Environment::default();
             if photo {
-                env.exposure = 0.55;
-                env.bloom = 0.04;
+                env.exposure_compensation = defaults.exposure_compensation;
+                env.bloom = defaults.bloom;
                 return;
             }
             // Below the horizon the "sun" becomes a dim moon opposite to it.
             env.sun_dir = if sun.y > -0.05 { sun } else { Vec3::new(-sun.x, (-sun.y).max(0.25), -sun.z).normalize() };
             env.sun_illuminance = if sun.y > -0.05 { 14.0 } else { 0.35 };
-            env.exposure = 0.55 + night * 5.0;
-            env.bloom = 0.04 + night * 0.06;
+            env.exposure_compensation = defaults.exposure_compensation - night * 2.0;
+            env.bloom = defaults.bloom + night * 0.05;
         });
         // Street lamps near the camera at night.
         app.add_system_at(Stage::PostUpdate, "street_lights", 50, |w| {

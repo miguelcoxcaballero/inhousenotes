@@ -386,7 +386,10 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let base = base_s * material.base_color * in.tint;
     if (base.a < material.params.z) { discard; }
     if (material.params.w > 0.5) {
-        return vec4<f32>(height_fog(base.rgb * frame.sun_color.w * 3.0, in.world_pos, normalize(in.world_pos - frame.camera_pos.xyz)), base.a);
+        // Unlit (KHR_materials_unlit) colors are display referred: divide by
+        // the exposure the post pass applies, so they show as authored at any
+        // EV instead of scaling with exposure squared.
+        return vec4<f32>(height_fog(base.rgb / max(frame.sun_color.w, 1e-6), in.world_pos, normalize(in.world_pos - frame.camera_pos.xyz)), base.a);
     }
     var ng = normalize(in.normal);
     if (!front) { ng = -ng; }
