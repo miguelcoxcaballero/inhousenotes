@@ -1297,7 +1297,7 @@ fn roof(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, lot: &Lo
                     let off = Vec2::new(rng.range(-2.5, 2.5), rng.range(-2.5, 2.5)) * if k == 0 { 0.3 } else { 1.0 };
                     let p = ctr + off;
                     if crate::geom::signed_area(&lot.ring) > 0.0 && point_in(&lot.ring, p) {
-                        out.placements.push((m, Mat4::from_rotation_translation(forja_math::Quat::from_rotation_y(rng.range(0.0, 6.28)), Vec3::new(p.x, cornice_top - 0.05, p.y))));
+                        out.placements.push((m, Mat4::from_rotation_translation(forja_math::Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)), Vec3::new(p.x, cornice_top - 0.05, p.y))));
                     }
                 }
                 if let Some(back) = inset(&lot.ring, 1.5) {
