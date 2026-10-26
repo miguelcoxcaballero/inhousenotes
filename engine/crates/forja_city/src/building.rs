@@ -14,33 +14,7 @@ use crate::kit::{Kit, Mat, Rgb, assemble, hex};
 use crate::modules::{self, BalconyKey, P, Piece, PortalKey, REVEAL, ShopKey, ShopPiece, SurroundKind, WindowKey, facade_frame};
 use crate::style::{ShutterKind, Style, parse_material, parse_pattern, parse_rgb, parse_shutter};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EdgeKind {
-    /// Main facade on a street.
-    Street,
-    /// Street facade on a chamfered or rounded block corner.
-    Corner,
-    /// Facade on the block's inner courtyard.
-    Courtyard,
-    /// Wall shared with the neighbour (medianera).
-    Party,
-}
-
-impl EdgeKind {
-    pub fn is_street(self) -> bool {
-        matches!(self, EdgeKind::Street | EdgeKind::Corner)
-    }
-}
-
-/// A building plot: counter-clockwise ring in (x, z) and one kind per edge
-/// (`edges[i]` runs from `ring[i]` to `ring[i + 1]`).
-#[derive(Clone, Debug)]
-pub struct Lot {
-    pub ring: Vec<Vec2>,
-    pub edges: Vec<EdgeKind>,
-    /// Ground level (top of the sidewalk).
-    pub base: f32,
-}
+pub use crate::lot::{EdgeKind, Front, Lot};
 
 /// Everything a city build produces, in world space.
 #[derive(Default)]
@@ -1744,6 +1718,7 @@ mod tests {
             ring: vec![Vec2::new(0.0, 0.0), Vec2::new(18.0, 0.0), Vec2::new(18.0, 20.0), Vec2::new(0.0, 20.0)],
             edges: vec![EdgeKind::Courtyard, EdgeKind::Party, EdgeKind::Street, EdgeKind::Party],
             base: 0.15,
+            ..Default::default()
         }
     }
 
