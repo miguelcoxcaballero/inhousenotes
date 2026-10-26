@@ -1,5 +1,6 @@
 //! Whole procedural Spanish city rendered from a few viewpoints:
 //! `cargo run --release -p forja_render --example city -- out_prefix [small]`
+//! (`CITY_SHOTS=boulevard,aerial` renders only those shots).
 
 use std::path::PathBuf;
 
@@ -74,7 +75,11 @@ fn main() {
         ("valencia_street2", v2_eye, v2_at),
         ("aerial", Vec3::new(-e.x * 0.8, 120.0, -e.y * 1.1), Vec3::new(0.0, 0.0, 0.0)),
     ];
+    let only = std::env::var("CITY_SHOTS").ok();
     for (name, eye, at) in shots {
+        if only.as_deref().is_some_and(|o| !o.split(',').any(|n| n.trim() == name)) {
+            continue;
+        }
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = 60f32.to_radians();
         let img = r.render_to_image(&frame, 1280, 720);
