@@ -2477,8 +2477,17 @@
             const { targetWidth, targetHeight, scale } = getTargetPageCanvasBackingSize(pageWidth, pageHeight, zoom);
             const resized = canvas.width !== targetWidth || canvas.height !== targetHeight;
             if (resized) {
+                // Changing width/height clears the bitmap immediately. Keep the
+                // last complete frame visible while the sharper paint is sliced.
+                const previous = canvas.dataset.hasPageDraw === '1'
+                    ? createProcessingCanvas(canvas.width, canvas.height) : null;
+                if (previous) previous.getContext('2d').drawImage(canvas, 0, 0);
                 canvas.width = targetWidth;
                 canvas.height = targetHeight;
+                if (previous) {
+                    canvas.getContext('2d').drawImage(previous, 0, 0, targetWidth, targetHeight);
+                    previous.width = previous.height = 0;
+                }
             }
             canvas.style.width = '100%';
             canvas.style.height = '100%';
@@ -12905,7 +12914,7 @@
             ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
             drawPageBackgroundLayer(ctx, page, pageIndex, scale);
             if (page.bakedBackground) {
-                const image = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex));
+                const image = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex, { assetsReady: true }));
                 if (image?.complete) {
                     const size = getPageDimensions(pageIndex);
                     ctx.drawImage(image, 0, 0, size.width, size.height);
@@ -13369,7 +13378,7 @@
             if (!page || !Array.isArray(page.images) || page.images.length === 0) return;
             page.images.forEach(image => {
                 if (!image || !image.src) return;
-                const img = getCachedImage(image.src, onload ? () => onload(pageIndex) : null);
+                const img = getCachedImage(image.src, onload ? () => onload(pageIndex, { assetsReady: true }) : null);
                 if (!img || !img.complete) return;
                 ctx.save();
                 ctx.translate(image.x, image.y);
@@ -13436,7 +13445,7 @@
             ctx.fillRect(0, 0, pageWidth, pageHeight);
 
             if (page.backgroundImage) {
-                const bgImg = getCachedImage(page.backgroundImage, () => redrawPage(pageIndex));
+                const bgImg = getCachedImage(page.backgroundImage, () => redrawPage(pageIndex, { assetsReady: true }));
                 if (bgImg && bgImg.complete) {
                     ctx.drawImage(bgImg, 0, 0, pageWidth, pageHeight);
                 }
@@ -13521,10 +13530,20 @@
             }
 
             const previousPaint = pendingPageRepaints.get(canvas);
+            const generation = pageDirtyGeneration.get(pageIndex) || 0;
+            if (previousPaint && !previousPaint.cancelled && previousPaint.page === page
+                && previousPaint.generation === generation && previousPaint.strokes === page.strokes
+                && previousPaint.strokeCount === page.strokes.length
+                && previousPaint.width === canvas.width && previousPaint.height === canvas.height
+                && previousPaint.background === page.backgroundImage && previousPaint.images === page.images
+                && previousPaint.baked === page.bakedBackground && remoteLiveErasePreviews.size === 0
+                && !options.assetsReady && !options.duringErase) return;
             if (previousPaint) previousPaint.cancelled = true;
             if (!options.duringErase && isPenWriting) {
                 page.needsRedraw = true;
-                const job = {cancelled:false};
+                const job = {cancelled:false, page, generation, strokes: page.strokes,
+                    strokeCount: page.strokes.length, width: canvas.width, height: canvas.height,
+                    background: page.backgroundImage, images: page.images, baked: page.bakedBackground};
                 pendingPageRepaints.set(canvas,job);
                 const resume = () => {
                     if (job.cancelled || !canvas.isConnected || state.pages[pageIndex] !== page) {
@@ -13538,7 +13557,7 @@
                 setTimeout(resume,40);
                 return;
             }
-            const staged = (page.strokes?.length || 0) > 128;
+            const staged = (page.strokes?.length || 0) > 128 || page.strokes.some(stroke => (stroke.points?.length || 0) > 2048);
             const target = staged ? createProcessingCanvas(canvas.width, canvas.height) : canvas;
             const ctx = target.getContext('2d');
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
@@ -13553,7 +13572,7 @@
 
             // Draw baked background if available (contains old strokes)
             if (page.bakedBackground) {
-                const bakedImg = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex));
+                const bakedImg = getCachedImage(page.bakedBackground, () => redrawPage(pageIndex, { assetsReady: true }));
                 if (bakedImg.complete) {
                     ctx.drawImage(bakedImg, 0, 0, pageWidth, pageHeight);
                 }
@@ -13565,9 +13584,10 @@
                 // Export/thumbnail callers must not reuse the old visible
                 // canvas until this generation has been committed atomically.
                 page.needsRedraw = true;
-                const generation = pageDirtyGeneration.get(pageIndex) || 0;
                 const strokeCount = page.strokes.length;
-                const job = { cancelled: false };
+                const job = { cancelled: false, page, generation, strokes: page.strokes,
+                    strokeCount, width: canvas.width, height: canvas.height,
+                    background: page.backgroundImage, images: page.images, baked: page.bakedBackground };
                 pendingPageRepaints.set(canvas, job);
                 const strokes = getRemoteLiveErasePreviewStrokes(page);
                 const covers = !pendingCleanOriginalSwap ? (page.legacyCoverStrokes || []) : [];
