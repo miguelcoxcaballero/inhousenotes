@@ -63,6 +63,20 @@ impl Skeleton {
         let world = scene.world_matrices();
         let top = s.joints.iter().find(|n| scene.nodes[**n].parent.is_none_or(|p| !node_to_joint.contains_key(&p)));
         let root_parent = top.and_then(|n| scene.nodes[*n].parent).map(|p| world[p]).unwrap_or(Mat4::IDENTITY);
+        // Joints whose scene parent is not a joint (skipped helper nodes, or
+        // several root chains): express their rest relative to the joint
+        // parent (or the root parent) so the skipped transforms are kept.
+        let mut joints = joints;
+        for (j, n) in s.joints.iter().enumerate() {
+            let direct = scene.nodes[*n].parent;
+            let jp = joints[j].parent.map(|p| s.joints[p]);
+            if direct == jp && jp.is_some() || (jp.is_none() && direct == top.and_then(|t| scene.nodes[*t].parent)) {
+                continue;
+            }
+            let base = jp.map(|p| world[p]).unwrap_or(root_parent);
+            let (sc, r, t) = (base.inverse() * world[*n]).to_scale_rotation_translation();
+            joints[j].rest = Trs { t, r: r.normalize(), s: sc };
+        }
         let mut order = Vec::with_capacity(joints.len());
         let mut placed = vec![false; joints.len()];
         while order.len() < joints.len() {

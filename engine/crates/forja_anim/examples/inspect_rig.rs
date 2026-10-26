@@ -4,7 +4,7 @@ fn main() {
     let scene = if path.ends_with(".bvh") {
         forja_assets::bvh::load_bvh(std::path::Path::new(&path), forja_assets::bvh::CMU_SCALE).expect("load")
     } else {
-        forja_assets::load_gltf(std::path::Path::new(&path)).expect("load")
+        forja_assets::load_model(std::path::Path::new(&path)).expect("load")
     };
     let skels: Vec<_> = if scene.skins.is_empty() {
         vec![forja_anim::Skeleton::from_nodes(&scene)]

@@ -815,3 +815,383 @@ license = "per model (CC-BY or CC0, checked on download)"
 author = "Sketchfab creators"
 homepage = "https://sketchfab.com/search?features=downloadable&licenses=322a749bcfa841b29dff1e8a1bb74b0b&type=models"
 manual = { url = "https://sketchfab.com/settings/password", note = "Photoreal rigged humans are not available as CC0 direct downloads. Get an API token on Sketchfab (Settings > Password & API), then: SKETCHFAB_TOKEN=... cargo run -p forja_fetch -- sketchfab <model uid>. Mixamo characters can be imported from a downloaded zip with `forja_fetch import`." }
+
+# --------------------------------------------- Microsoft Rocketbox avatars (MIT)
+
+[[asset]]
+id = "rocketbox_male_adult_01"
+name = "Rocketbox avatar Male_Adult_01 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Export/Male_Adult_01.fbx", path = "Export/Male_Adult_01.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Export/Male_Adult_01_facial.fbx", path = "Export/Male_Adult_01_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_body_color.tga", path = "Textures/m002_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_body_normal.tga", path = "Textures/m002_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_body_specular.tga", path = "Textures/m002_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_head_color.tga", path = "Textures/m002_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_head_normal.tga", path = "Textures/m002_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_head_specular.tga", path = "Textures/m002_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_01/Textures/m002_opacity_color.tga", path = "Textures/m002_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_02"
+name = "Rocketbox avatar Male_Adult_02 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Export/Male_Adult_02.fbx", path = "Export/Male_Adult_02.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Export/Male_Adult_02_facial.fbx", path = "Export/Male_Adult_02_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_body_color.tga", path = "Textures/m003_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_body_normal.tga", path = "Textures/m003_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_body_specular.tga", path = "Textures/m003_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_color.tga", path = "Textures/m003_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_normal - wr.tga", path = "Textures/m003_head_normal - wr.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_normal.tga", path = "Textures/m003_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_head_specular.tga", path = "Textures/m003_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_02/Textures/m003_opacity_color.tga", path = "Textures/m003_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_06"
+name = "Rocketbox avatar Male_Adult_06 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Export/Male_Adult_06.fbx", path = "Export/Male_Adult_06.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Export/Male_Adult_06_facial.fbx", path = "Export/Male_Adult_06_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_body_color.tga", path = "Textures/m011_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_body_normal.tga", path = "Textures/m011_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_body_specular.tga", path = "Textures/m011_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_head_color.tga", path = "Textures/m011_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_head_normal.tga", path = "Textures/m011_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_head_specular.tga", path = "Textures/m011_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_06/Textures/m011_opacity_color.tga", path = "Textures/m011_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_08"
+name = "Rocketbox avatar Male_Adult_08 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Export/Male_Adult_08.fbx", path = "Export/Male_Adult_08.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Export/Male_Adult_08_facial.fbx", path = "Export/Male_Adult_08_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_body_color.tga", path = "Textures/m014_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_body_normal.tga", path = "Textures/m014_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_body_specular.tga", path = "Textures/m014_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_head_color.tga", path = "Textures/m014_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_head_normal.tga", path = "Textures/m014_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_head_specular.tga", path = "Textures/m014_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_08/Textures/m014_opacity_color.tga", path = "Textures/m014_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_09"
+name = "Rocketbox avatar Male_Adult_09 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Export/Male_Adult_09.fbx", path = "Export/Male_Adult_09.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Export/Male_Adult_09_facial.fbx", path = "Export/Male_Adult_09_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Textures/m017_body_color.tga", path = "Textures/m017_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Textures/m017_body_normal.tga", path = "Textures/m017_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Textures/m017_body_specular.tga", path = "Textures/m017_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Textures/m017_head_color.tga", path = "Textures/m017_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Textures/m017_head_normal.tga", path = "Textures/m017_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Textures/m017_head_specular.tga", path = "Textures/m017_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_09/Textures/m017_opacity_color.tga", path = "Textures/m017_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_11"
+name = "Rocketbox avatar Male_Adult_11 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Export/Male_Adult_11.fbx", path = "Export/Male_Adult_11.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Export/Male_Adult_11_facial.fbx", path = "Export/Male_Adult_11_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Textures/m001_body_color.tga", path = "Textures/m001_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Textures/m001_body_normal.tga", path = "Textures/m001_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Textures/m001_body_specular.tga", path = "Textures/m001_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Textures/m001_head_color.tga", path = "Textures/m001_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Textures/m001_head_normal.tga", path = "Textures/m001_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_11/Textures/m001_head_specular.tga", path = "Textures/m001_head_specular.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_14"
+name = "Rocketbox avatar Male_Adult_14 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Export/Male_Adult_14.fbx", path = "Export/Male_Adult_14.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Export/Male_Adult_14_facial.fbx", path = "Export/Male_Adult_14_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Textures/m012_body_color.tga", path = "Textures/m012_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Textures/m012_body_normal.tga", path = "Textures/m012_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Textures/m012_body_specular.tga", path = "Textures/m012_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Textures/m012_head_color.tga", path = "Textures/m012_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Textures/m012_head_normal.tga", path = "Textures/m012_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_14/Textures/m012_head_specular.tga", path = "Textures/m012_head_specular.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_16"
+name = "Rocketbox avatar Male_Adult_16 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Export/Male_Adult_16.fbx", path = "Export/Male_Adult_16.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Export/Male_Adult_16_facial.fbx", path = "Export/Male_Adult_16_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Textures/m019_body_color.tga", path = "Textures/m019_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Textures/m019_body_normal.tga", path = "Textures/m019_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Textures/m019_body_specular.tga", path = "Textures/m019_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Textures/m019_head_color.tga", path = "Textures/m019_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Textures/m019_head_normal.tga", path = "Textures/m019_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_16/Textures/m019_head_specular.tga", path = "Textures/m019_head_specular.tga" },
+]
+
+[[asset]]
+id = "rocketbox_male_adult_20"
+name = "Rocketbox avatar Male_Adult_20 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Export/Male_Adult_20.fbx", path = "Export/Male_Adult_20.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Export/Male_Adult_20_facial.fbx", path = "Export/Male_Adult_20_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Textures/m027_body_color.tga", path = "Textures/m027_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Textures/m027_body_normal.tga", path = "Textures/m027_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Textures/m027_body_specular.tga", path = "Textures/m027_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Textures/m027_head_color.tga", path = "Textures/m027_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Textures/m027_head_normal.tga", path = "Textures/m027_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Male_Adult_20/Textures/m027_head_specular.tga", path = "Textures/m027_head_specular.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_01"
+name = "Rocketbox avatar Female_Adult_01 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Export/Female_Adult_01.fbx", path = "Export/Female_Adult_01.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Export/Female_Adult_01_facial.fbx", path = "Export/Female_Adult_01_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_body_color.tga", path = "Textures/f001_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_body_normal.tga", path = "Textures/f001_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_body_specular.tga", path = "Textures/f001_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_color.tga", path = "Textures/f001_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_normal.tga", path = "Textures/f001_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_normal_wrinkle.tga", path = "Textures/f001_head_normal_wrinkle.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_head_specular.tga", path = "Textures/f001_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_01/Textures/f001_opacity_color.tga", path = "Textures/f001_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_05"
+name = "Rocketbox avatar Female_Adult_05 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Export/Female_Adult_05.fbx", path = "Export/Female_Adult_05.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Export/Female_Adult_05_facial.fbx", path = "Export/Female_Adult_05_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_body_color.tga", path = "Textures/f005_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_body_normal.tga", path = "Textures/f005_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_body_specular.tga", path = "Textures/f005_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_head_color.tga", path = "Textures/f005_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_head_normal.tga", path = "Textures/f005_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_head_specular.tga", path = "Textures/f005_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_05/Textures/f005_opacity_color.tga", path = "Textures/f005_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_07"
+name = "Rocketbox avatar Female_Adult_07 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Export/Female_Adult_07.fbx", path = "Export/Female_Adult_07.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Export/Female_Adult_07_facial.fbx", path = "Export/Female_Adult_07_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Textures/f007_body_color.tga", path = "Textures/f007_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Textures/f007_body_normal.tga", path = "Textures/f007_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Textures/f007_body_specular.tga", path = "Textures/f007_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Textures/f007_head_color.tga", path = "Textures/f007_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Textures/f007_head_normal.tga", path = "Textures/f007_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Textures/f007_head_specular.tga", path = "Textures/f007_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_07/Textures/f007_opacity_color.tga", path = "Textures/f007_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_08"
+name = "Rocketbox avatar Female_Adult_08 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Export/Female_Adult_08.fbx", path = "Export/Female_Adult_08.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Export/Female_Adult_08_facial.fbx", path = "Export/Female_Adult_08_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_body_color.tga", path = "Textures/f008_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_body_normal.tga", path = "Textures/f008_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_body_specular.tga", path = "Textures/f008_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_head_color.tga", path = "Textures/f008_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_head_normal.tga", path = "Textures/f008_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_head_specular.tga", path = "Textures/f008_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_08/Textures/f008_opacity_color.tga", path = "Textures/f008_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_09"
+name = "Rocketbox avatar Female_Adult_09 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Export/Female_Adult_09.fbx", path = "Export/Female_Adult_09.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Export/Female_Adult_09_facial.fbx", path = "Export/Female_Adult_09_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Textures/f009_body_color.tga", path = "Textures/f009_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Textures/f009_body_normal.tga", path = "Textures/f009_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Textures/f009_body_specular.tga", path = "Textures/f009_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Textures/f009_head_color.tga", path = "Textures/f009_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Textures/f009_head_normal.tga", path = "Textures/f009_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Textures/f009_head_specular.tga", path = "Textures/f009_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_09/Textures/f009_opacity_color.tga", path = "Textures/f009_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_11"
+name = "Rocketbox avatar Female_Adult_11 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Export/Female_Adult_11.fbx", path = "Export/Female_Adult_11.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Export/Female_Adult_11_facial.fbx", path = "Export/Female_Adult_11_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Textures/f011_body_color.tga", path = "Textures/f011_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Textures/f011_body_normal.tga", path = "Textures/f011_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Textures/f011_body_specular.tga", path = "Textures/f011_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Textures/f011_head_color.tga", path = "Textures/f011_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Textures/f011_head_normal.tga", path = "Textures/f011_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Textures/f011_head_specular.tga", path = "Textures/f011_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_11/Textures/f011_opacity_color.tga", path = "Textures/f011_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_13"
+name = "Rocketbox avatar Female_Adult_13 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Export/Female_Adult_13.fbx", path = "Export/Female_Adult_13.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Export/Female_Adult_13_facial.fbx", path = "Export/Female_Adult_13_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Textures/f019_body_color.tga", path = "Textures/f019_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Textures/f019_body_normal.tga", path = "Textures/f019_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Textures/f019_body_specular.tga", path = "Textures/f019_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Textures/f019_head_color.tga", path = "Textures/f019_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Textures/f019_head_normal.tga", path = "Textures/f019_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Textures/f019_head_specular.tga", path = "Textures/f019_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_13/Textures/f019_opacity_color.tga", path = "Textures/f019_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_15"
+name = "Rocketbox avatar Female_Adult_15 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Export/Female_Adult_15.fbx", path = "Export/Female_Adult_15.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Export/Female_Adult_15_facial.fbx", path = "Export/Female_Adult_15_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Textures/f018_body_color.tga", path = "Textures/f018_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Textures/f018_body_normal.tga", path = "Textures/f018_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Textures/f018_body_specular.tga", path = "Textures/f018_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Textures/f018_head_color.tga", path = "Textures/f018_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Textures/f018_head_normal.tga", path = "Textures/f018_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Textures/f018_head_specular.tga", path = "Textures/f018_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_15/Textures/f018_opacity_color.tga", path = "Textures/f018_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_female_adult_17"
+name = "Rocketbox avatar Female_Adult_17 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Export/Female_Adult_17.fbx", path = "Export/Female_Adult_17.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Export/Female_Adult_17_facial.fbx", path = "Export/Female_Adult_17_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Textures/f006_body_color.tga", path = "Textures/f006_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Textures/f006_body_normal.tga", path = "Textures/f006_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Textures/f006_body_specular.tga", path = "Textures/f006_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Textures/f006_head_color.tga", path = "Textures/f006_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Textures/f006_head_normal.tga", path = "Textures/f006_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Textures/f006_head_specular.tga", path = "Textures/f006_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Adults/Female_Adult_17/Textures/f006_opacity_color.tga", path = "Textures/f006_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_business_male_01"
+name = "Rocketbox avatar Business_Male_01 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Export/Business_Male_01.fbx", path = "Export/Business_Male_01.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Export/Business_Male_01_facial.fbx", path = "Export/Business_Male_01_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Textures/m005_body_color.tga", path = "Textures/m005_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Textures/m005_body_normal.tga", path = "Textures/m005_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Textures/m005_body_specular.tga", path = "Textures/m005_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Textures/m005_head_color.tga", path = "Textures/m005_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Textures/m005_head_normal.tga", path = "Textures/m005_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Textures/m005_head_specular.tga", path = "Textures/m005_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Male_01/Textures/m005_opacity_color.tga", path = "Textures/m005_opacity_color.tga" },
+]
+
+[[asset]]
+id = "rocketbox_business_female_01"
+name = "Rocketbox avatar Business_Female_01 (rigged, color/normal/specular, facial blendshapes)"
+kind = "character"
+license = "MIT"
+author = "Microsoft Rocketbox (Mar Gonzalez-Franco et al.)"
+homepage = "https://github.com/microsoft/Microsoft-Rocketbox"
+files = [
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Export/Business_Female_01.fbx", path = "Export/Business_Female_01.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Export/Business_Female_01_facial.fbx", path = "Export/Business_Female_01_facial.fbx" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Textures/f014_body_color.tga", path = "Textures/f014_body_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Textures/f014_body_normal.tga", path = "Textures/f014_body_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Textures/f014_body_specular.tga", path = "Textures/f014_body_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Textures/f014_head_color.tga", path = "Textures/f014_head_color.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Textures/f014_head_normal.tga", path = "Textures/f014_head_normal.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Textures/f014_head_specular.tga", path = "Textures/f014_head_specular.tga" },
+    { url = "https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/master/Assets/Avatars/Professions/Business_Female_01/Textures/f014_opacity_color.tga", path = "Textures/f014_opacity_color.tga" },
+]

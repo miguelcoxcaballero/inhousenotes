@@ -257,6 +257,7 @@ struct Pipelines {
     double_sided: wgpu::RenderPipeline,
     skinned: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    skinned_blend: wgpu::RenderPipeline,
     shadow: wgpu::RenderPipeline,
     shadow_skinned: wgpu::RenderPipeline,
     sky: wgpu::RenderPipeline,
@@ -487,6 +488,7 @@ impl Renderer {
         let double_sided = scene_pipeline("double", "vs_main", false, None, false);
         let skinned = scene_pipeline("skinned", "vs_skinned", true, None, false);
         let blend = scene_pipeline("blend", "vs_main", false, None, true);
+        let skinned_blend = scene_pipeline("skinned_blend", "vs_skinned", true, None, true);
 
         let shadow_pipeline = |vs: &str, skinned: bool| {
             let buffers = vertex_layouts(skinned);
@@ -582,6 +584,7 @@ impl Renderer {
             double_sided,
             skinned,
             blend,
+                skinned_blend,
             shadow: shadow_static,
             shadow_skinned,
             sky: sky_pipeline,
@@ -900,7 +903,7 @@ impl Renderer {
                 },
                 m.unlit as u32 as f32,
             ],
-            layers: [m.clearcoat, m.clearcoat_roughness, m.transmission, 0.0],
+            layers: [m.clearcoat, m.clearcoat_roughness, m.transmission, m.subsurface],
         };
         let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(&m.name), contents: bytemuck::bytes_of(&uniforms), usage: wgpu::BufferUsages::UNIFORM });
         let base = pick(m.base_color_tex, white_srgb);
@@ -1134,7 +1137,7 @@ impl Renderer {
         let key = |r: &Renderer, mesh: u32, raw: &InstanceRaw| {
             let m = &r.meshes[mesh as usize];
             let mat = &r.materials[m.material as usize];
-            let pipe = if mat.blend { 3 } else if raw.extra[1] == 1 { 2 } else if mat.double_sided { 1 } else { 0 };
+            let pipe = if mat.blend { if raw.extra[1] == 1 { 4 } else { 3 } } else if raw.extra[1] == 1 { 2 } else if mat.double_sided { 1 } else { 0 };
             (pipe, m.material, mesh, raw.extra[2])
         };
         main.sort_by_key(|(m, raw)| key(self, *m, raw));
@@ -1258,7 +1261,7 @@ impl Renderer {
             // Opaque first; the sky goes after opaque and before blended.
             let mut sky_drawn = false;
             while i <= main.len() {
-                let blend_start = i == main.len() || key(self, main[i].0, &main[i].1).0 == 3;
+                let blend_start = i == main.len() || key(self, main[i].0, &main[i].1).0 >= 3;
                 if blend_start && !sky_drawn {
                     pass.set_pipeline(&self.pipelines.sky);
                     pass.draw(0..3, 0..1);
@@ -1280,6 +1283,7 @@ impl Renderer {
                         0 => &self.pipelines.opaque,
                         1 => &self.pipelines.double_sided,
                         2 => &self.pipelines.skinned,
+                        4 => &self.pipelines.skinned_blend,
                         _ => &self.pipelines.blend,
                     });
                     pass.set_bind_group(0, &self.frame_bind, &[]);
@@ -1293,7 +1297,7 @@ impl Renderer {
                 }
                 let mesh = &self.meshes[mesh_id as usize];
                 pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                if pipe == 2 && let Some(s) = &mesh.skin {
+                if (pipe == 2 || pipe == 4) && let Some(s) = &mesh.skin {
                     pass.set_vertex_buffer(2, s.slice(..));
                 }
                 let (ib, count) = mesh.indices(lod);

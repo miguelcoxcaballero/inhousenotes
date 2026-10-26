@@ -149,21 +149,44 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let ngc = ng;
     var color = vec3<f32>(0.0);
     var glass_sun = vec3<f32>(0.0);
+    // Skin: light diffuses under the surface. Diffuse uses a softened
+    // normal and per-channel wrap so red reaches further past the
+    // terminator, and shadow edges bleed red (pre-integrated SSS, cheap).
+    let sss = material.layers.w;
+    let nd = normalize(mix(n, ng, 0.55 * sss));
+    let ndl = dot(nd, l);
+    var shadow = 1.0;
+    if (nl > 0.0 || (sss > 0.0 && ndl > -0.5)) {
+        shadow = shadow_factor(in.world_pos, ng, in.view_depth);
+    }
+    var dterm = vec3<f32>(nl * shadow);
+    if (sss > 0.0) {
+        // Measured skin scatters red light ~3x further than blue; keep the
+        // wrap small so lit skin stays neutral and only the terminator and
+        // shadow edges warm up.
+        let w = vec3<f32>(0.10, 0.035, 0.015) * sss;
+        let wrapv = clamp((vec3<f32>(ndl) + w) / (vec3<f32>(1.0) + w), vec3<f32>(0.0), vec3<f32>(1.0));
+        dterm = wrapv * shadow;
+    }
     if (nl > 0.0) {
-        let shadow = shadow_factor(in.world_pos, ng, in.view_depth);
-        glass_sun = d_ggx(nh, a) * v_smith(nv, nl, a) * frame.sun_color.rgb * nl * shadow;
         let f = f_schlick(f0, vh);
-        let spec = f * d_ggx(nh, a) * v_smith(nv, nl, a);
-        let diff = (vec3<f32>(1.0) - f) * diffuse_color / PI;
-        var lit = diff + spec;
+        glass_sun = d_ggx(nh, a) * v_smith(nv, nl, a) * frame.sun_color.rgb * nl * shadow;
+        var spec = f * d_ggx(nh, a) * v_smith(nv, nl, a);
+        if (sss > 0.0) {
+            // Two specular lobes: broad oily sheen plus a tight highlight.
+            let a2 = max(a * 0.35, 0.02);
+            spec = f * (0.8 * d_ggx(nh, a) * v_smith(nv, nl, a) + 0.2 * d_ggx(nh, a2) * v_smith(nv, nl, a2));
+        }
+        var lit = spec * nl * shadow;
         if (cc > 0.0) {
             let fc = f_schlick(vec3<f32>(0.04), vh).x * cc;
             let ncl = max(dot(ngc, l), 0.0);
             let spec_c = fc * d_ggx(max(dot(ngc, h), 0.0), cc_a) * v_smith(max(dot(ngc, v), 1e-4), ncl, cc_a);
-            lit = lit * (1.0 - fc) + vec3<f32>(spec_c);
+            lit = lit * (1.0 - fc) + vec3<f32>(spec_c) * nl * shadow;
         }
-        color += lit * frame.sun_color.rgb * nl * shadow;
+        color += lit * frame.sun_color.rgb;
     }
+    color += (vec3<f32>(1.0) - f_schlick(f0, max(dot(nd, normalize(v + l)), 0.0))) * diffuse_color / PI * dterm * frame.sun_color.rgb;
     // Point lights with smooth range falloff (Karis).
     let count = i32(frame.params.x);
     for (var i = 0; i < count; i++) {
@@ -186,7 +209,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     // Image-based ambient from the analytic sky.
     let env = env_brdf(f0, rough, nv);
     let spec_occ = clamp(pow(nv + ao, exp2(-16.0 * rough - 1.0)) - 1.0 + ao, 0.0, 1.0);
-    color += diffuse_color * ambient_sky(n) * ao;
+    color += diffuse_color * ambient_sky(nd) * ao;
     color += env_reflection(reflect(-v, n), rough) * env * spec_occ;
     if (cc > 0.0) {
         let fcv = f_schlick(vec3<f32>(0.04), max(dot(ngc, v), 1e-4)).x * cc;
