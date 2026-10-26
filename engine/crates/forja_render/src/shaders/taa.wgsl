@@ -120,6 +120,11 @@ fn fs_taa(in: FsIn) -> @location(0) vec4<f32> {
     let m = max(ts.x, max(ts.y, ts.z));
     let clipped = select(hist, center + off / m, m > 1.0);
     let c = to_ycocg(tm(cur));
-    let outc = mix(clipped, c, taa.params.x);
+    // A moving camera resamples the history every frame, which blurs it:
+    // trust the current frame more the further the history moved (0.1 at
+    // rest up to 0.25 from 3 px), trading a little aliasing for detail.
+    let motion = length(hist_pix - in.pos.xy);
+    let w_cur = select(taa.params.x, clamp(taa.params.x * (1.0 + 0.5 * motion), taa.params.x, 0.25), taa.params.w < 0.5);
+    let outc = mix(clipped, c, w_cur);
     return vec4<f32>(itm(from_ycocg(outc)), 1.0);
 }

@@ -1596,11 +1596,14 @@ impl Renderer {
             0,
             bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [env.exposure, env.bloom, env.vignette, 0.0] }),
         );
-        // Final pass: FXAA without TAA, CAS sharpening with it.
+        // Final pass: FXAA without TAA, CAS sharpening with it (stronger
+        // while the camera moves, when the temporal filter is softer).
+        let still = tf.taa_params[3] > 0.5;
+        let sharpen = if still { self.settings.sharpen } else { (self.settings.sharpen * 1.6).min(1.0) };
         self.queue.write_buffer(
             &pu[pu.len() - 1],
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, self.settings.sharpen, 0.0, 0.0] }),
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!self.settings.taa) as u32 as f32, sharpen, 0.0, 0.0] }),
         );
 
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
@@ -1862,10 +1865,19 @@ impl Renderer {
         self.read_image(&tex)
     }
 
-    /// Renders into a new texture (so callers can draw UI on top before reading it back).
-    pub fn render_offscreen(&mut self, frame: &FrameDesc, width: u32, height: u32) -> wgpu::Texture {
+    /// One real-time frame read back to RGBA8: unlike
+    /// [`Renderer::render_to_image`] it keeps the temporal history, so a
+    /// sequence of calls shows TAA, SSR and the noise of the screen-space
+    /// effects as a moving game camera sees them.
+    pub fn render_live_to_image(&mut self, frame: &FrameDesc, width: u32, height: u32) -> image::RgbaImage {
         self.resize(width, height);
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+        let tex = self.offscreen_texture(width, height);
+        self.render(frame, &tex.create_view(&Default::default()));
+        self.read_image(&tex)
+    }
+
+    fn offscreen_texture(&self, width: u32, height: u32) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen"),
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
             mip_level_count: 1,
@@ -1874,7 +1886,13 @@ impl Renderer {
             format: self.output_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
-        });
+        })
+    }
+
+    /// Renders into a new texture (so callers can draw UI on top before reading it back).
+    pub fn render_offscreen(&mut self, frame: &FrameDesc, width: u32, height: u32) -> wgpu::Texture {
+        self.resize(width, height);
+        let tex = self.offscreen_texture(width, height);
         // A still image: start a fresh history and accumulate jittered
         // frames so TAA (and the per-frame noise of GTAO, PCSS and contact
         // shadows) converges to a supersampled result.
