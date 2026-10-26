@@ -2814,8 +2814,6 @@
 
             const canvas = document.createElement('canvas');
             canvas.className = 'page-canvas';
-            // Request the browser's low-latency canvas path before its first paint.
-            canvas.getContext('2d', { desynchronized: true });
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
             const pageCanvasSizing = resizePageCanvas(canvas, pageWidth, pageHeight, state.zoom);
             canvas.dataset.page = pageIndex;
@@ -2832,7 +2830,6 @@
 
             const cursorOverlay = document.createElement('canvas');
             cursorOverlay.className = 'cursor-overlay';
-            cursorOverlay.getContext('2d', { desynchronized: true });
             cursorOverlay.dataset.page = pageIndex;
             const cursorOverlayScale = getCursorOverlayScale(state.zoom);
             cursorOverlay.width = Math.max(1, Math.round(pageWidth * cursorOverlayScale));
@@ -4276,33 +4273,13 @@
                     currentStroke.points.push({x:pos.x,y:pos.y,p:sample.pressure || last.p || .5});
                 }
             };
-            let paintedStroke = null;
-            let paintedPointCount = 0;
-            let lastDirectPenPaintAt = -Infinity;
-            const paintPenTail = () => {
-                if (!isDrawing || !currentStroke) return;
-                const count = currentStroke.points.length;
-                if (paintedStroke === currentStroke && paintedPointCount === count) return;
-                updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
-                paintedStroke = currentStroke;
-                paintedPointCount = count;
-                if (typeof publishLiveStrokePreview === 'function') publishLiveStrokePreview(currentStrokePageId,currentStroke);
-            };
-            const schedulePenPaint = (raw = false) => {
-                if (!currentStroke || (paintedStroke === currentStroke && paintedPointCount === currentStroke.points.length)) return;
-                // Raw pen samples arrive before the frame-aligned pointermove.
-                // Present them immediately, capped at 120 updates/s; keep a RAF
-                // for the newest tail when a device delivers samples faster.
-                // Ordinary pointermove-only browsers retain frame batching.
-                const now = performance.now();
-                if (raw && (paintedStroke !== currentStroke || now - lastDirectPenPaintAt >= 1000 / 120)) {
-                    lastDirectPenPaintAt = now;
-                    paintPenTail();
-                }
+            const schedulePenPaint = () => {
                 if (paintFrame) return;
                 paintFrame = requestAnimationFrame(() => {
                     paintFrame = 0;
-                    paintPenTail();
+                    if (!isDrawing || !currentStroke) return;
+                    updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
+                    if (typeof publishLiveStrokePreview === 'function') publishLiveStrokePreview(currentStrokePageId,currentStroke);
                 });
             };
 
@@ -4460,7 +4437,7 @@
                 }
 
                 appendPenSamples(e);
-                schedulePenPaint(e.type === 'pointerrawupdate');
+                schedulePenPaint();
             };
             canvas.addEventListener('pointermove', moveDrawing);
             canvas.addEventListener('pointerrawupdate', moveDrawing);

@@ -48,7 +48,7 @@ test('empty coalesced events, raw samples and the release tail retain a curved p
     return {beforeFrame,frameCalls,strokes:__IHN_TEST_API__.snapshot().pages[0].strokes.filter(s=>s.color==='#E81010')};
   });
   await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
-  expect(result.beforeFrame).toBeGreaterThan(0);expect(result.frameCalls - result.beforeFrame).toBeLessThanOrEqual(3);
+  expect(result.beforeFrame).toBe(0);expect(result.frameCalls).toBeGreaterThan(0);expect(result.frameCalls).toBeLessThanOrEqual(3);
   expect(result.strokes).toHaveLength(1);
   const points=result.strokes[0].points;
   expect(points.length).toBeGreaterThan(140);expect(points.length).toBeLessThan(210);
@@ -175,33 +175,44 @@ test('a full-page copy stops when its save is cancelled',async({page})=>{
  expect(result.saved).toBe(false);expect(result.yields).toBe(1);
 });
 
-for (const raw of [true, false]) test(`pen tail uses ${raw ? 'immediate raw input' : 'frame-batched fallback'} without repainting duplicate samples`, async ({page,context}) => {
-  const {cdp,target} = await startPen(page,context,40);
-  const result = await page.evaluate(async raw => {
-    const c=document.querySelector('canvas.page-canvas[data-page="0"]'),r=c.getBoundingClientRect();
-    const original=CanvasRenderingContext2D.prototype.stroke;
-    let paints=0;
-    CanvasRenderingContext2D.prototype.stroke=function(...args){paints++;return original.apply(this,args);};
-    const time=performance.now();
-    const send=type=>{
-      const e=new PointerEvent(type,{pointerId:penInputId,pointerType:'pen',buttons:1,pressure:.5,bubbles:true,
-        clientX:r.left+140*r.width/794,clientY:r.top+420*r.height/1123});
-      Object.defineProperty(e,'timeStamp',{value:time});c.dispatchEvent(e);
-    };
-    send(raw ? 'pointerrawupdate' : 'pointermove');
-    const immediate=paints;
-    for(let i=0;i<200;i++) send('pointermove');
-    const duplicates=paints;
-    await new Promise(requestAnimationFrame);
-    const afterFrame=paints;
-    await new Promise(requestAnimationFrame);
-    const idleFrame=paints;
-    CanvasRenderingContext2D.prototype.stroke=original;
-    return {immediate,duplicates,afterFrame,idleFrame};
-  },raw);
-  expect(result.immediate).toBe(raw ? 1 : 0);
-  expect(result.duplicates).toBe(result.immediate);
-  expect(result.afterFrame).toBe(1);
-  expect(result.idleFrame).toBe(1);
-  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+// Check the composited screenshot as well as stored points: a canvas can hold
+// ink while a low-latency GPU surface fails to present it on screen.
+test('ink is visible before and after reopening, and new ink remains writable', async ({page,context}) => {
+  const {cdp,target}=await startPen(page,context,40);
+  async function draw(endX) {
+    const end=await page.evaluate(endX=>{
+      const r=document.querySelector('canvas.page-canvas[data-page="0"]').getBoundingClientRect();
+      return {x:r.left+endX*r.width/794,y:r.top+400*r.height/1123};
+    },endX);
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',...end,buttons:1,pointerType:'pen'});
+    await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...end,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+  }
+  async function visibleRedInk() {
+    const png=await page.locator('canvas.page-canvas[data-page="0"]').screenshot();
+    return page.evaluate(async url=>{
+      const image=new Image();image.src=url;await image.decode();
+      const c=document.createElement('canvas');c.width=image.width;c.height=image.height;
+      const ctx=c.getContext('2d');ctx.drawImage(image,0,0);
+      const sx=c.width/794,sy=c.height/1123;
+      const pixels=ctx.getImageData(Math.floor(90*sx),Math.floor(390*sy),Math.ceil(170*sx),Math.ceil(20*sy)).data;
+      let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>130&&pixels[i+1]<90&&pixels[i+2]<90)ink++;
+      return ink;
+    },`data:image/png;base64,${png.toString('base64')}`);
+  }
+  await draw(180);
+  expect(await visibleRedInk()).toBeGreaterThan(20);
+  const before=await page.evaluate(()=>__IHN_TEST_API__.snapshot().pages[0].strokes);
+  await page.evaluate(()=>__IHN_TEST_API__.checkpointBeforeLeaving());
+  await page.reload();await page.waitForFunction(()=>window.__IHN_TEST_API__);
+  await page.evaluate(async()=>{await __IHN_TEST_API__.loadPage(0);await __IHN_TEST_API__.showEditorForTest();});
+  await page.waitForFunction(()=>!__IHN_TEST_API__.densePaintStatusForTest().pending);
+  expect(await page.evaluate(()=>__IHN_TEST_API__.snapshot().pages[0].strokes)).toEqual(before);
+  expect(await visibleRedInk()).toBeGreaterThan(20);
+  expect(await page.evaluate(()=>document.querySelector('canvas.page-canvas').getContext('2d').getContextAttributes().desynchronized)).toBe(false);
+  await page.locator('[data-tool="pen"][data-color="#E81010"]').click();
+  const start=await page.evaluate(()=>{const r=document.querySelector('canvas.page-canvas[data-page="0"]').getBoundingClientRect();return {x:r.left+190*r.width/794,y:r.top+400*r.height/1123};});
+  await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',...start,button:'left',buttons:1,clickCount:1,pointerType:'pen'});
+  await draw(250);
+  expect(await visibleRedInk()).toBeGreaterThan(40);
+  expect(await page.evaluate(()=>__IHN_TEST_API__.snapshot().pages[0].strokes.length)).toBe(before.length+1);
 });
