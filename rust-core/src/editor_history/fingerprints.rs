@@ -75,35 +75,55 @@ pub fn js_number_to_string(value: f64, out: &mut Vec<u8>) {
     }
 }
 
-/// `Number.isFinite(v) ? Math.round(v * scale) / scale : 0`, printed as JavaScript prints it.
-/// `scale` is 100 (or 10000 for rotation); `decimals` is its digit count.
-pub fn write_rounded(out: &mut Vec<u8>, value: f64, scale: u64, decimals: usize) {
-    if !value.is_finite() { out.push(b'0'); return; }
-    let rounded = round_half_up(value * scale as f64);
-    if rounded.abs() < 1e15 {
-        // n / scale for an integer n below 1e15 has at most 15 significant digits, so its
-        // shortest round-trip form is exactly the decimal expansion (DBL_DIG guarantee).
-        if rounded == 0.0 { out.push(b'0'); return; }
-        if rounded < 0.0 { out.push(b'-'); }
-        let magnitude = rounded.abs() as u64;
-        let (whole, fraction) = (magnitude / scale, magnitude % scale);
-        let mut digits = [0u8; 20];
-        let mut length = 0;
-        let mut rest = whole;
-        loop { digits[length] = b'0' + (rest % 10) as u8; length += 1; rest /= 10; if rest == 0 { break; } }
-        while length > 0 { length -= 1; out.push(digits[length]); }
-        if fraction != 0 {
-            let mut text = [b'0'; 8];
-            let mut rest = fraction;
-            for slot in (0..decimals).rev() { text[slot] = b'0' + (rest % 10) as u8; rest /= 10; }
-            let mut end = decimals;
-            while text[end - 1] == b'0' { end -= 1; }
-            out.push(b'.');
-            out.extend_from_slice(&text[..end]);
-        }
-    } else {
-        js_number_to_string(rounded / scale as f64, out);
+/// Plain-decimal text of `n / SCALE` for an integer `n` with at most 15 digits; no trailing zeros, "0" for zero.
+/// Returns the new write position. `buf` must have room for 24 bytes.
+#[inline(always)]
+fn put_decimal<const SCALE: u64, const DECIMALS: usize>(buf: &mut [u8], mut pos: usize, rounded: f64) -> usize {
+    if rounded == 0.0 { buf[pos] = b'0'; return pos + 1; }
+    if rounded < 0.0 { buf[pos] = b'-'; pos += 1; }
+    let magnitude = rounded.abs() as u64;
+    let (whole, fraction) = (magnitude / SCALE, magnitude % SCALE);
+    let mut digits = [0u8; 20];
+    let mut length = 0;
+    let mut rest = whole;
+    loop { digits[length] = b'0' + (rest % 10) as u8; length += 1; rest /= 10; if rest == 0 { break; } }
+    while length > 0 { length -= 1; buf[pos] = digits[length]; pos += 1; }
+    if fraction != 0 {
+        let mut text = [b'0'; DECIMALS];
+        let mut rest = fraction;
+        for slot in (0..DECIMALS).rev() { text[slot] = b'0' + (rest % 10) as u8; rest /= 10; }
+        let mut end = DECIMALS;
+        while text[end - 1] == b'0' { end -= 1; }
+        buf[pos] = b'.'; pos += 1;
+        buf[pos..pos + end].copy_from_slice(&text[..end]);
+        pos += end;
     }
+    pos
+}
+
+/// Write `Number.isFinite(v) ? Math.round(v * SCALE) / SCALE : 0` as JavaScript prints it at `buf[pos..]`
+/// (24 bytes of room needed). Returns the new position. `SCALE` is 100, or 10000 for rotation.
+#[inline(always)]
+fn put_rounded<const SCALE: u64, const DECIMALS: usize>(buf: &mut [u8], pos: usize, value: f64) -> usize {
+    if !value.is_finite() { buf[pos] = b'0'; return pos + 1; }
+    let rounded = round_half_up(value * SCALE as f64);
+    if rounded.abs() < 1e15 {
+        // n / SCALE for an integer n below 1e15 has at most 15 significant digits, so its
+        // shortest round-trip form is exactly the decimal expansion (DBL_DIG guarantee).
+        put_decimal::<SCALE, DECIMALS>(buf, pos, rounded)
+    } else {
+        let mut text = Vec::with_capacity(32);
+        js_number_to_string(rounded / SCALE as f64, &mut text);
+        buf[pos..pos + text.len()].copy_from_slice(&text);
+        pos + text.len()
+    }
+}
+
+/// Appending form of `put_rounded` for the record writers. `scale` must be 100 or 10000.
+pub fn write_rounded(out: &mut Vec<u8>, value: f64, scale: u64) {
+    let mut buf = [0u8; 32];
+    let end = if scale == 10000 { put_rounded::<10000, 4>(&mut buf, 0, value) } else { put_rounded::<100, 2>(&mut buf, 0, value) };
+    out.extend_from_slice(&buf[..end]);
 }
 
 #[inline] pub fn hash_bytes(mut h: i32, bytes: &[u8]) -> i32 {
@@ -129,24 +149,23 @@ pub fn write_hash_text(out: &mut Vec<u8>, h: i32) {
 /// NaN stands for a hole in a sparse array, which `Array.prototype.join` renders as empty text.
 pub fn points_hash(points: &[f64]) -> i32 {
     let mut h = 0i32;
-    let mut text = Vec::with_capacity(96);
+    let mut text = [0u8; 96];
     for (index, point) in points.chunks_exact(3).enumerate() {
-        if index > 0 { h = hash_bytes(h, b";"); }
+        if index > 0 { h = h.wrapping_mul(31).wrapping_add(b';' as i32); }
         if point[0].is_nan() { continue; }
-        text.clear();
-        write_rounded(&mut text, point[0], 100, 2);
-        text.push(b',');
-        write_rounded(&mut text, point[1], 100, 2);
-        text.push(b',');
-        write_rounded(&mut text, point[2], 100, 2);
-        h = hash_bytes(h, &text);
+        let mut end = put_rounded::<100, 2>(&mut text, 0, point[0]);
+        text[end] = b','; end += 1;
+        end = put_rounded::<100, 2>(&mut text, end, point[1]);
+        text[end] = b','; end += 1;
+        end = put_rounded::<100, 2>(&mut text, end, point[2]);
+        h = hash_bytes(h, &text[..end]);
     }
     h
 }
 
 /// `width|pointCount|pointHash` followed by a tab and the stamp clock (`max(0, floor(clock))`).
 pub fn write_stroke_record(out: &mut Vec<u8>, width: f64, clock: f64, points: &[f64]) {
-    write_rounded(out, width, 100, 2);
+    write_rounded(out, width, 100);
     out.push(b'|');
     out.extend_from_slice((points.len() / 3).to_string().as_bytes());
     out.push(b'|');
@@ -161,7 +180,7 @@ pub fn write_image_tail(out: &mut Vec<u8>, src_hash: i32, geometry: [f64; 5], cl
     write_hash_text(out, src_hash);
     for (index, value) in geometry.iter().enumerate() {
         out.push(b'|');
-        if index == 4 { write_rounded(out, *value, 10000, 4); } else { write_rounded(out, *value, 100, 2); }
+        if index == 4 { write_rounded(out, *value, 10000); } else { write_rounded(out, *value, 100); }
     }
     out.push(b'\t');
     write_clock(out, clock);
@@ -246,7 +265,7 @@ mod tests {
         assert_eq!(num(9007199254740993.0), "9007199254740992");
     }
     fn num(v: f64) -> String { let mut out = Vec::new(); js_number_to_string(v, &mut out); String::from_utf8(out).unwrap() }
-    fn rounded(v: f64, scale: u64, decimals: usize) -> String { let mut out = Vec::new(); write_rounded(&mut out, v, scale, decimals); String::from_utf8(out).unwrap() }
+    fn rounded(v: f64, scale: u64, _decimals: usize) -> String { let mut out = Vec::new(); write_rounded(&mut out, v, scale); String::from_utf8(out).unwrap() }
     fn hash_text(h: i32) -> String { let mut out = Vec::new(); write_hash_text(&mut out, h); String::from_utf8(out).unwrap() }
     fn simple_hash(text: &str) -> String { hash_text(hash_units(0, &text.encode_utf16().collect::<Vec<_>>())) }
 
