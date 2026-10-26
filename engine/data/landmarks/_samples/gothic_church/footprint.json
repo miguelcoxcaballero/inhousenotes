@@ -1,0 +1,32 @@
+{
+  "slug": "gothic_church",
+  "frame": "utm30n-local-v1",
+  "origin": {"lat": 39.4699, "lon": -0.3763, "E0": 725730.0, "N0": 4372180.0},
+  "anchor": [-185.0, -262.0],
+  "attribution": ["Synthetic sample data (not a real building)", "Layout in the style of OpenStreetMap / Catastro exports"],
+  "outlines": [
+    {"id": "way/900001", "tags": {"building": "church", "name": "Sample Gothic church", "amenity": "place_of_worship", "height": "22.5", "roof:shape": "gabled"},
+     "outer": [[-26,-19.5],[-18,-19.5],[-18,-11.5],[14,-11.5],[14,-7],[18.95,-4.95],[21,0],[18.95,4.95],[14,7],[14,11.5],[-22,11.5],[-22,-11.5],[-26,-11.5]],
+     "inners": []}
+  ],
+  "parts": [
+    {"id": "way/900002", "tags": {"building:part": "yes", "name": "nave", "height": "22.2", "roof:shape": "gabled"}, "outer": [[-22,-7],[14,-7],[14,7],[-22,7]], "inners": []},
+    {"id": "way/900003", "tags": {"building:part": "yes", "name": "north aisle", "height": "11.0"}, "outer": [[-22,-11.5],[14,-11.5],[14,-7],[-22,-7]], "inners": []},
+    {"id": "way/900004", "tags": {"building:part": "yes", "name": "south aisle", "height": "11.0"}, "outer": [[-22,7],[14,7],[14,11.5],[-22,11.5]], "inners": []},
+    {"id": "way/900005", "tags": {"building:part": "yes", "name": "apse", "height": "21.0"}, "outer": [[14,-7],[18.95,-4.95],[21,0],[18.95,4.95],[14,7]], "inners": []},
+    {"id": "way/900006", "tags": {"building:part": "tower", "name": "bell tower", "height": "49.0", "roof:shape": "pyramidal"}, "outer": [[-26,-19.5],[-18,-19.5],[-18,-11.5],[-26,-11.5]], "inners": []}
+  ],
+  "catastro": [
+    {"id": "9999901YJ2799N", "refcat": "9999901YJ2799N0001AB", "floors_above": 5, "floors_below": 0,
+     "outer": [[-22,-11.5],[14,-11.5],[14,-7],[18.95,-4.95],[21,0],[18.95,4.95],[14,7],[14,11.5],[-22,11.5]], "inners": []},
+    {"id": "9999902YJ2799N", "refcat": "9999902YJ2799N0001CD", "floors_above": 14, "floors_below": 0,
+     "outer": [[-26,-19.5],[-18,-19.5],[-18,-11.5],[-26,-11.5]], "inners": []}
+  ],
+  "context": [
+    {"source": "catastro", "floors_above": 5, "outer": [[-42,-44],[-8,-46],[26,-40],[30,-26],[12,-23.5],[-14,-23],[-30,-24],[-44,-28]]},
+    {"source": "catastro", "floors_above": 4, "outer": [[28,-20],[48,-22],[52,6],[46,24],[30,22],[25.5,8],[26.5,-6]]},
+    {"source": "catastro", "floors_above": 6, "outer": [[-36,25],[-4,24],[20,27],[26,44],[-30,46],[-40,36]]},
+    {"source": "catastro", "floors_above": 3, "outer": [[-80,-20],[-55,-24],[-51,8],[-58,30],[-82,22]]},
+    {"source": "catastro", "floors_above": 4, "outer": [[-50,-30],[-45,-52],[-70,-56],[-74,-34]]}
+  ]
+}
