@@ -19,3 +19,4 @@ forja_city.workspace = true
 serde_json.workspace = true
 forja_world.workspace = true
 forja_anim.workspace = true
+forja_flora.workspace = true

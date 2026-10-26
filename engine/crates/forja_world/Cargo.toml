@@ -10,6 +10,7 @@ forja_math.workspace = true
 forja_assets.workspace = true
 forja_physics.workspace = true
 forja_city.workspace = true
+forja_flora.workspace = true
 quick-xml.workspace = true
 image.workspace = true
 log.workspace = true

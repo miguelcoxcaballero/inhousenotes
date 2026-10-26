@@ -3,7 +3,8 @@
 //! (`CITY_SHOTS=boulevard,aerial` renders only those shots; `CITY_MOTION=30`
 //! also saves `<shot>_motion.png`, the last of 30 real-time 60 fps frames
 //! walking into the shot, to judge TAA and the screen-space effects in
-//! motion).
+//! motion; `CITY_TREES=scanned` uses the scanned library tree instead of
+//! the procedural `forja_flora` species, `CITY_SEASON=winter|spring|autumn`).
 
 use std::path::PathBuf;
 
@@ -37,13 +38,26 @@ fn main() {
         r.set_environment(Some(&env::EnvMap::from_hdr(&img, 14.0)));
     }
     let handles: Vec<ModelHandle> = out.scenes.iter().map(|s| r.upload_scene(s)).collect();
-    let tree = lib.prop("polyhaven_island_tree").map(|s| r.upload_scene(&s));
+    let scanned = std::env::var("CITY_TREES").is_ok_and(|v| v == "scanned");
+    let tree = if scanned { lib.prop("polyhaven_island_tree").map(|s| r.upload_scene(&s)) } else { None };
+    let mut forest_instances = Vec::new();
+    if !scanned {
+        let t1 = std::time::Instant::now();
+        let species = forja_flora::SpeciesLibrary::load(Some(&root.join("data/flora/species.toml")));
+        let season = std::env::var("CITY_SEASON").ok().and_then(|s| forja_flora::Season::parse(&s)).unwrap_or_default();
+        let opt = forja_flora::city::PlantOptions { variants: 3, season, seed: cfg.seed };
+        let forest = forja_flora::city::plant(&city.props, &city.prop_sites, &species, &opt);
+        let handles: Vec<ModelHandle> = forest.models.iter().map(|t| r.upload_scene(&t.scene)).collect();
+        println!("trees: {} instances of {} models ({:?}) in {:.2}s", forest.instances.len(), handles.len(), forest.by_species.keys().collect::<Vec<_>>(), t1.elapsed().as_secs_f32());
+        forest_instances = forest.instances.iter().map(|(m, t)| DrawInstance::new(handles[*m], *t)).collect();
+    }
     let bench = lib.prop("polyhaven_street_bench").map(|s| r.upload_scene(&s));
     println!("uploaded in {:.2}s", t0.elapsed().as_secs_f32());
     let mut frame = FrameDesc::default();
     for (s, m) in &out.placements {
         frame.instances.push(DrawInstance::new(handles[*s], *m));
     }
+    frame.instances.extend(forest_instances);
     for (k, m) in &city.props {
         let h = match k {
             PropKind::Tree | PropKind::Palm => tree,

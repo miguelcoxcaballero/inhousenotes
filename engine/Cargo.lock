@@ -1019,6 +1019,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "forja_flora"
+version = "0.1.0"
+dependencies = [
+ "forja_assets",
+ "forja_city",
+ "forja_math",
+ "image",
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "forja_gameplay"
 version = "0.1.0"
 dependencies = [
@@ -1065,6 +1080,7 @@ dependencies = [
  "forja_anim",
  "forja_assets",
  "forja_city",
+ "forja_flora",
  "forja_math",
  "forja_world",
  "image",
@@ -1080,6 +1096,7 @@ version = "0.1.0"
 dependencies = [
  "forja_assets",
  "forja_city",
+ "forja_flora",
  "forja_math",
  "forja_physics",
  "image",
