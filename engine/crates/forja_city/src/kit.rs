@@ -213,6 +213,9 @@ pub struct Kit {
     shop_interiors: TextureData,
     plates: Vec<TextureData>,
     decals: DecalTextures,
+    glass: GenSet,
+    /// Sky visibility inside the fake rooms behind windows.
+    interior_ao: TextureData,
 }
 
 const SETS: [&str; 19] = [
@@ -284,6 +287,8 @@ impl Kit {
             shop_interiors: texgen::shop_interiors(),
             plates: STREETS.iter().map(|s| texgen::street_plate(s)).collect(),
             decals: DecalTextures::generate(),
+            glass: texgen::glass(),
+            interior_ao: texgen::solid("interior_ao", 0.22),
             pbr,
         };
         log::info!("city kit: {} scanned materials", kit.pbr.len());
@@ -408,14 +413,40 @@ impl<'a> Assembler<'a> {
             // Wrought iron is painted: a dielectric, satin black paint
             // (albedo ~0.02, never pure black).
             Mat::Iron => flat("iron", hex(0x2a2a28), 0.55, 0.0),
-            Mat::Glass => MaterialData { name: "glass".into(), base_color: Vec4::new(0.30, 0.34, 0.33, 1.0), roughness: 0.03, transmission: 0.94, ..Default::default() },
+            // Glass is never a perfect mirror: panes bulge and ripple a
+            // little and carry smudges and dust (see `texgen::glass`).
+            Mat::Glass => {
+                let g = kit.glass.clone();
+                let normal = g.normal.as_ref().map(|t| self.tex(t));
+                let orm = g.orm.as_ref().map(|t| self.tex(t));
+                MaterialData {
+                    name: "glass".into(),
+                    base_color: Vec4::new(0.30, 0.34, 0.33, 1.0),
+                    roughness: 1.0,
+                    metallic_roughness_tex: orm,
+                    normal_tex: normal,
+                    normal_scale: 0.25,
+                    transmission: 0.94,
+                    ..Default::default()
+                }
+            }
+            // Rooms behind the glass see only a sliver of sky through the
+            // opening, so their ambient light is a fraction of the street's
+            // and, as in photos, daylight reflections dominate the glass.
+            // Shops add their own (dim, by day) lighting.
             Mat::Interior => {
                 let t = kit.interiors.clone();
-                self.textured(&t, "interior", 0.9, 0.035)
+                let ao = kit.interior_ao.clone();
+                let mut d = self.textured(&t, "interior", 0.9, 0.03);
+                d.occlusion_tex = Some(self.tex(&ao));
+                d
             }
             Mat::ShopInterior => {
                 let t = kit.shop_interiors.clone();
-                let d = self.textured(&t, "shop_interior", 0.7, 0.12);
+                let ao = kit.interior_ao.clone();
+                let mut d = self.textured(&t, "shop_interior", 0.7, 0.035);
+                d.base_color = Vec4::new(0.7, 0.7, 0.7, 1.0);
+                d.occlusion_tex = Some(self.tex(&ao));
                 d
             }
             Mat::PaintedWood(c) => {

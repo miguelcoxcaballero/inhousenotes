@@ -29,24 +29,30 @@ pub enum Decal {
     /// Soot band and drips under a cornice. Tiles along the wall every
     /// [`SOOT_REPEAT`] m.
     Soot,
+    /// Dirt swept against the wall on the pavement: a horizontal strip,
+    /// v = 0 at the wall and 1 at its outer edge, repeating every
+    /// [`GROUND_REPEAT`] m along the facade.
+    Ground,
 }
 
 pub const PLINTH_REPEAT: f32 = 4.0;
 pub const SOOT_REPEAT: f32 = 4.0;
+pub const GROUND_REPEAT: f32 = 4.0;
 pub const STREAK_VARIANTS: u32 = 4;
 /// Dirt levels: alpha multiplier of `Mat::Decal(_, level)`.
-pub const LEVELS: [f32; 4] = [0.55, 0.72, 0.87, 1.0];
+pub const LEVELS: [f32; 4] = [0.7, 0.8, 0.9, 1.0];
 
 /// Generated decal textures.
 pub struct DecalTextures {
     pub plinth: TextureData,
     pub streaks: TextureData,
     pub soot: TextureData,
+    pub ground: TextureData,
 }
 
 impl DecalTextures {
     pub fn generate() -> Self {
-        DecalTextures { plinth: plinth(1024, 256, 7), streaks: streaks(512, 512, 19), soot: soot(1024, 256, 31) }
+        DecalTextures { plinth: plinth(1024, 256, 7), streaks: streaks(512, 512, 19), soot: soot(1024, 256, 31), ground: ground(1024, 128, 43) }
     }
 
     pub fn get(&self, d: Decal) -> &TextureData {
@@ -54,6 +60,7 @@ impl DecalTextures {
             Decal::Plinth => &self.plinth,
             Decal::Streaks => &self.streaks,
             Decal::Soot => &self.soot,
+            Decal::Ground => &self.ground,
         }
     }
 }
@@ -84,10 +91,17 @@ impl Px {
     }
 }
 
-fn to_texture(name: &str, w: u32, h: u32, px: &[Px]) -> TextureData {
+/// Encodes the decal. `boost` > 1 strengthens coverage (`1 - (1 - a)^boost`)
+/// without moving its edges: a blended dirt layer still lets the wall's own
+/// specular through, so on screen it darkens less than its alpha suggests.
+fn to_texture(name: &str, w: u32, h: u32, px: &[Px], boost: f32) -> TextureData {
     let mut rgba = Vec::with_capacity(px.len() * 4);
     for p in px {
-        rgba.extend(p.rgba8());
+        let mut q = *p;
+        q.a = 1.0 - (1.0 - q.a.clamp(0.0, 1.0)).powf(boost);
+        let k = if p.a > 1e-4 { q.a / p.a } else { 0.0 };
+        q.c = p.c.map(|c| c * k);
+        rgba.extend(q.rgba8());
     }
     TextureData { name: name.into(), width: w, height: h, rgba8: rgba.into(), srgb: true }
 }
@@ -104,6 +118,10 @@ const RUST: [f32; 3] = [0.115, 0.048, 0.018];
 /// the top of the band and 1 at the pavement.
 pub fn plinth(w: u32, h: u32, seed: u32) -> TextureData {
     let mut px = vec![Px::default(); (w * h) as usize];
+    // Dark blotches at the foot of the wall (dogs, mops, bins), a few per
+    // repeat: (u centre, half width, height fraction, strength).
+    let mut rng = Rng::new(seed as u64 ^ 0xb107);
+    let blotches: Vec<(f32, f32, f32, f32)> = (0..3).map(|_| (rng.f(), rng.range(0.03, 0.07), rng.range(0.15, 0.4), rng.range(0.35, 0.6))).collect();
     for y in 0..h {
         let v = (y as f32 + 0.5) / h as f32;
         let s = 1.0 - v; // height fraction above the pavement
@@ -113,22 +131,58 @@ pub fn plinth(w: u32, h: u32, seed: u32) -> TextureData {
             // Damp front: wavy, higher in places (capillary rise is patchy).
             let front = 0.42 + 0.38 * fbm(u, 0.0, 7, 4, seed) + 0.06 * (fbm(u, v, 24, 2, seed + 1) - 0.5);
             let mottle = 0.55 + 0.9 * fbm(u, v * 0.25, 18, 4, seed + 2);
-            // Traffic grime: strongest at the bottom, everywhere.
-            p.over(GRIME, 0.28 * (1.0 - s).powf(1.3) * mottle);
+            // Grime body under the damp front, fading out above it, and
+            // traffic grime strongest at the bottom.
+            let body = smoothstep(front + 0.3, front - 0.08, s);
+            p.over(GRIME, (0.22 + 0.4 * (1.0 - s)) * body * mottle.min(1.3));
             // Damp zone with vertical wicking structure.
             let wick = 0.75 + 0.5 * fbm_aniso(u, v, 90, 4, 3, seed + 3);
             let damp = smoothstep(front + 0.015, front - 0.18, s) * (0.55 + 0.45 * (1.0 - s / front.max(0.05)).clamp(0.0, 1.0));
-            p.over(DAMP, 0.58 * damp * wick * mottle.min(1.2));
-            // Salt tide line at the damp front.
+            p.over(DAMP, 0.7 * damp * wick * mottle.min(1.2));
+            // Faint salt tide line at the damp front.
             let tide = (-((s - front) / 0.022).powi(2)).exp() * (0.25 + 0.75 * fbm(u, 0.0, 40, 3, seed + 4));
-            p.over(SALT, 0.34 * tide);
-            // Splash-back: speckled, dark, the bottom ~20 % of the band.
-            let splash = (1.0 - s / 0.2).clamp(0.0, 1.0).powf(1.4);
+            p.over(SALT, 0.16 * tide);
+            for &(c, hw, ht, st) in &blotches {
+                let du = crate::noise::wrap_delta(u - c);
+                if du.abs() > hw * 1.6 {
+                    continue;
+                }
+                let r = ((du / hw).powi(2) + (s / ht).powi(2)).sqrt() + 0.35 * (fbm(u, v, 30, 3, seed + 6) - 0.5);
+                p.over(DAMP, st * smoothstep(1.0, 0.6, r));
+            }
+            // Splash-back: speckled, dark, the bottom ~28 % of the band.
+            let splash = (1.0 - s / 0.28).clamp(0.0, 1.0).powf(1.3);
             let speck = smoothstep(0.35, 0.8, fbm(u, v, 160, 2, seed + 5));
-            p.over(GRIME, splash * (0.45 + 0.4 * speck));
+            p.over(GRIME, splash * (0.55 + 0.4 * speck));
         }
     }
-    to_texture("decal_plinth", w, h, &px)
+    to_texture("decal_plinth", w, h, &px, 2.0)
+}
+
+/// Dirt swept against the foot of the wall on the pavement: v = 0 at the
+/// wall, 1 at the outer edge of the strip; `w` px = [`GROUND_REPEAT`] m.
+pub fn ground(w: u32, h: u32, seed: u32) -> TextureData {
+    let mut px = vec![Px::default(); (w * h) as usize];
+    for y in 0..h {
+        let v = (y as f32 + 0.5) / h as f32;
+        for x in 0..w {
+            let u = (x as f32 + 0.5) / w as f32;
+            let p = &mut px[(y * w + x) as usize];
+            // How far the dirt reaches out varies along the wall.
+            let reach = 0.35 + 0.55 * fbm(u, 0.0, 11, 4, seed);
+            let mottle = 0.5 + 0.9 * fbm(u, v * 0.15, 36, 4, seed + 1);
+            let k = smoothstep(reach, 0.0, v + 0.12 * (fbm(u, v, 40, 3, seed + 2) - 0.5));
+            p.over(GRIME, 0.7 * k.powf(1.4) * mottle.min(1.3));
+            // The joint itself: a dark line of packed dust.
+            p.over(GRIME, 0.75 * smoothstep(0.07, 0.0, v));
+            // Grit: scattered dark specks, denser close to the wall.
+            let g = hashf(x as i32, y as i32, seed + 3);
+            if g > 0.992 - 0.02 * (1.0 - v) {
+                p.over(SOOT, 0.6);
+            }
+        }
+    }
+    to_texture("decal_ground", w, h, &px, 1.8)
 }
 
 /// Streak atlas: `STREAK_VARIANTS` columns; v = 0 just under the sill.
@@ -142,7 +196,7 @@ pub fn streaks(w: u32, h: u32, seed: u32) -> TextureData {
         let rust = col == cols - 1;
         let color = if rust { RUST } else { GRIME };
         // Streak list: (x, width, length, strength, wobble phase).
-        let n = 4 + rng.below(6);
+        let n = 6 + rng.below(6);
         let mut list = Vec::new();
         for _ in 0..n {
             let x = if rng.chance(0.65) {
@@ -150,9 +204,11 @@ pub fn streaks(w: u32, h: u32, seed: u32) -> TextureData {
             } else {
                 rng.range(0.24, 0.76)
             };
-            list.push((x, rng.range(0.025, 0.085), rng.range(0.35, 1.0), rng.range(0.35, 0.75), rng.range(0.0, 6.28)));
+            list.push((x, rng.range(0.035, 0.11), rng.range(0.35, 1.0), rng.range(0.5, 0.9), rng.range(0.0, 6.28)));
         }
-        let wash = rng.range(0.3, 0.5);
+        let wash = rng.range(0.4, 0.6);
+        // Broad curtain: the whole wall under a sill is a little darker.
+        let curtain = rng.range(0.45, 0.85);
         for y in 0..h {
             let v = (y as f32 + 0.5) / h as f32;
             for lx in 0..cw {
@@ -166,6 +222,10 @@ pub fn streaks(w: u32, h: u32, seed: u32) -> TextureData {
                 let reach = 0.08 + 0.14 * fbm(u, col as f32 * 0.37, 12, 3, seed + col);
                 let inside = smoothstep(0.08, 0.16, u) * smoothstep(0.92, 0.84, u);
                 p.over(color, wash * inside * smoothstep(reach, 0.0, v) * edge);
+                if v < curtain {
+                    let k = (1.0 - v / curtain).powf(1.6) * (0.6 + 0.6 * fbm_aniso(u, v, 24, 3, 3, seed + 23 + col));
+                    p.over(color, 0.3 * inside * k * edge);
+                }
                 for &(x0, sw, len, st, ph) in &list {
                     if v > len {
                         continue;
@@ -185,7 +245,7 @@ pub fn streaks(w: u32, h: u32, seed: u32) -> TextureData {
             }
         }
     }
-    to_texture("decal_streaks", w, h, &px)
+    to_texture("decal_streaks", w, h, &px, 1.7)
 }
 
 /// Soot under a cornice: a dark sheltered strip with drips; v = 0 right
@@ -201,8 +261,8 @@ pub fn soot(w: u32, h: u32, seed: u32) -> TextureData {
             let p = &mut px[(y * w + x) as usize];
             let edge = 0.16 + 0.18 * fbm(u, 0.0, 9, 4, seed);
             let mottle = 0.6 + 0.8 * fbm(u, v * 0.3, 20, 4, seed + 1);
-            p.over(SOOT, 0.62 * smoothstep(edge + 0.08, 0.0, v) * mottle.min(1.3));
-            p.over(SOOT, 0.12 * smoothstep(0.9, 0.0, v) * fbm_aniso(u, v, 120, 3, 3, seed + 2));
+            p.over(SOOT, 0.8 * smoothstep(edge + 0.08, 0.0, v) * mottle.min(1.3));
+            p.over(SOOT, 0.22 * smoothstep(0.9, 0.0, v) * fbm_aniso(u, v, 120, 3, 3, seed + 2));
             for &(x0, sw, len, st) in &drips {
                 if v > len {
                     continue;
@@ -217,7 +277,7 @@ pub fn soot(w: u32, h: u32, seed: u32) -> TextureData {
             }
         }
     }
-    to_texture("decal_soot", w, h, &px)
+    to_texture("decal_soot", w, h, &px, 1.5)
 }
 
 /// One street facade to weather, in facade coordinates (u along the wall
@@ -307,6 +367,15 @@ pub fn facade(parts: &mut Parts<Mat>, f: &FacadeWear) {
     let uoff = rng.range(0.0, 40.0);
     let m = Mat::Decal(Decal::Plinth, level(&mut rng, lvl.max(1), 1));
     region(parts.get(m), f, 0.0, f.len, 0.0, band, f.ground_holes, base_out, |u, v| Vec2::new((u + uoff) / PLINTH_REPEAT, (band - v) / band));
+
+    // Dirt swept against the wall on the pavement (any street layout: it
+    // follows the facade, not a grid).
+    let gw = rng.range(0.35, 0.65);
+    let goff = rng.range(0.0, 40.0);
+    let m = Mat::Decal(Decal::Ground, level(&mut rng, lvl.max(1), 1));
+    let g = |u: f32, d: f32| f.origin + f.t * u + f.n * d + Vec3::Y * 0.004;
+    let (ua, ub) = (-0.02, f.len + 0.02);
+    parts.get(m).quad_uv([g(ua, 0.0), g(ua, gw), g(ub, gw), g(ub, 0.0)], [Vec2::new((ua + goff) / GROUND_REPEAT, 0.0), Vec2::new((ua + goff) / GROUND_REPEAT, 1.0), Vec2::new((ub + goff) / GROUND_REPEAT, 1.0), Vec2::new((ub + goff) / GROUND_REPEAT, 0.0)]);
 
     // Soot under the main cornice and, lighter, under the ground cornice.
     let hs = rng.range(0.6, 1.5);
@@ -413,8 +482,19 @@ mod tests {
         let mut parts: Parts<Mat> = Parts::new();
         facade(&mut parts, &f);
         assert!(parts.prims.contains_key(&Mat::Decal(Decal::Plinth, 1)) || parts.prims.keys().any(|k| matches!(k, Mat::Decal(Decal::Plinth, _))));
+        assert!(parts.prims.keys().any(|k| matches!(k, Mat::Decal(Decal::Ground, _))));
         for (k, p) in &parts.prims {
             assert!(matches!(k, Mat::Decal(..)));
+            if matches!(k, Mat::Decal(Decal::Ground, _)) {
+                // Pavement strip: lies on the ground in front of the wall,
+                // facing up.
+                for t in p.indices.chunks_exact(3) {
+                    let [a, b, c] = [0, 1, 2].map(|i| p.positions[t[i] as usize]);
+                    assert!((a.y - 0.004).abs() < 1e-4 && a.z >= 0.0 && a.z < 0.7, "{a:?}");
+                    assert!((b - a).cross(c - a).y > 0.0);
+                }
+                continue;
+            }
             for t in p.indices.chunks_exact(3) {
                 let c = (p.positions[t[0] as usize] + p.positions[t[1] as usize] + p.positions[t[2] as usize]) / 3.0;
                 assert!(c.z > 0.0 && c.z < 0.05, "decal off the wall {c:?}");
@@ -427,6 +507,13 @@ mod tests {
                 assert!(n.z > 0.0);
             }
         }
+    }
+
+    #[test]
+    fn ground_dirt_hugs_the_wall() {
+        let t = ground(256, 64, 3);
+        let row = |y: u32| (0..256).map(|x| alpha(&t, x, y) as u32).sum::<u32>();
+        assert!(row(1) > row(40) * 2 && row(40) >= row(63), "{} {} {}", row(1), row(40), row(63));
     }
 
     #[test]
@@ -447,7 +534,7 @@ mod tests {
     fn dump_decals() {
         let d = DecalTextures::generate();
         let dir = std::env::var("DUMP_DIR").unwrap();
-        for (n, t) in [("plinth", &d.plinth), ("streaks", &d.streaks), ("soot", &d.soot)] {
+        for (n, t) in [("plinth", &d.plinth), ("streaks", &d.streaks), ("soot", &d.soot), ("ground", &d.ground)] {
             std::fs::write(format!("{dir}/{n}_{}x{}.rgba", t.width, t.height), &t.rgba8[..]).unwrap();
         }
     }

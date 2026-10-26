@@ -664,6 +664,61 @@ pub fn shop_interiors() -> TextureData {
     c.to_texture("shop_interiors", true)
 }
 
+/// Window glass imperfections over one window (UV 0..1 across both
+/// leaves): a slight pillow bulge per leaf and horizontal ripples (old
+/// drawn glass) in the normal map, and smudges, water spots and a dusty
+/// lower edge in the roughness, so reflections wobble and soften a little
+/// differently on every pane instead of being a perfect mirror. The normal
+/// map is stored 4x exaggerated; use `normal_scale` 0.25.
+pub fn glass() -> GenSet {
+    use crate::noise::{fbm, fbm_aniso, smoothstep};
+    let n = 256u32;
+    let mut height = vec![0.0f32; (n * n) as usize];
+    let mut rough = vec![0.0f32; (n * n) as usize];
+    let mut rng = Rng::new(0x61a55);
+    let spots: Vec<(Vec2, f32)> = (0..40).map(|_| (Vec2::new(rng.f(), rng.f()), rng.range(0.004, 0.012))).collect();
+    for y in 0..n {
+        let v = (y as f32 + 0.5) / n as f32;
+        for x in 0..n {
+            let u = (x as f32 + 0.5) / n as f32;
+            let i = (y * n + x) as usize;
+            // Pillow: each leaf bulges a little at its centre.
+            let s = (u * 2.0).fract();
+            let pillow = (std::f32::consts::PI * s).sin() * (std::f32::consts::PI * v).sin();
+            let ripple = fbm_aniso(u, v, 2, 12, 3, 7) - 0.5;
+            height[i] = 0.6 * pillow + 0.5 * ripple;
+            // Roughness: clean glass 0.03, wiped smudges, dust at the bottom.
+            let smudge = smoothstep(0.55, 0.75, fbm(u, v, 5, 4, 11)) * 0.07;
+            let dust = smoothstep(0.75, 1.0, v) * (0.06 + 0.06 * fbm(u, v, 12, 3, 13));
+            let mut r = 0.03 + smudge + dust + 0.01 * fbm(u, v, 32, 2, 17);
+            for (c, rad) in &spots {
+                let d = (Vec2::new(u, v) - *c).length();
+                r += 0.08 * smoothstep(*rad, rad * 0.4, d);
+            }
+            rough[i] = r;
+        }
+    }
+    // Normal amplitude: steepest slope about 0.1 (4x the real ~0.025).
+    let mut max_g = 1e-6f32;
+    for y in 0..n as i64 {
+        for x in 0..n as i64 {
+            let at = |x: i64, y: i64| height[(y.rem_euclid(n as i64) * n as i64 + x.rem_euclid(n as i64)) as usize];
+            let g = (at(x + 1, y) - at(x - 1, y)).abs().max((at(x, y + 1) - at(x, y - 1)).abs());
+            max_g = max_g.max(g);
+        }
+    }
+    let normal = normal_from_height(&height, n, n, 0.1 / max_g);
+    let orm = orm_from(&rough, n, n);
+    let color = Canvas::new(4, 4, [1.0; 4]).to_texture("glass_color", true);
+    GenSet { color, normal: Some(TextureData { name: "glass_normal".into(), ..normal }), orm: Some(TextureData { name: "glass_orm".into(), ..orm }) }
+}
+
+/// Uniform linear texture (e.g. an occlusion term for fake interiors).
+pub fn solid(name: &str, value: f32) -> TextureData {
+    let b = (value.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+    TextureData { name: name.into(), width: 4, height: 4, rgba8: Arc::from(vec![b, b, b, 255].repeat(16)), srgb: false }
+}
+
 /// Street name plate, Madrid ceramic style: blue frame, white field.
 pub fn street_plate(name: &str) -> TextureData {
     let mut c = Canvas::new(512, 192, rgb(0xf4f1e6));
