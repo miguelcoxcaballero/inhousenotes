@@ -22,7 +22,13 @@ fn lathe_full(p: &mut Prim, c: Vec3, prof: &[(f32, f32)], seg: usize) {
 /// Column geometry in its own frame (base centre at the origin).
 #[allow(clippy::too_many_arguments)]
 pub fn column_geo(b: &Builder, p: &mut Prim, height: f32, r: f32, order: ColumnOrder, entasis: Option<f32>, flutes: u32, base: bool, capital: bool, pedestal: Option<f32>) {
-    let seg = b.segs(r, 12, 40).max(flutes as usize * 2);
+    column_geo_n(b, p, height, r, order, entasis, flutes, base, capital, pedestal, None)
+}
+
+/// [`column_geo`] with an explicit shaft resolution.
+#[allow(clippy::too_many_arguments)]
+pub fn column_geo_n(b: &Builder, p: &mut Prim, height: f32, r: f32, order: ColumnOrder, entasis: Option<f32>, flutes: u32, base: bool, capital: bool, pedestal: Option<f32>, segments: Option<usize>) {
+    let seg = segments.unwrap_or_else(|| b.segs(r, 12, 40)).max(flutes as usize * 2);
     let mut y = 0.0;
     if let Some(ph) = pedestal {
         let w = r * 2.8;
@@ -157,7 +163,8 @@ pub fn column_geo(b: &Builder, p: &mut Prim, height: f32, r: f32, order: ColumnO
 
 pub fn column_el(b: &mut Builder, c: &Column, sc: &Scope, o: &mut Out) -> Result<()> {
     let mut p = Prim::default();
-    column_geo(b, &mut p, c.height, c.radius, c.order, c.entasis, c.flutes, c.base, c.capital, c.pedestal);
+    let seg = c.segments.map(|_| b.user_segs(c.segments, 16, 3, 512, "segments")).transpose()?;
+    column_geo_n(b, &mut p, c.height, c.radius, c.order, c.entasis, c.flutes, c.base, c.capital, c.pedestal, seg);
     o.geo.get(sc.mat).append(&p, &Mat4::from_translation(Vec3::from_array(c.at)));
     Ok(())
 }
@@ -559,30 +566,74 @@ pub fn stairs(b: &mut Builder, s: &Stairs, sc: &Scope, o: &mut Out) -> Result<()
 }
 
 pub fn arcade(b: &mut Builder, a: &Arcade, sc: &Scope, o: &mut Out) -> Result<()> {
-    let mut runs: Vec<(Vec2, Vec2)> = Vec::new();
+    // Polylines in arcade order (u along them, the front on their left):
+    // a straight `from`/`to` line, or chains of selected polygon edges split
+    // into smooth runs, so an arcade round a curved square is one arcade
+    // bent along the curve with its bays by arc length.
+    let mut lines: Vec<(Vec<Vec2>, bool)> = Vec::new();
+    let flip = a.face.as_deref() == Some("left");
     if let (Some(p0), Some(p1)) = (a.from, a.to) {
-        runs.push((Vec2::new(p0[0], p0[1]), Vec2::new(p1[0], p1[1])));
+        lines.push((vec![Vec2::new(p1[0], p1[1]), Vec2::new(p0[0], p0[1])], false));
     } else if let Some(pg) = &a.polygon {
         for s in b.poly(pg, sc)? {
-            for e in resolve::select(&s, &a.edges) {
-                let ring = resolve::ring_of(&s, e.ring);
-                let n = ring.len();
-                // Polygon edges: arcade faces outward.
-                runs.push((ring[(e.i + 1) % n], ring[e.i]));
+            let sel = resolve::select(&s, &a.edges);
+            for c in resolve::chains(&s, &sel) {
+                let mut pts = resolve::chain_points(&s, c);
+                if c.3 {
+                    // Closed chains start at a corner, so no run wraps.
+                    let cor = super::runs::corners(&pts, true, super::facade::RUN_ANGLE);
+                    if let Some(k) = cor.iter().position(|x| *x) {
+                        pts.rotate_left(k);
+                    }
+                }
+                let p2 = super::runs::Path2::new(&pts, c.3, super::facade::RUN_ANGLE);
+                if p2.full_loop() {
+                    lines.push((pts, true));
+                    continue;
+                }
+                for &(r0, r1) in &p2.runs {
+                    // Points of the run [r0, r1] along the chain.
+                    let mut run = vec![p2.at(r0).0];
+                    let m = pts.len();
+                    for (k, sk) in p2.s.iter().enumerate().take(if c.3 { m } else { m }) {
+                        if *sk > r0 + 1e-4 && *sk < r1 - 1e-4 {
+                            run.push(pts[k % m]);
+                        }
+                    }
+                    run.push(p2.at(r1 - 1e-5).0);
+                    lines.push((run, false));
+                }
             }
         }
     } else {
         return Err(Error::msg("arcade needs `from` and `to`, or `polygon` (+ `edges`)"));
     }
+    let mut built = Out::default();
+    for (mut pts, closed) in lines {
+        if flip {
+            pts.reverse();
+        }
+        let Some(bend) = super::runs::Bend::new(&pts, closed, 20.0) else { continue };
+        let mut flat = Out::default();
+        arcade_flat(b, a, bend.len(), closed, sc, &mut flat)?;
+        bend.warp_geo(&flat.geo, &mut built.geo);
+    }
+    built.collide_all();
+    o.append(&built, &Mat4::IDENTITY);
+    Ok(())
+}
+
+/// One straight arcade of length `len` in the flat frame (x along it from
+/// its left end seen from the front, z out of the front).
+fn arcade_flat(b: &mut Builder, a: &Arcade, len: f32, closed: bool, sc: &Scope, o: &mut Out) -> Result<()> {
+    let runs = vec![(Vec2::new(len, 0.0), Vec2::ZERO)];
     let wall_m = b.mat(a.wall_material.as_deref(), sc.mat)?;
     let col = a.column.get().cloned();
     let pier = a.piers.get().cloned();
     let use_cols = col.is_some() || pier.is_none();
     let col = col.unwrap_or(ColumnSpec { radius: 0.3, order: ColumnOrder::Tuscan, flutes: 0, material: None, double: false });
     let col_m = b.mat(col.material.as_deref(), sc.mat)?;
-    let flip = a.face.as_deref() == Some("left");
     for (p0, p1) in runs {
-        let (p0, p1) = if flip { (p1, p0) } else { (p0, p1) };
         let len = (p1 - p0).length();
         if len < 0.5 {
             continue;
@@ -608,7 +659,7 @@ pub fn arcade(b: &mut Builder, a: &Arcade, sc: &Scope, o: &mut Out) -> Result<()
         let half = front_n * (depth * 0.5);
         let u = Vec3::new(-d.x, 0.0, -d.y);
         let wall_y0 = if use_cols { a.y + a.impost } else { a.y };
-        let f = Facade { plane: Plane::new(Vec3::new(p1.x, 0.0, p1.y) + half, u, Vec3::Y), len, v0: wall_y0, v1: top, uv_off: 0.0, mat: wall_m, outline: None };
+        let f = Facade { plane: Plane::new(Vec3::new(p1.x, 0.0, p1.y) + half, u, Vec3::Y), len, v0: wall_y0, v1: top, uv_off: 0.0, mat: wall_m, outline: None, wrap: None };
         let mut cuts = Vec::new();
         let n_arc = b.segs(span * 0.5, 8, 24);
         for k in 0..count {
@@ -635,7 +686,11 @@ pub fn arcade(b: &mut Builder, a: &Arcade, sc: &Scope, o: &mut Out) -> Result<()
         // Supports.
         let cap_h = 0.25f32;
         for k in 0..=count {
-            let pos = p0 + d * (spacing * k as f32).clamp(support * 0.5, len - support * 0.5);
+            if closed && k == count {
+                continue;
+            }
+            let at = if closed { spacing * k as f32 } else { (spacing * k as f32).clamp(support * 0.5, len - support * 0.5) };
+            let pos = p0 + d * at;
             let base = Vec3::new(pos.x, a.y, pos.y);
             if use_cols {
                 let mut p = Prim::default();

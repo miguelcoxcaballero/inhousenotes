@@ -16,6 +16,7 @@
 //! ```
 
 pub mod build;
+pub mod camera;
 pub mod details;
 pub mod domes;
 pub mod earcut;
@@ -34,8 +35,10 @@ pub mod profiles;
 pub mod raster;
 pub mod resolve;
 pub mod roofs;
+pub mod runs;
 pub mod scaffold;
 pub mod shapes;
+pub mod skeleton;
 pub mod spec;
 pub mod supports;
 #[cfg(test)]
@@ -202,9 +205,12 @@ pub fn assemble(model: &Model, lib: &Library, name: &str, opts: AssembleOptions)
         for uv in &mut p.uvs {
             *uv = uvt(*uv);
         }
+        if opts.lods {
+            weld(&mut p);
+        }
         let mut mesh: MeshData = p.into_mesh(mi);
         if opts.lods && mesh.triangle_count() > 3000 {
-            forja_assets::lod::generate_mesh_lods(&mut mesh, 4, 1500);
+            lods(&mut mesh, 4);
         }
         prims.push(mesh);
     }
@@ -216,7 +222,93 @@ pub fn assemble(model: &Model, lib: &Library, name: &str, opts: AssembleOptions)
     scene
 }
 
-/// A built landmark, ready to place in a world at its anchor.
+/// Untextured scene of a model (one flat colour per material, from its
+/// tint or kind): the fast "clay" preview, no texture generation.
+pub fn assemble_clay(model: &Model, name: &str) -> SceneData {
+    let mut scene = SceneData { name: name.into(), ..Default::default() };
+    let mut prims = Vec::new();
+    for id in &model.geo.order {
+        let Some(src) = model.geo.prims.get(id) else { continue };
+        if src.indices.is_empty() {
+            continue;
+        }
+        let e = model.palette.get(*id);
+        let kind = e.spec.kind.as_str();
+        let c = e.spec.color.or(e.spec.tint).map(|c| c.0).unwrap_or(match kind {
+            "glass" | "curtain_wall" => [0.2, 0.25, 0.3],
+            "interior" | "dark" => [0.03, 0.03, 0.03],
+            "roof_tiles" | "clay_tiles" | "terracotta" => [0.62, 0.36, 0.25],
+            "slate" | "iron" | "lead" => [0.2, 0.2, 0.22],
+            "glazed_tiles" => e.spec.colors.first().map(|c| c.0).unwrap_or([0.15, 0.3, 0.6]),
+            "wood" | "door" => [0.36, 0.24, 0.15],
+            "granite" | "asphalt" => [0.45, 0.45, 0.45],
+            _ => [0.82, 0.8, 0.76],
+        });
+        let lin = |v: f32| if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+        scene.materials.push(forja_assets::MaterialData {
+            name: e.name.clone(),
+            base_color: forja_math::Vec4::new(lin(c[0]), lin(c[1]), lin(c[2]), 1.0),
+            roughness: e.spec.roughness.unwrap_or(0.8),
+            metallic: 0.0,
+            ..Default::default()
+        });
+        let mi = scene.materials.len() - 1;
+        prims.push(src.clone().into_mesh(mi));
+    }
+    if !prims.is_empty() {
+        scene.meshes.push(prims);
+        scene.nodes.push(NodeData { name: name.into(), mesh: Some(0), ..Default::default() });
+        scene.roots.push(0);
+    }
+    scene
+}
+
+/// Merges vertices with the same position, normal and UV (primitives
+/// emit unshared vertices), so simplification can collapse edges. Hard
+/// edges and UV seams stay split.
+fn weld(p: &mut crate::geom::Prim) {
+    use std::collections::HashMap;
+    let q = |v: f32, k: f32| (v * k).round() as i32;
+    let mut map: HashMap<[i32; 8], u32> = HashMap::with_capacity(p.positions.len());
+    let mut np = crate::geom::Prim::default();
+    let mut remap = Vec::with_capacity(p.positions.len());
+    for i in 0..p.positions.len() {
+        let (a, n, uv) = (p.positions[i], p.normals[i], p.uvs[i]);
+        let key = [q(a.x, 1e3), q(a.y, 1e3), q(a.z, 1e3), q(n.x, 50.0), q(n.y, 50.0), q(n.z, 50.0), q(uv.x, 1e3), q(uv.y, 1e3)];
+        let id = *map.entry(key).or_insert_with(|| np.vertex(a, n, uv));
+        remap.push(id);
+    }
+    np.indices = p.indices.iter().map(|i| remap[*i as usize]).collect();
+    *p = np;
+}
+
+/// Distance LODs by edge collapse with locked borders: material borders
+/// and hard edges never move, so levels do not crack or merge windows;
+/// stops when the mesh resists simplification (no sloppy fallback).
+fn lods(mesh: &mut MeshData, max_levels: usize) {
+    mesh.lods.clear();
+    let bytes: &[u8] = unsafe { std::slice::from_raw_parts(mesh.positions.as_ptr().cast::<u8>(), std::mem::size_of_val(&mesh.positions[..])) };
+    let Ok(adapter) = meshopt::VertexDataAdapter::new(bytes, 12, 0) else { return };
+    let mut prev = mesh.indices.clone();
+    for level in 1..=max_levels {
+        let target = (prev.len() / 2) / 3 * 3;
+        if target < 900 {
+            break;
+        }
+        let mut err = 0.0;
+        let lod = meshopt::simplify(&prev, &adapter, target, 0.005 * level as f32, meshopt::SimplifyOptions::LockBorder, Some(&mut err));
+        if lod.is_empty() || lod.len() as f32 > prev.len() as f32 * 0.9 {
+            break;
+        }
+        let lod = meshopt::optimize_vertex_cache(&lod, mesh.positions.len());
+        mesh.lods.push(lod.clone());
+        prev = lod;
+    }
+}
+
+/// A built landmark, ready to place in a world at its anchor: the render
+/// scene, the collider and a little metadata (the spec and raw geometry
+/// are dropped after assembly; use [`read`] and [`build_model`] for them).
 pub struct Landmark {
     pub slug: String,
     pub name: String,
@@ -225,8 +317,8 @@ pub struct Landmark {
     pub anchor: Vec2,
     pub scene: SceneData,
     pub collider: Collider,
-    pub model: Model,
-    pub source: Source,
+    /// Landmark-local bounds of the geometry.
+    pub bounds: (Vec3, Vec3),
     pub warnings: Vec<String>,
 }
 
@@ -248,12 +340,11 @@ pub fn load_with(dir: &Path, lib: &Library, opts: AssembleOptions) -> Result<Lan
         name: source.spec.landmark.name.clone(),
         anchor: source.anchor(),
         dir: dir.to_path_buf(),
-        warnings: model.warnings.clone(),
+        bounds: mesh::bounds(&model.geo).unwrap_or((Vec3::ZERO, Vec3::ZERO)),
+        warnings: model.warnings,
         slug,
         scene,
         collider,
-        model,
-        source,
     })
 }
 
