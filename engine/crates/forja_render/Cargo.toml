@@ -1,7 +1,19 @@
 [package]
 name = "forja_render"
+description = "Forja renderer on wgpu (DX12 on Windows): HDR PBR, cascaded shadows, physical sky, instancing, culling, tonemapping"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+forja_math.workspace = true
+forja_assets.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true
+log.workspace = true
+pollster.workspace = true
+image.workspace = true
+
+[dev-dependencies]
+forja_world.workspace = true
+forja_anim.workspace = true
