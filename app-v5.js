@@ -4395,12 +4395,6 @@
                     // Anchor the stroke to its page identity so it follows the
                     // page across remote reorders that may land mid-draw.
                     currentStrokePageId = state.pages[pageIndex]?.pageId || null;
-                    if (lassoCanvas && currentStroke.tool !== 'highlighter') {
-                        clearLassoCanvas(pageIndex);
-                        const scale = getOverlayCanvasRenderScale(lassoCanvas, drawGeometry.pageWidth, LASSO_OVERLAY_BASE_SCALE);
-                        lassoCanvas.getContext('2d').setTransform(scale, 0, 0, scale, 0, 0);
-                        livePenSurfaces.set(currentStroke, lassoCanvas);
-                    }
                     updateLiveStroke(pageIndex, canvas, currentStroke, cursorOverlay, drawGeometry);
                     if (typeof publishLiveStrokePreview === 'function') {
                         publishLiveStrokePreview(currentStrokePageId, currentStroke);
@@ -4462,7 +4456,6 @@
                     if (currentStroke && typeof publishLiveStrokePreview === 'function') {
                         publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
                     }
-                    releaseLivePenSurface(currentStroke);
                     isDrawing = false;
                     if (isLassoing) {
                         isLassoing = false;
@@ -4567,7 +4560,6 @@
                             publishLiveStrokePreview(currentStrokePageId, currentStroke, { cancel: true });
                         }
                         // Page was deleted while we were drawing — drop the stroke.
-                        releaseLivePenSurface(currentStroke);
                         currentStroke = null;
                         currentStrokePageId = null;
                         drawGeometry = null;
@@ -4696,65 +4688,6 @@
         }
 
         const liveCursorPreviewBounds = new WeakMap();
-        // Keep the large page bitmap unchanged during contact. The existing
-        // lasso layer is otherwise idle while writing and has a bounded size.
-        const livePenSurfaces = new WeakMap();
-        function releaseLivePenSurface(stroke) {
-            const surface = stroke && livePenSurfaces.get(stroke);
-            if (!surface) return;
-            const ctx = surface.getContext('2d');
-            ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.clearRect(0, 0, surface.width, surface.height); ctx.restore();
-            livePenSurfaces.delete(stroke);
-        }
-
-        function drawStrokePreviewTail(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
-            const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
-            if (!previewCanvas) return;
-            const ctx = previewCanvas.getContext('2d');
-            const overlayScale = (metrics && metrics.cursorOverlay === previewCanvas && Number.isFinite(metrics.cursorScale))
-                ? metrics.cursorScale
-                : getOverlayCanvasRenderScale(previewCanvas, getPageDimensions(pageIndex).width, CURSOR_OVERLAY_BASE_SCALE);
-            ctx.setTransform(overlayScale, 0, 0, overlayScale, 0, 0);
-            const previousBounds = liveCursorPreviewBounds.get(previewCanvas);
-            if (previousBounds) {
-                ctx.clearRect(previousBounds.x, previousBounds.y, previousBounds.width, previousBounds.height);
-            }
-
-            if (!stroke || !stroke.points || stroke.points.length === 0
-                || (stroke.points.length > 1 && stroke.finalizedIndex >= stroke.points.length - 1)) {
-                liveCursorPreviewBounds.delete(previewCanvas);
-                return;
-            }
-            const startIndex = stroke.finalizedIndex >= 0 ? Math.max(0, stroke.finalizedIndex) : 0;
-            let minX = Infinity;
-            let minY = Infinity;
-            let maxX = -Infinity;
-            let maxY = -Infinity;
-            for (let index = startIndex; index < stroke.points.length; index += 1) {
-                const point = stroke.points[index];
-                if (!point) continue;
-                minX = Math.min(minX, point.x);
-                minY = Math.min(minY, point.y);
-                maxX = Math.max(maxX, point.x);
-                maxY = Math.max(maxY, point.y);
-            }
-            const padding = Math.max(4, Number(stroke.width) || 1);
-            if (Number.isFinite(minX)) {
-                liveCursorPreviewBounds.set(previewCanvas, {
-                    x: minX - padding,
-                    y: minY - padding,
-                    width: Math.max(1, maxX - minX + padding * 2),
-                    height: Math.max(1, maxY - minY + padding * 2)
-                });
-            }
-            if (stroke.points.length === 1) {
-                drawSinglePointStroke(ctx, stroke);
-                return;
-            }
-            drawStrokeTailSegment(ctx, stroke);
-        }
-
         function drawLiveHighlighterAppend(pageIndex, stroke, cachedPreviewCanvas = null, metrics = null) {
             const previewCanvas = cachedPreviewCanvas || document.querySelector(`.cursor-overlay[data-page="${pageIndex}"]`);
             const points = stroke?.points;
@@ -4816,18 +4749,8 @@
         function commitLiveStrokeToCanvas(pageIndex, canvas, stroke) {
             if (!canvas || !stroke || !stroke.points || stroke.points.length === 0) return;
             const ctx = canvas.getContext('2d');
-            if (livePenSurfaces.has(stroke)) {
-                // Commit original geometry once, at page resolution. No raster
-                // copy or simplification of the live layer enters saved ink.
-                stroke.finalizedIndex = -1;
-                stroke.lastMid = null;
-                if (stroke.points.length === 1) drawSinglePointStroke(ctx, stroke);
-                else drawStrokeTailSegment(ctx, stroke);
-                releaseLivePenSurface(stroke);
-                return;
-            }
             if (stroke.points.length === 1) {
-                drawSinglePointStroke(ctx, stroke);
+                if (stroke.finalizedIndex < 0) drawSinglePointStroke(ctx, stroke);
                 return;
             }
             if (stroke.tool === 'highlighter') {
@@ -4840,7 +4763,10 @@
 
         function finalizeStrokeSegments(pageIndex, canvas, stroke) {
             if (stroke.points.length < 2 || stroke.finalizedIndex >= stroke.points.length - 1) return;
-            drawStrokeTailSegment(canvas.getContext('2d'), stroke);
+            const ctx = canvas.getContext('2d');
+            const size = getPageDimensions(pageIndex);
+            ctx.setTransform(canvas.width / size.width, 0, 0, canvas.height / size.height, 0, 0);
+            drawStrokeTailSegment(ctx, stroke);
             stroke.finalizedIndex = stroke.points.length - 1;
             stroke.lastMid = null;
         }
@@ -4850,16 +4776,22 @@
                 drawLiveHighlighterAppend(pageIndex, stroke, previewCanvas, metrics);
                 return;
             }
-            if (!stroke || stroke.points.length < 2) {
-                drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
+            if (!stroke || !stroke.points.length) return;
+            if (stroke.points.length === 1) {
+                if (stroke.finalizedIndex < 0) {
+                    const ctx = canvas.getContext('2d');
+                    const size = getPageDimensions(pageIndex);
+                    ctx.setTransform(canvas.width / size.width, 0, 0, canvas.height / size.height, 0, 0);
+                    drawSinglePointStroke(ctx, stroke);
+                    stroke.finalizedIndex = 0;
+                }
                 return;
             }
             const pending = stroke.points.length - 1 - stroke.finalizedIndex;
             if (pending <= 0) return;
             if (pending > 0) {
-                finalizeStrokeSegments(pageIndex, livePenSurfaces.get(stroke) || canvas, stroke);
+                finalizeStrokeSegments(pageIndex, canvas, stroke);
             }
-            drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
         }
 
         function drawEraserPreview(pageIndex, pos) {
@@ -13519,7 +13451,7 @@
             const { width: pageWidth, height: pageHeight } = getPageDimensions(pageIndex);
             const renderScale = getPageCanvasRenderScale(canvas, pageWidth);
             ctx.save();
-            ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+            ctx.setTransform(canvas.width / pageWidth, 0, 0, canvas.height / pageHeight, 0, 0);
             ctx.clearRect(0, 0, pageWidth, pageHeight);
             ctx.globalCompositeOperation = 'source-over';
             ctx.globalAlpha = 1;

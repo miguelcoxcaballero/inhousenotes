@@ -217,7 +217,7 @@ test('ink is visible before and after reopening, and new ink remains writable', 
   expect(await page.evaluate(()=>__IHN_TEST_API__.snapshot().pages[0].strokes.length)).toBe(before.length+1);
 });
 
-test('writing keeps the large page bitmap idle until lift and displays ink on the live layer',async({page,context})=>{
+test('pen segments are definitive before lift with no layer transfer or pixel shift',async({page,context})=>{
  const {cdp,target}=await startPen(page,context,40);
  const result=await page.evaluate(async()=>{
   const c=document.querySelector('canvas.page-canvas[data-page="0"]'),r=c.getBoundingClientRect();
@@ -228,14 +228,15 @@ test('writing keeps the large page bitmap idle until lift and displays ink on th
    await new Promise(requestAnimationFrame);
   }
   const during=pagePaints;
-  const live=document.querySelector('.lasso-overlay'),pixels=live.getContext('2d').getImageData(0,0,live.width,live.height).data;
+  const live=document.querySelector('.lasso-overlay'),pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+  const before=c.toDataURL();
   let visible=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])visible++;
-  c.dispatchEvent(new PointerEvent('pointerup',{pointerType:'pen',pointerId:penInputId,buttons:0,bubbles:true,clientX:r.left+200*r.width/794,clientY:r.top+400*r.height/1123}));
+  c.dispatchEvent(new PointerEvent('pointerup',{pointerType:'pen',pointerId:penInputId,buttons:0,bubbles:true,clientX:r.left+195*r.width/794,clientY:r.top+400*r.height/1123}));
   const after=pagePaints,cleared=live.getContext('2d').getImageData(0,0,live.width,live.height).data.every((v,i)=>i%4!==3||v===0);
   CanvasRenderingContext2D.prototype.stroke=stroke;
-  return {during,after,livePaints,visible,cleared};
+  return {during,after,livePaints,visible,cleared,identical:before===c.toDataURL()};
  });
- expect(result.during).toBe(0);expect(result.after).toBe(1);expect(result.livePaints).toBeGreaterThan(3);expect(result.visible).toBeGreaterThan(30);expect(result.cleared).toBe(true);
+ expect(result.during).toBeGreaterThan(3);expect(result.after).toBe(result.during);expect(result.livePaints).toBe(0);expect(result.identical).toBe(true);expect(result.visible).toBeGreaterThan(30);expect(result.cleared).toBe(true);
  await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
 });
 
