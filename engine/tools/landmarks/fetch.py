@@ -1422,13 +1422,31 @@ ALWAYS_SKIP_SUBCAT = re.compile(r"interior|inside|indoor|\bviews? from\b|vistas?
                                 r"replica|r[eé]plica|exposition|\bmaps?\b|\bmapas?\b", re.I)
 
 
+def name_mask(main_cat, names) -> set:
+    """Normalised words of the landmark's own names that would by themselves
+    trigger the interior/skip vocabulary (e.g. 'Exposició' in Palau de
+    l'Exposició, 'Museu' in a museum's name). They are blanked out before
+    those rules run, so the building's name does not make every file of its
+    category look like an interior."""
+    text = " ".join([main_cat.split(":", 1)[-1] if main_cat else ""] + [n for n in names if n])
+    return {t for t in name_tokens(text)
+            if INTERIOR_RE.search(t) or SKIP_SUBCAT.search(t) or ALWAYS_SKIP_SUBCAT.search(t)}
+
+
+def mask_words(text: str, mask: set) -> str:
+    if not mask or not text:
+        return text
+    return re.sub(r"\w+", lambda m: " " if norm_text(m.group()) in mask else m.group(), text)
+
+
 def subcat_ok(name, main_cat, names):
     """Depth-1 subcategory filter: skip interiors/people/events/collections and
     subcategories about something else (no shared name token, e.g. a
     neighbouring building filed under the landmark)."""
-    if ALWAYS_SKIP_SUBCAT.search(name):
+    masked = mask_words(name, name_mask(main_cat, names))
+    if ALWAYS_SKIP_SUBCAT.search(masked):
         return False
-    if SKIP_SUBCAT.search(name) and not EXTERIOR_SUBCAT.search(name):
+    if SKIP_SUBCAT.search(masked) and not EXTERIOR_SUBCAT.search(name):
         return False
     toks = {t for t in name_tokens(" ".join([main_cat.split(":", 1)[-1] if main_cat else ""] + list(names)))
             if len(t) >= 4}
@@ -1462,7 +1480,7 @@ def step_commons(ctx, wd, names):
     if st.done("commons", key, [path]) and not ctx["force"]("commons"):
         doc = L.read_json(path)
         for r in doc.get("files", []):  # classification is cheap: always use current rules
-            classify(r, doc.get("category"))
+            classify(r, doc.get("category"), names)
         apply_subcat_rules(doc, names)
         return doc
     http = ctx["http"]
@@ -1536,7 +1554,7 @@ def step_commons(ctx, wd, names):
             "camera": [cams[0]["lat"], cams[0]["lon"]] if cams else None,
             "object": [objs[0]["lat"], objs[0]["lon"]] if objs else None,
         }
-        classify(rec, cat)
+        classify(rec, cat, names)
         out.append(rec)
     doc = {"category": cat, "category_how": how, "subcats_used": subcats_used,
            "subcats_skipped": subcats_skipped, "files": out, "warnings": warns}
@@ -1550,11 +1568,13 @@ def step_commons(ctx, wd, names):
     return doc
 
 
-def classify(rec, main_cat):
+def classify(rec, main_cat, names=()):
     title = rec["title"].split(":", 1)[1]
     base = re.sub(r"\.[a-z0-9]+$", "", title, flags=re.I)
     src_names = " ".join(s.split(":", 1)[-1] for s in rec["sources"])
     cats = " | ".join(rec["categories"])
+    mask = name_mask(main_cat, names)
+    m_base, m_cats = mask_words(base, mask), mask_words(cats, mask)
     strong = f"{base} | {cats} | {src_names}"
     weak = rec["description"]
     mime = rec["mime"]
@@ -1574,12 +1594,12 @@ def classify(rec, main_cat):
     court_src = any(COURTYARD_SUBCAT.search(s.split(":", 1)[-1]) for s in rec["sources"])
     aspect_src = any(ASPECT_EXT_SUBCAT.search(s.split(":", 1)[-1]) for s in rec["sources"])
     int_src = any(re.search(r"interior|inside", s, re.I) for s in rec["sources"])
-    if int_src or INTERIOR_RE.search(base) or INTERIOR_RE.search(cats):
+    if int_src or INTERIOR_RE.search(m_base) or INTERIOR_RE.search(m_cats):
         ext = False
     elif ext_src or court_src or aspect_src or EXTERIOR_RE.search(base) or rec["wikidata_role"] in ("image", "aerial", "night",
                                                                            "panorama", "view", "winter"):
         ext = True
-    elif INTERIOR_RE.search(weak):
+    elif INTERIOR_RE.search(mask_words(weak, mask)):
         ext = False
     elif EXTERIOR_RE.search(weak) or EXTERIOR_RE.search(cats):
         ext = True
