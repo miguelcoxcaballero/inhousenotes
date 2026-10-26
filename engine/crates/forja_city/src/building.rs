@@ -8,6 +8,7 @@ use std::sync::Arc;
 use forja_assets::SceneData;
 use forja_math::{Mat4, Vec2, Vec3};
 
+use crate::furniture;
 use crate::geom::{Parts, Prim, Rng, polyline_normals, signed_area};
 use crate::kit::{Kit, Mat, Rgb, assemble, hex};
 use crate::modules::{self, BalconyKey, P, Piece, PortalKey, REVEAL, ShopKey, ShopPiece, SurroundKind, WindowKey, facade_frame};
@@ -51,6 +52,24 @@ pub struct CityOut {
     /// `(position, color)` of lamps.
     pub lights: Vec<(Vec3, Vec3)>,
     pub buildings: usize,
+    /// Ground-floor premises on street fronts, for sidewalk dressing
+    /// (bar terraces) by whoever knows the sidewalk widths.
+    pub frontages: Vec<Frontage>,
+}
+
+/// One shopfront at street level.
+#[derive(Clone, Copy, Debug)]
+pub struct Frontage {
+    /// Bottom centre of the opening on the facade plane.
+    pub pos: Vec3,
+    /// Along the facade (right when facing it) and out of the wall.
+    pub right: Vec3,
+    pub out: Vec3,
+    pub width: f32,
+    /// Café, taberna or bodega (gets a terrace on wide sidewalks).
+    pub bar: bool,
+    /// Its shutter is down (closed premises get no terrace).
+    pub closed: bool,
 }
 
 impl CityOut {
@@ -281,6 +300,34 @@ fn band(prim: &mut Prim, m: Mat, f: &Frame, v0: f32, v1: f32, u0: f32, u1: f32, 
         }
         let uv = |uu: f32, vv: f32| Vec2::new(uu / s, -vv / s);
         prim.quad_uv([f.p(a, v0, o), f.p(b, v0, o), f.p(b, v1, o), f.p(a, v1, o)], [uv(a, v0), uv(b, v0), uv(b, v1), uv(a, v1)]);
+    }
+}
+
+/// Stone plinth (zócalo) along the foot of a facade, `h` high and a few
+/// centimetres proud, broken by the openings that reach the ground.
+fn plinth(prim: &mut Prim, m: Mat, f: &Frame, h: f32, holes: &[Hole]) {
+    let s = m.scale();
+    let o = 0.035;
+    let mut cuts: Vec<(f32, f32)> = holes.iter().filter(|x| x.v0 < h).map(|x| (x.u0, x.u1)).collect();
+    cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut spans = Vec::new();
+    let mut u = 0.0f32;
+    for (a, b) in cuts {
+        if a > u + 0.02 {
+            spans.push((u, a));
+        }
+        u = u.max(b);
+    }
+    if f.len > u + 0.02 {
+        spans.push((u, f.len));
+    }
+    let uv = |a: f32, b: f32| Vec2::new(a / s, -b / s);
+    for (a, b) in spans {
+        prim.quad_uv([f.p(a, 0.0, o), f.p(b, 0.0, o), f.p(b, h, o), f.p(a, h, o)], [uv(a, 0.0), uv(b, 0.0), uv(b, h), uv(a, h)]);
+        quad_facing(prim, [f.p(a, h, 0.0), f.p(b, h, 0.0), f.p(b, h, o), f.p(a, h, o)], Vec3::Y, [uv(a, 0.0), uv(b, 0.0), uv(b, o), uv(a, o)]);
+        for (x, dir) in [(a, -f.t), (b, f.t)] {
+            quad_facing(prim, [f.p(x, 0.0, 0.0), f.p(x, 0.0, o), f.p(x, h, o), f.p(x, h, 0.0)], dir, [uv(0.0, 0.0), uv(o, 0.0), uv(o, h), uv(0.0, h)]);
+        }
     }
 }
 
@@ -563,16 +610,31 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             // Standard shopfront sizes keep the module count small.
             let w = [3.3f32, 3.0, 2.6, 2.2].into_iter().find(|w| *w <= bay_w - 0.6).unwrap_or(2.2);
             let h: f32 = if c.gh >= 4.4 { 3.6 } else { 3.2 };
-            let shutter = if rng.chance(0.55) { 0 } else { 1 + rng.below(3) as u8 };
+            let mut sign = rng.below(16) as u8;
+            // Lit crosses catch the eye: keep pharmacies a little rarer.
+            if sign == 0 && rng.chance(0.5) {
+                sign = 2;
+            }
+            let pharmacy = sign == 0;
+            let bar = matches!(sign, 1 | 13 | 14);
+            // Pharmacies and most bars are open; other shops vary.
+            let shutter = if pharmacy || (bar && rng.chance(0.8)) || rng.chance(0.5) { 0 } else { 1 + rng.below(3) as u8 };
             let graffiti = if shutter == 3 && rng.chance(style.graffiti.max(0.05)) { 1 + rng.below(3) as u8 } else { 0 };
+            let mut frame = *rng.pick(&[hex(0x1d1d1d), hex(0x3b2a20), hex(0x5a1e1e), hex(0x24402e), hex(0x9aa0a6)]);
+            let mut surround = if c.ground == c.wall { c.surround } else { c.ground };
+            if bar && rng.chance(0.6) {
+                // Old taberna front: the whole frame in painted wood.
+                frame = *rng.pick(&[hex(0x6b1d1d), hex(0x24402e), hex(0x3b2a20)]);
+                surround = Mat::PaintedWood(frame);
+            }
             let key = ShopKey {
                 w_cm: (w * 100.0).round() as u16,
                 h_cm: (h * 100.0).round() as u16,
-                surround: if c.ground == c.wall { c.surround } else { c.ground },
-                sign: rng.below(16) as u8,
+                surround,
+                sign,
                 shutter,
                 graffiti,
-                frame: *rng.pick(&[hex(0x1d1d1d), hex(0x3b2a20), hex(0x5a1e1e), hex(0x24402e), hex(0x9aa0a6)]),
+                frame,
                 awning: rng.chance(style.awnings * 2.0).then(|| rng.below(3) as u8),
                 interior: 0,
             };
@@ -582,6 +644,29 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             for m in lib.shop(out, key) {
                 out.placements.push((m, at));
             }
+            let open = shutter == 0;
+            // Projecting signs on the pier beside the shop.
+            let pier = u + if k + 1 < bays { bay_w * 0.5 } else { -bay_w * 0.5 };
+            if pharmacy {
+                let m = lib.named(out, "pharmacy_cross", furniture::pharmacy_cross);
+                out.placements.push((m, facade_frame(f.p(pier, h + 0.1, 0.0), f.t, f.n)));
+                out.lights.push((f.p(pier, h + 0.1, 0.55), Vec3::new(0.1, 0.9, 0.3)));
+            } else if open && matches!(sign, 1 | 4 | 7 | 12 | 13 | 14) && rng.chance(0.45) {
+                let m = lib.named(out, &format!("blade_{sign}"), || furniture::blade_sign(sign));
+                out.placements.push((m, facade_frame(f.p(pier, h + 0.05, 0.0), f.t, f.n)));
+            }
+            // A wine barrel as a standing table in front of the bar window.
+            if bar && open && rng.chance(0.55) {
+                // Away from the door (centre, left or right, see the shop front).
+                let door_x = match sign % 3 {
+                    0 => -(w * 0.5 - 0.35),
+                    1 => w * 0.5 - 0.4,
+                    _ => -(w * 0.5 - 0.4),
+                };
+                let m = lib.named(out, "barrel", furniture::barrel);
+                out.placements.push((m, facade_frame(f.p(u + door_x, 0.0, 0.55), f.t, f.n)));
+            }
+            out.frontages.push(Frontage { pos: f.p(u, 0.0, 0.0), right: f.t, out: f.n, width: w, bar, closed: !open });
         } else {
             // House window with a grille (or a plain one high up).
             let (w, h, y) = (ww.min(1.1), 1.65, 0.95);
@@ -679,6 +764,11 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
     // Walls: ground floor (optionally rusticated) and upper floors.
     let rustic = style.rustication;
     wall(parts.get(c.ground), c.ground, f, 0.0, c.gh, &ground_holes, uv_off, rustic);
+    // Stone plinth (zócalo) at the foot of rendered or brick walls.
+    if matches!(c.ground, Mat::Stucco(_) | Mat::Plaster(_) | Mat::Brick(_)) {
+        let (pm, ph) = if style.city == "madrid" { (Mat::Granite, 0.85) } else { (Mat::Ashlar(hex(0xcfcabd)), 0.95) };
+        plinth(parts.get(pm), pm, f, ph, &ground_holes);
+    }
     wall(parts.get(c.wall), c.wall, f, c.gh, top, &upper_holes, uv_off, false);
     services(parts, f, c, style, rng, top, portal_u);
     // Tile bands under each upper floor and panels between bays.
@@ -1255,6 +1345,40 @@ mod tests {
         assert_ne!(a[2], b[2]);
         assert_eq!((a[3], a[4]), (b[3], b[4]));
         assert_eq!(out.scenes.len(), 7);
+    }
+
+    #[test]
+    fn plinth_stops_at_ground_openings() {
+        let f = edge_frame(Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 0.0);
+        let holes = [Hole { u0: 2.0, u1: 4.0, v0: 0.0, v1: 3.0 }, Hole { u0: 6.0, u1: 7.0, v0: 1.0, v1: 2.5 }];
+        let mut p = Prim::default();
+        plinth(&mut p, Mat::Granite, &f, 0.9, &holes);
+        let us: Vec<f32> = p.positions.iter().map(|q| (*q - f.origin).dot(f.t)).collect();
+        assert!(!us.is_empty());
+        // The shop door cuts it, the raised window does not.
+        assert!(us.iter().all(|u| !(*u > 2.01 && *u < 3.99)), "{us:?}");
+        assert!(p.positions.iter().all(|q| q.y <= 0.9 + 1e-4));
+        let front: Vec<f32> = p.positions.iter().filter(|q| (**q - f.origin).dot(f.n) > 0.03).map(|q| (*q - f.origin).dot(f.t)).collect();
+        assert!(front.iter().any(|u| *u < 6.0) && front.iter().any(|u| *u > 7.0));
+    }
+
+    #[test]
+    fn shops_record_frontages_and_bars_get_dressed() {
+        let kit = Kit::load(None);
+        let styles = StyleLibrary::builtin();
+        let mut lib = ModuleLib::new(&kit);
+        let mut out = CityOut::default();
+        for seed in 0..12 {
+            build(&mut lib, &mut out, &lot(), styles.get("madrid_centro").unwrap(), seed);
+        }
+        assert!(out.frontages.len() >= 12, "{} frontages", out.frontages.len());
+        assert!(out.frontages.iter().any(|f| f.bar));
+        for fr in &out.frontages {
+            // On the street edge (z = 20), facing out of the lot.
+            assert!((fr.pos.z - 20.0).abs() < 1e-3 && fr.out.z > 0.99, "{fr:?}");
+        }
+        let named = |p: &str| out.scenes.iter().any(|s| s.name.starts_with(p));
+        assert!(named("barrel") || named("blade_") || named("pharmacy_cross"));
     }
 
     #[test]
