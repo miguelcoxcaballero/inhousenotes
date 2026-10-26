@@ -3,19 +3,20 @@
 //! Every edge of the lot carries a roof plane that rises from its eave
 //! line at the edge's own pitch; a party wall has an infinite pitch (a
 //! vertical plane: the roof stops against the neighbour's medianera, as on
-//! real row houses). The roof is the lower envelope of those planes,
-//! capped by a flat top at height `cap`:
+//! real row houses). The roof is made of those planes, capped by a flat
+//! top at height `cap`:
 //!
-//! * the face of edge `i` is the strip in front of it, clipped by the
-//!   half-planes where its plane is below the plane of every edge `j` whose
-//!   strip it meets (the weighted bisectors), and by the eave lines;
+//! * the face of edge `i` is the strip in front of it between the
+//!   weighted bisectors with its two neighbours (hips at convex corners,
+//!   valleys at reflex ones), clipped where the plane of any other edge
+//!   whose own such strip it overlaps is lower (ridges), and by party walls;
 //! * the flat top is what no face covers: the lot offset inwards by each
 //!   edge's run.
 //!
 //! All clipping is of convex polygons by half-planes, in f64. For a convex
 //! lot this is exactly the weighted straight-skeleton roof; on concave
-//! lots locality (only edges whose strips meet) keeps far walls from
-//! cutting a face. `Roof::new` checks that faces and top tile the eave
+//! lots valleys and locality (only edges whose strips overlap) keep far
+//! walls from cutting a face. `Roof::new` checks that faces and top tile the eave
 //! outline exactly and returns `None` otherwise, so the caller can fall
 //! back to a lower cap or a flat roof.
 
@@ -167,30 +168,30 @@ impl Roof {
             [[lo[0] - 1.0, lo[1] - 1.0], [hi[0] + 1.0, hi[1] + 1.0]]
         };
         let bbox: Vec<P2> = vec![ext[0], [ext[1][0], ext[0][1]], ext[1], [ext[0][0], ext[1][1]]];
+        // The local face of every edge: its strip between the bisectors
+        // with its two neighbours. A far edge only cuts a face that its own
+        // local face overlaps, which is exact on convex lots (a true face
+        // lies inside its local face) and keeps the planes of far edges of
+        // a concave front from cutting in where their wavefront never gets.
+        let local: Vec<Vec<P2>> = (0..n).map(|j| roof.local(j, &bbox)).collect();
         let mut covered = 0.0;
         for i in 0..n {
             if !roof.slopes[i].sloped() {
                 continue;
             }
-            let mut face = clip(&bbox, roof.eave_half(i));
-            face = clip(&face, roof.cap_half(i));
-            // Neighbours first, then the others nearest first: a far wall
-            // only counts if the face still reaches its strip.
-            let mut order: Vec<usize> = (0..n).filter(|&j| j != i).collect();
+            let mut face = local[i].clone();
+            // The others nearest first.
             let mid = |k: usize| {
                 let (a, b) = (ring[k], ring[(k + 1) % n]);
                 (a + b) * 0.5
             };
-            order.sort_by(|&a, &b| {
-                let adj = |j: usize| j == (i + 1) % n || j == (i + n - 1) % n;
-                adj(b).cmp(&adj(a)).then(mid(a).distance(mid(i)).total_cmp(&mid(b).distance(mid(i)))).then(a.cmp(&b))
-            });
+            let mut order: Vec<usize> = (0..n).filter(|&j| j != i && j != (i + 1) % n && j != (i + n - 1) % n).collect();
+            order.sort_by(|&a, &b| mid(a).distance(mid(i)).total_cmp(&mid(b).distance(mid(i))).then(a.cmp(&b)));
             for j in order {
                 if face.len() < 3 {
                     break;
                 }
-                let adjacent = j == (i + 1) % n || j == (i + n - 1) % n;
-                if !adjacent && !overlap(&face, &roof.zone(j, ring), 1e-6) {
+                if !overlap(&face, &local[j], -1e-4) {
                     continue;
                 }
                 face = clip(&face, roof.bisector(i, j));
@@ -306,19 +307,44 @@ impl Roof {
         Half { a: [ai[0] - aj[0], ai[1] - aj[1]], b: bi - bj }
     }
 
-    /// The strip where edge `j`'s face can lie: from its eave line to its
-    /// cap line, a little beyond its ends (just the wall for party edges).
-    fn zone(&self, j: usize, ring: &[Vec2]) -> Vec<P2> {
-        let n = ring.len();
-        let (a, b) = (p2(ring[j]), p2(ring[(j + 1) % n]));
-        let nin = self.lines[j].1;
-        let d = [nin[1], -nin[0]];
-        let s = self.slopes[j];
-        let (lo, hi) = if s.sloped() { (-(s.eave as f64), (self.cap / s.pitch) as f64 - s.eave as f64) } else { (-0.01, 0.01) };
-        let ext = (hi - lo).max(0.0) * 2.0;
-        let at = |p: P2, along: f64, inn: f64| [p[0] + d[0] * along + nin[0] * inn, p[1] + d[1] * along + nin[1] * inn];
-        // d runs along the edge, from a to b.
-        vec![at(a, -ext, lo), at(b, ext, lo), at(b, ext, hi), at(a, -ext, hi)]
+    /// The face edge `j` would have if only its neighbours bounded it: its
+    /// strip from the eave line to the cap line between the bisectors with
+    /// both neighbours. A party wall's is a thin band along it, a little
+    /// longer than the wall so it also bounds the eaves.
+    fn local(&self, j: usize, bbox: &[P2]) -> Vec<P2> {
+        let n = self.lines.len();
+        if !self.slopes[j].sloped() {
+            let (a, nin) = self.lines[j];
+            let d = [nin[1], -nin[0]];
+            let len = {
+                let b = self.lines[(j + 1) % n].0;
+                ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt()
+            };
+            let at = |along: f64, inn: f64| [a[0] + d[0] * along + nin[0] * inn, a[1] + d[1] * along + nin[1] * inn];
+            let ext = 0.6;
+            return vec![at(-ext, -0.01), at(len + ext, -0.01), at(len + ext, 0.01), at(-ext, 0.01)];
+        }
+        let mut f = clip(bbox, self.eave_half(j));
+        f = clip(&f, self.cap_half(j));
+        for k in [(j + n - 1) % n, (j + 1) % n] {
+            if f.len() < 3 {
+                break;
+            }
+            f = clip(&f, self.toward(j, self.bisector(j, k)));
+        }
+        f
+    }
+
+    /// `h` turned to keep edge `j`'s own wall: at a convex vertex the
+    /// face of `j` is where its plane is the lower (a hip), at a reflex one
+    /// where it is the higher (a valley). Both bisectors pass through the
+    /// corner of the eave outline, so no other clip is needed there.
+    fn toward(&self, j: usize, h: Half) -> Half {
+        let n = self.lines.len();
+        let (a, nin) = self.lines[j];
+        let b = self.lines[(j + 1) % n].0;
+        let mid = [(a[0] + b[0]) * 0.5 + nin[0] * 0.01, (a[1] + b[1]) * 0.5 + nin[1] * 0.01];
+        if h.eval(mid) > 0.0 { Half { a: [-h.a[0], -h.a[1]], b: -h.b } } else { h }
     }
 
     /// Height above the eave line of the roof at `p` on face `i`.
@@ -362,42 +388,84 @@ impl Roof {
         }
     }
 
-    /// The roof's section on every party wall above `wall_top` (heights
-    /// relative to the eave line): `(a, b, ha, hb)` segments on the wall
-    /// line, for gable infills.
-    pub fn gables(&self, wall_top: f32) -> Vec<(usize, Vec2, Vec2, f32, f32)> {
+    /// Vertical infills on the party lines: above `wall_top` where the
+    /// roof rises over the medianera, and, past the end of a party wall
+    /// (a re-entrant corner), between the lower slope that stops on the
+    /// wall's line and the higher roof beyond it. Heights are relative to
+    /// the eave line.
+    pub fn gables(&self, wall_top: f32) -> Vec<Gable> {
         let mut out = Vec::new();
         let n = self.lines.len();
         for j in 0..n {
             if self.slopes[j].sloped() {
                 continue;
             }
-            let on = |p: Vec2| self.g(j, p2(p)).abs() < 1e-3;
-            let mut segs: Vec<(Vec2, Vec2, f32, f32)> = Vec::new();
-            for (i, f) in &self.faces {
-                for k in 0..f.len() {
-                    let (a, b) = (f[k], f[(k + 1) % f.len()]);
+            let (o, nin) = (v2(self.lines[j].0), v2(self.lines[j].1));
+            let d = Vec2::new(nin.y, -nin.x);
+            let len = (v2(self.lines[(j + 1) % n].0) - o).dot(d);
+            let on = |p: Vec2| (p - o).dot(nin).abs() < 1e-3;
+            // Sections of the roof on the line: (s0, s1, h0, h1, side).
+            let mut secs: Vec<(f32, f32, f32, f32, f32)> = Vec::new();
+            let mut add = |poly: &[Vec2], h: &dyn Fn(Vec2) -> f32| {
+                let c = poly.iter().copied().sum::<Vec2>() / poly.len() as f32;
+                let side = if (c - o).dot(nin) >= 0.0 { 1.0 } else { -1.0 };
+                for k in 0..poly.len() {
+                    let (a, b) = (poly[k], poly[(k + 1) % poly.len()]);
                     if on(a) && on(b) && a.distance(b) > 1e-3 {
-                        segs.push((a, b, self.face_height(*i, a), self.face_height(*i, b)));
+                        let (sa, sb) = ((a - o).dot(d), (b - o).dot(d));
+                        let (s0, s1, h0, h1) = if sa < sb { (sa, sb, h(a), h(b)) } else { (sb, sa, h(b), h(a)) };
+                        secs.push((s0, s1, h0, h1, side));
                     }
                 }
+            };
+            for (i, f) in &self.faces {
+                add(f, &|p| self.face_height(*i, p));
             }
             for t in &self.top {
-                for k in 0..t.len() {
-                    let (a, b) = (t[k], t[(k + 1) % t.len()]);
-                    if on(a) && on(b) && a.distance(b) > 1e-3 {
-                        segs.push((a, b, self.cap, self.cap));
-                    }
-                }
+                add(t, &|_| self.cap);
             }
-            for (a, b, ha, hb) in segs {
-                if ha.max(hb) > wall_top + 1e-3 {
-                    out.push((j, a, b, ha, hb));
+            let mut cuts: Vec<f32> = secs.iter().flat_map(|s| [s.0, s.1]).chain([0.0, len]).collect();
+            cuts.sort_by(f32::total_cmp);
+            cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-4);
+            for w in cuts.windows(2) {
+                let (x0, x1) = (w[0], w[1]);
+                let xm = (x0 + x1) * 0.5;
+                let at = |s: &(f32, f32, f32, f32, f32), x: f32| s.2 + (s.3 - s.2) * ((x - s.0) / (s.1 - s.0).max(1e-6));
+                let here: Vec<&(f32, f32, f32, f32, f32)> = secs.iter().filter(|s| s.0 <= xm && s.1 >= xm).collect();
+                if here.is_empty() {
+                    continue;
+                }
+                let hi_of = |x: f32| here.iter().map(|s| at(s, x)).fold(f32::NEG_INFINITY, f32::max);
+                let (lo, side) = if xm > 0.0 && xm < len {
+                    // On the medianera, facing the neighbour.
+                    ([wall_top; 2], -1.0)
+                } else if here.len() >= 2 {
+                    // Past the wall's end: from the lower section, facing it.
+                    let low = here.iter().min_by(|a, b| (at(a, x0) + at(a, x1)).total_cmp(&(at(b, x0) + at(b, x1)))).unwrap();
+                    ([at(low, x0), at(low, x1)], low.4)
+                } else {
+                    continue;
+                };
+                let hi = [hi_of(x0), hi_of(x1)];
+                if hi[0] - lo[0] > 1e-3 || hi[1] - lo[1] > 1e-3 {
+                    out.push(Gable { wall: j, a: o + d * x0, b: o + d * x1, lo, hi, out: nin * side });
                 }
             }
         }
         out
     }
+}
+
+/// A vertical infill on the line of party wall `wall`, from `a` to `b`,
+/// between heights `lo` and `hi` (at `a` and at `b`), facing `out`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Gable {
+    pub wall: usize,
+    pub a: Vec2,
+    pub b: Vec2,
+    pub lo: [f32; 2],
+    pub hi: [f32; 2],
+    pub out: Vec2,
 }
 
 /// Point inside a convex CCW polygon (boundary included).
@@ -412,32 +480,27 @@ fn crosses(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
     d1 * d2 < 0.0 && d3 * d4 < 0.0
 }
 
-/// Gable infill: the part of the roof section `a -> b` (heights `ha`,
-/// `hb` above `y`) that rises above `wall_top`, on the wall plane facing
-/// `out`.
-#[allow(clippy::too_many_arguments)]
-pub fn gable(prim: &mut Prim, a: Vec2, b: Vec2, ha: f32, hb: f32, y: f32, wall_top: f32, out: Vec2, scale: f32) {
+/// Meshes a gable infill with its eave line at height `y` (only where
+/// `hi` is above `lo`).
+pub fn gable(prim: &mut Prim, g: &Gable, y: f32, scale: f32) {
     let v3 = |p: Vec2, h: f32| Vec3::new(p.x, y + h, p.y);
-    // Clip the quad (a@wall_top, b@wall_top, b@hb, a@ha) to above wall_top.
-    let mut poly: Vec<(Vec2, f32)> = Vec::new();
-    let (wa, wb) = (ha - wall_top, hb - wall_top);
-    if wa > 0.0 && wb > 0.0 {
-        poly.extend([(a, wall_top), (b, wall_top), (b, hb), (a, ha)]);
-    } else if wa > 0.0 {
-        let t = wa / (wa - wb);
-        poly.extend([(a, wall_top), (a.lerp(b, t), wall_top), (a, ha)]);
-    } else if wb > 0.0 {
-        let t = wa / (wa - wb);
-        poly.extend([(a.lerp(b, t), wall_top), (b, wall_top), (b, hb)]);
+    let (da, db) = (g.hi[0] - g.lo[0], g.hi[1] - g.lo[1]);
+    let poly: Vec<Vec3> = if da > 0.0 && db > 0.0 {
+        vec![v3(g.a, g.lo[0]), v3(g.b, g.lo[1]), v3(g.b, g.hi[1]), v3(g.a, g.hi[0])]
+    } else if da > 0.0 {
+        let t = da / (da - db);
+        vec![v3(g.a, g.lo[0]), v3(g.a.lerp(g.b, t), g.lo[0] + (g.lo[1] - g.lo[0]) * t), v3(g.a, g.hi[0])]
+    } else if db > 0.0 {
+        let t = da / (da - db);
+        vec![v3(g.a.lerp(g.b, t), g.lo[0] + (g.lo[1] - g.lo[0]) * t), v3(g.b, g.lo[1]), v3(g.b, g.hi[1])]
     } else {
         return;
-    }
-    let pts: Vec<Vec3> = poly.iter().map(|(p, h)| v3(*p, *h)).collect();
-    let dir = (b - a).normalize_or(Vec2::X);
+    };
+    let dir = (g.b - g.a).normalize_or(Vec2::X);
     let uv = |q: &Vec3| Vec2::new(Vec2::new(q.x, q.z).dot(dir), -q.y) / scale;
-    let want = Vec3::new(out.x, 0.0, out.y);
-    for k in 1..pts.len() - 1 {
-        let (p0, p1, p2_) = (pts[0], pts[k], pts[k + 1]);
+    let want = Vec3::new(g.out.x, 0.0, g.out.y);
+    for k in 1..poly.len() - 1 {
+        let (p0, p1, p2_) = (poly[0], poly[k], poly[k + 1]);
         if (p1 - p0).cross(p2_ - p0).dot(want) >= 0.0 {
             prim.tri(p0, p1, p2_, [uv(&p0), uv(&p1), uv(&p2_)]);
         } else {
@@ -471,7 +534,7 @@ mod tests {
         assert!(r.outer.iter().any(|p| p.y < -0.39) && r.outer.iter().any(|p| p.y > 8.39));
         // Gables stand on both party walls.
         let g = r.gables(0.5);
-        assert_eq!(g.iter().filter(|s| s.0 == 1).count(), 2);
+        assert_eq!(g.iter().filter(|s| s.wall == 1).count(), 2);
     }
 
     #[test]

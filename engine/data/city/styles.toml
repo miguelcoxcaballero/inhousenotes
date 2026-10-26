@@ -262,3 +262,70 @@ flower_pots = 0.3
 reformed = 1.0
 clutter = 1.0
 atico = 0.2
+
+# Old-town houses on narrow streets. Barrio del Carmen (Valencia): two to
+# four storeys of lime-washed render in ochre, almagra red, pale blue, pink
+# and white, plain surrounds, single balconies with bar railings, slatted
+# alicantinas rolled up over the doors, clay roofs on wooden eaves, few
+# shops and plenty of plants and washing. How far balconies and cornices
+# reach is set by the alley each front faces, not by the style.
+[[style]]
+id = "valencia_carmen"
+city = "valencia"
+floors = [1, 3]
+ground_height = 3.3
+floor_height = 2.9
+bay = [2.2, 2.8]
+window_width = 0.9
+window_height = 1.9
+walls = ["stucco #e3b766", "stucco #b9583e", "stucco #a9c3d2", "stucco #e7b6a6", "stucco #f3efe4", "plaster #d9a55f", "stucco #efe2c4", "stucco #c98b5e"]
+ground = "wall"
+grounds = ["wall", "wall", "wall", "plaster #cdbfa6"]
+surround = ["moulding #f4efe4", "moulding #ece4d2"]
+surround_kind = "plain"
+balcony = "individual"
+railing = "bars"
+shutters = ["alicantina #c99a5c", "alicantina #4d6b45", "alicantina #3d5f7a", "louvre #3f6b3a", "louvre #2f4d6b"]
+frames = ["#f4f1ea", "#5a3a22", "#3f6b3a"]
+roof = "clay"
+cornice = "eave"
+shops = 0.25
+graffiti = 0.5
+awnings = 0.0
+flower_pots = 0.6
+grilles = true
+reformed = 0.35
+clutter = 0.8
+atico = 0.1
+
+# Madrid de los Austrias, Lavapiés and La Latina side streets: low corralas
+# and casas de vecinos in exposed brick and ochre render, plain openings
+# with single balconies, louvres, clay roofs with dormers, a tavern or two.
+[[style]]
+id = "madrid_popular"
+city = "madrid"
+floors = [1, 3]
+ground_height = 3.6
+floor_height = 3.0
+bay = [2.4, 3.0]
+window_width = 1.0
+window_height = 2.1
+walls = ["brick #b4593c", "plaster #d9b48a", "stucco #e8d3ae", "brick #a54e34", "stucco #c7865f", "stucco #efe4cc"]
+ground = "wall"
+grounds = ["wall", "wall", "granite", "plaster #d9c7a8"]
+surround = ["moulding #efe6d4", "moulding #f6f1e6"]
+surround_kind = "plain"
+balcony = "individual"
+railing = "bars"
+shutters = ["louvre #4e3420", "louvre #2f3d2e", "louvre #6a4628", "roller #e6e0d4"]
+frames = ["#f1eee6", "#3a2a1e"]
+roof = "clay"
+cornice = "eave"
+shops = 0.3
+graffiti = 0.6
+awnings = 0.02
+flower_pots = 0.45
+dormers = true
+reformed = 0.4
+clutter = 0.9
+atico = 0.1

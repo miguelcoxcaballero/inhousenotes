@@ -31,9 +31,11 @@ pub const MIN_MARGIN: f32 = 0.55;
 pub const MIN_FACADE: f32 = 2.0;
 /// Narrowest bay worth an opening (m).
 const MIN_BAY: f32 = 0.9;
-/// Furthest a fitted chord may stray from the frontage it replaces (m);
-/// a run that would stray more keeps its vertices and is planned per edge.
+/// Furthest a fitted chord may stray into the lot from the frontage it
+/// replaces (m), and out over the street (concave fronts); a run that would
+/// stray more keeps its vertices and is planned per edge.
 pub const FIT_TOLERANCE: f32 = 0.12;
+pub const FIT_OUTWARD: f32 = 0.05;
 
 /// Consecutive street edges of a lot that turn by at most a crease.
 #[derive(Clone, Debug, PartialEq)]
@@ -90,13 +92,15 @@ fn edge_len(lot: &Lot, i: usize) -> f32 {
 
 /// Blank wall needed at a run end whose corner has interior angle
 /// `interior` (radians), for features projecting `projection` metres:
-/// at sharp corners the reveals must not pierce the other face, and in
-/// re-entrant corners balconies and cornices of the two faces must not
-/// collide.
+/// at sharp corners neither the reveals (inside) nor balconies and
+/// cornices (outside) may cross the other face, and in re-entrant corners
+/// the balconies and cornices of the two faces must not collide.
 pub fn end_clearance(interior: f32, projection: f32) -> f32 {
     let mut m = MIN_MARGIN;
     if interior < FRAC_PI_2 {
-        m = m.max(REVEAL / interior.tan());
+        // The party line leans over the front: keep reveals inside and
+        // projections outside clear of it.
+        m = m.max(REVEAL.max(projection) / interior.tan());
     }
     if interior > PI {
         m = m.max(projection / ((TAU - interior) * 0.5).tan() + 0.4);
@@ -231,18 +235,23 @@ fn fit_stations(run: &Run, m0: f32, n: usize, w: f32) -> Vec<f32> {
     s
 }
 
-/// Largest distance from a vertex of the run to the fitted chords.
-fn fit_error(lot: &Lot, run: &Run, stations: &[f32]) -> f32 {
+/// Whether the fitted chords stay close enough to the run's vertices:
+/// within `FIT_TOLERANCE` inside the lot and `FIT_OUTWARD` over the street.
+fn fits(lot: &Lot, run: &Run, stations: &[f32]) -> bool {
     let mut s = 0.0;
-    let mut err = 0.0f32;
     for &i in &run.edges[..run.edges.len() - 1] {
         s += edge_len(lot, i);
         let v = lot.edge(i).1;
         let k = stations.windows(2).position(|w| s <= w[1]).unwrap_or(stations.len() - 2);
         let (a, b) = (at_arc(lot, run, stations[k]).0, at_arc(lot, run, stations[k + 1]).0);
-        err = err.max(seg_dist(v, a, b));
+        // The lot is on the left of a chord: a vertex there means the chord
+        // passes outside it, over the street.
+        let outward = (b - a).perp_dot(v - a) > 0.0;
+        if seg_dist(v, a, b) > if outward { FIT_OUTWARD } else { FIT_TOLERANCE } {
+            return false;
+        }
     }
-    err
+    true
 }
 
 /// The front of the original edge `src` re-measured for a chord `a -> b`:
@@ -271,7 +280,7 @@ pub fn plan(lot: &Lot, style: &Style, rng: &mut Rng) -> FacadePlan {
     let mut spans = Vec::new();
     for run in runs(lot, CREASE_DEG) {
         let (m0, m1, n, w) = lay(lot, style, &run, target);
-        let fit = run.edges.len() > 1 && n > 0 && fit_error(lot, &run, &fit_stations(&run, m0, n, w)) <= FIT_TOLERANCE;
+        let fit = run.edges.len() > 1 && n > 0 && fits(lot, &run, &fit_stations(&run, m0, n, w));
         if fit || run.edges.len() == 1 || n == 0 {
             spans.push(Span { run, m0, m1, n, w, fit });
             continue;
@@ -486,7 +495,8 @@ mod tests {
     #[test]
     fn end_clearance_by_angle() {
         // Sharp corners keep the reveals off the other face.
-        assert!((end_clearance(deg(20.0), 0.5) - REVEAL / deg(20.0).tan()).abs() < 1e-5);
+        assert!((end_clearance(deg(20.0), 0.2) - REVEAL / deg(20.0).tan()).abs() < 1e-5);
+        assert!((end_clearance(deg(20.0), 0.5) - 0.5 / deg(20.0).tan()).abs() < 1e-5);
         assert_eq!(end_clearance(deg(45.0), 0.5), MIN_MARGIN);
         assert_eq!(end_clearance(deg(90.0), 0.5), MIN_MARGIN);
         assert_eq!(end_clearance(deg(135.0), 0.5), MIN_MARGIN);
