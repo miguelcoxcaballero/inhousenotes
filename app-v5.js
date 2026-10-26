@@ -24135,7 +24135,9 @@
                 Math.random().toString(36).slice(2, 7)
             ].join('-');
             invalidatePageMutationCaches(pageIndex);
+            window.InhouseDriveInk?.page(pageIndex);
             if (!options.skipDriveVersion) bumpDriveContentVersion();
+            window.InhouseDriveInk?.stroke(pageIndex, cloned);
             const existing = pendingStrokeOps.get(pageIndex) || [];
             existing.push(cloned);
             pendingStrokeOps.set(pageIndex, existing);
@@ -24363,6 +24365,7 @@
             pageDirtyMode.set(pageIndex, (prevMode === 'full' || mode === 'full') ? 'full' : 'stroke');
             pageDirty.add(pageIndex);
             invalidatePageMutationCaches(pageIndex);
+            window.InhouseDriveInk?.page(pageIndex);
             // During interaction, just mark dirty — flushDeferredSavesAfterInteraction
             // will trigger scheduleDriveSync once the user lifts their finger/pen.
             if (!hasSmoothInteraction()) {
@@ -24388,6 +24391,7 @@
                     pageDirty.add(index);
                     pageMutationGeneration += 1;
                     pageDirtyGeneration.set(index, pageMutationGeneration);
+                    window.InhouseDriveInk?.page(index);
                 }
             });
             scheduleDriveSync();
@@ -24517,6 +24521,7 @@
         }
 
         function beginDocumentSession(options = {}) {
+            window.InhouseDriveInk?.stop();
             releaseViewportGesture();
             if (_eraserRedrawRaf) cancelAnimationFrame(_eraserRedrawRaf);
             _eraserRedrawRaf = null;
@@ -25092,6 +25097,7 @@
         }
 
         function bumpDriveContentVersion() {
+            window.InhouseDriveInk?.change();
             window.InhouseOfflineLibrary?.scheduleCapture();
             clearDriveSaveBlocked();
             driveContentVersion += 1;
@@ -26754,6 +26760,7 @@
                 const data = await res.json();
                 if (!isDocumentSessionTokenValid(sessionToken) || state.driveFileId !== fileIdAtStart) return false;
                 updatePresenceFromProps({ ...(data.appProperties || {}), ...(data.properties || {}) });
+                window.InhouseDriveInk?.hints(fileIdAtStart, data.properties);
 
                 const hasChanged = !isDriveHydratedForCurrentFile()
                     || isRemoteMetaNewerThanTracked(data);
@@ -26789,6 +26796,7 @@
         }
 
         function startCollabPolling() {
+            window.InhouseDriveInk?.start();
             if (!state.driveFileId) return;
             // The P2P supervisor is independent from Drive's interval. Reassert
             // it even when fallback polling is already alive so a recovered
@@ -26871,6 +26879,7 @@
 
                 // Update presence avatars from appProperties (zero extra API calls)
                 updatePresenceFromProps({ ...(data.appProperties || {}), ...(data.properties || {}) });
+                window.InhouseDriveInk?.hints(fileIdAtStart, data.properties);
 
                 // Detect changes BEFORE updating local state
                 const hasChanged = !isDriveHydratedForCurrentFile()
@@ -30517,6 +30526,13 @@
                 driveLabel = 'Receiving changes';
                 driveDetail = 'Receiving the latest changes from Drive.';
                 driveClass = 'syncing';
+            }
+
+            const inkSync = window.InhouseDriveInk?.status();
+            if (pendingDrive && inkSync && !inkSync.pendingCapture && !inkSync.pending
+                && inkSync.ackVersion === driveContentVersion && !offline && !reconnect) {
+                driveDetail = 'Stroke changes saved to Drive. Updating the PDF copy.';
+                driveLabel = 'Strokes saved';
             }
 
             const localLabel = local.error ? 'Needs attention' : (local.pending ? 'Saving' : (local.savedAt ? 'Saved' : 'No pending changes'));

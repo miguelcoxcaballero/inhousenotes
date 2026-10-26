@@ -241,6 +241,9 @@ function ihnEnsureTabChannel() {
             }
             return;
         }
+        if (event.data?.type === 'drive-ink-hint') {
+            window.InhouseDriveInk?.hint(event.data.fileId,event.data.id);return;
+        }
         if (event.data?.type === 'drive-committed') {
             ihnHandleDriveCommitHint(event.data);
             return;
@@ -1423,6 +1426,14 @@ function ihnHandleDriveCommitHint(message) {
     ihnDriveCommitHintAt = now;
     ihnDriveCommitHintFile = message.fileId;
     void pollDriveRevision();
+}
+
+function publishDriveInkHint(fileId,id) {
+    if(fileId!==state.driveFileId)return;
+    const message={type:'drive-ink-hint',fileId,id};
+    ihnEnsureTabChannel();
+    try { ihnLiveBroadcastChannel?.postMessage(message); } catch (_) {}
+    ihnLivePeers.forEach(peer=>ihnSendControl(peer,message));
 }
 
 function publishDriveCommitHint(fileId) {
@@ -3625,6 +3636,9 @@ async function ihnHandleWireMessage(
             force: true
         });
         return;
+    }
+    if (message?.type === 'drive-ink-hint') {
+        window.InhouseDriveInk?.hint(message.fileId,message.id);return;
     }
     if (message?.type === 'drive-committed') {
         ihnHandleDriveCommitHint(message);

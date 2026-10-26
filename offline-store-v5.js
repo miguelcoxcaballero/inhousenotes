@@ -62,6 +62,21 @@
             };
         });
     }
+    // Commit a small edit and its upload-queue pointer atomically. Readers can
+    // consult the sparse index instead of cloning every historical ink file.
+    async function patchAndQueue(account, id, update, indexId, revision) {
+        return transaction(['settings'], 'readwrite', (stores, done) => {
+            const store=stores.settings;
+            store.get(key(account,id)).onsuccess=event=>{
+                const previous=event.target.result||{account,id,key:key(account,id)};
+                const next=update(previous);store.put(next);done(next);
+            };
+            store.get(key(account,indexId)).onsuccess=event=>{
+                const previous=event.target.result||{account,id:indexId,key:key(account,indexId)};
+                store.put({...previous,pending:{...previous.pending,[id]:Math.max(previous.pending?.[id]||0,revision)}});
+            };
+        });
+    }
     async function settings(account) {
         return { retentionDays:14, ...(await read('settings',account,'preferences')) };
     }
@@ -182,6 +197,6 @@
         }).catch(()=>{lost=true;}),10000);
         try {return await work(assert);} finally {clearInterval(timer);await patch('leases',account,name,old=>old.owner===owner?null:old);}
     }
-    root.InhouseOfflineStore=Object.freeze({open,read,list,put,patch,settings,setRetention,checkpoint,acknowledge,
+    root.InhouseOfflineStore=Object.freeze({open,read,list,put,patch,patchAndQueue,settings,setRetention,checkpoint,acknowledge,
         createFolder,cacheEntries,resolveId,finishFolder,prune,withLease});
 })(globalThis);
