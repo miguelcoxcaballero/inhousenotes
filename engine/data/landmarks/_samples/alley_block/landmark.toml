@@ -1,0 +1,138 @@
+# Sample: a Ciutat Vella block on a curved, 3.6 m wide street.
+#
+# The OSM outline digitises the curved street front as 11 facets of about
+# 2.6 m (outline edges 0..10, all facing roughly south). Openings are laid
+# out by arc length along that whole curved run, not per facet: bays,
+# offsets and balconies ignore where the OSM nodes happen to fall, and a
+# window straddling a node gets a folded reveal. The block has a courtyard
+# reached through a vaulted passage, and a hip roof that follows the
+# concave, holed plan (straight skeleton). Synthetic data.
+
+[landmark]
+name = "Sample block on a curved street"
+main_facade = "facing:s"
+notes = "Synthetic sample for organic street layouts: facade runs, narrow street view, passage, skeleton hip roof over a courtyard."
+
+[defaults]
+material = "render"
+floor_height = 3.3
+
+[render]
+sun = [200, 52]
+
+[material.render]
+kind = "stucco"
+tint = "#e2c79a"
+weathering = 0.25
+uv_scale = 3.0
+
+[material.stone]
+kind = "limestone"
+tint = "#d9cdb4"
+weathering = 0.3
+
+[material.roof]
+kind = "roof_tiles"
+
+[material.shutter]
+kind = "painted_wood"
+tint = "#5d7a5a"
+
+[material.door]
+kind = "wood"
+tint = "#6b4a30"
+
+# ------------------------------------------------------------------ block
+
+[[element]]
+type = "mass"
+name = "block"
+polygon = "outline:0"          # outer ring + the courtyard (patio) hole
+height = 14.2                  # ground floor 4.3 m + 3 x 3.3 m
+cornice = { profile = "classical", size = 0.55, edges = "facing:s" }
+plinth = { profile = "plinth", size = 0.9, material = "stone", edges = "facing:s" }
+string_courses = [4.3]
+roof = { shape = "hip", pitch = 24, overhang = 0.45 }
+
+  # Shop doors on the curved front, every 3.4 m by arc length, leaving the
+  # middle for the passage. `offsets` are metres along the curve from its
+  # centre; edges 0..10 are one run, so this is one facade of 28 m.
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "door"
+  width = 1.5
+  height = 3.0
+  levels = [0.0]
+  bays = { offsets = [-11.9, -8.5, -5.1, 5.1, 8.5, 11.9] }
+  surround = { width = 0.22, projection = 0.05, material = "stone" }
+  door_material = "door"
+
+  # Vaulted passage to the courtyard: cut through the block to the patio
+  # facade, with a round arch and voussoirs on the street.
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "passage"
+  arch = "round"
+  width = 2.8
+  height = 3.9
+  bays = 1
+  voussoirs = { count = 11, width = 0.42 }
+  stone_material = "stone"
+
+  # Balcony doors on the upper floors, aligned with the shops.
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  width = 1.15
+  height = 2.45
+  levels = { start = 4.75, step = 3.3, count = 2 }
+  bays = { offsets = [-11.9, -8.5, -5.1, -1.7, 1.7, 5.1, 8.5, 11.9] }
+  depth = 0.3
+  panes = [2, 3]
+  frame = 0.07
+  frame_material = "shutter"
+  surround = { width = 0.16, projection = 0.04, material = "stone", pediment = "segmental" }
+  balcony = { depth = 0.65, extend = 0.3, railing = "iron" }
+
+  # Attic floor: smaller windows, no balconies.
+  [[element.openings]]
+  edges = ["facing:s", "not:inner"]
+  kind = "window"
+  width = 1.0
+  height = 1.6
+  levels = [11.5]
+  bays = { offsets = [-11.9, -8.5, -5.1, -1.7, 1.7, 5.1, 8.5, 11.9] }
+  depth = 0.3
+  infill = "shutters"
+  frame_material = "shutter"
+  sill = true
+
+  # Back lane and courtyard: plain windows wherever they fit.
+  [[element.openings]]
+  edges = ["facing:n", "inner"]
+  kind = "window"
+  width = 0.9
+  height = 1.4
+  levels = { start = 5.2, step = 3.3, count = 3 }
+  bays = { spacing = 2.6 }
+  infill = "shutters"
+  frame_material = "shutter"
+
+# A lamp on the street, used by dusk renders.
+[[light]]
+at = [0.0, 4.2, 5.6]
+intensity = 1.5
+radius = 14
+
+[[view]]
+name = "along the street"
+eye = [-9.0, 1.6, 5.7]
+target = [3.0, 7.0, 3.0]
+fov_y = 75
+
+[[view]]
+name = "courtyard"
+eye = [-2.0, 1.6, -9.5]
+target = [0.0, 1.8, -5.0]
+fov_y = 85
+context = false

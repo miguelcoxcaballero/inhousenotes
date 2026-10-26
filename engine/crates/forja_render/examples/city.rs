@@ -3,10 +3,13 @@
 //! (`CITY_SHOTS=boulevard,aerial` renders only those shots; `CITY_MOTION=30`
 //! also saves `<shot>_motion.png`, the last of 30 real-time 60 fps frames
 //! walking into the shot, to judge TAA and the screen-space effects in
-//! motion). `NIGHT=1`, `DUSK=1`, `RAIN=1` and `WET=1` render the shots at
-//! night, at dusk, on a rainy night or with wet streets (files get a
-//! `_night`, `_dusk`, `_rain` or `_night_wet` suffix) with the city's lights
-//! as physical lamps, floodlights on the plaza facades and a lit fountain.
+//! motion). `NIGHT=1` renders the city at 22:30 (`HOUR=<0..24>` picks the
+//! time) with lamps, lit windows, shops, neon and floodlights, every one of
+//! them a clustered point or spot light, under [`Environment::night`];
+//! `DUSK=1` (19:36), `RAIN=1` and `WET=1` select the other presets and
+//! `LEGACY=1` the previous path (64 selected point lights, far glow
+//! geometry, fixed exposure) for comparisons. Night files get a `_night`,
+//! `_dusk`, `_rain`, `_night_wet` or `_before` suffix.
 
 use std::path::PathBuf;
 
@@ -25,7 +28,13 @@ fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let dl = root.join("assets/downloaded");
     let t0 = std::time::Instant::now();
-    let kit = Kit::load(Some(&dl));
+    let mut kit = Kit::load(Some(&dl));
+    let mode = night::environment();
+    let hour = night_hour().or(mode.as_ref().map(|(n, _)| if n.starts_with("dusk") { 19.6 } else { 22.5 }));
+    let legacy = mode.as_ref().is_none_or(|(n, _)| *n == "before");
+    if let Some(h) = hour {
+        kit.set_hour(h);
+    }
     let styles = StyleLibrary::load(Some(&root.join("data/city/styles.toml")));
     let cfg = if small { CityConfig::small() } else { CityConfig::default() };
     let city = build_city(&kit, &styles, &cfg);
@@ -61,31 +70,23 @@ fn main() {
         }
     }
     frame.env.shadow_distance = 120.0;
-    let night_env = night::environment();
-    // The plaza: its fountain, or the middle of the plaza lamps.
-    let fountain = out.placements.iter().find(|(s, _)| out.scenes[*s].name.starts_with("fountain")).map(|(_, m)| m.w_axis.truncate());
-    let plaza = fountain.unwrap_or(Vec3::ZERO);
-    if let Some((_, env)) = &night_env {
-        frame.env = env.clone();
-        frame.local_lights = night::city_lights(&out.lights);
-        // Plaza lamps ring the square at 4 m: floodlights at their feet light
-        // the facades across the street, and the fountain glows cyan.
-        let ring: Vec<Vec3> = out.lights.iter().map(|l| l.0).filter(|p| (p.y - 4.0).abs() < 0.01 && (*p - plaza).length() < 70.0).collect();
-        for p in &ring {
-            let out_dir = Vec3::new(p.x - plaza.x, 0.0, p.z - plaza.z).normalize_or_zero();
-            let at = Vec3::new(p.x, 0.4, p.z) + out_dir * 1.0;
-            frame.local_lights.push(night::floodlight(at, at + out_dir * 22.0 + Vec3::Y * 13.0, 14000.0).with_scatter(0.25));
-        }
-        if fountain.is_some() {
-            for k in 0..6 {
-                let a = k as f32 / 6.0 * std::f32::consts::TAU;
-                let p = plaza + Vec3::new(a.cos() * 3.0, 0.6, a.sin() * 3.0);
-                frame.local_lights.push(Light::spot(p, Vec3::new(-a.cos() * 0.3, 1.0, -a.sin() * 0.3), Vec3::new(0.25, 0.95, 1.6), 2500.0, 0.3, 0.7).with_range(14.0));
+    let night = hour.is_some_and(|_| kit.night.is_night());
+    if night {
+        match &mode {
+            Some((_, env)) if !legacy => {
+                frame.env = env.clone();
+                frame.local_lights = out.city_lights.iter().map(night::from_city).collect();
             }
+            _ => night_env(&mut frame.env, kit.night.dark),
         }
-        println!("night: {} lights ({} floodlights)", frame.local_lights.len(), ring.len());
+        println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());
     }
-    let suffix = night_env.as_ref().map(|(n, _)| format!("_{n}")).unwrap_or_default();
+    let suffix = match &mode {
+        Some((n, _)) => format!("_{n}"),
+        None if night => "_night_old".to_string(),
+        None => String::new(),
+    };
+    let base_instances = frame.instances.clone();
     let e = city.extent;
     // Eye-level shots along real streets of each district.
     let street_shot = |district: usize, along_z: bool, pick: usize| {
@@ -101,14 +102,24 @@ fn main() {
     let (m2_eye, m2_at) = street_shot(0, false, 5);
     let (v_eye, v_at) = street_shot(1, true, 4);
     let (v2_eye, v2_at) = street_shot(1, false, 3);
+    // From a corner of each plaza toward the facades across it.
+    let plaza_shot = |district: usize| {
+        let (a, b, _) = city.plazas.iter().find(|p| p.2 == district).copied().unwrap_or((forja_math::Vec2::ZERO, forja_math::Vec2::ONE, 0));
+        let c = (a + b) * 0.5;
+        let eye = forja_math::Vec2::new(c.x, a.y + (b.y - a.y) * 0.12);
+        (Vec3::new(eye.x, 1.7, eye.y), Vec3::new(c.x, 9.0, b.y + 10.0))
+    };
+    let (pm_eye, pm_at) = plaza_shot(0);
+    let (pv_eye, pv_at) = plaza_shot(1);
     let shots = [
         ("boulevard", Vec3::new(-6.0, 1.7, -40.0), Vec3::new(-12.0, 6.0, 20.0)),
         ("madrid_street", m_eye, m_at),
         ("madrid_street2", m2_eye, m2_at),
         ("valencia_street", v_eye, v_at),
         ("valencia_street2", v2_eye, v2_at),
+        ("plaza_madrid", pm_eye, pm_at),
+        ("plaza_valencia", pv_eye, pv_at),
         ("aerial", Vec3::new(-e.x * 0.8, 120.0, -e.y * 1.1), Vec3::new(0.0, 0.0, 0.0)),
-        ("plaza", plaza + Vec3::new(-28.0, 1.7, -26.0), plaza + Vec3::new(0.0, 7.0, 0.0)),
         ("aerial_far", Vec3::new(-e.x * 1.6, 260.0, -e.y * 2.2), Vec3::new(0.0, 0.0, 0.0)),
     ];
     let only = std::env::var("CITY_SHOTS").ok();
@@ -116,12 +127,15 @@ fn main() {
         if only.as_deref().is_some_and(|o| !o.split(',').any(|n| n.trim() == name)) {
             continue;
         }
-        if night_env.as_ref().is_some_and(|(n, _)| *n == "before") {
-            frame.local_lights.clear();
-            frame.lights = night::legacy_lights(&out.lights, eye);
-        }
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = 60f32.to_radians();
+        if night && legacy {
+            frame.instances = base_instances.clone();
+            frame.lights = night_lights(&out.city_lights, eye, at - eye);
+            let glow = forja_city::nightlight::glow_parts(&out.city_lights, eye, 45.0, 2.0 * (frame.camera.fov_y * 0.5).tan() / 720.0, 1.6);
+            let h = r.upload_scene(&forja_city::kit::assemble(&kit, "glow", glow, None));
+            frame.instances.push(DrawInstance { cast_shadows: false, ..DrawInstance::new(h, Mat4::IDENTITY) });
+        }
         let img = r.render_to_image(&frame, 1280, 720);
         let path = format!("{prefix}_{name}{suffix}.png");
         img.save(&path).unwrap();
@@ -148,4 +162,33 @@ fn main() {
             }
         }
     }
+}
+
+/// `NIGHT=1` (22:30) or `HOUR=<h>`.
+fn night_hour() -> Option<f32> {
+    if let Some(h) = std::env::var("HOUR").ok().and_then(|v| v.parse::<f32>().ok()) {
+        return Some(h);
+    }
+    std::env::var("NIGHT").ok().filter(|v| v != "0").map(|_| 22.5)
+}
+
+/// Test night for the current renderer: a dim moon as the sun, a dark
+/// analytic sky, exposure for streets lit at ~15 lux.
+fn night_env(env: &mut Environment, dark: f32) {
+    env.use_ibl = false;
+    env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
+    env.sun_illuminance = 0.025 + 14.0 * (1.0 - dark).powi(3);
+    env.exposure = 0.55 + 3.0 * dark;
+    env.bloom = 0.04 + 0.04 * dark;
+}
+
+/// The 64 lights the current renderer can take, chosen by importance.
+fn night_lights(all: &[forja_city::CityLight], eye: Vec3, fwd: Vec3) -> Vec<PointLight> {
+    forja_city::nightlight::select(all, eye, fwd, 64)
+        .into_iter()
+        .map(|i| {
+            let (position, color, intensity, radius) = all[i].as_point();
+            PointLight { position, radius, color, intensity }
+        })
+        .collect()
 }

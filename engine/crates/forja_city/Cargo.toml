@@ -9,6 +9,9 @@ license.workspace = true
 forja_math.workspace = true
 forja_assets.workspace = true
 serde.workspace = true
-toml.workspace = true
+toml = { workspace = true, features = ["preserve_order"] }
+serde_json.workspace = true
 log.workspace = true
 rayon.workspace = true
+i_overlay.workspace = true
+meshopt.workspace = true

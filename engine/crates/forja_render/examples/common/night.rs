@@ -87,3 +87,33 @@ pub fn shop_spill(at: Vec3, outward: Vec3, lumens: f32) -> Light {
 pub fn floodlight(at: Vec3, target: Vec3, lumens: f32) -> Light {
     Light::spot(at, target - at, kelvin(2900.0), lumens, 0.25, 0.45).with_source_radius(0.15).with_range(((target - at).length() * 2.5).max(20.0))
 }
+
+/// The city kit's light intensities are ~candela / 20 (its emissives
+/// ~cd/m² / 20); renderer units are 10^4 cd and 10^4 cd/m².
+pub const CONTENT_TO_UNITS: f32 = 20.0 / 1.0e4;
+
+/// A content light of the night city as a clustered renderer light (spot
+/// cones kept, the glowing part as the source radius).
+pub fn from_city(l: &forja_city::CityLight) -> Light {
+    use forja_city::nightlight::LightKind;
+    let lum = l.color.dot(Vec3::new(0.2126, 0.7152, 0.0722)).max(1e-3);
+    let mut out = Light::point(l.pos, l.color / lum, 0.0);
+    out.intensity = l.intensity * lum * CONTENT_TO_UNITS;
+    out.range = l.range;
+    out.source_radius = (l.size * 0.5).clamp(0.02, 1.5);
+    out.spot = l.spot.map(|s| forja_render::Spot { direction: s.dir, inner_angle: s.inner, outer_angle: s.outer });
+    // Windows and signals are many and dim: no fog glow, no far sprite
+    // for signals (their lenses are drawn); floodlights glow little.
+    out.scatter = match l.kind {
+        LightKind::Window | LightKind::Signal => 0.0,
+        LightKind::Flood | LightKind::Accent => 0.3,
+        _ => 1.0,
+    };
+    out.sprite = !matches!(l.kind, LightKind::Signal);
+    out
+}
+
+/// `l` moved by a rigid transform.
+pub fn transformed(l: &Light, m: &forja_math::Mat4) -> Light {
+    Light { position: m.transform_point3(l.position), spot: l.spot.map(|s| forja_render::Spot { direction: m.transform_vector3(s.direction), ..s }), ..*l }
+}

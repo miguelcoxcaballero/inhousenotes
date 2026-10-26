@@ -17,6 +17,7 @@ use rayon::prelude::*;
 
 use crate::geom::{Parts, Prim};
 use crate::macrotex::{self, Recipe};
+use crate::nightlight::{self, NightState};
 use crate::texgen::{self, GenSet, SignKind, TilePattern};
 use crate::weathering::{self, Decal, DecalTextures};
 
@@ -72,6 +73,18 @@ pub enum Mat {
     Soil,
     /// Weathering decal and dirt level (index into [`weathering::LEVELS`]).
     Decal(Decal, u8),
+    /// Lantern panes: plain glass by day, frosted and glowing with the
+    /// lamp's color at night.
+    LanternGlass(Rgb),
+    /// Lit room behind a window at night: tone (see
+    /// [`nightlight::room_tone`]) and whether the curtains are drawn.
+    RoomLit(u8, bool),
+    /// Shop sign whose letters are lit at night.
+    ShopSignLit,
+    /// Neon or LED tube.
+    Neon(Rgb),
+    /// Far-light glow point (see [`nightlight::glow_parts`]).
+    Glow(Rgb),
 }
 
 impl Mat {
@@ -229,6 +242,12 @@ pub struct Kit {
     road_paint: GenSet,
     /// Sky visibility inside the fake rooms behind windows.
     interior_ao: TextureData,
+    interiors_lit: TextureData,
+    curtains_lit: TextureData,
+    shop_signs_lit: TextureData,
+    /// Time of day the city is generated for (day by default). Set it with
+    /// [`Kit::set_hour`] before building.
+    pub night: NightState,
 }
 
 const SETS: [&str; 19] = [
@@ -289,6 +308,7 @@ impl Kit {
             .enumerate()
             .map(|(i, p)| (p, texgen::tiles(p, i as u64 + 3)))
             .collect();
+        let interiors = texgen::window_interiors();
         let kit = Kit {
             tiles,
             signs: SignKind::ALL.iter().map(|k| (*k, texgen::sign_face(*k))).collect(),
@@ -296,7 +316,11 @@ impl Kit {
             shop_signs: texgen::shop_sign_atlas(),
             graffiti: (0..3).map(|i| texgen::graffiti_over(&shutter_base, 11 + i)).collect(),
             awnings: vec![texgen::awning(0x2e6b3a, 0xf1ead8), texgen::awning(0xb3261e, 0xf3eee2), texgen::awning(0xd9b779, 0xd9b779)],
-            interiors: texgen::window_interiors(),
+            interiors_lit: texgen::window_interiors_lit(&interiors),
+            curtains_lit: texgen::curtains_lit(),
+            shop_signs_lit: texgen::shop_sign_atlas_lit(),
+            night: NightState::DAY,
+            interiors,
             shop_interiors: texgen::shop_interiors(),
             shop_lights: texgen::shop_interior_lights(),
             plates: STREETS.iter().map(|s| texgen::street_plate(s)).collect(),
@@ -308,6 +332,12 @@ impl Kit {
         };
         log::info!("city kit: {} scanned materials", kit.pbr.len());
         kit
+    }
+
+    /// Generates content for `hour` (0..24): by day nothing changes; after
+    /// dusk lamps, windows, shops and signs light up (see [`nightlight`]).
+    pub fn set_hour(&mut self, hour: f32) {
+        self.night = NightState::at(hour);
     }
 
     pub fn has_scans(&self) -> bool {
@@ -339,6 +369,17 @@ fn tint(c: Rgb) -> Vec4 {
     };
     Vec4::new(f(c[0]), f(c[1]), f(c[2]), 1.0)
 }
+
+// Night emission strengths (shader radiance = texture x emissive x 4; a
+// night exposure of ~4 puts 0.25 at mid grey).
+const NIGHT_LANTERN: f32 = 1.5;
+const NIGHT_BULB: f32 = 30.0;
+const NIGHT_ROOM: f32 = 0.35;
+const NIGHT_SHOP: f32 = 0.08;
+const NIGHT_SIGN: f32 = 0.9;
+const NIGHT_NEON: f32 = 9.0;
+const NIGHT_GLOW: f32 = 0.8;
+const NIGHT_WATER: f32 = 0.1;
 
 /// Builds render scenes from kit primitives, adding each material and
 /// texture once per scene.
@@ -404,6 +445,39 @@ impl<'a> Assembler<'a> {
             emissive_tex: (emissive > 0.0).then_some(base),
             ..Default::default()
         }
+    }
+
+    /// The material of `m` without adding it to the scene.
+    fn material_data(&mut self, m: Mat) -> MaterialData {
+        let i = self.material(m);
+        self.scene.materials[i].clone()
+    }
+
+    /// Night versions of the day materials (identity by day): rooms and
+    /// road signs lose the daylight their emission fakes, shops, lamps and
+    /// fountains light up.
+    fn night_adjust(&mut self, m: Mat, mut d: MaterialData) -> MaterialData {
+        let n = self.kit.night;
+        if !n.is_night() {
+            return d;
+        }
+        let k = n.dark;
+        let mix = |day: f32, night: f32| day + (night - day) * k;
+        match m {
+            Mat::Interior => d.emissive = Vec3::splat(mix(0.03, 0.0015)),
+            Mat::ShopInterior => {
+                // The whole shop is lit, not just its fittings.
+                d.emissive_tex = d.base_color_tex;
+                d.emissive = Vec3::splat(mix(0.6, NIGHT_SHOP));
+            }
+            Mat::ShopSign => d.emissive = Vec3::splat(mix(0.6, 0.015)),
+            Mat::SignFace(_) => d.emissive = Vec3::splat(mix(0.08, 0.004)),
+            Mat::Lamp(c) => d.emissive = tint(c).truncate() * mix(12.0, NIGHT_BULB),
+            Mat::Water => d.emissive = Vec3::new(0.05, 0.55, 0.75) * NIGHT_WATER * k,
+            Mat::PedLens(_) => d.emissive = Vec3::splat(mix(6.0, 3.0)),
+            _ => {}
+        }
+        d
     }
 
     pub fn material(&mut self, m: Mat) -> usize {
@@ -551,7 +625,37 @@ impl<'a> Assembler<'a> {
                 let a = weathering::LEVELS[level as usize % weathering::LEVELS.len()];
                 MaterialData { name: format!("decal_{d:?}"), base_color: Vec4::new(1.0, 1.0, 1.0, a), base_color_tex: Some(base), roughness: 0.95, alpha: AlphaMode::Blend, ..Default::default() }
             }
+            Mat::LanternGlass(c) => {
+                let mut d = self.material_data(Mat::Glass);
+                if kit.night.is_night() {
+                    // Frosted panes glowing with the lamp behind them.
+                    d = MaterialData { name: "lantern_glass".into(), base_color: tint(c), roughness: 0.35, emissive: tint(c).truncate() * NIGHT_LANTERN * kit.night.dark, ..Default::default() };
+                }
+                d
+            }
+            Mat::RoomLit(tone, curtain) => {
+                let base = kit.interiors.clone();
+                let glow = if curtain { kit.curtains_lit.clone() } else { kit.interiors_lit.clone() };
+                let ao = kit.interior_ao.clone();
+                let mut d = self.textured(&base, "room_lit", 0.9, 0.0);
+                d.occlusion_tex = Some(self.tex(&ao));
+                d.emissive_tex = Some(self.tex(&glow));
+                let (col, level) = nightlight::room_tone(tone);
+                d.emissive = col * level * NIGHT_ROOM * kit.night.dark.max(0.05);
+                d
+            }
+            Mat::ShopSignLit => {
+                let t = kit.shop_signs.clone();
+                let glow = kit.shop_signs_lit.clone();
+                let mut d = self.textured(&t, "shop_sign_lit", 0.5, 0.0);
+                d.emissive_tex = Some(self.tex(&glow));
+                d.emissive = Vec3::splat(NIGHT_SIGN);
+                d
+            }
+            Mat::Neon(c) => MaterialData { name: "neon".into(), base_color: tint(c) * 0.6, roughness: 0.25, emissive: tint(c).truncate() * NIGHT_NEON, ..Default::default() },
+            Mat::Glow(c) => MaterialData { name: "glow".into(), base_color: Vec4::new(0.0, 0.0, 0.0, 1.0), roughness: 1.0, emissive: tint(c).truncate() * NIGHT_GLOW, ..Default::default() },
         };
+        let data = self.night_adjust(m, data);
         self.scene.materials.push(data);
         let i = self.scene.materials.len() - 1;
         self.mats.insert(m, i);

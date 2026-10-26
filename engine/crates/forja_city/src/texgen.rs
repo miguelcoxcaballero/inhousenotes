@@ -786,6 +786,104 @@ pub fn street_plate(name: &str) -> TextureData {
     c.to_texture("street_plate", true)
 }
 
+// ------------------------------------------------------------------- night
+
+/// Night emission of [`window_interiors`]: the same rooms lit by a ceiling
+/// lamp (bright near the fitting and on the ceiling, falling off toward
+/// the floor and the corners), stored as sRGB color to be scaled by the
+/// room tone. The sheer curtains glow where the lamp lights them.
+pub fn window_interiors_lit(base: &TextureData) -> TextureData {
+    let (w, h) = (base.width as usize, base.height as usize);
+    let cols = 4usize;
+    let cw = w / cols;
+    let mut rng = Rng::new(78);
+    let lamps: Vec<Vec2> = (0..cols).map(|_| Vec2::new(rng.range(0.35, 0.65), rng.range(0.08, 0.16))).collect();
+    let lin = |c: u8| crate::noise::srgb_to_linear(c as f32 / 255.0);
+    let s = |f: f32| (crate::noise::linear_to_srgb(f.clamp(0.0, 1.0)) * 255.0 + 0.5) as u8;
+    let mut out = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        for x in 0..w {
+            let k = (x / cw).min(cols - 1);
+            let p = Vec2::new((x - k * cw) as f32 / cw as f32, y as f32 / h as f32);
+            let i = (y * w + x) * 4;
+            let c = Vec3::new(lin(base.rgba8[i]), lin(base.rgba8[i + 1]), lin(base.rgba8[i + 2]));
+            // Lamp pool: inverse-square-ish from the fitting, plus a soft
+            // fill so the room never goes black.
+            let d = (p - lamps[k]) * Vec2::new(1.6, 1.0);
+            let pool = 1.0 / (1.0 + 9.0 * d.length_squared());
+            let ceiling = if p.y < 0.06 { 0.8 } else { 0.0 };
+            let light = 0.25 + 1.6 * pool + ceiling;
+            // Wall albedo ~0.05 in the atlas: lift it to read as a lit room.
+            let mut v = (c * light * 5.5).min(Vec3::ONE);
+            // The fitting itself.
+            if ((p - lamps[k]) * Vec2::new(5.0, 9.0)).length() < 0.25 {
+                v = Vec3::ONE;
+            }
+            out.extend([s(v.x), s(v.y), s(v.z), 255]);
+        }
+    }
+    TextureData { name: "interiors_lit".into(), width: w as u32, height: h as u32, rgba8: Arc::from(out), srgb: true }
+}
+
+/// Drawn curtains and blinds glowing with the room light behind them: four
+/// fabrics (cream sheer, ochre, white blind with slats, rust) in the
+/// interior atlas layout, brightest where the lamp is.
+pub fn curtains_lit() -> TextureData {
+    let (w, h) = (512u32, 512u32);
+    let mut c = Canvas::new(w, h, [0.0, 0.0, 0.0, 1.0]);
+    let fabrics = [[0.95, 0.86, 0.70], [0.92, 0.66, 0.36], [0.96, 0.95, 0.92], [0.80, 0.42, 0.30]];
+    for (k, f) in fabrics.iter().enumerate() {
+        let x0 = k as u32 * 128;
+        for y in 0..h {
+            for x in 0..128u32 {
+                let p = Vec2::new(x as f32 / 128.0, y as f32 / h as f32);
+                let pool = 1.0 / (1.0 + 6.0 * ((p - Vec2::new(0.5, 0.25)) * Vec2::new(1.2, 1.0)).length_squared());
+                let pattern = if k == 2 {
+                    // Venetian blind: bright slats, dark gaps.
+                    if (p.y * 64.0).fract() < 0.18 { 0.35 } else { 1.0 }
+                } else {
+                    // Vertical folds.
+                    0.75 + 0.25 * (p.x * 38.0 + (p.x * 7.0).sin()).sin()
+                };
+                let v = 0.6 * (0.35 + 0.65 * pool) * pattern;
+                c.px[(y * w + x0 + x) as usize] = [f[0] * v, f[1] * v, f[2] * v, 1.0];
+            }
+        }
+    }
+    c.to_texture("curtains_lit", true)
+}
+
+/// Night emission of [`shop_sign_atlas`]: the letters and borders glow at
+/// full strength, the panel behind them only faintly (channel letters);
+/// dark letters on a light panel make the panel the lightbox instead.
+pub fn shop_sign_atlas_lit() -> TextureData {
+    let mut c = Canvas::new(1024, 1024, [0.0, 0.0, 0.0, 1.0]);
+    let lum = |c: [f32; 4]| 0.3 * c[0] + 0.6 * c[1] + 0.1 * c[2];
+    for (i, (name, bg, fg)) in SHOPS.iter().enumerate() {
+        let y0 = i as f32 * 64.0;
+        let b = rgb(*bg);
+        let mut f = rgb(*fg);
+        let panel = if lum(f) < lum(b) {
+            f = [f[0] * 0.15, f[1] * 0.15, f[2] * 0.15, 1.0];
+            0.85
+        } else {
+            0.12
+        };
+        c.rect(Vec2::new(0.0, y0), Vec2::new(1024.0, y0 + 64.0), [b[0] * panel, b[1] * panel, b[2] * panel, 1.0]);
+        c.rect(Vec2::new(6.0, y0 + 5.0), Vec2::new(1018.0, y0 + 7.0), f);
+        c.rect(Vec2::new(6.0, y0 + 57.0), Vec2::new(1018.0, y0 + 59.0), f);
+        let size = 30.0f32.min(900.0 / (name.chars().count() as f32 * 5.5 / 6.0));
+        c.text_centered(name, Vec2::new(512.0, y0 + 30.0), size, 1.1, f);
+        if *name == "FARMACIA" {
+            for x in [70.0, 954.0] {
+                c.rect(Vec2::new(x - 18.0, y0 + 26.0), Vec2::new(x + 18.0, y0 + 38.0), rgb(0x39ff6a));
+                c.rect(Vec2::new(x - 6.0, y0 + 14.0), Vec2::new(x + 6.0, y0 + 50.0), rgb(0x39ff6a));
+            }
+        }
+    }
+    c.to_texture("shop_signs_lit", true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -58,12 +58,14 @@ impl Default for NightSky {
     }
 }
 
-/// The city kit authors emission bright enough to read in sunlight (a lamp
-/// globe at ~5x10^5 cd/m², neon at ~5x10^5, lit interiors at ~1200); the
-/// night presets scale it to physical night luminances (globes ~2x10^4,
-/// shop windows ~1200, room interiors ~60 cd/m²). Content authored in
-/// physical units should set `emissive_scale = 1`.
-pub const AUTHORED_EMISSIVE_TO_NIGHT: f32 = 0.05;
+/// The city kit authors emission in units of ~cd/m² / 20 (tuned for the
+/// old fixed night exposure; the shader multiplies material emissive by
+/// 4), its lights in ~cd / 20. The night presets scale that emission to
+/// renderer units (10^4 cd/m²), the same factor the examples apply to the
+/// kit's lights, so lamps, windows and signs keep the content team's
+/// balance. Content authored in physical units should set
+/// `emissive_scale = 1`.
+pub const AUTHORED_EMISSIVE_TO_NIGHT: f32 = 20.0 / 1.0e4;
 
 /// Radiance in renderer units from cd/m².
 pub fn nits(cd_m2: f32) -> f32 {
@@ -85,18 +87,22 @@ impl Environment {
             exposure: 1500.0,
             fog_density: 0.0006,
             fog_falloff: 0.01,
-            bloom: 0.05,
             vignette: 0.3,
             shadow_distance: 0.0,
             use_ibl: false,
-            auto_exposure: Some(EyeAdaptation::default()),
+            // A low key: the eye adapts, but night is not pulled to grey.
+            auto_exposure: Some(EyeAdaptation { compensation_ev: -0.3, ..EyeAdaptation::default() }),
             night_sky: NightSky { zenith: Vec3::new(0.45, 0.62, 1.0) * nits(0.006), glow: pollution * nits(0.045), glow_height: 0.1, stars: nits(0.08) },
-            ambient_fill: crate::lights::kelvin(2600.0) * nits(0.03),
+            // Very little bounce light: unlit areas stay near black.
+            ambient_fill: crate::lights::kelvin(2600.0) * nits(0.012),
             light_scatter: 1.0,
             light_sprites: 1.0,
-            bloom_radius: 0.72,
+            // Tight halos around the bright sources only, no veil.
+            bloom: 0.035,
+            bloom_radius: 0.6,
             bloom_limit: 48.0,
-            scotopic: 0.5,
+            scotopic: 0.3,
+            night_grade: 1.0,
             emissive_scale: AUTHORED_EMISSIVE_TO_NIGHT,
             ..Self::default()
         }
@@ -109,20 +115,21 @@ impl Environment {
             sun_dir: Vec3::new(0.82, -0.035, 0.57).normalize(),
             sun_illuminance: 14.0,
             exposure: 60.0,
-            fog_density: 0.0022,
+            fog_density: 0.0016,
             fog_falloff: 0.012,
-            bloom: 0.045,
             vignette: 0.3,
             shadow_distance: 0.0,
             use_ibl: false,
             auto_exposure: Some(EyeAdaptation::default()),
             night_sky: NightSky { zenith: Vec3::ZERO, glow: crate::lights::kelvin(2300.0) * nits(0.05), glow_height: 0.1, stars: 0.0 },
-            ambient_fill: crate::lights::kelvin(2600.0) * nits(0.03),
+            ambient_fill: crate::lights::kelvin(2600.0) * nits(0.015),
             light_scatter: 1.0,
             light_sprites: 1.0,
-            bloom_radius: 0.75,
+            bloom: 0.035,
+            bloom_radius: 0.62,
             bloom_limit: 48.0,
-            scotopic: 0.25,
+            scotopic: 0.15,
+            night_grade: 0.7,
             emissive_scale: AUTHORED_EMISSIVE_TO_NIGHT,
             ..Self::default()
         }
@@ -134,13 +141,13 @@ impl Environment {
         let cloud = crate::lights::kelvin(2400.0);
         Self {
             sun_illuminance: 14.0 * 3.0e-7,
-            fog_density: 0.0028,
+            fog_density: 0.0016,
             fog_falloff: 0.008,
-            night_sky: NightSky { zenith: cloud * nits(0.012), glow: cloud * nits(0.08), glow_height: 0.2, stars: 0.0 },
-            ambient_fill: crate::lights::kelvin(2500.0) * nits(0.045),
+            night_sky: NightSky { zenith: cloud * nits(0.006), glow: cloud * nits(0.04), glow_height: 0.18, stars: 0.0 },
+            ambient_fill: crate::lights::kelvin(2500.0) * nits(0.016),
             wetness: 1.0,
             puddles: 0.6,
-            bloom: 0.055,
+            bloom: 0.04,
             ..Self::night()
         }
         .with_wetness(1.0, 0.6)
@@ -180,6 +187,7 @@ mod tests {
         assert!(r.wetness > 0.9 && r.puddles > 0.0 && r.fog_density > n.fog_density);
         // Daytime defaults keep every night feature off.
         let d = Environment::default();
-        assert!(!d.is_night_aware() && d.emissive_scale == 1.0 && d.bloom_radius == 1.0);
+        assert!(!d.is_night_aware() && d.emissive_scale == 1.0 && d.bloom_radius == 1.0 && d.night_grade == 0.0);
+        assert!(n.night_grade > 0.0 && n.auto_exposure.is_some_and(|a| a.compensation_ev <= 0.0));
     }
 }
