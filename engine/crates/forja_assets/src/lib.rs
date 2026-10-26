@@ -6,6 +6,8 @@
 //! testable and can run on background threads for streaming.
 
 pub mod bvh;
+pub mod character;
+pub mod fbx;
 pub mod lod;
 pub mod makehuman;
 pub mod manifest;
@@ -161,6 +163,8 @@ pub struct MaterialData {
     /// KHR_materials_clearcoat layer strength and roughness (car paint).
     pub clearcoat: f32,
     pub clearcoat_roughness: f32,
+    /// Skin-like subsurface scattering amount (0..1).
+    pub subsurface: f32,
 }
 
 impl Default for MaterialData {
@@ -183,6 +187,7 @@ impl Default for MaterialData {
             transmission: 0.0,
             clearcoat: 0.0,
             clearcoat_roughness: 0.03,
+            subsurface: 0.0,
         }
     }
 }
@@ -404,6 +409,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
             transmission: m.transmission().map(|t| t.transmission_factor()).unwrap_or(0.0),
             clearcoat: clearcoat(&doc, m.index()).0,
             clearcoat_roughness: clearcoat(&doc, m.index()).1,
+            subsurface: 0.0,
         });
     }
     let default_material = scene.materials.len();
@@ -541,6 +547,7 @@ pub fn load_model(path: &Path) -> Result<SceneData, AssetError> {
     match path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
         Some("gltf" | "glb") => load_gltf(path),
         Some("obj") => load_obj(path),
+        Some("fbx") => fbx::load_fbx(path),
         other => Err(AssetError::Format(format!("unsupported model extension {other:?}"))),
     }
 }

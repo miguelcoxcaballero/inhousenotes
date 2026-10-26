@@ -954,6 +954,7 @@ dependencies = [
 name = "forja_assets"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "forja_math",
  "gltf",
  "image",

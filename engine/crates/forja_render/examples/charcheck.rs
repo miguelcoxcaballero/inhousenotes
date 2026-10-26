@@ -15,8 +15,23 @@ fn main() {
     let preset = std::env::args().nth(2).unwrap_or_else(|| "casual_male".into());
     let only: Option<String> = std::env::args().nth(3);
     let dl = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/downloaded");
-    let spec = HumanSpec::presets().into_iter().find(|s| s.name == preset).expect("preset");
-    let scene = build_human(&dl.join("makehuman_base"), &dl.join("makehuman_assets"), &spec).unwrap();
+    let scene = if preset.contains('.') {
+        let p = if std::path::Path::new(&preset).exists() { PathBuf::from(&preset) } else { dl.join(&preset) };
+        let mut sc = forja_assets::load_model(&p).unwrap();
+        if std::env::var("RAW").is_err() {
+            forja_assets::character::make_photoreal(&mut sc);
+        }
+        if std::env::var("NOHAIR").is_ok() {
+            let hair: Vec<bool> = sc.materials.iter().map(|m| m.alpha != forja_assets::AlphaMode::Opaque).collect();
+            for prims in &mut sc.meshes {
+                prims.retain(|p| !hair[p.material]);
+            }
+        }
+        sc
+    } else {
+        let spec = HumanSpec::presets().into_iter().find(|s| s.name == preset).expect("preset");
+        build_human(&dl.join("makehuman_base"), &dl.join("makehuman_assets"), &spec).unwrap()
+    };
     let skel = Skeleton::from_scene(&scene, 0).unwrap();
     let t0 = std::time::Instant::now();
     let clips: Vec<Clip> = if only.as_deref() == Some("portrait") { Vec::new() } else { mocap::load(&dl.join("cmu_mocap"), &mocap::cmu_set(), &skel, Vec3::Z, 30.0)
@@ -26,10 +41,12 @@ fn main() {
     println!("{} clips in {:.2}s", clips.len(), t0.elapsed().as_secs_f32());
 
     // Metrics on CPU-skinned feet and joints.
-    let find = |n: &str| skel.find(n);
-    let (lf, rf) = (find("foot.L").or(find("toe1-1.L")), find("foot.R"));
-    let (lk, rk) = (find("lowerleg01.L"), find("lowerleg01.R"));
-    let (lh, rh) = (find("upperleg01.L"), find("upperleg01.R"));
+    use forja_anim::retarget::{Role, Side, humanoid_roles};
+    let roles = humanoid_roles(&skel);
+    let role = |r: Role| roles.get(&r).copied();
+    let (lf, rf) = (role(Role::Foot(Side::L)), role(Role::Foot(Side::R)));
+    let (lk, rk) = (role(Role::LowerLeg(Side::L)), role(Role::LowerLeg(Side::R)));
+    let (lh, rh) = (role(Role::UpperLeg(Side::L)), role(Role::UpperLeg(Side::R)));
     let rest_min = {
         let mut m = Vec::new();
         skel.model_matrices(&skel.rest_pose(), &mut m);
@@ -89,8 +106,8 @@ fn main() {
         let h = r.upload_scene(&scene);
         let mut m = Vec::new();
         skel.model_matrices(&skel.rest_pose(), &mut m);
-        let head = m[skel.find("head").unwrap()].w_axis.truncate();
-        let hand = m[skel.find("wrist.R").unwrap()].w_axis.truncate();
+        let head = m[role(Role::Head).unwrap()].w_axis.truncate();
+        let hand = m[role(Role::Hand(Side::R)).unwrap()].w_axis.truncate();
         let mut sheet = image::RgbaImage::new(1500, 500);
         for (k, (at, eye)) in [(head + Vec3::Y * 0.08, head + Vec3::new(0.0, 0.1, 0.75)), (head + Vec3::Y * 0.08, head + Vec3::new(0.55, 0.12, 0.5)), (hand, hand + Vec3::new(-0.15, 0.1, 0.55))].iter().enumerate() {
             let mut frame = FrameDesc::default();

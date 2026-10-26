@@ -27,6 +27,11 @@ pub struct RetargetMap {
     pub rules: Vec<BoneRule>,
     /// `(source hips, target hips)` for root motion.
     pub root: (String, String),
+    /// Target bones that keep their own rest orientation and only take the
+    /// source's change from rest. Clavicles: mocap rigs (CMU) model them
+    /// sloping up 15-20 degrees, game rigs slope down; copying the absolute
+    /// direction shrugs the shoulders by ~30 degrees.
+    pub rest_relative: Vec<String>,
 }
 
 impl RetargetMap {
@@ -52,7 +57,7 @@ impl RetargetMap {
                 o(&format!("Foot.{side}"), &format!("foot.{side}")),
             ]);
         }
-        Self { rules, root: ("Hips".into(), "root".into()) }
+        Self { rules, root: ("Hips".into(), "root".into()), rest_relative: vec!["clavicle.L".into(), "clavicle.R".into()] }
     }
 }
 
@@ -82,6 +87,14 @@ pub enum Side {
 
 fn side_of(n: &str) -> Option<Side> {
     let l = n.to_ascii_lowercase();
+    // A lone "l"/"r" word, as in 3ds Max Biped ("Bip01 L Thigh").
+    let words: Vec<&str> = l.split(|c: char| !c.is_ascii_alphanumeric()).collect();
+    if words.len() > 2 && words.contains(&"l") {
+        return Some(Side::L);
+    }
+    if words.len() > 2 && words.contains(&"r") {
+        return Some(Side::R);
+    }
     let ends = |s: &str| l.ends_with(s);
     if l.contains("left") || ends(".l") || ends("_l") || ends(" l") || l.starts_with("l_") || l.contains("_l_") || l.contains(".l.") || ends("l") && l.len() > 3 && (l.contains("arm") || l.contains("leg") || l.contains("hand") || l.contains("foot")) && !l.contains("right") && l.chars().rev().nth(1).is_some_and(|c| !c.is_alphabetic()) {
         return Some(Side::L);
@@ -194,7 +207,8 @@ impl RetargetMap {
             ori(Role::Foot(s), &mut rules);
         }
         let root = (rs.get(&Role::Hips).map(|j| name(source, *j)).unwrap_or_default(), rt.get(&Role::Hips).map(|j| name(target, *j)).unwrap_or_default());
-        Self { rules, root }
+        let rest_relative = [Side::L, Side::R].iter().filter_map(|s| rt.get(&Role::Clavicle(*s))).map(|j| name(target, *j)).collect();
+        Self { rules, root, rest_relative }
     }
 }
 
@@ -275,7 +289,14 @@ pub fn retarget(clip: &Clip, source: &Skeleton, target: &Skeleton, map: &Retarge
     //    that aligned pose. Twist then follows the performer instead of
     //    being left arbitrary, which is what kept forearms and hands
     //    wrung out.
-    let aligned = solve_directions(&src_rest);
+    let mut aligned = solve_directions(&src_rest);
+    // Rest-relative bones keep the target's own rest pose; their children
+    // stay aligned to the source (direction rules are absolute).
+    for name in &map.rest_relative {
+        if let Some(i) = resolve(name, target) {
+            aligned[i] = rot(&tgt_rest[i]);
+        }
+    }
     let source_of: Vec<Option<usize>> = (0..target.len())
         .map(|i| {
             rules.iter().find_map(|r| match *r {
@@ -363,5 +384,7 @@ mod tests {
         assert_eq!(side_of("UpperArm.R"), Some(Side::R));
         assert_eq!(side_of("lowerarm01.L"), Some(Side::L));
         assert_eq!(side_of("Spine"), None);
+        assert_eq!(side_of("Bip01 L Thigh"), Some(Side::L));
+        assert_eq!(side_of("Bip01 R Forearm"), Some(Side::R));
     }
 }
