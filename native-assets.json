@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "29360d32596847333db6c86b081b1c68d5128a550a547d26dfb4de9c094717c5",
-      "size": 1925531,
+      "sha256": "1754e90839fe86c00c97dc584541c8d2017a8aa750cedbd5fae229d26f21fc0d",
+      "size": 1925806,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -87,8 +87,8 @@
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {
-      "sha256": "def88ff0f037231f432fbf3e36bac39170f3d58d01a9cc3e4b62a4563f87f502",
-      "size": 24023,
+      "sha256": "045342888f574ee8a6b0ce9109fa13eabed8e6f7d3d0cb1778667db8125f4215",
+      "size": 26364,
       "mime": "application/javascript"
     },
     "/scanner/configLoader.js": {
@@ -1197,8 +1197,8 @@
       "mime": "font/ttf"
     },
     "/wasm/inhouse_notes_core.wasm": {
-      "sha256": "bb14072769366455f44b7ad91d412d37597684fbe61be46e9c64081bc7ee0847",
-      "size": 119114,
+      "sha256": "de15389f8a2403fcf2c5c768eb8afa904ae95b580ceae423f12a56f99b5a903e",
+      "size": 119752,
       "mime": "application/wasm"
     }
   }

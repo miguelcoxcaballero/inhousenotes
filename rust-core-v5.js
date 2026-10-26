@@ -367,6 +367,47 @@
         if (offset !== bytes.length) throw new Error('Trailing ink checkpoint bytes');
         return output;
     }
-    root.InhouseRust = Object.freeze({ ready, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
+    // Bounded, generation-scoped coordinates avoid re-packing long strokes on
+    // every eraser sample. A document edit invalidates all cached geometry.
+    const hitCache = new Map();
+    let hitCacheBytes = 0, hitGeneration = null;
+    function clearHitCache() {
+        for (const entry of hitCache.values()) core.free(entry.pointer, entry.bytes);
+        hitCache.clear(); hitCacheBytes = 0;
+    }
+    function strokeHitTest(points, x, y, radius, generation) {
+        if (!core?.editor_stroke_hit || !Array.isArray(points) || points.length < 256
+            || points.length > 262144 || ![x,y,radius].every(Number.isFinite)
+            || radius < 0 || Math.max(Math.abs(x),Math.abs(y),radius) > 1e9) return null;
+        if (generation !== hitGeneration) { clearHitCache(); hitGeneration = generation; }
+        const bytes = points.length * 16;
+        let entry = hitCache.get(points);
+        if (entry && entry.bytes !== bytes) {
+            core.free(entry.pointer,entry.bytes); hitCacheBytes -= entry.bytes;
+            hitCache.delete(points); entry = null;
+        }
+        if (!entry) {
+            while (hitCache.size >= 64 || hitCacheBytes + bytes > 4 * 1024 * 1024) {
+                const [key, oldest] = hitCache.entries().next().value;
+                core.free(oldest.pointer,oldest.bytes); hitCacheBytes -= oldest.bytes; hitCache.delete(key);
+            }
+            let pointer = 0;
+            try {
+                pointer = allocation(bytes).pointer;
+                const coords = new Float64Array(core.memory.buffer, pointer, points.length * 2);
+                for (let i=0;i<points.length;i++) {
+                    const point=points[i];
+                    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
+                        || Math.max(Math.abs(point.x),Math.abs(point.y)) > 1e9) { core.free(pointer,bytes); return null; }
+                    coords[i*2]=point.x; coords[i*2+1]=point.y;
+                }
+                entry={pointer,bytes}; hitCacheBytes += bytes;
+            } catch (_) { if(pointer)core.free(pointer,bytes); return null; }
+        } else hitCache.delete(points);
+        hitCache.set(points,entry);
+        const result = core.editor_stroke_hit(entry.pointer,points.length,x,y,radius);
+        return result < 0 ? null : !!result;
+    }
+    root.InhouseRust = Object.freeze({ ready, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
         folderMotion, folderFade, folderRows, available: () => !!core });
 })(globalThis);
