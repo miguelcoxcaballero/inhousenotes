@@ -4347,6 +4347,10 @@
                 lastSampleTime = e.timeStamp;
                 isDrawing = true;
                 erasedStrokes = [];
+                if (!forceFlushingForExit) {
+                    interruptDocumentBackgroundWork();
+                    window.InhouseOfflineLibrary?.pauseForEditing?.();
+                }
                 notePenActivity();
 
                 if (state.currentTool === 'eraser-stroke') {
@@ -4463,7 +4467,7 @@
                 if (paintFrame) { cancelAnimationFrame(paintFrame); paintFrame = 0; }
                 activePointerId = null;
                 activeDrawingPointers.delete(canvas);
-                if (isDrawing) armPenWritingIdleTimer(detectDeviceType() === 'pc' ? 120 : 220);
+                if (isDrawing) armPenWritingIdleTimer(1200);
                 if (canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
                 if (state.isReadOnly) {
                     if (currentStroke && typeof publishLiveStrokePreview === 'function') {
@@ -15638,6 +15642,12 @@
                             showHomeSaveLoading('Saving on this device…');
                             // Drain the local writer before committing the complete offline
                             // snapshot. Network/auth/peer delays must never hold Home hostage.
+                            // An idle PDF build owns the page-store lock. Stop it
+                            // before the exit checkpoint, otherwise a paused build
+                            // can prevent local writes until its next idle turn.
+                            const preparing = preparedDrivePdfBuild?.promise;
+                            interruptDocumentBackgroundWork();
+                            if (preparing) await preparing.catch(() => {});
                             await queueSave();
                             await persistExitLocalCheckpoint(exitingFileId);
                         }
@@ -21583,7 +21593,6 @@
             if (!state.driveFileId || state.driveFileId !== marker.fileId || !state.driveAutosave) return;
             const persistenceContext = captureDocumentPersistenceContext();
             pendingExitResumeInProgress = true;
-            forceFlushingForExit = true;
             backgroundExitSaveFileId = marker.fileId;
             driveContentVersion = Math.max(Number(marker.contentVersion) || 1, driveContentVersion || 0);
             driveUploadedContentVersion = Math.min(driveUploadedContentVersion, driveContentVersion - 1);
@@ -21610,7 +21619,6 @@
                 })
                 .finally(() => {
                     pendingExitResumeInProgress = false;
-                    forceFlushingForExit = false;
                     backgroundExitSavePromise = null;
                     if (!backgroundExitSaveFailed) backgroundExitSaveFileId = null;
                     if (isDriveHomeVisible()) void refreshDriveFiles();
@@ -22008,9 +22016,8 @@
             };
         }
 
-        // Per-stroke journal writes remain immediate. Full-page compaction must
-        // wait through the gaps between letters, rather than compete with the
-        // next pen contact after the short gesture-idle timer expires.
+        // Journal writes and page compaction wait through the gaps between
+        // letters. Explicit exit checkpoints bypass the editing pause.
         const PAGE_CHECKPOINT_IDLE_MS = 1200;
         async function packInkPageForStorage(page, sessionToken, isStale, normalizedInput = false) {
             const sanitized = normalizedInput ? page : sanitizePageForStorage(page);
@@ -22073,7 +22080,7 @@
             if (checkpoint.inkCheckpoint!==1 || !(checkpoint.bytes instanceof Uint8Array)) throw new Error('Unknown ink checkpoint format');
             let raw;
             try {raw=await window.InhouseDocumentProcessing.run('unpackInkCheckpoint',checkpoint);}
-            catch(error){raw=await window.InhouseRust.unpackCheckpoint(checkpoint);}
+            catch(error){await waitForDocumentBackgroundTurn({sessionToken});raw=await window.InhouseRust.unpackCheckpoint(checkpoint);}
             assertCurrent();
             const words=new Float64Array(raw.buffer,raw.byteOffset,raw.byteLength/8);
             const page=stripStoredPageSession(record);delete page.__inkCheckpoint;
@@ -24115,7 +24122,9 @@
                 strokeOpsFlushScheduled = true;
                 Promise.resolve().then(() => {
                     strokeOpsFlushScheduled = false;
-                    flushStrokeOpsQueue();
+                    // finishPenWritingIdle drains the queue once for the burst;
+                    // do not start a polling waiter for every handwritten letter.
+                    if (!isPenWriting) flushStrokeOpsQueue();
                 });
             }
         }
@@ -24148,6 +24157,7 @@
             let pausedByAbort = false;
             try {
                 while (strokeOpsQueue.length > 0) {
+                    if (!await waitForHotInteractionToSettle({abortSignal, sessionToken, windowMs:1200})) { pausedByAbort = true; return false; }
                     if (abortSignal?.aborted || !isDocumentSessionTokenValid(sessionToken)) {
                         pausedByAbort = true;
                         return false;
@@ -24221,6 +24231,7 @@
             const abortSignal = options.abortSignal || null;
             const structureToken = options.structureToken || null;
             if (abortSignal?.aborted) return false;
+            if (!await waitForHotInteractionToSettle({abortSignal, sessionToken:getDocumentSessionToken(), windowMs:1200})) return false;
 
             // A page-order owner may checkpoint the queue under its lock.
             // Everyone else must leave the numeric page mapping untouched.
@@ -24638,6 +24649,17 @@
             noteInteractionActivity();
         }
 
+        function interruptDocumentBackgroundWork() {
+            window.InhouseDocumentProcessing?.interruptForEditing?.();
+            window.InhouseOfflineApp?.pauseForEditing?.();
+            preparedDrivePdfBuild?.controller?.abort();
+            if (activeDriveSaveController && !activeDriveSaveController.signal.aborted) {
+                activeDriveSaveController.abort();
+                driveDirty = true;
+                deferredDriveSave = true;
+            }
+        }
+
         function pauseSavesDuringInteraction() {
             // While the user is leaving the editor, the save MUST run to
             // completion — abort signals would force the retry loop in
@@ -24649,20 +24671,15 @@
                 abortPrewarm();
                 pausedProcessing = true;
             }
-            // Export already yields between small batches and pauses while a
-            // gesture is active. Cancelling it here threw away completed worker
-            // work on every tap/pan, even when the document had not changed.
-            // Keep the version/session validation in prepareDrivePdfBlob: an
-            // actual edit still requires a fresh PDF before it is called saved.
+            // Pan/hover gestures pause cooperatively. Actual writing contacts
+            // also interrupt workers/uploads via interruptDocumentBackgroundWork.
             pausePdfRenderingDuringInteraction();
             if (saveInProgress && activeLocalSaveController && !activeLocalSaveController.aborted) {
                 activeLocalSaveController.aborted = true;
                 saveQueued = true;
                 pausedProcessing = true;
             }
-            // Do not cancel remote revision reads/uploads or throw away an
-            // export merely to yield CPU. The export loop handles cooperative
-            // pausing; cancellation is reserved for leaving/changing sessions.
+            // Keep pending local changes queued when a checkpoint is interrupted.
             if (pausedProcessing) {
                 showStatus('Save paused...', { phase: 'paused' });
                 armPausedSaveWatchdog();
@@ -24713,6 +24730,7 @@
 
         function flushDeferredSavesAfterInteraction() {
             if (hasSmoothInteraction()) return;
+            window.InhouseOfflineLibrary?.resumeAfterEditing?.();
             clearPausedSaveWatchdog();
             if (saveQueued || pageDirty.size > 0 || strokeOpsQueue.length > 0) {
                 queueSave();
@@ -24816,7 +24834,7 @@
             penWritingIdleTimer = setTimeout(tick, delay);
         }
 
-        let penWritingIdleDelay = 220;
+        let penWritingIdleDelay = 1200;
         function notePenActivity() {
             const wasWriting = isPenWriting;
             noteRecentUserActivity();
@@ -24824,7 +24842,7 @@
             // Only update status indicator on the first pen event of a stroke,
             // not on every pointermove — avoids DOM thrashing during drawing.
             if (!wasWriting) {
-                penWritingIdleDelay = detectDeviceType() === 'pc' ? 120 : 220;
+                penWritingIdleDelay = 1200;
                 showPendingSaveStatus();
             }
             const now = Date.now();
@@ -30863,7 +30881,10 @@
             // PDF build doesn't stall waiting for incidental hover events
             // to settle — there's no point pausing for an interaction
             // when the user explicitly asked us to save and leave.
-            if (forceFlushingForExit) return false;
+            if (forceFlushingForExit || (document.hidden && !OFFLINE_WORKER)) return false;
+            if (OFFLINE_WORKER && window.parent !== window) {
+                try { if (window.parent.hasHotUserInteraction?.(windowMs)) return true; } catch (_) { }
+            }
             return hasSmoothInteraction() || hasRecentUserActivity(windowMs) || hasPendingUserInput();
         }
 
@@ -30895,7 +30916,7 @@
                 await scheduler.postTask(() => {}, { priority: 'background', ...(options.signal ? {signal:options.signal} : {}) });
             } else await new Promise(resolve => setTimeout(resolve, 0));
             if (!await waitForHotInteractionToSettle({abortSignal:options.signal,
-                sessionToken:options.sessionToken, windowMs:300})) {
+                sessionToken:options.sessionToken, windowMs:1200})) {
                 assertCurrent();
                 throw createAbortError('Background document work interrupted');
             }
@@ -32842,7 +32863,10 @@
             if (!canBuildCurrentPdfWithPdfLib()) throw new Error('PDF backgrounds are not available');
             if (!options.forceMainThread && window.InhouseDocumentProcessing && typeof Worker === 'function') {
                 try { PDFLib = await window.InhouseDocumentProcessing.pdfLib(PDFLib); }
-                catch (error) { console.warn('PDF worker unavailable; using compatible export:', error); }
+                catch (error) {
+                    if (error?.name === 'AbortError') throw error;
+                    console.warn('PDF worker unavailable; using compatible export:', error);
+                }
             }
 
             const abortSignal = options.signal || null;

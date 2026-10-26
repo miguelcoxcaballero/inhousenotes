@@ -221,6 +221,23 @@
         assertAccount();
         return {token,expiry:driveTokenExpiry};
     }
+    const documentFetchControllers = new Set();
+    function pauseForEditing() {
+        for (const controller of documentFetchControllers) controller.abort();
+    }
+    async function documentFetch(url, options = {}) {
+        await waitForDocumentBackgroundTurn({signal:options.signal});
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        options.signal?.addEventListener('abort', abort, {once:true});
+        if (options.signal?.aborted) controller.abort();
+        documentFetchControllers.add(controller);
+        try { return await driveFetch(url, {...options, signal:controller.signal}); }
+        finally {
+            documentFetchControllers.delete(controller);
+            options.signal?.removeEventListener('abort', abort);
+        }
+    }
     async function worker() {
         let result;
         try {
@@ -255,7 +272,7 @@
             const guardedFetch=async(url,options)=>{
                 const active=await S.read('settings','__session__','active');
                 if(active?.enabled===false||(localStorage.getItem('drive-hint-email')||'').toLowerCase()!==account)throw new Error('Account signed out');
-                return driveFetch(url,options);
+                return documentFetch(url,options);
             };
             result=await root.InhouseOfflineSync.run(account,{background:true,fetch:guardedFetch,build:workerBuild,merge:async(doc,meta,remoteBlob)=>{await restore(doc,false);return merge(doc,meta,remoteBlob);},
                 progress:progress=>root.parent?.postMessage({type:'ihn-offline-progress',progress},location.origin),
@@ -312,7 +329,7 @@
                 targetId:options?.priority?id:null,
                 fetch:(url,options)=>{
                     if(!isDocumentPersistenceContextCurrent(requestContext))throw createAbortError('Sync document changed');
-                    return driveFetch(url,options);
+                    return documentFetch(url,options);
                 },skip:other=>other!==id,
                 progress:L.setSyncProgress,
                 build:()=>buildPdfBlob({sessionToken:session,...DRIVE_UPLOAD_PDF_OPTIONS}),merge,
@@ -357,5 +374,5 @@
             void L.kick();
         }
     }
-    root.InhouseOfflineApp=Object.freeze({authorizeBackground,initialize,reconcileStartup,backgroundAccess,worker,restore,newDocument,confirmed,queueSave,saveNow,renderHome,renderFolder,currentId});
+    root.InhouseOfflineApp=Object.freeze({pauseForEditing,authorizeBackground,initialize,reconcileStartup,backgroundAccess,worker,restore,newDocument,confirmed,queueSave,saveNow,renderHome,renderFolder,currentId});
 })(window);

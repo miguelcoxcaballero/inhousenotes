@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "7d6d42220a9536f0645fcc1449994145a9a380e7df4801e506c0f093a1d85b69",
-      "size": 1925068,
+      "sha256": "315652e0507d5d8fce9c4f65c4c1af6378416f7c28061bceccebaba28190339d",
+      "size": 1926484,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -22,8 +22,8 @@
       "mime": "application/javascript"
     },
     "/document-processing-v5.js": {
-      "sha256": "f3d1ec1a554602345531c66d7a83b9d0911834809680423d18753d13d6d5172b",
-      "size": 5260,
+      "sha256": "65d829330a34d5677dc454c59fd912f1d3bc11e8230c3b4ba07279b76a9693f4",
+      "size": 5593,
       "mime": "application/javascript"
     },
     "/document-processing-worker-v5.js": {
@@ -47,13 +47,13 @@
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
-      "sha256": "0b9829b290bab623569f43d8f6b3384aeef00dfa390fb0e1a4a938b698c1b370",
-      "size": 24897,
+      "sha256": "1e6bbadbe109e62400726453a0a7a9fac91b7592644961ee171ab13eec4b9885",
+      "size": 25727,
       "mime": "application/javascript"
     },
     "/offline-library-v5.js": {
-      "sha256": "5e77d306bcf77fb098618a0ec4404adc926c60ec02fa1cce980d2f20f82f222c",
-      "size": 27570,
+      "sha256": "958e961762181f8c9cb16cc5a57aff7a1d39319c528d9902de6d95af06232d46",
+      "size": 28517,
       "mime": "application/javascript"
     },
     "/offline-media-v5.js": {
