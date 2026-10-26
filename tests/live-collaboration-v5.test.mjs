@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import './helpers/collab-rust.mjs';
 import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
@@ -173,6 +174,7 @@ function createHarness(overrides = {}) {
     setInterval() { timerId += 1; return timerId; },
     clearInterval() {},
     crypto: globalThis.crypto,
+    InhouseRust: globalThis.InhouseRust,
     btoa: value => Buffer.from(value, 'binary').toString('base64'),
     atob: value => Buffer.from(value, 'base64').toString('binary'),
     TextEncoder,

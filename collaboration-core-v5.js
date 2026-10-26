@@ -16,35 +16,46 @@
     const IHN_STRUCTURE_RANK_STEP = 1024;
     const IHN_STRUCTURE_MIN_GAP = 1e-7;
 
-    function ihnHashString(value) {
-        const text = String(value || '');
-        let first = 0x811c9dc5;
-        let second = 0x9e3779b9;
-        for (let index = 0; index < text.length; index += 1) {
-            const code = text.charCodeAt(index);
-            first ^= code;
-            first = Math.imul(first, 0x01000193);
-            second ^= code + index;
-            second = Math.imul(second, 0x85ebca6b);
+    // Hashing, stable stringify, structure/field normalizers and the canonical document
+    // hash run in the Rust core (rust-core/src/collab). Inputs must be JSON data.
+    function ihnRust() {
+        const rust = globalThis.InhouseRust;
+        if (!rust?.available?.() || !rust.collab) {
+            throw new Error('Inhouse Rust core is not loaded; await InhouseRust.ready before collaboration hashing');
         }
-        return `${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`;
+        return rust.collab;
     }
 
-    function ihnStableValue(value) {
-        if (Array.isArray(value)) return value.map(ihnStableValue);
-        if (!value || typeof value !== 'object') {
-            if (typeof value === 'number' && !Number.isFinite(value)) return null;
-            return value === undefined ? null : value;
+    function ihnJson(value) {
+        const text = JSON.stringify(value);
+        return text === undefined ? 'null' : text;
+    }
+
+    // A field record whose `value` is undefined keeps its slot (as null) in the original
+    // normalizer; JSON would drop the key, so give such records an explicit null first.
+    function ihnFieldMetaJson(meta) {
+        const fields = meta?.fields;
+        if (!fields || typeof fields !== 'object') return ihnJson(meta);
+        let patched = null;
+        for (const key of Object.keys(fields)) {
+            const record = fields[key];
+            if (record && typeof record === 'object' && record.value === undefined
+                && Object.prototype.hasOwnProperty.call(record, 'value')) {
+                patched = patched || (Array.isArray(fields) ? fields.slice() : { ...fields });
+                patched[key] = { ...record, value: null };
+            }
         }
-        const next = {};
-        Object.keys(value).sort().forEach(key => {
-            if (value[key] !== undefined) next[key] = ihnStableValue(value[key]);
-        });
-        return next;
+        return ihnJson(patched ? { ...meta, fields: patched } : meta);
+    }
+
+    function ihnHashString(value) {
+        return ihnRust().hashString(String(value || ''));
     }
 
     function ihnStableStringify(value) {
-        return JSON.stringify(ihnStableValue(value));
+        const text = JSON.stringify(value);
+        if (text === undefined) return value === undefined ? 'null' : undefined;
+        return ihnRust().call('collab.stable', text);
     }
 
     function ihnNormalizeCollabStamp(stamp) {
@@ -90,42 +101,10 @@
     }
 
     function ihnNormalizeStructureMeta(meta, pageIds = []) {
-        const normalized = {
-            v: IHN_STRUCTURE_SCHEMA_VERSION,
-            clock: Math.max(0, Math.floor(Number(meta?.clock) || 0)),
-            entries: {},
-            tombstones: {}
-        };
-        const rawEntries = meta?.entries && typeof meta.entries === 'object' ? meta.entries : {};
-        Object.keys(rawEntries).sort().forEach((pageId, index) => {
-            if (!pageId) return;
-            const entry = ihnNormalizeStructureEntry(rawEntries[pageId], index * IHN_STRUCTURE_RANK_STEP);
-            normalized.entries[pageId] = entry;
-            normalized.clock = Math.max(
-                normalized.clock,
-                entry.orderStamp.clock,
-                entry.createdStamp.clock
-            );
-        });
-        const rawTombstones = meta?.tombstones && typeof meta.tombstones === 'object'
-            ? meta.tombstones
-            : {};
-        Object.keys(rawTombstones).sort().forEach(pageId => {
-            if (!pageId) return;
-            const stamp = ihnNormalizeCollabStamp(rawTombstones[pageId]);
-            normalized.tombstones[pageId] = stamp;
-            normalized.clock = Math.max(normalized.clock, stamp.clock);
-        });
-        ihnNormalizePageIdList(pageIds).forEach((pageId, index) => {
-            if (!normalized.entries[pageId]) {
-                normalized.entries[pageId] = {
-                    rank: index * IHN_STRUCTURE_RANK_STEP,
-                    orderStamp: { clock: 0, actor: '' },
-                    createdStamp: { clock: 0, actor: '' }
-                };
-            }
-        });
-        return normalized;
+        return JSON.parse(ihnRust().call(
+            'collab.normalize_structure',
+            `{"meta":${ihnJson(meta)},"ids":${ihnJson(pageIds)}}`
+        ));
     }
 
     function ihnCloneStructureMeta(meta, pageIds = []) {
@@ -278,25 +257,8 @@
         return ihnCompareCollabStamps(tombstone, created) >= 0;
     }
 
-    function ihnCanonicalStructurePayload(meta, pageIds = null) {
-        const normalized = ihnNormalizeStructureMeta(meta, pageIds || []);
-        const ids = pageIds
-            ? new Set(ihnNormalizePageIdList(pageIds))
-            : new Set([
-                ...Object.keys(normalized.entries),
-                ...Object.keys(normalized.tombstones)
-            ]);
-        const entries = {};
-        const tombstones = {};
-        [...ids].sort().forEach(pageId => {
-            if (normalized.entries[pageId]) entries[pageId] = normalized.entries[pageId];
-            if (normalized.tombstones[pageId]) tombstones[pageId] = normalized.tombstones[pageId];
-        });
-        return { v: IHN_STRUCTURE_SCHEMA_VERSION, entries, tombstones };
-    }
-
     function ihnStructureHash(meta, pageIds = null) {
-        return ihnHashString(ihnStableStringify(ihnCanonicalStructurePayload(meta, pageIds)));
+        return ihnRust().call('collab.structure_hash', `{"meta":${ihnJson(meta)},"ids":${ihnJson(pageIds)}}`);
     }
 
     function ihnMergeStructureMeta(localMeta, remoteMeta, localPageIds = [], remotePageIds = []) {
@@ -458,31 +420,11 @@
 
     function ihnCloneFieldValue(value) {
         if (value === undefined) return null;
-        return JSON.parse(JSON.stringify(ihnStableValue(value)));
+        return JSON.parse(ihnStableStringify(value));
     }
 
     function ihnNormalizeFieldMeta(meta) {
-        const normalized = {
-            v: IHN_FIELD_SCHEMA_VERSION,
-            clock: Math.max(0, Math.floor(Number(meta?.clock) || 0)),
-            fields: {}
-        };
-        const rawFields = meta?.fields && typeof meta.fields === 'object'
-            ? meta.fields
-            : {};
-        Object.keys(rawFields).sort().forEach(key => {
-            if (!key) return;
-            const rawRecord = rawFields[key];
-            if (!rawRecord || typeof rawRecord !== 'object'
-                || !Object.prototype.hasOwnProperty.call(rawRecord, 'value')) return;
-            const stamp = ihnNormalizeCollabStamp(rawRecord.stamp);
-            normalized.fields[key] = {
-                value: ihnCloneFieldValue(rawRecord.value),
-                stamp
-            };
-            normalized.clock = Math.max(normalized.clock, stamp.clock);
-        });
-        return normalized;
+        return JSON.parse(ihnRust().call('collab.normalize_fields', ihnFieldMetaJson(meta)));
     }
 
     function ihnSeedFieldValue(meta, key, value) {
@@ -571,81 +513,25 @@
     }
 
     function ihnFieldMetaHash(meta) {
-        const normalized = ihnNormalizeFieldMeta(meta);
         // The aggregate clock is only an allocation aid. Field stamps and
         // values contain all semantic state and are what replicas converge on.
-        return ihnHashString(ihnStableStringify({
-            v: IHN_FIELD_SCHEMA_VERSION,
-            fields: normalized.fields
-        }));
+        return ihnRust().call('collab.field_hash', ihnFieldMetaJson(meta));
     }
 
-    function ihnCanonicalContentItem(item) {
-        if (!item || typeof item !== 'object') return item;
-        const next = { ...item };
-        delete next.preview;
-        delete next.needsRedraw;
-        delete next.unloaded;
-        delete next.pendingUnload;
-        return next;
-    }
-
-    function ihnCanonicalLivePage(page) {
-        const strokes = (Array.isArray(page?.strokes) ? page.strokes : [])
-            .map(ihnCanonicalContentItem)
-            .sort((left, right) => {
-                const a = String(left?.id || ihnStableStringify(left));
-                const b = String(right?.id || ihnStableStringify(right));
-                return a < b ? -1 : (a > b ? 1 : 0);
-            });
-        const images = (Array.isArray(page?.images) ? page.images : [])
-            .map(ihnCanonicalContentItem)
-            .sort((left, right) => {
-                const a = String(left?.id || ihnStableStringify(left));
-                const b = String(right?.id || ihnStableStringify(right));
-                return a < b ? -1 : (a > b ? 1 : 0);
-            });
-        const sidePanel = page?.sidePanel
-            ? {
-                title: String(page.sidePanel.title || ''),
-                dateKeys: Array.isArray(page.sidePanel.dateKeys)
-                    ? [...page.sidePanel.dateKeys].map(String)
-                    : null
-            }
-            : null;
-        return {
-            pageId: String(page?.pageId || ''),
-            strokes,
-            images,
-            deletedStrokeIds: [...new Set(
-                (Array.isArray(page?.deletedStrokeIds) ? page.deletedStrokeIds : [])
-                    .filter(Boolean)
-                    .map(String)
-            )].sort(),
-            deletedStrokeStamps: ihnNormalizeDeletionStamps(
-                page?.deletedStrokeStamps,
-                page?.deletedStrokeIds
-            ),
-            backgroundSource: String(page?.backgroundSource || 'template'),
-            templateKind: String(page?.templateKind || ''),
-            pageWidth: Number(page?.pageWidth) || 0,
-            pageHeight: Number(page?.pageHeight) || 0,
-            sidePanel
-        };
+    // pagesJson is the JSON text of the pages array (the worker already has it).
+    function ihnCanonicalDocumentHashJson(pagesJson, structure, calendarPageConfig, exportName, fieldMeta = null) {
+        // Tombstones for pages that are no longer materialized stay in the structure
+        // payload: they stop an older Drive/P2P snapshot resurrecting a deleted page.
+        return ihnRust().call('collab.document_hash', '{"pages":' + pagesJson
+            + ',"structure":' + ihnJson(structure)
+            + ',"calendar":' + ihnJson(calendarPageConfig || null)
+            + ',"name":' + JSON.stringify(String(exportName || ''))
+            + ',"fields":' + ihnFieldMetaJson(fieldMeta) + '}');
     }
 
     function ihnCanonicalDocumentHash(pages, structure, calendarPageConfig, exportName, fieldMeta = null) {
-        const canonicalPages = (Array.isArray(pages) ? pages : []).map(ihnCanonicalLivePage);
-        return ihnHashString(ihnStableStringify({
-            pages: canonicalPages,
-            // Keep tombstones for pages that are no longer materialized. They
-            // are what prevents an older Drive/P2P snapshot resurrecting a
-            // deleted page later.
-            structure: ihnCanonicalStructurePayload(structure),
-            fields: ihnNormalizeFieldMeta(fieldMeta).fields,
-            calendarPageConfig: calendarPageConfig || null,
-            exportName: String(exportName || '')
-        }));
+        return ihnCanonicalDocumentHashJson(Array.isArray(pages) ? ihnJson(pages) : '[]',
+            structure, calendarPageConfig, exportName, fieldMeta);
     }
 
     function ihnComputeReconnectDelay(failures, peerId = '') {
@@ -696,6 +582,7 @@
         ihnResolveFieldValue,
         ihnFieldMetaHash,
         ihnCanonicalDocumentHash,
+        ihnCanonicalDocumentHashJson,
         ihnComputeReconnectDelay,
         ihnChooseMaterializableFallbackPageId
     };
