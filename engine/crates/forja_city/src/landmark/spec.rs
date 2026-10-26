@@ -111,6 +111,71 @@ macro_rules! str_enum {
     };
 }
 
+/// A string restricted to `names` (lower-cased, `-`/space as `_`), with a
+/// "did you mean" error on typos.
+fn one_of<'de, D: Deserializer<'de>>(d: D, names: &[&str], what: &str) -> Result<String, D::Error> {
+    let s = String::deserialize(d)?;
+    let k = s.trim().to_ascii_lowercase().replace(['-', ' '], "_");
+    if names.contains(&k.as_str()) {
+        return Ok(k);
+    }
+    Err(de::Error::custom(format!("unknown {what} `{s}`{}; expected one of {}", super::parse::did_you_mean(&k, names), names.join(", "))))
+}
+
+/// Deserialisers for free-text keys with a fixed vocabulary.
+macro_rules! checked {
+    ($names:ident, $f:ident, $fo:ident, $what:expr, [$($n:expr),* $(,)?]) => {
+        pub const $names: &[&str] = &[$($n),*];
+        #[allow(dead_code)]
+        fn $f<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+            one_of(d, $names, $what)
+        }
+        #[allow(dead_code)]
+        fn $fo<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+            one_of(d, $names, $what).map(Some)
+        }
+    };
+}
+
+checked!(PEDIMENTS, de_pediment, de_pediment_opt, "pediment", ["triangle", "segmental", "broken", "broken_segmental"]);
+checked!(RAILINGS, de_railing, de_railing_opt, "railing", ["iron", "stone", "balustrade", "glass", "none"]);
+checked!(MODILLION_STYLES, de_modillion, de_modillion_opt, "modillion style", ["bracket", "block", "corbel", "console"]);
+checked!(FINIALS, de_finials, de_finials_opt, "balustrade finial", ["none", "urn", "ball", "pinecone"]);
+checked!(MANSARD_UPPER, de_mansard, de_mansard_opt, "mansard upper part", ["hip", "flat", "pyramid"]);
+checked!(RIB_DIRS, de_ribdir, de_ribdir_opt, "rib direction", ["u", "v"]);
+checked!(BUTTRESS_CAPS, de_bcap, de_bcap_opt, "buttress cap", ["slope", "gable", "flat", "pinnacle"]);
+checked!(LANTERN_CAPS, de_lcap, de_lcap_opt, "lantern cap", ["dome", "cone", "onion", "spire", "flat"]);
+checked!(ALIGNS, de_align, de_align_opt, "wall alignment", ["center", "centre", "left", "right"]);
+checked!(SIDES, de_side, de_side_opt, "side", ["left", "right"]);
+checked!(PLANES, de_plane, de_plane_opt, "extrusion plane", ["xy", "xz", "yz", "zy"]);
+checked!(SKIES, de_sky, de_sky_opt, "sky", ["clear", "sky", "street", "atmosphere"]);
+checked!(TIMES, de_time, de_time_opt, "time of day", ["day", "morning", "evening", "dusk", "night"]);
+
+/// Smoothing: `true` (40 degree crease), `false`, or a crease angle.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Crease(pub f32);
+impl<'de> Deserialize<'de> for Crease {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = Crease;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("true, false or a crease angle in degrees")
+            }
+            fn visit_bool<E: de::Error>(self, b: bool) -> Result<Crease, E> {
+                Ok(Crease(if b { 40.0 } else { 0.0 }))
+            }
+            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Crease, E> {
+                Ok(Crease(v as f32))
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Crease, E> {
+                Ok(Crease(v as f32))
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
 // ------------------------------------------------------------------ colors
 
 /// `"#rrggbb"`, `[r, g, b]` in 0..255, or `[r, g, b]` in 0..1.
@@ -315,6 +380,12 @@ pub struct PolyTable {
     /// Douglas-Peucker tolerance in metres.
     #[serde(default)]
     pub simplify: Option<f32>,
+    /// Add these polygons (after inset/offset, holes and chamfer).
+    #[serde(default)]
+    pub union: Vec<PolySpec>,
+    /// Remove these polygons (after `union`).
+    #[serde(default)]
+    pub subtract: Vec<PolySpec>,
     /// Keep only the part inside this polygon.
     #[serde(default)]
     pub clip: Option<PolySpec>,
@@ -379,8 +450,10 @@ pub enum EdgeTok {
     Range(i64, i64),
     Longest(usize),
     Shortest(usize),
-    /// Facade normal within `tol` degrees of a compass azimuth.
-    Facing(f32, f32),
+    /// Facade normal near a compass azimuth: `None` = the half-open 90
+    /// degree sector of a compass word (every edge gets exactly one of
+    /// n / e / s / w), `Some(tol)` = within `tol` degrees (inclusive).
+    Facing(f32, Option<f32>),
     MinLength(f32),
     Not(Box<EdgeTok>),
 }
@@ -440,11 +513,11 @@ impl EdgeTok {
             "facing" => {
                 let a = arg.ok_or_else(|| format!("`facing` needs a direction: facing:s, facing:135 ({s})"))?;
                 let deg = compass_deg(a).ok_or_else(|| format!("bad direction `{a}` in `{s}`; use n, ne, e, se, s, sw, w, nw or degrees"))?;
-                let tol = arg2.map(|v| v.parse::<f32>().map_err(|_| bad())).transpose()?.unwrap_or(45.0);
+                let tol = arg2.map(|v| v.parse::<f32>().map_err(|_| bad())).transpose()?;
                 Ok(EdgeTok::Facing(deg, tol))
             }
             "min" | "min_length" => Ok(EdgeTok::MinLength(arg.ok_or_else(bad)?.parse().map_err(|_| bad())?)),
-            n if compass_deg(n).is_some() && n.parse::<f32>().is_err() => Ok(EdgeTok::Facing(compass_deg(n).unwrap(), 45.0)),
+            n if compass_deg(n).is_some() && n.parse::<f32>().is_err() => Ok(EdgeTok::Facing(compass_deg(n).unwrap(), None)),
             _ => Err(format!(
                 "unknown edge selector `{s}`{}; use all, outer, inner, <index>, a..b, longest[:k], shortest[:k], facing:<dir>[:tol], min:<metres>, not:<sel>",
                 super::parse::did_you_mean(head, &["all", "outer", "inner", "longest", "shortest", "facing", "min", "not"])
@@ -565,10 +638,16 @@ pub struct Bays {
     /// Bay indices to leave solid.
     #[serde(default)]
     pub skip: Vec<i64>,
+    /// One opening where the facade faces each compass azimuth (degrees;
+    /// curved and round walls), within `azimuth_tolerance` (default 30).
+    #[serde(default)]
+    pub azimuth: Option<Vec<f32>>,
+    #[serde(default)]
+    pub azimuth_tolerance: Option<f32>,
 }
 
 impl Shorthand for Bays {
-    const EXPECTING: &'static str = "a bay count or { count, spacing, margin, at, offsets, skip }";
+    const EXPECTING: &'static str = "a bay count or { count, spacing, margin, margins, at, offsets, skip, azimuth }";
     fn from_num(v: f64) -> Result<Self, String> {
         if v < 0.0 || v > 500.0 || v.fract() != 0.0 {
             return Err(format!("bay count must be a whole number 0..500, got {v}"));
@@ -581,7 +660,7 @@ impl Shorthand for Bays {
 
 str_enum!(
     /// What kind of opening.
-    OpeningKind, "opening kind", { Window => ["window"], Door => ["door"], Portal => ["portal"], Arch => ["arch"], Oculus => ["oculus"], Rose => ["rose"], Lancet => ["lancet"], Twin => ["twin", "ajimez"], Niche => ["niche"], Blind => ["blind"], Slit => ["slit"] }
+    OpeningKind, "opening kind", { Window => ["window"], Door => ["door"], Portal => ["portal"], Arch => ["arch"], Oculus => ["oculus"], Rose => ["rose"], Lancet => ["lancet"], Twin => ["twin", "ajimez"], Niche => ["niche"], Blind => ["blind"], Slit => ["slit"], Passage => ["passage", "gate", "tunnel"] }
 );
 
 str_enum!(
@@ -612,8 +691,9 @@ pub struct SurroundSpec {
     /// Ears (crossettes) at the top corners.
     #[serde(default)]
     pub ears: bool,
-    /// Pediment over the surround: "triangle" or "segmental".
-    #[serde(default)]
+    /// Pediment over the surround: triangle | segmental | broken |
+    /// broken_segmental.
+    #[serde(default, deserialize_with = "de_pediment_opt")]
     pub pediment: Option<String>,
 }
 fn d_surround_w() -> f32 {
@@ -706,7 +786,7 @@ pub struct BalconySpec {
     #[serde(default = "d_bal_t")]
     pub thickness: f32,
     /// iron | stone | balustrade | glass | none
-    #[serde(default = "d_bal_r")]
+    #[serde(default = "d_bal_r", deserialize_with = "de_railing")]
     pub railing: String,
     #[serde(default = "d_bal_h")]
     pub railing_height: f32,
@@ -828,7 +908,7 @@ pub struct ModillionSpec {
     #[serde(default)]
     pub depth: Option<f32>,
     /// bracket | block | corbel | console
-    #[serde(default = "d_mod_k")]
+    #[serde(default = "d_mod_k", deserialize_with = "de_modillion")]
     pub style: String,
 }
 fn d_mod_s() -> f32 {
@@ -1018,7 +1098,7 @@ pub struct BalustradeSpec {
     #[serde(default = "d_bal_ped")]
     pub pedestals: f32,
     /// urn | ball | pinecone | none
-    #[serde(default = "d_bal_fin")]
+    #[serde(default = "d_bal_fin", deserialize_with = "de_finials")]
     pub finials: String,
     #[serde(default)]
     pub material: Option<String>,
@@ -1167,7 +1247,7 @@ pub struct MansardSpec {
     #[serde(default = "d_mans_i")]
     pub inset: f32,
     /// Upper part: flat | hip | pyramid
-    #[serde(default = "d_mans_u")]
+    #[serde(default = "d_mans_u", deserialize_with = "de_mansard")]
     pub upper: String,
     /// Pitch of the upper part (degrees).
     #[serde(default = "d_mans_p")]
@@ -1525,7 +1605,7 @@ pub struct ShellRibs {
     #[serde(default = "d_srib_n")]
     pub count: u32,
     /// "u" (along u at constant v) or "v".
-    #[serde(default = "d_srib_dir")]
+    #[serde(default = "d_srib_dir", deserialize_with = "de_ribdir")]
     pub along: String,
     #[serde(default = "d_srib_w")]
     pub width: f32,
@@ -1648,6 +1728,8 @@ element! {
         /// Target element name (standalone `type = "openings"` only).
         #[serde(default)] pub on: Option<String>,
         #[serde(default)] pub edges: EdgeSel,
+        /// Lay bays out per plan edge instead of along whole facade runs.
+        #[serde(default)] pub per_edge: bool,
         #[serde(default = "d_kind")] pub kind: OpeningKind,
         #[serde(default)] pub arch: Option<ArchKind>,
         #[serde(default = "d_ow")] pub width: f32,
@@ -1741,6 +1823,13 @@ element! {
         #[serde(default)] pub bottom: Option<bool>,
         /// Smooth shading around the walls (round towers, curved facades).
         #[serde(default)] pub smooth: bool,
+        /// Edges meeting at less than this turn (degrees, default 25) form
+        /// one facade run laid out by arc length; 0 = every edge alone.
+        #[serde(default)] pub run_angle: Option<f32>,
+        /// Sides left open (no wall), showing the inside: the mass becomes
+        /// a shell of `wall_thickness` open on these edges.
+        #[serde(default)] pub open_edges: Option<EdgeSel>,
+        #[serde(default)] pub wall_thickness: Option<f32>,
         #[serde(default)] pub openings: Vec<Openings>,
         #[serde(default)] pub cornice: Flex<MouldingSpec>,
         #[serde(default)] pub plinth: Flex<MouldingSpec>,
@@ -1779,7 +1868,7 @@ element! {
         #[serde(default)] pub height: Option<f32>,
         #[serde(default = "d_wall_t")] pub thickness: f32,
         /// "center", "left" or "right" of the path (seen along it).
-        #[serde(default)] pub align: Option<String>,
+        #[serde(default, deserialize_with = "de_align_opt")] pub align: Option<String>,
         #[serde(default)] pub closed: bool,
         #[serde(default)] pub openings: Vec<Openings>,
         #[serde(default)] pub coping: bool,
@@ -1834,7 +1923,7 @@ element! {
         #[serde(default = "d_bal_height")] pub height: f32,
         #[serde(default = "d_bal_sp")] pub spacing: f32,
         #[serde(default = "d_bal_ped")] pub pedestals: f32,
-        #[serde(default = "d_bal_fin")] pub finials: String,
+        #[serde(default = "d_bal_fin", deserialize_with = "de_finials")] pub finials: String,
         /// Inward distance of the balustrade's centre line from the edge.
         #[serde(default = "d_bal_inset")] pub inset: f32,
     }
@@ -1869,12 +1958,21 @@ element! {
         #[serde(default)] pub polygon: Option<PolySpec>,
         #[serde(default)] pub edges: EdgeSel,
         #[serde(default)] pub y: Option<f32>,
+        /// Overhang of the parapet's outer face beyond the wall.
         #[serde(default = "d_mach_p")] pub projection: f32,
+        /// Corbel spacing (centre to centre, by arc length).
         #[serde(default = "d_mach_s")] pub spacing: f32,
-        /// Corbel height (three stepped courses).
+        /// Total corbel height.
         #[serde(default = "d_mach_h")] pub corbel_height: f32,
-        /// Small arches between corbels.
-        #[serde(default)] pub arches: bool,
+        /// Stepped courses per corbel.
+        #[serde(default = "d_mach_c")] pub corbel_courses: u32,
+        /// Width of each corbel along the wall.
+        #[serde(default = "d_mach_w")] pub corbel_width: f32,
+        /// Arches spanning between the corbels (Valencian arcuated
+        /// machicolation); `false` for plain brackets.
+        #[serde(default = "yes")] pub arches: bool,
+        /// Arch shape between corbels (default pointed).
+        #[serde(default = "d_mach_a")] pub arch: ArchKind,
         /// Parapet on top: height and thickness.
         #[serde(default = "d_mach_ph")] pub parapet: f32,
         #[serde(default = "d_par_t")] pub thickness: f32,
@@ -1883,13 +1981,22 @@ element! {
     }
 }
 fn d_mach_p() -> f32 {
-    0.55
+    0.9
 }
 fn d_mach_s() -> f32 {
-    1.1
+    1.6
 }
 fn d_mach_h() -> f32 {
-    1.0
+    1.5
+}
+fn d_mach_c() -> u32 {
+    4
+}
+fn d_mach_w() -> f32 {
+    0.45
+}
+fn d_mach_a() -> ArchKind {
+    ArchKind::Pointed
 }
 fn d_mach_ph() -> f32 {
     1.1
@@ -2039,6 +2146,9 @@ element! {
     pub struct Tower {
         #[serde(default)] pub polygon: Option<PolySpec>,
         #[serde(default)] pub y: f32,
+        /// Smooth shading for every stage (round towers).
+        #[serde(default)] pub smooth: bool,
+        #[serde(default)] pub run_angle: Option<f32>,
         pub stages: Vec<Stage>,
         /// Elements on top (origin at the top centre; polygon "parent" = last stage).
         #[serde(default)] pub top: ElementList,
@@ -2097,7 +2207,7 @@ element! {
         /// Explicit stages from the bottom.
         #[serde(default)] pub steps: Vec<StepSpec>,
         /// slope | gable | flat | pinnacle
-        #[serde(default = "d_but_cap")] pub cap: String,
+        #[serde(default = "d_but_cap", deserialize_with = "de_bcap")] pub cap: String,
         #[serde(default)] pub pinnacle: Flex<PinnacleSpec>,
         /// Plinth at the foot.
         #[serde(default)] pub plinth: bool,
@@ -2245,7 +2355,7 @@ element! {
         /// Hood mouldings over the arches.
         #[serde(default)] pub hood: Flex<HoodSpec>,
         /// Which side of the line the arcade faces ("left" or "right").
-        #[serde(default)] pub face: Option<String>,
+        #[serde(default, deserialize_with = "de_side_opt")] pub face: Option<String>,
     }
 }
 fn d_arc_a() -> ArchKind {
@@ -2267,7 +2377,7 @@ element! {
         /// Faces (posts); 0 = 8 with round look.
         #[serde(default = "d_lan_s")] pub sides: u32,
         /// dome | cone | onion | spire | flat
-        #[serde(default = "d_lan_c")] pub cap: String,
+        #[serde(default = "d_lan_c", deserialize_with = "de_lcap")] pub cap: String,
         #[serde(default)] pub cap_height: Option<f32>,
         #[serde(default)] pub cap_material: Option<String>,
         #[serde(default)] pub finial: ElementList,
@@ -2355,11 +2465,13 @@ element! {
     pub struct Extrude {
         pub profile: PolySpec,
         /// "xy" (default: profile in x/y, extruded along +z), "xz" (plan, up), "yz", "zy".
-        #[serde(default)] pub plane: Option<String>,
+        #[serde(default, deserialize_with = "de_plane_opt")] pub plane: Option<String>,
         #[serde(default)] pub origin: [f32; 3],
         pub length: f32,
         /// Centre the extrusion on the plane.
         #[serde(default)] pub center: bool,
+        /// Smooth shading of the sides: true (40 degree crease) or an angle.
+        #[serde(default)] pub smooth: Crease,
     }
 }
 
@@ -2505,6 +2617,15 @@ element! {
         #[serde(default)] pub facings: Option<Vec<f32>>,
         /// Skip these instance indices.
         #[serde(default)] pub skip: Vec<i64>,
+        /// Scale of the last instance (the first is 1; linear in between),
+        /// uniform or [x, y, z], about each instance's own origin.
+        #[serde(default)] pub scale_end: Option<Scale>,
+        /// Extra rotation about each instance's own vertical axis, per
+        /// instance (degrees).
+        #[serde(default)] pub rotate_step: f32,
+        /// Extra offset per instance in the instance frame [x, y, z]
+        /// (e.g. rising steps in a radial array).
+        #[serde(default)] pub offset_step: Option<[f32; 3]>,
     }
 }
 
@@ -2876,8 +2997,14 @@ pub struct MaterialSpec {
     pub color: Option<Color>,
     #[serde(default)]
     pub colors: Vec<Color>,
+    /// Relative amount of each of `colors` (random per tile).
+    #[serde(default)]
+    pub weights: Vec<f32>,
     #[serde(default)]
     pub pattern: Option<String>,
+    /// Glossy coat over the texture (glazes, varnish): 0..1.
+    #[serde(default)]
+    pub clearcoat: Option<f32>,
     #[serde(default)]
     pub roughness: Option<f32>,
     #[serde(default)]
@@ -2935,10 +3062,51 @@ pub struct ViewSpec {
     /// [azimuth, elevation] in degrees.
     #[serde(default)]
     pub sun: Option<[f32; 2]>,
+    /// day | morning | evening | dusk | night (sky and lights).
+    #[serde(default, deserialize_with = "de_time_opt")]
+    pub time: Option<String>,
     #[serde(default)]
     pub context: Option<bool>,
+    /// Image-to-world correspondences (at least 4): the camera is solved
+    /// from them and printed, overriding eye / target / fov.
+    #[serde(default, rename = "match")]
+    pub matches: Vec<MatchPoint>,
     #[serde(default)]
     pub note: Option<String>,
+}
+
+/// One correspondence: pixel `[u, v]` of the photo (from its top-left
+/// corner) seeing landmark-local `[x, y, z]`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MatchPoint {
+    pub px: [f32; 2],
+    pub world: [f32; 3],
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// `[[light]]`: a point light for dusk and night renders.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LightSpec {
+    pub at: [f32; 3],
+    #[serde(default)]
+    pub color: Option<Color>,
+    /// Relative intensity (1 = a street lamp).
+    #[serde(default = "d_light_i")]
+    pub intensity: f32,
+    /// Reach in metres.
+    #[serde(default = "d_light_r")]
+    pub radius: f32,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+fn d_light_i() -> f32 {
+    1.0
+}
+fn d_light_r() -> f32 {
+    12.0
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -2950,6 +3118,20 @@ pub struct RenderSpec {
     /// Distance of the street-level camera from the main facade.
     #[serde(default)]
     pub street_distance: Option<f32>,
+    /// Explicit street-view camera (overrides the automatic one).
+    #[serde(default)]
+    pub street_eye: Option<[f32; 3]>,
+    #[serde(default)]
+    pub street_target: Option<[f32; 3]>,
+    #[serde(default)]
+    pub street_fov: Option<f32>,
+    /// clear (default: sky-only HDRI) | street (the street HDRI) |
+    /// atmosphere (analytic sky following the sun).
+    #[serde(default, deserialize_with = "de_sky_opt")]
+    pub sky: Option<String>,
+    /// day | morning | evening | dusk | night.
+    #[serde(default, deserialize_with = "de_time_opt")]
+    pub time: Option<String>,
     #[serde(default)]
     pub exposure: Option<f32>,
     /// Paving radius around the building (metres).
@@ -2972,6 +3154,8 @@ pub struct Spec {
     pub element: Vec<Spanned<Element>>,
     #[serde(default)]
     pub view: Vec<ViewSpec>,
+    #[serde(default)]
+    pub light: Vec<LightSpec>,
     #[serde(default)]
     pub render: RenderSpec,
 }

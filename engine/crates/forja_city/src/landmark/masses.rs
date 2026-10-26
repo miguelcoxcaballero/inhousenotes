@@ -4,9 +4,9 @@
 use forja_math::{Mat4, Vec2, Vec3};
 
 use super::build::{Builder, Out, Scope};
-use super::facade::{self, Cut, Facade};
+use super::facade::{self, Facade, RUN_ANGLE};
 use super::mesh::{self, MatId, Plane};
-use super::openings::{self, OpCtx};
+use super::openings::{self, OpCtx, Placed, RunOut};
 use super::parse::{Error, Result};
 use super::poly::{self, Shape};
 use super::resolve::{self, EdgeRef};
@@ -27,7 +27,7 @@ pub fn mass_top(b: &Builder, m: &Mass) -> f32 {
     m.y0 + 10.0
 }
 
-/// One facade per edge of every ring of `shape`.
+/// One world-space facade per edge of every ring of `shape` (gables).
 pub fn facades(shape: &Shape, y0: f32, y1: f32, mat: MatId) -> Vec<(Facade, EdgeRef)> {
     let mut out = Vec::new();
     for (r, (ring, _)) in shape.rings().enumerate() {
@@ -43,7 +43,7 @@ pub fn facades(shape: &Shape, y0: f32, y1: f32, mat: MatId) -> Vec<(Facade, Edge
             }
             let u = Vec3::new(a.x - bb.x, 0.0, a.y - bb.y) / len;
             let plane = Plane::new(Vec3::new(bb.x, 0.0, bb.y), u, Vec3::Y);
-            out.push((Facade { plane, len, v0: y0, v1: y1, uv_off: per - d, mat, outline: None }, EdgeRef { ring: r, i }));
+            out.push((Facade { plane, len, v0: y0, v1: y1, uv_off: per - d, mat, outline: None, wrap: None }, EdgeRef { ring: r, i }));
         }
     }
     out
@@ -63,6 +63,12 @@ pub struct Inline<'s> {
 /// Walls with openings, caps, collider and inline details of a prism.
 #[allow(clippy::too_many_arguments)]
 pub fn prism_with_facades(b: &mut Builder, shape: &Shape, y0: f32, y1: f32, batter: f32, smooth: bool, top: Option<MatId>, bottom: bool, ops: &[&Openings], sc: &Scope, o: &mut Out) -> Result<()> {
+    prism_runs(b, shape, y0, y1, batter, smooth, RUN_ANGLE, top, bottom, ops, sc, o)
+}
+
+/// Like [`prism_with_facades`] with an explicit facade run angle.
+#[allow(clippy::too_many_arguments)]
+pub fn prism_runs(b: &mut Builder, shape: &Shape, y0: f32, y1: f32, batter: f32, smooth: bool, run_angle: f32, top: Option<MatId>, bottom: bool, ops: &[&Openings], sc: &Scope, o: &mut Out) -> Result<()> {
     let wall = sc.mat;
     if y1 <= y0 + 1e-3 {
         return Err(Error::msg(format!("height must be positive (y0 = {y0}, top = {y1})")));
@@ -82,6 +88,9 @@ pub fn prism_with_facades(b: &mut Builder, shape: &Shape, y0: f32, y1: f32, batt
         for h in &shape.holes {
             mesh::ring_walls(o.geo.get(wall), h, y0, y1, 0.0);
         }
+        if smooth {
+            mesh::auto_normals(o.geo.get(wall), 40.0);
+        }
         if !ops.is_empty() {
             b.warn(sc, "openings are not cut into battered walls");
         }
@@ -95,31 +104,39 @@ pub fn prism_with_facades(b: &mut Builder, shape: &Shape, y0: f32, y1: f32, batt
         o.collide_all();
         return Ok(());
     }
-    let fs = facades(shape, y0, y1, wall);
-    let (bmn, bmx) = shape.bbox();
-    let room = ((bmx - bmn).min_element() * 0.4 - 0.4).clamp(0.2, 1.4);
-    let cx = OpCtx { wall, trim: wall, through: None, room };
-    let cuts: Vec<Vec<Cut>> = if ops.is_empty() { vec![Vec::new(); fs.len()] } else { openings::on_facades(b, ops, &fs, shape, sc, &cx, &mut o.geo)? };
-    for ((f, _), c) in fs.iter().zip(cuts.iter()) {
-        for w in facade::build(&mut o.geo, f, c) {
+    // Facade runs: consecutive edges turning less than the run angle are
+    // one developed facade (openings by arc length, bent onto the plan).
+    let angle = if smooth { run_angle.max(40.0) } else { run_angle };
+    let runs = facade::runs_of(shape, y0, y1, wall, angle, smooth, &[]);
+    let cx = OpCtx { wall, trim: wall, through: None, solid: Some(shape) };
+    let placed = if ops.is_empty() { Placed { runs: vec![RunOut::default(); runs.len()], world: mesh::Geo::new(), passages: 0 } } else { openings::on_runs(b, ops, &runs, shape, sc, &cx)? };
+    let mut skin = Out::default();
+    for (run, ro) in runs.iter().zip(placed.runs) {
+        let mut g = ro.geo;
+        for w in facade::build(&mut g, &run.facade, &ro.cuts) {
             b.warn(sc, w);
         }
+        run.place(&g, &mut skin.geo);
     }
-    if smooth {
-        mesh::auto_normals(o.geo.get(wall), 40.0);
-    }
+    skin.geo.append(&placed.world, &Mat4::IDENTITY);
     if let Some(tm) = top {
-        mesh::horizontal_shape(o.geo.get(tm), shape, y1, true);
+        mesh::horizontal_shape(skin.geo.get(tm), shape, y1, true);
     }
     if bottom {
-        mesh::horizontal_shape(o.geo.get(wall), shape, y0, false);
+        mesh::horizontal_shape(skin.geo.get(wall), shape, y0, false);
     }
-    // Simple closed prism for collisions and plan metrics.
-    let mut col = crate::geom::Prim::default();
-    mesh::prism(&mut col, shape, y0, y1, true, true);
-    for t in col.indices.chunks_exact(3) {
-        o.col.push([col.positions[t[0] as usize], col.positions[t[1] as usize], col.positions[t[2] as usize]]);
+    if placed.passages > 0 {
+        // Walk-through passages: the collider is the real skin.
+        skin.collide_all();
+    } else {
+        // Simple closed prism for collisions and plan metrics.
+        let mut col = crate::geom::Prim::default();
+        mesh::prism(&mut col, shape, y0, y1, true, true);
+        for t in col.indices.chunks_exact(3) {
+            skin.col.push([col.positions[t[0] as usize], col.positions[t[1] as usize], col.positions[t[2] as usize]]);
+        }
     }
+    o.append(&skin, &Mat4::IDENTITY);
     Ok(())
 }
 
@@ -163,8 +180,35 @@ pub fn inline_details(b: &mut Builder, shape: &Shape, y0: f32, y1: f32, d: &Inli
     Ok(())
 }
 
+/// Shell of a plan open on some edges: the plan minus its inset by
+/// `t`, with the wall of every open edge removed.
+pub fn open_shell(shape: &Shape, open: &[resolve::EdgeRef], t: f32) -> Vec<Shape> {
+    let Some(inner) = poly::offset(&shape.outer, -t) else { return vec![shape.clone()] };
+    let mut cut = vec![Shape::new(inner)];
+    for e in open {
+        let ring = resolve::ring_of(shape, e.ring);
+        let n = ring.len();
+        let (a, c) = (ring[e.i], ring[(e.i + 1) % n]);
+        let nrm = poly::edge_normal(ring, e.i);
+        let dir = (c - a).normalize_or(Vec2::X);
+        // Remove the wall between the neighbouring walls only, so these
+        // keep their full length (square ends, as on real open towers).
+        let miters = mesh::polyline_offsets_2d(ring, true);
+        let (ia, ic) = (a - miters[e.i] * t, c - miters[(e.i + 1) % n] * t);
+        let ta = (ia - a).dot(dir).max(0.0);
+        let tc = (c - ic).dot(dir).max(0.0);
+        let (a2, c2) = (a + dir * (ta - 0.01), c - dir * (tc - 0.01));
+        let q = vec![a2 + nrm * 0.1, c2 + nrm * 0.1, c2 - nrm * (t * 1.05), a2 - nrm * (t * 1.05)];
+        if let Some(r) = poly::normalize(&q, true) {
+            cut.push(Shape::new(r));
+        }
+    }
+    let res = poly::boolean(std::slice::from_ref(shape), &cut, poly::BoolOp::Difference);
+    if res.is_empty() { vec![shape.clone()] } else { res }
+}
+
 pub fn mass(b: &mut Builder, m: &Mass, sc: &Scope, o: &mut Out) -> Result<()> {
-    let shapes = match &m.polygon {
+    let mut shapes = match &m.polygon {
         Some(p) => b.poly(p, sc)?,
         None => vec![sc.parent.clone().ok_or_else(|| Error::msg("mass needs `polygon` (e.g. \"outline:0\")"))?],
     };
@@ -172,14 +216,29 @@ pub fn mass(b: &mut Builder, m: &Mass, sc: &Scope, o: &mut Out) -> Result<()> {
     if m.y1.is_none() && m.height.is_none() && m.floors.is_none() {
         b.warn(sc, "mass has no y1/height/floors; using 10 m");
     }
+    if let Some(sel) = &m.open_edges {
+        let t = m.wall_thickness.unwrap_or(1.0).max(0.05);
+        let mut out = Vec::new();
+        for s in &shapes {
+            let edges = resolve::select(s, sel);
+            if edges.is_empty() {
+                b.warn(sc, "open_edges matched no edge");
+            }
+            out.extend(open_shell(s, &edges, t));
+        }
+        shapes = out;
+    } else if m.wall_thickness.is_some() {
+        b.warn(sc, "`wall_thickness` only applies with `open_edges`");
+    }
     let mut ops: Vec<&Openings> = m.openings.iter().collect();
     let extra = m.name.as_ref().and_then(|n| b.extra_openings.get(n)).cloned().unwrap_or_default();
     ops.extend(extra.iter());
-    let top = if m.top && m.roof.get().is_none() { Some(b.mat(m.top_material.as_deref(), sc.mat)?) } else if m.top { Some(b.mat(m.top_material.as_deref(), sc.mat)?) } else { None };
+    let top = if m.top { Some(b.mat(m.top_material.as_deref(), sc.mat)?) } else { None };
     let bottom = m.bottom.unwrap_or(m.y0 > 0.05);
+    let run_angle = m.run_angle.unwrap_or(RUN_ANGLE).clamp(0.0, 179.0);
     for s in &shapes {
         let inner = Scope { parent: Some(s.clone()), ..sc.clone() };
-        prism_with_facades(b, s, m.y0, y1, m.batter, m.smooth, top, bottom, &ops, &inner, o)?;
+        prism_runs(b, s, m.y0, y1, m.batter, m.smooth, run_angle, top, bottom, &ops, &inner, o)?;
         let d = Inline { cornice: &m.cornice, plinth: &m.plinth, string_courses: &m.string_courses, parapet: &m.parapet, crenellations: &m.crenellations, balustrade: &m.balustrade, roof: Some(&m.roof) };
         let top_shape = if m.batter.abs() > 1e-4 { Shape { outer: poly::offset(&s.outer, -m.batter).unwrap_or(s.outer.clone()), holes: s.holes.clone() } } else { s.clone() };
         inline_details(b, &top_shape, m.y0, y1, &d, &inner, o)?;
@@ -224,58 +283,40 @@ pub fn wall(b: &mut Builder, w: &Wall, sc: &Scope, o: &mut Out) -> Result<()> {
         return Err(Error::msg("wall needs `path` or `polygon`"));
     }
     let align = match w.align.as_deref().unwrap_or("center") {
-        "center" | "centre" => 0.0,
         "left" => -0.5,
         "right" => 0.5,
-        o2 => return Err(Error::msg(format!("bad wall align `{o2}`; use center, left or right"))),
+        _ => 0.0,
     };
     let ops: Vec<&Openings> = w.openings.iter().collect();
     for (path, closed) in paths {
+        // Closed walls run counter-clockwise, so the front (right) side is
+        // the outside and the cap ring is outer = right, hole = left.
+        let path: Vec<Vec2> = if closed && poly::area(&path) < 0.0 { path.into_iter().rev().collect() } else { path };
+        let path: Vec<Vec2> = path.iter().enumerate().filter(|(i, p)| *i == 0 || (**p - path[i - 1]).length() > 1e-4).map(|(_, p)| *p).collect();
+        if path.len() < 2 {
+            continue;
+        }
         let offs = mesh::polyline_offsets_2d(&path, closed);
-        // Right side (positive offset) is the front.
         let right: Vec<Vec2> = path.iter().zip(&offs).map(|(p, n)| *p + *n * t * (0.5 + align)).collect();
         let left: Vec<Vec2> = path.iter().zip(&offs).map(|(p, n)| *p - *n * t * (0.5 - align)).collect();
         let m = path.len();
-        let segs = if closed { m } else { m - 1 };
-        // Front facades along `right`, seen from the right side: they run
-        // a -> b from the viewer's right to left, so build with the plane
-        // origin at b.
-        let mut front = Vec::new();
-        let mut back = Vec::new();
-        for i in 0..segs {
-            let j = (i + 1) % m;
-            let (a, bb) = (right[i], right[j]);
-            let len = (bb - a).length();
-            if len < 1e-4 {
-                continue;
-            }
-            let u = Vec3::new(a.x - bb.x, 0.0, a.y - bb.y) / len;
-            let plane = Plane::new(Vec3::new(bb.x, 0.0, bb.y), u, Vec3::Y);
-            front.push((Facade { plane, len, v0: y0, v1: y1, uv_off: 0.0, mat: sc.mat, outline: None }, EdgeRef { ring: 0, i }));
-            let (la, lb) = (left[i], left[j]);
-            let llen = (lb - la).length();
-            let ub = Vec3::new(lb.x - la.x, 0.0, lb.y - la.y) / llen.max(1e-6);
-            let bplane = Plane::new(Vec3::new(la.x, 0.0, la.y), ub, Vec3::Y);
-            back.push(Facade { plane: bplane, len: llen, v0: y0, v1: y1, uv_off: 0.0, mat: sc.mat, outline: None });
-        }
-        // Openings select edges of the path as if it were a polygon ring.
+        // Front facades along the right side as runs; the back face is the
+        // same developed wall at depth `t`, so holes line up exactly.
+        let runs = facade::path_runs(&right, closed, y0, y1, sc.mat, RUN_ANGLE, false);
         let fake = Shape::new(right.clone());
-        let cx = OpCtx { wall: sc.mat, trim: sc.mat, through: Some(t), room: 0.0 };
-        let cuts = if ops.is_empty() { vec![Vec::new(); front.len()] } else { openings::on_facades(b, &ops, &front, &fake, sc, &cx, &mut o.geo)? };
-        for (k, ((f, _), c)) in front.iter().zip(cuts.iter()).enumerate() {
-            for wmsg in facade::build(&mut o.geo, f, c) {
+        let cx = OpCtx { wall: sc.mat, trim: sc.mat, through: Some(t), solid: None };
+        let placed = if ops.is_empty() { Placed { runs: vec![RunOut::default(); runs.len()], world: mesh::Geo::new(), passages: 0 } } else { openings::on_runs(b, &ops, &runs, &fake, sc, &cx)? };
+        for (run, ro) in runs.iter().zip(placed.runs) {
+            let mut g = ro.geo;
+            for wmsg in facade::build(&mut g, &run.facade, &ro.cuts) {
                 b.warn(sc, wmsg);
             }
-            // Back face: same holes mirrored along the segment.
-            let bf = &back[k];
-            let mirrored: Vec<Vec<Vec2>> = c.iter().map(|cut| cut.outer().iter().rev().map(|p| Vec2::new(f.len - p.x, p.y)).collect()).collect();
-            let scale = bf.len / f.len.max(1e-6);
-            let mirrored: Vec<Vec<Vec2>> = mirrored.into_iter().map(|r| r.into_iter().map(|p| Vec2::new(p.x * scale, p.y)).collect()).collect();
-            let (shape, warns) = facade::wall_shape(bf, &mirrored);
-            for wmsg in warns {
-                b.warn(sc, wmsg);
-            }
-            mesh::planar_shape(o.geo.get(sc.mat), &shape, &bf.plane, false, Vec2::ZERO);
+            let outers: Vec<Vec<Vec2>> = ro.cuts.iter().map(|c| c.outer().to_vec()).collect();
+            let (shape, _) = facade::wall_shape(&run.facade, &outers);
+            let pl = &run.facade.plane;
+            let back = Plane { o: pl.o - pl.n * t, ..*pl };
+            mesh::planar_shape(g.get(sc.mat), &shape, &back, true, Vec2::new(run.facade.uv_off, 0.0));
+            run.place(&g, &mut o.geo);
         }
         // Top and ends.
         let top: Vec<Vec2> = right.iter().copied().chain(left.iter().rev().copied()).collect();
@@ -292,15 +333,24 @@ pub fn wall(b: &mut Builder, w: &Wall, sc: &Scope, o: &mut Out) -> Result<()> {
             }
         }
         if w.coping {
-            let s = Shape::new(poly::normalize(&top, true).unwrap_or(top.clone()));
-            if let Some(g) = poly::offset(&s.outer, 0.06) {
-                mesh::prism(o.geo.get(sc.mat), &Shape::new(g), y1, y1 + 0.12, true, true);
+            if closed {
+                if let (Some(a), Some(c)) = (poly::offset(&right, 0.06), poly::offset(&left, -0.06))
+                    && let Some(s) = (Shape { outer: a, holes: vec![c] }).normalized()
+                {
+                    mesh::prism(o.geo.get(sc.mat), &s, y1, y1 + 0.12, true, true);
+                }
+            } else {
+                let s = Shape::new(poly::normalize(&top, true).unwrap_or(top.clone()));
+                if let Some(g) = poly::offset(&s.outer, 0.06) {
+                    mesh::prism(o.geo.get(sc.mat), &Shape::new(g), y1, y1 + 0.12, true, true);
+                }
             }
         }
         // Collider: plain slab.
-        if let Some(r) = poly::normalize(&top, true) {
+        let col_shape = if closed { (Shape { outer: right.clone(), holes: vec![left.clone()] }).normalized() } else { poly::normalize(&top, true).map(Shape::new) };
+        if let Some(s) = col_shape {
             let mut col = crate::geom::Prim::default();
-            mesh::prism(&mut col, &Shape::new(r), y0, y1, true, true);
+            mesh::prism(&mut col, &s, y0, y1, true, true);
             for tr in col.indices.chunks_exact(3) {
                 o.col.push([col.positions[tr[0] as usize], col.positions[tr[1] as usize], col.positions[tr[2] as usize]]);
             }
@@ -309,29 +359,36 @@ pub fn wall(b: &mut Builder, w: &Wall, sc: &Scope, o: &mut Out) -> Result<()> {
     Ok(())
 }
 
-/// Plans and height ranges of every stage.
-pub fn tower_stage_plans(b: &Builder, t: &Tower, base: &Shape, sc: &Scope) -> Vec<(Shape, f32, f32)> {
+/// Plans and height ranges of every stage. Errors name the stage.
+pub fn tower_stage_plans(b: &mut Builder, t: &Tower, base: &Shape, sc: &Scope) -> Result<Vec<(Shape, f32, f32)>> {
     let center = poly::centroid(&base.outer);
     let mut cur = base.clone();
     let mut y = t.y;
     let mut out = Vec::new();
-    for st in &t.stages {
+    for (k, st) in t.stages.iter().enumerate() {
+        let label = || st.name.as_ref().map(|n| format!("stage `{n}`")).unwrap_or_else(|| format!("stage #{k}"));
         let shape = if let Some(p) = &st.polygon {
             let s2 = Scope { center, parent: Some(cur.clone()), ..sc.clone() };
-            b.poly(p, &s2).ok().and_then(|v| v.into_iter().next()).unwrap_or(cur.clone())
+            b.poly(p, &s2).map_err(|e| e.context(&format!("{} polygon", label())))?.into_iter().next().ok_or_else(|| Error::msg(format!("{}: empty polygon", label())))?
         } else if st.inset.abs() > 1e-4 {
             match poly::offset(&cur.outer, -st.inset) {
                 Some(r) => Shape::new(r),
-                None => cur.clone(),
+                None => {
+                    b.warn(sc, format!("{}: inset {:.2} m collapses the plan; the previous plan is kept", label(), st.inset));
+                    cur.clone()
+                }
             }
         } else {
             cur.clone()
         };
+        if st.height <= 0.0 {
+            return Err(Error::msg(format!("{}: height must be positive", label())));
+        }
         out.push((shape.clone(), y, y + st.height));
         y += st.height;
         cur = if st.batter.abs() > 1e-4 { poly::offset(&shape.outer, -st.batter).map(Shape::new).unwrap_or(shape) } else { shape };
     }
-    out
+    Ok(out)
 }
 
 pub fn tower(b: &mut Builder, t: &Tower, sc: &Scope, o: &mut Out) -> Result<()> {
@@ -342,7 +399,8 @@ pub fn tower(b: &mut Builder, t: &Tower, sc: &Scope, o: &mut Out) -> Result<()> 
     if t.stages.is_empty() {
         return Err(Error::msg("tower needs at least one [[...stages]] entry"));
     }
-    let plans = tower_stage_plans(b, t, &base, sc);
+    let plans = tower_stage_plans(b, t, &base, sc)?;
+    let run_angle = t.run_angle.unwrap_or(RUN_ANGLE).clamp(0.0, 179.0);
     let center = poly::centroid(&base.outer);
     let mut top_y = t.y;
     let mut top_shape = base.clone();
@@ -369,6 +427,7 @@ pub fn tower(b: &mut Builder, t: &Tower, sc: &Scope, o: &mut Out) -> Result<()> 
                 note: None,
                 on: None,
                 edges: EdgeSel::default(),
+                per_edge: false,
                 kind: OpeningKind::Arch,
                 arch: Some(ArchKind::Round),
                 width: w,
@@ -412,10 +471,10 @@ pub fn tower(b: &mut Builder, t: &Tower, sc: &Scope, o: &mut Out) -> Result<()> 
             let extra: Vec<Openings> = extra;
             let mut tmp = Out::default();
             let refs: Vec<&Openings> = ops.iter().copied().chain(extra.iter()).collect();
-            prism_with_facades(b, shape, *y0, *y1, st.batter, st.smooth, Some(mat), false, &refs, &ss, &mut tmp)?;
+            prism_runs(b, shape, *y0, *y1, st.batter, st.smooth || t.smooth, run_angle, Some(mat), false, &refs, &ss, &mut tmp)?;
             o.append(&tmp, &Mat4::IDENTITY);
         } else {
-            prism_with_facades(b, shape, *y0, *y1, st.batter, st.smooth, Some(mat), false, &ops, &ss, o)?;
+            prism_runs(b, shape, *y0, *y1, st.batter, st.smooth || t.smooth, run_angle, Some(mat), false, &ops, &ss, o)?;
         }
         let d = Inline { cornice: &st.cornice, plinth: &st.plinth, string_courses: &st.string_courses, parapet: &st.parapet, crenellations: &st.crenellations, balustrade: &st.balustrade, roof: None };
         let ts = if st.batter.abs() > 1e-4 { Shape::new(poly::offset(&shape.outer, -st.batter).unwrap_or(shape.outer.clone())) } else { shape.clone() };
