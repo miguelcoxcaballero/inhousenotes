@@ -32,8 +32,8 @@ license = "Public domain"
 width = 1280
 height = 1003
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n (outer face, from the river side, evening light; view \"outer face evening\")"
 
 [[photo]]
 file = "photos/02_Puerta_de_los_Serranos_Valencia_Espana_2014_06_30_DD_86.jpg"
@@ -44,8 +44,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 881
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n (outer face head-on from the Pont de Serrans approach; view \"outer face\")"
 
 [[photo]]
 file = "photos/03_Valencia_Torres_de_Serrans_1.jpg"
@@ -98,8 +98,8 @@ width = 1280
 height = 1707
 camera = [-16.91, -6.84]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e (east tower side face from Carrer del Comte de Trenor, SE; view \"east side, south\")"
 
 [[photo]]
 file = "photos/07_Valencia_Torres_de_Serranos_02.jpg"
@@ -111,8 +111,8 @@ width = 1280
 height = 1138
 camera = [-6.04, 53.63]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s (inner open face from Placa dels Furs / Carrer de Serrans; view \"inner face\")"
 
 [[photo]]
 file = "photos/08_Puerta_de_los_Serranos_Valencia_Espana_2014_06_29_DD_30.jpg"
@@ -123,8 +123,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 951
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s (inner face close, stair on the west; view \"inner face close\")"
 
 [[photo]]
 file = "photos/09_Fossat_de_les_torres_de_Serrans.jpg"
@@ -297,3 +297,115 @@ notes = "built=1391; use=4_3_publicServices; area=1219; area_in_outline=1167.3"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1386"
 title = "Described at"
 notes = "Wikidata P973"
+
+# ---- added while modelling (downloaded via Special:FilePath?width=1280)
+
+[[photo]]
+file = "photos/17_158_Torres_dels_Serrans_cara_est.jpg"
+title = "File:158 Torres dels Serrans (València), cara est.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3A158_Torres_dels_Serrans_%28Val%C3%A8ncia%29%2C_cara_est.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "e (east tower and east side, reference)"
+
+[[photo]]
+file = "photos/18_Torres_de_Serranos_de_perfil_412670920.jpg"
+title = "File:Torres de Serranos de perfil (412670920).jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ATorres_de_Serranos_de_perfil_%28412670920%29.jpg"
+author = "Visentico / Sento"
+license = "CC BY-SA 2.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "e (east tower from the east; view \"east side\")"
+
+[[photo]]
+file = "photos/19_360_Torres_dels_Serrans_torre_de_ponent_angle_sud_oest.jpg"
+title = "File:360 Torres dels Serrans (València), torre de ponent, angle sud-oest.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3A360_Torres_dels_Serrans_%28Val%C3%A8ncia%29%2C_torre_de_ponent%2C_angle_sud-oest.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "w (west tower, south-west corner looking up: west face gallery and inner arches; view \"west tower, south-west corner\")"
+
+[[photo]]
+file = "photos/20_L04_515_Torres_de_Serranos_Wehrgang.jpg"
+title = "File:L04 515 Torres de Serranos, Wehrgang.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AL04_515_Torres_de_Serranos%2C_Wehrgang.jpg"
+author = "Falk2"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "top (from the central terrace: tower upper stage set back behind the gallery parapet, moat with battered tower base; reference, no view)"
+
+[[photo]]
+file = "photos/21_Maqueta_de_les_torres_de_Serrans.jpg"
+title = "File:Maqueta de les torres de Serrans, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AMaqueta_de_les_torres_de_Serrans%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 896
+exterior = true
+selected = false
+side = "n (bronze tactile model next to the gate; massing reference)"
+
+[[photo]]
+file = "photos/22_155_Torres_dels_Serrans_cara_nord.jpg"
+title = "File:155 Torres dels Serrans (València), cara nord.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3A155_Torres_dels_Serrans_%28Val%C3%A8ncia%29%2C_cara_nord.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = "n"
+
+[[photo]]
+file = "photos/23_Valencia_Torres_de_Serrans_from_the_northeast_closeup.jpg"
+title = "File:Valencia Torres de Serrans from the northeast closeup.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_Torres_de_Serrans_from_the_northeast_closeup.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1919
+exterior = true
+selected = false
+side = "ne (outer face close: tracery band, arms, gallery)"
+
+[[photo]]
+file = "photos/24_Torres_Serranos_Maqueta.jpg"
+title = "File:Torres Serranos Maqueta.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3ATorres_Serranos_Maqueta.jpg"
+author = "Rafesmar"
+license = "CC BY-SA 3.0 es"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "w (bronze model and west tower; reference)"
+
+[[reference]]
+url = "https://es.wikipedia.org/wiki/Torres_de_Serranos"
+title = "Wikipedia (es): dimensions used"
+notes = "Outer gate arch about 5 m wide and 6.5 m high (portcullis); central body two floors, towers three levels; the towers' two upper floors open to the city in large arcades; walkway (camino de ronda) at about 2/3 of the height on small vaults over stepped corbels; Pere Balaguer 1392-1398."
+
+[[reference]]
+url = "https://www.openstreetmap.org/way/1287040284"
+title = "OSM building:part machicolation gallery ring (min_height 20, height 22)"
+notes = "Gallery projection about 1.3-1.4 m beyond the tower walls; gallery stops 1.3 m (W) and 2.4 m (E) short of the inner corners of the side faces."
+
+[facts.modelled]
+value = "Heights used: towers 33.0 m to merlon tops (OSM height), terrace 30.3 m, parapet 31.4 m; string course 10.7 m; gallery corbels 17.2-19.8 m, arcaded parapet to 23.5 m, merlons to 24.7 m; central body 20.5 m, central gallery corbels 17.4 m, parapet top 20.9 m (merlons 21.7 m), rear gallery wall 23.6 m (merlons 24.8 m); tracery band 10.0-15.4 m; inner arches: towers 11.0-19.5 m and 22.4-29.7 m, central 10.3-19.0 m."
+source = "photos 02 and 07 calibrated on the OSM height (33 m); plans/01 cross section for the open U-shaped tower halls"

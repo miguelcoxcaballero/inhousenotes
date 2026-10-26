@@ -1,0 +1,803 @@
+# Torres de Serrans (Torres de Serranos), Valencia. Gothic city gate of the
+# Christian wall, Pere Balaguer 1392-1398.
+#
+# Frame: landmark-local metres, x east, z south. The gate axis is turned
+# 21.3 deg from the grid: outer face (river, Pont de Serrans) faces az 19-20,
+# inner face (Placa dels Furs, old town) faces az 199-201. In the comments
+# u = along the gate (east-north-east), n = depth towards the city:
+#   u = 0.9316 x + 0.3633 z,  n = -0.3633 x + 0.9316 z.
+# Plan: two elongated half-hexagonal towers (W: u -18.1..-5.4, E: u 6.5..20.1)
+# project 8.5 m in front of the gate wall (outer face n = 3.3); the central
+# body runs back to the inner face n = 14.7, which stands 4.5-5 m proud of
+# the towers' open inner faces (n 9.3-10.3).
+# Heights from photo 02 (calibrated on OSM height = 33 m) and photo 07.
+
+[landmark]
+name = "Torres de Serrans"
+slug = "torres_de_serrans"
+main_facade = "12"   # outline edge on the gate front (outer face, az 19)
+notes = "City gate: two polygonal towers with an arcuated machicolation gallery and crenellations, central gate body with round outer arch, Gothic tracery band and corbelled gallery; inner (city) side open in large pointed arches on two storeys, grand stair on the west. Moat with battered tower bases on the river side. Footprint IoU vs the OSM outline is only 0.47 by design: the outline includes the sunken dry moat (OSM parts 1287040285/86, min_level -2, 526 m2) and the gallery overhang (part 1287040284, 20-22 m), neither of which is built at the 1-3 m slice; precision is 0.995 and the model covers about 98 % of the remaining ground-level plan."
+
+[landmark.info]
+architect = "Pere Balaguer"
+built = "1392-1398"
+style = "Valencian Gothic"
+heritage = "BIC RI-51-0000969"
+
+[defaults]
+material = "stone"
+detail = 1.0
+
+[render]
+sun = [215, 45]
+street_distance = 55
+paving = 70
+
+# ------------------------------------------------------------- materials
+
+[material.stone]
+kind = "limestone"
+tint = "#e8d3b0"
+block = [1.0, 0.45]
+weathering = 0.3
+seed = 3
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#eddcbf"
+weathering = 0.2
+
+[material.tracery]
+kind = "limestone"
+tint = "#b29f80"
+weathering = 0.35
+
+[material.rubble]
+kind = "ashlar"
+tint = "#bfae96"
+block = [0.5, 0.3]
+weathering = 0.55
+seed = 9
+
+[material.moat_floor]
+kind = "grass"
+
+[material.plaza]
+kind = "paving"
+uv_scale = 2.4
+
+[material.iron]
+kind = "iron"
+
+# ------------------------------------------------------------ components
+
+[component.corbel]
+note = "Stepped corbel of the machicolation gallery, 4 courses (frame: x along the wall, z out, bottom at the origin)."
+[[component.corbel.children]]
+type = "box"
+min = [-0.36, 0.0, -0.1]
+max = [0.36, 0.6, 0.45]
+[[component.corbel.children]]
+type = "box"
+min = [-0.38, 0.6, -0.1]
+max = [0.38, 1.25, 0.75]
+[[component.corbel.children]]
+type = "box"
+min = [-0.4, 1.25, -0.1]
+max = [0.4, 1.9, 1.05]
+[[component.corbel.children]]
+type = "box"
+min = [-0.42, 1.9, -0.1]
+max = [0.42, 2.6, 1.38]
+[[component.corbel.children]]
+type = "box"
+min = [-0.22, -0.45, -0.1]
+max = [0.22, 0.0, 0.3]
+
+[component.corbel_small]
+note = "Corbel of the central gallery (3 courses, top at the origin)."
+[[component.corbel_small.children]]
+type = "box"
+min = [-0.3, 0.0, -0.1]
+max = [0.3, 0.55, 0.35]
+[[component.corbel_small.children]]
+type = "box"
+min = [-0.32, 0.55, -0.1]
+max = [0.32, 1.1, 0.68]
+[[component.corbel_small.children]]
+type = "box"
+min = [-0.34, 1.1, -0.1]
+max = [0.34, 1.6, 0.98]
+
+# ------------------------------------------------------------ west tower
+# OSM part 949545054 simplified (collinear vertices merged).
+
+[[element]]
+type = "mass"
+name = "tower_w"
+polygon = [[-20.12, 3.16], [-16.36, -7.84], [-11.67, -9.99], [-6.70, -8.00], [-4.87, -3.70], [-8.71, 7.61]]
+y0 = 0
+y1 = 22.4
+plinth = { profile = "plinth", size = 0.6 }
+string_courses = [10.7]
+
+  # Inner (city) face: ground-floor arch behind the stair, then the two
+  # great open pointed arches of the vaulted halls.
+  [[element.openings]]
+  edges = "facing:201:15"
+  kind = "arch"
+  arch = "segmental"
+  width = 7.0
+  height = 6.4
+  levels = [0.0]
+  bays = 1
+  depth = 6.0
+  infill = "blind"
+
+  [[element.openings]]
+  edges = "facing:201:15"
+  kind = "arch"
+  arch = "pointed"
+  width = 7.4
+  height = 8.5
+  rise = 4.59
+  levels = [11.0]
+  bays = 1
+  depth = 6.5
+  infill = "blind"
+
+  [[element.openings]]
+  edges = ["facing:289:15", "facing:22:10"]
+  kind = "slit"
+  width = 0.14
+  height = 1.3
+  levels = [4.5, 14.0]
+  bays = 1
+
+[[element]]
+type = "mass"
+name = "tower_w_top"
+polygon = [[-19.37, 3.45], [-15.71, -7.26], [-11.65, -9.12], [-7.31, -7.38], [-5.73, -3.67], [-9.46, 7.32]]
+y0 = 22.4
+y1 = 30.3
+string_courses = [27.8]
+crenellations = { shape = "rect", width = 1.3, gap = 0.8, height = 1.6, thickness = 0.6, wall = 1.1 }
+
+  [[element.openings]]
+  edges = "facing:201:15"
+  kind = "arch"
+  arch = "pointed"
+  width = 7.8
+  height = 7.3
+  rise = 4.84
+  levels = [22.4]
+  bays = 1
+  depth = 6.0
+  infill = "blind"
+
+# Machicolation gallery: corbels with arches, projecting parapet with merlons.
+# Runs on the outer faces and the side face, stopping 1.3 m short of the
+# inner corner (OSM part 949545054 edge 0 is that stop).
+[[element]]
+type = "mass"
+name = "tower_e"
+polygon = [[6.98, -0.08], [11.84, -1.92], [17.01, -0.05], [19.29, 4.21], [15.38, 15.94], [2.81, 11.59]]
+y0 = 0
+y1 = 22.4
+plinth = { profile = "plinth", size = 0.6 }
+string_courses = [10.7]
+
+  [[element.openings]]
+  edges = "facing:199:15"
+  kind = "door"
+  arch = "pointed"
+  width = 1.6
+  height = 3.0
+  levels = [0.0]
+  bays = { at = [4.0] }
+  infill = "door"
+
+  [[element.openings]]
+  edges = "facing:199:15"
+  kind = "window"
+  arch = "round"
+  width = 0.8
+  height = 1.4
+  levels = [5.5]
+  bays = { at = [8.5] }
+  infill = "dark"
+
+  [[element.openings]]
+  edges = "facing:199:15"
+  kind = "arch"
+  arch = "pointed"
+  width = 7.8
+  height = 8.5
+  rise = 4.84
+  levels = [11.0]
+  bays = 1
+  depth = 6.5
+  infill = "blind"
+
+  [[element.openings]]
+  edges = ["facing:108:15", "facing:20:10"]
+  kind = "slit"
+  width = 0.14
+  height = 1.3
+  levels = [4.5, 14.0]
+  bays = 1
+
+[[element]]
+type = "mass"
+name = "tower_e_top"
+polygon = [[7.61, 0.54], [11.85, -1.07], [16.45, 0.60], [18.42, 4.28], [14.62, 15.68], [3.57, 11.85]]
+y0 = 22.4
+y1 = 30.3
+string_courses = [27.8]
+crenellations = { shape = "rect", width = 1.3, gap = 0.8, height = 1.6, thickness = 0.6, wall = 1.1 }
+
+  [[element.openings]]
+  edges = "facing:199:15"
+  kind = "arch"
+  arch = "pointed"
+  width = 8.0
+  height = 7.3
+  rise = 4.96
+  levels = [22.4]
+  bays = 1
+  depth = 6.0
+  infill = "blind"
+
+[[element]]
+type = "mass"
+name = "stairhead_w"
+polygon = "part:9"
+y0 = 29.0
+y1 = 32.0
+
+[[element]]
+type = "mass"
+name = "stairhead_e"
+polygon = "part:8"
+y0 = 29.0
+y1 = 32.0
+
+# ----------------------------------------------------------- central body
+# Lower block, outer half (n 3.3..11.2): the round-arched outer gate,
+# a 7.9 m thick wall pierced by the passage.
+[[element]]
+type = "wall"
+name = "gate_outer"
+path = [[5.06, 5.29], [-6.48, 1.25]]
+align = "right"
+thickness = 7.9
+y0 = 0
+y1 = 10.0
+
+  [[element.openings]]
+  kind = "arch"
+  arch = "round"
+  width = 5.0
+  height = 6.5
+  note = "Wikipedia (es): outer gate arch about 5 m wide and 6.5 m high (portcullis)"
+  levels = [0.0]
+  bays = 1
+  voussoirs = { count = 17, width = 1.2 }
+  material = "stone_fine"
+
+# Lower block, inner half (n 11.2..14.7): the taller pointed inner arch.
+[[element]]
+type = "wall"
+name = "gate_inner"
+path = [[-8.94, 12.51], [0.48, 15.79]]
+align = "right"
+thickness = 3.5
+y0 = 0
+y1 = 10.0
+
+  [[element.openings]]
+  kind = "arch"
+  arch = "pointed"
+  width = 5.2
+  height = 7.4
+  levels = [0.0]
+  bays = { at = [5.0] }
+
+# Fill between the gate walls and the towers.
+[[element]]
+type = "mass"
+name = "gate_fill_w"
+polygon = [[-7.39, 8.08], [-8.71, 7.61], [-7.36, 3.72], [-6.2, 4.1], [-6.4, 8.4]]
+y0 = 0
+y1 = 10.0
+
+# Upper block (10..20.5) over the whole central plan.
+[[element]]
+type = "mass"
+name = "gate_upper"
+polygon = [[-6.48, 1.25], [5.06, 5.29], [4.18, 7.76], [2.81, 11.59], [2.05, 11.32], [0.48, 15.79], [-8.94, 12.51], [-8.64, 11.66], [-7.39, 8.08], [-8.71, 7.61], [-7.36, 3.72]]
+y0 = 10.0
+y1 = 20.5
+string_courses = [10.0]
+cornice = { profile = "gothic", size = 0.45, edges = "facing:199:10" }
+
+  # Inner face: the great pointed arch of the hall over the gate.
+  [[element.openings]]
+  edges = 5   # the inner face (0.48, 15.79) -> (-8.94, 12.51)
+  kind = "arch"
+  arch = "pointed"
+  width = 6.8
+  height = 8.7
+  rise = 4.22
+  levels = [10.3]
+  bays = 1
+  depth = 8.0
+  infill = "blind"
+
+# Outer face: the Gothic tracery band ("gotico florido") over the gate, a
+# panel 0.3 m proud of the wall: tall blind lancets under a row of
+# quatrefoils and small roundels.
+[[element]]
+type = "mass"
+name = "tracery_band"
+polygon = [[-6.48, 1.25], [5.06, 5.29], [5.16, 5.01], [-6.38, 0.97]]
+y0 = 10.0
+y1 = 15.4
+material = "tracery"
+
+  [[element.openings]]
+  edges = "facing:19:10"
+  kind = "blind"
+  arch = "pointed"
+  width = 0.8
+  height = 2.9
+  levels = [10.25]
+  bays = { count = 11, spacing = 1.02 }
+  depth = 0.35
+
+  [[element.openings]]
+  edges = "facing:19:10"
+  kind = "blind"
+  arch = "quatrefoil"
+  width = 0.88
+  levels = [13.35]
+  bays = { count = 11, spacing = 1.02 }
+  depth = 0.3
+
+  [[element.openings]]
+  edges = "facing:19:10"
+  kind = "blind"
+  arch = "circle"
+  width = 0.42
+  levels = [14.6]
+  bays = { offsets = [-4.59, -3.57, -2.55, -1.53, -0.51, 0.51, 1.53, 2.55, 3.57, 4.59] }
+  depth = 0.15
+
+[[element]]
+type = "moulding"
+polygon = [[-6.48, 1.25], [5.06, 5.29], [4.18, 7.76], [-7.36, 3.72]]
+edges = "facing:19:10"
+y = 15.4
+profile = "gothic"
+size = 0.4
+material = "stone_fine"
+
+[[element]]
+type = "mass"
+name = "gate_rear"
+polygon = [[4.82, 5.96], [4.18, 7.76], [4.05, 8.13], [-7.35, 3.68], [-6.57, 1.52]]
+y0 = 20.5
+y1 = 23.6
+crenellations = { shape = "rect", width = 1.0, gap = 0.7, height = 1.2, thickness = 0.5, wall = 0.0 }
+
+  [[element.openings]]
+  edges = "facing:19:10"
+  kind = "window"
+  arch = "round"
+  width = 0.6
+  height = 1.0
+  levels = [21.6]
+  bays = 1
+  infill = "dark"
+
+# Terrace parapet over the inner block.
+[[element]]
+type = "parapet"
+polygon = [[-6.48, 1.25], [5.06, 5.29], [4.18, 7.76], [2.81, 11.59], [2.05, 11.32], [0.48, 15.79], [-8.94, 12.51], [-8.64, 11.66], [-7.39, 8.08], [-8.71, 7.61], [-7.36, 3.72]]
+edges = ["facing:199:10"]
+y = 20.5
+height = 0.9
+thickness = 0.35
+
+# Coats of arms over the outer gate (simple relief): the royal arms in the
+# centre, the city arms either side. Local frame of the gate (x = u, z = n).
+[[element]]
+type = "group"
+name = "arms"
+transform = { rotate_y = -21.3 }
+material = "stone_fine"
+  [[element.children]]
+  type = "extrude"
+  plane = "xy"
+  profile = [[-0.7, 0.55], [-0.6, 0.15], [-0.3, -0.1], [0.0, -0.2], [0.3, -0.1], [0.6, 0.15], [0.7, 0.55], [0.7, 1.3], [0.45, 1.3], [0.45, 1.5], [0.2, 1.4], [0.0, 1.6], [-0.2, 1.4], [-0.45, 1.5], [-0.45, 1.3], [-0.7, 1.3]]
+  origin = [0.52, 7.9, 2.95]
+  length = 0.4
+  [[element.children]]
+  type = "extrude"
+  plane = "xy"
+  profile = [[-0.45, 0.4], [-0.38, 0.12], [-0.2, -0.05], [0.0, -0.12], [0.2, -0.05], [0.38, 0.12], [0.45, 0.4], [0.45, 1.0], [-0.45, 1.0]]
+  origin = [-2.7, 8.2, 3.05]
+  length = 0.35
+  [[element.children]]
+  type = "extrude"
+  plane = "xy"
+  profile = [[-0.45, 0.4], [-0.38, 0.12], [-0.2, -0.05], [0.0, -0.12], [0.2, -0.05], [0.38, 0.12], [0.45, 0.4], [0.45, 1.0], [-0.45, 1.0]]
+  origin = [3.7, 8.2, 2.95]
+  length = 0.35
+
+# --------------------------------------------------- machicolation galleries
+# Arcuated Valencian machicolations: stepped corbels carrying round arches
+# and a projecting parapet with merlons (generated per facet: arches evenly
+# spaced, a corbel under every pier and at every corner).
+
+[[element]]
+type = "mass"
+name = "gallery_w"
+polygon = [[-20.96, 1.49], [-17.50, -8.86], [-11.71, -11.51], [-5.64, -9.08], [-3.37, -3.76], [-5.19, 1.61], [-6.61, 1.13], [-4.98, -3.70], [-6.78, -7.92], [-11.67, -9.88], [-16.28, -7.77], [-19.54, 1.96]]
+y0 = 19.8
+y1 = 23.5
+
+  [[element.openings]]
+  edges = 0
+  kind = "arch"
+  arch = "round"
+  width = 1.86
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 4, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 1
+  kind = "arch"
+  arch = "round"
+  width = 2.32
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 2
+  kind = "arch"
+  arch = "round"
+  width = 2.41
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 3
+  kind = "arch"
+  arch = "round"
+  width = 2.03
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 4
+  kind = "arch"
+  arch = "round"
+  width = 1.97
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+[[element]]
+type = "array"
+name = "gallery_w_corbels"
+mode = "points"
+component = "corbel"
+points = [[-18.81, 17.20, -0.51], [-17.99, 17.20, -2.96], [-17.18, 17.20, -5.40], [-14.02, 17.20, -8.91], [-9.19, 17.20, -9.00], [-5.79, 17.20, -5.85], [-5.70, 17.20, -1.27], [-19.63, 17.20, 1.93], [-16.36, 17.20, -7.84], [-11.67, 17.20, -9.99], [-6.70, 17.20, -8.00], [-4.87, 17.20, -3.70], [-6.52, 17.20, 1.16]]
+facings = [288.5, 288.5, 288.5, 335.4, 21.8, 66.9, 108.8, 288.5, 311.9, 358.6, 44.4, 87.8, 108.8]
+
+[[element]]
+type = "crenellations"
+polygon = [[-20.96, 1.49], [-17.50, -8.86], [-11.71, -11.51], [-5.64, -9.08], [-3.37, -3.76], [-5.19, 1.61], [-6.61, 1.13], [-4.98, -3.70], [-6.78, -7.92], [-11.67, -9.88], [-16.28, -7.77], [-19.54, 1.96]]
+edges = [0, 1, 2, 3, 4]
+y = 23.5
+shape = "rect"
+width = 1.2
+gap = 0.75
+height = 1.2
+thickness = 0.5
+wall = 0.0
+
+[[element]]
+type = "mass"
+name = "gallery_e"
+polygon = [[3.71, 4.82], [5.88, -1.16], [11.83, -3.41], [17.99, -1.18], [20.81, 4.08], [17.50, 14.08], [16.08, 13.61], [19.18, 4.22], [16.94, 0.03], [11.84, -1.81], [7.06, -0.00], [5.12, 5.33]]
+y0 = 19.8
+y1 = 23.5
+
+  [[element.openings]]
+  edges = 0
+  kind = "arch"
+  arch = "round"
+  width = 2.32
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 1
+  kind = "arch"
+  arch = "round"
+  width = 2.32
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 2
+  kind = "arch"
+  arch = "round"
+  width = 2.41
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 3
+  kind = "arch"
+  arch = "round"
+  width = 2.12
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 2, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+  [[element.openings]]
+  edges = 4
+  kind = "arch"
+  arch = "round"
+  width = 1.77
+  height = 1.9
+  levels = [19.8]
+  bays = { count = 4, margin = 0 }
+  depth = 1.25
+  infill = "blind"
+
+[[element]]
+type = "array"
+name = "gallery_e_corbels"
+mode = "points"
+component = "corbel"
+points = [[6.01, 17.20, 2.61], [9.41, 17.20, -1.00], [14.43, 17.20, -0.98], [18.15, 17.20, 2.08], [18.51, 17.20, 6.57], [17.73, 17.20, 8.93], [16.95, 17.20, 11.28], [5.03, 17.20, 5.30], [6.98, 17.20, -0.08], [11.84, 17.20, -1.92], [17.01, 17.20, -0.05], [19.29, 17.20, 4.21], [16.17, 17.20, 13.64]]
+facings = [289.9, 339.3, 19.9, 61.8, 108.3, 108.3, 108.3, 289.9, 314.6, 359.6, 40.9, 85.1, 108.3]
+
+[[element]]
+type = "crenellations"
+polygon = [[3.71, 4.82], [5.88, -1.16], [11.83, -3.41], [17.99, -1.18], [20.81, 4.08], [17.50, 14.08], [16.08, 13.61], [19.18, 4.22], [16.94, 0.03], [11.84, -1.81], [7.06, -0.00], [5.12, 5.33]]
+edges = [0, 1, 2, 3, 4]
+y = 23.5
+shape = "rect"
+width = 1.2
+gap = 0.75
+height = 1.2
+thickness = 0.5
+wall = 0.0
+
+[[element]]
+type = "mass"
+name = "gallery_c"
+polygon = [[-6.15, 0.31], [5.39, 4.35], [5.03, 5.38], [-6.51, 1.34]]
+y0 = 19.0
+y1 = 20.9
+
+  [[element.openings]]
+  edges = 0
+  kind = "arch"
+  arch = "round"
+  width = 1.76
+  height = 1.3
+  levels = [19.0]
+  bays = { count = 5, margin = 0 }
+  depth = 0.85
+  infill = "blind"
+
+[[element]]
+type = "array"
+name = "gallery_c_corbels"
+mode = "points"
+component = "corbel_small"
+points = [[-4.17, 17.40, 2.06], [-1.86, 17.40, 2.87], [0.44, 17.40, 3.67], [2.75, 17.40, 4.48], [-6.48, 17.40, 1.25], [5.06, 17.40, 5.29]]
+facings = [19.3, 19.3, 19.3, 19.3, 19.3, 19.3]
+
+[[element]]
+type = "crenellations"
+polygon = [[-6.15, 0.31], [5.39, 4.35], [5.03, 5.38], [-6.51, 1.34]]
+edges = [0]
+y = 20.9
+shape = "rect"
+width = 0.9
+gap = 0.6
+height = 0.8
+thickness = 0.45
+wall = 0.0
+
+
+# Gargoyles on the inner faces (photos 07, 08: under each great arch).
+[[element]]
+type = "gargoyles"
+polygon = [[-20.12, 3.16], [-16.36, -7.84], [-11.67, -9.99], [-6.70, -8.00], [-4.87, -3.70], [-8.71, 7.61]]
+edges = "facing:201:15"
+y = 20.6
+spacing = 5.5
+length = 1.1
+size = 0.32
+corners = false
+
+[[element]]
+type = "gargoyles"
+polygon = [[6.98, -0.08], [11.84, -1.92], [17.01, -0.05], [19.29, 4.21], [15.38, 15.94], [2.81, 11.59]]
+edges = "facing:199:15"
+y = 20.6
+spacing = 5.5
+length = 1.1
+size = 0.32
+corners = false
+
+[[element]]
+type = "gargoyles"
+polygon = [[-6.48, 1.25], [5.06, 5.29], [4.18, 7.76], [2.81, 11.59], [2.05, 11.32], [0.48, 15.79], [-8.94, 12.51], [-8.64, 11.66], [-7.39, 8.08], [-8.71, 7.61], [-7.36, 3.72]]
+edges = "facing:199:5"
+y = 19.6
+spacing = 4.5
+length = 1.0
+size = 0.3
+corners = false
+
+# ---------------------------------------------------------- west stair
+# Grand stair along the inner face of the west tower (OSM part 743747153),
+# rising east from Placa dels Furs to the door of the central block.
+[[element]]
+type = "stairs"
+from = [-26.97, 2.58]
+to = [-8.9, 9.6]
+width = 3.4
+rise = 7.6
+riser = 0.19
+cheeks = true
+
+# ---------------------------------------------------------------- moat
+# Dry moat on the river side (OSM parts 1287040285/86, min_level -2):
+# battered tower bases, a grassed floor and a retaining wall with a low
+# parapet above street level.
+[[element]]
+type = "mass"
+name = "talus_w"
+polygon = [[-21.50, 3.80], [-17.25, -8.64], [-11.70, -11.19], [-5.87, -8.85], [-3.69, -3.74], [-8.04, 9.05]]
+y0 = -4.5
+y1 = 0.0
+batter = 1.1
+
+[[element]]
+type = "mass"
+name = "talus_e"
+polygon = [[6.12, -0.93], [11.83, -3.09], [17.78, -0.94], [20.48, 4.11], [16.07, 17.34], [1.40, 12.27]]
+y0 = -4.5
+y1 = 0.0
+batter = 1.1
+
+[[element]]
+type = "slab"
+polygon = "part:0"
+y = -4.4
+thickness = 0.2
+material = "moat_floor"
+
+[[element]]
+type = "slab"
+polygon = "part:1"
+y = -4.4
+thickness = 0.2
+material = "moat_floor"
+
+[[element]]
+type = "wall"
+name = "moat_wall_e"
+path = [[11.87, -3.11], [7.48, -1.45], [10.81, -10.53], [12.91, -11.45], [23.8, -7.41], [29.29, 4.14], [26.99, 10.55], [24.8, 16.64], [17.26, 14.02]]
+y0 = -4.5
+y1 = 1.0
+thickness = 0.6
+coping = true
+
+[[element]]
+type = "wall"
+name = "moat_wall_w"
+path = [[-4.21, -5.34], [-0.93, -14.33], [-1.39, -15.95], [-12.16, -20.04], [-23.66, -14.78], [-27.64, -3.74], [-20.78, 1.14]]
+y0 = -4.5
+y1 = 1.0
+thickness = 0.6
+coping = true
+
+# ----------------------------------------------------------------- views
+
+[[view]]
+name = "outer face"
+photo = "photos/02_Puerta_de_los_Serranos_Valencia_Espana_2014_06_30_DD_86.jpg"
+eye = [12.55, 1.6, -30.52]
+target = [0.56, 19.4, 0.22]
+focal_35mm = 18
+sun = [90, 45]
+
+[[view]]
+name = "inner face"
+photo = "photos/07_Valencia_Torres_de_Serranos_02.jpg"
+eye = [-6.04, 1.6, 53.63]
+target = [-4.22, 11.5, 14.13]
+focal_35mm = 22
+sun = [220, 25]
+
+[[view]]
+name = "outer face evening"
+photo = "photos/01_Torres_serrans_abril.jpg"
+eye = [17.6, 1.6, -43.6]
+target = [0.56, 17.6, 0.22]
+focal_35mm = 30
+sun = [75, 12]
+
+[[view]]
+name = "inner face close"
+photo = "photos/08_Puerta_de_los_Serranos_Valencia_Espana_2014_06_29_DD_30.jpg"
+eye = [-13.4, 1.6, 37.7]
+target = [-3.6, 12.0, 13.7]
+focal_35mm = 21
+sun = [180, 70]
+
+[[view]]
+name = "east side, south"
+photo = "photos/06_2023_Valencia_TorresDeSerrans01.jpg"
+eye = [43.0, 1.6, 17.3]
+target = [16.0, 15.5, 6.0]
+focal_35mm = 28
+sun = [110, 40]
+
+[[view]]
+name = "east side"
+photo = "photos/18_Torres_de_Serranos_de_perfil_412670920.jpg"
+eye = [52.0, 1.6, 5.5]
+target = [14.5, 16.0, 9.0]
+focal_35mm = 28
+sun = [130, 45]
+
+[[view]]
+name = "west tower, south-west corner"
+photo = "photos/19_360_Torres_dels_Serrans_torre_de_ponent_angle_sud_oest.jpg"
+eye = [-32.1, 1.6, 2.1]
+target = [-16.0, 25.0, 0.0]
+focal_35mm = 24
+sun = [250, 20]
+
+[[view]]
+name = "gallery close-up"
+eye = [-30.0, 14.0, -38.0]
+target = [-12.0, 20.0, -8.0]
+fov_y = 40
