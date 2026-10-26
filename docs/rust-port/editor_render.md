@@ -1,4 +1,51 @@
-# editor_render porting plan (planning only)
+# editor_render porting status
+
+## Done
+
+### U1 stroke_pack: stroke point packing, bounds and legacy cover strokes (done)
+- Rust (`rust-core/src/editor_render.rs`): `editor_render_stroke_bounds` (min/max of packed x,y pairs with the exact strict `<`/`>`
+  semantics of the old loop, NaN never updates a bound) and `editor_render_cover_widths` (skip rules, 1.05x highlighter /
+  1.35x pen widening, `Math.max(1, x)` with NaN propagation). 3.6 KB of Rust code, 3.3 KB of Rust unit tests.
+- JS adapter (`rust-core-v5.js`, `stream:editor_render`): `strokeCoords(n)` hands out a Float64Array view of a reusable WASM scratch,
+  `strokeBounds(n)` returns the four bounds, `legacyCoverWidths(strokes)` returns one width per stroke (-1 = not covered). Throws
+  loudly if the core is missing.
+- `drawSmoothStroke`: one pass over the point objects now builds the Path2D and packs the coordinates; the hit-test bounds come
+  from Rust and are seeded into `strokeBoundsCache` (also for the throw-away cover stroke objects, which previously rescanned every
+  point on every repaint). The old JS bounds scan is no longer used by the draw path.
+- `drawLegacyCoverStrokes`: skip/widen rules deleted, widths come from Rust. The spread of the stroke object and the canvas calls stay JS.
+- `redrawPage` waits for `InhouseRust.ready` (repaints afterwards) and throws if WASM failed; `drawSmoothStroke` and
+  `drawLegacyCoverStrokes` throw when the core is missing instead of degrading.
+- Tests: `cargo test` (4 tests), `tests/editor-render-stroke.test.mjs` (differential against the original `app-v5.js` from git:
+  fixtures plus 4000 random strokes with repaints, growing live stroke, 300k-point stroke, 3000 random cover pages; byte-exact
+  drawing logs and bounds), `tests/e2e/editor-render-parity.spec.mjs` (real canvas pixels, 0 differing bytes).
+- Bytes: app-v5.js 1033 B removed, 2449 B added (glue, loud-failure checks and the cold-start gate in `redrawPage`); rust-core-v5.js +3.9 KB
+  adapter; Rust +3.6 KB.
+- Not ported, with reasons: `cloneLegacyCoverStrokes` is a deep copy of JS object graphs (Rust would need a JSON round trip, slower and
+  lossy for `undefined`/extra fields), so it stays JS and unchanged. `getStrokeBounds` (section 4.5x, not owned) still carries the old JS scan
+  as a fallback for strokes that were never drawn (eraser hit tests); it should call a Rust helper in a later unit/owner.
+- Intentional divergence: for corrupt points whose x/y are numeric *strings* the old bounds kept lexical strings; Rust bounds are numbers
+  (consumers subtract a pad first, so results are numeric either way). Path and pixels are identical.
+
+Speed (Chromium, shared 4-core machine, best of 5; `lineTo` dominates so end-to-end is neutral):
+
+| points per stroke | legacy build+bounds | Rust build+bounds | bounds only JS -> Rust |
+| --- | --- | --- | --- |
+| 150 | 9.2 us | 8.9 us | 3.2 -> 0.5 us (6x) |
+| 600 | 31 us | 29 us | |
+| 2500 | 141-242 us | 210-245 us (noise) | 98 -> 4.5 us (22x) |
+| 10000 | 1.0 ms | 0.56-0.93 ms | 677 -> 24 us (27x) |
+
+The bounds scan itself is 6-27x faster in Rust, but Path2D `lineTo` per point (native, unavoidable) is 95% of the cost, so building a
+stroke path is within noise. The measurable win is for repaints of cover strokes (throw-away objects: O(1) seeded bounds instead of an
+O(n) scan every paint). The cover-width batch is a few microseconds slower per call (0.1 -> 0.24 us for one stroke, 5.6 -> 30 us for 400),
+negligible next to the canvas strokes it precedes.
+
+## Remaining
+U2-U8 as planned below.
+
+---
+
+# Original plan
 
 Owned: app-v5.js section 4.6 (13299-13468, 8.5 KB), 4.7 (13469-14661, 60 KB), 4.13 (19751-20813, 52 KB).
 
