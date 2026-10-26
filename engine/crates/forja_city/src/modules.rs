@@ -675,7 +675,8 @@ impl ShopKey {
         match piece {
             ShopPiece::Surround => ShopKey { surround: self.surround, ..blank },
             ShopPiece::Front => ShopKey { frame: self.frame, sign: self.sign % 3, ..blank },
-            ShopPiece::Interior => ShopKey { interior: self.sign % 4, ..blank },
+            // Atlas column from the sign, + 4 for a shallow room.
+            ShopPiece::Interior => ShopKey { interior: self.sign % 4 + if self.interior > 0 { 4 } else { 0 }, ..blank },
             ShopPiece::Sign => ShopKey { sign: self.sign, ..blank },
             ShopPiece::Shutter => ShopKey { shutter: self.shutter, graffiti: if self.shutter == 3 { self.graffiti } else { 0 }, ..blank },
             ShopPiece::Awning => ShopKey { awning: self.awning, ..blank },
@@ -704,7 +705,7 @@ pub fn shop_piece(k: &ShopKey, piece: ShopPiece) -> P {
             bx(&mut p, k.surround, v(hw, 0.0, 0.0), v(hw + bw, h, pr));
             bx(&mut p, k.surround, v(-hw - bw, h, 0.0), v(hw + bw, h + 0.18, pr + 0.02));
         }
-        ShopPiece::Interior => interior(&mut p, Mat::ShopInterior, w, ys, k.interior, 4.0),
+        ShopPiece::Interior => interior(&mut p, Mat::ShopInterior, w, ys, k.interior % 4, if k.interior >= 4 { 1.2 } else { 4.0 }),
         ShopPiece::Front => {
             let frame = Mat::PaintedWood(k.frame);
             bx(&mut p, frame, v(-hw, ys - 0.06, -0.08), v(hw, ys, -0.02));
