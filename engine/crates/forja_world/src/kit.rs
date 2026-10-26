@@ -147,6 +147,7 @@ impl WorldSource for KitCity {
                 if road_x && road_z && i + 1 < n && j + 1 < n {
                     let p = pos + Vec3::new(t * 0.42, 0.0, t * 0.42);
                     w.place(light, Mat4::from_translation(p) * scale);
+                    w.lights.push((p + Vec3::Y * t * 0.55, Vec3::new(1.0, 0.78, 0.5)));
                 }
                 if road_x && !road_z && j % 2 == 0 {
                     w.spawns.push(SpawnPoint { kind: SpawnKind::Vehicle, iso: Iso::new(pos + Vec3::new(t * 0.2, 1.0, 0.0), Quat::IDENTITY) });

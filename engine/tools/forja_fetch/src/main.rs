@@ -127,6 +127,16 @@ fn fetch_polyhaven(ctx: &mut Ctx, entry: &AssetEntry) -> Result<usize> {
     let api = format!("https://api.polyhaven.com/files/{}", ph.id);
     let json: serde_json::Value = serde_json::from_slice(&get(ctx, &api)?).map_err(|e| format!("{api}: {e}"))?;
     let mut count = 0;
+    if ph.format == "texture" {
+        // Color, OpenGL normal and packed AO/roughness/metal (glTF ORM order).
+        for (key, name) in [("Diffuse", "color"), ("nor_gl", "normal"), ("arm", "arm")] {
+            let url = json[key][&ph.res]["jpg"]["url"].as_str().ok_or(format!("{api}: no {key}/{}", ph.res))?;
+            let bytes = get(ctx, url)?;
+            store(ctx, entry, &format!("{}_{name}.jpg", ph.id), &bytes)?;
+            count += 1;
+        }
+        return Ok(count);
+    }
     if ph.format == "hdr" {
         let url = json["hdri"][&ph.res]["hdr"]["url"].as_str().ok_or(format!("{api}: no hdri/{}/hdr", ph.res))?;
         let bytes = get(ctx, url)?;
@@ -173,6 +183,29 @@ fn fetch_entry(ctx: &mut Ctx, entry: &AssetEntry) -> Result<usize> {
     }
     if entry.polyhaven.is_some() {
         return fetch_polyhaven(ctx, entry);
+    }
+    if let Some(acg) = &entry.ambientcg {
+        let url = format!("https://ambientcg.com/get?file={}_{}.zip", acg.id, acg.res);
+        let bytes = get(ctx, &url)?;
+        // Keep the maps the renderer uses; skip previews and displacement.
+        let mut e = entry.clone();
+        e.include = Vec::new();
+        let mut zip = zip::ZipArchive::new(Cursor::new(&bytes[..])).map_err(|err| format!("{}: bad zip: {err}", entry.id))?;
+        let mut n = 0;
+        for i in 0..zip.len() {
+            let mut f = zip.by_index(i).map_err(|err| err.to_string())?;
+            let name = f.name().to_string();
+            let keep = ["_Color", "_NormalGL", "_Roughness", "_AmbientOcclusion", "_Metalness", "_Emission", "_Opacity"].iter().any(|k| name.contains(k));
+            if f.is_dir() || !keep {
+                continue;
+            }
+            let Some(rel) = safe_rel(&name) else { continue };
+            let mut data = Vec::with_capacity(f.size() as usize);
+            f.read_to_end(&mut data).map_err(|err| err.to_string())?;
+            store(ctx, &e, &rel, &data)?;
+            n += 1;
+        }
+        return Ok(n);
     }
     if let Some(osm) = &entry.osm {
         let [a, b, c, d] = osm.bbox;

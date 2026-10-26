@@ -106,12 +106,13 @@ pub fn sky_lighting(sun_dir: Vec3, sun_illuminance: f32, ground_albedo: Vec3) ->
         zenith += sky_radiance(vec3(a.cos() * 0.35, 0.94, a.sin() * 0.35).normalize(), sun_dir, 0.0);
         horizon += sky_radiance(vec3(a.cos(), 0.08, a.sin()).normalize(), sun_dir, 0.0);
     }
-    // pi * average radiance approximates hemispherical irradiance.
-    let scale = sun_illuminance * std::f32::consts::PI / k as f32;
+    // Average sky radiance. Lambertian surfaces lit by it reflect
+    // albedo / pi * (pi * L) = albedo * L, so the shader uses it directly.
+    let scale = sun_illuminance / k as f32;
     let zenith = zenith * scale;
     let horizon = horizon * scale;
     let sun_on_ground = sun_color * sun_dir.y.max(0.0) / std::f32::consts::PI;
-    let ground = ground_albedo * (sun_on_ground + (zenith + horizon) * 0.25);
+    let ground = ground_albedo * (sun_on_ground + (zenith + horizon) * 0.5);
     SkyLighting { sun_color, zenith, horizon, ground }
 }
 

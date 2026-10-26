@@ -9,6 +9,7 @@
 
 pub mod builder;
 mod gltf_world;
+pub mod library;
 mod kit;
 pub mod osm;
 pub mod terrain;
@@ -22,6 +23,7 @@ use forja_physics::{ColliderDesc, PhysicsWorld};
 
 pub use gltf_world::GltfWorld;
 pub use kit::KitCity;
+pub use library::ContentLibrary;
 pub use osm::OsmWorld;
 pub use terrain::TerrainWorld;
 pub use track::TestTrack;
@@ -71,6 +73,8 @@ pub struct WorldDescription {
     /// Static colliders in world space.
     pub colliders: Vec<(ColliderDesc, Iso)>,
     pub spawns: Vec<SpawnPoint>,
+    /// Street lights and other static lamps: `(position, color)`.
+    pub lights: Vec<(forja_math::Vec3, forja_math::Vec3)>,
     /// Half size of the playable area (XZ).
     pub extent: Vec2,
     /// Credits required by the data licenses.

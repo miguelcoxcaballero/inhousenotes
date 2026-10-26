@@ -9,7 +9,9 @@
 #                `strip` removes a prefix when extracting. `page` is scraped for
 #                a fresh link if the archive URL ever changes (Kenney).
 #   files      = list of { url, path } single files.
-#   polyhaven  = { id, res, format } through the Poly Haven API.
+#   polyhaven  = { id, res, format } through the Poly Haven API
+#                (format: gltf model, hdr sky, texture = diffuse + normal + ARM).
+#   ambientcg  = { id, res } PBR material zip from ambientCG (CC0).
 #   osm        = { bbox = [min_lon, min_lat, max_lon, max_lat] } real map data.
 #   terrarium  = { z, x, y, tiles } elevation tiles (tiles x tiles grid).
 #   manual     = { url, note } the user downloads it; `forja_fetch import`.
@@ -207,3 +209,194 @@ license = "CC0-1.0"
 author = "Poly Haven (Greg Zaal)"
 homepage = "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky"
 polyhaven = { id = "kloofendal_48d_partly_cloudy_puresky", res = "2k", format = "hdr" }
+
+# ------------------------------------------------- photoreal PBR materials
+# Scanned CC0 materials used by the procedural worlds (roads, sidewalks,
+# facades, terrain). Each lands in its own folder; forja_assets::load_pbr_set
+# finds the color / normal / roughness / AO / metal maps by name.
+
+[[asset]]
+id = "pbr_asphalt"
+name = "Asphalt 02 (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/asphalt_02"
+polyhaven = { id = "asphalt_02", res = "2k", format = "texture" }
+
+[[asset]]
+id = "pbr_sidewalk"
+name = "Concrete pavement (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/concrete_pavement"
+polyhaven = { id = "concrete_pavement", res = "2k", format = "texture" }
+
+[[asset]]
+id = "pbr_sand"
+name = "Coast sand 01 (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/coast_sand_01"
+polyhaven = { id = "coast_sand_01", res = "2k", format = "texture" }
+
+[[asset]]
+id = "pbr_grass"
+name = "Aerial grass and rock (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/aerial_grass_rock"
+polyhaven = { id = "aerial_grass_rock", res = "2k", format = "texture" }
+
+[[asset]]
+id = "pbr_rock"
+name = "Aerial rocks 02 (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/aerial_rocks_02"
+polyhaven = { id = "aerial_rocks_02", res = "2k", format = "texture" }
+
+[[asset]]
+id = "pbr_roof"
+name = "Concrete tile facade used as flat roofs (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/concrete_tile_facade"
+polyhaven = { id = "concrete_tile_facade", res = "2k", format = "texture" }
+
+[[asset]]
+id = "pbr_facade_brick"
+name = "Facade 018A: brick with windows (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "ambientCG (Lennart Demes)"
+homepage = "https://ambientcg.com/view?id=Facade018A"
+ambientcg = { id = "Facade018A", res = "2K-JPG" }
+
+[[asset]]
+id = "pbr_facade_stone"
+name = "Facade 019A: stone office (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "ambientCG (Lennart Demes)"
+homepage = "https://ambientcg.com/view?id=Facade019A"
+ambientcg = { id = "Facade019A", res = "2K-JPG" }
+
+[[asset]]
+id = "pbr_facade_classic"
+name = "Facade 020A: classic apartments (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "ambientCG (Lennart Demes)"
+homepage = "https://ambientcg.com/view?id=Facade020A"
+ambientcg = { id = "Facade020A", res = "2K-JPG" }
+
+[[asset]]
+id = "pbr_facade_office"
+name = "Facade 006: white office grid (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "ambientCG (Lennart Demes)"
+homepage = "https://ambientcg.com/view?id=Facade006"
+ambientcg = { id = "Facade006", res = "2K-JPG" }
+
+[[asset]]
+id = "pbr_facade_glass"
+name = "Facade 001: glass tower (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "ambientCG (Lennart Demes)"
+homepage = "https://ambientcg.com/view?id=Facade001"
+ambientcg = { id = "Facade001", res = "2K-JPG" }
+
+# ------------------------------------------------------ photoreal skies
+
+[[asset]]
+id = "hdri_wide_street"
+name = "Wide street 01 (sunny city HDRI, unclipped sun)"
+kind = "sky"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/wide_street_01"
+polyhaven = { id = "wide_street_01", res = "2k", format = "hdr" }
+
+[[asset]]
+id = "hdri_pretville_street"
+name = "Pretville street (sunny suburb HDRI)"
+kind = "sky"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/pretville_street"
+polyhaven = { id = "pretville_street", res = "2k", format = "hdr" }
+
+# ------------------------------------------------- photoreal models
+
+[[asset]]
+id = "khronos_car_concept"
+name = "Car Concept: clearcoat paint, glass and tyre detail"
+kind = "vehicle"
+license = "CC-BY-4.0 (contains Khronos trademarks)"
+author = "Eric Chadwick / Darmstadt Graphics Group, from a CC0 model by Unity Fan"
+homepage = "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept"
+files = [
+    { url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/CarConcept/glTF-Binary/CarConcept.glb", path = "CarConcept.glb" },
+]
+
+[[asset]]
+id = "polyhaven_island_tree"
+name = "Island tree 01 (scanned tropical tree)"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/island_tree_01"
+polyhaven = { id = "island_tree_01", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "polyhaven_fire_hydrant"
+name = "Fire hydrant"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/fire_hydrant"
+polyhaven = { id = "fire_hydrant", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "polyhaven_trash_can"
+name = "Metal trash can"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/metal_trash_can"
+polyhaven = { id = "metal_trash_can", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "polyhaven_road_barrier"
+name = "Concrete road barrier"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/concrete_road_barrier"
+polyhaven = { id = "concrete_road_barrier", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "polyhaven_street_bench"
+name = "Modular street seating"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/modular_street_seating"
+polyhaven = { id = "modular_street_seating", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "sketchfab_models"
+name = "Photoreal characters/cars from Sketchfab (needs your token)"
+kind = "character"
+license = "per model (CC-BY or CC0, checked on download)"
+author = "Sketchfab creators"
+homepage = "https://sketchfab.com/search?features=downloadable&licenses=322a749bcfa841b29dff1e8a1bb74b0b&type=models"
+manual = { url = "https://sketchfab.com/settings/password", note = "Photoreal rigged humans are not available as CC0 direct downloads. Get an API token on Sketchfab (Settings > Password & API), then: SKETCHFAB_TOKEN=... cargo run -p forja_fetch -- sketchfab <model uid>. Mixamo characters can be imported from a downloaded zip with `forja_fetch import`." }

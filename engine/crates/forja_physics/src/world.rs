@@ -229,6 +229,14 @@ impl PhysicsWorld {
         self.colliders.get(h.0)
     }
 
+    /// Changes collision layers (e.g. hide a character while it drives).
+    pub fn set_collider_groups(&mut self, h: ColliderHandle, groups: CollisionGroups) {
+        if let Some(c) = self.colliders.get_mut(h.0) {
+            c.groups = groups;
+        }
+        self.pairs.retain(|k, _| k.0 != h && k.1 != h);
+    }
+
     pub fn bodies(&self) -> impl Iterator<Item = (BodyHandle, &RigidBody)> {
         self.bodies.iter().map(|(h, b)| (BodyHandle(h), b))
     }

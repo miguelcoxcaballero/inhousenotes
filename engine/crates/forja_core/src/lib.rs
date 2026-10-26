@@ -130,6 +130,7 @@ pub type System = Box<dyn FnMut(&mut World)>;
 
 struct NamedSystem {
     name: &'static str,
+    order: i32,
     run: System,
 }
 
@@ -231,7 +232,16 @@ impl App {
     }
 
     pub fn add_system(&mut self, stage: Stage, name: &'static str, f: impl FnMut(&mut World) + 'static) -> &mut Self {
-        self.systems.entry(stage).or_default().push(NamedSystem { name, run: Box::new(f) });
+        self.add_system_at(stage, name, 0, f)
+    }
+
+    /// Adds a system with an explicit order inside its stage (lower runs
+    /// first; equal orders keep registration order). Engine conventions:
+    /// gameplay 0, `physics_step` 100, sync after physics 200.
+    pub fn add_system_at(&mut self, stage: Stage, name: &'static str, order: i32, f: impl FnMut(&mut World) + 'static) -> &mut Self {
+        let list = self.systems.entry(stage).or_default();
+        list.push(NamedSystem { name, order, run: Box::new(f) });
+        list.sort_by_key(|s| s.order);
         self
     }
 
@@ -340,6 +350,17 @@ mod tests {
     #[should_panic(expected = "needs counter")]
     fn dependencies_are_checked() {
         App::new().add_plugin(NeedsCounter);
+    }
+
+    #[test]
+    fn systems_run_in_order() {
+        let mut app = App::new();
+        app.insert_resource(Vec::<&'static str>::new());
+        app.add_system_at(Stage::Update, "late", 100, |w| w.res_mut::<Vec<&'static str>>().push("late"));
+        app.add_system(Stage::Update, "early", |w| w.res_mut::<Vec<&'static str>>().push("early"));
+        app.update_with_dt(0.016);
+        assert_eq!(app.world.res::<Vec<&'static str>>(), &vec!["early", "late"]);
+        assert_eq!(app.system_names(Stage::Update), vec!["early", "late"]);
     }
 
     #[test]

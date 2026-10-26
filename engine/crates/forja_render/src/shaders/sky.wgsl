@@ -17,6 +17,9 @@ fn vs_main(@builtin(vertex_index) i: u32) -> SkyOut {
 fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
     let far = frame.inv_view_proj * vec4<f32>(in.ndc, 1e-6, 1.0);
     let d = normalize(far.xyz / far.w - frame.camera_pos.xyz);
+    if (frame.env_params.x > 0.5) {
+        return vec4<f32>(textureSampleLevel(env_tex, env_samp, equirect_uv(d), 0.0).rgb, 1.0);
+    }
     let l = frame.sun_dir.xyz;
     let alt = frame.camera_pos.y * 0.001;
     var c = sky_radiance(d, l, alt) * frame.sun_dir.w;
