@@ -310,8 +310,6 @@
         const OVERSCROLL_FRICTION = 0.24;
         const OVERSCROLL_MARGIN = 100;
         const CREATE_PAGE_MIN_BOTTOM_RATIO = 0.45;
-        const LIVE_PREVIEW_POINTS = 6;
-        const FINALIZE_STEP_POINTS = 6;
         const MIN_PAGE_VISIBLE = 5;
         const VIEW_STORAGE_KEY = (OFFLINE_WORKER ? 'background-' : '') + 'notebook-view-v1';
         const VIEW_SAVE_DELAY = 250;
@@ -884,6 +882,9 @@
             if (!stroke || !stroke.points) return stroke;
 
             const isHighlighter = stroke.tool === 'highlighter';
+            // Handwriting keeps the measured path, including small corners.
+            // Only the highlighter retains its existing simplification.
+            if (!isHighlighter) return stroke;
             const minPointsToSimplify = isHighlighter ? 6 : 8;
             if (stroke.points.length < minPointsToSimplify) return stroke;
 
@@ -4665,56 +4666,15 @@
         }
 
         function drawStrokeTailSegment(ctx, stroke) {
-            if (!stroke || !stroke.points || stroke.points.length < 2) return;
+            if (!stroke?.points || stroke.points.length < 2) return;
             const points = stroke.points;
-            const startIndex = stroke.finalizedIndex >= 0
-                ? stroke.finalizedIndex + 1
-                : 0;
-
+            const start = Math.max(0, stroke.finalizedIndex ?? -1);
+            if (start >= points.length - 1) return;
             setupContext(ctx, stroke.tool, stroke.color, stroke.width);
             setStrokeCaps(ctx, stroke.tool);
-            ctx.lineWidth = getStrokeWidth(stroke);
-
             ctx.beginPath();
-            if (stroke.lastMid) ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
-            let localMid = stroke.lastMid;
-            let i = startIndex;
-
-            if (!localMid) {
-                if (startIndex === 0) {
-                    const mid0 = {
-                        x: (points[0].x + points[1].x) / 2,
-                        y: (points[0].y + points[1].y) / 2
-                    };
-                    ctx.moveTo(points[0].x, points[0].y);
-                    ctx.lineTo(mid0.x, mid0.y);
-                    localMid = mid0;
-                    i = 1;
-                } else {
-                    const prev = points[startIndex - 1];
-                    const curr = points[startIndex];
-                    const midPrev = {
-                        x: (prev.x + curr.x) / 2,
-                        y: (prev.y + curr.y) / 2
-                    };
-                    ctx.moveTo(prev.x, prev.y);
-                    ctx.lineTo(midPrev.x, midPrev.y);
-                    localMid = midPrev;
-                }
-            }
-
-            for (; i < points.length - 1; i++) {
-                const next = points[i + 1];
-                const mid = {
-                    x: (points[i].x + next.x) / 2,
-                    y: (points[i].y + next.y) / 2
-                };
-                ctx.quadraticCurveTo(points[i].x, points[i].y, mid.x, mid.y);
-                localMid = mid;
-            }
-
-            const last = points[points.length - 1];
-            ctx.lineTo(last.x, last.y);
+            ctx.moveTo(points[start].x, points[start].y);
+            for (let i = start + 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
             ctx.stroke();
         }
 
@@ -4761,7 +4721,8 @@
                 ctx.clearRect(previousBounds.x, previousBounds.y, previousBounds.width, previousBounds.height);
             }
 
-            if (!stroke || !stroke.points || stroke.points.length === 0) {
+            if (!stroke || !stroke.points || stroke.points.length === 0
+                || (stroke.points.length > 1 && stroke.finalizedIndex >= stroke.points.length - 1)) {
                 liveCursorPreviewBounds.delete(previewCanvas);
                 return;
             }
@@ -4878,42 +4839,10 @@
         }
 
         function finalizeStrokeSegments(pageIndex, canvas, stroke) {
-            const points = stroke.points;
-            if (points.length < 2) return;
-            const targetIndex = Math.min(points.length - 2, points.length - LIVE_PREVIEW_POINTS - 1);
-            if (targetIndex <= stroke.finalizedIndex) return;
-
-            const ctx = canvas.getContext('2d');
-            setupContext(ctx, stroke.tool, stroke.color, stroke.width);
-            setStrokeCaps(ctx, stroke.tool);
-            ctx.lineWidth = getStrokeWidth(stroke);
-
-            ctx.beginPath();
-            if (stroke.lastMid) ctx.moveTo(stroke.lastMid.x, stroke.lastMid.y);
-            let startIndex = stroke.finalizedIndex + 1;
-            if (startIndex === 0) {
-                const mid0 = {
-                    x: (points[0].x + points[1].x) / 2,
-                    y: (points[0].y + points[1].y) / 2
-                };
-                ctx.moveTo(points[0].x, points[0].y);
-                ctx.lineTo(mid0.x, mid0.y);
-                stroke.lastMid = mid0;
-                stroke.finalizedIndex = 0;
-                startIndex = 1;
-            }
-
-            for (let i = startIndex; i <= targetIndex; i++) {
-                const next = points[i + 1];
-                const mid = {
-                    x: (points[i].x + next.x) / 2,
-                    y: (points[i].y + next.y) / 2
-                };
-                ctx.quadraticCurveTo(points[i].x, points[i].y, mid.x, mid.y);
-                stroke.lastMid = mid;
-                stroke.finalizedIndex = i;
-            }
-            ctx.stroke();
+            if (stroke.points.length < 2 || stroke.finalizedIndex >= stroke.points.length - 1) return;
+            drawStrokeTailSegment(canvas.getContext('2d'), stroke);
+            stroke.finalizedIndex = stroke.points.length - 1;
+            stroke.lastMid = null;
         }
 
         function updateLiveStroke(pageIndex, canvas, stroke, previewCanvas = null, metrics = null) {
@@ -4926,7 +4855,8 @@
                 return;
             }
             const pending = stroke.points.length - 1 - stroke.finalizedIndex;
-            if (pending > LIVE_PREVIEW_POINTS + FINALIZE_STEP_POINTS) {
+            if (pending <= 0) return;
+            if (pending > 0) {
                 finalizeStrokeSegments(pageIndex, livePenSurfaces.get(stroke) || canvas, stroke);
             }
             drawStrokePreviewTail(pageIndex, stroke, previewCanvas, metrics);
@@ -13391,15 +13321,9 @@
                 || cached.firstY !== first.y || cached.lastX !== last.x || cached.lastY !== last.y) {
                 const path = new Path2D();
                 path.moveTo(first.x, first.y);
-                if (points.length === 2) path.lineTo(last.x, last.y);
-                else {
-                    path.lineTo((first.x + points[1].x) / 2, (first.y + points[1].y) / 2);
-                    for (let i = 1; i < points.length - 1; i++) {
-                        const current = points[i], next = points[i + 1];
-                        path.quadraticCurveTo(current.x, current.y, (current.x + next.x) / 2, (current.y + next.y) / 2);
-                    }
-                    path.lineTo(last.x, last.y);
-                }
+                // Rounded joins remove raster corners without moving any
+                // measured point or averaging away handwriting details.
+                for (let i = 1; i < points.length; i++) path.lineTo(points[i].x, points[i].y);
                 cached = { path, length: points.length, firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y };
                 penPathCache.set(points, cached);
             }
