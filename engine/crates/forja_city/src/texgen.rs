@@ -649,10 +649,12 @@ pub fn shop_interiors() -> TextureData {
             c.rect(Vec2::new(x0 + 4.0, y + 40.0), Vec2::new(x0 + 124.0, y + 44.0), [0.3, 0.25, 0.2, 1.0]);
             let mut x = x0 + 6.0;
             while x < x0 + 120.0 {
-                let pw = rng.range(6.0, 14.0);
-                let ph = rng.range(16.0, 38.0);
-                c.rect(Vec2::new(x, y + 40.0 - ph), Vec2::new((x + pw).min(x0 + 122.0), y + 40.0), rgb(*rng.pick(&[0xc62828, 0x1565c0, 0xf9a825, 0x2e7d32, 0xeeeeee, 0x6a1b9a, 0xef6c00, 0x795548])));
-                x += pw + 2.0;
+                let pw = rng.range(3.0, 7.0);
+                let ph = rng.range(10.0, 30.0);
+                let col = rgb(*rng.pick(&[0x9a3a32, 0x3a5a8a, 0xb89a50, 0x4a6a44, 0xd8d4c8, 0x6a4a6a, 0xa86a3a, 0x6a5a4a, 0x2a2a2a]));
+                let k = rng.range(0.55, 0.9);
+                c.rect(Vec2::new(x, y + 40.0 - ph), Vec2::new((x + pw).min(x0 + 122.0), y + 40.0), [col[0] * k, col[1] * k, col[2] * k, 1.0]);
+                x += pw + rng.range(0.5, 2.5);
             }
         }
         // Counter.

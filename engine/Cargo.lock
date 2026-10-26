@@ -1056,6 +1056,7 @@ name = "forja_world"
 version = "0.1.0"
 dependencies = [
  "forja_assets",
+ "forja_city",
  "forja_math",
  "forja_physics",
  "image",

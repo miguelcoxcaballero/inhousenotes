@@ -1060,6 +1060,31 @@ impl Renderer {
         let mut culled = 0u32;
         for inst in &frame.instances {
             let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
+            // Whole-instance tests first: frustum, sub-pixel detail and
+            // distant small shadow casters are rejected without touching
+            // their parts.
+            let ib = if inst.joints.is_some() || inst.nodes.is_some() { model.bounds.expanded(0.5) } else { model.bounds };
+            let wbi = transform_aabb(&ib, &inst.transform);
+            let radius = wbi.half_extents().length();
+            let dist = (wbi.center() - cam.position).length().max(0.1);
+            let px_radius = radius / (dist * tan_half_fov) * height as f32 * 0.5;
+            let in_main = px_radius > 0.6 && frustum.intersects_aabb(&wbi);
+            let shadow_ok = inst.cast_shadows && !(radius < 0.8 && dist > 35.0) && !(radius < 3.0 && dist > 90.0);
+            let mut cmask = 0u8;
+            if shadow_ok {
+                for (c, planes) in cascade_planes.iter().enumerate() {
+                    if aabb_in_planes(&wbi, planes) {
+                        cmask |= 1 << c;
+                    }
+                }
+            }
+            if !in_main && cmask == 0 {
+                culled += model.parts.len() as u32;
+                continue;
+            }
+            // Large multi-part models (buildings, whole levels) still get
+            // per-part culling; small modules take the instance result.
+            let per_part = radius > 12.0 && model.parts.len() > 1;
             let joint_offset = if let Some(j) = &inst.joints {
                 let off = joints.len() as u32;
                 joints.extend(j.iter().map(|m| m.to_cols_array_2d()));
@@ -1067,33 +1092,37 @@ impl Renderer {
             } else {
                 0
             };
+            let inst_pixels = std::f32::consts::PI * px_radius * px_radius;
             for part in &model.parts {
                 let mesh = &self.meshes[part.mesh as usize];
                 let skinned = mesh.skin.is_some() && inst.joints.is_some();
                 let node_m = inst.nodes.as_ref().and_then(|n| n.get(part.node).copied()).unwrap_or(model.rest[part.node]);
                 let world = if skinned { inst.transform } else { inst.transform * node_m };
-                let bounds = if skinned { model.bounds.expanded(0.5) } else { mesh.aabb };
-                let wb = transform_aabb(&bounds, &world);
                 // LOD from screen-space triangle density: the finest level
                 // with at most one triangle per two covered pixels.
-                let coverage = wb.half_extents().length() / ((wb.center() - cam.position).length().max(0.1) * tan_half_fov);
-                let pixels = std::f32::consts::PI * (coverage * height as f32 * 0.5).powi(2);
+                let (visible, pixels, wb) = if per_part {
+                    let wb = transform_aabb(&mesh.aabb, &world);
+                    let cov = wb.half_extents().length() / ((wb.center() - cam.position).length().max(0.1) * tan_half_fov);
+                    (in_main && frustum.intersects_aabb(&wb), std::f32::consts::PI * (cov * height as f32 * 0.5).powi(2), Some(wb))
+                } else {
+                    (in_main, inst_pixels, None)
+                };
                 let budget = (pixels * 0.5) as u32;
                 let mut lod = 0;
                 while lod < mesh.lods.len() as u32 && mesh.indices(lod).1 / 3 > budget {
                     lod += 1;
                 }
                 let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, lod, 0] };
-                if frustum.intersects_aabb(&wb) {
+                if visible {
                     main.push((part.mesh, raw));
                 } else {
                     culled += 1;
                 }
-                if inst.cast_shadows && !self.materials[mesh.material as usize].blend {
+                if cmask != 0 && !self.materials[mesh.material as usize].blend {
                     let mut sraw = raw;
                     sraw.extra[2] = (lod + 1).min(mesh.lods.len() as u32);
                     for (c, planes) in cascade_planes.iter().enumerate() {
-                        if aabb_in_planes(&wb, planes) {
+                        if cmask & (1 << c) != 0 && wb.as_ref().is_none_or(|wb| aabb_in_planes(wb, planes)) {
                             shadow[c].push((part.mesh, sraw));
                         }
                     }

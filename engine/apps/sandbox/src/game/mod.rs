@@ -150,6 +150,7 @@ impl Hud {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapKind {
+    Spain,
     Track,
     Kit,
     Osm,
@@ -157,10 +158,11 @@ pub enum MapKind {
 }
 
 impl MapKind {
-    pub const ALL: [MapKind; 4] = [MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
+    pub const ALL: [MapKind; 5] = [MapKind::Spain, MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
 
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
+            "spain" | "espana" | "madrid" | "valencia" => Self::Spain,
             "track" => Self::Track,
             "kit" | "city" => Self::Kit,
             "osm" | "miami" => Self::Osm,
@@ -171,6 +173,7 @@ impl MapKind {
 
     pub fn label(&self) -> &'static str {
         match self {
+            Self::Spain => "Madrid y Valencia (procedural)",
             Self::Track => "Test track",
             Self::Kit => "Kenney city",
             Self::Osm => "Miami Beach (OpenStreetMap)",
