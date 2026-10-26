@@ -57,7 +57,13 @@ fn main() {
                 2 => Some(1.0),
                 _ => Some(0.0),
             };
-            let steps = if walking { 30 + col as usize * 7 } else { 45 };
+            // `STAND=1` (talking) or `2` (waiting) for the standing views.
+            match std::env::var("STAND").as_deref() {
+                Ok("1") => p.anim.set("talk", 0.45),
+                Ok("2") => p.anim.set("stand", 2.0),
+                _ => {}
+            }
+            let steps = if walking { 30 + col as usize * 7 } else { 45 + std::env::var("STEPS").ok().and_then(|v| v.parse().ok()).unwrap_or(0) };
             for _ in 0..steps {
                 p.update(1.0 / 30.0, speed, &body, look);
             }

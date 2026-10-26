@@ -99,10 +99,15 @@ impl PeopleLibrary {
         }
         let mocap_dir = paths.asset("cmu_mocap");
         let death = death_clip(paths);
-        let built: Vec<(PathBuf, Option<Prepared>)> = std::thread::scope(|s| {
-            let jobs: Vec<_> = todo.iter().map(|f| s.spawn(|| ((*f).clone(), prepare(f, &mocap_dir, death.as_ref(), max_texture)))).collect();
-            jobs.into_iter().filter_map(|j| j.join().ok()).collect()
-        });
+        // A few at a time: each avatar holds ~200 MB of 2K textures until
+        // they are shrunk.
+        let mut built: Vec<(PathBuf, Option<Prepared>)> = Vec::new();
+        for chunk in todo.chunks(3) {
+            built.extend(std::thread::scope(|s| {
+                let jobs: Vec<_> = chunk.iter().map(|f| s.spawn(|| ((*f).clone(), prepare(f, &mocap_dir, death.as_ref(), max_texture)))).collect();
+                jobs.into_iter().filter_map(|j| j.join().ok()).collect::<Vec<_>>()
+            }));
+        }
         for (path, prepared) in built {
             let kind = prepared.map(|p| {
                 let model = rs.add_model(Arc::new(p.scene));
@@ -223,9 +228,11 @@ pub fn stride_speed(clip: &Clip, skel: &Skeleton, feet: [Option<usize>; 2]) -> f
     speeds[speeds.len() / 2]
 }
 
-/// Halves textures larger than `max` until they fit (box filter).
+/// Halves textures larger than `max` until they fit (box filter). Data
+/// maps (normals, specular) go to half that unless `max` is full size.
 fn shrink_textures(scene: &mut SceneData, max: u32) {
     for t in &mut scene.textures {
+        let max = if t.srgb || max >= 2048 { max } else { max / 2 };
         while t.width > max || t.height > max {
             *t = half(t);
         }
@@ -751,7 +758,7 @@ mod tests {
         use forja_assets::{NodeData, SkinData, Trs};
         let node = |name: &str, parent: Option<usize>, t: Vec3| NodeData { name: name.into(), parent, local: Trs { t, ..Default::default() }, ..Default::default() };
         SceneData {
-            nodes: vec![node("hips", None, Vec3::Y), node("head", Some(0), Vec3::Y * 0.7)],
+            nodes: vec![node("hips", None, Vec3::Y), node("Bip01 Spine1", Some(0), Vec3::Y * 0.7)],
             roots: vec![0],
             skins: vec![SkinData { name: "skin".into(), joints: vec![0, 1], inverse_bind: vec![Mat4::IDENTITY; 2] }],
             ..Default::default()
