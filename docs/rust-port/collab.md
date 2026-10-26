@@ -133,4 +133,29 @@ Ported to rust-core/src/collab/{json,canon}.rs (methods `collab.hash_utf8|hash_u
   rust-core first but its `contentHash` / `prepareMetadata` tasks need `await InhouseRust.ready`, and should call `ihnCanonicalDocumentHashJson(data.json, ...)` to skip the JSON.parse
   (not my file). The main app needs the same gate before the first Drive sync / live snapshot. (2) add tests/collab-hash-differential.test.mjs to package.json test:unit.
 
-### Remaining: U2, U3, U4, U5, U6, U7, U8 (not started).
+### U4 snapshot cache + delta builder: DONE
+Ported to rust-core/src/collab/snapshot.rs (methods `collab.snap_remember`, `collab.snap_delta`, `collab.snap_reset`). The cache is a thread-local list
+of records in Rust (oldest first, same count/character eviction as the JS Map: `IHN_LIVE_SNAPSHOT_CACHE_LIMIT` / `_MAX_CHARS` stay in live-collaboration-v5.js
+and are passed with every remember call). Each page is serialised once with the U1 stable writer and kept as text; `ihnStopLive...` resets it with `collab.snap_reset`.
+- Deleted from live-collaboration-v5.js: ihnSerializeSnapshotPage, the `ihnLiveSnapshotCache` Map, the per-page payload Maps, the character-sum loop, the
+  per-page compare loop. Remaining glue: `ihnSnapshotRust()`, `ihnRememberLiveSnapshot` (JSON.stringify of `{contentHash, pages}` in, returns true/null),
+  `ihnBuildPeerSnapshot` (sends hash, force flag, candidate base hashes and, only when a delta is possible, the page ids; Rust answers `["missing"]`,
+  `["full"]` or `["delta", baseHash, [changed page indices]]`; JS spreads the snapshot and picks the pages by index).
+- Behaviour kept: a snapshot that was never remembered is remembered on demand; force or no cached acknowledged base sends the full snapshot; duplicate page ids share one
+  map slot (last wins) while the character total counts every page; delta only when changed pages are fewer than all and `changed + 2048 < 0.8 * total`; lengths are UTF-16 units.
+- Tolerance (documented, harmless): when the page list passed to `ihnBuildPeerSnapshot` does not match the one cached under the same contentHash (a hash collision
+  with different pages, never the case for one broadcast) the full snapshot is sent instead of an ad hoc delta; a full snapshot is always valid. A snapshot value
+  that is not plain JSON follows the U1 tolerances (JSON.stringify semantics).
+- Tests: `cargo test collab` (5 new snapshot tests incl. eviction and threshold), tests/collab-snapshot-differential.test.mjs (40 seeded random sessions of 30 steps with
+  mutated/reordered/removed pages, odd page ids, bad hashes, tiny character caps, force and missing bases; realistic 12 page deltas; unicode / lone surrogates; reload and
+  reset; missing-core error) comparing the extracted original functions at the port base with the new glue. live-collaboration-v5.test.mjs now passes `InhouseRust` into its
+  vm context (the live code reads the global). tests/release-v5-smoke.mjs needed no change (its greps still match).
+- Bytes: JS algorithm removed 2,776 bytes, JS glue added 2,147 (live-collaboration-v5.js 177,198 -> 176,618), Rust added 6.5 KB source plus about 5 KB tests.
+- Speed (node 22, shared noisy machine; remember base + remember next + 4 peer builds, ink points rounded to 2 decimals as the app stores them): 237 KB snapshot 60 -> 21.7 ms (2.8x),
+  1.9 MB 402 -> 170 ms (2.4x), 11.8 MB 2943 -> 894 ms (3.3x). Unrounded 17-digit doubles (not produced by the app) only reach 1.1-1.2x because the number formatter dominates.
+  Native Rust remember is 3.8 ms for 233 KB (parse 2.9, write 0.7); the rest of the JS-side time is the one JSON.stringify of the snapshot that crosses the boundary.
+  The parse is the U1 tree parser; a streaming canonicaliser would be the next speedup for the whole area.
+- Integrator notes: callers already needed `await InhouseRust.ready` for U1; the snapshot helpers throw "Rust core is not loaded" otherwise (stopLiveCollaboration's reset
+  tolerates a missing core because nothing could have been cached). Add tests/collab-snapshot-differential.test.mjs to package.json test:unit.
+
+### Remaining: U2, U3, U5, U6, U7, U8 (not started).

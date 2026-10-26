@@ -3,6 +3,7 @@
 //! result is byte-identical with the JavaScript it replaced.
 mod json;
 mod canon;
+mod snapshot;
 
 use json::{parse, write_stable, Pool};
 
@@ -33,6 +34,9 @@ pub fn call(method: &str, input: &[u8]) -> Option<Result<Vec<u8>, String>> {
         "collab.normalize_fields" => with_root(input, |pool, root| {
             let f = canon::normalize_fields(pool, Some(root));
             let mut out: Vec<u16> = Vec::new(); canon::write_fields_plain(&mut out, pool, &f); text_out(&out) }),
+        "collab.snap_remember" => snapshot::remember(input),
+        "collab.snap_delta" => snapshot::delta(input),
+        "collab.snap_reset" => snapshot::reset(),
         _ => return None,
     })
 }

@@ -174,6 +174,7 @@ function createHarness(overrides = {}) {
     setInterval() { timerId += 1; return timerId; },
     clearInterval() {},
     crypto: globalThis.crypto,
+    InhouseRust: globalThis.InhouseRust,
     btoa: value => Buffer.from(value, 'binary').toString('base64'),
     atob: value => Buffer.from(value, 'base64').toString('binary'),
     TextEncoder,

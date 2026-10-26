@@ -100,3 +100,110 @@ const PAGES: &str = r##"[{"pageId":"p1","strokes":[{"id":"s2","preview":"x","poi
     for _ in 0..20 { let mut h = super::canon::Hasher::new(); super::json::write_stable(&mut h, &pool, &v); std::hint::black_box(h.finish()); }
     println!("write+hash only: {:?}", started.elapsed() / 20);
 }
+
+// ---- live snapshot cache and delta planner (collab/snapshot.rs); the cache is thread-local, so each test has its own.
+
+fn snap(hash: &str, pages: &[(&str, usize, char)]) -> String {
+    let list: Vec<String> = pages.iter().map(|(id, n, c)| format!(r#"{{"pageId":"{id}","text":"{}"}}"#, c.to_string().repeat(*n))).collect();
+    format!(r#"{{"contentHash":"{hash}","pages":[{}]}}"#, list.join(","))
+}
+fn remember(limit: usize, max: usize, body: &str) -> String { run("collab.snap_remember", &format!("{limit},{max}\n{body}")) }
+fn plan(hash: &str, ids: &[&str], bases: &[&str], force: bool) -> String {
+    let q = |l: &[&str]| l.iter().map(|x| format!("\"{x}\"")).collect::<Vec<_>>().join(",");
+    run("collab.snap_delta", &format!(r#"{{"hash":"{hash}","ids":[{}],"bases":[{}],"force":{force}}}"#, q(ids), q(bases)))
+}
+
+#[test] fn snapshot_delta_lists_only_changed_pages() {
+    let ids = ["p0", "p1", "p2", "p3", "p4"];
+    let a: Vec<(&str, usize, char)> = ids.iter().map(|id| (*id, 1500, 'a')).collect();
+    let mut b = a.clone(); b[2].2 = 'b';
+    assert_eq!(remember(3, 16_000_000, &snap("a", &a)), "1");
+    assert_eq!(plan("b", &ids, &["a"], false), r#"["missing"]"#);
+    assert_eq!(remember(3, 16_000_000, &snap("b", &b)), "1");
+    assert_eq!(plan("b", &ids, &["a"], false), r#"["delta","a",[2]]"#);
+    assert_eq!(plan("b", &ids, &["a"], true), r#"["full"]"#);
+    assert_eq!(plan("b", &ids, &["zz", "a"], false), r#"["delta","a",[2]]"#);
+    assert_eq!(plan("b", &ids, &["zz"], false), r#"["full"]"#);
+    assert_eq!(plan("b", &ids, &[], false), r#"["full"]"#);
+    assert_eq!(plan("b", &["p0", "p1"], &["a"], false), r#"["full"]"#); // page list differs from the cached one
+    run("collab.snap_reset", "");
+    assert_eq!(plan("b", &ids, &["a"], false), r#"["missing"]"#);
+}
+
+#[test] fn snapshot_delta_threshold_and_all_changed_fall_back_to_full() {
+    let ids = ["p0", "p1"];
+    let a = [("p0", 100usize, 'a'), ("p1", 100, 'a')];
+    remember(3, 16_000_000, &snap("a", &a));
+    remember(3, 16_000_000, &snap("b", &[("p0", 100, 'b'), ("p1", 100, 'a')]));
+    assert_eq!(plan("b", &ids, &["a"], false), r#"["full"]"#); // changed + 2048 >= 80% of the total
+    remember(3, 16_000_000, &snap("c", &[("p0", 5000, 'c'), ("p1", 5000, 'c')]));
+    assert_eq!(plan("c", &ids, &["a"], false), r#"["full"]"#); // every page changed
+}
+
+#[test] fn snapshot_cache_evicts_oldest_by_count_then_by_characters() {
+    let page = [("p0", 1000usize, 'x')];
+    for h in ["h1", "h2", "h3"] { remember(2, 16_000_000, &snap(h, &page)); }
+    assert_eq!(plan("h1", &["p0"], &[], false), r#"["missing"]"#); // limit 2 evicted h1
+    assert_eq!(plan("h3", &["p0"], &[], false), r#"["full"]"#);
+    // Characters: one page record is ~1000+ chars; with a 2500 cap only the newest two fit, the newest stays alone at worst.
+    run("collab.snap_reset", "");
+    for h in ["a", "b", "c"] { remember(9, 2500, &snap(h, &page)); }
+    assert_eq!(plan("a", &["p0"], &[], false), r#"["missing"]"#);
+    assert_eq!(plan("c", &["p0"], &[], false), r#"["full"]"#);
+    remember(9, 10, &snap("huge", &[("p0", 5000, 'y')]));
+    assert_eq!(plan("c", &["p0"], &[], false), r#"["missing"]"#);
+    assert_eq!(plan("huge", &["p0"], &[], false), r#"["full"]"#); // a single record is never evicted by size
+}
+
+#[test] fn snapshot_remember_rejects_snapshots_without_hash_or_pages() {
+    assert_eq!(remember(3, 100, r#"{"contentHash":"","pages":[]}"#), "0");
+    assert_eq!(remember(3, 100, r#"{"contentHash":"h","pages":"x"}"#), "0");
+    assert_eq!(remember(3, 100, r#"{"pages":[]}"#), "0");
+    assert!(call("collab.snap_remember", b"no header").unwrap().is_err());
+    assert!(call("collab.snap_delta", b"{").unwrap().is_err());
+}
+
+#[test] fn snapshot_duplicate_and_missing_page_ids_follow_the_map_semantics() {
+    // The second "d" page overwrites the first in the map, so base and current compare the last one.
+    let a = r#"{"contentHash":"a","pages":[{"pageId":"d","t":"1"},{"pageId":"d","t":"2"},{"x":"y"},{"pageId":"e","t":""}]}"#;
+    let b = r#"{"contentHash":"b","pages":[{"pageId":"d","t":"9"},{"pageId":"d","t":"2"},{"x":"z"},{"pageId":"e","t":""}]}"#;
+    remember(3, 16_000_000, a); remember(3, 16_000_000, b);
+    // Tiny pages stay under the 2048 character floor, so the plan is full; the differential test covers real deltas.
+    assert_eq!(plan("b", &["d", "d", "legacy-page-3", "e"], &["a"], false), r#"["full"]"#);
+}
+
+#[test] #[ignore] fn bench_snapshot_remember() {
+    let mut seed = 99u64;
+    let mut rnd = move || { seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); (seed >> 33) as f64 / (1u64 << 31) as f64 };
+    for decimals in [None, Some(2usize)] {
+        let mut text = String::from(r#"{"contentHash":"h","pages":["#);
+        for p in 0..3 {
+            if p > 0 { text.push(','); }
+            text.push_str(&format!(r#"{{"pageId":"p{p}","strokes":["#));
+            for s in 0..40 {
+                if s > 0 { text.push(','); }
+                text.push_str(&format!(r#"{{"id":"s{s}","points":["#));
+                for q in 0..60 {
+                    if q > 0 { text.push(','); }
+                    let (x, y, pr) = (rnd() * 800.0, rnd() * 1100.0, rnd());
+                    match decimals { None => text.push_str(&format!(r#"{{"x":{x},"y":{y},"p":{pr}}}"#)), Some(d) => text.push_str(&format!(r#"{{"x":{x:.d$},"y":{y:.d$},"p":{pr:.d$}}}"#)) }
+                }
+                text.push_str("]}");
+            }
+            text.push_str("]}");
+        }
+        text.push_str("]}");
+        let input = format!("3,16000000\n{text}");
+        let start = std::time::Instant::now();
+        for _ in 0..20 { run("collab.snap_remember", &input); }
+        println!("decimals {decimals:?}: {} KB, {:?} per remember", text.len() / 1024, start.elapsed() / 20);
+        use super::json::{parse, write_stable, Pool};
+        let t = std::time::Instant::now();
+        for _ in 0..20 { let mut pool = Pool::default(); let _ = parse(&mut pool, text.as_bytes()).unwrap(); }
+        println!("  parse only {:?}", t.elapsed() / 20);
+        let mut pool = Pool::default(); let root = parse(&mut pool, text.as_bytes()).unwrap();
+        let t = std::time::Instant::now();
+        for _ in 0..20 { let mut out: Vec<u16> = Vec::new(); write_stable(&mut out, &pool, &root); std::hint::black_box(&out); }
+        println!("  write only {:?}", t.elapsed() / 20);
+    }
+}

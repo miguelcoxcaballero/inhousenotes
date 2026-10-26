@@ -142,7 +142,6 @@ const ihnLiveMailboxSeen = new Map();
 const ihnLiveMailboxInFlight = new Set();
 const ihnLivePendingApplies = new Map();
 const ihnLiveFanOutTasks = new Set();
-const ihnLiveSnapshotCache = new Map();
 const ihnLiveStrokeSends = new Map();
 const ihnLiveStrokeSeen = new Map();
 const ihnLiveEraseSends = new Map();
@@ -3161,7 +3160,7 @@ function stopLiveCollaboration() {
     if (typeof clearRemoteLiveErasePreviews === 'function') clearRemoteLiveErasePreviews();
     ihnLiveFailedSignalRefreshAt = 0; ihnLiveFailedSignalRefreshKey = '';
     ihnLiveKnownPeers.clear(); ihnLiveRetryState.clear();
-    ihnLiveSnapshotCache.clear();
+    try { ihnSnapshotRust().call('collab.snap_reset', ''); } catch (error) { /* Rust never loaded: nothing was cached */ }
     try { ihnLiveBroadcastChannel?.close(); } catch (error) {}
     ihnLiveBroadcastChannel = null; ihnLiveBroadcastFileId = '';
     ihnInvalidateSignalKey();
@@ -3176,71 +3175,54 @@ function stopLiveCollaboration() {
     ihnLivePeerCacheFileId = '';
 }
 
-function ihnSerializeSnapshotPage(page) {
-    try {
-        return typeof ihnStableStringify === 'function'
-            ? ihnStableStringify(page)
-            : JSON.stringify(page);
-    } catch (error) {
-        return JSON.stringify(page);
+// The snapshot page cache and the delta planner live in the Rust core (rust-core/src/collab/snapshot.rs):
+// pages are serialised there once and compared as text. JavaScript only hands over the snapshot and
+// rebuilds the partial snapshot from the changed page indices.
+function ihnSnapshotRust() {
+    const rust = globalThis.InhouseRust;
+    if (!rust?.available?.() || !rust.collab) {
+        throw new Error('Inhouse Rust core is not loaded; await InhouseRust.ready before live collaboration');
     }
+    return rust.collab;
 }
 
 function ihnRememberLiveSnapshot(snapshot) {
     const hash = String(snapshot?.contentHash || '');
     if (!hash || !Array.isArray(snapshot.pages)) return null;
-    const pagePayloads = new Map();
-    let pageChars = 0;
-    snapshot.pages.forEach((page, index) => {
-        const pageId = String(page?.pageId || `legacy-page-${index + 1}`);
-        const serialized = ihnSerializeSnapshotPage(page);
-        pagePayloads.set(pageId, serialized);
-        pageChars += serialized.length;
-    });
-    const record = { pagePayloads, pageChars };
-    ihnLiveSnapshotCache.delete(hash);
-    ihnLiveSnapshotCache.set(hash, record);
-    const cachedChars = () => [...ihnLiveSnapshotCache.values()]
-        .reduce((total, entry) => total + Number(entry?.pageChars || 0), 0);
-    while (ihnLiveSnapshotCache.size > IHN_LIVE_SNAPSHOT_CACHE_LIMIT
-        || (ihnLiveSnapshotCache.size > 1
-            && cachedChars() > IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS)) {
-        const oldestHash = ihnLiveSnapshotCache.keys().next().value;
-        if (oldestHash === undefined) break;
-        ihnLiveSnapshotCache.delete(oldestHash);
-    }
-    return record;
+    const body = JSON.stringify({ contentHash: hash, pages: snapshot.pages });
+    ihnSnapshotRust().call('collab.snap_remember',
+        `${IHN_LIVE_SNAPSHOT_CACHE_LIMIT},${IHN_LIVE_SNAPSHOT_CACHE_MAX_CHARS}\n${body}`);
+    return true;
 }
 
 function ihnBuildPeerSnapshot(snapshot, peer, forceFull = false) {
-    const current = ihnLiveSnapshotCache.get(String(snapshot?.contentHash || ''))
-        || ihnRememberLiveSnapshot(snapshot);
-    if (!current || forceFull) return snapshot;
-    const baseHash = [peer?.lastAckedHash, peer?.remoteCurrentHash]
+    const hash = String(snapshot?.contentHash || '');
+    if (!hash || !Array.isArray(snapshot.pages)) return snapshot;
+    const bases = [peer?.lastAckedHash, peer?.remoteCurrentHash]
         .map(value => String(value || ''))
-        .find(hash => hash && hash !== snapshot.contentHash && ihnLiveSnapshotCache.has(hash));
-    if (!baseHash) return snapshot;
-    const base = ihnLiveSnapshotCache.get(baseHash);
-    const changedPages = [];
-    let changedChars = 0;
-    snapshot.pages.forEach((page, index) => {
-        const pageId = String(page?.pageId || `legacy-page-${index + 1}`);
-        const serialized = current.pagePayloads.get(pageId) || ihnSerializeSnapshotPage(page);
-        if (base.pagePayloads.get(pageId) === serialized) return;
-        changedPages.push(page);
-        changedChars += serialized.length;
-    });
-    // Full snapshots remain the recovery format. Use a delta only when it is
-    // materially smaller and the peer has explicitly acknowledged its base.
-    if (changedPages.length === snapshot.pages.length
-        || changedChars + 2048 >= Math.max(1, current.pageChars) * 0.8) {
-        return snapshot;
+        .filter(base => base && base !== snapshot.contentHash);
+    const rust = ihnSnapshotRust();
+    const plan = () => JSON.parse(rust.call('collab.snap_delta', JSON.stringify({
+        hash,
+        force: Boolean(forceFull),
+        bases,
+        ids: bases.length && !forceFull
+            ? snapshot.pages.map((page, index) => String(page?.pageId || `legacy-page-${index + 1}`))
+            : []
+    })));
+    let result = plan();
+    if (result[0] === 'missing') {
+        ihnRememberLiveSnapshot(snapshot);
+        result = plan();
     }
+    // Full snapshots remain the recovery format. Rust plans a delta only when it is
+    // materially smaller and the peer has explicitly acknowledged its base.
+    if (result[0] !== 'delta') return snapshot;
     return {
         ...snapshot,
         partial: true,
-        baseHash,
-        pages: changedPages
+        baseHash: result[1],
+        pages: result[2].map(index => snapshot.pages[index])
     };
 }
 
