@@ -455,6 +455,49 @@
     // >>> stream:editor_history (only this area edits between its markers)
     // <<< stream:editor_history
     // >>> stream:collab (only this area edits between its markers)
+    // Text in, text out: collaboration-core-v5.js builds the JSON, Rust hashes and canonicalizes it.
+    const loneSurrogate = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+    // Method names and the length cell live for the page lifetime: small calls skip two allocations.
+    const collabNames = new Map();
+    let collabLength = null;
+    function collabMethod(name) {
+        let method = collabNames.get(name);
+        if (!method) {
+            codecs();
+            const bytes = textEncoder.encode(name), block = allocation(bytes.length);
+            view(block).set(bytes);
+            method = { pointer: block.pointer, length: bytes.length };
+            collabNames.set(name, method);
+        }
+        return method;
+    }
+    function collabBytes(name, data) {
+        if (!core?.bridge_call) throw new Error('Rust core is not loaded; collaboration hashing is unavailable');
+        const method = collabMethod(name);
+        collabLength ||= allocation(8);
+        let input = null, pointer = 0, total = 0;
+        try {
+            if (data.length) { input = allocation(data.length); view(input).set(data); }
+            pointer = core.bridge_call(method.pointer, method.length, input ? input.pointer : 0, data.length, collabLength.pointer);
+            if (!pointer) throw new Error(`Rust call ${name} was rejected`);
+            total = new Uint32Array(core.memory.buffer, collabLength.pointer, 1)[0];
+            const out = new Uint8Array(core.memory.buffer, pointer, total);
+            const text = textDecoder.decode(out.subarray(1));
+            if (out[0] !== 0) throw new Error(text);
+            return text;
+        } finally { release(input); if (pointer) core.free(pointer, total); }
+    }
+    function collabCall(name, text) { codecs(); return collabBytes(name, textEncoder.encode(text)); }
+    function collabHashString(text) {
+        if (!core?.bridge_call) throw new Error('Rust core is not loaded; collaboration hashing is unavailable');
+        const wellFormed = typeof text.isWellFormed === 'function' ? text.isWellFormed() : !loneSurrogate.test(text);
+        if (wellFormed) return collabCall('collab.hash_utf8', text);
+        // Unpaired surrogates do not survive UTF-8: hash the exact code units instead.
+        const units = new Uint16Array(text.length);
+        for (let i = 0; i < units.length; i++) units[i] = text.charCodeAt(i);
+        return collabBytes('collab.hash_utf16', new Uint8Array(units.buffer));
+    }
+    api.collab = Object.freeze({ call: collabCall, hashString: collabHashString });
     // <<< stream:collab
     // >>> stream:offline (only this area edits between its markers)
     // <<< stream:offline

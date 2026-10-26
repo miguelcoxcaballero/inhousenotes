@@ -143,6 +143,9 @@
         };
     }
 
+    // The hash and normalizers run in the Rust core: expose the harness only once it is ready.
+    root.InhouseRust.ready.then(loaded => {
+    if (!loaded) throw new Error('Rust core failed to load');
     root.__CHAOS__ = Object.freeze({
         init(nextActor, nextRoom) {
             actor = String(nextActor || 'unknown');
@@ -218,5 +221,6 @@
         },
         publish,
         snapshot
+    });
     });
 })(window);
