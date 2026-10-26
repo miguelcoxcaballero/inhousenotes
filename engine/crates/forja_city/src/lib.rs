@@ -25,6 +25,7 @@ pub mod furniture;
 pub mod layout;
 pub mod geom;
 pub mod kit;
+pub mod landmark;
 pub mod macrotex;
 pub mod modules;
 pub mod noise;
