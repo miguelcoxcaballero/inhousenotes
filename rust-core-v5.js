@@ -453,6 +453,165 @@
     // >>> stream:editor_view (only this area edits between its markers)
     // <<< stream:editor_view
     // >>> stream:editor_history (only this area edits between its markers)
+    // Item fingerprints (unit eh-1). Strings (ids, tool, color, actor) stay in JS, so lone surrogates and
+    // non-string ids behave as before; Rust returns the numeric/hash tails that need per-point work.
+    api.history = (() => {
+        const RESERVE = 128, GROUP_POINTS = 350000, GROUP_ITEMS = 4096, STRING_CHUNK = 1 << 22, SHORT_TEXT = 256;
+        let scratch = null, small = 0, decoder = null, encoder = null;
+        function need() {
+            if (!core?.history_stroke_batch) throw new Error('Rust core (WASM) is required for item fingerprints and is not loaded');
+            decoder ||= new TextDecoder(); encoder ||= new TextEncoder();
+            if (!small) small = allocation(256).pointer;
+        }
+        function reserve(bytes) {
+            if (scratch && scratch.bytes >= bytes) return scratch.pointer;
+            if (scratch) release(scratch);
+            scratch = null;
+            scratch = allocation(Math.max(bytes, 4096));
+            return scratch.pointer;
+        }
+        function dropLargeScratch() { if (scratch && scratch.bytes > 32 * 1024 * 1024) { release(scratch); scratch = null; } }
+        const finite = value => Number.isFinite(value) ? value : 0;
+        function hashChunk(seed, text) {
+            const length = text.length;
+            let pointer, wide = 1;
+            if (length > SHORT_TEXT) {
+                pointer = reserve(length);
+                const done = encoder.encodeInto(text, new Uint8Array(core.memory.buffer, pointer, length));
+                if (done.read === length && done.written === length) wide = 0; // every unit fit one byte: ASCII
+            }
+            if (wide) {
+                pointer = reserve(length * 2);
+                const units = new Uint16Array(core.memory.buffer, pointer, length);
+                for (let index = 0; index < length; index++) units[index] = text.charCodeAt(index);
+            }
+            const hash = core.history_hash_update(seed, pointer, length, wide);
+            if (hash === -9223372036854775808n) throw new Error('Rust hash rejected its input');
+            return Number(hash);
+        }
+        // Mirrors `str.length` / `charCodeAt` on the legacy hash: null throws, other non-strings hash as empty.
+        function hashValue(value) {
+            if (typeof value !== 'string') {
+                if (value === null || value === undefined || value.length > 0) throw new TypeError('Cannot hash a non-string value');
+                return 0;
+            }
+            let hash = 0;
+            for (let start = 0; start < value.length; start += STRING_CHUNK)
+                hash = hashChunk(hash, value.length <= STRING_CHUNK ? value : value.slice(start, start + STRING_CHUNK));
+            return hash;
+        }
+        function smallText(length) {
+            if (length < 0) throw new Error('Rust fingerprint output rejected');
+            return decoder.decode(new Uint8Array(core.memory.buffer, small, length));
+        }
+        function simpleHash(text) { need(); return smallText(core.history_hash_text(hashValue(text), small, 256)); }
+        const stampOf = item => item?.syncStamp || item?._syncStamp
+            || (item?.updatedClock || item?.updatedBy ? { clock: item.updatedClock, actor: item.updatedBy } : null);
+        const stampText = (clock, actor) => `${clock}|${String(actor || '')}`;
+        // Fingerprint records for one group of truthy strokes: "width|count|hash<TAB>clock" lines.
+        function strokeGroup(items, from, to, points, collab) {
+            const count = to - from, metaBytes = count * 16, offsetBytes = ((count + 1) * 4 + 7) & ~7;
+            const base = reserve(metaBytes + offsetBytes + points * 24 + count * RESERVE);
+            const buffer = core.memory.buffer;
+            const meta = new Float64Array(buffer, base, count * 2), offsets = new Uint32Array(buffer, base + metaBytes, count + 1);
+            const coords = new Float64Array(buffer, base + metaBytes + offsetBytes, points * 3);
+            let cursor = 0;
+            for (let index = 0; index < count; index++) {
+                const stroke = items[from + index], list = stroke.points;
+                offsets[index] = cursor;
+                meta[index * 2] = finite(stroke.width);
+                meta[index * 2 + 1] = collab ? Number(stampOf(stroke)?.clock) || 0 : 0;
+                if (!Array.isArray(list)) continue;
+                for (let at = 0; at < list.length; at++, cursor++) {
+                    const point = list[at], slot = cursor * 3;
+                    if (point) {
+                        const x = point.x, y = point.y, p = point.p;
+                        coords[slot] = Number.isFinite(x) ? x : 0; coords[slot + 1] = Number.isFinite(y) ? y : 0; coords[slot + 2] = Number.isFinite(p) ? p : 0;
+                    } else if (point === undefined && !(at in list)) { coords[slot] = NaN; coords[slot + 1] = 0; coords[slot + 2] = 0; }
+                    else { coords[slot] = 0; coords[slot + 1] = 0; coords[slot + 2] = 0; }
+                }
+            }
+            offsets[count] = cursor;
+            if (cursor !== points) throw new Error('Stroke points changed while packing');
+            const outPointer = base + metaBytes + offsetBytes + points * 24;
+            const written = Number(core.history_stroke_batch(base, base + metaBytes, base + metaBytes + offsetBytes, count, points, outPointer, count * RESERVE));
+            if (written < 0) throw new Error('Rust stroke fingerprint rejected its input');
+            return decoder.decode(new Uint8Array(core.memory.buffer, outPointer, written)).split('\n');
+        }
+        function strokeFingerprints(strokes, collab) {
+            need();
+            const result = new Array(strokes.length);
+            const live = [], slots = [];
+            for (let index = 0; index < strokes.length; index++) {
+                const stroke = strokes[index];
+                if (stroke) { live.push(stroke); slots.push(index); } else result[index] = collab ? '|0|' : '';
+            }
+            let from = 0;
+            while (from < live.length) {
+                let to = from, points = 0;
+                while (to < live.length && to - from < GROUP_ITEMS) {
+                    const length = Array.isArray(live[to].points) ? live[to].points.length : 0;
+                    if (to > from && points + length > GROUP_POINTS) break;
+                    points += length; to++;
+                }
+                const lines = strokeGroup(live, from, to, points, collab);
+                for (let index = from; index < to; index++) {
+                    const stroke = live[index], line = lines[index - from], tab = line.indexOf('\t');
+                    const sync = `${stroke.id || ''}|${stroke.tool || ''}|${stroke.color || ''}|${line.slice(0, tab)}`;
+                    result[slots[index]] = collab ? `${sync}|${stampText(line.slice(tab + 1), stampOf(stroke)?.actor)}` : sync;
+                }
+                from = to;
+            }
+            dropLargeScratch();
+            return result;
+        }
+        function imageFingerprint(image, collab) {
+            if (!image) return collab ? '|0|' : '';
+            need();
+            const hash = hashValue(image.src || ''), stamp = collab ? stampOf(image) : null;
+            const length = core.history_image_tail(hash, finite(image.x), finite(image.y), finite(image.width), finite(image.height),
+                finite(image.rotation), collab ? Number(stamp?.clock) || 0 : 0, small, 256);
+            const record = smallText(length), tab = record.indexOf('\t');
+            const sync = `${image.id || ''}|${record.slice(0, tab)}`;
+            return collab ? `${sync}|${stampText(record.slice(tab + 1), stamp?.actor)}` : sync;
+        }
+        const imageFingerprints = (images, collab) => images.map(image => imageFingerprint(image, collab));
+        // Strokes whose fingerprints differ between two id-keyed snapshots, in legacy insertion order.
+        function touchedStrokeIds(sourceById, targetById) {
+            const prints = new Map(), pending = [];
+            const note = stroke => { if (!prints.has(stroke)) { prints.set(stroke, ''); pending.push(stroke); } };
+            sourceById.forEach((source, id) => { const target = targetById.get(id); if (target && target !== source) { note(source); note(target); } });
+            if (pending.length) strokeFingerprints(pending, false).forEach((print, index) => prints.set(pending[index], print));
+            const differs = (source, target) => !source || !target || (source !== target && prints.get(source) !== prints.get(target));
+            const touched = new Set();
+            sourceById.forEach((source, id) => { if (differs(source, targetById.get(id))) touched.add(id); });
+            targetById.forEach((target, id) => { if (differs(sourceById.get(id), target)) touched.add(id); });
+            return touched;
+        }
+        // True when two equally long item lists differ in any collab fingerprint (early exit per block).
+        function collabItemsDiffer(kind, remote, local) {
+            const compute = kind === 'image' ? imageFingerprints : strokeFingerprints;
+            for (let start = 0; start < remote.length; start += 128) {
+                const left = [], right = [];
+                for (let index = start; index < Math.min(remote.length, start + 128); index++) {
+                    if (remote[index] !== local[index]) { left.push(remote[index]); right.push(local[index]); }
+                }
+                if (!left.length) continue;
+                const a = compute(left, true), b = compute(right, true);
+                for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return true;
+            }
+            return false;
+        }
+        return Object.freeze({
+            simpleHash,
+            strokeFingerprint: stroke => stroke ? strokeFingerprints([stroke], false)[0] : '',
+            strokeCollabFingerprint: stroke => strokeFingerprints([stroke], true)[0],
+            strokeFingerprints, imageFingerprints,
+            imageFingerprint: image => imageFingerprint(image, false),
+            imageCollabFingerprint: image => imageFingerprint(image, true),
+            touchedStrokeIds, collabItemsDiffer
+        });
+    })();
     // <<< stream:editor_history
     // >>> stream:collab (only this area edits between its markers)
     // <<< stream:collab
