@@ -713,10 +713,59 @@ pub fn glass() -> GenSet {
     GenSet { color, normal: Some(TextureData { name: "glass_normal".into(), ..normal }), orm: Some(TextureData { name: "glass_orm".into(), ..orm }) }
 }
 
+/// Worn road paint, one repeat per metre of world XZ (markings are planar
+/// mapped at scale 1): tyres and weather erode it in patches and pits so
+/// the asphalt shows through (alpha, for a 0.5 mask), the rest is greyed by
+/// dirt and tyre rubber, and roughness rises where it is dirty.
+pub fn road_paint() -> GenSet {
+    use crate::noise::{fbm, fbm_aniso, hashf, smoothstep};
+    let n = 512u32;
+    let mut c = Canvas::new(n, n, [1.0; 4]);
+    let mut rough = vec![0.0f32; (n * n) as usize];
+    for y in 0..n {
+        let v = (y as f32 + 0.5) / n as f32;
+        for x in 0..n {
+            let u = (x as f32 + 0.5) / n as f32;
+            let i = (y * n + x) as usize;
+            // Erosion: only small chips and pits go through to the asphalt
+            // (a line must stay a line); large-scale wear just greys it.
+            let patch = fbm(u, v, 4, 5, 31);
+            let pits = fbm(u, v, 96, 2, 37);
+            let worn = smoothstep(0.7, 0.76, pits) * (0.6 + 0.8 * smoothstep(0.5, 0.7, patch)) + 0.5 * smoothstep(0.6, 0.75, patch) * hashf(x as i32, y as i32, 41);
+            let alpha = if worn > 0.5 { 0.0 } else { 1.0 };
+            // Dirt: tyre rubber streaks (anisotropic) and general grime.
+            let streak = fbm_aniso(u, v, 2, 24, 3, 43);
+            let grime = fbm(u, v, 8, 4, 47);
+            let k = (1.0 - 0.22 * smoothstep(0.35, 0.8, grime) - 0.15 * smoothstep(0.5, 0.75, streak) - 0.12 * smoothstep(0.45, 0.65, patch)).clamp(0.4, 1.0);
+            let g = k * (0.97 + 0.06 * hashf(x as i32, y as i32, 53));
+            c.px[i] = [g, g, g * 0.985, alpha];
+            rough[i] = 0.5 + 0.3 * (1.0 - k);
+        }
+    }
+    GenSet { color: c.to_texture("road_paint", true), normal: None, orm: Some(TextureData { name: "road_paint_orm".into(), ..orm_from(&rough, n, n) }) }
+}
+
 /// Uniform linear texture (e.g. an occlusion term for fake interiors).
 pub fn solid(name: &str, value: f32) -> TextureData {
     let b = (value.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
     TextureData { name: name.into(), width: 4, height: 4, rgba8: Arc::from(vec![b, b, b, 255].repeat(16)), srgb: false }
+}
+
+/// Emission of [`shop_interiors`]: only the ceiling fittings glow, with a
+/// faint pool of light on the wall under them, so a shop reads as a dim
+/// room with lamps rather than a self-lit picture.
+pub fn shop_interior_lights() -> TextureData {
+    let (w, h) = (512u32, 512u32);
+    let mut c = Canvas::new(w, h, [0.0, 0.0, 0.0, 1.0]);
+    for k in 0..4 {
+        let x0 = k as f32 * 128.0;
+        for lx in [x0 + 32.0, x0 + 96.0] {
+            let at = Vec2::new(lx, 40.0);
+            c.fill(Vec2::new(lx - 50.0, 16.0), Vec2::new(lx + 50.0, 200.0), [0.5, 0.45, 0.36, 0.25], |p| ((p - at) / Vec2::new(45.0, 140.0)).length() - 1.0);
+            c.rect(Vec2::new(lx - 14.0, 8.0), Vec2::new(lx + 14.0, 16.0), [1.0, 1.0, 0.96, 1.0]);
+        }
+    }
+    c.to_texture("shop_interior_lights", true)
 }
 
 /// Street name plate, Madrid ceramic style: blue frame, white field.
@@ -740,6 +789,17 @@ pub fn street_plate(name: &str) -> TextureData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn road_paint_is_worn_but_mostly_intact() {
+        let g = road_paint();
+        let px: Vec<&[u8]> = g.color.rgba8.chunks_exact(4).collect();
+        let holes = px.iter().filter(|p| p[3] < 128).count() as f32 / px.len() as f32;
+        assert!(holes > 0.01 && holes < 0.12, "worn fraction {holes}");
+        // Dirt greys it: never pure white on average.
+        let mean = px.iter().map(|p| p[0] as f32).sum::<f32>() / px.len() as f32;
+        assert!(mean < 245.0 && mean > 180.0, "mean {mean}");
+    }
 
     #[test]
     fn stop_sign_is_red_with_white_letters() {
