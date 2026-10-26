@@ -1,0 +1,27 @@
+# Valencia's Barrio del Carmen: an old town inside its ronda, grown by
+# accessibility (every plot reachable), with a main plaza, crooked
+# streets, callejuelas and callejones of 2-4 m, and dead ends.
+
+name = "carmen"
+
+[[zone]]
+id = "valencia_carmen"
+city = "valencia"
+plaza_kind = "fountain"
+ronda = "ronda"
+mask = { size = [340.0, 300.0], wobble = 25.0 }
+lots = { width = [4.0, 8.0], depth = 12.0, min_width = 3.5, min_area = 28.0, court_min = 80.0, neck = 1.6, min_tip = 2.5, jitter = 0.25, wobble = 0.4 }
+[zone.styles]
+street = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
+alley = [["valencia_carmen", 1.0]]
+avenue = [["valencia_modernista", 0.5], ["valencia_ensanche", 0.5]]
+plaza = [["valencia_modernista", 0.4], ["valencia_carmen", 0.6]]
+[zone.organic]
+plaza = { radius = [14.0, 22.0], vertices = [6, 9] }
+meander = 0.6
+lattice = 2.0
+tiers = [
+  { profile = "calle_vieja", d_max = 50.0, adarve = 0.0, loops = 0.2, plazuelas = 0.0 },
+  { profile = "callejuela", d_max = 24.0, adarve = 0.15, loops = 0.15, plazuelas = 0.25 },
+  { profile = "callejon", d_max = 14.0, adarve = 0.35, loops = 0.05, plazuelas = 0.15 },
+]

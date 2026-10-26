@@ -1,0 +1,54 @@
+# The classic forja_city map: a Madrid barrio and a Valencian Ensanche on
+# either side of a tree-lined boulevard.
+
+name = "classic"
+
+[[zone]]
+id = "madrid"
+city = "madrid"
+plaza_kind = "parterre"
+lots = { width = [8.0, 14.0], depth = 13.0, min_width = 3.5, min_area = 30.0, court_min = 80.0, neck = 3.0, min_tip = 2.5 }
+[zone.styles]
+street = [["madrid_centro", 0.55], ["madrid_ladrillo", 0.35], ["desarrollismo", 0.1]]
+avenue = [["madrid_centro", 0.5], ["valencia_ensanche", 0.5]]
+outer = [["madrid_ladrillo", 0.5], ["madrid_centro", 0.35], ["desarrollismo", 0.15]]
+plaza = [["madrid_austrias", 1.0]]
+alley = [["madrid_popular", 0.6], ["madrid_ladrillo", 0.4]]
+[zone.grid]
+origin = [0.0, 0.0]
+dir = -1.0
+cols = 4
+rows = 5
+block = [46.0, 62.0]
+street = "madrid_calle"
+outer = "madrid_borde"
+near = 23.0
+plaza = [1, 2]
+
+[[zone]]
+id = "valencia_ensanche"
+city = "valencia"
+plaza_kind = "fountain"
+lots = { width = [13.0, 21.0], depth = 19.0, min_width = 4.0, min_area = 40.0, court_min = 120.0, neck = 4.0, min_tip = 3.0 }
+[zone.styles]
+street = [["valencia_ensanche", 0.4], ["valencia_ruzafa", 0.32], ["valencia_modernista", 0.16], ["desarrollismo", 0.12]]
+avenue = [["valencia_modernista", 0.55], ["valencia_ensanche", 0.45]]
+outer = [["cabanyal", 0.65], ["valencia_ruzafa", 0.23], ["desarrollismo", 0.12]]
+plaza = [["valencia_modernista", 0.6], ["valencia_ensanche", 0.4]]
+alley = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
+[zone.grid]
+origin = [0.0, 0.0]
+dir = 1.0
+cols = 3
+rows = 3
+block = [92.0, 104.0]
+street = "ensanche"
+outer = "ensanche_borde"
+near = 23.0
+plaza = [1, 1]
+
+[[way]]
+profile = "bulevar"
+name = "Paseo"
+line = [[0.0, -2000.0], [0.0, 2000.0]]
+clip_to_zones = true

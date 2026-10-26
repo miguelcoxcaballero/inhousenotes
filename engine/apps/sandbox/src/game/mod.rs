@@ -151,6 +151,16 @@ impl Hud {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapKind {
     Spain,
+    /// The classic grids-and-boulevard map.
+    SpainClassic,
+    /// Valencia's Barrio del Carmen, procedural.
+    Carmen,
+    /// Madrid de los Austrias, procedural.
+    Austrias,
+    /// The real Barrio del Carmen street layout (OpenStreetMap).
+    CarmenOsm,
+    /// The real Austrias street layout (OpenStreetMap).
+    AustriasOsm,
     Track,
     Kit,
     Osm,
@@ -158,11 +168,16 @@ pub enum MapKind {
 }
 
 impl MapKind {
-    pub const ALL: [MapKind; 5] = [MapKind::Spain, MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
+    pub const ALL: [MapKind; 10] = [MapKind::Spain, MapKind::Carmen, MapKind::Austrias, MapKind::CarmenOsm, MapKind::AustriasOsm, MapKind::SpainClassic, MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
 
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "spain" | "espana" | "madrid" | "valencia" => Self::Spain,
+            "classic" | "spain-classic" => Self::SpainClassic,
+            "carmen" => Self::Carmen,
+            "austrias" => Self::Austrias,
+            "carmen-osm" | "osm-carmen" => Self::CarmenOsm,
+            "austrias-osm" | "osm-austrias" => Self::AustriasOsm,
             "track" => Self::Track,
             "kit" | "city" => Self::Kit,
             "osm" | "miami" => Self::Osm,
@@ -174,6 +189,11 @@ impl MapKind {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Spain => "Madrid y Valencia (procedural)",
+            Self::SpainClassic => "Madrid y Valencia, ensanches (procedural)",
+            Self::Carmen => "Barrio del Carmen (procedural)",
+            Self::Austrias => "Madrid de los Austrias (procedural)",
+            Self::CarmenOsm => "Barrio del Carmen (OpenStreetMap)",
+            Self::AustriasOsm => "Madrid de los Austrias (OpenStreetMap)",
             Self::Track => "Test track",
             Self::Kit => "Kenney city",
             Self::Osm => "Miami Beach (OpenStreetMap)",

@@ -30,6 +30,36 @@ author = "OpenStreetMap contributors"
 homepage = "https://www.openstreetmap.org/copyright"
 osm = { bbox = [-80.1400, 25.7740, -80.1290, 25.7880] }
 
+# Spanish old towns for forja_city (`city -- out osm:<file>`, sandbox
+# `--map carmen-osm`): ~300 x 300 m tiles. Also kept as map.json under
+# assets/downloaded/osm/. Map data © OpenStreetMap contributors, ODbL 1.0.
+[[asset]]
+id = "map_valencia_carmen_osm"
+name = "Valencia, Barrio del Carmen, from OpenStreetMap"
+kind = "map"
+license = "ODbL-1.0"
+author = "OpenStreetMap contributors"
+homepage = "https://www.openstreetmap.org/copyright"
+osm = { bbox = [-0.3818, 39.4766, -0.3783, 39.4793] }
+
+[[asset]]
+id = "map_madrid_austrias_osm"
+name = "Madrid de los Austrias from OpenStreetMap"
+kind = "map"
+license = "ODbL-1.0"
+author = "OpenStreetMap contributors"
+homepage = "https://www.openstreetmap.org/copyright"
+osm = { bbox = [-3.7108, 40.4137, -3.7073, 40.4164] }
+
+[[asset]]
+id = "map_valencia_ruzafa_osm"
+name = "Valencia, Ruzafa (grid reference), from OpenStreetMap"
+kind = "map"
+license = "ODbL-1.0"
+author = "OpenStreetMap contributors"
+homepage = "https://www.openstreetmap.org/copyright"
+osm = { bbox = [-0.3758, 39.4612, -0.3723, 39.4639] }
+
 [[asset]]
 id = "map_hollywood_hills_terrain"
 name = "Hollywood Hills elevation (2x2 tiles, ~16 km)"
