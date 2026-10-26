@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "f9c782879f5f3dc0355ed2656672f7f2f153fda87b6cf8391e113a7c19d42fd2",
-      "size": 1927247,
+      "sha256": "7658c873f7b6e2f5739cfdcd20487037f42bd2bcdb091b4f7d9816a660828b93",
+      "size": 1930458,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -27,8 +27,8 @@
       "mime": "application/javascript"
     },
     "/document-processing-worker-v5.js": {
-      "sha256": "a271bdcd07da896b783612c9c956b367e5b0e81230b773e4dbde1e39656727ab",
-      "size": 16020,
+      "sha256": "0177cf9d84211976b1be330373fbe6a5582efbd0e1d7c057d03868c5b4916448",
+      "size": 17675,
       "mime": "application/javascript"
     },
     "/icons/welcome-pages.svg": {
@@ -42,8 +42,8 @@
       "mime": "application/javascript"
     },
     "/live-collaboration-v5.js": {
-      "sha256": "a9d4a060fcb7274f791bd8f01aae46c38a620dea009d16919a7e14f2543e67ba",
-      "size": 177198,
+      "sha256": "30ec2e757312f44a411f7dacff3b10f58a370fe98dab169d0d445c1196dc3854",
+      "size": 178391,
       "mime": "application/javascript"
     },
     "/offline-app-v5.js": {
@@ -87,8 +87,8 @@
       "mime": "application/javascript"
     },
     "/rust-core-v5.js": {
-      "sha256": "c580109baf6e14bb6d1a0069a111bb88b52d8f91aa15c15c4b4bcdfea4ecdb9a",
-      "size": 27938,
+      "sha256": "b66a947f64d3028bfd1398ebced7e58ee2ee3aa888f1ba3de377f177024b6bcb",
+      "size": 29966,
       "mime": "application/javascript"
     },
     "/scanner/configLoader.js": {
@@ -1197,8 +1197,8 @@
       "mime": "font/ttf"
     },
     "/wasm/inhouse_notes_core.wasm": {
-      "sha256": "5662d7b1b2206f4060f7769c7d20a751f5c9ce3022cce973b1142f78a47b005d",
-      "size": 123752,
+      "sha256": "2cddd99269306979d68029fd9612ca398a0d9ab0eebbd1db3d2239519112d27c",
+      "size": 126798,
       "mime": "application/wasm"
     }
   }

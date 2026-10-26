@@ -62,7 +62,7 @@ test('dirty intent cannot take the no-upload Saved shortcut when version counter
   let uploads=0;
   prepareDrivePdfBlob=async()=>({blob:new Blob(['pdf']),version:driveContentVersion,contentHash:'draft'});
   ensureDriveFile=async()=>({fileId:'pending',created:false});
-  waitForRemoteSaveQuietBeforeUpload=async()=>{};mergeLatestRemoteBeforeDriveUpload=async()=>({changed:false});
+  mergeLatestRemoteBeforeDriveUpload=async()=>({changed:false});
   updateDriveFile=async()=>{uploads++;throw new Error('test upload rejected');};
   await queueDriveSaveOnline(true);
   const result={uploads,pending:hasPendingDriveSave(),label:getSavePresentation().driveLabel};

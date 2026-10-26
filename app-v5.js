@@ -25891,14 +25891,46 @@
             });
         }
 
-        async function updateDriveFile(fileId, pdfBlob, options = {}) {
-            return uploadDriveBlobResumable({
-                url: `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=resumable&fields=id,headRevisionId,modifiedTime,version`,
-                method: 'PATCH',
-                blob: pdfBlob,
-                resumeKey: `update:${fileId}:${pdfBlob.inhouseContentHash || pdfBlob.size}`,
-                options
+        async function readDriveWriteRevision(fileId, options = {}) {
+            await waitForDocumentBackgroundTurn(options);
+            const response = await driveFetch(`https://www.googleapis.com/drive/v2/files/${encodeURIComponent(fileId)}?fields=id,etag,headRevisionId,modifiedDate,version`, {
+                signal:options.signal, timeout:DRIVE_META_TIMEOUT, headers:{'Cache-Control':'no-cache'}
             });
+            const data = await response.json();
+            if (options.signal?.aborted) throw createAbortError('Drive save aborted');
+            const etag = data.etag || response.headers.get('ETag');
+            if (!etag || (data.id && data.id !== fileId)) throw new Error('Drive did not provide a safe write revision');
+            return {...data, id:fileId, etag, modifiedTime:data.modifiedDate || data.modifiedTime};
+        }
+
+        async function updateDriveFile(fileId, pdfBlob, options = {}) {
+            if (!(pdfBlob instanceof Blob) || !pdfBlob.size) throw new Error('Cannot upload an empty PDF to Drive');
+            const revision = options.writeRevision;
+            if (revision?.id !== fileId || !revision.etag) throw new Error('Drive write revision belongs to another document');
+            const projection = 'id,headRevisionId,modifiedDate,version';
+            let result;
+            if (pdfBlob.size <= 4 * 1024 * 1024) {
+                // Small immutable PDFs need one conditional media request, not
+                // a resumable-session handshake followed by a second request.
+                await waitForDocumentBackgroundTurn(options);
+                driveUploadProgress = {sent:0,total:pdfBlob.size};
+                const response = await driveFetch(`https://www.googleapis.com/upload/drive/v2/files/${encodeURIComponent(fileId)}?uploadType=media&fields=${projection}`, {
+                    method:'PUT', headers:{'Content-Type':'application/pdf','If-Match':revision.etag},
+                    body:pdfBlob, signal:options.signal, timeout:DRIVE_RESUMABLE_CHUNK_TIMEOUT_MS,
+                    bufferResponse:true, keepalive:!!options.keepalive && pdfBlob.size <= 48 * 1024
+                });
+                await waitForDocumentBackgroundTurn(options);
+                if (response.status !== 200 && response.status !== 201) throw new Error('Drive has not confirmed upload completion');
+                result = await response.json();
+            } else {
+                result = await uploadDriveBlobResumable({
+                    url:`https://www.googleapis.com/upload/drive/v2/files/${encodeURIComponent(fileId)}?uploadType=resumable&fields=${projection}`,
+                    method:'PUT', blob:pdfBlob, options:{...options,conditionalETag:revision.etag}
+                });
+            }
+            if (result?.id !== fileId) throw new Error('Drive did not confirm the expected document');
+            driveUploadProgress = {sent:pdfBlob.size,total:pdfBlob.size};
+            return {...result,modifiedTime:result.modifiedDate || result.modifiedTime};
         }
 
         const driveUploadBlobIds = new WeakMap();
@@ -25929,9 +25961,11 @@
             // A logical document hash (or byte length) does not identify PDF bytes.
             // Resume only the exact immutable Blob whose bytes started this session.
             if (!driveUploadBlobIds.has(blob)) driveUploadBlobIds.set(blob, ++driveUploadBlobSequence);
-            const contentIdentity = String(driveUploadBlobIds.get(blob));
+            const contentIdentity = `${driveUploadBlobIds.get(blob)}:${options.conditionalETag || ''}`;
             const resumeKey = `${String(options.resumeKey || `${method}:${url}:${metadata?.name || ''}:${(metadata?.parents || []).join(',')}`)}:blob-${contentIdentity}`;
+            const conditionalHeaders = options.conditionalETag ? {'If-Match':options.conditionalETag} : {};
             const initiationHeaders = {
+                ...conditionalHeaders,
                 'X-Upload-Content-Type': contentType,
                 'X-Upload-Content-Length': String(blob.size)
             };
@@ -25974,7 +26008,7 @@
                 try {
                     const status = await driveFetch(sessionUrl, {
                         method: 'PUT',
-                        headers: { 'Content-Range': `bytes */${blob.size}` },
+                        headers: { ...conditionalHeaders, 'Content-Range': `bytes */${blob.size}` },
                         body: new Blob([]),
                         keepalive: useKeepalive,
                         signal,
@@ -25991,6 +26025,7 @@
                     offset = getDriveResumableAcknowledgedOffset(status);
                     driveUploadProgress.sent = offset;
                 } catch (statusError) {
+                    if (statusError?.code === 412 || statusError?.status === 412) { driveResumableSessions.delete(resumeKey); throw statusError; }
                     if (/Drive API error (404|410)/.test(String(statusError?.message || statusError))) {
                         driveResumableSessions.delete(resumeKey);
                         sessionUrl = await startSession();
@@ -26009,6 +26044,7 @@
                     const response = await driveFetch(sessionUrl, {
                         method: 'PUT',
                         headers: {
+                            ...conditionalHeaders,
                             'Content-Type': contentType,
                             'Content-Range': `bytes ${offset}-${endExclusive - 1}/${blob.size}`
                         },
@@ -26048,6 +26084,7 @@
                 } catch (error) {
                     if (signal?.aborted || error?.name === 'AbortError') throw error;
                     if (error?.uploadStalled) throw error;
+                    if (error?.code === 412 || error?.status === 412) { driveResumableSessions.delete(resumeKey); throw error; }
                     if (/Drive API error (404|410)/.test(String(error?.message || error))) {
                         driveResumableSessions.delete(resumeKey);
                         throw new Error('Drive upload session expired; retrying with a new session');
@@ -26059,6 +26096,7 @@
                     const status = await driveFetch(sessionUrl, {
                         method: 'PUT',
                         headers: {
+                            ...conditionalHeaders,
                             'Content-Range': `bytes */${blob.size}`
                         },
                         body: new Blob([]),
@@ -26067,6 +26105,9 @@
                         timeout: 30000,
                         bufferResponse: true,
                         acceptStatuses: [308]
+                    }).catch(error => {
+                        if (error?.code === 412 || error?.status === 412) driveResumableSessions.delete(resumeKey);
+                        throw error;
                     });
                     if (status.status !== 308) {
                         const result = await completedFile(status);
@@ -26094,28 +26135,8 @@
             });
         }
 
-        async function waitForRemoteSaveQuietBeforeUpload(fileId, controller, timeoutMs = 2600) {
-            if (!fileId || !hasRemoteActiveSaveSignal()) return false;
-            const start = Date.now();
-            let waited = false;
-            recordSaveDebug('Remote device is saving; waiting before upload');
-            while (hasRemoteActiveSaveSignal() && Date.now() - start < timeoutMs) {
-                if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
-                waited = true;
-                await new Promise(resolve => setTimeout(resolve, 220));
-            }
-            if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
-            if (waited) {
-                recordSaveDebug('Remote save wait finished; rechecking revision');
-            }
-            return waited;
-        }
-
         async function mergeLatestRemoteBeforeDriveUpload(fileId, controller, label = 'Checking remote revision') {
             if (!fileId || !state.driveFileId || state.driveFileId !== fileId) {
-                return { changed: false, hasLocalMerges: false };
-            }
-            if (!(state.driveHeadRevisionId || state.driveLastKnownModified)) {
                 return { changed: false, hasLocalMerges: false };
             }
             if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
@@ -26125,18 +26146,9 @@
             }
             if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
             recordSaveDebug(label);
-            const checkRes = await driveFetch(
-                `https://www.googleapis.com/drive/v3/files/${fileId}?fields=headRevisionId,modifiedTime,version`,
-                {
-                    signal: controller?.signal,
-                    timeout: DRIVE_META_TIMEOUT,
-                    headers: { 'Cache-Control': 'no-cache' }
-                }
-            );
-            const checkData = await checkRes.json();
-            if (controller?.signal?.aborted) throw createAbortError('Drive save aborted');
+            const checkData = await readDriveWriteRevision(fileId, {signal:controller?.signal});
             if (!isRemoteMetaNewerThanTracked(checkData)) {
-                return { changed: false, hasLocalMerges: false };
+                return {changed:false, hasLocalMerges:false, writeRevision:checkData};
             }
             recordSaveDebug('Remote changes found, merging before upload');
             const mergeResult = await pullRemoteChanges(checkData, {
@@ -26151,7 +26163,9 @@
             if (!mergeResult && collabPullInProgress) {
                 throw new Error('Remote merge still in progress');
             }
-            return mergeResult || { changed: false, hasLocalMerges: false };
+            // Rebuild and check again even when the merge changed only the baseline.
+            // Only the next verified revision can authorize a conditional upload.
+            return {...mergeResult, changed:true};
         }
 
         const driveCheckpointQueue = new window.InhouseRuntimeCore.CoalescingQueue(
@@ -26364,8 +26378,6 @@
                         }
                         driveSavePhase = 'verifying';
                         refreshSaveIndicatorState();
-                        await waitForRemoteSaveQuietBeforeUpload(fileId, controller);
-                        assertCurrent();
                         const latestMerge = await mergeLatestRemoteBeforeDriveUpload(
                             fileId,
                             controller,
@@ -26374,7 +26386,10 @@
                                 : 'Final remote revision check'
                         );
                         assertCurrent();
-                        if (!(latestMerge?.changed || latestMerge?.hasLocalMerges)) break;
+                        if (!(latestMerge?.changed || latestMerge?.hasLocalMerges)) {
+                            driveOptions.writeRevision = latestMerge?.writeRevision;
+                            break;
+                        }
                         finalRemoteCheckAttempts += 1;
                         if (finalRemoteCheckAttempts > 3) {
                             driveDirty = true;
@@ -26453,6 +26468,7 @@
                 startCollabPolling();
                 showStatus('Saved', { savedAt });
                 setPresenceSavePhase('saved');
+                if (typeof publishDriveCommitHint === 'function') publishDriveCommitHint(fileId);
                 recordSaveDebug('Drive save finished');
                 driveSaveSucceeded = true;
                 }
@@ -26467,7 +26483,13 @@
                     driveSaveSucceeded = false;
                 } else {
                 driveSavePhase = 'retrying';
-                const aborted = controller.signal.aborted
+                const conflict = err?.code === 412 || err?.status === 412;
+                if (conflict) {
+                    driveLastSaveError = null;
+                    deferRemotePull(null);
+                    recordSaveDebug('Concurrent Drive edit; merging before retry');
+                }
+                const aborted = conflict || controller.signal.aborted
                     || err?.name === 'AbortError'
                     || (typeof err?.message === 'string' && err.message.toLowerCase().includes('aborted'));
                 if (aborted) {
@@ -32938,7 +32960,7 @@
             const overlayScale = options.highQuality
                 ? Math.min(3.5, CANVAS_SCALE * 1.75)
                 : (optimizeForUpload ? 2 : 2.5);
-            const exportProfile = `pdflib:${overlayScale}:${optimizeForUpload ? 'opt' : (options.highQuality ? 'hq' : 'std')}:${PDFLib === window.PDFLib ? 'png' : 'raw'}`;
+            const exportProfile = `pdflib:${overlayScale}:${optimizeForUpload ? 'opt' : (options.highQuality ? 'hq' : 'std')}:${PDFLib === window.PDFLib ? 'png' : (options.forceRasterInk ? 'raw' : 'vector')}`;
 
             // PDF user units are points (1pt = 1/72 inch). PDF.js viewports use CSS px @ 96 DPI.
             // 1 px = 0.75 pt.
@@ -33063,6 +33085,7 @@
                                     customBackgroundImageCache.set(pageData.backgroundImage, embedded);
                                 }
                             } catch (embedErr) {
+                                if (embedErr?.name === 'AbortError') throw embedErr;
                                 console.warn('Failed to embed page background:', embedErr);
                             }
                         }
@@ -33094,6 +33117,7 @@
                                 embedded = await outDoc.embedJpg(await encodedTemplate);
                                 templateBackgroundImageCache.set(templateKey, embedded);
                             } catch (tplErr) {
+                                if (tplErr?.name === 'AbortError') throw tplErr;
                                 console.warn('Failed to embed template background:', tplErr);
                             }
                         }
@@ -33213,9 +33237,11 @@
                         await yieldToUI(true);
                         pngBytes = await window.InhouseDocumentProcessing.run('renderOverlay', {
                             json: JSON.stringify({ strokes: exportStrokes, images: pageData.images || [] }),
-                            bounds: overlayBounds, scale: overlayScale, pdfRaster: !!outDoc.workerDocumentId
+                            bounds: overlayBounds, scale: overlayScale, pdfRaster: !!outDoc.workerDocumentId,
+                            vectorInk: !options.forceRasterInk
                         });
                     } catch (error) {
+                        if (error?.name === 'AbortError') throw error;
                         console.warn('Worker overlay unavailable; using compatible renderer:', error);
                     }
                 }
@@ -33346,6 +33372,7 @@
             try {
                 preparedMetadata = await window.InhouseDocumentProcessing.run('prepareMetadata', syncHashInput);
             } catch (error) {
+                if (error?.name === 'AbortError') throw error;
                 console.warn('Combined PDF metadata preparation unavailable:', error);
             }
             let encodedMetadata, metaPrefix;
@@ -33354,6 +33381,7 @@
                     ?? await window.InhouseDocumentProcessing.run('compress', { json: metadataString });
                 metaPrefix = 'STROKES_Z:';
             } catch (compressErr) {
+                if (compressErr?.name === 'AbortError') throw compressErr;
                 console.warn('Metadata compression failed, using uncompressed:', compressErr);
                 encodedMetadata = btoa(unescape(encodeURIComponent(metadataString)));
                 metaPrefix = 'STROKES_DATA:';
@@ -33390,6 +33418,7 @@
                 }))));
                 if (encodedSync) keywordsPayload += `;${DRIVE_SYNC_KEYWORD}${encodedSync}`;
             } catch (syncErr) {
+                if (syncErr?.name === 'AbortError') throw syncErr;
                 console.warn('Failed to add Drive sync identity:', syncErr);
             }
             // Capture this save as a version-history snapshot. The pages JSON we just
@@ -33412,6 +33441,7 @@
                     keywordsPayload += `;${VERSION_HISTORY_KEYWORD}${encodedHistory}`;
                 }
             } catch (versionErr) {
+                if (versionErr?.name === 'AbortError') throw versionErr;
                 console.warn('Failed to capture version snapshot:', versionErr);
             }
             try {
@@ -33420,6 +33450,7 @@
                 await outDoc.setSubject('Notas con S-Pen');
                 await outDoc.setCreator('Cuaderno Digital App');
             } catch (metaErr) {
+                if (metaErr?.name === 'AbortError') throw metaErr;
                 console.warn('Failed to set output metadata:', metaErr);
             }
 
@@ -33438,6 +33469,7 @@
                     });
                 }
             } catch (attachErr) {
+                if (attachErr?.name === 'AbortError') throw attachErr;
                 console.warn('Failed to attach clean original PDF:', attachErr);
             }
 
