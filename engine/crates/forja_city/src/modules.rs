@@ -858,6 +858,113 @@ pub fn rooftop(kind: u8, wall: Mat) -> P {
     p
 }
 
+/// Rooftop TV aerial: a galvanised mast on a tripod foot with one or two
+/// UHF Yagis pointing along +Z (towards the transmitter) and, on some, a
+/// bow-tie or FM dipole near the top. Origin at the foot of the mast.
+pub fn tv_antenna(variant: u8) -> P {
+    let mut p = P::new();
+    let h = [3.4f32, 4.3, 2.8][variant as usize % 3];
+    let g = p.get(Mat::Galvanized);
+    g.cylinder(v(0.0, 0.0, 0.0), v(0.0, h, 0.0), 0.024, 6, true);
+    for k in 0..3 {
+        let a = std::f32::consts::TAU * k as f32 / 3.0 + 0.4;
+        g.beam(v(0.0, 0.55, 0.0), v(a.cos() * 0.5, 0.0, a.sin() * 0.5), Vec3::Y, 0.02, 0.02, 1.0);
+    }
+    // Yagi: boom along +Z, directors across, a reflector grid at the back.
+    let yagi = |g: &mut Prim, y: f32, len: f32, n: i32| {
+        let z0 = -0.22;
+        g.beam(v(0.0, y, z0), v(0.0, y, z0 + len), Vec3::Y, 0.02, 0.02, 1.0);
+        g.beam(v(0.0, y - 0.04, 0.0), v(0.0, y + 0.04, 0.0), Vec3::X, 0.05, 0.05, 1.0);
+        for i in 0..n {
+            let z = z0 + 0.2 + (len - 0.2) * i as f32 / (n - 1) as f32;
+            let half = 0.15 - 0.05 * i as f32 / n as f32;
+            g.beam(v(-half, y, z), v(half, y, z), Vec3::Y, 0.008, 0.008, 1.0);
+        }
+        for k in 0..4 {
+            let yy = y - 0.22 + k as f32 * 0.147;
+            g.beam(v(-0.24, yy, z0), v(0.24, yy, z0), Vec3::Y, 0.008, 0.008, 1.0);
+        }
+        g.beam(v(0.0, y - 0.24, z0), v(0.0, y + 0.24, z0), Vec3::X, 0.012, 0.012, 1.0);
+    };
+    yagi(g, h - 0.35, if variant % 2 == 0 { 1.5 } else { 1.1 }, 12);
+    if variant % 3 != 2 {
+        yagi(g, h - 1.15, 0.9, 8);
+    }
+    if variant % 2 == 1 {
+        // FM dipole across the top.
+        g.beam(v(-0.75, h - 0.05, 0.0), v(0.75, h - 0.05, 0.0), Vec3::Y, 0.012, 0.012, 1.0);
+    }
+    // Amplifier box and the coax down the mast.
+    bx(&mut p, Mat::Plastic(hex(0xdcdad2)), v(-0.06, 1.25, 0.03), v(0.06, 1.42, 0.09));
+    p.get(Mat::Plastic(hex(0x1e1e1e))).beam(v(0.03, 0.0, 0.03), v(0.03, h - 0.4, 0.03), Vec3::X, 0.008, 0.008, 1.0);
+    p
+}
+
+/// One metre of terrace railing along +X on top of a parapet: square
+/// posts, a flat top rail and plain bars (the 1960s-80s ático kind).
+pub fn terrace_railing() -> P {
+    let mut p = P::new();
+    let iron = Mat::Iron;
+    bx(&mut p, iron, v(-0.5, 0.0, -0.025), v(0.5, 0.03, 0.025));
+    bx(&mut p, iron, v(-0.5, 0.6, -0.035), v(0.5, 0.64, 0.035));
+    bx(&mut p, iron, v(-0.5, 0.5, -0.012), v(0.5, 0.52, 0.012));
+    bx(&mut p, iron, v(-0.5, 0.0, -0.025), v(-0.45, 0.64, 0.025));
+    let prim = p.get(iron);
+    for k in 1..9 {
+        let x = -0.5 + k as f32 * 0.111;
+        prim.beam(v(x, 0.03, 0.0), v(x, 0.6, 0.0), Vec3::X, 0.014, 0.014, 1.0);
+    }
+    p
+}
+
+/// Terrace planting seen over an ático railing: a planter of box shrubs,
+/// a potted olive or a jasmine climbing a trellis. Origin at the foot.
+pub fn planter(variant: u8) -> P {
+    let mut p = P::new();
+    let mut rng = Rng::new(variant as u64 * 4211 + 3);
+    let blob = |p: &mut P, at: Vec3, r: f32, hgt: f32| {
+        let prof: Vec<(f32, f32)> = (0..=6)
+            .map(|i| {
+                let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / 6.0;
+                (if i == 0 || i == 6 { 0.0 } else { a.cos() * r }, hgt * (0.5 + a.sin() * 0.5))
+            })
+            .collect();
+        p.get(Mat::Leaves).lathe(at, &prof, 8);
+    };
+    match variant % 3 {
+        0 => {
+            bx(&mut p, Mat::Terracotta, v(-0.5, 0.0, -0.2), v(0.5, 0.42, 0.2));
+            for x in [-0.28, 0.0, 0.28] {
+                let r = rng.range(0.22, 0.3);
+                blob(&mut p, v(x, 0.3, 0.0), r, rng.range(0.7, 1.0));
+            }
+        }
+        1 => {
+            p.get(Mat::Terracotta).lathe(Vec3::ZERO, &[(0.0, 0.0), (0.2, 0.0), (0.27, 0.5), (0.3, 0.52), (0.3, 0.56), (0.0, 0.56)], 12);
+            p.get(Mat::Wood(hex(0x5a4632))).cylinder(v(0.0, 0.5, 0.0), v(0.05, 1.5, 0.02), 0.045, 6, false);
+            for (dx, dy, r) in [(0.0, 1.45, 0.42), (0.25, 1.75, 0.3), (-0.22, 1.7, 0.32)] {
+                blob(&mut p, v(dx, dy, 0.0), r, r * 1.5);
+            }
+        }
+        _ => {
+            bx(&mut p, Mat::Terracotta, v(-0.4, 0.0, -0.18), v(0.4, 0.38, 0.18));
+            let g = p.get(Mat::Wood(hex(0x6a5038)));
+            for x in [-0.35, 0.35] {
+                g.beam(v(x, 0.3, -0.05), v(x, 1.9, -0.05), Vec3::X, 0.03, 0.03, 1.0);
+            }
+            for (dx, dy, r) in [(-0.2, 0.3, 0.3), (0.15, 0.6, 0.32), (-0.1, 1.05, 0.3), (0.12, 1.4, 0.26)] {
+                blob(&mut p, v(dx, dy, 0.0), r, r * 1.8);
+            }
+            let f = p.get(Mat::Flowers(hex(0xf6f4ee)));
+            for _ in 0..24 {
+                let c = v(rng.range(-0.4, 0.4), rng.range(0.5, 1.8), rng.range(0.1, 0.3));
+                f.aabox(c - Vec3::splat(0.025), c + Vec3::splat(0.025), 1.0);
+            }
+        }
+    }
+    p
+}
+
 // ------------------------------------------------------------ lived-in clutter
 
 /// Split AC condenser (the white box on every Spanish facade). Origin at
@@ -1136,8 +1243,16 @@ mod tests {
         assert!(s.prims.contains_key(&Mat::MetalShutter(1)));
         let d = portal(&PortalKey { w_cm: 200, h_cm: 360, surround: Mat::Granite, door: hex(0x4a2e1c) });
         assert!(prim_count(&d) > 100);
-        for m in [balustrade(Mat::Moulding([250; 3])), pedestal(Mat::Moulding([250; 3]), true), crest(Mat::Moulding([250; 3]), Mat::Tiles(crate::texgen::TilePattern::Frieze), 3.6), dormer(Mat::Zinc, Mat::RoofSlate, hex(0xffffff)), chimney(Mat::Brick([255; 3])), wall_lantern()] {
+        for m in [balustrade(Mat::Moulding([250; 3])), pedestal(Mat::Moulding([250; 3]), true), crest(Mat::Moulding([250; 3]), Mat::Tiles(crate::texgen::TilePattern::Frieze), 3.6), dormer(Mat::Zinc, Mat::RoofSlate, hex(0xffffff)), chimney(Mat::Brick([255; 3])), wall_lantern(), terrace_railing()] {
             assert!(prim_count(&m) > 10);
+        }
+        // Aerials stand on their foot and stay slim.
+        for v in 0..3 {
+            let a = tv_antenna(v);
+            let ys: Vec<f32> = a.prims.values().flat_map(|q| q.positions.iter().map(|p| p.y)).collect();
+            assert!(ys.iter().cloned().fold(f32::MAX, f32::min) >= -0.03);
+            assert!(ys.iter().cloned().fold(f32::MIN, f32::max) > 2.5);
+            assert!(prim_count(&a) < 2000);
         }
     }
 }
