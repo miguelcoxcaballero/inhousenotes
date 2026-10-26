@@ -6,7 +6,24 @@
     const client = new root.InhouseRuntimeCore.WorkerRpcClient(() => new Worker(processorUrl));
     // Checkpoint compression must not queue behind a PDF export.
     const checkpointClient = new root.InhouseRuntimeCore.WorkerRpcClient(() => new Worker(processorUrl));
-    const run = (type, data, options) => (type === 'packInkCheckpoint' || type === 'unpackInkCheckpoint' ? checkpointClient : client).run(type, data, options);
+    async function run(type, data, options = {}) {
+        // The independent durable checkpoint queue is not held behind exports.
+        if (type === 'packInkCheckpoint' || type === 'unpackInkCheckpoint') return checkpointClient.run(type, data, options);
+        const epoch = client.epoch;
+        const sessionToken = typeof root.getDocumentSessionToken === 'function' ? root.getDocumentSessionToken() : undefined;
+        const yieldToPen = async () => {
+            if (type !== 'pdfDispose' && typeof root.waitForDocumentBackgroundTurn === 'function') {
+                await root.waitForDocumentBackgroundTurn({signal:options.signal, sessionToken});
+            }
+            client.assertEpoch(epoch);
+        };
+        // Gate before structured-cloning large payloads to the worker and
+        // before main-thread continuations consume the finished result.
+        await yieldToPen();
+        const result = await client.run(type, data, options);
+        await yieldToPen();
+        return result;
+    }
     function reset(error) { client.reset(error); checkpointClient.reset(error); facade = null; }
     let facade = null;
     async function pdfLib(library) {

@@ -25876,6 +25876,7 @@
             if (!(blob instanceof Blob)) throw new TypeError('Drive upload requires a Blob');
             if (!blob.size) throw new Error('Cannot upload an empty PDF to Drive');
             const completedFile = async response => {
+                await waitForDocumentBackgroundTurn(options);
                 if (response.status !== 200 && response.status !== 201) throw new Error('Drive has not confirmed upload completion');
                 const file = await response.json();
                 if (!file || typeof file.id !== 'string' || !file.id) throw new Error('Drive upload response did not identify a completed file');
@@ -25916,6 +25917,7 @@
             if (driveSaveInProgress) {
                 showStatus('Uploading to Drive... 0%', { phase: 'uploading' });
             }
+            await waitForDocumentBackgroundTurn(options);
             if (!sessionUrl) sessionUrl = await startSession();
 
             let offset = 0;
@@ -25958,6 +25960,7 @@
                 }
             }
             while (offset < blob.size) {
+                await waitForDocumentBackgroundTurn(options);
                 if (signal?.aborted) throw createAbortError('Drive save aborted');
                 const endExclusive = Math.min(blob.size, offset + chunkSize);
                 const chunk = blob.slice(offset, endExclusive, contentType);
@@ -30861,6 +30864,27 @@
             await new Promise(resolve => setTimeout(resolve, 0));
         }
 
+        async function waitForDocumentBackgroundTurn(options = {}) {
+            const assertCurrent = () => {
+                if (options.signal?.aborted) throw createAbortError('Background document work aborted');
+                if (Number.isFinite(options.sessionToken) && !isDocumentSessionTokenValid(options.sessionToken)) {
+                    throw createAbortError('Document session replaced');
+                }
+            };
+            assertCurrent();
+            // Unlike a boosted scheduler.yield continuation, this turn is
+            // explicitly below input/rendering in browsers with task priorities.
+            if (globalThis.scheduler?.postTask) {
+                await scheduler.postTask(() => {}, { priority: 'background', ...(options.signal ? {signal:options.signal} : {}) });
+            } else await new Promise(resolve => setTimeout(resolve, 0));
+            if (!await waitForHotInteractionToSettle({abortSignal:options.signal,
+                sessionToken:options.sessionToken, windowMs:300})) {
+                assertCurrent();
+                throw createAbortError('Background document work interrupted');
+            }
+            assertCurrent();
+        }
+
         async function waitForHotInteractionToSettle(options = {}) {
             const abortSignal = options.abortSignal || null;
             const sessionToken = Number.isFinite(options.sessionToken) ? options.sessionToken : null;
@@ -32834,6 +32858,7 @@
                     if (updateSaveStatus) showStatus('Building PDF...', { phase: 'building' });
                 } else if (force || hasPendingUserInput() || performance.now() - lastExportYield >= 4) {
                     await yieldProcessingForUi();
+                    await waitForHotInteractionToSettle({abortSignal, sessionToken, pollMs:interactionPollMs});
                     lastExportYield = performance.now();
                     throwIfAborted();
                     throwIfSessionInvalid();
@@ -33501,6 +33526,7 @@
                 } else if (force || hasPendingUserInput()) {
                     const inputPending = hasPendingUserInput();
                     await yieldProcessingForUi(force || inputPending || isMobileLike);
+                    await waitForHotInteractionToSettle({abortSignal, sessionToken, pollMs:interactionPollMs});
                     throwIfAborted();
                     throwIfSessionInvalid();
                 }
