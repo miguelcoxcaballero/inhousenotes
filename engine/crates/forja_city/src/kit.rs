@@ -18,6 +18,7 @@ use rayon::prelude::*;
 use crate::geom::{Parts, Prim};
 use crate::macrotex::{self, Recipe};
 use crate::texgen::{self, GenSet, SignKind, TilePattern};
+use crate::weathering::{self, Decal, DecalTextures};
 
 pub type Rgb = [u8; 3];
 
@@ -69,6 +70,8 @@ pub enum Mat {
     Water,
     Grass,
     Soil,
+    /// Weathering decal and dirt level (index into [`weathering::LEVELS`]).
+    Decal(Decal, u8),
 }
 
 impl Mat {
@@ -209,6 +212,7 @@ pub struct Kit {
     interiors: TextureData,
     shop_interiors: TextureData,
     plates: Vec<TextureData>,
+    decals: DecalTextures,
 }
 
 const SETS: [&str; 19] = [
@@ -279,6 +283,7 @@ impl Kit {
             interiors: texgen::window_interiors(),
             shop_interiors: texgen::shop_interiors(),
             plates: STREETS.iter().map(|s| texgen::street_plate(s)).collect(),
+            decals: DecalTextures::generate(),
             pbr,
         };
         log::info!("city kit: {} scanned materials", kit.pbr.len());
@@ -481,6 +486,12 @@ impl<'a> Assembler<'a> {
             Mat::Water => MaterialData { name: "water".into(), base_color: Vec4::new(0.03, 0.10, 0.11, 1.0), roughness: 0.02, ..Default::default() },
             Mat::Grass => self.scanned("pbr_grass", hex(0xd8e0c8), hex(0x4a6a32), 0.95),
             Mat::Soil => self.scanned("pbr_sand", hex(0x8a7058), hex(0x5a4636), 0.95),
+            Mat::Decal(d, level) => {
+                let t = kit.decals.get(d).clone();
+                let base = self.tex(&t);
+                let a = weathering::LEVELS[level as usize % weathering::LEVELS.len()];
+                MaterialData { name: format!("decal_{d:?}"), base_color: Vec4::new(1.0, 1.0, 1.0, a), base_color_tex: Some(base), roughness: 0.95, alpha: AlphaMode::Blend, ..Default::default() }
+            }
         };
         self.scene.materials.push(data);
         let i = self.scene.materials.len() - 1;
