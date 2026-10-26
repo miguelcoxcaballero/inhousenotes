@@ -649,6 +649,68 @@
     }
     // <<< stream:editor_input
     // >>> stream:editor_render (only this area edits between its markers)
+    // Stroke packing scratch: x,y f64 pairs followed by four f64 of bounds, kept in WASM
+    // memory so the host writes coordinates once and Rust reads them in place.
+    const STROKE_MAX_POINTS = 4194304, STROKE_KEEP_POINTS = 65536;
+    let strokeScratch = null, strokeCapacity = 0;
+    function requireCore() {
+        if (!core) throw new Error('Rust core is not available; editor rendering requires WebAssembly');
+        return core;
+    }
+    function strokeCoords(count) {
+        requireCore();
+        if (!Number.isSafeInteger(count) || count < 1 || count > STROKE_MAX_POINTS) throw new RangeError('Stroke point count out of range');
+        if (count > strokeCapacity) {
+            if (strokeScratch) { release(strokeScratch); strokeScratch = null; strokeCapacity = 0; }
+            let capacity = 1024;
+            while (capacity < count) capacity *= 2;
+            strokeScratch = allocation(capacity * 16 + 32);
+            strokeCapacity = capacity;
+        }
+        return new Float64Array(core.memory.buffer, strokeScratch.pointer, count * 2);
+    }
+    function strokeBounds(count) {
+        if (!strokeScratch || !Number.isSafeInteger(count) || count < 1 || count > strokeCapacity) throw new RangeError('Stroke bounds need packed coordinates');
+        const out = strokeScratch.pointer + strokeCapacity * 16;
+        if (core.editor_render_stroke_bounds(strokeScratch.pointer, count, out) !== 1) throw new Error('Rust stroke bounds rejected the stroke');
+        const bounds = new Float64Array(core.memory.buffer, out, 4);
+        const result = [bounds[0], bounds[1], bounds[2], bounds[3]];
+        if (strokeCapacity > STROKE_KEEP_POINTS) { release(strokeScratch); strokeScratch = null; strokeCapacity = 0; }
+        return result;
+    }
+    // Per-stroke width of the opaque cover; -1 marks a stroke that is not covered.
+    // One scratch block (tools | widths | counts | output, sized for `coverCapacity`) is reused across calls.
+    let coverBlock = null, coverCapacity = 0;
+    function legacyCoverWidths(strokes) {
+        requireCore();
+        const n = strokes.length, widths = new Float64Array(n);
+        if (!n) return widths;
+        if (n > coverCapacity) {
+            if (coverBlock) { release(coverBlock); coverBlock = null; coverCapacity = 0; }
+            let capacity = 64;
+            while (capacity < n) capacity *= 2;
+            coverBlock = allocation(capacity * 21 + 16);
+            coverCapacity = capacity;
+        }
+        // Offsets depend on the capacity so every typed array stays aligned.
+        const base = coverBlock.pointer, widthsAt = coverCapacity, countsAt = widthsAt + coverCapacity * 8, outAt = countsAt + coverCapacity * 4;
+        const buffer = core.memory.buffer;
+        const tools = new Uint8Array(buffer, base, n), input = new Float64Array(buffer, base + widthsAt, n), counts = new Uint32Array(buffer, base + countsAt, n);
+        for (let i = 0; i < n; i++) {
+            const stroke = strokes[i];
+            if (!stroke || stroke.tool === 'eraser-stroke') { tools[i] = 2; input[i] = 0; counts[i] = 0; continue; }
+            tools[i] = stroke.tool === 'highlighter' ? 1 : 0;
+            const points = stroke.points, count = Array.isArray(points) ? points.length : 0;
+            counts[i] = count;
+            input[i] = count >= (tools[i] ? 1 : 2) ? +(stroke.width || 1) : 0;
+        }
+        if (core.editor_render_cover_widths(base, base + widthsAt, base + countsAt, n, base + outAt) !== 1)
+            throw new Error('Rust cover widths rejected the strokes');
+        widths.set(new Float64Array(core.memory.buffer, base + outAt, n));
+        if (coverCapacity > 4096) { release(coverBlock); coverBlock = null; coverCapacity = 0; }
+        return widths;
+    }
+    Object.assign(api, { strokeCoords, strokeBounds, legacyCoverWidths });
     // <<< stream:editor_render
     // >>> stream:editor_view (only this area edits between its markers)
     // Page layout cache and visible-window planner. Rust owns the layout; there is no JavaScript fallback.
