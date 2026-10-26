@@ -14,7 +14,7 @@ const rust = rustScope.InhouseRust;
 await rust.ready;
 
 // Cut the two functions out of an app-v5.js text and evaluate them with host stubs.
-function build(source, {withRust}) {
+function build(source, {rustApi = rust} = {}) {
     const start = source.indexOf('async function packInkPageForStorage(');
     const end = source.indexOf('async function cloneSanitizedPageForStorage(');
     assert.ok(start > 0 && end > start, 'ink functions not found');
@@ -27,17 +27,17 @@ function build(source, {withRust}) {
         cloneSanitizedPageForStorage: async () => { throw new Error('lossless fallback'); },
         getDocumentSessionToken: () => 1, isDocumentSessionTokenValid: () => valid, createAbortError: m => new Error(m),
         stripStoredPageSession: record => { const next = {...record}; delete next.__sessionId; return next; }};
-    scope.window = {InhouseRust: rust, InhouseDocumentProcessing: {run: async (type, data) => {
+    scope.window = {InhouseRust: rustApi, InhouseDocumentProcessing: {run: async (type, data) => {
         if (type === 'packInkCheckpoint') return {inkCheckpoint: 1, codec: 'raw-v1', rawLength: data.bytes.byteLength, bytes: new Uint8Array(data.bytes)};
-        if (type === 'unpackInkCheckpoint') return rust.unpackCheckpoint(data);
+        if (type === 'unpackInkCheckpoint') return rustApi.unpackCheckpoint(data);
         throw new Error(type);
     }}};
     vm.createContext(scope);
     vm.runInContext(`${code};this.pack=packInkPageForStorage;this.unpack=unpackInkPageFromStorage;`, scope);
     return {pack: scope.pack, unpack: scope.unpack, invalidate: () => { valid = false; }};
 }
-const legacy = build(legacySource('app-v5.js'), {});
-const current = build(await readFile(new URL('../app-v5.js', import.meta.url), 'utf8'), {});
+const legacy = build(legacySource('app-v5.js'));
+const current = build(await readFile(new URL('../app-v5.js', import.meta.url), 'utf8'));
 
 // Order-sensitive, realm-independent encoding that tells -0 from 0 and keeps NaN, undefined and key order.
 function canon(value) {
@@ -182,7 +182,7 @@ test('unpack: a document change while decoding aborts after the codec step', asy
     const words = Float64Array.from({length: 4096 * 4}, (_, i) => i % 4 === 3 ? 0 : i);
     const record = () => checkpointRecord(words, [{id: 'a', points: {inkRange: [0, 4096]}}], null);
     for (const impl of [legacy, current]) {
-        const target = build(impl === legacy ? legacySource('app-v5.js') : await readFile(new URL('../app-v5.js', import.meta.url), 'utf8'), {});
+        const target = build(impl === legacy ? legacySource('app-v5.js') : await readFile(new URL('../app-v5.js', import.meta.url), 'utf8'));
         target.invalidate();
         assert.equal(await unpackOutcome(target, record()), 'error Document changed while decoding ink');
     }
@@ -197,4 +197,25 @@ test('pack and unpack round-trip arbitrary pages through the Rust-backed glue', 
         assert.equal(canon(restored.strokes), canon(page.strokes), `seed ${seed}`);
         assert.equal(canon(restored.legacyCoverStrokes), canon(page.legacyCoverStrokes), `seed ${seed}`);
     }
+});
+
+// Without WebAssembly an existing offline file must still be readable (the checkpoint codec keeps a JS decoder for the same reason).
+const noWasmScope = {WebAssembly, Uint8Array, Uint16Array, Uint32Array, Float32Array, Float64Array, URL, location: new URL('https://notes.test/'),
+    fetch: async () => { throw new Error('blocked'); }, console, AbortSignal, AbortController, setTimeout, clearTimeout};
+vm.createContext(noWasmScope);
+vm.runInContext(await readFile(new URL('../rust-core-v5.js', import.meta.url), 'utf8'), noWasmScope);
+test('unpack without WebAssembly still decodes and rejects like the original; packing refuses loudly', async () => {
+    assert.equal(await noWasmScope.InhouseRust.ready, false);
+    const offline = build(await readFile(new URL('../app-v5.js', import.meta.url), 'utf8'), {rustApi: noWasmScope.InhouseRust});
+    for (let seed = 1; seed <= 400; seed++) {
+        const random = rng(seed * 104729);
+        const words = new Float64Array(Math.floor(random() * 20) * 4);
+        for (let i = 0; i < words.length; i++) words[i] = i % 4 === 3 ? sample(random, [0, 1, 1, random() < 0.1 ? 3 : 0]) : number(random);
+        const strokes = Array.from({length: 1 + Math.floor(random() * 4)}, (_, i) => ({id: i, points: {inkRange:
+            random() < 0.15 ? sample(random, [[1, 1], [0, 99], [-4, 0], [NaN, 1], ['0', 1]]) : [Math.floor(random() * 4) * 4, Math.floor(random() * 3)]}}));
+        const make = () => checkpointRecord(words, structuredClone(strokes), null);
+        assert.equal(await unpackOutcome(offline, make()), await unpackOutcome(legacy, make()), `seed ${seed}`);
+    }
+    const message = await offline.pack({strokes: [{id: 'a', points: [{x: 1, y: 2}]}], legacyCoverStrokes: null}, 1, never, true).then(() => null, error => error.message);
+    assert.match(message, /Rust core is required/);
 });

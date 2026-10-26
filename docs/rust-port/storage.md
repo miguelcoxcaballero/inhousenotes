@@ -25,7 +25,14 @@ Rust module: `rust-core/src/storage.rs`. JS adapter: between `stream:storage` ma
   The gain is speed (no `Object.keys` array, closure and `performance.now()` per point) and a tested Rust core, not source size.
 - Known intentional differences (all unreachable for data the app produces): a stroke destructured with a non-iterable `inkRange`
   throws its `TypeError` before an earlier stroke's invalid-range error; a point whose `x`/`y` come from the prototype chain is
-  judged by own-key count. Callers fail loudly without WASM (`Rust core is required...` on pack, `Rust core is unavailable` on unpack).
+  judged by own-key count. Packing fails loudly without WASM (`Rust core is required to pack ink checkpoints`).
+- Parity doubt for the integrator: `tests/e2e/ink-checkpoint.spec.mjs` (modes `no-wasm`, `no-worker`) requires saved pages to stay
+  readable when WebAssembly cannot load, so `InhouseRust.validateInkWords` keeps a 10-line JS range/flag check used only when the
+  core is absent (read path only; same precedent as the JS xor decoder in `unpackCheckpoint`). Remove it together with that test
+  mode if policy says reads must also fail loudly. Differential test covers this path too.
+- Other test notes: no test greps removed source text. `tests/native-assets.test.mjs` fails because `app-v5.js` size changed
+  (generated `native-assets.json`, rebuilt by the integrator). `app-resilience` scanner specs (308, 371, 443, 800) are flaky or
+  failing on the base commit as well (800 fails at base; 308 failed at base once, passed on this branch).
 - Tests: `tests/storage-ink-checkpoint.test.mjs` (differential vs the original text from git: fixtures, 1500 random pack pages with
   hostile points, 3000 random unpack pages with corrupt ranges/flags, stale-session checkpoints), `cargo test` in `ink_words`,
   `tests/storage-ink-bench.mjs` (benchmark).

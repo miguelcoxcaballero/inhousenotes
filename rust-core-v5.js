@@ -482,8 +482,18 @@
     };
     // ranges: [offset, count] pairs per stroke. Returns normally when valid and throws the original messages otherwise.
     api.validateInkWords = (words, ranges) => {
-        const wasm = storageCore('ink_validate_words');
         if (!(words instanceof Float64Array) || !(ranges instanceof Float64Array) || ranges.length % 2) throw new TypeError('Invalid ink word buffers');
+        if (!core?.ink_validate_words) {
+            // Existing offline files must stay readable when WebAssembly cannot load (as with the checkpoint codec above).
+            // Reading only: packing a page still requires the core.
+            for (let s = 0; s < ranges.length; s += 2) {
+                const offset = ranges[s], count = ranges[s + 1];
+                if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(count) || offset < 0 || count < 0 || offset % 4 || offset + count * 4 > words.length) throw new Error('Invalid ink point range');
+                for (let i = 0; i < count; i++) { const flag = words[offset + i * 4 + 3]; if (flag !== 1 && flag !== 0) throw new Error('Invalid ink pressure flag'); }
+            }
+            return;
+        }
+        const wasm = core;
         const blocks = [], put = array => { const block = allocation(Math.max(8, array.byteLength)); blocks.push(block);
             view(block).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)); return block; };
         try {
