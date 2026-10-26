@@ -71,6 +71,13 @@ pub fn cascade_splits(near: f32, far: f32, lambda: f32) -> [f32; 4] {
 /// Stable (rotation and translation invariant) cascade matrix: bounding
 /// sphere of the slice, texel-snapped in light space.
 pub fn cascade_matrix(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resolution: u32, caster_reach: f32) -> Mat4 {
+    cascade_fit(camera, near, far, sun_dir, resolution, caster_reach).0
+}
+
+/// [`cascade_matrix`] plus the radius of the fitted bounding sphere (world
+/// size of a shadow texel = 2 radius / resolution; light-space depth range =
+/// 2 radius + caster reach).
+pub fn cascade_fit(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resolution: u32, caster_reach: f32) -> (Mat4, f32) {
     let corners = camera.slice_corners(near, far);
     let center = corners.iter().copied().sum::<Vec3>() / 8.0;
     let radius = corners.iter().map(|c| (*c - center).length()).fold(0.0, f32::max);
@@ -86,7 +93,7 @@ pub fn cascade_matrix(camera: &Camera, near: f32, far: f32, sun_dir: Vec3, resol
     let eye = snapped + sun_dir * (radius + caster_reach);
     let view = Mat4::look_at_rh(eye, snapped, up);
     let proj = Mat4::orthographic_rh(-radius, radius, -radius, radius, 0.0, 2.0 * radius + caster_reach);
-    proj * view
+    (proj * view, radius)
 }
 
 /// Planes of an orthographic or perspective matrix for culling (standard Z).
