@@ -88,7 +88,7 @@ fn main() {
     if night {
         frame.env.use_ibl = false;
         frame.env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
-        frame.env.sun_illuminance = 0.06;
+        frame.env.sun_illuminance = 0.025;
         frame.env.exposure = 0.55 + 3.0 * kit.night.dark;
         frame.env.bloom = 0.08;
         println!("night at {:.1} h: {} city lights", kit.night.hour, out.city_lights.len());

@@ -375,11 +375,11 @@ fn tint(c: Rgb) -> Vec4 {
 const NIGHT_LANTERN: f32 = 1.5;
 const NIGHT_BULB: f32 = 30.0;
 const NIGHT_ROOM: f32 = 0.35;
-const NIGHT_SHOP: f32 = 0.5;
+const NIGHT_SHOP: f32 = 0.08;
 const NIGHT_SIGN: f32 = 0.9;
 const NIGHT_NEON: f32 = 9.0;
-const NIGHT_GLOW: f32 = 10.0;
-const NIGHT_WATER: f32 = 0.35;
+const NIGHT_GLOW: f32 = 0.8;
+const NIGHT_WATER: f32 = 0.1;
 
 /// Builds render scenes from kit primitives, adding each material and
 /// texture once per scene.
