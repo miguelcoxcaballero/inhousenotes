@@ -111,6 +111,21 @@ impl Skeleton {
         Self { inverse_bind: vec![Mat4::IDENTITY; joints.len()], joints, order, root_parent: Mat4::IDENTITY, by_name }
     }
 
+    /// World rotation of `j`'s parent in the rest pose (the root parent
+    /// for a root joint). Root translation/rotation edits are expressed in
+    /// this frame; rigs like the 3ds Max Biped hang the hips under a
+    /// rotated helper ("Bip01").
+    pub fn parent_rest_rotation(&self, j: usize) -> Quat {
+        match self.joints[j].parent {
+            None => Quat::from_mat4(&self.root_parent).normalize(),
+            Some(p) => {
+                let mut m = Vec::new();
+                self.model_matrices(&self.rest_pose(), &mut m);
+                Quat::from_mat4(&m[p]).normalize()
+            }
+        }
+    }
+
     /// Skinned skeleton when the file has a skin, node hierarchy otherwise.
     pub fn from_scene_any(scene: &SceneData) -> Self {
         Self::from_scene(scene, 0).unwrap_or_else(|| Self::from_nodes(scene))

@@ -15,7 +15,7 @@ fn root_track(clip: &mut Clip) -> Option<&mut crate::Track> {
 pub fn face_forward(clip: &mut Clip, skel: &Skeleton, forward: Vec3) {
     let Some(root) = clip.root_joint else { return };
     let rest = skel.joints[root].rest;
-    let parent = if skel.joints[root].parent.is_none() { Quat::from_mat4(&skel.root_parent).normalize() } else { Quat::IDENTITY };
+    let parent = skel.parent_rest_rotation(root);
     let Some(tr) = root_track(clip) else { return };
     let Some(tc) = &tr.translation else { return };
     let (a, b) = (parent * tc.values[0], parent * tc.values[tc.values.len() - 1]);
@@ -68,7 +68,7 @@ fn hips_heading(rots: Vec<Quat>, parent: Quat, skel: &Skeleton, root: usize) -> 
 /// character instead), keeping the natural side-to-side sway and bob.
 pub fn in_place(clip: &mut Clip, skel: &Skeleton) {
     let Some(root) = clip.root_joint else { return };
-    let parent = if skel.joints[root].parent.is_none() { Quat::from_mat4(&skel.root_parent).normalize() } else { Quat::IDENTITY };
+    let parent = skel.parent_rest_rotation(root);
     let Some(tr) = root_track(clip) else { return };
     let Some(tc) = &mut tr.translation else { return };
     let n = tc.values.len();
@@ -110,7 +110,7 @@ pub fn ground(clip: &mut Clip, skel: &Skeleton, feet: &[usize]) {
         .collect();
     lows.sort_by(f32::total_cmp);
     let delta = rest - lows[n / 10];
-    let parent = if skel.joints[root].parent.is_none() { Quat::from_mat4(&skel.root_parent).normalize() } else { Quat::IDENTITY };
+    let parent = skel.parent_rest_rotation(root);
     let Some(tr) = root_track(clip) else { return };
     if let Some(tc) = &mut tr.translation {
         let off = parent.inverse() * Vec3::new(0.0, delta, 0.0);
@@ -124,7 +124,7 @@ pub fn ground(clip: &mut Clip, skel: &Skeleton, feet: &[usize]) {
 /// playback to movement speed.
 pub fn root_speed(clip: &Clip, skel: &Skeleton) -> f32 {
     let Some(root) = clip.root_joint else { return 0.0 };
-    let parent = if skel.joints[root].parent.is_none() { Quat::from_mat4(&skel.root_parent).normalize() } else { Quat::IDENTITY };
+    let parent = skel.parent_rest_rotation(root);
     let Some(tc) = clip.tracks.iter().find(|t| t.joint == root).and_then(|t| t.translation.as_ref()) else { return 0.0 };
     let (a, b) = (parent * tc.values[0], parent * tc.values[tc.values.len() - 1]);
     Vec3::new(b.x - a.x, 0.0, b.z - a.z).length() / clip.duration.max(1e-3)
@@ -193,6 +193,32 @@ pub fn extract_loop(clip: &Clip, min_len: f32, max_len: f32, skip: f32) -> Clip 
         }
     }
     out
+}
+
+/// Start time of the `len`-second window with the least horizontal root
+/// travel.
+pub fn stillest_window(clip: &Clip, skel: &Skeleton, len: f32) -> f32 {
+    let Some(root) = clip.root_joint else { return 0.0 };
+    let Some(tc) = clip.tracks.iter().find(|t| t.joint == root).and_then(|t| t.translation.as_ref()) else { return 0.0 };
+    let parent = skel.parent_rest_rotation(root);
+    let pts: Vec<Vec3> = tc.values.iter().map(|t| {
+        let w = parent * *t;
+        Vec3::new(w.x, 0.0, w.z)
+    })
+    .collect();
+    let n = pts.len();
+    if n < 3 || clip.duration <= len {
+        return 0.0;
+    }
+    let dt = clip.duration / (n - 1) as f32;
+    let w = ((len / dt) as usize).min(n - 1);
+    // Prefix sums of step lengths.
+    let mut acc = vec![0.0f32; n];
+    for i in 1..n {
+        acc[i] = acc[i - 1] + (pts[i] - pts[i - 1]).length();
+    }
+    let best = (0..n - w).min_by(|&a, &b| (acc[a + w] - acc[a]).total_cmp(&(acc[b + w] - acc[b]))).unwrap_or(0);
+    best as f32 * dt
 }
 
 /// A short slice of a clip as a looping hold (e.g. an idle taken from a

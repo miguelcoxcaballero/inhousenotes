@@ -38,6 +38,19 @@ fn main() {
         .into_iter()
         .filter(|c| only.as_deref().is_none_or(|o| c.name == o))
         .collect() };
+    // `file:<bvh stem>` checks any take as a walk-style loop.
+    let clips: Vec<Clip> = match only.as_deref().and_then(|o| o.strip_prefix("file:")) {
+        Some(stem) => {
+            let stem: &'static str = Box::leak(stem.to_string().into_boxed_str());
+            let cut = match std::env::var("SLICE").ok().and_then(|v| v.split_once(',').map(|(a, b)| (a.parse::<f32>().ok(), b.parse::<f32>().ok()))) {
+                Some((Some(from), Some(to))) => mocap::Cut::Slice { from, to },
+                _ => mocap::Cut::Loop { min: 0.9, max: 1.5, skip: 0.5 },
+            };
+            let take = mocap::Take { file: stem, name: stem, cut, in_place: true };
+            mocap::load(&dl.join("cmu_mocap"), &[take], &skel, Vec3::Z, 30.0)
+        }
+        None => clips,
+    };
     println!("{} clips in {:.2}s", clips.len(), t0.elapsed().as_secs_f32());
 
     // Metrics on CPU-skinned feet and joints.
@@ -59,6 +72,9 @@ fn main() {
         let mut slide = 0.0f32;
         let mut prev: Option<(Vec3, Vec3)> = None;
         let mut knee_bad = 0;
+        let (lhand, rhand, hips) = (role(Role::Hand(Side::L)), role(Role::Hand(Side::R)), role(Role::Hips));
+        let (mut width, mut hand_x, mut zmin, mut zmax, mut elbow) = (0.0f32, 0.0f32, f32::MAX, f32::MIN, 0.0f32);
+        let (lua, lfa) = (role(Role::UpperArm(Side::L)), role(Role::LowerArm(Side::L)));
         for k in 0..n {
             let t = c.duration * k as f32 / n as f32;
             let mut pose = skel.rest_pose();
@@ -76,6 +92,14 @@ fn main() {
                 slide += Vec3::new(planted.x, 0.0, planted.z).length();
             }
             prev = Some((a, b));
+            let hp = p(hips);
+            width += (a.x - b.x).abs();
+            hand_x += ((p(lhand).x - hp.x).abs() + (p(rhand).x - hp.x).abs()) * 0.5;
+            let hz = p(lhand).z - hp.z;
+            zmin = zmin.min(hz);
+            zmax = zmax.max(hz);
+            let (u, f, h) = (p(lua), p(lfa), p(lhand));
+            elbow += (f - u).normalize_or_zero().angle_between((h - f).normalize_or_zero()).to_degrees();
             // Knees must bend forward: knee ahead of the hip-ankle line.
             for (h, kj, f) in [(lh, lk, lf), (rh, rk, rf)] {
                 let (hp, kp, fp) = (p(h), p(kj), p(f));
@@ -95,6 +119,7 @@ fn main() {
             "{:8} dur {:5.2}s | feet lowest {:+.3} m (rest {:+.3}), planted max {:+.3} | slide {:.2} m/cycle | seam {:.4} | knees backwards {}",
             c.name, c.duration, lowest, rest_min, highest_low, slide, seam, knee_bad
         );
+        println!("         gait: feet apart {:.0} cm | hands from body centre {:.0} cm | hand swing {:.0} cm | elbow bend {:.0} deg", width / n as f32 * 100.0, hand_x / n as f32 * 100.0, (zmax - zmin) * 100.0, elbow / n as f32);
     }
 
     // Portrait mode: face and hands close up in the idle pose.

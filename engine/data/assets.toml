@@ -175,6 +175,10 @@ files = [
     { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-076-080/80/Data/80_03.zip", path = "shoot.bvh" },
     { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-001-009/02/Data/02_05.zip", path = "punch.bvh" },
     { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-001-009/08/Data/08_01.zip", path = "walk_casual.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-035-039/35/Data/35_01.zip", path = "walk_natural.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-001-009/07/Data/07_04.zip", path = "walk_slow.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-015-019/16/Data/16_15.zip", path = "walk_alt.bvh" },
+    { url = "https://raw.githubusercontent.com/Shriinivas/cmubvh/main/Sequence-081-085/82/Data/82_08.zip", path = "idle_natural.bvh" },
 ]
 
 [[asset]]
