@@ -60,8 +60,8 @@ width = 1280
 height = 960
 camera = [107.01, 205.28]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw oblique from the south corner along Placa del Mercat (detail only)"
 
 [[photo]]
 file = "photos/04_La_Lonja_panoramio.jpg"
@@ -74,7 +74,7 @@ height = 960
 camera = [-2.29, 40.82]
 exterior = true
 selected = true
-side = "s (south corner: Placa del Mercat SW facade + SE facade)"
+side = "s corner (SW facade + SE facade on Pere Compte, royal shield with angels on the corner); view south_corner"
 
 [[photo]]
 file = "photos/05_Lonja_de_la_Seda_Valencia_20200810_002.jpg"
@@ -112,7 +112,7 @@ width = 1280
 height = 865
 exterior = true
 selected = true
-side = "aerial e (from the Santa Caterina bell tower: roofs, tower top)"
+side = "aerial from the east (Santa Caterina bell tower): hall roof gable at the NE end, tower top, Torres de Quart behind; view aerial_santa_caterina"
 
 [[photo]]
 file = "photos/08_Llotja_de_la_Seda_2019_1.jpg"
@@ -136,7 +136,7 @@ width = 1280
 height = 741
 exterior = true
 selected = true
-side = "n (Carrer de la Llotja: annex, north pier, garden wall, hall NE facade)"
+side = "n corner (Carrer de la Llotja / Cordellats: annex NE and NW faces, corner pier, garden wall, hall NE facade); view north_annex"
 
 [[photo]]
 file = "photos/10_Valencia_loggia_della_seta_esterno_01.jpg"
@@ -148,7 +148,7 @@ width = 1280
 height = 1729
 exterior = true
 selected = true
-side = "w (Consolat de Mar NW face on Carrer dels Cordellats + SW facade)"
+side = "w corner (Consolat NW face on Cordellats + SW frontage; corner shield); view consolat_west via extra2/pad_10"
 
 [[photo]]
 file = "photos/11_L04_506_Lonja_de_la_Seda.jpg"
@@ -160,7 +160,7 @@ width = 1280
 height = 903
 exterior = true
 selected = true
-side = "sw (main facade, frontal, used for heights)"
+side = "sw (Placa del Mercat frontal, perspective-corrected; heights and bay positions); view placa_del_mercat via extra2/pad_11"
 
 [[photo]]
 file = "photos/12_Valencia_Valencia_136.jpg"
@@ -195,8 +195,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s corner oblique along the SW frontage: corner shield, reliefs, gargoyles (detail only)"
 
 [[photo]]
 file = "photos/15_Llotja_desde_darrere.jpg"
@@ -328,14 +328,195 @@ note = "OSM part:1 has building:levels=1 and no height (check assumes 3.2 m): th
 [[reference]]
 url = "https://commons.wikimedia.org/wiki/File:Llotja_pla.jpg"
 title = "Llotja pla (plan of the Llotja, Commons)"
-notes = "Could not be downloaded (Wikimedia rate limit, HTTP 429) on 2026-10-26; layout taken from OSM parts and photos instead."
+notes = "Downloaded 2026-10-26 as extra2/Llotja_pla.jpg (500 px thumbnail; author Felivet, public domain). Used: Sala of 5 x 3 bays (columns at u 8.1/15.4/22.9/30.0 m along Pere Compte), Pere Compte (SE) front with windows in bays 2 and 4 and the side portal in bay 3, Carrer de la Llotja (NE) window-portal-window, garden wall of the Sala with one window and the door by the stair turret, annex rooms along Carrer de la Llotja."
 
 [[reference]]
 url = "https://commons.wikimedia.org/wiki/File:La_Llotja_de_Val%C3%A8ncia_el_1704_(pl%C3%A0nol_del_pare_Tosca).jpg"
 title = "La Llotja de Valencia el 1704 (planol del pare Tosca)"
-notes = "Historic view; not downloaded (rate limit)."
+notes = "Historic bird's-eye view, 506 px original (Tomas Vicent Tosca, public domain); originals are rate-limited by Wikimedia (HTTP 429, retry-after 600 s), see extra2/ if the 500 px thumbnail arrived."
 
 [[reference]]
 url = "https://commons.wikimedia.org/wiki/File:1.16_LONJA_DE_LA_SEDA_firmado.pdf"
 title = "Ajuntament de Valencia catalogue ficha 1.16 (PGOU)"
 notes = "Used: parcel 5629101, 2 floors, situation Plaza del Mercado 31, aerial 2008 confirming the garden notch."
+
+# ---- added in the second modelling pass (2026-10-26): more exterior photos ----
+# Streets (ca.wikipedia, plan "Llotja pla"): Placa del Mercat = SW front,
+# Carrer de Pere Compte = SE long side, Carrer de la Llotja = NE rear and the
+# annex, Carrer dels Cordellats = NW (Consolat, garden wall); Placa del Doctor
+# Collado at the E corner.
+
+[facts.street_sides]
+value = { sw = "Placa del Mercat", se = "Carrer de Pere Compte", ne = "Carrer de la Llotja", nw = "Carrer dels Cordellats" }
+source = "https://ca.wikipedia.org/wiki/Llotja_de_la_Seda ; plan Llotja pla.jpg"
+note = "Royal shield with angels on the corner Mercat/Pere Compte; municipal shield (works begun 5 Feb 1483) on the corner Llotja/Pere Compte."
+
+[facts.sala_bays]
+value = [5, 3]
+source = "plan Llotja pla.jpg"
+note = "5 bays along Pere Compte (38.7 m outside), 3 along the Mercat (23 m); 8 free helical columns."
+
+[[photo]]
+file = "extra2/082_Pla_a_del_Doctor_Collado__Val_ncia___amb_la_Llotja_de_la_Seda_a_l_esquerra.jpg"
+title = "File:082 Plaça del Doctor Collado (València), amb la Llotja de la Seda a l'esquerra.jpg"
+url = "https://commons.wikimedia.org/wiki/File:082_Pla%C3%A7a_del_Doctor_Collado_(Val%C3%A8ncia),_amb_la_Llotja_de_la_Seda_a_l%27esquerra.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "e corner (blind end bay of the Pere Compte facade with the municipal shield, NE facade receding); view doctor_collado"
+
+[[photo]]
+file = "extra2/Puerta_posterior_Plaza_de_la_Cebada.JPG"
+title = "File:Puerta posterior Plaza de la Cebada.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Puerta_posterior_Plaza_de_la_Cebada.JPG"
+author = "Un valencià"
+license = "Public domain"
+width = 500
+height = 667
+exterior = true
+selected = true
+side = "ne (Carrer de la Llotja: window, rear portal, window with ogee gablets and pinnacle shafts); view carrer_de_la_llotja"
+
+[[photo]]
+file = "extra2/059_Llotja_de_la_Seda__pl._del_Mercat_31__Val_ncia_.jpg"
+title = "File:059 Llotja de la Seda, pl. del Mercat 31 (València).jpg"
+url = "https://commons.wikimedia.org/wiki/File:059_Llotja_de_la_Seda,_pl._del_Mercat_31_(Val%C3%A8ncia).jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw (hall front and tower close up: panels with angels and shields, portal gablet and crowned shield, tower ogee window); view placa_oblique_west"
+
+[[photo]]
+file = "extra2/Valencia_Llotja_de_la_Seda_from_the_northwest.jpg"
+title = "File:Valencia Llotja de la Seda from the northwest.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Llotja_de_la_Seda_from_the_northwest.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1926
+exterior = true
+selected = true
+side = "sw frontage from the north-west (telephoto: Consolat, tower, hall); view frontage_from_northwest (rms 9 px)"
+
+[[photo]]
+file = "extra2/061_Llotja_de_la_Seda__Val_ncia___angle_c._Cordellats_-_pl._del_Mercat.jpg"
+title = "File:061 Llotja de la Seda (València), angle c. Cordellats - pl. del Mercat.jpg"
+url = "https://commons.wikimedia.org/wiki/File:061_Llotja_de_la_Seda_(Val%C3%A8ncia),_angle_c._Cordellats_-_pl._del_Mercat.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "w corner (Consolat from below: gallery corbelling, NW and SW faces); detail only"
+
+[[photo]]
+file = "extra2/Lonja_de_la_Seda__Valencia__Espa_a.jpg"
+title = "File:Lonja de la Seda, Valencia, España.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Lonja_de_la_Seda,_Valencia,_Espa%C3%B1a.jpg"
+author = "Pamdelinaza"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "n (annex on Carrer de la Llotja close up: leaf-crowned merlons, stone corner pier, door; garden-side hall wall, turret and tower behind); detail only"
+
+[[photo]]
+file = "extra2/Llotja_de_la_Seda_DSCN2882.JPG"
+title = "File:Llotja de la Seda DSCN2882.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Llotja_de_la_Seda_DSCN2882.JPG"
+author = "Pere prlpz"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "ne (annex along Carrer de la Llotja, ochre render, merlons); detail only"
+
+[[photo]]
+file = "extra2/Lonja_de_la_Seda_-_Valencia_-_20200810_003.jpg"
+title = "File:Lonja de la Seda - Valencia - 20200810 003.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Lonja_de_la_Seda_-_Valencia_-_20200810_003.jpg"
+author = "Américo Toledano"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2276
+exterior = true
+selected = true
+side = "hall window detail (three lights, flamboyant tracery, ogee gablet with leaf crockets and finial, flanking pinnacle shafts, drip moulding, sill 1 m up); detail only"
+
+[[photo]]
+file = "extra2/Llotja_de_la_Seda_de_Val_ncia_Finestrals.jpg"
+title = "File:Llotja de la Seda de València Finestrals.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Llotja_de_la_Seda_de_Val%C3%A8ncia_Finestrals.jpg"
+author = "Romang"
+license = "CC BY 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "hall portal and window from below (gablets, crockets); detail only"
+
+[[photo]]
+file = "extra2/Valencia_Llotja_de_la_Seda_southwestern_portal.jpg"
+title = "File:Valencia Llotja de la Seda southwestern portal.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_Llotja_de_la_Seda_southwestern_portal.jpg"
+author = "Ymblanter"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1919
+exterior = true
+selected = true
+side = "sw main portal (orders, tympanum, trumeau, gablet, crowned shield, steps); detail only"
+
+[[photo]]
+file = "extra2/Valencia__loggia_della_seta__esterno__porta_della_vergine_01.jpg"
+title = "File:Valencia, loggia della seta, esterno, porta della vergine 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia,_loggia_della_seta,_esterno,_porta_della_vergine_01.jpg"
+author = "Francesco Bini"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 843
+exterior = true
+selected = true
+side = "sw portal of the Virgin (tympanum Virgin and angels, doors to 3.9 m, panels with angels); detail only"
+
+[[photo]]
+file = "extra2/Valencia__loggia_della_seta__portale_su_carre_de_la_llotja__in_stile_gotico_fiammeggiante_"
+title = "File:Valencia, loggia della seta, portale su carre de la llotja, in stile gotico fiammeggiante del xv secolo, 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia,_loggia_della_seta,_portale_su_carre_de_la_llotja,_in_stile_gotico_fiammeggiante_del_xv_secolo,_01.jpg"
+author = "Francesco Bini"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "ne rear portal on Carrer de la Llotja (detail)"
+
+[[photo]]
+file = "extra2/Merlet_coronat_de_la_llotja__Val_ncia.JPG"
+title = "File:Merlet coronat de la llotja, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Merlet_coronat_de_la_llotja,_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 960
+height = 669
+exterior = true
+selected = true
+side = "merlon crown detail (flared rim, three tall and two small points per face)"
+
+[[plan]]
+file = "extra2/Llotja_pla.jpg"
+title = "File:Llotja pla.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Llotja_pla.jpg"
+author = "Felivet"
+license = "Public domain"
+kind = "plan"
+notes = "Ground plan with street names (500 px thumbnail)."
