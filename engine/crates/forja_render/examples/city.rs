@@ -3,7 +3,10 @@
 //! (`CITY_SHOTS=boulevard,aerial` renders only those shots; `CITY_MOTION=30`
 //! also saves `<shot>_motion.png`, the last of 30 real-time 60 fps frames
 //! walking into the shot, to judge TAA and the screen-space effects in
-//! motion).
+//! motion). `NIGHT=1`, `DUSK=1`, `RAIN=1` and `WET=1` render the shots at
+//! night, at dusk, on a rainy night or with wet streets (files get a
+//! `_night`, `_dusk`, `_rain` or `_night_wet` suffix) with the city's lights
+//! as physical lamps, floodlights on the plaza facades and a lit fountain.
 
 use std::path::PathBuf;
 
@@ -12,6 +15,9 @@ use forja_city::layout::{CityConfig, PropKind, build_city};
 use forja_city::style::StyleLibrary;
 use forja_math::{Mat4, Vec3};
 use forja_render::*;
+
+#[path = "common/night.rs"]
+mod night;
 
 fn main() {
     let prefix = std::env::args().nth(1).unwrap_or_else(|| "city".into());
@@ -55,6 +61,31 @@ fn main() {
         }
     }
     frame.env.shadow_distance = 120.0;
+    let night_env = night::environment();
+    // The plaza: its fountain, or the middle of the plaza lamps.
+    let fountain = out.placements.iter().find(|(s, _)| out.scenes[*s].name.starts_with("fountain")).map(|(_, m)| m.w_axis.truncate());
+    let plaza = fountain.unwrap_or(Vec3::ZERO);
+    if let Some((_, env)) = &night_env {
+        frame.env = env.clone();
+        frame.local_lights = night::city_lights(&out.lights);
+        // Plaza lamps ring the square at 4 m: floodlights at their feet light
+        // the facades across the street, and the fountain glows cyan.
+        let ring: Vec<Vec3> = out.lights.iter().map(|l| l.0).filter(|p| (p.y - 4.0).abs() < 0.01 && (*p - plaza).length() < 70.0).collect();
+        for p in &ring {
+            let out_dir = Vec3::new(p.x - plaza.x, 0.0, p.z - plaza.z).normalize_or_zero();
+            let at = Vec3::new(p.x, 0.4, p.z) + out_dir * 1.0;
+            frame.local_lights.push(night::floodlight(at, at + out_dir * 22.0 + Vec3::Y * 13.0, 14000.0));
+        }
+        if fountain.is_some() {
+            for k in 0..6 {
+                let a = k as f32 / 6.0 * std::f32::consts::TAU;
+                let p = plaza + Vec3::new(a.cos() * 3.0, 0.6, a.sin() * 3.0);
+                frame.local_lights.push(Light::spot(p, Vec3::new(-a.cos() * 0.3, 1.0, -a.sin() * 0.3), Vec3::new(0.25, 0.95, 1.6), 2500.0, 0.3, 0.7).with_range(14.0));
+            }
+        }
+        println!("night: {} lights ({} floodlights)", frame.local_lights.len(), ring.len());
+    }
+    let suffix = night_env.as_ref().map(|(n, _)| format!("_{n}")).unwrap_or_default();
     let e = city.extent;
     // Eye-level shots along real streets of each district.
     let street_shot = |district: usize, along_z: bool, pick: usize| {
@@ -77,16 +108,22 @@ fn main() {
         ("valencia_street", v_eye, v_at),
         ("valencia_street2", v2_eye, v2_at),
         ("aerial", Vec3::new(-e.x * 0.8, 120.0, -e.y * 1.1), Vec3::new(0.0, 0.0, 0.0)),
+        ("plaza", plaza + Vec3::new(-28.0, 1.7, -26.0), plaza + Vec3::new(0.0, 7.0, 0.0)),
+        ("aerial_far", Vec3::new(-e.x * 1.6, 260.0, -e.y * 2.2), Vec3::new(0.0, 0.0, 0.0)),
     ];
     let only = std::env::var("CITY_SHOTS").ok();
     for (name, eye, at) in shots {
         if only.as_deref().is_some_and(|o| !o.split(',').any(|n| n.trim() == name)) {
             continue;
         }
+        if night_env.as_ref().is_some_and(|(n, _)| *n == "before") {
+            frame.local_lights.clear();
+            frame.lights = night::legacy_lights(&out.lights, eye);
+        }
         frame.camera = Camera::look_at(eye, at);
         frame.camera.fov_y = 60f32.to_radians();
         let img = r.render_to_image(&frame, 1280, 720);
-        let path = format!("{prefix}_{name}.png");
+        let path = format!("{prefix}_{name}{suffix}.png");
         img.save(&path).unwrap();
         println!("{path}: {:?}", r.stats);
         if let Some(n) = std::env::var("CITY_MOTION").ok().and_then(|v| v.parse::<u32>().ok()) {
@@ -105,7 +142,7 @@ fn main() {
             }
             frame.time = 0.0;
             if let Some(img) = img {
-                let path = format!("{prefix}_{name}_motion.png");
+                let path = format!("{prefix}_{name}{suffix}_motion.png");
                 img.save(&path).unwrap();
                 println!("{path}");
             }
