@@ -72,6 +72,12 @@ pub struct Aabb {
     pub max: Vec3,
 }
 
+impl Default for Aabb {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
 impl Aabb {
     pub const EMPTY: Self = Self { min: Vec3::splat(f32::INFINITY), max: Vec3::splat(f32::NEG_INFINITY) };
 

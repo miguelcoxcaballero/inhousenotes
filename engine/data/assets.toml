@@ -1,0 +1,209 @@
+# Test content for the sandbox, fetched with `cargo run -p forja_fetch -- fetch --all`.
+#
+# Every entry is openly licensed. CC0 needs no attribution; CC-BY and ODbL
+# entries are listed in the generated assets/downloaded/ATTRIBUTION.md, which
+# must ship with any build that includes them.
+#
+# Source kinds (exactly one per entry):
+#   zip        = archive URL; `include` keeps paths with these prefixes and
+#                `strip` removes a prefix when extracting. `page` is scraped for
+#                a fresh link if the archive URL ever changes (Kenney).
+#   files      = list of { url, path } single files.
+#   polyhaven  = { id, res, format } through the Poly Haven API.
+#   osm        = { bbox = [min_lon, min_lat, max_lon, max_lat] } real map data.
+#   terrarium  = { z, x, y, tiles } elevation tiles (tiles x tiles grid).
+#   manual     = { url, note } the user downloads it; `forja_fetch import`.
+#
+# SHA-256 hashes are pinned in assets.lock.toml on first download and
+# verified afterwards.
+
+# --------------------------------------------------------------------- maps
+
+[[asset]]
+id = "map_miami_beach_osm"
+name = "Miami Beach (South Beach) from OpenStreetMap"
+kind = "map"
+license = "ODbL-1.0"
+author = "OpenStreetMap contributors"
+homepage = "https://www.openstreetmap.org/copyright"
+osm = { bbox = [-80.1400, 25.7740, -80.1290, 25.7880] }
+
+[[asset]]
+id = "map_hollywood_hills_terrain"
+name = "Hollywood Hills elevation (2x2 tiles, ~16 km)"
+kind = "terrain"
+license = "Terrain Tiles (SRTM/USGS, attribution)"
+author = "Mapzen / Tilezen joerd (SRTM, USGS NED, ETOPO1)"
+homepage = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+terrarium = { z = 12, x = 701, y = 1634, tiles = 2 }
+
+[[asset]]
+id = "kenney_city_roads"
+name = "Kenney City Kit: Roads"
+kind = "map"
+license = "CC0-1.0"
+author = "Kenney"
+homepage = "https://kenney.nl/assets/city-kit-roads"
+page = "https://kenney.nl/assets/city-kit-roads"
+zip = "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1791628607/kenney_city-kit-roads.zip"
+include = ["Models/GLB format/", "License.txt"]
+strip = "Models/GLB format/"
+
+[[asset]]
+id = "kenney_city_commercial"
+name = "Kenney City Kit: Commercial"
+kind = "map"
+license = "CC0-1.0"
+author = "Kenney"
+homepage = "https://kenney.nl/assets/city-kit-commercial"
+page = "https://kenney.nl/assets/city-kit-commercial"
+zip = "https://kenney.nl/media/pages/assets/city-kit-commercial/a742d900eb-1753115042/kenney_city-kit-commercial_2.1.zip"
+include = ["Models/GLB format/", "License.txt"]
+strip = "Models/GLB format/"
+
+[[asset]]
+id = "kenney_city_suburban"
+name = "Kenney City Kit: Suburban"
+kind = "map"
+license = "CC0-1.0"
+author = "Kenney"
+homepage = "https://kenney.nl/assets/city-kit-suburban"
+page = "https://kenney.nl/assets/city-kit-suburban"
+zip = "https://kenney.nl/media/pages/assets/city-kit-suburban/2c871b7af2-1745479373/kenney_city-kit-suburban_20.zip"
+include = ["Models/GLB format/", "License.txt"]
+strip = "Models/GLB format/"
+
+[[asset]]
+id = "kenney_city_industrial"
+name = "Kenney City Kit: Industrial"
+kind = "map"
+license = "CC0-1.0"
+author = "Kenney"
+homepage = "https://kenney.nl/assets/city-kit-industrial"
+page = "https://kenney.nl/assets/city-kit-industrial"
+zip = "https://kenney.nl/media/pages/assets/city-kit-industrial/0ec35b139d-1788171848/kenney_city-kit-industrial_2.0.zip"
+include = ["Models/GLB format/", "License.txt"]
+strip = "Models/GLB format/"
+
+# ----------------------------------------------------------------- vehicles
+
+[[asset]]
+id = "kenney_car_kit"
+name = "Kenney Car Kit (sedans, SUVs, police, taxi, trucks, wheels, debris)"
+kind = "vehicle"
+license = "CC0-1.0"
+author = "Kenney"
+homepage = "https://kenney.nl/assets/car-kit"
+page = "https://kenney.nl/assets/car-kit"
+zip = "https://kenney.nl/media/pages/assets/car-kit/1a312ec241-1775131960/kenney_car-kit.zip"
+include = ["Models/GLB format/", "License.txt"]
+strip = "Models/GLB format/"
+
+[[asset]]
+id = "oga_fancy_motorcycle"
+name = "Fancy motorcycle (OBJ)"
+kind = "vehicle"
+license = "CC0-1.0"
+author = "OpenGameArt user (fancy-motorcycle)"
+homepage = "https://opengameart.org/content/fancy-motorcycle"
+files = [
+    { url = "https://opengameart.org/sites/default/files/bike.obj", path = "bike.obj" },
+    { url = "https://opengameart.org/sites/default/files/biken.png", path = "bike.png" },
+]
+
+[[asset]]
+id = "polyhaven_covered_car"
+name = "Covered car (photoscanned prop)"
+kind = "prop"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/covered_car"
+polyhaven = { id = "covered_car", res = "1k", format = "gltf" }
+
+# ------------------------------------------------------------------ weapons
+
+[[asset]]
+id = "polyhaven_service_pistol"
+name = "Service pistol"
+kind = "weapon"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/service_pistol"
+polyhaven = { id = "service_pistol", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "polyhaven_bolt_action_rifle"
+name = "Bolt action rifle 7.62"
+kind = "weapon"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/bolt_action_rifle_7_62"
+polyhaven = { id = "bolt_action_rifle_7_62", res = "1k", format = "gltf" }
+
+[[asset]]
+id = "kenney_blaster_kit"
+name = "Kenney Blaster Kit (stylised guns, scopes, ammo)"
+kind = "weapon"
+license = "CC0-1.0"
+author = "Kenney"
+homepage = "https://kenney.nl/assets/blaster-kit"
+page = "https://kenney.nl/assets/blaster-kit"
+zip = "https://kenney.nl/media/pages/assets/blaster-kit/261d80a716-1753959510/kenney_blaster-kit_2.1.zip"
+include = ["Models/GLB format/", "License.txt"]
+strip = "Models/GLB format/"
+
+# --------------------------------------------------- characters & animation
+
+[[asset]]
+id = "quaternius_robot_expressive"
+name = "Robot Expressive: humanoid with 14 clips (idle, walk, run, jump, punch, death, ...)"
+kind = "animation"
+license = "CC0-1.0"
+author = "Tomás Laulhé (Quaternius), glTF by Don McCurdy"
+homepage = "https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf/RobotExpressive"
+files = [
+    { url = "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/RobotExpressive/RobotExpressive.glb", path = "RobotExpressive.glb" },
+]
+
+[[asset]]
+id = "kenney_blocky_characters"
+name = "Kenney Blocky Characters: 18 rigged characters with animations"
+kind = "animation"
+license = "CC0-1.0"
+author = "Kenney"
+homepage = "https://kenney.nl/assets/blocky-characters"
+page = "https://kenney.nl/assets/blocky-characters"
+zip = "https://kenney.nl/media/pages/assets/blocky-characters/8369c0cf30-1749547469/kenney_blocky-characters_20.zip"
+include = ["Models/GLB format/", "License.txt"]
+strip = "Models/GLB format/"
+
+[[asset]]
+id = "khronos_fox"
+name = "Fox: quadruped with survey, walk and run clips"
+kind = "animation"
+license = "CC-BY-4.0 (rig and animation), CC0 (model)"
+author = "PixelMannen (model), tomkranis (rig, animation), @AsoboStudio and @scurest (glTF)"
+homepage = "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox"
+files = [
+    { url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb", path = "Fox.glb" },
+]
+
+[[asset]]
+id = "quaternius_universal_animation_library"
+name = "Quaternius Universal Animation Library (120+ humanoid clips)"
+kind = "animation"
+license = "CC0-1.0"
+author = "Quaternius"
+homepage = "https://quaternius.com/packs/universalanimationlibrary.html"
+manual = { url = "https://quaternius.itch.io/universal-animation-library", note = "itch.io only serves it through a browser. Download the glTF zip, then run: cargo run -p forja_fetch -- import quaternius_universal_animation_library <file.zip>" }
+
+# ---------------------------------------------------------------- lighting
+
+[[asset]]
+id = "polyhaven_sky_kloofendal"
+name = "Kloofendal partly cloudy pure sky (HDRI)"
+kind = "sky"
+license = "CC0-1.0"
+author = "Poly Haven (Greg Zaal)"
+homepage = "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky"
+polyhaven = { id = "kloofendal_48d_partly_cloudy_puresky", res = "2k", format = "hdr" }
