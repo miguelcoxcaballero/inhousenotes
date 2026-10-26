@@ -11,6 +11,8 @@
 //! Conventions: points are `(x, z)` in metres, outer rings are
 //! counter-clockwise (`geom::signed_area > 0`) and holes clockwise.
 
+use std::collections::BTreeMap;
+
 use forja_math::Vec2;
 use i_overlay::core::fill_rule::FillRule;
 use i_overlay::core::overlay::{Overlay, ShapeType};
@@ -271,6 +273,37 @@ impl Region {
         let paths: Vec<Vec<IP>> = cuts.iter().map(|c| path_ip(c)).filter(|c| c.len() >= 2).collect();
         let out = if paths.is_empty() { self.shapes.clone() } else { self.shapes.slice_by_paths(&paths, FillRule::NonZero) };
         Self::from_int(out).shapes()
+    }
+
+    /// The region cut into square tiles of `size` m on the absolute grid,
+    /// in one exact slice: city-wide regions then answer local queries
+    /// (clipping, containment, meshing) at the cost of one tile.
+    pub fn tiles(&self, size: f32) -> Tiled {
+        let mut t = Tiled { size, tiles: BTreeMap::new() };
+        let Some([lo, hi]) = self.bbox() else { return t };
+        let (k0, k1) = (t.key(lo), t.key(hi));
+        let (x0, x1, z0, z1) = (lo.x - 1.0, hi.x + 1.0, lo.y - 1.0, hi.y + 1.0);
+        let mut cuts = Vec::new();
+        for kx in k0.0 + 1..=k1.0 {
+            let x = kx as f32 * size;
+            cuts.push(vec![Vec2::new(x, z0), Vec2::new(x, z1)]);
+        }
+        for kz in k0.1 + 1..=k1.1 {
+            let z = kz as f32 * size;
+            cuts.push(vec![Vec2::new(x0, z), Vec2::new(x1, z)]);
+        }
+        let mut pieces: BTreeMap<(i32, i32), Vec<Shape>> = BTreeMap::new();
+        for sh in self.slice(&cuts) {
+            // Every piece lies in one cell: its bounding box centre names it.
+            let (mut a, mut b) = (Vec2::splat(f32::MAX), Vec2::splat(f32::MIN));
+            for p in &sh.outer {
+                a = a.min(*p);
+                b = b.max(*p);
+            }
+            pieces.entry(t.key((a + b) * 0.5)).or_default().push(sh);
+        }
+        t.tiles = pieces.into_iter().map(|(k, v)| (k, Region::from_shapes(&v))).collect();
+        t
     }
 
     /// The parts of open polylines strictly inside the region.
@@ -584,6 +617,49 @@ fn rdp_mark(p: &[Vec2], a: usize, b: usize, tol: f32, keep: &mut [bool]) {
     }
 }
 
+/// A region cut into square tiles (`Region::tiles`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Tiled {
+    pub size: f32,
+    pub tiles: BTreeMap<(i32, i32), Region>,
+}
+
+impl Tiled {
+    pub fn key(&self, p: Vec2) -> (i32, i32) {
+        ((p.x / self.size).floor() as i32, (p.y / self.size).floor() as i32)
+    }
+
+    pub fn get(&self, k: (i32, i32)) -> Option<&Region> {
+        self.tiles.get(&k)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&(i32, i32), &Region)> {
+        self.tiles.iter()
+    }
+
+    pub fn contains(&self, p: Vec2) -> bool {
+        self.tiles.get(&self.key(p)).is_some_and(|r| r.contains(p))
+    }
+
+    /// `Region::clip` tile by tile: pieces end at tile borders.
+    pub fn clip(&self, lines: &[Vec<Vec2>]) -> Vec<Vec<Vec2>> {
+        let mut out = Vec::new();
+        for l in lines {
+            let Some(first) = l.first() else { continue };
+            let (lo, hi) = l.iter().fold((*first, *first), |(a, b), p| (a.min(*p), b.max(*p)));
+            let (k0, k1) = (self.key(lo), self.key(hi));
+            for kx in k0.0..=k1.0 {
+                for kz in k0.1..=k1.1 {
+                    if let Some(r) = self.tiles.get(&(kx, kz)) {
+                        out.extend(r.clip(std::slice::from_ref(l)));
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -734,6 +810,29 @@ mod tests {
         assert!((len - 7.0).abs() < 1e-3);
         assert!((r.ray(Vec2::new(1.0, 4.0), Vec2::X, 50.0).unwrap() - 2.0).abs() < 1e-4);
         assert!(r.ray(Vec2::new(-1.0, 4.0), -Vec2::X, 50.0).is_none());
+    }
+
+    #[test]
+    fn tiles_partition_exactly_and_clip_like_the_whole() {
+        // A ring street with a hole crossing many tile borders, plus a star.
+        let shape = Shape { outer: poly(3, Vec2::new(5.0, -7.0), 90.0, 23), holes: vec![poly(4, Vec2::new(5.0, -7.0), 40.0, 17).into_iter().rev().collect()] };
+        let r = Region::from_shapes(&[shape]);
+        let t = r.tiles(16.0);
+        assert!(t.tiles.len() > 30);
+        let sum: f64 = t.iter().map(|(_, x)| x.area()).sum();
+        assert!((sum - r.area()).abs() < 1e-6 * r.area(), "{sum} vs {}", r.area());
+        let back = Region::union_all(t.iter().map(|(_, x)| x));
+        assert!((back.area() - r.area()).abs() < 1e-6 * r.area());
+        for (k, x) in t.iter() {
+            let [lo, hi] = x.bbox().unwrap();
+            assert!(t.key(lo + Vec2::splat(1e-3)) == *k && t.key(hi - Vec2::splat(1e-3)) == *k, "piece outside its tile {k:?}");
+        }
+        let lines = vec![vec![Vec2::new(-120.0, -30.0), Vec2::new(4.0, 2.0), Vec2::new(130.0, 11.0)], vec![Vec2::new(0.0, -120.0), Vec2::new(9.0, 120.0)]];
+        let len = |v: &[Vec<Vec2>]| v.iter().map(|p| p.windows(2).map(|w| w[0].distance(w[1])).sum::<f32>()).sum::<f32>();
+        assert!((len(&t.clip(&lines)) - len(&r.clip(&lines))).abs() < 0.01);
+        for p in [Vec2::new(70.0, -7.0), Vec2::new(5.0, -7.0), Vec2::new(-60.0, 10.0)] {
+            assert_eq!(t.contains(p), r.contains(p), "{p:?}");
+        }
     }
 
     #[test]

@@ -2,6 +2,7 @@
 
 use forja_city::fabric::Fabric;
 use forja_city::generators::{self, CityPlan};
+use forja_city::plan::{Join, Region};
 use forja_city::profile::ProfileLibrary;
 
 fn svg_dir() -> std::path::PathBuf {
@@ -14,7 +15,7 @@ fn preset(name: &str, min_lots: usize) -> Fabric {
     let lib = ProfileLibrary::builtin();
     let plan = CityPlan::builtin(name).unwrap();
     let t = std::time::Instant::now();
-    let d = generators::draft(&plan, &lib, 7);
+    let (d, carved) = generators::draft_report(&plan, &lib, 7);
     let td = t.elapsed().as_secs_f32();
     std::fs::write(svg_dir().join(format!("{name}_draft.toml")), d.to_toml()).unwrap();
     let f = Fabric::build(&d, &plan, &lib, 7);
@@ -27,6 +28,17 @@ fn preset(name: &str, min_lots: usize) -> Fabric {
         panic!("{name}: {} violations", v.len());
     }
     assert!(f.lots.len() >= min_lots, "{name}: {} lots", f.lots.len());
+    // Accessibility: carving ended by its rule, not its safety cap, and no
+    // land of an organic zone is deeper than the last tier's d_max.
+    for c in &carved {
+        assert!(!c.capped, "{name}: zone {} hit the carve cap after {} iterations", c.zone, c.iterations);
+        let ring = |z: u16| d.masks.iter().filter(move |m| m.zone == z).map(|m| m.ring.as_slice());
+        let earlier = Region::rings(d.masks.iter().filter(|m| m.zone < c.zone).map(|m| m.ring.as_slice()));
+        let land = Region::rings(ring(c.zone)).minus(&earlier).minus(&f.corridors).minus(&f.plazas);
+        let deep = land.offset(-c.d_max, Join::Round).area();
+        println!("{name}: zone {} carved in {} iterations, land deeper than {} m: {deep:.2} m²", c.zone, c.iterations, c.d_max);
+        assert!(deep < 1.0, "{name}: zone {}: {deep:.1} m² of land deeper than {} m from any street", c.zone, c.d_max);
+    }
     f
 }
 

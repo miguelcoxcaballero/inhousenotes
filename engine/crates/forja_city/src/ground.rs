@@ -73,6 +73,7 @@ impl Ground {
     /// Splits `public` into surface classes.
     pub fn classes(g: &StreetGraph, lib: &ProfileLibrary, public: &Region, plazas: &Region) -> Ground {
         let prof = |s: &crate::plan::Street| lib.get(s.profile);
+        let mut laps = crate::fabric::Laps::new();
         // Junction discs.
         let mut junctions = Vec::new();
         for n in 0..g.nodes.len() as NodeId {
@@ -87,30 +88,41 @@ impl Ground {
             let r = (half + kr).max(mouth).min(shortest * 0.5);
             junctions.push(Junction { node: n, c: g.nodes[n as usize].p, kerb_radius: kr, r });
         }
+        laps.lap("ground: junction discs");
         let carriage0 = g.corridor(|s, _| if prof(s).vehicles { s.carriageway } else { 0.0 });
+        // Kerb fillets: each junction disc only sees the roadway tiles under it.
+        let tiled = carriage0.tiles(TILE);
         let mut fillets = Vec::new();
         for j in &junctions {
             if j.kerb_radius <= 0.0 {
                 continue;
             }
             let d = Region::ring(&disc(j.c, j.r, 32));
-            fillets.push(carriage0.and(&d).closing(j.kerb_radius).and(&d));
+            let (k0, k1) = (tiled.key(j.c - Vec2::splat(j.r)), tiled.key(j.c + Vec2::splat(j.r)));
+            let near: Vec<&Region> = (k0.0..=k1.0).flat_map(|x| (k0.1..=k1.1).map(move |z| (x, z))).filter_map(|k| tiled.get(k)).collect();
+            fillets.push(Region::union_all(near).and(&d).closing(j.kerb_radius).and(&d));
         }
+        laps.lap("ground: fillets");
         let carriage_all = carriage0.union(&Region::union_all(fillets.iter())).and(public);
         let jdiscs = Region::rings(junctions.iter().map(|j| disc(j.c, j.r, 32)).collect::<Vec<_>>().iter().map(|r| r.as_slice()));
         let median = g.corridor(|s, _| prof(s).median).minus(&jdiscs).and(&carriage_all);
         let carriage = carriage_all.minus(&median);
+        laps.lap("ground: carriage and median");
         let carroads = g.corridor(|s, i| if prof(s).vehicles && s.carriageway > 0.0 { s.width[i] } else { 0.0 });
         let shared = g.corridor(|s, i| if s.carriageway <= 0.0 && prof(s).class != Class::Limit { s.width[i] } else { 0.0 }).and(public).minus(&carroads).minus(&carriage);
+        laps.lap("ground: shared");
         let open = public.minus(&carriage).minus(&median).minus(&shared).opening(8.0);
         let plaza = plazas.union(&open).and(public).minus(&carriage).minus(&median).minus(&shared);
         let walk = public.minus(&carriage).minus(&median).minus(&shared).minus(&plaza);
+        laps.lap("ground: plaza and walk");
         let plaza_poles = plaza.components().into_iter().map(|c| {
             let r = c.pole().map(|p| p.1).unwrap_or(0.0);
             (Located::new(c), r)
         }).collect();
+        laps.lap("ground: poles");
         let mut gr = Ground { carriage, median, shared, plaza, walk, junctions, ..Default::default() };
         gr.surfaces = surfaces(&gr, g, lib);
+        laps.lap("ground: surfaces");
         gr.loc = gr.surfaces.iter().map(|s| Located::new(s.region.clone())).collect();
         gr.carriage_loc = Located::new(gr.carriage.clone());
         gr.plaza_loc = Located::new(gr.plaza.clone());
@@ -276,43 +288,34 @@ pub fn kerbs(gr: &Ground) -> Vec<Kerb> {
 /// Ground meshes per 64 m tile: every surface triangulated at its height,
 /// kerb faces with a granite top band, gutters. Colliders come from the
 /// same triangles. Returns tiles of parts plus collider triangles.
-pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, extent: [Vec2; 2]) -> (BTreeMap<(i32, i32), Parts<Mat>>, Vec<[Vec3; 3]>) {
-    const TILE: f32 = 64.0;
+/// Side of the ground, marking and building tiles (m).
+pub const TILE: f32 = 64.0;
+
+pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> (BTreeMap<(i32, i32), Parts<Mat>>, Vec<[Vec3; 3]>) {
     let mut tiles: BTreeMap<(i32, i32), Parts<Mat>> = BTreeMap::new();
     let mut col: Vec<[Vec3; 3]> = Vec::new();
     let tile_of = |p: Vec2| ((p.x / TILE).floor() as i32, (p.y / TILE).floor() as i32);
-    let (t0, t1) = (tile_of(extent[0]), tile_of(extent[1]));
     for s in &gr.surfaces {
         // Asphalt at 0 is the ground plane laid by the caller.
         if s.h <= 0.0 && s.mat == Mat::Asphalt {
             continue;
         }
-        let Some([lo, hi]) = s.region.bbox() else { continue };
-        let (a, b) = (tile_of(lo).max(t0.min(tile_of(lo))), tile_of(hi));
-        for tx in a.0..=b.0 {
-            for tz in a.1..=b.1 {
-                let sq = [Vec2::new(tx as f32 * TILE, tz as f32 * TILE), Vec2::new((tx + 1) as f32 * TILE, tz as f32 * TILE), Vec2::new((tx + 1) as f32 * TILE, (tz + 1) as f32 * TILE), Vec2::new(tx as f32 * TILE, (tz + 1) as f32 * TILE)];
-                let piece = s.region.and(&Region::ring(&sq));
-                if piece.is_empty() {
-                    continue;
-                }
-                let (pts, tris) = piece.triangulate();
-                let prim = tiles.entry((tx, tz)).or_insert_with(Parts::new).get(s.mat);
-                let scale = s.mat.scale();
-                let base = prim.positions.len() as u32;
-                for p in &pts {
-                    prim.vertex(Vec3::new(p.x, s.h, p.y), Vec3::Y, *p / scale);
-                }
-                for t in &tris {
-                    // CCW in (x, z) faces -Y: flip to face up.
-                    prim.indices.extend([base + t[0], base + t[2], base + t[1]]);
-                    let v = |i: u32| Vec3::new(pts[i as usize].x, s.h, pts[i as usize].y);
-                    col.push([v(t[0]), v(t[2]), v(t[1])]);
-                }
+        for (&(tx, tz), piece) in s.region.tiles(TILE).iter() {
+            let (pts, tris) = piece.triangulate();
+            let prim = tiles.entry((tx, tz)).or_insert_with(Parts::new).get(s.mat);
+            let scale = s.mat.scale();
+            let base = prim.positions.len() as u32;
+            for p in &pts {
+                prim.vertex(Vec3::new(p.x, s.h, p.y), Vec3::Y, *p / scale);
+            }
+            for t in &tris {
+                // CCW in (x, z) faces -Y: flip to face up.
+                prim.indices.extend([base + t[0], base + t[2], base + t[1]]);
+                let v = |i: u32| Vec3::new(pts[i as usize].x, s.h, pts[i as usize].y);
+                col.push([v(t[0]), v(t[2]), v(t[1])]);
             }
         }
     }
-    let _ = t1;
     // Kerb faces with a 0.3 m granite top band on the raised side.
     for k in kerbs(gr) {
         let mid = k.line[k.line.len() / 2];
@@ -334,6 +337,7 @@ pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, extent: [Vec2; 2
         }
     }
     // Gutters: a granite strip along the centre of shared streets.
+    let shared = gr.shared.tiles(TILE);
     for s in &g.streets {
         let p = lib.get(s.profile);
         if p.gutter == Gutter::None || s.carriageway > 0.0 {
@@ -343,7 +347,7 @@ pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, extent: [Vec2; 2
             Gutter::Centre => vec![s.line.pts().to_vec()],
             _ => [1.0f32, -1.0].iter().map(|side| s.line.offset(side * (s.min_width() * 0.5 - 0.45).max(0.3)).pts().to_vec()).collect(),
         };
-        for piece in gr.shared.clip(&lines) {
+        for piece in shared.clip(&lines) {
             let pl = Polyline::new(piece);
             if pl.len() < 0.5 {
                 continue;
@@ -395,7 +399,10 @@ pub fn markings(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Parts<Mat
         return p;
     }
     let jd = Region::rings(gr.junctions.iter().map(|j| disc(j.c, j.r, 32)).collect::<Vec<_>>().iter().map(|r| r.as_slice()));
-    let paintable = gr.carriage.offset(-0.3, Join::Miter(0.5)).minus(&jd);
+    // Paint stays 0.3 m off the kerbs and out of junctions; zebras reach to
+    // 0.2 m. Tiled once, so each street clips against a few tiles only.
+    let paintable = gr.carriage.offset(-0.3, Join::Miter(0.5)).minus(&jd).tiles(TILE);
+    let zebra = gr.carriage.offset(-0.2, Join::Miter(0.5)).tiles(TILE);
     let white = Mat::Paint(hex(WHITE));
     let yellow = Mat::Paint(hex(YELLOW));
     for (si, s) in g.streets.iter().enumerate() {
@@ -528,7 +535,7 @@ pub fn markings(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary) -> Parts<Mat
                     stripes.push(vec![line.at(c0) + line.normal(c0) * c, line.at(c1) + line.normal(c1) * c]);
                     o += 1.0;
                 }
-                for piece in gr.carriage.offset(-0.2, Join::Miter(0.5)).clip(&stripes) {
+                for piece in zebra.clip(&stripes) {
                     ribbon(p.get(white), &Polyline::new(piece), 0.5, 0.008, 1.0);
                 }
                 // Stop line across the lanes arriving here.
