@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../offline-library-v5.js', import.meta.url), 'utf8');
+// The catalogue index runs in the Rust core: give the sandbox the real adapter and WASM, exactly as the page loads them.
+const rustSource = readFileSync(new URL('../rust-core-v5.js', import.meta.url), 'utf8');
+const wasm = readFileSync(new URL('../wasm/inhouse_notes_core.wasm', import.meta.url));
 const folderType = 'application/vnd.google-apps.folder';
 const file = (id, name = `${id}.pdf`, extra = {}) => ({ id, name, mimeType: 'application/pdf', parents: ['root'], ...extra });
 const directory = (id, name = id, extra = {}) => ({ id, name, mimeType: folderType, parents: ['root'], ...extra });
@@ -15,13 +18,17 @@ async function library(initial = {}) {
         async read(kind, account, key) { return key === 'drive-root' ? state.driveRoot : key === 'home-views' ? state.views : null; }
     };
     const sandbox = {
-        URLSearchParams, location: { search: '?offline-worker=1' }, navigator: { onLine: false },
+        URLSearchParams, location: { search: '?offline-worker=1', pathname: '/', href: 'https://notes.test/' }, navigator: { onLine: false },
+        WebAssembly, URL, TextEncoder, TextDecoder, AbortSignal, fetch: async () => new Response(wasm),
         localStorage: { getItem: () => 'index@example.test' }, sessionStorage: { getItem: () => null },
         document: { querySelectorAll: () => [] },
         InhouseOfflineStore: store, InhouseRuntimeCore: { CoalescingQueue: class {} }
     };
     sandbox.window = sandbox;
-    vm.runInNewContext(source, sandbox);
+    vm.createContext(sandbox);
+    vm.runInContext(rustSource, sandbox);
+    assert.equal(await sandbox.InhouseRust.ready, true);
+    vm.runInContext(source, sandbox);
     const api = sandbox.InhouseOfflineLibrary;
     await api.init({ quickAccess: () => false });
     return { api, state };

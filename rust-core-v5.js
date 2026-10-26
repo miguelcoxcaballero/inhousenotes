@@ -500,6 +500,117 @@
     api.collab = Object.freeze({ call: collabCall, hashString: collabHashString });
     // <<< stream:collab
     // >>> stream:offline (only this area edits between its markers)
+    // Worker kernels (rust-core/src/offline/worker_kernels.rs): base64, timeline hash, PNG cache eviction plan.
+    const BASE64_CHUNK = 24 * 1024 * 1024; // multiple of 3, so chunk boundaries never add padding
+    function offlineCore() {
+        if (!core?.offline_b64_encode || !core.bridge_call) throw new Error('Rust core is unavailable (offline kernels)');
+        return core;
+    }
+    // btoa over the octets of `bytes`, without building a binary string first.
+    api.b64Encode = function b64Encode(bytes) {
+        offlineCore();
+        if (!(bytes instanceof Uint8Array)) throw new TypeError('b64Encode needs a Uint8Array');
+        codecs();
+        const parts = [];
+        for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK) {
+            const chunk = bytes.subarray(offset, offset + BASE64_CHUNK);
+            let input = null, output = null;
+            try {
+                input = allocation(chunk.length); output = allocation(Math.ceil(chunk.length / 3) * 4);
+                view(input).set(chunk);
+                const written = core.offline_b64_encode(input.pointer, chunk.length, output.pointer);
+                if (written !== output.bytes) throw new Error('Rust base64 encode failed');
+                parts.push(textDecoder.decode(view(output)));
+            } finally { release(input); release(output); }
+        }
+        return parts.join('');
+    };
+    // atob, returning bytes. Rejects exactly the text atob rejects, with the same DOMException.
+    api.b64Decode = function b64Decode(text) {
+        offlineCore();
+        if (typeof text !== 'string') throw new TypeError('b64Decode needs a string');
+        if (!text.length) return new Uint8Array(0);
+        codecs();
+        const invalid = () => new DOMException('The string to be decoded is not correctly encoded.', 'InvalidCharacterError');
+        let input = null, output = null;
+        try {
+            input = allocation(text.length);
+            // Valid base64 is ASCII, one byte per code unit. Anything wider cannot fit, so it was not valid anyway.
+            if (textEncoder.encodeInto(text, view(input)).read !== text.length) throw invalid();
+            output = allocation(Math.floor(text.length / 4) * 3 + 3);
+            const written = core.offline_b64_decode(input.pointer, text.length, output.pointer, output.bytes);
+            if (written === -1) throw invalid();
+            if (written < 0) throw new Error('Rust base64 decode rejected its arguments');
+            return view(output).slice(0, written);
+        } finally { release(input); release(output); }
+    };
+    // `<abs(hash) base36>:<length base36>` over the UTF-16 code units of `json`.
+    api.timelineHash = function timelineHash(json) {
+        offlineCore();
+        if (typeof json !== 'string') throw new TypeError('timelineHash needs a string');
+        codecs();
+        let input = null, output = null;
+        try {
+            output = allocation(32);
+            let length, utf16 = 0;
+            if (typeof json.isWellFormed === 'function' && json.isWellFormed()) {
+                // Encode straight into WASM memory. JSON is almost always ASCII (one byte per unit), so try that size
+                // first and only retry with the worst case when wider characters did not fit.
+                for (const factor of [1, 3]) {
+                    release(input); input = null;
+                    if (factor === 3 && json.length * 3 > 128 * 1024 * 1024) { // too wide for the worst case: size it exactly
+                        const exact = textEncoder.encode(json);
+                        input = allocation(exact.length); view(input).set(exact); length = exact.length; break;
+                    }
+                    input = allocation(Math.max(1, json.length * factor));
+                    const done = textEncoder.encodeInto(json, view(input));
+                    if (done.read === json.length) { length = done.written; break; }
+                }
+            } else { // lone surrogates cannot travel as UTF-8: hand over the raw code units (little-endian, as every WASM host)
+                const units = new Uint16Array(json.length);
+                for (let i = 0; i < units.length; i++) units[i] = json.charCodeAt(i);
+                input = allocation(Math.max(1, units.byteLength)); view(input).set(new Uint8Array(units.buffer));
+                length = units.byteLength; utf16 = 1;
+            }
+            const hashed = core.offline_timeline_hash(input.pointer, length, utf16, output.pointer, 32);
+            if (!hashed) throw new Error('Rust timeline hash failed');
+            return textDecoder.decode(view(output).subarray(0, hashed));
+        } finally { release(input); release(output); }
+    };
+    // Prepared-PNG cache: how many of the oldest entries (sizes oldest first) to drop so `incoming` fits `limit`.
+    api.pngCachePlan = function pngCachePlan(limit, sizes, incoming) {
+        offlineCore();
+        const plan = callJson('offline.png_cache_plan', { limit, sizes, incoming });
+        if (!plan) throw new Error('Rust PNG cache plan failed');
+        return plan;
+    };
+    // Library catalogue (rust-core/src/offline/library.rs): columnar JSON projections in, Uint32Array indexes out.
+    const libraryCall = (name, value) => {
+        offlineCore(); codecs();
+        const body = callBytes(name, textEncoder.encode(JSON.stringify(value)));
+        return new Uint32Array(body.buffer, body.byteOffset, body.length >> 2);
+    };
+    api.offlineLibrary = Object.freeze({
+        // -> {identity, kept, overlay, patches}: identity means every record stays as it is; otherwise the source
+        // indexes that survive, their remote overlay (or 0xFFFFFFFF), and (keptPosition, parentPosition, aliasTarget) triples
+        merge(columns) {
+            const words = libraryCall('offline.library_merge', columns), kept = words[0], patches = words[1];
+            if (words[2]) return { identity: true, kept: words.subarray(3, 3), overlay: words.subarray(3, 3), patches: words.subarray(3, 3) };
+            return { identity: false, kept: words.subarray(3, 3 + kept), overlay: words.subarray(3 + kept, 3 + 2 * kept), patches: words.subarray(3 + 2 * kept, 3 + 2 * kept + 3 * patches) };
+        },
+        // -> positions whose timestamp text only JavaScript can parse (answer them with `touch`)
+        load(columns) { return libraryCall('offline.library_load', columns); },
+        touch(changes) { libraryCall('offline.library_touch', changes); },
+        ranks(values) { libraryCall('offline.library_ranks', values); },
+        names(values) { libraryCall('offline.library_names', values); },
+        folder(parent, needle, local) { return libraryCall('offline.library_folder', { parent, needle, local }); },
+        sort(columns) { return libraryCall('offline.library_sort', columns); },
+        recents(columns) { return libraryCall('offline.library_recents', columns); },
+        home(quick) {
+            const words = libraryCall('offline.library_home', { quick }), a = words[0], b = words[1], c = words[2];
+            return [words.subarray(3, 3 + a), words.subarray(3 + a, 3 + a + b), words.subarray(3 + a + b, 3 + a + b + c)];
+        }
+    });
     // <<< stream:offline
     // >>> stream:docio (only this area edits between its markers)
     // PDF export bookkeeping computed in Rust (rust-core/src/docio). Every call throws when the core is missing:
