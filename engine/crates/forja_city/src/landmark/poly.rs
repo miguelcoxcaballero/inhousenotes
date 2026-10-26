@@ -108,8 +108,9 @@ pub fn bbox(p: &[Vec2]) -> (Vec2, Vec2) {
     (mn, mx)
 }
 
-/// Removes duplicate, closing and collinear points and orients the ring
-/// (counter-clockwise when `ccw`).
+/// Removes duplicate, closing and collinear points and zero-width spikes
+/// (a point going out and straight back, common in OSM) and orients the
+/// ring (counter-clockwise when `ccw`).
 pub fn normalize(ring: &[Vec2], ccw: bool) -> Option<Ring> {
     let mut r: Ring = Vec::with_capacity(ring.len());
     for p in ring {
@@ -123,16 +124,27 @@ pub fn normalize(ring: &[Vec2], ccw: bool) -> Option<Ring> {
     while r.len() > 1 && (r[0] - r[r.len() - 1]).length() <= 1e-4 {
         r.pop();
     }
-    // Drop collinear points (keeps rings from OSM tidy).
+    // Drop collinear points and spikes until stable.
     let mut changed = true;
-    while changed && r.len() > 3 {
+    while changed && r.len() >= 3 {
         changed = false;
         let n = r.len();
         for i in 0..n {
             let (a, b, c) = (r[(i + n - 1) % n], r[i], r[(i + 1) % n]);
-            let cr = (b - a).perp_dot(c - b);
-            if cr.abs() < 1e-6 * (b - a).length().max(1.0) * (c - b).length().max(1.0) && (b - a).dot(c - b) > 0.0 {
+            let (u, v) = (b - a, c - b);
+            let cr = u.perp_dot(v);
+            let flat = cr.abs() < 1e-6 * u.length().max(1.0) * v.length().max(1.0);
+            if flat || (a - c).length() <= 1e-4 {
                 r.remove(i);
+                // A spike leaves `a` and `c` coincident: drop one of them too.
+                if r.len() >= 2 {
+                    let m = r.len();
+                    let j = i % m;
+                    let k = (j + m - 1) % m;
+                    if (r[j] - r[k]).length() <= 1e-4 {
+                        r.remove(j);
+                    }
+                }
                 changed = true;
                 break;
             }
@@ -145,6 +157,76 @@ pub fn normalize(ring: &[Vec2], ccw: bool) -> Option<Ring> {
         r.reverse();
     }
     Some(r)
+}
+
+/// First pair of non-adjacent edges that cross (`None` for a simple ring).
+pub fn self_intersection(ring: &[Vec2]) -> Option<(usize, usize)> {
+    let n = ring.len();
+    if n < 4 {
+        return None;
+    }
+    let cross = |a: Vec2, b: Vec2, c: Vec2, d: Vec2| -> bool {
+        let o = |p: Vec2, q: Vec2, r: Vec2| (q - p).perp_dot(r - p);
+        let (d1, d2, d3, d4) = (o(c, d, a), o(c, d, b), o(a, b, c), o(a, b, d));
+        ((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) && ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9))
+    };
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        for j in i + 2..n {
+            if i == 0 && j == n - 1 {
+                continue;
+            }
+            if cross(a, b, ring[j], ring[(j + 1) % n]) {
+                return Some((i, j));
+            }
+        }
+    }
+    None
+}
+
+/// Boolean operation on plan shapes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoolOp {
+    Union,
+    Difference,
+    Intersection,
+}
+
+/// Union / difference / intersection of two sets of shapes (non-zero
+/// fill; holes allowed), as normalised shapes.
+pub fn boolean(a: &[Shape], b: &[Shape], op: BoolOp) -> Vec<Shape> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    let conv = |list: &[Shape]| -> Vec<Vec<Vec<[f64; 2]>>> {
+        list.iter()
+            .filter_map(|s| s.normalized())
+            .map(|s| s.rings().map(|(r, _)| r.iter().map(|p| [p.x as f64, p.y as f64]).collect()).collect())
+            .collect()
+    };
+    let (sa, sb) = (conv(a), conv(b));
+    if sa.is_empty() {
+        return if op == BoolOp::Union { b.iter().filter_map(|s| s.normalized()).collect() } else { Vec::new() };
+    }
+    if sb.is_empty() {
+        return if op == BoolOp::Intersection { Vec::new() } else { a.iter().filter_map(|s| s.normalized()).collect() };
+    }
+    let rule = match op {
+        BoolOp::Union => OverlayRule::Union,
+        BoolOp::Difference => OverlayRule::Difference,
+        BoolOp::Intersection => OverlayRule::Intersect,
+    };
+    let res = sa.overlay(&sb, rule, FillRule::NonZero);
+    let mut out = Vec::new();
+    for shape in res {
+        let mut rings = shape.into_iter().map(|c| c.into_iter().map(|p| Vec2::new(p[0] as f32, p[1] as f32)).collect::<Ring>());
+        let Some(outer) = rings.next() else { continue };
+        let s = Shape { outer, holes: rings.collect() };
+        if let Some(n) = s.normalized() {
+            out.push(n);
+        }
+    }
+    out
 }
 
 /// Even-odd point in ring test.
@@ -243,6 +325,17 @@ pub fn offset(ring: &[Vec2], d: f32) -> Option<Ring> {
         r = keep;
     }
     None
+}
+
+/// Shape grown by `d` (outer offset outward, holes shrunk; holes that
+/// close up disappear). Negative `d` shrinks.
+pub fn grow_shape(s: &Shape, d: f32) -> Shape {
+    if d.abs() < 1e-6 {
+        return s.clone();
+    }
+    let outer = offset(&s.outer, d).unwrap_or_else(|| s.outer.clone());
+    let holes = s.holes.iter().filter_map(|h| offset(h, -d)).collect();
+    Shape { outer, holes }
 }
 
 /// Douglas-Peucker simplification of a closed ring.

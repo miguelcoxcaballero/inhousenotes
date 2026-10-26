@@ -214,13 +214,22 @@ def points_in_ring(px, py, ring) -> np.ndarray:
     a = np.asarray(ring, dtype=float)
     x1, y1 = a[:, 0], a[:, 1]
     x2, y2 = np.roll(x1, -1), np.roll(y1, -1)
-    px = np.asarray(px, dtype=float)[:, None]
-    py = np.asarray(py, dtype=float)[:, None]
-    cond = (y1 > py) != (y2 > py)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        xint = x1 + (py - y1) * (x2 - x1) / (y2 - y1)
-    hit = cond & (px < xint)
-    return (hit.sum(axis=1) % 2) == 1
+    px = np.asarray(px, dtype=float)
+    py = np.asarray(py, dtype=float)
+    out = np.zeros(len(px), dtype=bool)
+    # Chunk over points so the (points x edges) temporaries stay ~32 MB
+    # (a large Catastro part against a 200-edge ring needed 2 GB and was
+    # OOM-killed).
+    chunk = max(1, 4_000_000 // max(1, len(a)))
+    for s in range(0, len(px), chunk):
+        cx = px[s:s + chunk, None]
+        cy = py[s:s + chunk, None]
+        cond = (y1 > cy) != (y2 > cy)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            xint = x1 + (cy - y1) * (x2 - x1) / (y2 - y1)
+        hit = cond & (cx < xint)
+        out[s:s + chunk] = (hit.sum(axis=1) % 2) == 1
+    return out
 
 
 def points_in_polygon(px, py, outer, inners=()) -> np.ndarray:
@@ -240,6 +249,8 @@ def sample_polygon(outer, inners=(), target=900, max_step=0.5):
     x0, y0, x1, y1 = bbox_of([outer])
     area = max(polygon_area(outer, inners), 1e-6)
     step = min(max_step, max(0.02, math.sqrt(area / target)))
+    # Cap the grid at ~250k cells for very large polygons (port areas, parks).
+    step = max(step, math.sqrt(max((x1 - x0) * (y1 - y0), 0.0) / 250_000))
     xs = np.arange(x0 + step / 2, x1, step)
     ys = np.arange(y0 + step / 2, y1, step)
     if len(xs) == 0 or len(ys) == 0:

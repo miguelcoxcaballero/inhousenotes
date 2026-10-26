@@ -21,7 +21,9 @@ pub fn builtin(name: &str) -> Option<MaterialSpec> {
         tint: tint.map(|c| Color([((c >> 16) & 255) as f32 / 255.0, ((c >> 8) & 255) as f32 / 255.0, (c & 255) as f32 / 255.0])),
         color: None,
         colors: Vec::new(),
+        weights: Vec::new(),
         pattern: None,
+        clearcoat: None,
         roughness: None,
         metallic: None,
         uv_scale: None,
@@ -157,6 +159,20 @@ impl Palette {
             {
                 return Err(format!("[material.{name}]: uv_scale must be positive"));
             }
+            if let Some(p) = &m.pattern {
+                let k = m.kind.trim().to_ascii_lowercase();
+                let names: &[&str] = match k.as_str() {
+                    "glazed_tiles" => &["scales", "chevron", "zigzag", "stripes", "checker", "diamond", "plain"],
+                    "azulejo" => &["checker_blue", "checker_green", "diamond_blue", "diamond", "frieze", "white"],
+                    _ => return Err(format!("[material.{name}]: `pattern` only applies to glazed_tiles and azulejo")),
+                };
+                if !names.contains(&p.as_str()) {
+                    return Err(format!("[material.{name}]: unknown {k} pattern `{p}`{}; expected one of {}", super::parse::did_you_mean(p, names), names.join(", ")));
+                }
+            }
+            if !m.weights.is_empty() && m.weights.len() != m.colors.len() {
+                return Err(format!("[material.{name}]: `weights` needs one value per colour ({} colours, {} weights)", m.colors.len(), m.weights.len()));
+            }
         }
         Ok(Palette { entries: Vec::new(), map: HashMap::new(), user: user.clone() })
     }
@@ -193,6 +209,11 @@ impl Palette {
 
     pub fn get(&self, id: u32) -> &Entry {
         &self.entries[id as usize]
+    }
+
+    /// Id of a material already in use (no built-in lookup).
+    pub fn find(&self, name: &str) -> Option<u32> {
+        self.map.get(name).copied()
     }
 
     pub fn len(&self) -> usize {
