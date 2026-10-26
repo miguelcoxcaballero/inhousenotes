@@ -24,6 +24,34 @@ pub enum Field { V(V), Pts(Vec<Pt>) }
 
 pub struct Stroke { pub fields: Vec<(Bytes, Field)> }
 
+/// Marker key the host writes in place of a packed points array (see `packStrokes` in rust-core-v5.js).
+pub const PACKED_KEY: &[u8] = b"\x01packedPoints";
+
+/// Point data handed over as typed arrays: little-endian f64 `x, y, p` per point plus one flag byte
+/// (1 = pressure present). Avoids stringifying and re-parsing every coordinate.
+pub struct Packed<'a> { coords: &'a [u8], flags: &'a [u8], next: usize }
+
+impl<'a> Packed<'a> {
+    pub fn new(coords: &'a [u8], flags: &'a [u8]) -> Result<Self, String> {
+        if coords.len() != flags.len() * 24 { return Err("Packed point arrays disagree".into()); }
+        Ok(Packed { coords, flags, next: 0 })
+    }
+    fn take(&mut self, count: usize, out: &mut Vec<Pt>) -> Result<(), String> {
+        if count > self.flags.len() - self.next { return Err("Packed point arrays are too short".into()); }
+        let f = |at: usize| f64::from_le_bytes(self.coords[at..at + 8].try_into().unwrap());
+        out.reserve(count);
+        for k in 0..count {
+            let i = self.next + k;
+            let base = i * 24;
+            out.push(Pt { null: false, x: Sc::Num(f(base)), y: Sc::Num(f(base + 8)),
+                p: if self.flags[i] == 1 { Sc::Num(f(base + 16)) } else { Sc::Undef }, start: 0, end: 0 });
+        }
+        self.next += count;
+        Ok(())
+    }
+    fn finished(&self) -> bool { self.next == self.flags.len() }
+}
+
 pub enum Item { Falsy, Other, Obj(Stroke) }
 
 impl Stroke {
@@ -89,7 +117,7 @@ fn parse_points(p: &mut P, key: &mut Bytes) -> Result<Vec<Pt>, String> {
     Ok(points)
 }
 
-fn parse_stroke(p: &mut P) -> Result<Stroke, String> {
+fn parse_stroke(p: &mut P, packed: &mut Option<Packed>) -> Result<Stroke, String> {
     p.i += 1; // '{'
     let mut fields: Vec<(Bytes, Field)> = Vec::new();
     let mut key = Vec::new();
@@ -102,7 +130,20 @@ fn parse_stroke(p: &mut P) -> Result<Stroke, String> {
         p.string(Some(&mut key))?;
         p.expect(b':')?;
         p.ws();
-        let field = if key == b"points" && p.peek() == Some(b'[') { Field::Pts(parse_points(p, &mut scratch)?) } else { Field::V(p.value()?) };
+        let field = if key == b"points" && p.peek() == Some(b'[') { Field::Pts(parse_points(p, &mut scratch)?) }
+            else {
+                let value = p.value()?;
+                match (&value, packed.as_mut()) {
+                    (V::Obj(entries), Some(packed)) if entries.len() == 1 && entries[0].0 == PACKED_KEY => {
+                        let V::Num(count) = entries[0].1 else { return p.err("bad packed points count") };
+                        if !(count >= 0.0 && count.fract() == 0.0 && count < 1e9) { return p.err("bad packed points count"); }
+                        let mut points = Vec::new();
+                        packed.take(count as usize, &mut points)?;
+                        Field::Pts(points)
+                    }
+                    _ => Field::V(value),
+                }
+            };
         match fields.iter().position(|(k, _)| *k == key) {
             Some(n) => fields[n].1 = field,
             None => fields.push((key.clone(), field)),
@@ -119,18 +160,19 @@ fn parse_stroke(p: &mut P) -> Result<Stroke, String> {
 }
 
 /// Parse a JSON array of strokes. Points inside strokes keep only what the export reads.
-pub fn parse_strokes(json: &[u8]) -> Result<Vec<Item>, String> {
+pub fn parse_strokes(json: &[u8], packed: Option<Packed>) -> Result<Vec<Item>, String> {
+    let mut packed = packed;
     let mut p = P::new(json);
     p.ws();
     if p.peek() != Some(b'[') { return p.err("strokes must be an array"); }
     p.i += 1;
     let mut items = Vec::new();
     p.ws();
-    if p.peek() == Some(b']') { p.i += 1; p.end()?; return Ok(items); }
+    if p.peek() == Some(b']') { p.i += 1; p.end()?; return finish(items, &packed); }
     loop {
         p.ws();
         match p.peek() {
-            Some(b'{') => items.push(Item::Obj(parse_stroke(&mut p)?)),
+            Some(b'{') => items.push(Item::Obj(parse_stroke(&mut p, &mut packed)?)),
             Some(_) => {
                 let v = p.value()?;
                 items.push(if v.truthy() { Item::Other } else { Item::Falsy });
@@ -145,6 +187,11 @@ pub fn parse_strokes(json: &[u8]) -> Result<Vec<Item>, String> {
         }
     }
     p.end()?;
+    finish(items, &packed)
+}
+
+fn finish(items: Vec<Item>, packed: &Option<Packed>) -> Result<Vec<Item>, String> {
+    if packed.as_ref().is_some_and(|p| !p.finished()) { return Err("Packed point arrays have unused points".into()); }
     Ok(items)
 }
 
@@ -161,6 +208,7 @@ fn write_points_canonical(points: &[Pt], input: &[u8], out: &mut Bytes) -> Resul
     out.push(b'[');
     for (n, pt) in points.iter().enumerate() {
         if n > 0 { out.push(b','); }
+        if pt.end == 0 { return Err("Packed points have no source text".into()); }
         let v = P::document(&input[pt.start..pt.end])?;
         write(&v, out);
     }
@@ -364,17 +412,21 @@ pub fn stroke_fingerprint(item: &Item, out: &mut Bytes) {
     fmt_num(points.len() as f64, out);
     out.push(b'|');
     let mut hasher = Hasher::new();
-    let mut piece: Bytes = Vec::with_capacity(48);
+    let mut buf = [0u8; 24];
     for (n, pt) in points.iter().enumerate() {
         if n > 0 { hasher.unit(b';' as u16); }
-        piece.clear();
-        if pt.null { piece.extend_from_slice(b"0,0,0"); } else {
-            for (k, sc) in [&pt.x, &pt.y, &pt.p].into_iter().enumerate() {
-                if k > 0 { piece.push(b','); }
-                match sc.finite() { Some(v) => { let r = js_round(v * 100.0); if r.is_finite() { fmt_r2(r, &mut piece) } else { fmt_num(r / 100.0, &mut piece) } } None => piece.push(b'0') }
+        if pt.null { hasher.feed(b"0,0,0"); continue; }
+        for (k, sc) in [&pt.x, &pt.y, &pt.p].into_iter().enumerate() {
+            if k > 0 { hasher.unit(b',' as u16); }
+            match sc.finite() {
+                Some(v) => {
+                    let r = js_round(v * 100.0);
+                    if r.abs() < 1e13 { let len = r2_bytes(r, &mut buf); for &b in &buf[..len] { hasher.unit(b as u16); } }
+                    else { let mut text = Vec::new(); fmt_num(r / 100.0, &mut text); hasher.feed(&text); }
+                }
+                None => hasher.unit(b'0' as u16),
             }
         }
-        hasher.feed(&piece);
     }
     hasher.finish(out);
 }
@@ -412,7 +464,7 @@ mod tests {
     }
 
     fn compact(json: &str, mode: Mode) -> Result<String, String> {
-        let items = parse_strokes(json.as_bytes())?;
+        let items = parse_strokes(json.as_bytes(), None)?;
         let keep = dedupe(&items, json.as_bytes())?;
         let mut out = vec![b'['];
         for (n, &i) in keep.iter().enumerate() {
@@ -429,7 +481,7 @@ mod tests {
             {"tool":"pen","color":"#000","width":2,"points":[{"x":1,"y":2,"t":5}]},
             {"tool":"pen","color":"#000","width":2,"points":[{"x":1,"y":2,"t":5}]},
             {"tool":"pen","color":"#000","width":2,"points":[{"x":1,"y":2,"t":6}]}]"##;
-        let items = parse_strokes(json.as_bytes()).unwrap();
+        let items = parse_strokes(json.as_bytes(), None).unwrap();
         assert_eq!(dedupe(&items, json.as_bytes()).unwrap(), vec![0, 2, 4]);
     }
     #[test] fn compaction_rounds_and_drops_missing_pressure() {
@@ -448,14 +500,35 @@ mod tests {
     }
     #[test] fn bounds_pad_pen_and_include_images() {
         let json = r#"[{"tool":"pen","width":4,"points":[{"x":10,"y":20},{"x":30,"y":40}]},{"tool":"eraser-stroke","points":[{"x":900,"y":900},{"x":1,"y":1}]}]"#;
-        let items = parse_strokes(json.as_bytes()).unwrap();
+        let items = parse_strokes(json.as_bytes(), None).unwrap();
         let r = overlay_bounds(&items, None, None, 794.0, 1123.0, 2.5).unwrap().unwrap();
         // padding = 4 * 0.52 + 2 = 4.08
         assert_eq!((r.x, r.y), ((5.92f64 * 2.5).floor() / 2.5, (15.92f64 * 2.5).floor() / 2.5));
         assert!(overlay_bounds(&[], None, None, 794.0, 1123.0, 2.0).unwrap().is_none());
     }
+    #[test] fn packed_points_equal_json_points() {
+        let json = r#"[{"id":"a","points":[{"x":1.005,"y":2.4999,"p":0.123456},{"x":3,"y":4}],"tool":"pen"},{"id":"b","points":[]},{"id":"c","points":null}]"#;
+        let shell = r#"[{"id":"a","points":{"\u0001packedPoints":2},"tool":"pen"},{"id":"b","points":{"\u0001packedPoints":0}},{"id":"c","points":null}]"#;
+        let mut coords = Vec::new();
+        for v in [1.005f64, 2.4999, 0.123456, 3.0, 4.0, 0.0] { coords.extend_from_slice(&v.to_le_bytes()); }
+        let flags = [1u8, 0u8];
+        let render = |items: Vec<Item>, input: &[u8]| {
+            let mut out = Vec::new();
+            for item in &items { let Item::Obj(s) = item else { panic!() }; write_compact_stroke(s, Mode::PdfLib, input, &mut out).unwrap(); out.push(b'\n'); }
+            String::from_utf8(out).unwrap()
+        };
+        let plain = render(parse_strokes(json.as_bytes(), None).unwrap(), json.as_bytes());
+        let packed = render(parse_strokes(shell.as_bytes(), Some(Packed::new(&coords, &flags).unwrap())).unwrap(), shell.as_bytes());
+        assert_eq!(plain, packed);
+        // Too few or too many packed points are rejected, not read out of bounds.
+        assert!(parse_strokes(shell.as_bytes(), Some(Packed::new(&coords[..24], &flags[..1]).unwrap())).is_err());
+        let extra = [flags[0], flags[1], 0];
+        let mut long = coords.clone(); long.extend_from_slice(&[0u8; 24]);
+        assert!(parse_strokes(shell.as_bytes(), Some(Packed::new(&long, &extra).unwrap())).is_err());
+        assert!(Packed::new(&coords, &flags[..1]).is_err());
+    }
     #[test] fn fingerprint_shape() {
-        let items = parse_strokes(br##"[{"id":"a","tool":"pen","color":"#111","width":2.345,"points":[{"x":1,"y":2,"p":0.5}]}, null]"##).unwrap();
+        let items = parse_strokes(br##"[{"id":"a","tool":"pen","color":"#111","width":2.345,"points":[{"x":1,"y":2,"p":0.5}]}, null]"##, None).unwrap();
         let mut out = Vec::new();
         stroke_fingerprint(&items[0], &mut out);
         let text = String::from_utf8(out).unwrap();

@@ -112,26 +112,35 @@ pub fn fmt_num(x: f64, out: &mut Bytes) {
     }
 }
 
-/// Fast path for `x = Math.round(v * 100) / 100` given the integer-valued `r = Math.round(v * 100)`:
-/// the shortest round-trip text of `r / 100` is the plain decimal `r / 100`.
+/// Plain decimal text of `r / 100` for an integer-valued `r` with `|r| < 1e13`, written into `buf`.
+/// This is what `Math.round(v * 100) / 100` prints: the shortest round-trip text of `r / 100.0` is the
+/// plain decimal `r / 100`, because every decimal of at most 15 significant digits maps to a distinct double.
+#[inline]
+pub fn r2_bytes(r: f64, buf: &mut [u8; 24]) -> usize {
+    let n = r as i64;
+    if n == 0 { buf[0] = b'0'; return 1; }
+    let magnitude = n.unsigned_abs();
+    let (mut whole, fraction) = (magnitude / 100, (magnitude % 100) as u8);
+    let mut digits = [0u8; 16];
+    let mut count = 0;
+    if whole == 0 { digits[0] = b'0'; count = 1; }
+    while whole > 0 { digits[count] = b'0' + (whole % 10) as u8; whole /= 10; count += 1; }
+    let mut at = 0;
+    if n < 0 { buf[0] = b'-'; at = 1; }
+    while count > 0 { count -= 1; buf[at] = digits[count]; at += 1; }
+    if fraction != 0 {
+        buf[at] = b'.'; buf[at + 1] = b'0' + fraction / 10; at += 2;
+        if fraction % 10 != 0 { buf[at] = b'0' + fraction % 10; at += 1; }
+    }
+    at
+}
+
+/// `x = Math.round(v * 100) / 100` given the integer-valued `r = Math.round(v * 100)`.
 pub fn fmt_r2(r: f64, out: &mut Bytes) {
     if !(r.abs() < 1e13) { return fmt_num(r / 100.0, out); }
-    let n = r as i64;
-    if n == 0 { out.push(b'0'); return; }
-    let mut magnitude = n.unsigned_abs();
-    if n < 0 { out.push(b'-'); }
-    let (whole, fraction) = (magnitude / 100, (magnitude % 100) as u8);
-    magnitude = whole;
-    let mut digits = [0u8; 20];
-    let mut count = 0;
-    if magnitude == 0 { digits[0] = b'0'; count = 1; }
-    while magnitude > 0 { digits[count] = b'0' + (magnitude % 10) as u8; magnitude /= 10; count += 1; }
-    while count > 0 { count -= 1; out.push(digits[count]); }
-    if fraction != 0 {
-        out.push(b'.');
-        out.push(b'0' + fraction / 10);
-        if fraction % 10 != 0 { out.push(b'0' + fraction % 10); }
-    }
+    let mut buf = [0u8; 24];
+    let n = r2_bytes(r, &mut buf);
+    out.extend_from_slice(&buf[..n]);
 }
 
 pub fn num_string(x: f64) -> Bytes { let mut out = Vec::new(); fmt_num(x, &mut out); out }

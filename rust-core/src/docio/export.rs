@@ -23,6 +23,11 @@ fn header(bytes: &[u8]) -> Result<V, String> {
     if matches!(v, V::Obj(_)) { Ok(v) } else { Err("Header must be an object".into()) }
 }
 
+/// Typed-array point data, when the host packed the strokes (both sections empty otherwise).
+fn packed<'a>(coords: &'a [u8], flags: &'a [u8]) -> Result<Option<Packed<'a>>, String> {
+    if coords.is_empty() && flags.is_empty() { Ok(None) } else { Packed::new(coords, flags).map(Some) }
+}
+
 fn number_field(header: &V, key: &str) -> f64 { to_number(header.get(key.as_bytes())) }
 
 /// `normalizePageDimension(value, fallback)`.
@@ -126,12 +131,12 @@ impl Stamps {
 
 /// `computePageHash(pageData)`.
 pub fn page_hash(input: &[u8]) -> Result<Bytes, String> {
-    let [head, strokes_json] = split_sections::<2>(input)?;
+    let [head, strokes_json, coords, flags] = split_sections::<4>(input)?;
     let h = header(head)?;
     let mut out: Bytes = Vec::with_capacity(strokes_json.len() / 4 + 256);
     let mut stroke_count = 0usize;
     if !strokes_json.is_empty() {
-        let items = parse_strokes(strokes_json)?;
+        let items = parse_strokes(strokes_json, packed(coords, flags)?)?;
         stroke_count = items.len();
         for (n, item) in items.iter().enumerate() {
             if n > 0 { out.push(b','); }
@@ -183,9 +188,10 @@ pub fn page_hash(input: &[u8]) -> Result<Bytes, String> {
 
 // ------------------------------------------------------------------ page export (dedupe, compaction, metadata entry, bounds)
 
-/// Returns `[keepCount u32][keep u32...][hasBounds u8][4 x f64][compactLen u32][compact][meta]`.
+/// Returns `[keepCount u32][keep u32...][hasBounds u8][4 x f64][pdfPageIndex f64, NaN = null][compactOffset u32][compactLen u32][meta]`,
+/// where the compacted strokes are the byte range `compactOffset..compactOffset+compactLen` of `meta` (no second copy).
 pub fn page_export(input: &[u8]) -> Result<Vec<u8>, String> {
-    let [head, strokes_json, cached_compact] = split_sections::<3>(input)?;
+    let [head, strokes_json, cached_compact, coords, flags] = split_sections::<5>(input)?;
     let h = header(head)?;
     let mode = match h.get(b"mode") {
         Some(m) if m.is_str("pdflib") => Mode::PdfLib,
@@ -193,7 +199,7 @@ pub fn page_export(input: &[u8]) -> Result<Vec<u8>, String> {
         _ => return Err("Unknown export mode".into()),
     };
     let reuse = truthy(h.get(b"reuse"));
-    let items = if strokes_json.is_empty() { Vec::new() } else { parse_strokes(strokes_json)? };
+    let items = if strokes_json.is_empty() { Vec::new() } else { parse_strokes(strokes_json, packed(coords, flags)?)? };
     let mut keep: Vec<usize> = Vec::new();
     let mut compact: Bytes = Vec::new();
     if reuse {
@@ -235,6 +241,7 @@ pub fn page_export(input: &[u8]) -> Result<Vec<u8>, String> {
     meta.push(b'{');
     if let Some(id) = h.get(b"pageId") { meta.extend_from_slice(b"\"pageId\":"); write(id, &mut meta); meta.push(b','); }
     meta.extend_from_slice(b"\"strokes\":");
+    let compact_offset = meta.len();
     meta.extend_from_slice(&compact);
     meta.extend_from_slice(b",\"images\":");
     match images { Some(a @ V::Arr(_)) => write(a, &mut meta), _ => meta.extend_from_slice(b"[]") }
@@ -262,24 +269,25 @@ pub fn page_export(input: &[u8]) -> Result<Vec<u8>, String> {
     }
     meta.push(b'}');
 
-    let mut out: Vec<u8> = Vec::with_capacity(64 + keep.len() * 4 + compact.len() + meta.len());
+    let mut out: Vec<u8> = Vec::with_capacity(64 + keep.len() * 4 + meta.len());
     out.extend_from_slice(&(keep.len() as u32).to_le_bytes());
     for &i in &keep { out.extend_from_slice(&(i as u32).to_le_bytes()); }
     match &bounds {
         Some(r) => { out.push(1); for v in [r.x, r.y, r.width, r.height] { out.extend_from_slice(&v.to_le_bytes()); } }
         None => { out.push(0); out.extend_from_slice(&[0u8; 32]); }
     }
+    out.extend_from_slice(&(if has_custom { page_index + 1.0 } else { f64::NAN }).to_le_bytes());
+    out.extend_from_slice(&(compact_offset as u32).to_le_bytes());
     out.extend_from_slice(&(compact.len() as u32).to_le_bytes());
-    out.extend_from_slice(&compact);
     out.extend_from_slice(&meta);
     Ok(out)
 }
 
 /// Overlay bounds alone: `[hasBounds u8][4 x f64]`.
 pub fn bounds_only(input: &[u8]) -> Result<Vec<u8>, String> {
-    let [head, strokes_json] = split_sections::<2>(input)?;
+    let [head, strokes_json, coords, flags] = split_sections::<4>(input)?;
     let h = header(head)?;
-    let items = if strokes_json.is_empty() { Vec::new() } else { parse_strokes(strokes_json)? };
+    let items = if strokes_json.is_empty() { Vec::new() } else { parse_strokes(strokes_json, packed(coords, flags)?)? };
     let rect = overlay_bounds(&items, None, h.get(b"images"), number_field(&h, "width"), number_field(&h, "height"), number_field(&h, "scale"))?;
     let mut out = Vec::with_capacity(33);
     match rect {
@@ -410,10 +418,11 @@ mod tests {
         let keep = (0..n).map(|i| u32::from_le_bytes(out[4 + i * 4..8 + i * 4].try_into().unwrap())).collect();
         let at = 4 + n * 4;
         let bounds = if out[at] == 1 { Some(std::array::from_fn(|k| f64::from_le_bytes(out[at + 1 + k * 8..at + 9 + k * 8].try_into().unwrap()))) } else { None };
-        let at = at + 33;
-        let clen = u32::from_le_bytes(out[at..at + 4].try_into().unwrap()) as usize;
-        let compact = String::from_utf8(out[at + 4..at + 4 + clen].to_vec()).unwrap();
-        (keep, bounds, compact, String::from_utf8(out[at + 4 + clen..].to_vec()).unwrap())
+        let at = at + 41;
+        let offset = u32::from_le_bytes(out[at..at + 4].try_into().unwrap()) as usize;
+        let clen = u32::from_le_bytes(out[at + 4..at + 8].try_into().unwrap()) as usize;
+        let meta = String::from_utf8(out[at + 8..].to_vec()).unwrap();
+        (keep, bounds, meta[offset..offset + clen].to_string(), meta)
     }
 
     #[test] fn metadata_entry_follows_original_key_order() {
@@ -421,7 +430,7 @@ mod tests {
             "pageWidth":794,"pageHeight":1123,"images":[{"id":"i","src":"data:x"}],"deletedStrokeIds":["a","b"],"deletedStrokeStamps":{"a":{"clock":4,"actor":"z"}},
             "renderPanels":true,"sidePanel":{"n":1},"bounds":{"width":794,"height":1123,"scale":2.5}}"#;
         let strokes = br#"[{"id":"s1","tool":"pen","width":3,"points":[{"x":10.123,"y":20},{"x":30,"y":40.555,"p":0.5}]}]"#;
-        let out = page_export(&frame(&[head, strokes, b""])).unwrap();
+        let out = page_export(&frame(&[head, strokes, b"", b"", b""])).unwrap();
         let (keep, bounds, compact, meta) = split_out(&out);
         assert_eq!(keep, vec![0]);
         assert!(bounds.is_some());
@@ -460,5 +469,42 @@ mod tests {
         assert!(page_export(b"\x05\0\0\0{").is_err());
         assert!(page_hash(b"").is_err());
         assert!(export_plan(b"[]").is_err());
+    }
+}
+
+#[cfg(test)]
+mod perf {
+    use super::*;
+    #[test] #[ignore]
+    fn page_hash_speed() {
+        let mut seed = 1u32;
+        let mut r = || { seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); seed as f64 / 4294967296.0 };
+        let mut coords = Vec::new(); let mut flags = Vec::new(); let mut shell = String::from("[");
+        for s in 0..300 {
+            if s > 0 { shell.push(','); }
+            shell.push_str(&format!(r##"{{"id":"s{s}","tool":"pen","color":"#111","width":2.4,"points":{{"\u0001packedPoints":80}}}}"##));
+            let (mut x, mut y) = (r() * 700.0, r() * 1000.0);
+            for _ in 0..80 { x += (r() - 0.5) * 6.0; y += (r() - 0.5) * 6.0; for v in [x + 0.123456789, y + 0.987654321, r()] { coords.extend_from_slice(&v.to_le_bytes()); } flags.push(1u8); }
+        }
+        shell.push(']');
+        let head = br#"{"images":[],"pageWidth":794,"pageHeight":1123,"a4Width":794,"a4Height":1123}"#;
+        let mut input = Vec::new();
+        for part in [&head[..], shell.as_bytes(), &coords, &flags] { input.extend_from_slice(&(part.len() as u32).to_le_bytes()); input.extend_from_slice(part); }
+        let head2 = br#"{"mode":"pdflib","pageId":"p","pageIndex":0,"templateKind":"default","pageWidth":794,"pageHeight":1123,"images":[],"renderPanels":true,"bounds":{"width":794,"height":1123,"scale":2.5}}"#;
+        let mut input2 = Vec::new();
+        for part in [&head2[..], shell.as_bytes(), &[][..], &coords, &flags] { input2.extend_from_slice(&(part.len() as u32).to_le_bytes()); input2.extend_from_slice(part); }
+        let start = std::time::Instant::now();
+        for _ in 0..50 { page_export(&input2).unwrap(); }
+        eprintln!("page_export: {:?} per call ({} bytes out)", start.elapsed() / 50, page_export(&input2).unwrap().len());
+        let start = std::time::Instant::now();
+        for _ in 0..50 { page_hash(&input).unwrap(); }
+        eprintln!("page_hash: {:?} per call", start.elapsed() / 50);
+        let items = parse_strokes(shell.as_bytes(), Some(Packed::new(&coords, &flags).unwrap())).unwrap();
+        let start = std::time::Instant::now();
+        for _ in 0..50 { parse_strokes(shell.as_bytes(), Some(Packed::new(&coords, &flags).unwrap())).unwrap(); }
+        eprintln!("parse only: {:?}", start.elapsed() / 50);
+        let start = std::time::Instant::now();
+        for _ in 0..50 { let mut out = Vec::new(); for item in &items { stroke_fingerprint(item, &mut out); } }
+        eprintln!("fingerprints only: {:?}", start.elapsed() / 50);
     }
 }

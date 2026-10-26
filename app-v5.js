@@ -31859,9 +31859,9 @@
         async function _prewarmPdfCacheInner() {
             const pageCount = state.pages.length;
             if (pageCount === 0) return;
-            const exportScale = pageCount >= 20 ? 1.1 : 1.22;
-            const jpegQuality = pageCount >= 20 ? 0.55 : 0.62;
-            const exportProfile = `drv-opt:${exportScale}:q${jpegQuality}`;
+            const { exportScale, jpegQuality, exportProfile } = (await requireDocioRust()).exportPlan({
+                kind: 'raster', pageCount, canvasScale: CANVAS_SCALE, highQuality: false, optimizeForUpload: true
+            });
             const isMobile = detectDeviceType() !== 'pc';
             const cleanupPrewarmCanvas = (canvas) => {
                 if (!canvas) return;
@@ -31985,28 +31985,19 @@
             cleanupPrewarmCanvas(tempCanvas);
         }
 
+        // The export bookkeeping (page hash, stroke dedupe/compaction, metadata entry, overlay bounds, export
+        // profile, copyPages plan, page geometry) is computed by the Rust core (rust-core/src/docio). There is
+        // no JavaScript fallback: callers await this first and fail loudly when WASM is unavailable.
+        async function requireDocioRust() {
+            const rust = window.InhouseRust;
+            if (!rust || !(await rust.ready) || !rust.docio) {
+                throw new Error('The Rust core (WASM) is required for PDF export but is not available');
+            }
+            return rust.docio;
+        }
+
         function computePageHash(pageData) {
-            const strokeSig = Array.isArray(pageData.strokes)
-                ? pageData.strokes.map(s => strokeSyncFingerprint(s)).join(',')
-                : '';
-            const imageSig = Array.isArray(pageData.images)
-                ? pageData.images.map(img => imageSyncFingerprint(img)).join(',')
-                : '';
-            const deletedIds = Array.isArray(pageData.deletedStrokeIds)
-                ? pageData.deletedStrokeIds.filter(Boolean).join(',')
-                : '';
-            const deletionStampSig = ihnStableStringify(ihnNormalizeDeletionStamps(
-                pageData.deletedStrokeStamps,
-                pageData.deletedStrokeIds
-            ));
-            const bg = pageData.backgroundSource || '';
-            const pdfIdx = pageData.pdfPageIndex || '';
-            const bgRef = pageData.backgroundImage
-                ? `${pageData.backgroundImage.length}:${simpleHash(pageData.backgroundImage.slice(0, 160))}`
-                : '';
-            const pageW = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
-            const pageH = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
-            return `${strokeSig}|${imageSig}|${deletedIds}|${deletionStampSig}|${bg}|${pdfIdx}|${bgRef}|${pageW}x${pageH}|${pageData.strokes?.length || 0}`;
+            return window.InhouseRust.docio.pageHash(pageData, A4_WIDTH, A4_HEIGHT);
         }
 
         // Web Worker that assembles jsPDF off the main thread.
@@ -32772,81 +32763,6 @@
             }
         }
 
-        function getPdfOverlayContentBounds(pageData, exportStrokes, pageWidth, pageHeight, scale) {
-            let minX = Infinity;
-            let minY = Infinity;
-            let maxX = -Infinity;
-            let maxY = -Infinity;
-            const includeRect = (x1, y1, x2, y2) => {
-                if (![x1, y1, x2, y2].every(Number.isFinite)) return;
-                minX = Math.min(minX, x1, x2);
-                minY = Math.min(minY, y1, y2);
-                maxX = Math.max(maxX, x1, x2);
-                maxY = Math.max(maxY, y1, y2);
-            };
-
-            for (const stroke of Array.isArray(exportStrokes) ? exportStrokes : []) {
-                if (!stroke || stroke.tool === 'eraser-stroke') continue;
-                const points = Array.isArray(stroke.points) ? stroke.points : [];
-                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
-                if (points.length < minPoints) continue;
-                let strokeMinX = Infinity;
-                let strokeMinY = Infinity;
-                let strokeMaxX = -Infinity;
-                let strokeMaxY = -Infinity;
-                for (const point of points) {
-                    const x = Number(point?.x);
-                    const y = Number(point?.y);
-                    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-                    strokeMinX = Math.min(strokeMinX, x);
-                    strokeMinY = Math.min(strokeMinY, y);
-                    strokeMaxX = Math.max(strokeMaxX, x);
-                    strokeMaxY = Math.max(strokeMaxY, y);
-                }
-                if (!Number.isFinite(strokeMinX)) continue;
-                const renderedWidth = stroke.tool === 'highlighter'
-                    ? Math.max(4, Number(stroke.width) || 12)
-                    : Math.max(1, Number(stroke.width) || 1);
-                // Two logical pixels cover round caps and Canvas antialiasing,
-                // so cropping cannot clip or soften edge pixels.
-                const padding = renderedWidth * 0.52 + 2;
-                includeRect(
-                    strokeMinX - padding,
-                    strokeMinY - padding,
-                    strokeMaxX + padding,
-                    strokeMaxY + padding
-                );
-            }
-
-            for (const image of Array.isArray(pageData?.images) ? pageData.images : []) {
-                const x = Number(image?.x);
-                const y = Number(image?.y);
-                const width = Number(image?.width);
-                const height = Number(image?.height);
-                if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) continue;
-                const angle = Number(image.rotation) || 0;
-                const cos = Math.abs(Math.cos(angle));
-                const sin = Math.abs(Math.sin(angle));
-                const halfWidth = (width * cos + height * sin) / 2;
-                const halfHeight = (width * sin + height * cos) / 2;
-                includeRect(x - halfWidth - 2, y - halfHeight - 2, x + halfWidth + 2, y + halfHeight + 2);
-            }
-
-            if (!Number.isFinite(minX) || !Number.isFinite(minY)
-                || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-                return null;
-            }
-            const safeWidth = Math.max(1, Number(pageWidth) || 1);
-            const safeHeight = Math.max(1, Number(pageHeight) || 1);
-            const safeScale = Math.max(1, Number(scale) || 1);
-            const x1 = Math.floor(Math.max(0, minX) * safeScale) / safeScale;
-            const y1 = Math.floor(Math.max(0, minY) * safeScale) / safeScale;
-            const x2 = Math.min(safeWidth, Math.ceil(Math.min(safeWidth, maxX) * safeScale) / safeScale);
-            const y2 = Math.min(safeHeight, Math.ceil(Math.min(safeHeight, maxY) * safeScale) / safeScale);
-            if (x2 <= x1 || y2 <= y1) return null;
-            return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
-        }
-
         function canBuildCurrentPdfWithPdfLib() {
             if (!window.PDFLib || !Array.isArray(state.pages) || state.pages.length === 0) return false;
             if (state.cleanOriginalPdfBytes?.byteLength) return true;
@@ -32872,6 +32788,7 @@
                 catch (error) { console.warn('PDF worker unavailable; using compatible export:', error); }
             }
 
+            const docio = await requireDocioRust();
             const abortSignal = options.signal || null;
             const sessionToken = Number.isFinite(options.sessionToken)
                 ? options.sessionToken
@@ -32917,16 +32834,6 @@
             throwIfSessionInvalid();
 
             const pageCount = state.pages.length;
-            const optimizeForUpload = !!options.optimizeForUpload && !options.highQuality;
-            // Higher overlay resolution so strokes stay sharp under PDF zoom.
-            const overlayScale = options.highQuality
-                ? Math.min(3.5, CANVAS_SCALE * 1.75)
-                : (optimizeForUpload ? 2 : 2.5);
-            const exportProfile = `pdflib:${overlayScale}:${optimizeForUpload ? 'opt' : (options.highQuality ? 'hq' : 'std')}:${PDFLib === window.PDFLib ? 'png' : 'raw'}`;
-
-            // PDF user units are points (1pt = 1/72 inch). PDF.js viewports use CSS px @ 96 DPI.
-            // 1 px = 0.75 pt.
-            const PX_TO_PT = 0.75;
 
             // Load source + target. Cache the parsed original document across
             // consecutive saves of the same buffer — parsing a 5MB PDF takes
@@ -32963,21 +32870,14 @@
             outDoc = await PDFLib.PDFDocument.create();
 
             // Plan which original pages to copy (batch copy is much faster than per-page).
-            const sourceIndices = [];
-            const stateToSourceIdx = [];
-            const originalPageCount = originalDoc ? originalDoc.getPageCount() : 0;
-            for (let i = 0; i < pageCount; i++) {
-                const p = state.pages[i];
-                if (p?.backgroundSource === 'pdf'
-                    && Number.isFinite(p.pdfPageIndex)
-                    && p.pdfPageIndex >= 1
-                    && p.pdfPageIndex <= originalPageCount) {
-                    stateToSourceIdx.push(sourceIndices.length);
-                    sourceIndices.push(p.pdfPageIndex - 1);
-                } else {
-                    stateToSourceIdx.push(null);
-                }
-            }
+            // Overlay resolution, cache profile and the copy plan come from the Rust core. PDF user units are
+            // points (1pt = 1/72 inch); PDF.js viewports use CSS px @ 96 DPI, so 1 px = 0.75 pt.
+            const { overlayScale, exportProfile, stateToSourceIdx, sourceIndices } = docio.exportPlan({
+                kind: 'pdflib', canvasScale: CANVAS_SCALE, highQuality: !!options.highQuality,
+                optimizeForUpload: !!options.optimizeForUpload, rawBackend: PDFLib !== window.PDFLib,
+                originalPageCount: originalDoc ? originalDoc.getPageCount() : 0,
+                pages: state.pages.map(p => (p ? { s: p.backgroundSource, i: p.pdfPageIndex } : null))
+            });
             let copiedPages = [];
             if (sourceIndices.length > 0 && originalDoc) {
                 copiedPages = await outDoc.copyPages(originalDoc, sourceIndices);
@@ -32990,7 +32890,6 @@
             const overlayCanvas = createProcessingCanvas(1, 1);
             const overlayCtx = overlayCanvas.getContext('2d');
             const metadataParts = [];
-            const metadataPages = [];
             const templateBackgroundImageCache = new Map();
             // Template canvases already have a six-entry LRU and are replaced
             // when SVG resources finish loading. Cache only their encoded bytes,
@@ -33010,24 +32909,23 @@
                 throwIfSessionInvalid();
 
                 const sourceIdx = stateToSourceIdx[i];
-                const logicalPageWidthPx = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
-                const logicalPageHeightPx = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
                 let outPage;
                 let pageWidthPt, pageHeightPt;
                 let pageWidthPx, pageHeightPx;
+                let logicalPageWidthPx, logicalPageHeightPx;
+                const useGeometry = geometry => {
+                    ({
+                        logicalWidth: logicalPageWidthPx, logicalHeight: logicalPageHeightPx,
+                        widthPx: pageWidthPx, heightPx: pageHeightPx, widthPt: pageWidthPt, heightPt: pageHeightPt
+                    } = geometry);
+                };
 
                 if (sourceIdx !== null && copiedPages[sourceIdx]) {
                     outPage = await outDoc.addPage(copiedPages[sourceIdx]);
                     const sz = outPage.getSize();
-                    pageWidthPt = sz.width;
-                    pageHeightPt = sz.height;
-                    pageWidthPx = pageWidthPt / PX_TO_PT;
-                    pageHeightPx = pageHeightPt / PX_TO_PT;
+                    useGeometry(docio.pdfLibGeometry(pageData.pageWidth, pageData.pageHeight, A4_WIDTH, A4_HEIGHT, sz.width, sz.height));
                 } else {
-                    pageWidthPx = logicalPageWidthPx;
-                    pageHeightPx = logicalPageHeightPx;
-                    pageWidthPt = pageWidthPx * PX_TO_PT;
-                    pageHeightPt = pageHeightPx * PX_TO_PT;
+                    useGeometry(docio.pdfLibGeometry(pageData.pageWidth, pageData.pageHeight, A4_WIDTH, A4_HEIGHT));
                     outPage = await outDoc.addPage([pageWidthPt, pageHeightPt]);
                     await outPage.drawRectangle({
                         x: 0, y: 0,
@@ -33097,73 +32995,29 @@
                 const compactGeneration = pageDirtyGeneration.get(i) || 0;
                 const reuseCompact = compactCached?.generation === compactGeneration
                     && compactCached.session === sessionToken && compactCached.strokes === pageData.strokes;
-                let exportStrokes = reuseCompact ? compactCached.exportStrokes
-                    : (Array.isArray(pageData.strokes) ? pageData.strokes : []);
-                if (!reuseCompact && exportStrokes.length > 1) {
-                    const seen = new Set();
-                    exportStrokes = exportStrokes.filter(s => {
-                        const pts = Array.isArray(s.points) ? s.points : [];
-                        const fp = s.id ? `id:${s.id}` : JSON.stringify([s.tool,s.color,s.width,pts]);
-                        if (seen.has(fp)) return false;
-                        seen.add(fp);
-                        return true;
-                    });
-                }
-                const compactStrokes = reuseCompact ? compactCached.compact : [];
-                let compactStrokeCounter = 0;
-                let compactPointCounter = 0;
-                if (!reuseCompact) for (const stroke of exportStrokes) {
-                    const compactStroke = {
-                        ...stroke,
-                        points: []
-                    };
-                    if (Array.isArray(stroke.points) && stroke.points.length > 0) {
-                        compactStroke.points = new Array(stroke.points.length);
-                        for (let pointIndex = 0; pointIndex < stroke.points.length; pointIndex++) {
-                            const p = stroke.points[pointIndex];
-                            compactStroke.points[pointIndex] = {
-                                x: Math.round(p.x * 100) / 100,
-                                y: Math.round(p.y * 100) / 100,
-                                p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
-                            };
-                            if ((pointIndex + 1) % (isMobileLike ? 64 : 220) === 0) {
-                                await yieldToUI();
-                            }
-                        }
-                        compactPointCounter += compactStroke.points.length;
-                    }
-                    compactStrokes.push(compactStroke);
-                    compactStrokeCounter += 1;
-                    if (compactStrokeCounter % (isMobileLike ? 2 : 5) === 0
-                        || compactPointCounter >= (isMobileLike ? 180 : 900)) {
-                        compactPointCounter = 0;
-                        await yieldToUI();
-                    }
-                }
+                if (!pageData.pageId) pageData.pageId = generatePageId();
+                const strokeList = Array.isArray(pageData.strokes) ? pageData.strokes : [];
+                // Overlay bounds are computed together with the metadata when the cached overlay is stale.
+                const overlayCachedBefore = pdfLibOverlayCache.get(i);
+                const needBoundsNow = !(overlayCachedBefore && overlayCachedBefore.pageRef === pageData
+                    && overlayCachedBefore.mutationGeneration === compactGeneration
+                    && overlayCachedBefore.exportProfile === exportProfile);
+                const exported = docio.pageExport({
+                    mode: 'pdflib', reuse: reuseCompact, pageId: pageData.pageId, pageIndex: i,
+                    bgSource: pageData.backgroundSource, pdfIndex: pageData.pdfPageIndex, hasBgImage: !!pageData.backgroundImage,
+                    templateKind: normalizeTemplateKind(pageData.templateKind), pageWidth: logicalPageWidthPx, pageHeight: logicalPageHeightPx,
+                    images: Array.isArray(pageData.images) ? pageData.images : [], deletedStrokeIds: pageData.deletedStrokeIds,
+                    deletedStrokeStamps: pageData.deletedStrokeStamps, sidePanel: pageData.sidePanel,
+                    renderPanels: shouldRenderPageCalendarPanels(),
+                    bounds: needBoundsNow ? { width: logicalPageWidthPx, height: logicalPageHeightPx, scale: overlayScale } : undefined
+                }, reuseCompact ? (needBoundsNow ? compactCached.exportStrokes : null) : strokeList,
+                reuseCompact ? compactCached.compact : undefined);
+                const exportStrokes = reuseCompact ? compactCached.exportStrokes : exported.keep.map(index => strokeList[index]);
                 if (!reuseCompact) pdfCompactStrokeCache.set(pageData, {
                     generation: compactGeneration, session: sessionToken,
-                    strokes: pageData.strokes, compact: compactStrokes, exportStrokes
+                    strokes: pageData.strokes, compact: exported.compact, exportStrokes
                 });
-                if (!pageData.pageId) pageData.pageId = generatePageId();
-                const pageStrokeEntry = {
-                    pageId: pageData.pageId,
-                    strokes: compactStrokes,
-                    images: cloneTimelineValue(Array.isArray(pageData.images) ? pageData.images : []),
-                    deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? [...pageData.deletedStrokeIds] : [],
-                    deletedStrokeStamps: ihnNormalizeDeletionStamps(
-                        pageData.deletedStrokeStamps,
-                        pageData.deletedStrokeIds
-                    ),
-                    hasCustomBackground: pageData.backgroundSource === 'pdf' || !!pageData.backgroundImage,
-                    backgroundSource: pageData.backgroundSource || (pageData.pdfPageIndex ? 'pdf' : 'template'),
-                    templateKind: normalizeTemplateKind(pageData.templateKind),
-                    pdfPageIndex: (pageData.backgroundSource === 'pdf' || !!pageData.backgroundImage) ? (i + 1) : null,
-                    pageWidth: logicalPageWidthPx,
-                    pageHeight: logicalPageHeightPx,
-                    sidePanel: shouldRenderPageCalendarPanels() ? cloneTimelineValue(pageData.sidePanel || null) : null
-                };
-                metadataParts.push(JSON.stringify(pageStrokeEntry));
-                metadataPages.push(pageStrokeEntry);
+                metadataParts.push(exported.meta);
                 await yieldToUI(true);
 
                 // Keep the original 2x/2.5x resolution, but encode only the
@@ -33179,13 +33033,11 @@
                     && cached.pageRef === pageData
                     && cached.mutationGeneration === mutationGeneration
                     && cached.exportProfile === exportProfile;
-                let overlayBounds = cachedHashIsCurrent ? cached.bounds : getPdfOverlayContentBounds(
-                    pageData,
-                    exportStrokes,
-                    logicalPageWidthPx,
-                    logicalPageHeightPx,
-                    overlayScale
-                );
+                let overlayBounds = cachedHashIsCurrent ? cached.bounds
+                    : (needBoundsNow ? exported.bounds : docio.overlayBounds(
+                        exportStrokes, Array.isArray(pageData.images) ? pageData.images : [],
+                        logicalPageWidthPx, logicalPageHeightPx, overlayScale
+                    ));
                 if (!overlayBounds) continue;
                 const pageHash = cachedHashIsCurrent
                     ? cached.hash
@@ -33261,13 +33113,12 @@
                 throwIfAborted();
                 throwIfSessionInvalid();
                 const overlayImg = await outDoc.embedPng(pngBytes);
-                const scaleX = pageWidthPt / logicalPageWidthPx;
-                const scaleY = pageHeightPt / logicalPageHeightPx;
+                const placement = docio.overlayPlacement(overlayBounds, pageWidthPt, pageHeightPt, logicalPageWidthPx, logicalPageHeightPx);
                 await outPage.drawImage(overlayImg, {
-                    x: overlayBounds.x * scaleX,
-                    y: pageHeightPt - ((overlayBounds.y + overlayBounds.height) * scaleY),
-                    width: overlayBounds.width * scaleX,
-                    height: overlayBounds.height * scaleY
+                    x: placement.x,
+                    y: placement.y,
+                    width: placement.width,
+                    height: placement.height
                 });
                 // Capture the XObject NAME pdf-lib assigned for our overlay so the
                 // reopen path can surgically strip it via Resources/XObject delete.
@@ -33362,10 +33213,8 @@
             if (encodedStructure) keywordsPayload += `;IH_STRUCT:${encodedStructure}`;
             const encodedFields = encodeCollabFieldsForKeywords();
             if (encodedFields) keywordsPayload += `;IH_FIELDS:${encodedFields}`;
-            let pagesParsedForSync = [];
             let savedContentHash = '';
             try {
-                pagesParsedForSync = metadataPages;
                 savedContentHash = preparedMetadata?.contentHash
                     ?? await window.InhouseDocumentProcessing.run('contentHash', syncHashInput);
                 const encodedSync = btoa(unescape(encodeURIComponent(JSON.stringify({
@@ -33380,9 +33229,7 @@
             // serialized into STROKES_Z is what gets embedded in the snapshot too, so
             // restoring is a matter of replacing state.pages with that snapshot's data.
             try {
-                const pagesParsed = pagesParsedForSync.length
-                    ? pagesParsedForSync
-                    : metadataParts.map(s => JSON.parse(s));
+                const pagesParsed = metadataParts.map(s => JSON.parse(s));
                 await yieldToUI(true);
                 const timelinePages = buildTimelineSnapshotFromPages(pagesParsed, true);
                 const timelineHash = await window.InhouseDocumentProcessing.run('timelineHash', {
@@ -33598,11 +33445,7 @@
             };
 
             throwIfAborted();
-            const pxToMm = (px, fallbackPx) => {
-                const normalizedPx = normalizePageDimension(px, fallbackPx);
-                return Math.max(10, Math.round((normalizedPx * 25.4 / 96) * 1000) / 1000);
-            };
-            const getPageOrientation = (wMm, hMm) => (wMm > hMm ? 'landscape' : 'portrait');
+            const docio = await requireDocioRust();
 
             const dirtyFlushed = await flushDirtyPages({ abortSignal });
             if (!dirtyFlushed && abortSignal?.aborted) {
@@ -33612,16 +33455,10 @@
             throwIfSessionInvalid();
 
             const pageCount = state.pages.length;
-            const optimizeForUpload = !!options.optimizeForUpload && !options.highQuality;
-            let exportScale = options.highQuality
-                ? CANVAS_SCALE
-                : (optimizeForUpload ? (pageCount >= 20 ? 1.1 : 1.22) : 1.5);
-            const jpegQuality = options.highQuality
-                ? (pageCount >= 20 ? 0.75 : 0.85)
-                : (optimizeForUpload ? (pageCount >= 20 ? 0.55 : 0.62) : (pageCount >= 20 ? 0.70 : 0.75));
-            const exportProfile = options.highQuality
-                ? `hq:${exportScale}:q${jpegQuality}`
-                : `${optimizeForUpload ? 'drv-opt' : 'std'}:${exportScale}:q${jpegQuality}`;
+            const { exportScale, jpegQuality, exportProfile } = docio.exportPlan({
+                kind: 'raster', pageCount, canvasScale: CANVAS_SCALE, highQuality: !!options.highQuality,
+                optimizeForUpload: !!options.optimizeForUpload
+            });
 
             const tempCanvas = createProcessingCanvas(A4_WIDTH * exportScale, A4_HEIGHT * exportScale);
             tempCanvas.width = Math.max(1, Math.round(A4_WIDTH * exportScale));
@@ -33648,10 +33485,12 @@
                     || (pageData.pdfPageIndex ? 'pdf' : (pageData.backgroundImage ? 'custom' : 'template'));
                 const backgroundImage = backgroundSource === 'pdf' ? null : (pageData.backgroundImage || null);
                 throwIfSessionInvalid();
-                const resolvedPageWidth = normalizePageDimension(pageData.pageWidth, A4_WIDTH);
-                const resolvedPageHeight = normalizePageDimension(pageData.pageHeight, A4_HEIGHT);
-                const pageMmWidth = pxToMm(resolvedPageWidth, A4_WIDTH);
-                const pageMmHeight = pxToMm(resolvedPageHeight, A4_HEIGHT);
+                const pageGeometry = docio.pageGeometry(pageData.pageWidth, pageData.pageHeight, A4_WIDTH, A4_HEIGHT);
+                const resolvedPageWidth = pageGeometry.width;
+                const resolvedPageHeight = pageGeometry.height;
+                const pageMmWidth = pageGeometry.mmWidth;
+                const pageMmHeight = pageGeometry.mmHeight;
+                const pageOrientation = pageGeometry.landscape ? 'landscape' : 'portrait';
                 const pageHash = `${computePageHash(pageData)}|exp:${resolvedPageWidth}x${resolvedPageHeight}|${exportProfile}`;
                 const cached = pdfExportCache.get(i);
                 if (cached && cached.hash === pageHash && cached.metaJson && cached.jpegData) {
@@ -33660,85 +33499,31 @@
                         jpegData: new Uint8Array(cached.jpegData),
                         wMm: pageMmWidth,
                         hMm: pageMmHeight,
-                        orientation: getPageOrientation(pageMmWidth, pageMmHeight)
+                        orientation: pageOrientation
                     });
                     continue;
                 }
 
-                // Preserve distinct marks; legacy id-less strokes require all their points to match.
-                let exportStrokes = Array.isArray(pageData.strokes) ? pageData.strokes : [];
-                if (exportStrokes.length > 1) {
-                    const seen = new Set();
-                    exportStrokes = exportStrokes.filter(s => {
-                        const pts = Array.isArray(s.points) ? s.points : [];
-                        const fp = s.id ? `id:${s.id}` : JSON.stringify([s.tool,s.color,s.width,pts]);
-                        if (seen.has(fp)) return false;
-                        seen.add(fp);
-                        return true;
-                    });
-                }
-                const compactStrokes = [];
-                let compactStrokeCounter = 0;
-                let compactPointCounter = 0;
-                for (const stroke of exportStrokes) {
-                    const compactStroke = {
-                        ...stroke,
-                        points: stroke.points
-                    };
-                    if (Array.isArray(stroke.points) && stroke.points.length > 0) {
-                        const compactPoints = new Array(stroke.points.length);
-                        for (let pointIndex = 0; pointIndex < stroke.points.length; pointIndex++) {
-                            const p = stroke.points[pointIndex];
-                            compactPoints[pointIndex] = {
-                                x: Math.round(p.x * 100) / 100,
-                                y: Math.round(p.y * 100) / 100,
-                                p: p.p != null ? Math.round(p.p * 100) / 100 : undefined
-                            };
-                            if ((pointIndex + 1) % (isMobileLike ? 48 : 160) === 0) {
-                                await maybeYieldForSlice(false);
-                                throwIfAborted();
-                                throwIfSessionInvalid();
-                            }
-                        }
-                        compactStroke.points = compactPoints;
-                        compactPointCounter += compactPoints.length;
-                    }
-                    compactStrokes.push(compactStroke);
-                    compactStrokeCounter += 1;
-                    if (compactStrokeCounter % (isMobileLike ? 2 : 4) === 0 || compactPointCounter >= (isMobileLike ? 160 : 720)) {
-                        compactPointCounter = 0;
-                        await maybeYieldForSlice(false);
-                        throwIfAborted();
-                        throwIfSessionInvalid();
-                    }
-                }
+                // Duplicate removal (distinct marks stay; legacy id-less strokes need all their points to match),
+                // point compaction and the metadata entry are computed by the Rust core.
+                const strokeList = Array.isArray(pageData.strokes) ? pageData.strokes : [];
                 if (!pageData.pageId) pageData.pageId = generatePageId();
-                const pageStrokeEntry = {
-                    pageId: pageData.pageId,
-                    strokes: compactStrokes,
-                    images: Array.isArray(pageData.images) ? pageData.images : [],
-                    deletedStrokeIds: Array.isArray(pageData.deletedStrokeIds) ? pageData.deletedStrokeIds : [],
-                    deletedStrokeStamps: ihnNormalizeDeletionStamps(
-                        pageData.deletedStrokeStamps,
-                        pageData.deletedStrokeIds
-                    ),
-                    hasCustomBackground: backgroundSource === 'pdf' || !!backgroundImage,
-                    backgroundSource,
-                    templateKind: normalizeTemplateKind(pageData.templateKind),
-                    // Saved PDFs are reopened using their own rendered pages as the background source.
-                    // Persist the exported page position, not the original source PDF page index.
-                    pdfPageIndex: (backgroundSource === 'pdf' || !!backgroundImage) ? (i + 1) : null,
-                    pageWidth: resolvedPageWidth,
-                    pageHeight: resolvedPageHeight,
-                    sidePanel: shouldRenderPageCalendarPanels() ? (pageData.sidePanel || null) : null
-                };
-                const metaJson = JSON.stringify(pageStrokeEntry);
+                const exported = docio.pageExport({
+                    mode: 'raster', pageId: pageData.pageId, pageIndex: i, bgSource: pageData.backgroundSource,
+                    pdfIndex: pageData.pdfPageIndex, hasBgImage: !!pageData.backgroundImage,
+                    templateKind: normalizeTemplateKind(pageData.templateKind), pageWidth: resolvedPageWidth, pageHeight: resolvedPageHeight,
+                    images: Array.isArray(pageData.images) ? pageData.images : [], deletedStrokeIds: pageData.deletedStrokeIds,
+                    deletedStrokeStamps: pageData.deletedStrokeStamps, sidePanel: pageData.sidePanel,
+                    renderPanels: shouldRenderPageCalendarPanels()
+                }, strokeList);
+                const exportStrokes = exported.keep.map(index => strokeList[index]);
+                const metaJson = exported.meta;
                 metadataParts.push(metaJson);
                 const sourcePdfPageIndex = Number.isFinite(pageData.pdfPageIndex)
                     ? pageData.pdfPageIndex
-                    : pageStrokeEntry.pdfPageIndex;
+                    : exported.pdfPageIndex;
                 const renderPageStrokeEntry = {
-                    ...pageStrokeEntry,
+                    images: Array.isArray(pageData.images) ? pageData.images : [],
                     strokes: exportStrokes
                 };
 
@@ -33748,8 +33533,8 @@
                 }
                 if (!jpegData) {
                     // Render this page to canvas
-                    const targetCanvasWidth = Math.max(1, Math.round(pageStrokeEntry.pageWidth * exportScale));
-                    const targetCanvasHeight = Math.max(1, Math.round(pageStrokeEntry.pageHeight * exportScale));
+                    const targetCanvasWidth = Math.max(1, Math.round(resolvedPageWidth * exportScale));
+                    const targetCanvasHeight = Math.max(1, Math.round(resolvedPageHeight * exportScale));
                     if (tempCanvas.width !== targetCanvasWidth || tempCanvas.height !== targetCanvasHeight) {
                         tempCanvas.width = targetCanvasWidth;
                         tempCanvas.height = targetCanvasHeight;
@@ -33899,7 +33684,7 @@
                     jpegData: new Uint8Array(jpegData),
                     wMm: pageMmWidth,
                     hMm: pageMmHeight,
-                    orientation: getPageOrientation(pageMmWidth, pageMmHeight)
+                    orientation: pageOrientation
                 });
             }
 

@@ -487,33 +487,82 @@
             x: view.getFloat64(at + 1, true), y: view.getFloat64(at + 9, true),
             width: view.getFloat64(at + 17, true), height: view.getFloat64(at + 25, true) } : null;
         const stampSource = stamps => stamps instanceof Map ? [...stamps].map(([id, stamp]) => ({ id, stamp })) : stamps;
+        // Strokes cross the boundary as a JSON "shell" (everything except the point coordinates) plus typed arrays
+        // holding every point, because stringifying and re-parsing thousands of doubles dominates the cost otherwise.
+        // Packing needs every stroke to be an object with an id and every point an object with numeric x/y and
+        // numeric-or-absent pressure; anything else travels as plain JSON, which Rust handles identically.
+        let packHolder = null;
+        const packPlaceholder = function (key, value) {
+            return key === 'points' && this === packHolder && Array.isArray(value) ? { '\u0001packedPoints': value.length } : value;
+        };
+        const packStrokes = (strokes, allowPacking = true) => {
+            const plain = () => ({ json: JSON.stringify(strokes), coords: NONE, flags: NONE });
+            if (!allowPacking || !strokes.length) return plain();
+            let total = 0;
+            for (let i = 0; i < strokes.length; i++) {
+                const stroke = strokes[i];
+                if (!stroke || typeof stroke !== 'object' || Array.isArray(stroke) || !stroke.id) return plain();
+                if (Array.isArray(stroke.points)) total += stroke.points.length;
+            }
+            if (!total) return plain();
+            const numbers = new Float64Array(total * 3), flags = new Uint8Array(total);
+            let at = 0;
+            for (let i = 0; i < strokes.length; i++) {
+                const points = strokes[i].points;
+                if (!Array.isArray(points)) continue;
+                for (let k = 0; k < points.length; k++, at++) {
+                    const point = points[k];
+                    if (point === null || typeof point !== 'object') return plain();
+                    const x = point.x, y = point.y, pressure = point.p;
+                    if (typeof x !== 'number' || typeof y !== 'number') return plain();
+                    numbers[at * 3] = x; numbers[at * 3 + 1] = y;
+                    if (typeof pressure === 'number') { numbers[at * 3 + 2] = pressure; flags[at] = 1; }
+                    else if (pressure !== undefined && pressure !== null) return plain();
+                }
+            }
+            const shells = new Array(strokes.length);
+            try {
+                for (let i = 0; i < strokes.length; i++) { packHolder = strokes[i]; shells[i] = JSON.stringify(packHolder, packPlaceholder); }
+            } finally { packHolder = null; }
+            return { json: `[${shells.join(',')}]`, coords: new Uint8Array(numbers.buffer), flags };
+        };
+        const strokeList = value => Array.isArray(value) ? value : [];
         return Object.freeze({
+            /** True when `strokes` can cross the boundary as typed arrays (exposed for tests and diagnostics). */
+            packable(strokes) { return packStrokes(strokeList(strokes)).coords.length > 0; },
             /**
              * Duplicate removal, point compaction and the page metadata entry.
-             * `job` holds the scalar page fields; `strokesJson` is JSON.stringify(strokes) (omit when reusing `cachedCompact`).
-             * Returns { keep: indices of the surviving strokes, bounds, compact: Uint8Array, meta: JSON text }.
+             * `job` holds the scalar page fields; `strokes` is the page's stroke array (null when reusing `cachedCompact`
+             * and no bounds are needed). `options.pack = false` forces the plain-JSON hand-off (used by tests).
+             * Returns { keep: indices of the surviving strokes, bounds, pdfPageIndex (as written to the entry),
+             * compact: Uint8Array, meta: JSON text }.
              */
-            pageExport(job, strokesJson = '', cachedCompact = NONE) {
+            pageExport(job, strokes = null, cachedCompact = NONE, options = {}) {
                 need();
                 const header = { ...job };
                 if (header.deletedStrokeStamps) header.deletedStrokeStamps = stampSource(header.deletedStrokeStamps);
-                const out = callBytes('docio.page_export', frame(encode(header), encode(strokesJson), cachedCompact));
+                const packed = strokes ? packStrokes(strokeList(strokes), options.pack !== false) : { json: '', coords: NONE, flags: NONE };
+                const out = callBytes('docio.page_export', frame(encode(header), encode(packed.json), cachedCompact || NONE, packed.coords, packed.flags));
                 const view = new DataView(out.buffer, out.byteOffset, out.byteLength);
                 const count = view.getUint32(0, true), keep = new Array(count);
                 for (let i = 0; i < count; i++) keep[i] = view.getUint32(4 + i * 4, true);
                 const at = 4 + count * 4, bounds = readBounds(view, at);
-                const compactLength = view.getUint32(at + 33, true), start = at + 37;
-                return { keep, bounds, compact: out.slice(start, start + compactLength),
-                    meta: textDecoder.decode(out.subarray(start + compactLength)) };
+                const pdfPageIndex = view.getFloat64(at + 33, true);
+                const compactOffset = view.getUint32(at + 41, true), compactLength = view.getUint32(at + 45, true), start = at + 49;
+                // `compact` is a view into the entry bytes: no copy, and it is what a later unchanged save passes back.
+                return { keep, bounds, pdfPageIndex: Number.isNaN(pdfPageIndex) ? null : pdfPageIndex,
+                    compact: out.subarray(start + compactOffset, start + compactOffset + compactLength),
+                    meta: textDecoder.decode(out.subarray(start)) };
             },
             /** getPdfOverlayContentBounds: { x, y, width, height } or null. */
-            overlayBounds(strokes, images, width, height, scale) {
+            overlayBounds(strokes, images, width, height, scale, options = {}) {
                 need();
-                const out = callBytes('docio.overlay_bounds', frame(encode({ images, width, height, scale }), encode(strokes)));
+                const packed = packStrokes(strokeList(strokes), options.pack !== false);
+                const out = callBytes('docio.overlay_bounds', frame(encode({ images, width, height, scale }), encode(packed.json), packed.coords, packed.flags));
                 return readBounds(new DataView(out.buffer, out.byteOffset, out.byteLength), 0);
             },
             /** computePageHash. */
-            pageHash(page, a4Width, a4Height) {
+            pageHash(page, a4Width, a4Height, options = {}) {
                 need();
                 const background = page.backgroundImage;
                 const strokes = Array.isArray(page.strokes);
@@ -522,7 +571,8 @@
                     pdfIndex: page.pdfPageIndex, bgLen: background ? background.length : 0,
                     bgHead: background ? background.slice(0, 160) : '', pageWidth: page.pageWidth, pageHeight: page.pageHeight,
                     a4Width, a4Height, strokes: strokes ? undefined : page.strokes };
-                return textDecoder.decode(callBytes('docio.page_hash', frame(encode(header), strokes ? encode(JSON.stringify(page.strokes)) : NONE)));
+                const packed = strokes ? packStrokes(page.strokes, options.pack !== false) : { json: '', coords: NONE, flags: NONE };
+                return textDecoder.decode(callBytes('docio.page_hash', frame(encode(header), encode(packed.json), packed.coords, packed.flags)));
             },
             /** Export profile, scale/quality and (pdf-lib) the copyPages plan. */
             exportPlan(options) { need(); return callJson('docio.export_plan', options); },
