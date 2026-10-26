@@ -42,7 +42,7 @@ function disposeDocument(id) {
     for (const [key, object] of objects) if (object.owner === id) objects.delete(key);
 }
 
-// Same quadratic paths and highlighter blending as the interactive renderer.
+// Same measured pen paths and highlighter blending as the interactive renderer.
 function drawStroke(ctx, stroke) {
     const points = stroke.points || [];
     if (!points.length || stroke.tool === 'eraser-stroke') return;
@@ -74,14 +74,8 @@ function drawStroke(ctx, stroke) {
     ctx.strokeStyle = stroke.tool === 'eraser-area' ? 'rgba(0,0,0,1)' : stroke.color;
     ctx.lineWidth = stroke.width; ctx.lineCap = ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
-    if (points.length > 2) {
-        ctx.lineTo((points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2);
-        for (let i = 1; i < points.length - 1; i++) {
-            ctx.quadraticCurveTo(points[i].x, points[i].y,
-                (points[i].x + points[i + 1].x) / 2, (points[i].y + points[i + 1].y) / 2);
-        }
-    }
-    ctx.lineTo(points[points.length - 1].x, points[points.length - 1].y); ctx.stroke();
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
 }
 
 async function compress(value) {
