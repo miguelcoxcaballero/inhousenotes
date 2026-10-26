@@ -162,7 +162,7 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
         let gi = lay.out.add_scene(assemble(kit, "ground_plane", plane, None));
         lay.out.placements.push((gi, Mat4::IDENTITY));
     }
-    let (tiles, col) = ground::mesh(&fabric.ground, &fabric.graph, lib, fabric.extent);
+    let (tiles, col) = ground::mesh(&fabric.ground, &fabric.graph, lib);
     for (_, parts) in tiles {
         if parts.tri_count() == 0 {
             continue;

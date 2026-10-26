@@ -206,8 +206,26 @@ pub fn keyed(seed: u64, stage: u64, key: u64) -> crate::geom::Rng {
 
 /// Runs every zone's generator in plan order, then the global ways.
 pub fn draft(plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> Draft {
+    draft_report(plan, lib, seed).0
+}
+
+/// How an organic zone's carving ended.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Carved {
+    pub zone: u16,
+    /// Accessibility depth of the last tier: no land is deeper than this.
+    pub d_max: f32,
+    /// Carving iterations over all tiers.
+    pub iterations: usize,
+    /// A tier stopped at its safety cap (the termination bound failed).
+    pub capped: bool,
+}
+
+/// `draft`, plus how each organic zone's carving ended.
+pub fn draft_report(plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> (Draft, Vec<Carved>) {
+    let mut report = Vec::new();
     if let Some(d) = &plan.given {
-        return d.clone();
+        return (d.clone(), report);
     }
     let mut d = Draft { snap: 0.05, ..Default::default() };
     // Zone masks first (organic masks are placed beside earlier zones).
@@ -254,11 +272,12 @@ pub fn draft(plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> Draft {
             let zi = (i + 1) as u16;
             let earlier = Region::rings(masks[..i].iter().map(|m| m.as_slice()));
             let own = Region::ring(&masks[i]).minus(&earlier);
-            let dd = organic::generate(o, z, zi, &own, &d, lib, seed);
+            let (dd, carved) = organic::generate(o, z, zi, &own, &d, lib, seed);
             d.extend(dd);
+            report.push(carved);
         }
     }
-    d
+    (d, report)
 }
 
 /// The outline of a zone without a grid.

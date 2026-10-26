@@ -40,6 +40,28 @@ pub mod stage {
     pub const GRID: u64 = 7;
 }
 
+/// Stage timer for `FORJA_TIMING=1` (stderr), a no-op otherwise.
+pub struct Laps(Option<std::time::Instant>);
+
+impl Laps {
+    pub fn new() -> Self {
+        Laps(std::env::var_os("FORJA_TIMING").map(|_| std::time::Instant::now()))
+    }
+
+    pub fn lap(&mut self, what: &str) {
+        if let Some(t) = self.0 {
+            eprintln!("  {what}: {:.3}s", t.elapsed().as_secs_f32());
+            self.0 = Some(std::time::Instant::now());
+        }
+    }
+}
+
+impl Default for Laps {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Lot vertices closer than this merge into one (region debris), so a lot
 /// may cut across a block-outline vertex by at most this much.
 pub const WELD: f32 = 0.06;
@@ -266,8 +288,11 @@ fn bevel(ring: &[Vec2], faces: &dyn Fn(Vec2, Vec2) -> bool, chamfer_of: &dyn Fn(
 impl Fabric {
     /// Turns any draft into lots.
     pub fn build(d: &Draft, plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> Fabric {
+        let mut laps = Laps::new();
         let graph = StreetGraph::build(&d.ways, &d.nodes, lib, d.snap);
+        laps.lap("graph");
         let corridors = graph.corridor(|s, i| s.width[i]);
+        laps.lap("corridors");
         let plazas = Region::rings(d.plazas.iter().map(|p| p.ring.as_slice()));
         // Zone masks: earlier zones win where masks overlap.
         let mut by_zone: BTreeMap<u16, Vec<&[Vec2]>> = BTreeMap::new();
@@ -285,6 +310,7 @@ impl Fabric {
         let domain = Region::union_all([&masks, &corridors, &plazas]);
         let land = masks.minus(&corridors.union(&plazas));
         let domain_loc = Located::new(domain.clone());
+        laps.lap("land");
         // Footprints (OSM): de-overlapped in id order beforehand by the importer.
         let fps: Vec<(Region, &crate::plan::Footprint)> = d
             .footprints
@@ -390,6 +416,7 @@ impl Fabric {
                 }
             }
         }
+        laps.lap("blocks and parcels");
         // Setback jitter: each facade end steps back up to `jitter`.
         let front_ix = {
             let mut ix = SegIndex::new(8.0);
@@ -411,6 +438,7 @@ impl Fabric {
             let mut rng = Rng::keyed(seed, stage::JITTER, key);
             *r = setback(r, &front_ix, jitter, &mut rng, &domain_loc);
         }
+        laps.lap("setbacks");
         // Lots never leave their block (setbacks and merges are region algebra);
         // the weld then clears the millimetre debris on the shared vertex set.
         let block_regions: Vec<Region> = blocks.iter().map(|b| Region::from_shapes(std::slice::from_ref(&b.shape))).collect();
@@ -421,30 +449,57 @@ impl Fabric {
             }
         }
         weld(&mut lot_regions, &front_ix, WELD);
-        // Courts vs public, classification and fronts; failing lots merge
-        // into a neighbour or become courts, then everything is redone.
+        laps.lap("clip and weld");
+        // Courts vs public: what is not lot, split topologically. Merging two
+        // adjacent lots never changes it; dropping a lot does (`stale`).
+        let streets = corridors.union(&plazas).tiles(crate::ground::TILE);
+        let touches_streets = |c: &Region| {
+            let Some([lo, hi]) = c.bbox() else { return false };
+            let (k0, k1) = (streets.key(lo), streets.key(hi));
+            (k0.0..=k1.0).any(|x| (k0.1..=k1.1).any(|z| streets.get((x, z)).is_some_and(|t| t.intersects(c))))
+        };
+        let split = |lots: &[(Region, u32, Option<usize>)]| {
+            let rest = domain.minus(&Region::union_all(lots.iter().map(|l| &l.0)));
+            let (public, courts): (Vec<Region>, Vec<Region>) = rest.components().into_iter().partition(touches_streets);
+            let public = Region::union_all(public.iter());
+            let ground = Ground::classes(&graph, lib, &public, &plazas);
+            (public, Region::union_all(courts.iter()), ground)
+        };
+        let (mut public, mut courts, mut ground) = split(&lot_regions);
+        let (mut stale, mut last) = (false, false);
+        let mut cache: Vec<Option<(Lot, bool)>> = Vec::new();
+        let mut stale_cache = false;
+        // Classification and fronts; failing lots merge into a neighbour (or
+        // finally become courts) and the lots are classified again.
         let mut dropped = 0;
         let mut round = 0;
         loop {
             round += 1;
-            let all_lots = Region::union_all(lot_regions.iter().map(|l| &l.0));
-            let rest = domain.minus(&all_lots);
-            let streets_and_plazas = corridors.union(&plazas);
-            let (mut public_parts, mut court_parts) = (Vec::new(), Vec::new());
-            for c in rest.components() {
-                if c.intersects(&streets_and_plazas) {
-                    public_parts.push(c);
-                } else {
-                    court_parts.push(c);
-                }
+            if std::mem::take(&mut stale) {
+                (public, courts, ground) = split(&lot_regions);
+                stale_cache = true;
             }
-            let public = Region::union_all(public_parts.iter());
-            let courts = Region::union_all(court_parts.iter());
-            let ground = Ground::classes(&graph, lib, &public, &plazas);
+            laps.lap("public, courts and ground");
+            if stale_cache {
+                cache.clear();
+                stale_cache = false;
+            }
             let ctx = Ctx::new(&graph, lib, &lot_regions, &courts, &public, &domain, &ground, &blocks);
+            if cache.len() != lot_regions.len() {
+                cache = vec![None; lot_regions.len()];
+            }
             let mut lots = Vec::new();
             let mut bad: Vec<usize> = Vec::new();
             for (i, (r, _bi, fp)) in lot_regions.iter().enumerate() {
+                // A lot's classification depends only on the lots touching it
+                // and the split: lots away from this round's merges keep theirs.
+                if let Some((lot, is_bad)) = cache[i].take() {
+                    if is_bad {
+                        bad.push(i);
+                    }
+                    lots.push(lot);
+                    continue;
+                }
                 let mut lot = ctx.classify(i, r);
                 if let Some(fi) = fp {
                     lot.levels = fps[*fi].1.levels;
@@ -460,8 +515,27 @@ impl Fabric {
                 }
                 lots.push(lot);
             }
-            if bad.is_empty() || round >= 4 {
-                // Final: drop what is still bad.
+            laps.lap("classify");
+            if !bad.is_empty() && round >= 3 && !last {
+                // Lots that merging could not repair leave: the plot joins
+                // public space (or a court) and every lot is classified once
+                // more against the new split.
+                let mut keep = vec![true; lot_regions.len()];
+                for &i in &bad {
+                    keep[i] = false;
+                }
+                dropped += bad.len();
+                let mut k = 0;
+                lot_regions.retain(|_| {
+                    k += 1;
+                    keep[k - 1]
+                });
+                stale = true;
+                last = true;
+                continue;
+            }
+            if bad.is_empty() || last {
+                // Final (bad lots here are a last resort: they become courts).
                 let mut keep = vec![true; lots.len()];
                 for &i in &bad {
                     keep[i] = false;
@@ -487,6 +561,7 @@ impl Fabric {
             }
             // Merge each bad lot into its best neighbour in the same block.
             let mut gone = vec![false; lot_regions.len()];
+            let mut changed: Vec<[Vec2; 2]> = Vec::new();
             for &i in &bad {
                 if gone[i] {
                     continue;
@@ -497,22 +572,27 @@ impl Fabric {
                     .map(|j| (parcel::shared_len(&lot_regions[i].0, &lot_regions[j].0), j))
                     .filter(|(l, _)| *l > 0.1)
                     .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)));
-                match best {
-                    Some((_, j)) if round < 3 => {
-                        let m = lot_regions[i].0.union(&lot_regions[j].0);
-                        if m.len() == 1 && m.shapes()[0].holes.is_empty() {
-                            lot_regions[j].0 = m;
-                            gone[i] = true;
-                        }
-                    }
-                    _ => {
+                // A lot that cannot merge stays bad until the final round,
+                // which drops every bad lot at once.
+                if let Some((_, j)) = best {
+                    let m = lot_regions[i].0.union(&lot_regions[j].0);
+                    if m.len() == 1 && m.shapes()[0].holes.is_empty() {
+                        changed.extend(m.bbox());
+                        lot_regions[j].0 = m;
                         gone[i] = true;
-                        dropped += 1;
                     }
                 }
             }
+            // Keep the classification of every lot clear of the merges.
+            let near = |r: &Region| r.bbox().is_some_and(|[lo, hi]| changed.iter().any(|[a, b]| lo.x <= b.x + 0.1 && hi.x >= a.x - 0.1 && lo.y <= b.y + 0.1 && hi.y >= a.y - 0.1));
+            cache = lots.into_iter().zip(lot_regions.iter()).enumerate().map(|(i, (lot, (r, _, _)))| (!near(r)).then(|| (lot, bad.contains(&i)))).collect();
             let mut k = 0;
             lot_regions.retain(|_| {
+                k += 1;
+                !gone[k - 1]
+            });
+            let mut k = 0;
+            cache.retain(|_| {
                 k += 1;
                 !gone[k - 1]
             });

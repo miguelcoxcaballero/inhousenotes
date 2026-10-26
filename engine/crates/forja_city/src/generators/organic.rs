@@ -23,7 +23,7 @@ use super::carve::Lattice;
 use crate::fabric::stage;
 use crate::geom::{Rng, point_key};
 use crate::plan::line::seg_dist;
-use crate::plan::{Draft, Join, Located, Plaza, PlazaKind, Polyline, Region, StreetGraph, Way, noise1};
+use crate::plan::{Draft, Join, Located, Plaza, PlazaKind, Polyline, Region, SegIndex, StreetGraph, Way, noise1};
 use crate::profile::ProfileLibrary;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -82,20 +82,51 @@ struct State<'a> {
     seed: u64,
     land: Region,
     out: Draft,
-    /// Centrelines that new paths may end on (existing and carved).
+    /// Centrelines that new paths may end on (existing and carved), with
+    /// their widest width.
     lines: Vec<(Vec<Vec2>, f32)>,
+    /// Lattice step: how far a path end may stop short of a street's edge.
+    lattice: f32,
     /// Graph nodes of the streets around: T stems continue into the land.
     stems: Vec<(Vec2, Vec2, f32)>,
     iterations: usize,
 }
 
+impl State<'_> {
+    /// Segment index of the lines paths may join (payload: line index),
+    /// with the widest line's reach.
+    fn line_index(&self) -> (SegIndex, f32) {
+        let mut ix = SegIndex::new(16.0);
+        for (i, (l, _)) in self.lines.iter().enumerate() {
+            for s in l.windows(2) {
+                ix.push(s[0], s[1], i as u32);
+            }
+        }
+        (ix, self.reach_of(self.lines.iter().map(|l| l.1).fold(0.0, f32::max)))
+    }
+
+    /// Half a line's width plus the inset and one and a half lattice steps:
+    /// how far short of a centreline a path end may stop and still join it.
+    fn reach_of(&self, w: f32) -> f32 {
+        w * 0.5 + 1.0 + 1.5 * self.lattice
+    }
+
+    /// Whether a path ending at `p` would join a line (see `attach`).
+    fn reaches(&self, (ix, max): &(SegIndex, f32), p: Vec2) -> bool {
+        ix.around(p, *max).into_iter().any(|k| {
+            let (a, b, li) = ix.seg(k);
+            seg_dist(p, a, b) < self.reach_of(self.lines[li as usize].1)
+        })
+    }
+}
+
 /// Generates an organic zone inside `mask`, around the streets of `d`.
-pub fn generate(o: &OrganicSpec, zone: &Zone, zi: u16, mask: &Region, d: &Draft, lib: &ProfileLibrary, seed: u64) -> Draft {
+pub fn generate(o: &OrganicSpec, zone: &Zone, zi: u16, mask: &Region, d: &Draft, lib: &ProfileLibrary, seed: u64) -> (Draft, super::Carved) {
     let graph = StreetGraph::build(&d.ways, &d.nodes, lib, d.snap.max(0.05));
     let corridors = graph.corridor(|s, i| s.width[i]);
     let plazas = Region::rings(d.plazas.iter().map(|p| p.ring.as_slice()));
     let land = mask.minus(&corridors).minus(&plazas);
-    let lines = graph.streets.iter().map(|s| (s.line.pts().to_vec(), s.min_width())).collect();
+    let lines = graph.streets.iter().map(|s| (s.line.pts().to_vec(), s.width.iter().copied().fold(0.0, f32::max))).collect();
     // T stems: a node of degree 3 whose odd arm points away has a mouth
     // continuing across the street.
     let mut stems = Vec::new();
@@ -115,7 +146,7 @@ pub fn generate(o: &OrganicSpec, zone: &Zone, zi: u16, mask: &Region, d: &Draft,
             }
         }
     }
-    let mut st = State { lib, zi, seed, land, out: Draft::default(), lines, stems, iterations: 0 };
+    let mut st = State { lib, zi, seed, land, out: Draft::default(), lines, lattice: o.lattice, stems, iterations: 0 };
     let mut rng = Rng::keyed(seed, stage::CARVE, zi as u64);
     // The main plaza, at the deepest point of the zone.
     if let (Some(mp), Some((c, r))) = (&o.plaza, st.land.pole()) {
@@ -127,35 +158,46 @@ pub fn generate(o: &OrganicSpec, zone: &Zone, zi: u16, mask: &Region, d: &Draft,
             st.out.plazas.push(Plaza { ring, zone: zi, kind: zone.plaza_kind });
         }
     }
+    let mut capped = false;
     for (ti, tier) in o.tiers.iter().enumerate() {
-        carve_tier(&mut st, o, tier, ti);
+        capped |= !carve_tier(&mut st, o, tier, ti);
     }
-    st.out
+    let d_max = o.tiers.last().map(|t| t.d_max).unwrap_or(f32::INFINITY);
+    (st.out, super::Carved { zone: zi, d_max, iterations: st.iterations, capped })
 }
 
-/// Carves until no land of this zone is deeper than `tier.d_max`.
-fn carve_tier(st: &mut State, o: &OrganicSpec, tier: &Tier, ti: usize) {
-    let Some(prof) = st.lib.by_name(&tier.profile) else { return };
+/// Carves until no land of this zone is deeper than `tier.d_max`. False if
+/// the loop stopped at its safety cap instead.
+fn carve_tier(st: &mut State, o: &OrganicSpec, tier: &Tier, ti: usize) -> bool {
+    let Some(prof) = st.lib.by_name(&tier.profile) else { return true };
     let [w0, w1] = prof.width;
     let area = st.land.area() as f32;
     let cap = (4.0 * area / (std::f32::consts::PI * tier.d_max * tier.d_max / 4.0)).ceil() as usize + 8;
     let mut guard = 0;
+    let mut shallow = std::collections::HashSet::new();
     loop {
         guard += 1;
         if guard > cap {
             log::warn!("organic zone {}: tier {ti} hit its safety cap", st.zi);
-            break;
+            return false;
         }
-        // The largest piece that still has a core.
+        // The largest piece that still has a core. Land only shrinks, so a
+        // piece seen before without a core never gets one: remembered by hash.
+        let mut pieces = st.land.components();
+        pieces.sort_by(|a, b| b.area().total_cmp(&a.area()));
         let mut best: Option<(Region, Region)> = None;
-        for piece in st.land.components() {
-            let core = piece.offset(-tier.d_max, Join::Round);
-            if core.is_empty() {
+        for piece in pieces {
+            let h = piece.hash64();
+            if shallow.contains(&h) {
                 continue;
             }
-            if best.as_ref().is_none_or(|(b, _)| piece.area() > b.area()) {
-                best = Some((piece, core));
+            let core = piece.offset(-tier.d_max, Join::Round);
+            if core.is_empty() {
+                shallow.insert(h);
+                continue;
             }
+            best = Some((piece, core));
+            break;
         }
         let Some((piece, core)) = best else { break };
         st.iterations += 1;
@@ -216,7 +258,10 @@ fn carve_tier(st: &mut State, o: &OrganicSpec, tier: &Tier, ti: usize) {
         if !carved_any || !core_left.is_empty() {
             let Some((p, _)) = core_left.pole().or(core.pole()) else { continue };
             let Some(from) = lat.nearest(p) else { continue };
-            let to_edge = |u: u32| lat.edge_dist[u as usize] < o.lattice * 1.2;
+            // Paths leave the pole for the land's edge where a street runs
+            // (not the edge of a plaza or the map): there they can join it.
+            let idx = st.line_index();
+            let to_edge = |u: u32| lat.edge_dist[u as usize] < o.lattice * 1.2 && st.reaches(&idx, lat.pts[u as usize]);
             let Some(a) = lat.path(from, to_edge) else {
                 add_way(st, straight_through(&piece, p), [w0, w1], &tier.profile, &mut rng);
                 continue;
@@ -225,7 +270,7 @@ fn carve_tier(st: &mut State, o: &OrganicSpec, tier: &Tier, ti: usize) {
             if !rng.chance(tier.adarve) {
                 // Through path: also from the pole to the far side.
                 let first_end = lat.pts[*nodes.last().unwrap() as usize];
-                let away = |u: u32| lat.edge_dist[u as usize] < o.lattice * 1.2 && lat.pts[u as usize].distance(first_end) > tier.d_max;
+                let away = |u: u32| to_edge(u) && lat.pts[u as usize].distance(first_end) > tier.d_max;
                 if let Some(mut b) = lat.path(from, away) {
                     b.reverse();
                     b.pop();
@@ -255,6 +300,7 @@ fn carve_tier(st: &mut State, o: &OrganicSpec, tier: &Tier, ti: usize) {
             }
         }
     }
+    true
 }
 
 /// Whether the segment `ab` passes through the core.
@@ -372,7 +418,7 @@ fn attach(st: &State, piece: &Region, line: &mut Vec<Vec2>, last: bool) {
         for k in 0..l.len().saturating_sub(1) {
             let (a, b) = (l[k], l[k + 1]);
             let d = seg_dist(p, a, b);
-            if d < w * 0.5 + 3.0 && d > 0.01 && best.is_none_or(|x| d < x.0) {
+            if d < st.reach_of(*w) && d > 0.01 && best.is_none_or(|x| d < x.0) {
                 let e = b - a;
                 let t = ((p - a).dot(e) / e.length_squared().max(1e-9)).clamp(0.0, 1.0);
                 best = Some((d, a + e * t));
@@ -425,9 +471,16 @@ fn add_way(st: &mut State, line: Vec<Vec2>, range: [f32; 2], profile: &str, rng:
             (w * flare).clamp(range[0], range[1] * 1.15)
         })
         .collect();
+    // Only a way that joins the network may consume land: a floating one
+    // would be dropped by the planar graph and leave its land unserved.
+    let joins = |p: Vec2| st.lines.iter().any(|(l, _)| l.windows(2).any(|s| seg_dist(p, s[0], s[1]) < 0.05));
+    if !joins(pl.pts()[0]) && !joins(*pl.pts().last().unwrap()) {
+        log::debug!("organic zone {}: dropped a path that joins no street", st.zi);
+        return;
+    }
     let corridor = crate::plan::line::stroke(pl.pts(), |k| width[k] * 0.5);
     st.land = st.land.minus(&corridor);
-    st.lines.push((pl.pts().to_vec(), range[0]));
+    st.lines.push((pl.pts().to_vec(), width.iter().copied().fold(0.0, f32::max)));
     let mut w = Way::new(pl.pts().to_vec(), profile).zone(st.zi);
     w.width = width;
     st.out.ways.push(w);
