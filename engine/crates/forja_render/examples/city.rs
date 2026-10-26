@@ -88,11 +88,21 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
     let size = hi - lo;
     out.push(("aerial", v3(Vec2::new(lo.x - size.x * 0.1, hi.y + size.y * 0.25), size.max_element() * 0.45), v3(c, 0.0)));
     out.push(("overview", v3(c + Vec2::new(0.0, size.y * 0.02), size.max_element() * 1.05), v3(c + Vec2::new(0.0, -size.y * 0.001), 0.0)));
-    // Eye-level shot from `t` along street `s`, `side` from the centre.
+    // An eye stands in open public space: 0.8 m from facades, 1.5 m from
+    // any lamp, tree, sign or other item.
+    let public = forja_city::plan::Located::new(f.public.clone());
+    let things: Vec<Vec2> = city.items.iter().map(|i| Vec2::new(i.pos.x, i.pos.z)).chain(city.props.iter().map(|p| Vec2::new(p.1.w_axis.x, p.1.w_axis.z))).collect();
+    let open = |p: Vec2, r: f32| public.contains_disc(p, r) && things.iter().all(|q| q.distance(p) > 1.5);
+    let clear = |p: Vec2| open(p, 0.8);
+    // Eye-level shot along street `s` from about `t`, `side` from the centre:
+    // the first clear spot stepping 1.5 m along the street.
     let along = |s: usize, t: f32, side: f32, look: f32, eye_h: f32| {
         let st = &g.streets[s];
-        let p = st.line.at(t) + st.line.normal(t) * side;
-        let q = st.line.at((t + look).min(st.len())) + st.line.normal((t + look).min(st.len())) * side * 0.2;
+        let len = st.len();
+        let at = |t: f32| st.line.at(t) + st.line.normal(t) * side;
+        let t = (0..40).map(|k| t + 1.5 * k as f32).filter(|t| *t < len - 2.0).find(|t| clear(at(*t))).unwrap_or(t);
+        let p = at(t);
+        let q = st.line.at((t + look).min(len)) + st.line.normal((t + look).min(len)) * side * 0.2;
         (v3(p, eye_h + f.ground.height_at(p)), v3(q, eye_h + 3.0))
     };
     let longest = |pred: &dyn Fn(&forja_city::plan::Street) -> bool| g.streets.iter().enumerate().filter(|(_, s)| pred(s)).max_by(|a, b| a.1.len().total_cmp(&b.1.len())).map(|x| x.0);
@@ -126,7 +136,8 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
     // A narrow alley at eye level.
     if let Some((s, _)) = g.streets.iter().enumerate().filter(|(_, s)| lib.get(s.profile).class == Class::Alley && s.len() > 25.0).min_by(|a, b| a.1.min_width().total_cmp(&b.1.min_width()).then(b.1.len().total_cmp(&a.1.len()))) {
         let st = &g.streets[s];
-        let (e, a) = along(s, 3.0, 0.0, 18.0, 1.7);
+        // From inside the alley, not from the square it opens onto.
+        let (e, a) = along(s, st.len() * 0.3, 0.0, 18.0, 1.7);
         out.push(("alley", e, a));
         let _ = st;
     }
@@ -134,7 +145,7 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
     let mut plazas: Vec<(Vec2, f32)> = f.ground.plaza.components().iter().filter_map(|c| c.pole()).filter(|p| p.1 > 5.0).collect();
     plazas.sort_by(|a, b| a.1.total_cmp(&b.1));
     if let Some(&(p, r)) = plazas.first() {
-        let eye = p + Vec2::new(r * 0.8, r * 0.5);
+        let eye = (0..24).map(|k| p + Vec2::from_angle(k as f32 * 0.9) * r * (0.85 - 0.02 * k as f32)).find(|q| clear(*q)).unwrap_or(p + Vec2::new(r * 0.8, r * 0.5));
         out.push(("plazuela", v3(eye, 1.7 + f.ground.height_at(eye)), v3(p, 2.0)));
     }
     // The sharpest corner, from across its junction.
@@ -150,21 +161,17 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         }
     }
     if let Some((_, apex, out_dir)) = best {
-        let eye = apex + out_dir * 18.0;
+        let eye = (0..30).map(|k| apex + out_dir.rotate(Vec2::from_angle((k as f32 * 0.7).sin() * 0.5)) * (14.0 + k as f32 * 0.5)).find(|p| open(*p, 2.5)).unwrap_or(apex + out_dir * 18.0);
         out.push(("acute", v3(eye, 1.7 + f.ground.height_at(eye)), v3(apex, 6.0)));
     }
-    // A dead end, from 15 m back.
-    for (si, s) in g.streets.iter().enumerate() {
-        for e in [End::A, End::B] {
-            if g.degree(s.node(e)) == 1 && s.len() > 18.0 {
-                let t = if e == End::A { 15.0 } else { s.len() - 15.0 };
-                let end = s.line.at(s.end_s(e));
-                let p = s.line.at(t);
-                out.push(("deadend", v3(p, 1.7 + f.ground.height_at(p)), v3(end, 3.0)));
-                let _ = (si, prof(s));
-                return out;
-            }
-        }
+    // A dead end (an adarve, the longest), from 15 m back.
+    let dead = g.streets.iter().flat_map(|s| [End::A, End::B].map(|e| (s, e))).filter(|(s, e)| g.degree(s.node(*e)) == 1 && s.len() > 18.0);
+    if let Some((s, e)) = dead.max_by(|a, b| (lib.get(a.0.profile).class == Class::Alley, a.0.len()).partial_cmp(&(lib.get(b.0.profile).class == Class::Alley, b.0.len())).unwrap()) {
+        let toward = |k: usize| if e == End::A { 15.0 + k as f32 } else { s.len() - 15.0 - k as f32 };
+        let t = (0..10).map(toward).find(|t| clear(s.line.at(*t))).unwrap_or(toward(0));
+        let (p, end) = (s.line.at(t), s.line.at(s.end_s(e)));
+        let _ = prof(s);
+        out.push(("deadend", v3(p, 1.7 + f.ground.height_at(p)), v3(end, 3.0)));
     }
     out
 }

@@ -23,7 +23,7 @@ use forja_math::Vec2;
 use crate::generators::{CityPlan, LotRules};
 use crate::geom::{Rng, point_key};
 use crate::ground::Ground;
-use crate::lot::{EdgeKind, Front, Lot, MAX_CHORD, MIN_CORNER_ANGLE, Rhythm, SKIRT};
+use crate::lot::{EdgeKind, Front, Lot, MAX_CHORD, MIN_CORNER_ANGLE, Rhythm};
 use crate::parcel::{self, BlockRing, Tag};
 use crate::plan::line::{mix64, seg_dist};
 use crate::plan::{Draft, Join, Located, Region, SegIndex, Shape, StreetGraph, StreetId};
@@ -290,7 +290,8 @@ impl Fabric {
     pub fn build(d: &Draft, plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> Fabric {
         let mut laps = Laps::new();
         let graph = StreetGraph::build(&d.ways, &d.nodes, lib, d.snap);
-        laps.lap("graph");
+        let relief = crate::plan::Relief::solve(&graph, lib, &d.hills);
+        laps.lap("graph and grades");
         let corridors = graph.corridor(|s, i| s.width[i]);
         laps.lap("corridors");
         let plazas = Region::rings(d.plazas.iter().map(|p| p.ring.as_slice()));
@@ -462,7 +463,7 @@ impl Fabric {
             let rest = domain.minus(&Region::union_all(lots.iter().map(|l| &l.0)));
             let (public, courts): (Vec<Region>, Vec<Region>) = rest.components().into_iter().partition(touches_streets);
             let public = Region::union_all(public.iter());
-            let ground = Ground::classes(&graph, lib, &public, &plazas);
+            let ground = Ground::classes(&graph, lib, &public, &plazas, relief.clone());
             (public, Region::union_all(courts.iter()), ground)
         };
         let (mut public, mut courts, mut ground) = split(&lot_regions);
@@ -928,7 +929,7 @@ impl<'a> Ctx<'a> {
         }
         // Fronts.
         let mut fronts = vec![Front::UNCONSTRAINED; n];
-        let mut base: f32 = 0.0;
+        let mut base = f32::NEG_INFINITY;
         let mut any_street = false;
         for i in 0..n {
             if !edges[i].is_street() {
@@ -958,9 +959,10 @@ impl<'a> Ctx<'a> {
             fronts[i].miradores = fronts[i].miradores && reach >= 0.8;
         }
         if !any_street {
-            base = 0.15;
+            let c = ring.iter().copied().sum::<Vec2>() / n as f32;
+            base = 0.15 + self.ground.relief.elev(c);
         }
-        let mut lot = Lot::new(ring, edges, if any_street { base.max(0.0) } else { base });
+        let mut lot = Lot::new(ring, edges, base);
         lot.fronts = fronts;
         lot
     }
@@ -1064,8 +1066,15 @@ impl Fabric {
             if !self.info[i].footprint && !(0..l.ring.len()).any(|k| l.edges[k].is_street() && l.ring[k].distance(l.ring[(k + 1) % l.ring.len()]) >= 2.0) {
                 v.push(Violation(format!("lot {i}: no street edge of 2 m")));
             }
-            if l.base - 0.0 > SKIRT + 0.2 {
-                v.push(Violation(format!("lot {i}: base {}", l.base)));
+            // L8: base is the highest ground in front of the facades (the
+            // layout fills any lower ground with a plinth).
+            let ground_max = (0..l.ring.len()).filter(|&k| l.edges[k].is_street()).flat_map(|k| {
+                let (a, b) = l.edge(k);
+                let d = (b - a).normalize_or(Vec2::X);
+                [0.15, 0.5, 0.85].map(|t| self.ground.height_at(a.lerp(b, t) + Vec2::new(d.y, -d.x) * 0.2))
+            }).fold(f32::NEG_INFINITY, f32::max);
+            if ground_max.is_finite() && (l.base - ground_max).abs() > 0.02 {
+                v.push(Violation(format!("lot {i}: base {} vs ground {ground_max}", l.base)));
             }
             area += l.area() as f64;
         }

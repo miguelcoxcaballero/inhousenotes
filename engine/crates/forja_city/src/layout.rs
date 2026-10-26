@@ -162,7 +162,7 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
         let gi = lay.out.add_scene(assemble(kit, "ground_plane", plane, None));
         lay.out.placements.push((gi, Mat4::IDENTITY));
     }
-    let (tiles, col) = ground::mesh(&fabric.ground, &fabric.graph, lib);
+    let (tiles, col) = ground::mesh(&fabric.ground, &fabric.graph, lib, &fabric.courts);
     for (_, parts) in tiles {
         if parts.tri_count() == 0 {
             continue;
@@ -185,7 +185,7 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
         let c = b.shape.outer.iter().copied().sum::<Vec2>() / b.shape.outer.len().max(1) as f32;
         by_tile.entry(((c.x / 64.0).floor() as i32, (c.y / 64.0).floor() as i32)).or_default().push(bi);
     }
-    let mut built = 0usize;
+    let (mut built, mut plinths) = (0usize, 0usize);
     for (_, blocks) in by_tile {
         let mut parts: Parts<Mat> = Parts::new();
         for bi in blocks {
@@ -197,6 +197,7 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
                 let Some(style) = style_for(styles, plan, info.zone, &info.pool, info.key, seed) else { continue };
                 let mut rng = Rng::keyed(seed, stage::LOT ^ 0x99, info.key);
                 eaves[li] = building::build_into(&mut mlib, &mut lay.out, &mut parts, lot, style, rng.next_u32() as u64 | (rng.next_u32() as u64) << 32);
+                plinths += plinth(&mut parts, &mut lay.out, lot, &fabric.ground);
                 built += 1;
             }
             building::medianeras(&mut mlib, &mut lay.out, &mut parts, first_wall);
@@ -234,10 +235,49 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
     lay.stats = fabric.stats.clone();
     lay.stats.push(("buildings".into(), lay.out.buildings));
     lay.stats.push(("built_lots".into(), built));
+    lay.stats.push(("plinth_m".into(), plinths));
     lay.stats.push(("modules".into(), lay.out.scenes.len()));
     lay.stats.push(("lights".into(), lay.out.lights.len()));
     lay.fabric = fabric;
     lay
+}
+
+/// A stone plinth (zócalo) under the street and courtyard facades of a
+/// lot wherever the ground falls below the building's foundation
+/// (`base - SKIRT`): on a slope the facade stands level at its highest
+/// ground and the plinth grows downhill, as on Madrid's sloping streets.
+/// Returns the metres of plinth built.
+fn plinth(parts: &mut Parts<Mat>, out: &mut CityOut, lot: &crate::lot::Lot, ground: &ground::Ground) -> usize {
+    if ground.relief.is_flat() {
+        return 0;
+    }
+    let top = lot.base - crate::lot::SKIRT + 0.02;
+    let mut built = 0.0f32;
+    for k in 0..lot.ring.len() {
+        if lot.edges[k] == crate::lot::EdgeKind::Party {
+            continue;
+        }
+        let (a, b) = lot.edge(k);
+        let d = (b - a).normalize_or(Vec2::X);
+        let o = Vec2::new(d.y, -d.x);
+        let n = (a.distance(b) / 2.0).ceil().max(1.0) as usize;
+        for i in 0..n {
+            let (p0, p1) = (a.lerp(b, i as f32 / n as f32), a.lerp(b, (i + 1) as f32 / n as f32));
+            let (g0, g1) = (ground.height_at(p0 + o * 0.15) - 0.05, ground.height_at(p1 + o * 0.15) - 0.05);
+            if top - g0.min(g1) < 0.03 {
+                continue;
+            }
+            let (b0, b1) = (Vec3::new(p0.x, g0.min(top), p0.y), Vec3::new(p1.x, g1.min(top), p1.y));
+            let (t0, t1) = (Vec3::new(p0.x, top, p0.y), Vec3::new(p1.x, top, p1.y));
+            // Facing out of the lot (right of a -> b).
+            parts.get(Mat::Granite).quad(b1, b0, t0, t1, Mat::Granite.scale());
+            let base = out.col_verts.len() as u32;
+            out.col_verts.extend([b1, b0, t0, t1]);
+            out.col_tris.extend([[base, base + 1, base + 2], [base, base + 2, base + 3]]);
+            built += p0.distance(p1);
+        }
+    }
+    built as usize
 }
 
 /// The style of a lot: from its zone's pool for its key, falling back to
@@ -402,7 +442,7 @@ fn spawns(lay: &mut CityLayout, f: &Fabric, lib: &ProfileLibrary) {
                 continue;
             }
             let fwd = s.line.tangent(t) * dir;
-            lay.spawns.push(Spawn { vehicle: true, pos: Vec3::new(q.x, 0.8, q.y), yaw: fwd.x.atan2(fwd.y) });
+            lay.spawns.push(Spawn { vehicle: true, pos: Vec3::new(q.x, f.ground.height_at(q) + 0.8, q.y), yaw: fwd.x.atan2(fwd.y) });
         }
     }
 }

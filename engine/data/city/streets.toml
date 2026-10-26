@@ -201,6 +201,7 @@ speed = 50
 # Pedestrian street (calle peatonal): flush slabs, terraces, benches.
 [[profile]]
 id = "calle_peatonal"
+stairs = true
 class = "street"
 rank = 4
 width = [5.0, 9.0]
@@ -258,6 +259,7 @@ front = { reach_max = 0.7 }
 # Pedestrian alley: shared cobbles with a central gutter.
 [[profile]]
 id = "callejuela"
+stairs = true
 class = "alley"
 rank = 1
 width = [3.5, 5.5]
@@ -271,6 +273,7 @@ front = { reach_max = 0.6, shops = 0.6 }
 
 [[profile]]
 id = "callejon"
+stairs = true
 class = "alley"
 rank = 0
 width = [2.2, 3.4]

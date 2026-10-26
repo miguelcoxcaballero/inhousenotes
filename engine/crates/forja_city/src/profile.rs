@@ -198,6 +198,14 @@ pub struct Profile {
     pub bike: bool,
     #[serde(default)]
     pub speed: Option<u8>,
+    /// Steepest ramp (rise over run); by class when absent: avenues 5 %,
+    /// streets 10 %, lanes 12 %, alleys and plazas 15 %.
+    #[serde(default)]
+    pub grade: Option<f32>,
+    /// Pedestrian street that turns into steps where it is steeper than
+    /// `grade` (up to `relief::STAIR_GRADE`).
+    #[serde(default)]
+    pub stairs: bool,
     #[serde(default)]
     pub front: FrontRules,
 }
@@ -207,6 +215,16 @@ fn d_kerb() -> f32 {
 }
 
 impl Profile {
+    pub fn max_grade(&self) -> f32 {
+        self.grade.unwrap_or(match self.class {
+            Class::Avenue => 0.05,
+            Class::Street => 0.10,
+            Class::Lane => 0.12,
+            Class::Alley | Class::Plaza => 0.15,
+            Class::Limit => 1.0,
+        })
+    }
+
     /// Typical width (m).
     pub fn default_width(&self) -> f32 {
         (self.width[0] + self.width[1]) * 0.5

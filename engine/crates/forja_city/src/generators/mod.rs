@@ -126,6 +126,9 @@ pub struct CityPlan {
     pub zones: Vec<Zone>,
     #[serde(default, rename = "way")]
     pub ways: Vec<GlobalWay>,
+    /// Terrain: rises of the ground, on a zone or at a point.
+    #[serde(default, rename = "hill")]
+    pub hills: Vec<HillSpec>,
     /// A draft given as data (tests, OSM): used as is.
     #[serde(skip)]
     pub given: Option<Draft>,
@@ -195,8 +198,28 @@ impl CityPlan {
             grid: None,
             organic: None,
         };
-        CityPlan { name: "given".into(), zones: vec![zone], ways: Vec::new(), given: Some(d) }
+        CityPlan { name: "given".into(), zones: vec![zone], ways: Vec::new(), hills: Vec::new(), given: Some(d) }
     }
+}
+
+/// A rise of the ground in a plan: centred on a zone (covering its mask)
+/// or at a point.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HillSpec {
+    #[serde(default)]
+    pub zone: Option<String>,
+    #[serde(default)]
+    pub at: Option<[f32; 2]>,
+    /// Radius (m); for a zone, a multiple of its mask's circumradius.
+    #[serde(default)]
+    pub radius: Option<f32>,
+    /// Offset of the summit from the zone centre (m).
+    #[serde(default)]
+    pub offset: [f32; 2],
+    pub height: f32,
+    #[serde(default)]
+    pub noise: f32,
 }
 
 /// Mixes a seed with a stage and a key (SplitMix64).
@@ -241,6 +264,23 @@ pub fn draft_report(plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> (Draft,
         };
         masks.push(ring.clone());
         d.masks.push(Mask { zone: zi, ring });
+    }
+    // Terrain, resolved against the zone masks.
+    for (k, h) in plan.hills.iter().enumerate() {
+        let zone_ring = h.zone.as_ref().and_then(|id| plan.zones.iter().position(|z| &z.id == id)).map(|i| &masks[i]);
+        let (at, radius) = match (zone_ring, h.at) {
+            (Some(r), _) if !r.is_empty() => {
+                let c = r.iter().copied().sum::<Vec2>() / r.len() as f32;
+                let rad = r.iter().map(|p| p.distance(c)).fold(0.0, f32::max);
+                (c + Vec2::from(h.offset), rad * h.radius.unwrap_or(1.0))
+            }
+            (_, Some(at)) => (Vec2::from(at), h.radius.unwrap_or(150.0)),
+            _ => {
+                log::warn!("hill {k}: no zone or point");
+                continue;
+            }
+        };
+        d.hills.push(crate::plan::Hill { at, radius, height: h.height, noise: h.noise, seed: seed ^ (k as u64 + 1).wrapping_mul(0x9E37_79B9) });
     }
     // Ronda loops along organic zone boundaries.
     for (i, z) in plan.zones.iter().enumerate() {

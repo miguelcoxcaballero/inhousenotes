@@ -128,6 +128,9 @@ pub struct Draft {
     /// Node merge distance (m): 0.05 for procedural plans, 0.3 for OSM.
     #[serde(default = "d_snap")]
     pub snap: f32,
+    /// The terrain under the city (none: flat).
+    #[serde(default)]
+    pub hills: Vec<super::relief::Hill>,
 }
 
 fn d_snap() -> f32 {
@@ -150,6 +153,7 @@ impl Draft {
         self.masks.extend(o.masks);
         self.footprints.extend(o.footprints);
         self.nodes.extend(o.nodes);
+        self.hills.extend(o.hills);
     }
 }
 
