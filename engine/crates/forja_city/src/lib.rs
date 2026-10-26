@@ -13,15 +13,24 @@
 //!
 //! Everything is modular: a module is an instanced scene built once per
 //! variant, a style is data, and the city layout only hands out lots.
+//!
+//! Surfaces are weathered so they read as photographed, not generated:
+//! scanned materials become larger anti-tiling textures with mottling,
+//! repairs, stains, cracks and gum ([`macrotex`]), and every street facade
+//! gets dirt decals (rising damp, sill streaks, cornice soot,
+//! [`weathering`]).
 
 pub mod building;
 pub mod furniture;
 pub mod layout;
 pub mod geom;
 pub mod kit;
+pub mod macrotex;
 pub mod modules;
+pub mod noise;
 pub mod style;
 pub mod texgen;
+pub mod weathering;
 
 pub use building::{CityOut, EdgeKind, Frontage, Lot, ModuleLib};
 pub use kit::{Kit, Mat};
