@@ -35,6 +35,8 @@ pub struct Target {
     pub anim: Option<AnimController>,
     pub scale: f32,
     pub facing: f32,
+    /// A Rocketbox person (preferred over the MakeHuman/robot fallbacks).
+    pub person: Option<super::people::Person>,
 }
 
 pub struct Combat {
@@ -76,6 +78,28 @@ fn fit(scene: &forja_assets::SceneData, size: f32) -> Mat4 {
 
 fn load_target(app: &mut App, position: Vec3, facing: f32, variant: usize) -> Option<Target> {
     let paths = app.world.res::<Paths>().clone();
+    // Real-looking people standing about, when Rocketbox avatars are there.
+    if super::people::PeopleLibrary::available(&paths) {
+        let own = app.world.res::<Player>().avatar.person.as_ref().map(|p| p.kind.name.clone());
+        let files: Vec<_> = super::people::PeopleLibrary::catalogue(&paths).into_iter().filter(|f| own.as_ref().is_none_or(|o| !f.ends_with(format!("{o}.fbx")))).collect();
+        if !files.is_empty() {
+            let file = files[(variant * 5 + 3) % files.len()].clone();
+            let person = app.world.scope::<super::people::PeopleLibrary, _>(|w, lib| {
+                let kind = lib.load(&paths, w.res_mut::<RenderScene>(), &[file], 1024).pop()?;
+                let mut p = lib.spawn(&paths, &kind, super::people::WALKS[0], 77 + variant as u64)?;
+                // Waiting, idling, waiting.
+                p.anim.set("stand", if variant % 2 == 0 { 2.0 } else { 0.0 });
+                Some(p)
+            });
+            if let Some(p) = person {
+                let physics = app.world.res_mut::<PhysicsWorld>();
+                let body = physics.add_body(RigidBodyDesc::kinematic().position(position + Vec3::Y * 0.9));
+                physics.add_collider(ColliderDesc::new(Shape::capsule(0.5, 0.3)).groups(CollisionGroups::new(layers::CHARACTER, u32::MAX)), Some(body));
+                let (model, skeleton) = (p.kind.model, p.kind.skeleton.clone());
+                return Some(Target { body, health: Health { hp: 120.0, max_hp: 120.0, ..Default::default() }, model, skeleton, anim: None, scale: 1.0, facing, person: Some(p) });
+            }
+        }
+    }
     // Realistic people when the MakeHuman content is present.
     if super::humans::HumanLibrary::available(&paths) {
         let specs = super::humans::npc_specs();
@@ -85,7 +109,7 @@ fn load_target(app: &mut App, position: Vec3, facing: f32, variant: usize) -> Op
             let physics = app.world.res_mut::<PhysicsWorld>();
             let body = physics.add_body(RigidBodyDesc::kinematic().position(position + Vec3::Y * 0.9));
             physics.add_collider(ColliderDesc::new(Shape::capsule(0.5, 0.35)).groups(CollisionGroups::new(layers::CHARACTER, u32::MAX)), Some(body));
-            return Some(Target { body, health: Health { hp: 120.0, max_hp: 120.0, ..Default::default() }, model: h.model, skeleton: h.skeleton, anim: h.anim, scale: 1.0, facing });
+            return Some(Target { body, health: Health { hp: 120.0, max_hp: 120.0, ..Default::default() }, model: h.model, skeleton: h.skeleton, anim: h.anim, scale: 1.0, facing, person: None });
         }
     }
     let rs = app.world.res_mut::<RenderScene>();
@@ -103,7 +127,7 @@ fn load_target(app: &mut App, position: Vec3, facing: f32, variant: usize) -> Op
     let physics = app.world.res_mut::<PhysicsWorld>();
     let body = physics.add_body(RigidBodyDesc::kinematic().position(position + Vec3::Y * 0.9));
     physics.add_collider(ColliderDesc::new(Shape::capsule(0.5, 0.4)).groups(CollisionGroups::new(layers::CHARACTER, u32::MAX)), Some(body));
-    Some(Target { body, health: Health { hp: 120.0, max_hp: 120.0, ..Default::default() }, model, skeleton, anim, scale, facing })
+    Some(Target { body, health: Health { hp: 120.0, max_hp: 120.0, ..Default::default() }, model, skeleton, anim, scale, facing, person: None })
 }
 
 impl Plugin for CombatPlugin {
@@ -368,7 +392,8 @@ fn render_system(w: &mut forja_core::World) {
     let dt = w.res::<Time>().delta;
     let t = w.res::<Time>().elapsed as f32;
     let hand = w.res::<Player>().hand_world;
-    let human = w.res::<Player>().avatar.human.is_some();
+    let human = w.res::<Player>().avatar.human.is_some() || w.res::<Player>().avatar.person.is_some();
+    let player_eye = w.res::<Player>().controller.feet() + Vec3::Y * 1.62;
     let cam_fwd = w.res::<RenderScene>().camera.forward();
     let driving = w.res::<Driving>().0.is_some();
     let mut items = Vec::new();
@@ -417,6 +442,15 @@ fn render_system(w: &mut forja_core::World) {
         for tg in &mut c.targets {
             let Some(b) = physics.body(tg.body) else { continue };
             let feet = b.position() - Vec3::Y * 0.9;
+            if let Some(p) = &mut tg.person {
+                // They keep an eye on whoever is holding the gun.
+                let transform = Mat4::from_rotation_translation(Quat::from_rotation_y(tg.facing), feet);
+                let dead = tg.health.is_dead();
+                p.anim.set("dead", dead as u32 as f32);
+                p.update(dt, 0.0, &transform, (!dead).then_some(player_eye));
+                items.push(p.render_item(transform));
+                continue;
+            }
             let mut mats = Vec::new();
             if let Some(anim) = &mut tg.anim {
                 anim.set("dead", tg.health.is_dead() as u32 as f32);
