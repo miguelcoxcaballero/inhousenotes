@@ -653,9 +653,9 @@ impl HeightField {
         if !aabb.intersects(&self.aabb) {
             return;
         }
-        let c0 = (((aabb.min.x - self.aabb.min.x) / self.cell.x).floor().max(0.0)) as usize;
+        let c0 = (((aabb.min.x - self.aabb.min.x) / self.cell.x).floor().max(0.0) as usize).min(self.cols - 2);
         let c1 = (((aabb.max.x - self.aabb.min.x) / self.cell.x).floor() as isize).clamp(0, self.cols as isize - 2) as usize;
-        let r0 = (((aabb.min.z - self.aabb.min.z) / self.cell.y).floor().max(0.0)) as usize;
+        let r0 = (((aabb.min.z - self.aabb.min.z) / self.cell.y).floor().max(0.0) as usize).min(self.rows - 2);
         let r1 = (((aabb.max.z - self.aabb.min.z) / self.cell.y).floor() as isize).clamp(0, self.rows as isize - 2) as usize;
         for r in r0..=r1.min(self.rows - 2) {
             for c in c0..=c1.min(self.cols - 2) {
@@ -769,6 +769,15 @@ mod tests {
         let hit = hf.raycast(&ray, 100.0).unwrap();
         let h = hf.height_at(3.3, -2.7).unwrap();
         assert!((ray.at(hit.t).y - h).abs() < 1e-3);
+    }
+
+    #[test]
+    fn heightfield_edges_are_solid() {
+        let hf = HeightField::new(3, 3, vec![0.0; 9], Vec2::splat(1.0));
+        // Exactly on the max corner and edges.
+        for (x, z) in [(1.0, 1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, -1.0)] {
+            assert!(hf.raycast(&Ray::new(vec3(x, 5.0, z), Vec3::NEG_Y), 10.0).is_some(), "miss at {x},{z}");
+        }
     }
 
     #[test]
