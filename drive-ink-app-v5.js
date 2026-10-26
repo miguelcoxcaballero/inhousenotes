@@ -3,6 +3,7 @@
 (function(root){
     'use strict';
     const L=root.InhouseOfflineLibrary,S=root.InhouseOfflineStore;
+    let live=null,previewRaf=null;const incomingPreviews=new Map();
     let engine=null,session=null,account='',timer=null,applying=0,ackVersion=-1;
     let pages=new Set(),baseline=new Map(),metadataDirty=false,baselineReady=false,capturing=null;
     const announced=new Map();
@@ -16,13 +17,13 @@
     function remember(page){
         baseline.set(page.pageId,new Map([...(page.strokes||[]),...(page.images||[])].map(item=>[item.id,stamp(item)])));
     }
-    function stop(){capturing=null;clearTimeout(timer);timer=null;engine?.stop();engine=null;baseline.clear();pages.clear();baselineReady=false;metadataDirty=false;ackVersion=-1;}
+    function stop(){live?.stop();live=null;if(previewRaf)cancelAnimationFrame(previewRaf);previewRaf=null;incomingPreviews.clear();capturing=null;clearTimeout(timer);timer=null;engine?.stop();engine=null;baseline.clear();pages.clear();baselineReady=false;metadataDirty=false;ackVersion=-1;}
     function start(){
         if(!L.account())return null;
         if(engine&&current(engine))return engine;
         stop();account=L.account();session=getDocumentSessionToken();
         const token=session,docId=usable()?state.driveFileId:'';
-        const journal=new root.InhouseDriveInkJournal.Journal({store:S,account,docId,
+        const host={store:S,account,docId,
             fetch:async(url,options)=>{
                 if(journal.account!==L.account())throw createAbortError('Account changed');
                 if(navigator.onLine===false)throw createAbortError('Offline');
@@ -51,6 +52,7 @@
                         const result=await applyRemotePages(op.pages,{sessionToken:token,fileId:docId,
                             additiveById:true,preserveLocalUnsynced:true,remoteStructure:op.structure,
                             remoteFields:op.fields,remoteExportName:op.name,remoteCalendarPageConfig:op.calendar});
+                        clearRemoteLiveStrokePreviews('',Infinity,op.pages);
                         if(result.changed){
                             // A journal receipt is not a PDF receipt. Keep PDF dirty
                             // and invalidate exports before its next checkpoint.
@@ -61,22 +63,26 @@
                     }finally{applying--;}
                 }
             },
-            announce:async(fileId,id)=>{
-                root.publishDriveInkHint?.(fileId,id);
+            announce:async(fileId,id,actor,preview=false)=>{
+                root.publishDriveInkHint?.(fileId,id,preview);
+                if(driveSaveInProgress)return;
                 const device=getPresenceClientId().replace(/[^a-zA-Z0-9]/g,'').slice(-24);
-                const key=`ihn_ink_${device}`;
-                if(announced.get(fileId)===id)return;
+                const key=`${preview?'ihn_live_':'ihn_ink_'}${device}`,announcementKey=`${fileId}:${preview}`;
+                if(announced.get(announcementKey)===id)return;
                 if(journal.account!==L.account())throw createAbortError('Account changed');
                 const response=await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id`,{
                     method:'PATCH',timeout:8000,headers:{'Content-Type':'application/json'},body:JSON.stringify({properties:{[key]:id}})});
                 if(!response.ok)throw new Error(`Ink discovery hint failed (${response.status})`);
-                announced.set(fileId,id);
+                announced.set(announcementKey,id);
             },
             receipt:receipt=>{if(current(journal)&&receipt.docId===docId&&receipt.actor===journal.actor){ackVersion=Math.max(ackVersion,receipt.version);refreshSaveIndicatorState();}},
             error:error=>{if(current(journal))console.warn('Drive ink sync:',error.message);},
             changed:()=>{if(current(journal))refreshSaveIndicatorState();}
-        });
+        };
+        const journal=new root.InhouseDriveInkJournal.Journal(host);
         engine=journal;
+        if(docId&&root.InhouseDriveLivePreview)live=new root.InhouseDriveLivePreview({...host,actor:journal.actor,
+            canPublish:state.driveCanEdit!==false,preview:packet=>queuePreview(journal,packet)}).start();
         // Baseline establishment happens at idle, not on the pointerdown path.
         schedule();journal.start();return journal;
     }
@@ -140,10 +146,35 @@
     }
     function page(index){if(applying)return;if(!start()?.docId)return;pages.add(index);schedule();}
     function change(){if(applying)return;if(!start()?.docId)return;metadataDirty=true;schedule();}
-    function hint(fileId,id){if(fileId!==state.driveFileId)return;start()?.hint(id);}
-    function hints(fileId,props){for(const [key,id]of Object.entries(props||{}))if(key.startsWith('ihn_ink_'))hint(fileId,id);}
+    function preview(packet){if(packet?.fileId!==state.driveFileId)return;start();live?.push(packet);}
+    function queuePreview(journal,packet){
+        if(!current(journal)||packet.actorId===`${ihnGetLivePeerId()}:${ihnGetLiveTabId()}`)return;
+        const key=`${packet.actorId}:${packet.strokeId}`,queued=incomingPreviews.get(key);
+        if(queued&&queued.sequence>=packet.sequence)return;
+        incomingPreviews.set(key,packet);
+        if(previewRaf)return;
+        previewRaf=requestAnimationFrame(()=>{
+            previewRaf=null;
+            const packets=[...incomingPreviews.values()];incomingPreviews.clear();
+            if(!current(journal))return;
+            for(const packet of packets){
+                const page=state.pages.find(page=>page.pageId===packet.pageId);
+                if(!page)continue;
+                if(packet.cancel||page.strokes?.some(stroke=>stroke.id===packet.strokeId)
+                    ||page.deletedStrokeIds?.includes(packet.strokeId)){
+                    clearRemoteLiveStrokePreview(packet.actorId,packet.strokeId);continue;
+                }
+                const old=remoteLiveStrokePreviews.get(`${packet.actorId}:${packet.strokeId}`);
+                if(old&&old.sequence>=packet.sequence)continue;
+                const offset=Math.max(0,Math.min(packet.points.length,old?.points.length||0)-1);
+                applyRemoteLiveStrokePreview({...packet,offset,points:packet.points.slice(offset),finalBatch:false,final:false,totalPoints:0});
+            }
+        });
+    }
+    function hint(fileId,id,preview=false){if(fileId!==state.driveFileId)return;const journal=start();if(preview)live?.hint(id);else journal?.hint(id);}
+    function hints(fileId,props){for(const [key,id]of Object.entries(props||{}))if(key.startsWith('ihn_ink_')||key.startsWith('ihn_live_'))hint(fileId,id,key.startsWith('ihn_live_'));}
     function status(){return engine&&current(engine)?{...engine.status(),ackVersion,pendingCapture:!!pages.size||metadataDirty}:null;}
-    root.InhouseDriveInk=Object.freeze({start,stop,page,stroke,change,hint,hints,status,capture});
+    root.InhouseDriveInk=Object.freeze({start,stop,page,stroke,preview,change,hint,hints,status,capture});
     // Home also drains journals committed before a process exit. It never
     // replaces the PDF's local snapshot with journal upload acknowledgements.
     setInterval(()=>{

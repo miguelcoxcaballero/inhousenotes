@@ -242,7 +242,7 @@ function ihnEnsureTabChannel() {
             return;
         }
         if (event.data?.type === 'drive-ink-hint') {
-            window.InhouseDriveInk?.hint(event.data.fileId,event.data.id);return;
+            window.InhouseDriveInk?.hint(event.data.fileId,event.data.id,event.data.preview);return;
         }
         if (event.data?.type === 'drive-committed') {
             ihnHandleDriveCommitHint(event.data);
@@ -1428,9 +1428,9 @@ function ihnHandleDriveCommitHint(message) {
     void pollDriveRevision();
 }
 
-function publishDriveInkHint(fileId,id) {
+function publishDriveInkHint(fileId,id,preview=false) {
     if(fileId!==state.driveFileId)return;
-    const message={type:'drive-ink-hint',fileId,id};
+    const message={type:'drive-ink-hint',fileId,id,preview};
     ihnEnsureTabChannel();
     try { ihnLiveBroadcastChannel?.postMessage(message); } catch (_) {}
     ihnLivePeers.forEach(peer=>ihnSendControl(peer,message));
@@ -1486,6 +1486,7 @@ function ihnSanitizeLiveStrokeStamp(value) {
 
 function ihnSendRealtimeStrokePacket(packet, excludePeerId = '') {
     if (!packet || packet.fileId !== state?.driveFileId) return false;
+    if(!excludePeerId&&packet.type==='live-stroke')window.InhouseDriveInk?.preview(packet);
     ihnRememberRealtimePacket(packet);
     ihnEnsureTabChannel();
     try { ihnLiveBroadcastChannel?.postMessage(packet); } catch (error) {}
@@ -3638,7 +3639,7 @@ async function ihnHandleWireMessage(
         return;
     }
     if (message?.type === 'drive-ink-hint') {
-        window.InhouseDriveInk?.hint(message.fileId,message.id);return;
+        window.InhouseDriveInk?.hint(message.fileId,message.id,message.preview);return;
     }
     if (message?.type === 'drive-committed') {
         ihnHandleDriveCommitHint(message);

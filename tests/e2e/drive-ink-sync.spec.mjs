@@ -18,6 +18,9 @@ async function setup(page,api,actor){
   // Expose this instance only in the test; the production adapter remains sealed.
   const Original=InhouseDriveInkJournal.Journal;
   InhouseDriveInkJournal.Journal=class extends Original{constructor(host){super({...host,actor});window.inkTestJournal=this;}start(){return this;}wake(){}};
+  const Live=InhouseDriveLivePreview;
+  InhouseDriveLivePreview=class extends Live{constructor(host){super(host);window.liveTest=this;}start(){return this;}scheduleFrame(){}schedulePoll(){}};
+  startLiveCollaboration=()=>{};
   InhouseDriveInk.start();await InhouseDriveInk.capture();
  },actor);
 }
@@ -83,4 +86,23 @@ test('finished strokes reach the small Drive journal while heavy document work i
  });
  expect(result.pending).toBe(0);expect(result.receipt).toBe(result.version);
  expect([...api.files.values()].some(f=>f.raw?.includes('quick-ink'))).toBe(true);
+});
+
+test('Drive previews show a growing stroke before pen-up without P2P or durable merge waits',async({browser})=>{
+ const api=fakeInkDrive(),ca=await browser.newContext(),cb=await browser.newContext(),a=await ca.newPage(),b=await cb.newPage();
+ try{
+  await setup(a,api,'drawing-device');await setup(b,api,'viewing-device');
+  const id=await a.evaluate(async()=>{
+   window.testLiveStroke={id:'unfinished',tool:'pen',color:'#0000ff',width:2,points:[{x:10,y:10,p:.5},{x:20,y:20,p:.5}]};
+   publishLiveStrokePreview('page-one',testLiveStroke);ihnFlushLiveStrokePreview('unfinished');
+   isPenWriting=true;await liveTest.flushFrame();return liveTest.fileId;
+  });
+  await b.evaluate(async id=>{liveTest.hint(id);await liveTest.pollFrames();},id);
+  await expect.poll(()=>b.evaluate(()=>[...remoteLiveStrokePreviews.values()].find(p=>p.strokeId==='unfinished')?.points.length)).toBe(2);
+  expect(await b.evaluate(()=>state.pages[0].strokes.some(s=>s.id==='unfinished'))).toBe(false);
+  await a.evaluate(async()=>{testLiveStroke.points.push({x:30,y:35,p:.7});publishLiveStrokePreview('page-one',testLiveStroke);ihnFlushLiveStrokePreview('unfinished');await liveTest.flushFrame();});
+  await b.evaluate(async()=>{for(const s of liveTest.previewSources.values())s.next=0;await liveTest.pollFrames();});
+  await expect.poll(()=>b.evaluate(()=>[...remoteLiveStrokePreviews.values()].find(p=>p.strokeId==='unfinished')?.points.length)).toBe(3);
+  expect(await a.evaluate(()=>isPenWriting)).toBe(true);
+ }finally{await ca.close();await cb.close();}
 });

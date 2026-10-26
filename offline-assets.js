@@ -8,6 +8,7 @@ self.INHOUSE_OFFLINE_ASSETS=[
   "/document-processing-worker-v5.js",
   "/drive-ink-app-v5.js",
   "/drive-ink-journal-v5.js",
+  "/drive-live-preview-v5.js",
   "/icons/welcome-pages.svg",
   "/index.html",
   "/ink-palette.js",
