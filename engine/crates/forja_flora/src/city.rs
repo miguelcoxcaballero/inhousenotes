@@ -11,7 +11,6 @@ use std::collections::BTreeMap;
 
 use forja_city::layout::{PropKind, PropSite, Setting};
 use forja_math::{Mat4, Quat};
-use rayon::prelude::*;
 
 use crate::rng::{Rng, hash_str};
 use crate::{Capsule, Params, Pruning, Season, SpeciesLibrary, TreeAsset, generate, impostor};
@@ -108,8 +107,10 @@ pub fn plant(props: &[(PropKind, Mat4)], sites: &[PropSite], lib: &SpeciesLibrar
         }
     }
     let variants = opt.variants.max(1);
+    // Species one after another (each builds its textures with all cores):
+    // generating several atlases at once needs a lot of memory.
     let built: Vec<Vec<TreeAsset>> = groups
-        .par_iter()
+        .iter()
         .map(|(sp_id, pr)| {
             let Some(sp) = lib.get(sp_id) else { return Vec::new() };
             let mut out = Vec::new();
@@ -132,6 +133,7 @@ pub fn plant(props: &[(PropKind, Mat4)], sites: &[PropSite], lib: &SpeciesLibrar
             out
         })
         .collect();
+    crate::clear_texture_cache();
     let mut forest = CityForest::default();
     let mut first = Vec::new();
     for (g, list) in groups.iter().zip(built) {

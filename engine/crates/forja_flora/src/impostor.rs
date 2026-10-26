@@ -108,8 +108,9 @@ fn raster(asset: &TreeAsset, n: usize) -> Vec<(Canvas, Vec<f32>)> {
     let center = asset.crown_center;
     let crown_r = asset.crown_radii.max_element().max(0.5);
     let vs = views(&asset.billboard);
-    vs.par_iter()
-        .map(|v| {
+    // Two views at a time keeps the peak memory low.
+    vs.chunks(2)
+        .flat_map(|pair| pair.par_iter().map(|v| {
             let mut col = Canvas::new(n, n);
             let mut shade_px = vec![1.0f32; n * n];
             let mut depth = vec![f32::MIN; n * n];
@@ -164,7 +165,7 @@ fn raster(asset: &TreeAsset, n: usize) -> Vec<(Canvas, Vec<f32>)> {
                 }
             }
             (col, shade_px)
-        })
+        }).collect::<Vec<_>>())
         .collect()
 }
 

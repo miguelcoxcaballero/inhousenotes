@@ -203,6 +203,13 @@ fn cache() -> &'static Mutex<TexCache> {
     C.get_or_init(|| Mutex::new(TexCache { bark: HashMap::new(), foliage: HashMap::new() }))
 }
 
+/// Drops the shared texture cache (trees already generated keep theirs).
+pub fn clear_texture_cache() {
+    let mut c = cache().lock().unwrap();
+    c.bark.clear();
+    c.foliage.clear();
+}
+
 fn bark_textures(sp: &Species) -> Arc<TextureSet> {
     if let Some(t) = cache().lock().unwrap().bark.get(&sp.id) {
         return t.clone();
