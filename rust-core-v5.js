@@ -461,6 +461,38 @@
     // >>> stream:docio (only this area edits between its markers)
     // <<< stream:docio
     // >>> stream:storage (only this area edits between its markers)
+    // Ink checkpoint words (rust-core/src/storage.rs). The host reads the live point objects into typed arrays;
+    // the layout, validation and range rules are decided in Rust. Both calls throw when the core is missing.
+    const storageCore = name => { if (!core?.[name]) throw new Error('Rust core is unavailable (' + name + ')'); return core; };
+    api.packInkWords = (raw, tags, counts) => {
+        const wasm = storageCore('ink_pack_words');
+        if (!(raw instanceof Float64Array) || !(tags instanceof Uint8Array) || !(counts instanceof Uint32Array)
+            || raw.length !== tags.length * 3) throw new TypeError('Invalid ink point buffers');
+        const blocks = [], put = array => { const block = allocation(Math.max(8, array.byteLength)); blocks.push(block);
+            view(block).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)); return block; };
+        try {
+            const input = put(raw), shape = put(tags), strokes = put(counts);
+            const words = allocation(Math.max(8, tags.length * 32)); blocks.push(words);
+            const offsets = allocation(Math.max(8, counts.length * 8)); blocks.push(offsets);
+            const used = wasm.ink_pack_words(input.pointer, shape.pointer, tags.length, strokes.pointer, counts.length, words.pointer, offsets.pointer);
+            if (used < 0) throw new Error('Ink point packing rejected its input');
+            return { words: new Float64Array(wasm.memory.buffer, words.pointer, used).slice(),
+                offsets: new Float64Array(wasm.memory.buffer, offsets.pointer, counts.length).slice() };
+        } finally { blocks.forEach(release); }
+    };
+    // ranges: [offset, count] pairs per stroke. Returns normally when valid and throws the original messages otherwise.
+    api.validateInkWords = (words, ranges) => {
+        const wasm = storageCore('ink_validate_words');
+        if (!(words instanceof Float64Array) || !(ranges instanceof Float64Array) || ranges.length % 2) throw new TypeError('Invalid ink word buffers');
+        const blocks = [], put = array => { const block = allocation(Math.max(8, array.byteLength)); blocks.push(block);
+            view(block).set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength)); return block; };
+        try {
+            const status = wasm.ink_validate_words(put(words).pointer, words.length, put(ranges).pointer, ranges.length / 2);
+            if (status === 1) throw new Error('Invalid ink point range');
+            if (status === 2) throw new Error('Invalid ink pressure flag');
+            if (status !== 0) throw new Error('Ink point validation rejected its input');
+        } finally { blocks.forEach(release); }
+    };
     // <<< stream:storage
     // >>> stream:drive_home (only this area edits between its markers)
     // <<< stream:drive_home
