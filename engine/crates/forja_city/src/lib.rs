@@ -16,7 +16,9 @@
 //!
 //! Surfaces are weathered so they read as photographed, not generated:
 //! scanned materials become larger anti-tiling textures with mottling,
-//! repairs, stains, cracks and gum ([`macrotex`]).
+//! repairs, stains, cracks and gum ([`macrotex`]), and every street facade
+//! gets dirt decals (rising damp, sill streaks, cornice soot,
+//! [`weathering`]).
 
 pub mod building;
 pub mod furniture;
@@ -28,6 +30,7 @@ pub mod modules;
 pub mod noise;
 pub mod style;
 pub mod texgen;
+pub mod weathering;
 
 pub use building::{CityOut, EdgeKind, Lot, ModuleLib};
 pub use kit::{Kit, Mat};

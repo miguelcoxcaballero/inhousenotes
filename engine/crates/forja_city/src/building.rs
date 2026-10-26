@@ -592,6 +592,11 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
     let rustic = style.rustication;
     wall(parts.get(c.ground), c.ground, f, 0.0, c.gh, &ground_holes, uv_off, rustic);
     wall(parts.get(c.wall), c.wall, f, c.gh, top, &upper_holes, uv_off, false);
+    // Weathering decals: damp plinth, sill streaks, cornice soot.
+    let rect = |h: &Hole| [h.u0, h.u1, h.v0, h.v1];
+    let (gw, uw): (Vec<[f32; 4]>, Vec<[f32; 4]>) = (ground_holes.iter().map(rect).collect(), upper_holes.iter().map(rect).collect());
+    let seed = ((f.origin.x.to_bits() as u64) << 32) ^ f.origin.z.to_bits() as u64;
+    crate::weathering::facade(parts, &crate::weathering::FacadeWear { origin: f.origin, t: f.t, n: f.n, len: f.len, ground: c.gh, top, floor_h: c.fh, floors: c.floors, rustic, ground_holes: &gw, upper_holes: &uw, seed });
     // Tile bands under each upper floor and panels between bays.
     if let Some(p) = &style.tile_bands {
         let m = Mat::Tiles(parse_pattern(p));
