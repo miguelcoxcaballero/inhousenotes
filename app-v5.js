@@ -13312,22 +13312,40 @@
             ctx.lineWidth = getStrokeWidth(stroke);
 
             const points = stroke.points;
-            // Populate hit-test bounds during the sliced page paint. The
-            // first eraser contact must not scan every point in the document.
-            getStrokeBounds(stroke);
             const first = points[0], last = points[points.length - 1];
             let cached = penPathCache.get(points);
             if (!cached || cached.length !== points.length || cached.firstX !== first.x
                 || cached.firstY !== first.y || cached.lastX !== last.x || cached.lastY !== last.y) {
+                // One pass over the point objects builds the Path2D and packs x/y into
+                // WASM memory; Rust derives the hit-test bounds from the packed array,
+                // so the first eraser contact never scans every point in the document.
+                const rust = strokeRustCore();
+                const coords = rust.strokeCoords(points.length);
                 const path = new Path2D();
                 path.moveTo(first.x, first.y);
+                coords[0] = first.x; coords[1] = first.y;
                 // Rounded joins remove raster corners without moving any
                 // measured point or averaging away handwriting details.
-                for (let i = 1; i < points.length; i++) path.lineTo(points[i].x, points[i].y);
-                cached = { path, length: points.length, firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y };
+                for (let i = 1; i < points.length; i++) {
+                    const point = points[i], x = point.x, y = point.y;
+                    path.lineTo(x, y);
+                    coords[i * 2] = x; coords[i * 2 + 1] = y;
+                }
+                const [minX, minY, maxX, maxY] = rust.strokeBounds(points.length);
+                cached = { path, length: points.length, firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y,
+                    bounds: { minX, minY, maxX, maxY, points, pointCount: points.length,
+                        firstX: first.x, firstY: first.y, lastX: last.x, lastY: last.y } };
                 penPathCache.set(points, cached);
-            }
+                strokeBoundsCache.set(stroke, cached.bounds);
+            } else if (strokeBoundsCache.has(stroke)) getStrokeBounds(stroke);
+            else strokeBoundsCache.set(stroke, cached.bounds);
             ctx.stroke(cached.path);
+        }
+
+        function strokeRustCore() {
+            const rust = window.InhouseRust;
+            if (!rust) throw new Error('Rust core script is missing; editor rendering requires it');
+            return rust;
         }
 
         function drawImagesOnContext(ctx, page, pageIndex, onload) {
@@ -13447,18 +13465,18 @@
 
         function drawLegacyCoverStrokes(ctx, page) {
             if (!Array.isArray(page?.legacyCoverStrokes) || page.legacyCoverStrokes.length === 0) return;
+            const strokes = page.legacyCoverStrokes;
+            // Rust applies the skip rules and widens each cover (highlighter 1.05x,
+            // pens 1.35x) so the burnt-in stroke is fully covered at high zoom.
+            const widths = strokeRustCore().legacyCoverWidths(strokes);
             ctx.save();
-            for (const stroke of page.legacyCoverStrokes) {
-                if (!stroke || stroke.tool === 'eraser-stroke') continue;
-                const minPoints = stroke.tool === 'highlighter' ? 1 : 2;
-                if (!Array.isArray(stroke.points) || stroke.points.length < minPoints) continue;
-                // Inflate width and use opaque white so the burnt-in stroke is
-                // fully covered by the cover even at high zoom levels.
-                const widenFactor = stroke.tool === 'highlighter' ? 1.05 : 1.35;
+            for (let i = 0; i < strokes.length; i++) {
+                if (widths[i] < 0) continue;
+                const stroke = strokes[i];
                 drawSmoothStroke(ctx, {
                     ...stroke,
                     color: '#ffffff',
-                    width: Math.max(1, (stroke.width || 1) * widenFactor),
+                    width: widths[i],
                     opacity: 1,
                     tool: stroke.tool === 'highlighter' ? 'highlighter' : 'pen'
                 });
@@ -13482,6 +13500,16 @@
                 page.needsRedraw = true;
                 applyPagePreview(pageIndex);
                 ensurePageDataLoaded(pageIndex);
+                return;
+            }
+            const rust = strokeRustCore();
+            if (!rust.available()) {
+                // The WASM core is still downloading on a cold start: repaint once it is ready.
+                page.needsRedraw = true;
+                rust.ready.then(loaded => {
+                    if (!loaded) throw new Error('Rust core failed to load; editor rendering requires WebAssembly');
+                    redrawPage(pageIndex, options);
+                });
                 return;
             }
 
