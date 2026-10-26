@@ -1,0 +1,201 @@
+# Architectural styles for the procedural Spanish city (forja_city).
+#
+# Each style is data: add or tweak one and every building that uses it
+# changes, no code involved. Materials are "<kind> #rrggbb" with kinds
+# stucco, plaster, brick, ashlar, granite, tiles (<pattern>) and moulding.
+# Tile patterns: checker_green, checker_blue, diamond_blue, frieze, white.
+#
+# References: Madrid centro (Lavapiés, Huertas, Malasaña), Madrid de los
+# Austrias (Plaza de la Villa), Valencian Ensanche (Gran Vía, Colón,
+# Plaza del Ayuntamiento), Valencian modernismo, Ruzafa and Cabanyal.
+
+[[style]]
+id = "madrid_centro"
+city = "madrid"
+floors = [4, 5]
+ground_height = 4.2
+floor_height = 3.2
+bay = [2.8, 3.3]
+window_width = 1.1
+window_height = 2.3
+walls = ["stucco #efe4cc", "stucco #ead2a6", "plaster #d8a468", "stucco #c98a64", "stucco #f4efe4", "plaster #e6c48e", "stucco #b9705a"]
+ground = "ashlar #e8dcc4"
+surround = ["moulding #f6f1e6", "moulding #efe6d4"]
+surround_kind = "lintel"
+balcony = "individual"
+railing = "bars"
+shutters = ["louvre #4e3420", "louvre #33241a", "louvre #6a4628", "roller #e6e0d4", "louvre #2f3d2e"]
+frames = ["#f1eee6", "#3a2a1e", "#6b4a2e"]
+roof = "clay"
+cornice = "eave"
+shops = 0.85
+graffiti = 0.6
+awnings = 0.05
+flower_pots = 0.35
+wall_lamps = true
+dormers = true
+
+[[style]]
+id = "madrid_ladrillo"
+city = "madrid"
+floors = [3, 5]
+ground_height = 4.0
+floor_height = 3.1
+bay = [2.7, 3.2]
+window_width = 1.05
+window_height = 2.2
+walls = ["brick #ffffff", "brick #e8d8d0", "brick #f0d0c0"]
+ground = "plaster #e9e2d4"
+surround = ["moulding #f3eee4", "moulding #e7dcc8"]
+surround_kind = "eared"
+balcony = "individual"
+railing = "bars"
+shutters = ["louvre #4e3420", "roller #e6e0d4", "louvre #2c3a2a"]
+frames = ["#f1eee6", "#3a2a1e"]
+roof = "clay"
+cornice = "modillions"
+shops = 0.7
+graffiti = 0.7
+flower_pots = 0.3
+wall_lamps = true
+dormers = false
+
+[[style]]
+id = "madrid_austrias"
+city = "madrid"
+floors = [2, 3]
+ground_height = 4.4
+floor_height = 3.6
+bay = [3.4, 4.0]
+window_width = 1.2
+window_height = 2.4
+walls = ["brick #ffffff", "brick #f2dcd0"]
+ground = "granite"
+surround = ["granite"]
+surround_kind = "plain"
+balcony = "individual"
+railing = "bars"
+shutters = ["louvre #3a2a1c", "louvre #5a3c22"]
+frames = ["#3a2a1e"]
+roof = "mansard"
+cornice = "classic"
+shops = 0.3
+graffiti = 0.0
+flower_pots = 0.2
+wall_lamps = true
+dormers = true
+tower = "spire"
+quoins = true
+
+[[style]]
+id = "valencia_ensanche"
+city = "valencia"
+floors = [5, 7]
+ground_height = 4.6
+floor_height = 3.3
+bay = [3.0, 3.5]
+window_width = 1.2
+window_height = 2.45
+walls = ["stucco #f2e8d2", "stucco #ead6ae", "stucco #f3dccb", "stucco #e6e2d6", "stucco #f6efe0", "stucco #e9cf9f"]
+ground = "ashlar #efe4cc"
+surround = ["moulding #f8f4ea"]
+surround_kind = "keystone"
+balcony = "noble"
+railing = "belly"
+shutters = ["alicantina #c99a5c", "alicantina #b7834c", "alicantina #e0d2b0", "alicantina #3f6b45", "roller #ece6da"]
+frames = ["#f4f1ea", "#2f4a35"]
+roof = "balustrade"
+cornice = "modillions"
+frieze = "frieze"
+miradores = 0.35
+tower = "dome"
+pinnacles = true
+crest = true
+rustication = true
+shops = 0.95
+graffiti = 0.1
+awnings = 0.15
+flower_pots = 0.25
+
+[[style]]
+id = "valencia_modernista"
+city = "valencia"
+floors = [6, 8]
+ground_height = 5.0
+floor_height = 3.4
+bay = [3.1, 3.6]
+window_width = 1.25
+window_height = 2.5
+walls = ["stucco #f7f2e8", "stucco #f1e6cf", "stucco #f4ecdc"]
+ground = "ashlar #f1e8d6"
+surround = ["moulding #fbf8f1"]
+surround_kind = "pediment"
+balcony = "corrido"
+railing = "belly"
+shutters = ["alicantina #c99a5c", "roller #ece6da", "alicantina #e0d2b0"]
+frames = ["#f4f1ea", "#26302a"]
+roof = "balustrade"
+cornice = "modillions"
+miradores = 0.5
+tower = "dome"
+pinnacles = true
+crest = true
+rustication = true
+pilasters = true
+shops = 1.0
+graffiti = 0.0
+awnings = 0.1
+flower_pots = 0.1
+
+[[style]]
+id = "valencia_ruzafa"
+city = "valencia"
+floors = [4, 6]
+ground_height = 4.2
+floor_height = 3.2
+bay = [2.8, 3.3]
+window_width = 1.1
+window_height = 2.3
+walls = ["brick #ffffff", "stucco #e2b98a", "stucco #c9533e", "stucco #f0c04c", "stucco #e9dcc0"]
+ground = "tiles frieze"
+surround = ["moulding #f6f1e6"]
+surround_kind = "lintel"
+balcony = "individual"
+railing = "belly"
+shutters = ["alicantina #c99a5c", "alicantina #ddd0b0", "roller #ece6da"]
+frames = ["#f4f1ea", "#2a3a5a"]
+roof = "balustrade"
+cornice = "classic"
+tile_bands = "checker_blue"
+tile_panels = "diamond_blue"
+miradores = 0.15
+shops = 0.8
+graffiti = 0.35
+flower_pots = 0.35
+wall_lamps = true
+
+[[style]]
+id = "cabanyal"
+city = "valencia"
+floors = [1, 2]
+ground_height = 3.9
+floor_height = 3.3
+bay = [2.4, 3.0]
+window_width = 1.05
+window_height = 2.3
+walls = ["tiles checker_green", "tiles checker_blue", "stucco #36b6c8", "stucco #e9c24c", "stucco #d64a3a", "stucco #84c26e", "stucco #f2a6b0", "tiles diamond_blue"]
+ground = "wall"
+surround = ["moulding #fbf8f1"]
+surround_kind = "lintel"
+balcony = "individual"
+railing = "belly"
+shutters = ["alicantina #e2d6bc", "alicantina #c99a5c", "alicantina #f2efe6"]
+frames = ["#f4f1ea", "#5a3a22"]
+roof = "balustrade"
+cornice = "classic"
+pinnacles = true
+crest = true
+shops = 0.1
+grilles = true
+flower_pots = 0.5
+wall_lamps = true

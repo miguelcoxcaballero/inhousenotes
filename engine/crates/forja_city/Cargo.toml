@@ -1,0 +1,13 @@
+[package]
+name = "forja_city"
+description = "Forja procedural Spanish city kit: Valencia and Madrid buildings (balconies, ironwork, shutters, tiles, cornices, roofs), streets with curbs and markings, traffic lights, signs and street furniture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+forja_math.workspace = true
+forja_assets.workspace = true
+serde.workspace = true
+toml.workspace = true
+log.workspace = true

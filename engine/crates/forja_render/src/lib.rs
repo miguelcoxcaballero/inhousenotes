@@ -300,6 +300,8 @@ pub struct Renderer {
     env_view: wgpu::TextureView,
     env: Option<EnvInfo>,
     meshes: Vec<GpuMesh>,
+    texture_cache: std::collections::HashMap<(usize, bool), (std::sync::Arc<[u8]>, wgpu::TextureView)>,
+    default_textures: Option<[wgpu::TextureView; 3]>,
     materials: Vec<GpuMaterial>,
     models: Vec<GpuModel>,
     instance_buf: wgpu::Buffer,
@@ -691,6 +693,8 @@ impl Renderer {
             env_view,
             env: None,
             meshes: Vec::new(),
+            texture_cache: Default::default(),
+            default_textures: None,
             materials: Vec::new(),
             models: Vec::new(),
             instance_buf,
@@ -836,10 +840,25 @@ impl Renderer {
 
     // ---------------------------------------------------------------- upload
 
+    /// Uploads a texture once per shared pixel buffer.
+    fn cached_texture(&mut self, t: &TextureData) -> wgpu::TextureView {
+        let key = (t.rgba8.as_ptr() as usize, t.srgb);
+        if let Some((_, view)) = self.texture_cache.get(&key) {
+            return view.clone();
+        }
+        let view = self.upload_texture(t);
+        self.texture_cache.insert(key, (t.rgba8.clone(), view.clone()));
+        view
+    }
+
     fn upload_texture(&self, t: &TextureData) -> wgpu::TextureView {
+        Self::upload_texture_with(&self.device, &self.queue, t)
+    }
+
+    fn upload_texture_with(device: &wgpu::Device, queue: &wgpu::Queue, t: &TextureData) -> wgpu::TextureView {
         let format = if t.srgb { wgpu::TextureFormat::Rgba8UnormSrgb } else { wgpu::TextureFormat::Rgba8Unorm };
         let mips = generate_mips(t);
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+        let tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(&t.name),
             size: wgpu::Extent3d { width: t.width, height: t.height, depth_or_array_layers: 1 },
             mip_level_count: mips.len() as u32,
@@ -850,7 +869,7 @@ impl Renderer {
             view_formats: &[],
         });
         for (level, (w, h, data)) in mips.iter().enumerate() {
-            self.queue.write_texture(
+            queue.write_texture(
                 wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: level as u32, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
                 data,
                 wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: Some(*h) },
@@ -860,8 +879,8 @@ impl Renderer {
         tex.create_view(&Default::default())
     }
 
-    fn solid(&self, rgba: [u8; 4], srgb: bool) -> wgpu::TextureView {
-        self.upload_texture(&TextureData { name: "solid".into(), width: 1, height: 1, rgba8: rgba.to_vec(), srgb })
+    fn solid_view(device: &wgpu::Device, queue: &wgpu::Queue, rgba: [u8; 4], srgb: bool) -> wgpu::TextureView {
+        Self::upload_texture_with(device, queue, &TextureData { name: "solid".into(), width: 1, height: 1, rgba8: rgba.to_vec().into(), srgb })
     }
 
     fn upload_material(&self, m: &MaterialData, textures: &[wgpu::TextureView], defaults: &[wgpu::TextureView; 3]) -> GpuMaterial {
@@ -907,8 +926,8 @@ impl Renderer {
 
     /// Uploads a scene once; draw it with [`DrawInstance`]s.
     pub fn upload_scene(&mut self, scene: &SceneData) -> ModelHandle {
-        let textures: Vec<wgpu::TextureView> = scene.textures.iter().map(|t| self.upload_texture(t)).collect();
-        let defaults = [self.solid([255; 4], true), self.solid([255; 4], false), self.solid([128, 128, 255, 255], false)];
+        let textures: Vec<wgpu::TextureView> = scene.textures.iter().map(|t| self.cached_texture(t)).collect();
+        let defaults = self.default_textures.get_or_insert_with(|| [Self::solid_view(&self.device, &self.queue, [255; 4], true), Self::solid_view(&self.device, &self.queue, [255; 4], false), Self::solid_view(&self.device, &self.queue, [128, 128, 255, 255], false)]).clone();
         let mat_base = self.materials.len() as u32;
         for m in &scene.materials {
             let gm = self.upload_material(m, &textures, &defaults);
@@ -1396,7 +1415,7 @@ fn generate_mips(t: &TextureData) -> Vec<(u32, u32, Vec<u8>)> {
         let e = if !t.srgb { v } else if v <= 0.0031308 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
         (e * 255.0 + 0.5) as u8
     };
-    let mut out = vec![(t.width, t.height, t.rgba8.clone())];
+    let mut out = vec![(t.width, t.height, t.rgba8.to_vec())];
     let (mut w, mut h) = (t.width, t.height);
     while w > 1 || h > 1 {
         let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));

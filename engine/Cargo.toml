@@ -6,6 +6,7 @@ members = [
     "crates/forja_physics",
     "crates/forja_assets",
     "crates/forja_anim",
+    "crates/forja_city",
     "crates/forja_world",
     "crates/forja_render",
     "crates/forja_input",
@@ -26,6 +27,7 @@ forja_core = { path = "crates/forja_core" }
 forja_physics = { path = "crates/forja_physics" }
 forja_assets = { path = "crates/forja_assets" }
 forja_anim = { path = "crates/forja_anim" }
+forja_city = { path = "crates/forja_city" }
 forja_world = { path = "crates/forja_world" }
 forja_render = { path = "crates/forja_render" }
 forja_input = { path = "crates/forja_input" }

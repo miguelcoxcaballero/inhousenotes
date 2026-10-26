@@ -50,7 +50,7 @@ pub fn load_pbr_set(dir: &Path) -> Result<PbrSet, AssetError> {
         for i in 0..n {
             rgba.extend([ao.as_ref().map_or(255, |a| a[i]), r[i], metal.as_ref().map_or(0, |m| m[i]), 255]);
         }
-        Some(TextureData { name: "orm".into(), width: color.width, height: color.height, rgba8: rgba, srgb: false })
+        Some(TextureData { name: "orm".into(), width: color.width, height: color.height, rgba8: rgba.into(), srgb: false })
     } else {
         None
     };
@@ -61,7 +61,11 @@ pub fn load_pbr_set(dir: &Path) -> Result<PbrSet, AssetError> {
 impl PbrSet {
     /// Adds the textures and a material to `scene`; returns the material index.
     pub fn add_to(&self, scene: &mut SceneData, tint: Vec4, emissive: bool) -> usize {
+        // Tinted variants of one set share its textures.
         let mut push = |t: &TextureData| {
+            if let Some(i) = scene.textures.iter().position(|e| std::sync::Arc::ptr_eq(&e.rgba8, &t.rgba8) && e.srgb == t.srgb) {
+                return i;
+            }
             scene.textures.push(t.clone());
             scene.textures.len() - 1
         };
