@@ -148,8 +148,10 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let cc_a = max(material.layers.y, 0.02) * max(material.layers.y, 0.02);
     let ngc = ng;
     var color = vec3<f32>(0.0);
+    var glass_sun = vec3<f32>(0.0);
     if (nl > 0.0) {
         let shadow = shadow_factor(in.world_pos, ng, in.view_depth);
+        glass_sun = d_ggx(nh, a) * v_smith(nv, nl, a) * frame.sun_color.rgb * nl * shadow;
         let f = f_schlick(f0, vh);
         let spec = f * d_ggx(nh, a) * v_smith(nv, nl, a);
         let diff = (vec3<f32>(1.0) - f) * diffuse_color / PI;
@@ -196,9 +198,13 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     var alpha = base.a;
     let tr = material.layers.z;
     if (tr > 0.0) {
-        // Thin glass: transmit most light, keep Fresnel reflection opaque.
+        // Thin glass: blend weight is the Fresnel reflectance (plus the
+        // opaque share 1 - transmission), color is what the glass
+        // reflects. Over a dark interior this reads like real windows.
         let fr = f_schlick(vec3<f32>(0.04), nv).x;
-        alpha = clamp(mix(1.0 - tr * 0.92, 1.0, fr), 0.05, 1.0);
+        alpha = clamp(fr + (1.0 - tr) * (1.0 - fr), 0.03, 1.0);
+        let refl = env_reflection(reflect(-v, n), rough) + glass_sun * fr / max(alpha, 0.03);
+        color = height_fog(refl * (fr / alpha) + albedo * ambient_sky(n) * (1.0 - fr / alpha) * 0.3, in.world_pos, -v);
     }
     return vec4<f32>(color, alpha);
 }

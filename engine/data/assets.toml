@@ -314,6 +314,135 @@ author = "ambientCG (Lennart Demes)"
 homepage = "https://ambientcg.com/view?id=Facade001"
 ambientcg = { id = "Facade001", res = "2K-JPG" }
 
+# ------------------------------------------- Spanish architecture kit
+# Materials for the procedural Valencia / Madrid buildings and streets.
+
+[[asset]]
+id = "arch_stucco"
+name = "White stucco, tinted per building (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/white_stucco_02"
+polyhaven = { id = "white_stucco_02", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_plaster_ochre"
+name = "Painted lime plaster, tinted ochre (Madrid) (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/painted_plaster_wall"
+polyhaven = { id = "painted_plaster_wall", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_brick_red"
+name = "Red brick, Madrid neo-mudéjar (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/red_brick_03"
+polyhaven = { id = "red_brick_03", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_ashlar"
+name = "White sandstone ashlar for plinths and quoins (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/white_sandstone_bricks_03"
+polyhaven = { id = "white_sandstone_bricks_03", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_moulding"
+name = "Smooth limestone plaster for mouldings and surrounds (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/white_plaster_02"
+polyhaven = { id = "white_plaster_02", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_granite"
+name = "Granite for plinths and steps (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/granite_tile_03"
+polyhaven = { id = "granite_tile_03", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_roof_clay"
+name = "Clay roof tiles, Valencian teja árabe (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/clay_roof_tiles_02"
+polyhaven = { id = "clay_roof_tiles_02", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_roof_slate"
+name = "Slate roof tiles, Madrid mansards (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/roof_slates_03"
+polyhaven = { id = "roof_slates_03", res = "2k", format = "texture" }
+
+[[asset]]
+id = "arch_wood_shutter"
+name = "Wooden louvred shutters (1K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/wood_shutter"
+polyhaven = { id = "wood_shutter", res = "1k", format = "texture" }
+
+[[asset]]
+id = "arch_metal_shutter"
+name = "Painted metal roller shutter for shops (1K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/painted_metal_shutter"
+polyhaven = { id = "painted_metal_shutter", res = "1k", format = "texture" }
+
+[[asset]]
+id = "street_sidewalk_hex"
+name = "Hexagonal concrete paving, Valencia sidewalks (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/hexagonal_concrete_paving"
+polyhaven = { id = "hexagonal_concrete_paving", res = "2k", format = "texture" }
+
+[[asset]]
+id = "street_sidewalk_tiles"
+name = "Grey granite slabs, Madrid sidewalks (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/granite_tile_04"
+polyhaven = { id = "granite_tile_04", res = "2k", format = "texture" }
+
+[[asset]]
+id = "street_curb"
+name = "Granite curb stone (1K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/granite_tile"
+polyhaven = { id = "granite_tile", res = "1k", format = "texture" }
+
+[[asset]]
+id = "street_cobble"
+name = "Granite setts for plazas (2K PBR)"
+kind = "material"
+license = "CC0-1.0"
+author = "Poly Haven"
+homepage = "https://polyhaven.com/a/cobblestone_floor_08"
+polyhaven = { id = "cobblestone_floor_08", res = "2k", format = "texture" }
+
 # ------------------------------------------------------ photoreal skies
 
 [[asset]]

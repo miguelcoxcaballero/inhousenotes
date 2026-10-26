@@ -15,5 +15,6 @@ pollster.workspace = true
 image.workspace = true
 
 [dev-dependencies]
+forja_city.workspace = true
 forja_world.workspace = true
 forja_anim.workspace = true

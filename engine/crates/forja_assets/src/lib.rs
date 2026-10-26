@@ -191,7 +191,9 @@ pub struct TextureData {
     pub name: String,
     pub width: u32,
     pub height: u32,
-    pub rgba8: Vec<u8>,
+    /// Shared so tinted material variants and instanced kits reuse one copy
+    /// (the renderer also uploads each shared buffer once).
+    pub rgba8: std::sync::Arc<[u8]>,
     /// Color data (base color, emissive) is sRGB; data maps are linear.
     pub srgb: bool,
 }
@@ -372,7 +374,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
             name: t.name().unwrap_or("").to_string(),
             width: img.width,
             height: img.height,
-            rgba8: to_rgba8(img),
+            rgba8: to_rgba8(img).into(),
             srgb: srgb[t.index()],
         });
     }
@@ -549,7 +551,7 @@ pub fn load_texture(path: &Path, srgb: bool) -> Result<TextureData, AssetError> 
         name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
         width: img.width(),
         height: img.height(),
-        rgba8: img.into_raw(),
+        rgba8: img.into_raw().into(),
         srgb,
     })
 }

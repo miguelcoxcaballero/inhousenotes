@@ -965,6 +965,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "forja_city"
+version = "0.1.0"
+dependencies = [
+ "forja_assets",
+ "forja_math",
+ "log",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "forja_core"
 version = "0.1.0"
 dependencies = [
@@ -1031,6 +1042,7 @@ dependencies = [
  "bytemuck",
  "forja_anim",
  "forja_assets",
+ "forja_city",
  "forja_math",
  "forja_world",
  "image",
