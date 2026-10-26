@@ -181,6 +181,28 @@ implemente funciona con física y render sin cambios:
 | Post (TAA/upscale, bloom, tonemap) | 1.5 |
 | Margen | 3.1 |
 
+### 5.4 Pases de pantalla implementados (oclusión, sombras, reflejos, TAA)
+
+Orden del frame: sombras → prepase de profundidad y normales → GTAO → pase
+principal (sin sobredibujado: prueba contra la profundidad del prepase) →
+cielo → TAA → bloom → tonemap → CAS. Costes estimados a 1440p en una GPU tipo
+RTX 3070 (lavapipe no sirve para medir):
+
+| Pase | Técnica | ms |
+|---|---|---|
+| Prepase | Profundidad + normal geométrica; recorte alfa solo en materiales enmascarados | 1.0–2.0 |
+| GTAO | XeGTAO (2 cortes × 6 pasos) + denoise bilateral 4×4; multi-rebote y oclusión especular (Lagarde) con atenuación de horizonte | 0.5–0.8 |
+| Sombras del sol | PCSS con el diámetro angular del sol, sesgo por plano receptor, cascadas mezcladas con dithering y ajustadas a la profundidad visible; hojas y pelo proyectan su textura | +0.3–0.6 |
+| Sombras de contacto | 10 pasos hacia el sol en la profundidad del prepase | 0.2–0.4 |
+| SSR | Rayo en pantalla con profundidad perspectiva-correcta + bisección; dirección GGX (VNDF) por frame en superficies rugosas (< 0.62); color de la historia HDR; si falla, entorno ocluido | 0.6–1.2 |
+| TAA | Jitter Halton(2,3), reproyección sin jitter, historia Catmull-Rom, clipping de varianza en YCoCg, CAS | 0.25 |
+
+Las capturas (`render_to_image`) acumulan 8 frames con jitter (más uno de
+calentamiento para SSR) y convergen a una imagen supermuestreada;
+`render_live_to_image` muestra un frame de juego con la historia intacta.
+Interruptores: `FORJA_FX=-taa,-ao,-contact,-ssr`, `FORJA_CAPTURE_FRAMES=n`,
+`FORJA_DEBUG=ao|shadow|ssr`.
+
 ## 6. Gameplay modular (`forja_gameplay`)
 
 * **Inventario**: definiciones de objeto en TOML (id, categoría, tamaño de pila,
