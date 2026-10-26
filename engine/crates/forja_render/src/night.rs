@@ -78,7 +78,7 @@ impl Environment {
     /// a light haze and distant light sprites. No sun shadows (the moon is
     /// ~100x dimmer than the street lighting).
     pub fn night() -> Self {
-        let pollution = crate::lights::kelvin(3000.0);
+        let pollution = crate::lights::kelvin(3600.0);
         Self {
             // The "sun" is the moon: the same atmosphere scattering at
             // 1/400000 of the sunlight gives the blue moonlit sky.
@@ -91,10 +91,10 @@ impl Environment {
             shadow_distance: 0.0,
             use_ibl: false,
             // A low key: the eye adapts, but night is not pulled to grey.
-            auto_exposure: Some(EyeAdaptation { compensation_ev: -0.3, ..EyeAdaptation::default() }),
-            night_sky: NightSky { zenith: Vec3::new(0.45, 0.62, 1.0) * nits(0.006), glow: pollution * nits(0.045), glow_height: 0.1, stars: nits(0.08) },
+            auto_exposure: Some(EyeAdaptation { compensation_ev: 0.3, ..EyeAdaptation::default() }),
+            night_sky: NightSky { zenith: Vec3::new(0.35, 0.55, 1.0) * nits(0.012), glow: pollution * nits(0.04), glow_height: 0.1, stars: nits(0.08) },
             // Very little bounce light: unlit areas stay near black.
-            ambient_fill: crate::lights::kelvin(2600.0) * nits(0.012),
+            ambient_fill: crate::lights::kelvin(2600.0) * nits(0.02),
             light_scatter: 1.0,
             light_sprites: 1.0,
             // Tight halos around the bright sources only, no veil.
@@ -188,6 +188,6 @@ mod tests {
         // Daytime defaults keep every night feature off.
         let d = Environment::default();
         assert!(!d.is_night_aware() && d.emissive_scale == 1.0 && d.bloom_radius == 1.0 && d.night_grade == 0.0);
-        assert!(n.night_grade > 0.0 && n.auto_exposure.is_some_and(|a| a.compensation_ev <= 0.0));
+        assert!(n.night_grade > 0.0 && n.auto_exposure.is_some_and(|a| a.compensation_ev.abs() <= 1.0));
     }
 }

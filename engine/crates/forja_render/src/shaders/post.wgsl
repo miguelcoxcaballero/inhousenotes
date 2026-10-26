@@ -115,16 +115,16 @@ fn scotopic(c: vec3<f32>, nits: f32, strength: f32) -> vec3<f32> {
 // Cinematic night grade on the display image (after AgX, whose base look
 // is deliberately flat): an S-curve about a low pivot with a filmic toe
 // (true blacks, lamp-lit areas pushed toward white), teal shadows and warm
-// highlights, and richer saturation in the bright, lamp-coloured areas.
+// highlights, and highlights that roll off toward white like film.
 // Strength `g` (0 = off, the daytime path).
 fn night_grade(lin: vec3<f32>, g: f32) -> vec3<f32> {
     var v = pow(clamp(lin, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2));
     // Black point: the darkest values sink to true black.
-    let bp = 0.018 * g;
+    let bp = 0.006 * g;
     v = max(v - vec3<f32>(bp), vec3<f32>(0.0)) / (1.0 - bp);
     // S-curve about the pivot (exponent > 1 on both sides).
     let pivot = 0.32;
-    let k = 1.0 + 0.5 * g;
+    let k = 1.0 + 0.3 * g;
     let lo = pivot * pow(v / pivot, vec3<f32>(k));
     let hi = vec3<f32>(1.0) - (1.0 - pivot) * pow((vec3<f32>(1.0) - v) / (1.0 - pivot), vec3<f32>(k));
     v = select(hi, lo, v < vec3<f32>(pivot));
@@ -134,9 +134,10 @@ fn night_grade(lin: vec3<f32>, g: f32) -> vec3<f32> {
     let high_w = l * l * g;
     v *= mix(vec3<f32>(1.0), vec3<f32>(0.9, 1.0, 1.08), shadow_w);
     v *= mix(vec3<f32>(1.0), vec3<f32>(1.06, 1.0, 0.9), high_w);
-    // Saturation of the lit areas.
+    // Film-like highlights: the brightest lamp-lit areas roll toward white
+    // instead of saturating to pure orange.
     let l2 = luma(v);
-    v = vec3<f32>(l2) + (v - vec3<f32>(l2)) * (1.0 + 0.25 * g * smoothstep(0.1, 0.6, l2));
+    v = vec3<f32>(l2) + (v - vec3<f32>(l2)) * (1.0 - 0.3 * g * smoothstep(0.35, 0.9, l2));
     return pow(clamp(v, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(2.2));
 }
 

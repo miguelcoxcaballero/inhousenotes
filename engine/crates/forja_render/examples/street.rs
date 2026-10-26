@@ -2,7 +2,7 @@
 //! level: `cargo run --release -p forja_render --example street -- out_prefix`
 //! (`NIGHT=1` or `HOUR=<h>` for a night street with candelabras; `DUSK=1`,
 //! `RAIN=1`, `WET=1` pick the other presets, `LEGACY=1` the previous
-//! 64-light path). At night the street also gets neon arches and signs,
+//! 64-light path). At night the street also gets two small neon signs,
 //! shop light spilling onto the pavement and a low `along` shot down the
 //! road. `STREET_SHOTS=wide,along` renders only those shots.
 
@@ -82,30 +82,14 @@ fn main() {
             out.city_lights.push(forja_city::nightlight::street_lamp(bulb, color, true));
             x += 18.0;
         }
-        // Neon: red arches over three shopfronts and a few green and cyan
-        // signs (`Mat::Lamp` is emissive), with the light they cast.
+        // Two small neon shop signs (`Mat::Lamp` is emissive) with the
+        // light they cast.
         let mut neon: Parts<Mat> = Parts::new();
-        let red = Mat::Lamp([255, 30, 24]);
-        let mut cx = x0 + 52.0;
-        for _ in 0..3 {
-            for a in 0..5 {
-                let c = cx + a as f32 * 3.1;
-                let mut prev = Vec3::new(c - 1.35, 3.0, 0.25);
-                for s in 1..=10 {
-                    let t = s as f32 / 10.0 * std::f32::consts::PI;
-                    let q = Vec3::new(c - 1.35 * t.cos(), 3.0 + 1.0 * t.sin(), 0.25);
-                    neon.get(red).beam(prev, q, Vec3::Z, 0.05, 0.05, 1.0);
-                    prev = q;
-                }
-            }
-            extra.push(Light::point(Vec3::new(cx + 6.2, 3.6, 0.9), Vec3::new(3.2, 0.12, 0.08), 2500.0).with_range(12.0).with_source_radius(1.5));
-            cx += 70.0;
-        }
         for (j, (col, light)) in [([40u8, 255u8, 90u8], Vec3::new(0.1, 1.3, 0.25)), ([60, 230, 255], Vec3::new(0.12, 1.0, 1.6))].iter().enumerate() {
             let sx = x0 + 30.0 + j as f32 * 95.0;
             neon.get(Mat::Lamp(*col)).aabox(Vec3::new(sx, 3.1, 0.15), Vec3::new(sx + 2.4, 3.16, 0.22), 1.0);
             neon.get(Mat::Lamp(*col)).aabox(Vec3::new(sx, 3.7, 0.15), Vec3::new(sx + 2.4, 3.76, 0.22), 1.0);
-            extra.push(Light::point(Vec3::new(sx + 1.2, 3.4, 0.8), *light, 3000.0).with_range(9.0).with_source_radius(1.0));
+            extra.push(Light::point(Vec3::new(sx + 1.2, 3.4, 0.8), *light, 1200.0).with_range(7.0).with_source_radius(1.0));
         }
         // Lit shop windows spill light onto the pavement.
         let mut k = x0 + 6.0;
