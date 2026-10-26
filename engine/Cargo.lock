@@ -973,6 +973,7 @@ dependencies = [
  "forja_math",
  "log",
  "serde",
+ "serde_json",
  "toml",
 ]
 
@@ -1049,6 +1050,7 @@ dependencies = [
  "image",
  "log",
  "pollster",
+ "serde_json",
  "wgpu",
 ]
 
