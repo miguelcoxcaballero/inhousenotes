@@ -59,7 +59,66 @@ pub struct OrganicSpec {
     pub meander: f32,
     #[serde(default = "d_lattice")]
     pub lattice: f32,
+    /// Large avenues cut straight (or gently bent) through the zone from
+    /// ronda to ronda before it is carved, like Madrid's Bailén or
+    /// Valencia's Avenida del Oeste through their old towns.
+    #[serde(default, rename = "avenue")]
+    pub avenues: Vec<AvenueSpec>,
     pub tiers: Vec<Tier>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AvenueSpec {
+    pub profile: String,
+    /// Heading (degrees from +x).
+    pub angle: f32,
+    /// Offset from the zone's centre, across the heading (m).
+    #[serde(default)]
+    pub offset: f32,
+    /// Sideways bow at the middle (m).
+    #[serde(default)]
+    pub bend: f32,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+impl AvenueSpec {
+    /// The avenue's line across `mask` (a ring), ending on its edge.
+    pub fn line(&self, mask: &[Vec2]) -> Option<Vec<Vec2>> {
+        if mask.len() < 3 {
+            return None;
+        }
+        let c = mask.iter().copied().sum::<Vec2>() / mask.len() as f32;
+        let dir = Vec2::from_angle(self.angle.to_radians());
+        let across = Vec2::new(-dir.y, dir.x);
+        let base = c + across * self.offset;
+        let bow = |f: f32| across * self.bend * (std::f32::consts::PI * f).sin();
+        // Where the (straight) line crosses the ring.
+        let mut ts = Vec::new();
+        for i in 0..mask.len() {
+            let (a, b) = (mask[i], mask[(i + 1) % mask.len()]);
+            let e = b - a;
+            let den = dir.perp_dot(e);
+            if den.abs() < 1e-9 {
+                continue;
+            }
+            let t = (a - base).perp_dot(e) / den;
+            let u = (a - base).perp_dot(dir) / den;
+            if (0.0..1.0).contains(&u) {
+                ts.push(t);
+            }
+        }
+        let (t0, t1) = ts.iter().fold((f32::MAX, f32::MIN), |(a, b), t| (a.min(*t), b.max(*t)));
+        if ts.len() < 2 || t1 - t0 < 20.0 {
+            return None;
+        }
+        let n = ((t1 - t0) / 25.0).ceil().max(1.0) as usize;
+        Some((0..=n).map(|k| {
+            let f = k as f32 / n as f32;
+            base + dir * (t0 + (t1 - t0) * f) + bow(f)
+        }).collect())
+    }
 }
 
 fn d_meander() -> f32 {
@@ -70,7 +129,6 @@ fn d_lattice() -> f32 {
     2.0
 }
 
-/// A jittered convex polygon.
 /// An irregular square: `n` corners around `c` at about radius `r`, with
 /// unequal sides (angles jittered by a third of a step, radii by ±20%).
 fn blob(c: Vec2, r: f32, n: u32, rng: &mut Rng) -> Vec<Vec2> {

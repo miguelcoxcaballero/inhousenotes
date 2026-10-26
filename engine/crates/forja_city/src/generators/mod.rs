@@ -18,7 +18,7 @@ use crate::plan::{Draft, Mask, PlazaKind, Region, Way};
 use crate::profile::ProfileLibrary;
 
 pub use grid::GridSpec;
-pub use organic::OrganicSpec;
+pub use organic::{AvenueSpec, OrganicSpec};
 
 /// How a zone cuts its blocks into lots.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
@@ -129,6 +129,10 @@ pub struct CityPlan {
     /// Terrain: rises of the ground, on a zone or at a point.
     #[serde(default, rename = "hill")]
     pub hills: Vec<HillSpec>,
+    /// The zone the player starts in (on its main square); else the middle
+    /// of the map.
+    #[serde(default)]
+    pub start: Option<String>,
     /// A draft given as data (tests, OSM): used as is.
     #[serde(skip)]
     pub given: Option<Draft>,
@@ -198,7 +202,7 @@ impl CityPlan {
             grid: None,
             organic: None,
         };
-        CityPlan { name: "given".into(), zones: vec![zone], ways: Vec::new(), hills: Vec::new(), given: Some(d) }
+        CityPlan { name: "given".into(), zones: vec![zone], ways: Vec::new(), hills: Vec::new(), start: None, given: Some(d) }
     }
 }
 
@@ -288,6 +292,19 @@ pub fn draft_report(plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> (Draft,
             let mut line = masks[i].clone();
             line.push(line[0]);
             d.ways.push(Way::new(line, r).zone(0));
+        }
+    }
+    // Avenues through organic zones, ronda to ronda.
+    for (i, z) in plan.zones.iter().enumerate() {
+        for av in z.organic.iter().flat_map(|o| &o.avenues) {
+            match av.line(&masks[i]) {
+                Some(line) => {
+                    let mut w = Way::new(line, &av.profile).zone(0);
+                    w.name = av.name.clone();
+                    d.ways.push(w);
+                }
+                None => log::warn!("zone {}: avenue at {} deg misses the zone", z.id, av.angle),
+            }
         }
     }
     // Global ways, trimmed to the zones' extent.

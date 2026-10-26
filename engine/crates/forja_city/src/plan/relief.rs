@@ -8,6 +8,11 @@
 //! therefore cut gently through a hill while alleys climb it, and an
 //! alley steeper than its ramp limit becomes a stair street.
 //!
+//! A plaza is a level terrace: the street mouths that open onto it are
+//! held at one level, so on a hill the squares stand at different levels
+//! with the streets climbing between them, and where a terrace meets lower
+//! or higher public ground the mesh draws a granite wall.
+//!
 //! Along a street the level is linear in arc length (stepped on stairs).
 //! Everywhere else (sidewalks, plazas, courts, building lots) it is a
 //! blend of the levels of the nearby streets, each weighted by how close
@@ -72,12 +77,57 @@ struct Grade {
     steps: Option<Steps>,
 }
 
+/// A plaza on sloping ground: one level for all of it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Terrace {
+    pub ring: Vec<Vec2>,
+    pub z: f32,
+    lo: Vec2,
+    hi: Vec2,
+}
+
+impl Terrace {
+    fn new(ring: Vec<Vec2>, z: f32) -> Self {
+        let (lo, hi) = ring.iter().fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(a, b), p| (a.min(*p), b.max(*p)));
+        Terrace { ring, z, lo, hi }
+    }
+
+    pub fn contains(&self, p: Vec2) -> bool {
+        if p.x < self.lo.x || p.y < self.lo.y || p.x > self.hi.x || p.y > self.hi.y {
+            return false;
+        }
+        let (r, n) = (&self.ring, self.ring.len());
+        let mut c = false;
+        for i in 0..n {
+            let (a, b) = (r[i], r[(i + 1) % n]);
+            if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) {
+                c = !c;
+            }
+        }
+        c
+    }
+
+    /// Distance to the edge, if within `max` of the bounding box.
+    fn edge_dist(&self, p: Vec2, max: f32) -> Option<f32> {
+        if p.x < self.lo.x - max || p.y < self.lo.y - max || p.x > self.hi.x + max || p.y > self.hi.y + max {
+            return None;
+        }
+        let n = self.ring.len();
+        Some((0..n).map(|i| seg_dist(p, self.ring[i], self.ring[(i + 1) % n])).fold(f32::INFINITY, f32::min))
+    }
+}
+
+/// Street nodes this close to a plaza's edge open onto it (m).
+const MOUTH: f32 = 1.5;
+
 #[derive(Clone, Debug, Default)]
 pub struct Relief {
     /// Level of each node (m).
     pub nodes: Vec<f32>,
     streets: Vec<Grade>,
     hills: Vec<Hill>,
+    /// Level plazas.
+    pub terraces: Vec<Terrace>,
     /// Copy of the street centrelines for `elev` (segments, payload =
     /// index into `segs`).
     index: SegIndex,
@@ -93,8 +143,8 @@ impl Relief {
         self.hills.is_empty()
     }
 
-    /// Grades the network over the terrain.
-    pub fn solve(g: &StreetGraph, lib: &ProfileLibrary, hills: &[Hill]) -> Relief {
+    /// Grades the network over the terrain, with each of `plazas` level.
+    pub fn solve(g: &StreetGraph, lib: &ProfileLibrary, hills: &[Hill], plazas: &[Vec<Vec2>]) -> Relief {
         if hills.is_empty() || g.streets.is_empty() {
             return Relief { nodes: vec![0.0; g.nodes.len()], streets: g.streets.iter().map(|s| Grade { z: [0.0; 2], len: s.len(), steps: None }).collect(), ..Default::default() };
         }
@@ -128,9 +178,26 @@ impl Relief {
             })
             .collect();
         let mut z: Vec<f32> = g.nodes.iter().map(|n| terrain(hills, n.p)).collect();
-        // Projection onto the grade constraints (Gauss–Seidel), in id order.
+        // The nodes that open onto each plaza share its level.
+        let mut terraces: Vec<Terrace> = plazas.iter().filter(|r| r.len() >= 3).map(|r| Terrace::new(r.clone(), 0.0)).collect();
+        let mouths: Vec<Vec<usize>> = terraces
+            .iter()
+            .map(|t| (0..g.nodes.len()).filter(|&n| t.contains(g.nodes[n].p) || t.edge_dist(g.nodes[n].p, MOUTH).is_some_and(|d| d <= MOUTH)).collect())
+            .collect();
+        // Projection onto the grade constraints and the plaza levels
+        // (Gauss–Seidel), in id order.
         for _ in 0..600 {
             let mut worst = 0.0f32;
+            for m in &mouths {
+                if m.len() < 2 {
+                    continue;
+                }
+                let mean = m.iter().map(|&n| z[n]).sum::<f32>() / m.len() as f32;
+                for &n in m {
+                    worst = worst.max((z[n] - mean).abs());
+                    z[n] = mean;
+                }
+            }
             for (s, m) in g.streets.iter().zip(&limit) {
                 let (a, b) = (s.a as usize, s.b as usize);
                 let d = z[b] - z[a];
@@ -171,7 +238,23 @@ impl Relief {
             }
             widths.push((st.to_vec(), s.width.clone()));
         }
-        Relief { nodes: z, streets, hills: hills.to_vec(), index, segs, widths }
+        let mut r = Relief { nodes: z, streets, hills: hills.to_vec(), terraces: Vec::new(), index, segs, widths };
+        // A plaza's level: that of its mouths, else of the streets around it.
+        for (t, m) in terraces.iter_mut().zip(&mouths) {
+            t.z = if m.is_empty() {
+                let c = t.ring.iter().copied().sum::<Vec2>() / t.ring.len() as f32;
+                r.elev(c)
+            } else {
+                m.iter().map(|&n| r.nodes[n]).sum::<f32>() / m.len() as f32
+            };
+        }
+        r.terraces = terraces;
+        r
+    }
+
+    /// The terrace (level plaza) containing `p`.
+    pub fn terrace_at(&self, p: Vec2) -> Option<&Terrace> {
+        self.terraces.iter().find(|t| t.contains(p))
     }
 
     /// Level along street `s` at arc length `t`.
@@ -219,6 +302,9 @@ impl Relief {
         if self.is_flat() {
             return 0.0;
         }
+        if let Some(t) = self.terrace_at(p) {
+            return t.z;
+        }
         // The closest point of each nearby street.
         let mut near: Vec<(StreetId, f32, f32)> = Vec::new();
         for k in self.index.around(p, BLEND) {
@@ -245,6 +331,15 @@ impl Relief {
             let w = fade as f64 / (gap as f64 * gap as f64 + 0.01);
             acc += w * self.street_z(s, t) as f64;
             wsum += w;
+        }
+        // Terraces count as streets do, by distance to their edge.
+        for tr in &self.terraces {
+            if let Some(d) = tr.edge_dist(p, BLEND).filter(|d| *d < BLEND) {
+                let fade = ((BLEND - d) / (BLEND * 0.3)).clamp(0.0, 1.0);
+                let w = fade as f64 / (d as f64 * d as f64 + 0.01);
+                acc += w * tr.z as f64;
+                wsum += w;
+            }
         }
         let wt = 1.0 / (BLEND as f64 * BLEND as f64);
         ((acc + wt * terrain(&self.hills, p) as f64) / (wsum + wt)) as f32
@@ -274,7 +369,7 @@ mod tests {
         }
         ways.push(Way::new(vec![Vec2::new(0.0, -8.0), Vec2::new(0.0, 8.0)], "callejon"));
         let g = StreetGraph::build(&ways, &[], &lib, 0.05);
-        let r = Relief::solve(&g, &lib, &hill());
+        let r = Relief::solve(&g, &lib, &hill(), &[]);
         let mut stairs = 0;
         for (i, s) in g.streets.iter().enumerate() {
             let p = lib.get(s.profile);
@@ -297,10 +392,51 @@ mod tests {
     }
 
     #[test]
+    fn plazas_are_level_terraces_at_their_own_levels() {
+        let lib = ProfileLibrary::builtin();
+        // Two squares on the flank of the hill, alleys and a lane running
+        // up and down from each.
+        let sq = |c: Vec2, r: f32| -> Vec<Vec2> { (0..5).map(|i| c + Vec2::from_angle(i as f32 / 5.0 * std::f32::consts::TAU + 0.3) * r).collect() };
+        let (c1, c2) = (Vec2::new(40.0, 0.0), Vec2::new(110.0, 0.0));
+        let plazas = vec![sq(c1, 14.0), sq(c2, 12.0)];
+        let mut ways = Vec::new();
+        for (c, ring) in [(c1, &plazas[0]), (c2, &plazas[1])] {
+            for k in [0usize, 2, 3] {
+                let e = ring[k];
+                let out = (e - c).normalize();
+                ways.push(Way::new(vec![e, e + out * 40.0], "callejuela"));
+            }
+        }
+        ways.push(Way::new(vec![plazas[0][0], plazas[1][3]], "calle_vieja"));
+        let g = StreetGraph::build(&ways, &[], &lib, 0.05);
+        let r = Relief::solve(&g, &lib, &hill(), &plazas);
+        assert_eq!(r.terraces.len(), 2);
+        for (t, c) in r.terraces.iter().zip([c1, c2]) {
+            // Level inside, and the mouths at that level.
+            for k in 0..20 {
+                let q = c + Vec2::from_angle(k as f32) * (k as f32 * 0.4);
+                assert!((r.elev(q) - t.z).abs() < 1e-4, "{} vs {}", r.elev(q), t.z);
+            }
+            for (n, node) in g.nodes.iter().enumerate() {
+                if t.ring.iter().any(|p| p.distance(node.p) < 0.5) {
+                    assert!((r.nodes[n] - t.z).abs() < 1e-3, "mouth {} vs {}", r.nodes[n], t.z);
+                }
+            }
+        }
+        // Different levels, the upper square nearer the top.
+        assert!(r.terraces[0].z > r.terraces[1].z + 2.0, "{:?}", r.terraces.iter().map(|t| t.z).collect::<Vec<_>>());
+        // Grades still hold.
+        for (i, s) in g.streets.iter().enumerate() {
+            let max = if r.steps(i as StreetId).is_some() { STAIR_GRADE } else { lib.get(s.profile).max_grade() };
+            assert!(r.grade(i as StreetId) <= max + 1e-3);
+        }
+    }
+
+    #[test]
     fn no_hills_is_flat_and_free() {
         let lib = ProfileLibrary::builtin();
         let g = StreetGraph::build(&[Way::new(vec![Vec2::ZERO, Vec2::new(50.0, 0.0)], "avenida")], &[], &lib, 0.05);
-        let r = Relief::solve(&g, &lib, &[]);
+        let r = Relief::solve(&g, &lib, &[], &[]);
         assert!(r.is_flat() && r.elev(Vec2::new(10.0, 1.0)) == 0.0 && r.grade(0) == 0.0);
     }
 }

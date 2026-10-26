@@ -326,6 +326,13 @@ pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, courts: &Region)
             } else {
                 let mut cuts = grid_cuts(tx, tz, RELIEF_CELL);
                 cuts.extend(risers.iter().filter(|r| r.0.iter().any(|p| tile_of(*p) == (tx, tz))).map(|r| r.0.clone()));
+                // Terrace edges: the plaza and the ground around it are
+                // separate pieces at their own levels.
+                for t in &relief.terraces {
+                    let mut ring = t.ring.clone();
+                    ring.push(ring[0]);
+                    cuts.push(ring);
+                }
                 piece.slice(&cuts).into_iter().map(|sh| Region::from_shapes(&[sh])).collect()
             };
             for sub in pieces {
@@ -379,6 +386,18 @@ pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, courts: &Region)
             col.push([qa, qb + Vec3::Y * (hi - lo), qa + Vec3::Y * (hi - lo)]);
         }
     }
+    // Terrace walls: granite faces where a level plaza meets lower or
+    // higher public ground, each facing the lower side.
+    for (a, b, lo, hi, inner_high) in terrace_walls(gr) {
+        let m = (a + b) * 0.5;
+        let parts = tiles.entry(tile_of(m)).or_insert_with(Parts::new);
+        let (pa, pb) = if inner_high { (b, a) } else { (a, b) };
+        let (qa, qb) = (Vec3::new(pa.x, lo, pa.y), Vec3::new(pb.x, lo, pb.y));
+        let up = Vec3::Y * (hi - lo);
+        parts.get(Mat::Granite).quad(qa, qb, qb + up, qa + up, Mat::Granite.scale());
+        col.push([qa, qb, qb + up]);
+        col.push([qa, qb + up, qa + up]);
+    }
     // Kerb faces with a 0.3 m granite top band on the raised side.
     for k in kerbs(gr) {
         let mid = k.line[k.line.len() / 2];
@@ -426,6 +445,38 @@ pub fn mesh(gr: &Ground, g: &StreetGraph, lib: &ProfileLibrary, courts: &Region)
         }
     }
     (tiles, col)
+}
+
+/// Wall pieces along the terrace edges: (a, b, low, high, plaza side
+/// higher), with the plaza on the left of a -> b. Only where both sides are
+/// public and differ by more than a few centimetres (a facade or a plinth
+/// closes the rest).
+pub fn terrace_walls(gr: &Ground) -> Vec<(Vec2, Vec2, f32, f32, bool)> {
+    let mut out = Vec::new();
+    for t in &gr.relief.terraces {
+        let mut ring = t.ring.clone();
+        if crate::geom::signed_area(&ring) < 0.0 {
+            ring.reverse();
+        }
+        ring.push(ring[0]);
+        let pts = Polyline::new(ring).resample(1.0).pts().to_vec();
+        for w in pts.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let d = (b - a).normalize_or(Vec2::X);
+            let out_n = Vec2::new(d.y, -d.x);
+            let m = (a + b) * 0.5;
+            let (pi, po) = (m - out_n * 0.05, m + out_n * 0.05);
+            if !gr.public_tiles.contains(pi) || !gr.public_tiles.contains(po) {
+                continue;
+            }
+            let (zi, zo) = (gr.height_at(pi), gr.height_at(po));
+            if (zi - zo).abs() < 0.04 {
+                continue;
+            }
+            out.push((a, b, zi.min(zo), zi.max(zo), zi > zo));
+        }
+    }
+    out
 }
 
 /// Side of the cells public space is cut into on sloping ground (m).

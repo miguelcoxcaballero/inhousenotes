@@ -219,9 +219,10 @@ pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan
     items.extend(dress::after_buildings(&fabric, lib, &eaves, &fronts, seed));
     place_items(&mut mlib, &mut lay, &items, seed);
     lay.items = items;
-    // 5. Spawns: cars in the right lane of real roads, the player on a
-    // sidewalk near the middle.
-    spawns(&mut lay, &fabric, lib);
+    // 5. Spawns: cars in the right lane of real roads, the player on the
+    // start zone's main square or a sidewalk near the middle.
+    let start = plan.start.as_ref().and_then(|id| plan.zones.iter().position(|z| &z.id == id)).map(|i| (i + 1) as u16);
+    spawns(&mut lay, &fabric, lib, start);
     // 6. Streets and stats.
     lay.streets = fabric
         .graph
@@ -397,12 +398,26 @@ fn place_items(lib: &mut ModuleLib, lay: &mut CityLayout, items: &[Item], seed: 
     }
 }
 
-fn spawns(lay: &mut CityLayout, f: &Fabric, lib: &ProfileLibrary) {
+/// A clear spot on the largest square of zone `zi`: open paving, away
+/// from fountains, trees and benches.
+fn square_spot(lay: &CityLayout, f: &Fabric, zi: u16) -> Option<Vec2> {
+    let (lo, hi) = f.lots.iter().zip(&f.info).filter(|(_, i)| i.zone == zi).flat_map(|(l, _)| l.ring.iter()).fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(a, b), p| (a.min(*p), b.max(*p)));
+    let inside = |p: Vec2| p.x > lo.x && p.y > lo.y && p.x < hi.x && p.y < hi.y;
+    let (c, r) = f.plazas.components().into_iter().filter_map(|c| c.pole()).filter(|(p, _)| inside(*p)).max_by(|a, b| a.1.total_cmp(&b.1))?;
+    let clear = |q: Vec2| f.ground.in_plaza(q) && lay.items.iter().all(|it| Vec2::new(it.pos.x, it.pos.z).distance(q) > 2.5);
+    (0..24).map(|k| c + Vec2::from_angle(k as f32 * 0.9) * r * (0.45 + 0.02 * k as f32)).find(|q| clear(*q))
+}
+
+fn spawns(lay: &mut CityLayout, f: &Fabric, lib: &ProfileLibrary, start: Option<u16>) {
     let g = &f.graph;
-    // The player: on a sidewalk or plaza near the middle of the map.
+    // The player: on the start zone's main square, else on a sidewalk or
+    // plaza near the middle of the map.
     let centre = (f.extent[0] + f.extent[1]) * 0.5;
-    let mut player = None;
+    let mut player = start.and_then(|zi| square_spot(lay, f, zi)).map(|q| Spawn { vehicle: false, pos: Vec3::new(q.x, f.ground.height_at(q) + 1.05, q.y), yaw: 0.0 });
     for (si, _, _) in g.near(centre, 400.0) {
+        if player.is_some() {
+            break;
+        }
         let s = g.street(si);
         for k in 0..10 {
             let t = s.len() * (0.3 + 0.04 * k as f32);
