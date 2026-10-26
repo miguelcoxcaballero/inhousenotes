@@ -7418,6 +7418,58 @@
         // ── § 4.17a  Drive HTTP client ────────────────────────────────────────
         // driveFetch wraps fetch() with automatic token injection, 401-retry,
         // and request timeout. All Drive API calls go through this function.
+        // A fetch resolves when headers arrive, not when the PDF is complete.
+        // Keep its deadline and cancellation alive while consumers read bytes.
+        function monitorDriveResponseBody(response, controller, options, cleanup) {
+            const reader = response.body.getReader();
+            let ended = false, idleTimer = null, output = null, readError = null;
+            const finish = () => {
+                ended = true;
+                clearTimeout(idleTimer);
+                controller.signal.removeEventListener('abort', abort);
+                cleanup();
+            };
+            const abort = () => {
+                if (ended) return;
+                const error = options.signal?.aborted
+                    ? createAbortError('Drive request aborted')
+                    : new Error('Drive download timed out before the PDF finished');
+                readError = error;
+                finish();
+                output.error(error);
+                void reader.cancel(error).catch(() => {});
+            };
+            const armIdle = () => {
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(() => controller.abort(),
+                    Math.min(options.timeout, options.bodyIdleTimeout || 15000));
+            };
+            const body = new ReadableStream({
+                start(target) {
+                    output = target;
+                    controller.signal.addEventListener('abort', abort, {once:true});
+                    if (controller.signal.aborted) abort(); else armIdle();
+                },
+                async pull(target) {
+                    try {
+                        const chunk = await reader.read();
+                        if (ended) return;
+                        if (chunk.done) { finish(); target.close(); }
+                        else { armIdle(); target.enqueue(chunk.value); }
+                    } catch (error) {
+                        if (!ended) { finish(); target.error(error); }
+                    }
+                },
+                cancel(reason) { finish(); controller.abort(); return reader.cancel(reason); }
+            });
+            const result = new Response(body, {status:response.status,statusText:response.statusText,headers:response.headers});
+            for (const method of ['blob','arrayBuffer','text','json']) {
+                const consume = result[method].bind(result);
+                result[method] = (...args) => consume(...args).catch(error => { throw readError || error; });
+            }
+            return result;
+        }
+
         async function driveFetch(url, options = {}, _retried = false) {
             // The deadline includes authentication. Previously a stalled
             // token refresh could leave "Checking Drive" pending forever
@@ -7447,6 +7499,7 @@
                 delete fetchOptions.signal;
                 delete fetchOptions.acceptStatuses;
                 delete fetchOptions.bufferResponse;
+                delete fetchOptions.bodyIdleTimeout;
                 let res = await fetch(url, {
                     ...fetchOptions,
                     headers,
@@ -7463,10 +7516,12 @@
                     const body = await res.arrayBuffer();
                     res = new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
                 }
-                clearTimeout(timeoutId);
-                if (externalAbortHandler && options.signal) {
-                    options.signal.removeEventListener('abort', externalAbortHandler);
-                }
+                const releaseDeadline = () => {
+                    clearTimeout(timeoutId);
+                    if (externalAbortHandler && options.signal) options.signal.removeEventListener('abort', externalAbortHandler);
+                };
+                const streaming = res.ok && res.body && !options.bufferResponse && !isJsonResponse;
+                if (!streaming) releaseDeadline();
                 if (res.status === 401 && !_retried) {
                     if (driveSignedOut) {
                         throw new Error('Drive API error 401: signed out');
@@ -7485,7 +7540,8 @@
                     const message = await res.text().catch(() => '');
                     throw Object.assign(new Error(`Drive API error ${res.status}: ${message}`), { code: res.status, status: res.status });
                 }
-                return res;
+                return streaming ? monitorDriveResponseBody(res, controller,
+                    {...options,timeout:timeoutMs}, releaseDeadline) : res;
             } catch (err) {
                 clearTimeout(timeoutId);
                 if (externalAbortHandler && options.signal) {
@@ -25959,15 +26015,19 @@
 
         async function updateDriveFile(fileId, pdfBlob, options = {}) {
             if (!(pdfBlob instanceof Blob) || !pdfBlob.size) throw new Error('Cannot upload an empty PDF to Drive');
-            const revision = options.writeRevision;
+            let revision = options.writeRevision;
             if (revision?.id !== fileId || !revision.etag) throw new Error('Drive write revision belongs to another document');
             const projection = 'id,headRevisionId,modifiedDate,version';
             let result;
+            for (let attempt = 0; ; attempt++) {
+            try {
             if (pdfBlob.size <= 4 * 1024 * 1024) {
                 // Small immutable PDFs need one conditional media request, not
                 // a resumable-session handshake followed by a second request.
                 await waitForDocumentBackgroundTurn(options);
+                driveSavePhase = 'uploading';
                 driveUploadProgress = {sent:0,total:pdfBlob.size};
+                refreshSaveIndicatorState();
                 const response = await driveFetch(`https://www.googleapis.com/upload/drive/v2/files/${encodeURIComponent(fileId)}?uploadType=media&fields=${projection}`, {
                     method:'PUT', headers:{'Content-Type':'application/pdf','If-Match':revision.etag},
                     body:pdfBlob, signal:options.signal, timeout:DRIVE_RESUMABLE_CHUNK_TIMEOUT_MS,
@@ -25981,6 +26041,16 @@
                     url:`https://www.googleapis.com/upload/drive/v2/files/${encodeURIComponent(fileId)}?uploadType=resumable&fields=${projection}`,
                     method:'PUT', blob:pdfBlob, options:{...options,conditionalETag:revision.etag}
                 });
+            }
+                break;
+            } catch (error) {
+                if ((error.status !== 412 && error.code !== 412) || attempt >= 2 || !revision.headRevisionId) throw error;
+                const latest = await readDriveWriteRevision(fileId, options);
+                if (!revision.headRevisionId || !latest.headRevisionId
+                    || revision.headRevisionId !== latest.headRevisionId) throw error;
+                revision = latest;
+                recordSaveDebug('Metadata changed; retrying the same PDF with a fresh write token');
+            }
             }
             if (result?.id !== fileId) throw new Error('Drive did not confirm the expected document');
             driveUploadProgress = {sent:pdfBlob.size,total:pdfBlob.size};
@@ -27329,6 +27399,7 @@
         }
 
         async function pingPresence() {
+            if (driveSaveInProgress) return;
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
             const keyPrefix = getPresenceKey();
             const legacyKey = getLegacyPresenceKey();
@@ -27387,6 +27458,7 @@
                     });
                 });
 
+                if (driveSaveInProgress) return;
                 await driveFetch(
                     `https://www.googleapis.com/drive/v3/files/${state.driveFileId}`,
                     {
@@ -27405,6 +27477,7 @@
         }
 
         async function pulsePresenceHeartbeat() {
+            if (driveSaveInProgress) return;
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
             if (!_presenceCanHeartbeat) return;
             if (_presenceHeartbeatInFlight) return;
@@ -27494,6 +27567,7 @@
             if (presenceSavePhase === normalized && normalized !== 'saved') return;
             presenceSavePhase = normalized;
             presenceSavePhaseAt = normalized ? now : 0;
+            if (driveSaveInProgress) return;
             if (!state.driveFileId || !driveAccessToken || !driveUserProfile) return;
             presenceSavePhasePushInFlight = true;
             try {
