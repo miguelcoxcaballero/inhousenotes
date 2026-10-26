@@ -15,9 +15,9 @@ lots = { width = [4.0, 8.0], depth = 12.0, min_width = 3.5, min_area = 28.0, cou
 street = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
 alley = [["valencia_carmen", 1.0]]
 avenue = [["valencia_modernista", 0.5], ["valencia_ensanche", 0.5]]
-plaza = [["valencia_modernista", 0.4], ["valencia_carmen", 0.6]]
+plaza = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
 [zone.organic]
-plaza = { radius = [14.0, 22.0], vertices = [6, 9] }
+plaza = { radius = [14.0, 22.0], vertices = [4, 6] }
 meander = 0.6
 lattice = 2.0
 tiers = [
