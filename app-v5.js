@@ -13063,6 +13063,9 @@
             if (!stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) return false;
             if (!strokeMayIntersectCircle(stroke, x, y, hitRadius, 2)) return false;
             const points = stroke.points;
+            const nativeHit = points.length >= 256
+                ? window.InhouseRust?.strokeHitTest(points, x, y, hitRadius, `${getDocumentSessionToken()}:${pageMutationGeneration}`) : null;
+            if (nativeHit !== null && nativeHit !== undefined) return nativeHit;
             if (points.length === 1) {
                 return Math.hypot(points[0].x - x, points[0].y - y) <= hitRadius;
             }
