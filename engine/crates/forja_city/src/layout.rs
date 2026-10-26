@@ -78,9 +78,9 @@ impl District {
             rounded: 0.0,
             depth: 13.0,
             lot_width: [8.0, 14.0],
-            styles: vec![("madrid_centro", 0.6), ("madrid_ladrillo", 0.4)],
+            styles: vec![("madrid_centro", 0.55), ("madrid_ladrillo", 0.35), ("desarrollismo", 0.1)],
             avenue_styles: vec![("madrid_centro", 0.5), ("valencia_ensanche", 0.5)],
-            outer_styles: vec![("madrid_ladrillo", 0.6), ("madrid_centro", 0.4)],
+            outer_styles: vec![("madrid_ladrillo", 0.5), ("madrid_centro", 0.35), ("desarrollismo", 0.15)],
             plaza_styles: vec![("madrid_austrias", 1.0)],
             traffic_lights: false,
             valencia: false,
@@ -101,9 +101,9 @@ impl District {
             rounded: 0.35,
             depth: 19.0,
             lot_width: [13.0, 21.0],
-            styles: vec![("valencia_ensanche", 0.45), ("valencia_ruzafa", 0.35), ("valencia_modernista", 0.2)],
+            styles: vec![("valencia_ensanche", 0.4), ("valencia_ruzafa", 0.32), ("valencia_modernista", 0.16), ("desarrollismo", 0.12)],
             avenue_styles: vec![("valencia_modernista", 0.55), ("valencia_ensanche", 0.45)],
-            outer_styles: vec![("cabanyal", 0.75), ("valencia_ruzafa", 0.25)],
+            outer_styles: vec![("cabanyal", 0.65), ("valencia_ruzafa", 0.23), ("desarrollismo", 0.12)],
             plaza_styles: vec![("valencia_modernista", 0.6), ("valencia_ensanche", 0.4)],
             traffic_lights: true,
             valencia: true,
@@ -352,6 +352,7 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
         }
         // One scene per block for all the buildings' unique geometry.
         let mut parts: Parts<Mat> = Parts::new();
+        let first_wall = lay.out.party_walls.len();
         for (lot, facing) in split_block(b, d, &mut rng) {
             let pool = match facing {
                 Facing::Avenue => &d.avenue_styles,
@@ -373,6 +374,8 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
                 }
             }
         }
+        // Medianeras once every neighbour in the block is known.
+        building::medianeras(&mut lib, &mut lay.out, &mut parts, first_wall);
         let si = lay.out.add_scene(assemble(kit, "block", parts, None));
         lay.out.placements.push((si, Mat4::IDENTITY));
     }

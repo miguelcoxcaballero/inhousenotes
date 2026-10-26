@@ -228,3 +228,37 @@ flower_pots = 0.5
 wall_lamps = true
 reformed = 0.15
 clutter = 0.6
+
+# 1960s-80s infill (desarrollismo): the block that replaced an old house
+# on almost every street of both cities. Taller than its neighbours, even
+# low floors that never line up with theirs, face brick or render with
+# white slab edges, concrete terraces with solid parapets and striped
+# awnings, aluminium and roller blinds everywhere, condensers galore.
+[[style]]
+id = "desarrollismo"
+city = "any"
+modern = true
+floors = [6, 8]
+ground_height = 4.0
+floor_height = 2.85
+bay = [3.3, 3.9]
+window_width = 1.5
+window_height = 2.15
+walls = ["brick #ffffff", "brick #f4dcc4", "brick #f8e8d0", "stucco #ece6da", "plaster #d8d2c6"]
+ground = "granite"
+grounds = ["granite", "granite", "plaster #d8d2c6", "ashlar #e6e0d4"]
+surround = ["moulding #ebe8e1"]
+surround_kind = "none"
+balcony = "terrace"
+railing = "bars"
+shutters = ["roller #e8e6e0"]
+frames = ["#f1f1ee", "#6b5442", "#b9bcbe"]
+roof = "parapet"
+cornice = "slab"
+shops = 0.9
+graffiti = 0.5
+awnings = 0.3
+flower_pots = 0.3
+reformed = 1.0
+clutter = 1.0
+atico = 0.2

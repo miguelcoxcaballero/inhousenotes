@@ -249,6 +249,9 @@ pub struct BalconyKey {
     pub ends: (bool, bool),
     pub pots: u8,
     pub awning: Option<u8>,
+    /// Cantilevered terrace with a solid parapet (1960s-80s blocks)
+    /// instead of a stone slab on corbels with a wrought-iron railing.
+    pub solid: bool,
 }
 
 /// Stone slab on corbels with a wrought-iron railing.
@@ -256,6 +259,10 @@ fn balcony(p: &mut P, slab: Mat, b: &BalconyKey, h_window: f32) {
     let w = b.width_cm as f32 / 100.0;
     let d = b.depth_cm as f32 / 100.0;
     let hw = w * 0.5;
+    if b.solid {
+        terrace(p, slab, b, h_window);
+        return;
+    }
     bx(p, slab, v(-hw, -0.12, 0.0), v(hw, 0.0, d));
     bx(p, slab, v(-hw - 0.025, -0.17, 0.0), v(hw + 0.025, -0.1, d + 0.03));
     // Corbels.
@@ -313,6 +320,34 @@ fn balcony(p: &mut P, slab: Mat, b: &BalconyKey, h_window: f32) {
     }
     if let Some(a) = b.awning {
         awning(p, a, w + 0.1, h_window + 0.3, d + 0.45, h_window - 0.6);
+    }
+}
+
+/// Concrete terrace of a 1960s-80s block: a thin cantilevered slab with a
+/// solid parapet capped by a steel tube.
+fn terrace(p: &mut P, m: Mat, b: &BalconyKey, h_window: f32) {
+    let w = b.width_cm as f32 / 100.0;
+    let d = b.depth_cm as f32 / 100.0;
+    let hw = w * 0.5;
+    let (t, ph) = (0.08, 0.95);
+    bx(p, m, v(-hw, -0.16, 0.0), v(hw, 0.0, d));
+    bx(p, m, v(-hw, 0.0, d - t), v(hw, ph, d));
+    for (on, x0, x1) in [(b.ends.0, -hw, -hw + t), (b.ends.1, hw - t, hw)] {
+        if on {
+            bx(p, m, v(x0, 0.0, 0.0), v(x1, ph, d - t));
+        }
+    }
+    // Drip edge under the slab and the steel handrail on top.
+    bx(p, m, v(-hw - 0.01, -0.2, d - 0.04), v(hw + 0.01, -0.16, d + 0.01));
+    let g = p.get(Mat::Galvanized);
+    g.cylinder(v(-hw + 0.02, ph + 0.06, d - t * 0.5), v(hw - 0.02, ph + 0.06, d - t * 0.5), 0.022, 8, true);
+    let n = ((w - 0.1) / 1.2).ceil().max(1.0) as i32;
+    for i in 0..=n {
+        let x = -hw + 0.05 + (w - 0.1) * i as f32 / n as f32;
+        g.beam(v(x, ph, d - t * 0.5), v(x, ph + 0.06, d - t * 0.5), Vec3::X, 0.02, 0.02, 1.0);
+    }
+    if let Some(a) = b.awning {
+        awning(p, a, w - 0.1, h_window + 0.3, d + 0.25, h_window - 0.5);
     }
 }
 
@@ -450,14 +485,14 @@ impl WindowKey {
     /// The key reduced to what `piece` depends on.
     pub fn for_piece(&self, piece: Piece) -> WindowKey {
         let blank = WindowKey { w_cm: self.w_cm, h_cm: self.h_cm, door: self.door, surround: Mat::Iron, surround_kind: SurroundKind::None, frame: [0; 3], shutter: None, balcony: None, mirador: None, interior: 0, grille: false };
-        let has_balcony = self.balcony.map(|_| BalconyKey { width_cm: 0, depth_cm: 0, belly: false, ends: (false, false), pots: 0, awning: None });
+        let has_balcony = self.balcony.map(|_| BalconyKey { width_cm: 0, depth_cm: 0, belly: false, ends: (false, false), pots: 0, awning: None, solid: false });
         match piece {
             Piece::Surround => WindowKey { surround: self.surround, surround_kind: self.surround_kind, balcony: has_balcony, grille: self.grille, ..blank },
             Piece::Glazing => WindowKey { frame: self.frame, mirador: self.mirador, surround: if self.mirador.is_some() { self.surround } else { Mat::Iron }, ..blank },
             Piece::Interior => WindowKey { interior: self.interior, ..blank },
             Piece::Shutter => WindowKey {
                 shutter: self.shutter,
-                balcony: if self.mirador.is_some() { None } else { self.balcony.map(|b| BalconyKey { width_cm: 0, depth_cm: b.depth_cm, belly: false, ends: (false, false), pots: 0, awning: None }) },
+                balcony: if self.mirador.is_some() { None } else { self.balcony.map(|b| BalconyKey { width_cm: 0, depth_cm: b.depth_cm, belly: false, ends: (false, false), pots: 0, awning: None, solid: false }) },
                 ..blank
             },
             Piece::Balcony => WindowKey { surround: self.surround, balcony: if self.mirador.is_some() { None } else { self.balcony }, ..blank },
@@ -1210,7 +1245,7 @@ mod tests {
             surround_kind: SurroundKind::Lintel,
             frame: hex(0xf0f0f0),
             shutter: Some((ShutterKind::Alicantina, hex(0xc99a5c), 2)),
-            balcony: Some(BalconyKey { width_cm: 185, depth_cm: 50, belly: true, ends: (true, true), pots: 3, awning: Some(0) }),
+            balcony: Some(BalconyKey { width_cm: 185, depth_cm: 50, belly: true, ends: (true, true), pots: 3, awning: Some(0), solid: false }),
             mirador: None,
             interior: 1,
             grille: false,
@@ -1246,6 +1281,13 @@ mod tests {
         for m in [balustrade(Mat::Moulding([250; 3])), pedestal(Mat::Moulding([250; 3]), true), crest(Mat::Moulding([250; 3]), Mat::Tiles(crate::texgen::TilePattern::Frieze), 3.6), dormer(Mat::Zinc, Mat::RoofSlate, hex(0xffffff)), chimney(Mat::Brick([255; 3])), wall_lantern(), terrace_railing()] {
             assert!(prim_count(&m) > 10);
         }
+        // A 1970s terrace: parapet up to the handrail, no corbels.
+        let mut k = sample_window();
+        k.balcony = Some(BalconyKey { width_cm: 340, depth_cm: 110, belly: false, ends: (true, false), pots: 0, awning: Some(1), solid: true });
+        let b = window_piece(&k.for_piece(Piece::Balcony), Piece::Balcony);
+        let pts: Vec<Vec3> = b.prims.values().flat_map(|q| q.positions.iter().copied()).collect();
+        assert!(pts.iter().any(|p| p.y > 0.95 && p.z > 1.0));
+        assert!(pts.iter().all(|p| p.y > -0.25 || p.z < 0.0), "no corbels under a cantilevered slab");
         // Aerials stand on their foot and stay slim.
         for v in 0..3 {
             let a = tv_antenna(v);
