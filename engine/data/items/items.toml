@@ -1,0 +1,105 @@
+# Item catalogue. Weapon items point at data/weapons definitions; models
+# are paths under assets/downloaded.
+
+[[item]]
+id = "pistol"
+name = "Service Pistol"
+category = "weapon"
+weight = 0.9
+weapon = "service_pistol"
+model = "polyhaven_service_pistol/service_pistol_1k.gltf"
+
+[[item]]
+id = "rifle"
+name = "Bolt-Action Rifle"
+category = "weapon"
+weight = 4.1
+weapon = "bolt_rifle"
+model = "polyhaven_bolt_action_rifle/bolt_action_rifle_7_62_1k.gltf"
+
+[[item]]
+id = "blaster_smg"
+name = "Compact SMG"
+category = "weapon"
+weight = 2.6
+weapon = "compact_smg"
+model = "kenney_blaster_kit/blaster-a.glb"
+
+[[item]]
+id = "blaster_shotgun"
+name = "Pump Shotgun"
+category = "weapon"
+weight = 3.4
+weapon = "pump_shotgun"
+model = "kenney_blaster_kit/blaster-h.glb"
+
+[[item]]
+id = "carbine"
+name = "Carbine Rifle"
+category = "weapon"
+weight = 3.2
+weapon = "carbine"
+model = "kenney_blaster_kit/blaster-d.glb"
+
+[[item]]
+id = "fists"
+name = "Fists"
+category = "weapon"
+weapon = "fists"
+
+[[item]]
+id = "ammo_9mm"
+name = "9mm rounds"
+category = "ammo"
+max_stack = 250
+weight = 0.008
+
+[[item]]
+id = "ammo_762"
+name = "7.62mm rounds"
+category = "ammo"
+max_stack = 100
+weight = 0.025
+
+[[item]]
+id = "ammo_556"
+name = "5.56mm rounds"
+category = "ammo"
+max_stack = 300
+weight = 0.012
+
+[[item]]
+id = "ammo_12g"
+name = "12 gauge shells"
+category = "ammo"
+max_stack = 60
+weight = 0.04
+
+[[item]]
+id = "medkit"
+name = "First aid kit"
+category = "consumable"
+max_stack = 5
+weight = 0.5
+value = 50.0
+
+[[item]]
+id = "snack"
+name = "Energy bar"
+category = "consumable"
+max_stack = 10
+weight = 0.1
+value = 15.0
+
+[[item]]
+id = "body_armor"
+name = "Body armor"
+category = "armor"
+weight = 4.0
+value = 100.0
+
+[[item]]
+id = "car_keys"
+name = "Car keys"
+category = "key"
+weight = 0.05

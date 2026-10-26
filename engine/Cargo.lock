@@ -318,10 +318,22 @@ dependencies = [
 [[package]]
 name = "forja_gameplay"
 version = "0.1.0"
+dependencies = [
+ "forja_assets",
+ "forja_math",
+ "forja_physics",
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "forja_input"
 version = "0.1.0"
+dependencies = [
+ "forja_math",
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "forja_math"
