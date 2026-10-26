@@ -5,6 +5,12 @@
 # stucco, plaster, brick, ashlar, granite, tiles (<pattern>) and moulding.
 # Tile patterns: checker_green, checker_blue, diamond_blue, frieze, white.
 #
+# `reformed` is the chance that a flat swapped its old joinery for white
+# aluminium and roller blinds; `clutter` scales the lived-in extras (AC
+# condensers, satellite dishes, laundry, cables, downpipes); `grounds`
+# lists alternative ground-floor treatments ("wall" = the facade material
+# down to a stone plinth).
+#
 # References: Madrid centro (Lavapiés, Huertas, Malasaña), Madrid de los
 # Austrias (Plaza de la Villa), Valencian Ensanche (Gran Vía, Colón,
 # Plaza del Ayuntamiento), Valencian modernismo, Ruzafa and Cabanyal.
@@ -34,6 +40,8 @@ awnings = 0.05
 flower_pots = 0.35
 wall_lamps = true
 dormers = true
+reformed = 0.3
+clutter = 1.0
 
 [[style]]
 id = "madrid_ladrillo"
@@ -59,6 +67,8 @@ graffiti = 0.7
 flower_pots = 0.3
 wall_lamps = true
 dormers = false
+reformed = 0.35
+clutter = 0.9
 
 [[style]]
 id = "madrid_austrias"
@@ -86,6 +96,8 @@ wall_lamps = true
 dormers = true
 tower = "spire"
 quoins = true
+reformed = 0.05
+clutter = 0.2
 
 [[style]]
 id = "valencia_ensanche"
@@ -116,6 +128,8 @@ shops = 0.95
 graffiti = 0.1
 awnings = 0.15
 flower_pots = 0.25
+reformed = 0.15
+clutter = 0.4
 
 [[style]]
 id = "valencia_modernista"
@@ -146,6 +160,8 @@ shops = 1.0
 graffiti = 0.0
 awnings = 0.1
 flower_pots = 0.1
+reformed = 0.05
+clutter = 0.15
 
 [[style]]
 id = "valencia_ruzafa"
@@ -173,6 +189,8 @@ shops = 0.8
 graffiti = 0.35
 flower_pots = 0.35
 wall_lamps = true
+reformed = 0.3
+clutter = 0.8
 
 [[style]]
 id = "cabanyal"
@@ -199,3 +217,5 @@ shops = 0.1
 grilles = true
 flower_pots = 0.5
 wall_lamps = true
+reformed = 0.15
+clutter = 0.6

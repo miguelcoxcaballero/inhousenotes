@@ -432,18 +432,29 @@ pub struct WindowKey {
 /// placement time instead of multiplying into unique meshes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Piece {
-    /// Mouldings, joinery, glass, interior, mirador and grille.
-    Base,
+    /// Stone surround, sill and grille.
+    Surround,
+    /// Joinery and glass (and the mirador built from the same joinery).
+    Glazing,
+    /// Fake room behind the glass.
+    Interior,
     Shutter,
     Balcony,
+}
+
+impl Piece {
+    pub const ALL: [Piece; 5] = [Piece::Surround, Piece::Glazing, Piece::Interior, Piece::Shutter, Piece::Balcony];
 }
 
 impl WindowKey {
     /// The key reduced to what `piece` depends on.
     pub fn for_piece(&self, piece: Piece) -> WindowKey {
         let blank = WindowKey { w_cm: self.w_cm, h_cm: self.h_cm, door: self.door, surround: Mat::Iron, surround_kind: SurroundKind::None, frame: [0; 3], shutter: None, balcony: None, mirador: None, interior: 0, grille: false };
+        let has_balcony = self.balcony.map(|_| BalconyKey { width_cm: 0, depth_cm: 0, belly: false, ends: (false, false), pots: 0, awning: None });
         match piece {
-            Piece::Base => WindowKey { shutter: None, balcony: self.balcony.map(|_| BalconyKey { width_cm: 0, depth_cm: 0, belly: false, ends: (false, false), pots: 0, awning: None }), ..*self },
+            Piece::Surround => WindowKey { surround: self.surround, surround_kind: self.surround_kind, balcony: has_balcony, grille: self.grille, ..blank },
+            Piece::Glazing => WindowKey { frame: self.frame, mirador: self.mirador, surround: if self.mirador.is_some() { self.surround } else { Mat::Iron }, ..blank },
+            Piece::Interior => WindowKey { interior: self.interior, ..blank },
             Piece::Shutter => WindowKey {
                 shutter: self.shutter,
                 balcony: if self.mirador.is_some() { None } else { self.balcony.map(|b| BalconyKey { width_cm: 0, depth_cm: b.depth_cm, belly: false, ends: (false, false), pots: 0, awning: None }) },
@@ -455,9 +466,9 @@ impl WindowKey {
 }
 
 pub fn window(k: &WindowKey) -> P {
-    let mut p = window_piece(k, Piece::Base);
-    for piece in [Piece::Shutter, Piece::Balcony] {
-        p.append(&window_piece(k, piece), &Mat4::IDENTITY);
+    let mut p = P::new();
+    for piece in Piece::ALL {
+        p.append(&window_piece(&k.for_piece(piece), piece), &Mat4::IDENTITY);
     }
     p
 }
@@ -467,17 +478,19 @@ pub fn window_piece(k: &WindowKey, piece: Piece) -> P {
     let (w, h) = (k.w_cm as f32 / 100.0, k.h_cm as f32 / 100.0);
     let frame = Mat::PaintedWood(k.frame);
     match piece {
-        Piece::Base => {
+        Piece::Surround => {
             surround(&mut p, k.surround, k.surround_kind, w, h, if k.door { 0.0 } else { -0.02 }, !k.door && k.balcony.is_none());
-            glazing(&mut p, frame, w, h, k.door);
-            interior(&mut p, Mat::Interior, w, h, k.interior, 1.6);
-            if let Some(hcm) = k.mirador {
-                mirador(&mut p, frame, k.surround, w, hcm as f32 / 100.0);
-            }
             if k.grille {
                 grille(&mut p, w, h);
             }
         }
+        Piece::Glazing => {
+            glazing(&mut p, frame, w, h, k.door);
+            if let Some(hcm) = k.mirador {
+                mirador(&mut p, frame, k.surround, w, hcm as f32 / 100.0);
+            }
+        }
+        Piece::Interior => interior(&mut p, Mat::Interior, w, h, k.interior, 1.6),
         Piece::Balcony => {
             if let (Some(b), None) = (&k.balcony, k.mirador) {
                 balcony(&mut p, k.surround, b, h);
@@ -547,17 +560,27 @@ pub struct ShopKey {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ShopPiece {
-    Base,
+    /// Stone or tiled frame around the opening.
+    Surround,
+    /// Painted joinery, door and glass.
+    Front,
+    Interior,
     Sign,
     Shutter,
     Awning,
+}
+
+impl ShopPiece {
+    pub const ALL: [ShopPiece; 6] = [ShopPiece::Surround, ShopPiece::Front, ShopPiece::Interior, ShopPiece::Sign, ShopPiece::Shutter, ShopPiece::Awning];
 }
 
 impl ShopKey {
     pub fn for_piece(&self, piece: ShopPiece) -> ShopKey {
         let blank = ShopKey { w_cm: self.w_cm, h_cm: self.h_cm, surround: Mat::Iron, sign: 0, shutter: 0, graffiti: 0, frame: [0; 3], awning: None, interior: 0 };
         match piece {
-            ShopPiece::Base => ShopKey { sign: self.sign % 3, shutter: 0, graffiti: 0, awning: None, interior: self.sign % 4, ..*self },
+            ShopPiece::Surround => ShopKey { surround: self.surround, ..blank },
+            ShopPiece::Front => ShopKey { frame: self.frame, sign: self.sign % 3, ..blank },
+            ShopPiece::Interior => ShopKey { interior: self.sign % 4, ..blank },
             ShopPiece::Sign => ShopKey { sign: self.sign, ..blank },
             ShopPiece::Shutter => ShopKey { shutter: self.shutter, graffiti: if self.shutter == 3 { self.graffiti } else { 0 }, ..blank },
             ShopPiece::Awning => ShopKey { awning: self.awning, ..blank },
@@ -566,9 +589,9 @@ impl ShopKey {
 }
 
 pub fn shop(k: &ShopKey) -> P {
-    let mut p = shop_piece(k, ShopPiece::Base);
-    for piece in [ShopPiece::Sign, ShopPiece::Shutter, ShopPiece::Awning] {
-        p.append(&shop_piece(k, piece), &Mat4::IDENTITY);
+    let mut p = P::new();
+    for piece in ShopPiece::ALL {
+        p.append(&shop_piece(&k.for_piece(piece), piece), &Mat4::IDENTITY);
     }
     p
 }
@@ -580,11 +603,14 @@ pub fn shop_piece(k: &ShopKey, piece: ShopPiece) -> P {
     let sign_h = 0.55;
     let ys = h - sign_h;
     match piece {
-        ShopPiece::Base => {
+        ShopPiece::Surround => {
             let (bw, pr) = (0.22, 0.05);
             bx(&mut p, k.surround, v(-hw - bw, 0.0, 0.0), v(-hw, h, pr));
             bx(&mut p, k.surround, v(hw, 0.0, 0.0), v(hw + bw, h, pr));
             bx(&mut p, k.surround, v(-hw - bw, h, 0.0), v(hw + bw, h + 0.18, pr + 0.02));
+        }
+        ShopPiece::Interior => interior(&mut p, Mat::ShopInterior, w, ys, k.interior, 4.0),
+        ShopPiece::Front => {
             let frame = Mat::PaintedWood(k.frame);
             bx(&mut p, frame, v(-hw, ys - 0.06, -0.08), v(hw, ys, -0.02));
             // Shopfront: kick plate, mullions, door.
@@ -601,7 +627,6 @@ pub fn shop_piece(k: &ShopKey, piece: ShopPiece) -> P {
             let g = p.get(Mat::Glass);
             let uv = [Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 0.0), Vec2::ZERO];
             g.quad_uv([v(-hw, 0.08, z - 0.01), v(hw, 0.08, z - 0.01), v(hw, ys - 0.12, z - 0.01), v(-hw, ys - 0.12, z - 0.01)], uv);
-            interior(&mut p, Mat::ShopInterior, w, ys, k.interior, 4.0);
         }
         ShopPiece::Sign => {
             let row = (k.sign % 16) as f32;
@@ -828,6 +853,164 @@ pub fn rooftop(kind: u8, wall: Mat) -> P {
             bx(&mut p, wall, v(-1.3, 0.0, -1.6), v(1.3, 2.5, 1.6));
             bx(&mut p, Mat::Moulding(hex(0xeeeeea)), v(-1.38, 2.5, -1.68), v(1.38, 2.62, 1.68));
             bx(&mut p, Mat::PaintedWood(hex(0x6b4a2e)), v(-0.45, 0.0, 1.6), v(0.45, 2.05, 1.63));
+        }
+    }
+    p
+}
+
+// ------------------------------------------------------------ lived-in clutter
+
+/// Split AC condenser (the white box on every Spanish facade). Origin at
+/// the bottom centre against the wall; `bracket` hangs it on steel
+/// brackets, otherwise it stands on rubber feet (balcony floor).
+pub fn ac_unit(bracket: bool, variant: u8) -> P {
+    let mut p = P::new();
+    let (w, h, z0, z1) = if variant % 2 == 0 { (0.8, 0.55, 0.06, 0.34) } else { (0.7, 0.5, 0.06, 0.31) };
+    let hw = w * 0.5;
+    let shell = Mat::Plastic(if variant % 3 == 2 { hex(0xd9d6cc) } else { hex(0xeeece6) });
+    bx(&mut p, shell, v(-hw, 0.0, z0), v(hw, h, z1));
+    // Fan opening: dark disc behind a grille, offset to the left.
+    let fc = v(-hw + 0.3, h * 0.5, z1);
+    p.get(Mat::Iron).cylinder(fc + v(0.0, 0.0, -0.01), fc + v(0.0, 0.0, 0.002), 0.2, 20, true);
+    {
+        let g = p.get(Mat::Galvanized);
+        for k in -3..=3 {
+            let x = k as f32 * 0.055;
+            let r = (0.2f32 * 0.2 - x * x).max(0.0).sqrt();
+            g.beam(fc + v(x, -r, 0.006), fc + v(x, r, 0.006), Vec3::Z, 0.006, 0.006, 1.0);
+        }
+        g.beam(fc + v(-0.2, 0.0, 0.008), fc + v(0.2, 0.0, 0.008), Vec3::Z, 0.008, 0.008, 1.0);
+    }
+    // Louvred side and the service valve cover on the right.
+    for k in 0..6 {
+        let y = 0.08 + k as f32 * 0.065;
+        bx(&mut p, shell, v(hw - 0.2, y, z1), v(hw - 0.04, y + 0.03, z1 + 0.012));
+    }
+    bx(&mut p, Mat::Plastic(hex(0xc8c6be)), v(hw, 0.08, z0 + 0.05), v(hw + 0.02, 0.3, z1 - 0.03));
+    // Refrigerant lines in a white trunking up the wall, with the drip.
+    let duct = Mat::Plastic(hex(0xe4e2da));
+    bx(&mut p, duct, v(hw + 0.02, 0.18, 0.0), v(hw + 0.1, 0.24, z0 + 0.1));
+    bx(&mut p, duct, v(hw + 0.04, 0.18, 0.0), v(hw + 0.1, 1.1, 0.05));
+    p.get(Mat::Plastic(hex(0x2a2a2a))).beam(v(-hw + 0.06, 0.0, z0 + 0.04), v(-hw + 0.06, -0.12, z0 + 0.06), Vec3::X, 0.014, 0.014, 1.0);
+    if bracket {
+        for x in [-hw + 0.1, hw - 0.1] {
+            let g = p.get(Mat::Galvanized);
+            g.beam(v(x, -0.02, 0.0), v(x, -0.02, z1 + 0.04), Vec3::X, 0.035, 0.035, 1.0);
+            g.beam(v(x, -0.4, 0.0), v(x, -0.02, z1 - 0.04), Vec3::X, 0.03, 0.03, 1.0);
+            g.beam(v(x, -0.42, 0.0), v(x, 0.05, 0.0), Vec3::Z, 0.04, 0.012, 1.0);
+        }
+    } else {
+        for x in [-hw + 0.08, hw - 0.08] {
+            bx(&mut p, Mat::Plastic(hex(0x202020)), v(x - 0.04, -0.06, z0 + 0.02), v(x + 0.04, 0.0, z1 - 0.02));
+        }
+    }
+    p
+}
+
+/// Satellite dish on a wall arm, aimed up and to the south-ish.
+pub fn dish(variant: u8) -> P {
+    let mut p = P::new();
+    let r = if variant % 2 == 0 { 0.32 } else { 0.4 };
+    let depth = r * r / 1.6;
+    // Closed thin shell: convex back going out, concave face coming back.
+    let n = 6;
+    let mut prof: Vec<(f32, f32)> = (0..=n).map(|i| {
+        let t = i as f32 / n as f32 * r;
+        (t, t * t / 1.6)
+    })
+    .collect();
+    prof.push((r, depth + 0.012));
+    prof.extend((0..n).rev().map(|i| {
+        let t = i as f32 / n as f32 * r;
+        (t, t * t / 1.6 + 0.012)
+    }));
+    let mut bowl = P::new();
+    let col = if variant % 3 == 1 { hex(0x9fa3a6) } else { hex(0xe6e6e2) };
+    bowl.get(Mat::Plastic(col)).lathe(Vec3::ZERO, &prof, 18);
+    // LNB arm from the lower rim to the focus (y = 0.4), and the LNB.
+    let focus = v(0.0, 0.4, 0.0);
+    bowl.get(Mat::Plastic(hex(0x6a6e72))).beam(v(0.0, depth, r), focus, Vec3::X, 0.025, 0.025, 1.0);
+    bowl.get(Mat::Plastic(hex(0x3a3d40))).beam(focus - v(0.0, 0.05, 0.0), focus + v(0.0, 0.06, 0.0), Vec3::X, 0.05, 0.05, 1.0);
+    // Bowl axis is +Y: tip it to face +Z and 30 degrees up, then yaw a bit.
+    let yaw = [0.35f32, -0.25, 0.1][variant as usize % 3];
+    let m = Mat4::from_translation(v(0.0, 0.0, 0.35)) * Mat4::from_rotation_y(yaw) * Mat4::from_rotation_x(60f32.to_radians());
+    p.append(&bowl, &m);
+    let g = p.get(Mat::Galvanized);
+    g.beam(v(0.0, 0.0, 0.0), v(0.0, 0.0, 0.33), Vec3::Y, 0.035, 0.035, 1.0);
+    g.beam(v(-0.06, -0.08, 0.0), v(0.06, 0.08, 0.0), Vec3::Z, 0.1, 0.012, 1.0);
+    p
+}
+
+/// Laundry draped over a balcony's top rail (towels, a rug, a sheet).
+/// `depth` is the balcony depth so the cloth hangs on its front rail.
+pub fn laundry(variant: u8, depth_cm: u16) -> P {
+    let mut p = P::new();
+    let zf = depth_cm as f32 / 100.0 - 0.03;
+    let mut rng = Rng::new(variant as u64 * 977 + 13);
+    let colors = [hex(0xf2f0ea), hex(0x3b6ea8), hex(0xd8c25a), hex(0xc0392b), hex(0x7fb3d5), hex(0xe8a0b4), hex(0x5c8a4a), hex(0x2c2c2c)];
+    let pieces = 1 + variant as usize % 3;
+    let mut x = -0.55 + rng.range(0.0, 0.2);
+    for _ in 0..pieces {
+        let w = rng.range(0.35, 0.75).min(0.75 - x);
+        if w < 0.2 {
+            break;
+        }
+        let drop = rng.range(0.35, 0.8);
+        let m = if rng.chance(0.3) { Mat::Awning(rng.below(2) as u8) } else { Mat::Flowers(*rng.pick(&colors)) };
+        let prim = p.get(m);
+        let (x0, x1) = (x, x + w);
+        // Outside face hanging from the rail, the fold on top and the
+        // short inside flap.
+        let top = 1.02;
+        prim.quad(v(x0, top - drop, zf + 0.035), v(x1, top - drop, zf + 0.035), v(x1, top, zf + 0.035), v(x0, top, zf + 0.035), 1.0);
+        prim.quad(v(x1, top - drop, zf + 0.025), v(x0, top - drop, zf + 0.025), v(x0, top, zf + 0.025), v(x1, top, zf + 0.025), 1.0);
+        prim.quad(v(x0, top + 0.01, zf + 0.035), v(x1, top + 0.01, zf + 0.035), v(x1, top + 0.01, zf - 0.035), v(x0, top + 0.01, zf - 0.035), 1.0);
+        prim.quad(v(x1, top - 0.25, zf - 0.035), v(x0, top - 0.25, zf - 0.035), v(x0, top, zf - 0.035), v(x1, top, zf - 0.035), 1.0);
+        prim.quad(v(x0, top - 0.25, zf - 0.03), v(x1, top - 0.25, zf - 0.03), v(x1, top, zf - 0.03), v(x0, top, zf - 0.03), 1.0);
+        // Pegs.
+        for px in [x0 + 0.05, x1 - 0.05] {
+            p.get(Mat::Plastic(*rng.pick(&[hex(0x3b8fd8), hex(0xe84a5f), hex(0xf5d33a)]))).aabox(v(px - 0.012, top - 0.03, zf + 0.03), v(px + 0.012, top + 0.04, zf + 0.05), 1.0);
+        }
+        x = x1 + rng.range(0.08, 0.3);
+    }
+    p
+}
+
+/// Clothes-line rack under a window (tendedero): two steel arms, four
+/// lines and a few garments. Origin at the sill centre on the wall.
+pub fn clothes_rack(variant: u8) -> P {
+    let mut p = P::new();
+    let mut rng = Rng::new(variant as u64 * 1543 + 7);
+    let (hw, reach) = (0.65, 0.55);
+    {
+        let g = p.get(Mat::Galvanized);
+        for x in [-hw, hw] {
+            g.beam(v(x, 0.0, 0.0), v(x, 0.0, reach), Vec3::Y, 0.025, 0.025, 1.0);
+            g.beam(v(x, -0.3, 0.0), v(x, 0.0, reach * 0.7), Vec3::Y, 0.02, 0.02, 1.0);
+        }
+    }
+    let lines: Vec<f32> = (0..4).map(|i| 0.12 + i as f32 * 0.13).collect();
+    {
+        let l = p.get(Mat::Plastic(hex(0xdedad0)));
+        for z in &lines {
+            l.beam(v(-hw, 0.0, *z), v(hw, 0.0, *z), Vec3::Y, 0.006, 0.006, 1.0);
+        }
+    }
+    let colors = [hex(0xf2f0ea), hex(0x24344d), hex(0xb03a2e), hex(0x7fb3d5), hex(0xe8d8b0), hex(0x404040), hex(0xd98cb3), hex(0x6a8f4e)];
+    for z in &lines {
+        let mut x = -hw + rng.range(0.03, 0.2);
+        while x < hw - 0.2 {
+            if rng.chance(0.65) {
+                let w = rng.range(0.18, 0.45).min(hw - x);
+                let drop = rng.range(0.25, 0.7);
+                let m = Mat::Flowers(*rng.pick(&colors));
+                let c = p.get(m);
+                c.quad(v(x, -drop, *z), v(x + w, -drop, *z), v(x + w, 0.0, *z), v(x, 0.0, *z), 1.0);
+                c.quad(v(x + w, -drop, *z - 0.008), v(x, -drop, *z - 0.008), v(x, 0.0, *z - 0.008), v(x + w, 0.0, *z - 0.008), 1.0);
+                x += w + rng.range(0.03, 0.12);
+            } else {
+                x += rng.range(0.1, 0.3);
+            }
         }
     }
     p

@@ -107,6 +107,18 @@ pub struct Style {
     pub grilles: bool,
     #[serde(default)]
     pub dormers: bool,
+    /// Chance that a flat (one floor, one half of the front) has replaced
+    /// its joinery with white aluminium and roller blinds.
+    #[serde(default)]
+    pub reformed: f32,
+    /// Density of lived-in facade clutter: AC condensers, satellite
+    /// dishes, laundry, cables (0 = pristine, 1 = Lavapiés).
+    #[serde(default)]
+    pub clutter: f32,
+    /// Alternative ground-floor treatments (one picked per building, `wall`
+    /// = same as the upper wall with a stone plinth); empty uses `ground`.
+    #[serde(default)]
+    pub grounds: Vec<String>,
 }
 
 #[derive(Deserialize)]
