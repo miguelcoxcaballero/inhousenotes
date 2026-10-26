@@ -40,6 +40,10 @@ pub mod stage {
     pub const GRID: u64 = 7;
 }
 
+/// Lot vertices closer than this merge into one (region debris), so a lot
+/// may cut across a block-outline vertex by at most this much.
+pub const WELD: f32 = 0.06;
+
 /// A street corner of a block: where two street-facing sides meet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CornerMark {
@@ -312,10 +316,14 @@ impl Fabric {
                     _ => (0.0, 0.0),
                 };
                 let (ring, corners) = bevel(&outer, &faces, &chamfer_of, &rules, (seed, *z as u64));
-                // Holes in land are enclosed scraps of public space (a square no street
-                // reaches): the block covers them.
-                let block_r = Region::from_shapes(&[Shape { outer: ring, holes: Vec::new() }]);
-                for bs in block_r.shapes() {
+                // The bevel only ever removes land (a chamfer chord across a concave
+                // stretch would otherwise bulge into the street), and holes (public
+                // space enclosed by land, e.g. a square no street reaches) stay public:
+                // the block is cut through them so every block ring is simple.
+                let land_piece = Region::from_shapes(std::slice::from_ref(&shape));
+                let block_r = Region::ring(&ring).and(&land_piece);
+                let pieces: Vec<Shape> = split_holes(&block_r).iter().flat_map(|r| r.shapes()).collect();
+                for bs in pieces {
                     let key = bs.outer.iter().fold(Vec2::splat(f32::MAX), |m, p| if (p.x, p.y) < (m.x, m.y) { *p } else { m });
                     let key = point_key(key);
                     let bi = blocks.len() as u32;
@@ -403,7 +411,16 @@ impl Fabric {
             let mut rng = Rng::keyed(seed, stage::JITTER, key);
             *r = setback(r, &front_ix, jitter, &mut rng, &domain_loc);
         }
-        weld(&mut lot_regions, &front_ix, 0.06);
+        // Lots never leave their block (setbacks and merges are region algebra);
+        // the weld then clears the millimetre debris on the shared vertex set.
+        let block_regions: Vec<Region> = blocks.iter().map(|b| Region::from_shapes(std::slice::from_ref(&b.shape))).collect();
+        for (r, bi, _) in lot_regions.iter_mut() {
+            let inside = r.and(&block_regions[*bi as usize]);
+            if let Some(best) = inside.components().into_iter().max_by(|a, b| a.area().total_cmp(&b.area())) {
+                *r = best;
+            }
+        }
+        weld(&mut lot_regions, &front_ix, WELD);
         // Courts vs public, classification and fronts; failing lots merge
         // into a neighbour or become courts, then everything is redone.
         let mut dropped = 0;
@@ -985,8 +1002,14 @@ impl Fabric {
         if (sum - self.public.area()).abs() > 1.0 + 1e-4 * self.public.area() {
             v.push(Violation(format!("ground classes {} vs public {}", sum, self.public.area())));
         }
-        if !union.and(&self.corridors.offset(-0.01, Join::Miter(0.3))).is_empty() && union.and(&self.corridors).area() > 0.5 {
-            v.push(Violation(format!("lots on streets: {:.3} m²", union.and(&self.corridors).area())));
+        // Nothing deeper than the weld tolerance inside the street space.
+        let on_streets = union.and(&self.corridors.offset(-WELD, Join::Miter(0.3)));
+        if on_streets.area() > 0.01 {
+            let at: Vec<String> = on_streets.components().iter().take(6).map(|c| {
+                let [lo, hi] = c.bbox().unwrap_or_default();
+                format!("{:.3} m² at ({:.1}, {:.1})", c.area(), (lo.x + hi.x) * 0.5, (lo.y + hi.y) * 0.5)
+            }).collect();
+            v.push(Violation(format!("lots on streets: {:.3} m²: {}", on_streets.area(), at.join(", "))));
         }
         if v.is_empty() { Ok(()) } else { Err(v) }
     }
