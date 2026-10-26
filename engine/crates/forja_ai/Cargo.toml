@@ -1,0 +1,18 @@
+[package]
+name = "forja_ai"
+description = "Forja traffic and pedestrian AI: abstract road network (lanes, turn connectors, stop lines, crosswalks), signal controllers that also drive the visible lights, IDM/MOBIL drivers that obey signals and signs, pedestrians that cross at crosswalks on the walk signal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Adapter from `forja_city`'s exported traffic description.
+city = ["dep:forja_city"]
+
+[dependencies]
+forja_math.workspace = true
+forja_city = { workspace = true, optional = true }
+
+[dev-dependencies]
+image.workspace = true
