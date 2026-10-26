@@ -265,6 +265,10 @@ fn balcony(p: &mut P, slab: Mat, b: &BalconyKey, h_window: f32) {
         terrace(p, slab, b, h_window);
         return;
     }
+    if b.depth_cm <= FLUSH_CM {
+        flush_railing(p, slab, b);
+        return;
+    }
     bx(p, slab, v(-hw, -0.12, 0.0), v(hw, 0.0, d));
     bx(p, slab, v(-hw - 0.025, -0.17, 0.0), v(hw + 0.025, -0.1, d + 0.03));
     // Corbels.
@@ -322,6 +326,33 @@ fn balcony(p: &mut P, slab: Mat, b: &BalconyKey, h_window: f32) {
     }
     if let Some(a) = b.awning {
         awning(p, a, w + 0.1, h_window + 0.3, d + 0.45, h_window - 0.6);
+    }
+}
+
+/// Balcony depth (cm) at or under which a balcony is a flush railing.
+pub const FLUSH_CM: u16 = 15;
+
+/// Balcón enrasado: on a street too narrow for a balcony, the door gets a
+/// thin stone sill and an iron railing just proud of the wall, no slab on
+/// corbels.
+fn flush_railing(p: &mut P, slab: Mat, b: &BalconyKey) {
+    let w = b.width_cm as f32 / 100.0 - 0.5;
+    let d = b.depth_cm as f32 / 100.0;
+    let hw = w * 0.5;
+    bx(p, slab, v(-hw - 0.05, -0.08, 0.0), v(hw + 0.05, 0.0, d));
+    let iron = Mat::Iron;
+    let zf = d - 0.03;
+    bx(p, iron, v(-hw, 0.96, zf - 0.02), v(hw, 1.0, zf + 0.02));
+    bx(p, iron, v(-hw, 0.05, zf - 0.015), v(hw, 0.08, zf + 0.015));
+    bx(p, iron, v(-hw, 0.84, zf - 0.01), v(hw, 0.86, zf + 0.01));
+    for x in [-hw, hw - 0.03] {
+        bx(p, iron, v(x, 0.0, 0.0), v(x + 0.03, 1.0, zf + 0.02));
+    }
+    let prim = p.get(iron);
+    let n = ((w - 0.06) / 0.11).floor().max(1.0) as i32;
+    for i in 1..n {
+        let x = -hw + 0.03 + (w - 0.06) * i as f32 / n as f32;
+        prim.beam(v(x, 0.08, zf), v(x, 0.96, zf), Vec3::X, 0.016, 0.016, 1.0);
     }
 }
 
@@ -553,7 +584,8 @@ pub fn window_piece(k: &WindowKey, piece: Piece) -> P {
                 mirador(&mut p, frame, k.surround, w, hcm as f32 / 100.0);
             }
         }
-        Piece::Interior => interior(&mut p, Mat::Interior, w, h, k.interior, 1.6),
+        // Interiors 4-7 are shallow rooms for thin lots.
+        Piece::Interior => interior(&mut p, Mat::Interior, w, h, k.interior % 4, if k.interior >= 4 { 0.6 } else { 1.6 }),
         Piece::Balcony => {
             if let (Some(b), None) = (&k.balcony, k.mirador) {
                 balcony(&mut p, k.surround, b, h);
@@ -643,7 +675,8 @@ impl ShopKey {
         match piece {
             ShopPiece::Surround => ShopKey { surround: self.surround, ..blank },
             ShopPiece::Front => ShopKey { frame: self.frame, sign: self.sign % 3, ..blank },
-            ShopPiece::Interior => ShopKey { interior: self.sign % 4, ..blank },
+            // Atlas column from the sign, + 4 for a shallow room.
+            ShopPiece::Interior => ShopKey { interior: self.sign % 4 + if self.interior > 0 { 4 } else { 0 }, ..blank },
             ShopPiece::Sign => ShopKey { sign: self.sign, ..blank },
             ShopPiece::Shutter => ShopKey { shutter: self.shutter, graffiti: if self.shutter == 3 { self.graffiti } else { 0 }, ..blank },
             ShopPiece::Awning => ShopKey { awning: self.awning, ..blank },
@@ -672,7 +705,7 @@ pub fn shop_piece(k: &ShopKey, piece: ShopPiece) -> P {
             bx(&mut p, k.surround, v(hw, 0.0, 0.0), v(hw + bw, h, pr));
             bx(&mut p, k.surround, v(-hw - bw, h, 0.0), v(hw + bw, h + 0.18, pr + 0.02));
         }
-        ShopPiece::Interior => interior(&mut p, Mat::ShopInterior, w, ys, k.interior, 4.0),
+        ShopPiece::Interior => interior(&mut p, Mat::ShopInterior, w, ys, k.interior % 4, if k.interior >= 4 { 1.2 } else { 4.0 }),
         ShopPiece::Front => {
             let frame = Mat::PaintedWood(k.frame);
             bx(&mut p, frame, v(-hw, ys - 0.06, -0.08), v(hw, ys, -0.02));
@@ -1188,25 +1221,66 @@ pub fn clothes_rack(variant: u8) -> P {
 
 /// Facade lantern on a wrought-iron bracket (farol de brazo), hanging.
 pub fn wall_lantern() -> P {
+    wall_lantern_arm(0.7)
+}
+
+/// Wall lantern whose bracket reaches `arm` metres out of the wall (0.7
+/// on wide streets, shorter in alleys).
+pub fn wall_lantern_arm(arm: f32) -> P {
     let mut p = P::new();
     let iron = Mat::Iron;
+    let k = arm / 0.7;
     bx(&mut p, iron, v(-0.06, -0.42, 0.0), v(0.06, 0.12, 0.03));
     {
         let a = p.get(iron);
-        a.beam(v(0.0, 0.0, 0.02), v(0.0, 0.0, 0.7), Vec3::X, 0.035, 0.035, 1.0);
-        a.beam(v(0.0, -0.38, 0.02), v(0.0, -0.02, 0.55), Vec3::X, 0.025, 0.025, 1.0);
+        a.beam(v(0.0, 0.0, 0.02), v(0.0, 0.0, 0.7 * k), Vec3::X, 0.035, 0.035, 1.0);
+        a.beam(v(0.0, -0.38, 0.02), v(0.0, -0.02, 0.55 * k), Vec3::X, 0.025, 0.025, 1.0);
         // Scroll: a ring between the arm and the brace.
-        let c = v(0.0, -0.11, 0.2);
-        let mut prev = c + v(0.0, 0.08, 0.0);
+        let r = 0.08 * k.min(1.0);
+        let c = v(0.0, -0.11, 0.2 * k);
+        let mut prev = c + v(0.0, r, 0.0);
         for i in 1..=10 {
             let t = std::f32::consts::TAU * i as f32 / 10.0;
-            let q = c + v(0.0, t.cos() * 0.08, t.sin() * 0.08);
+            let q = c + v(0.0, t.cos() * r, t.sin() * r);
             a.beam(prev, q, Vec3::X, 0.015, 0.015, 1.0);
             prev = q;
         }
-        a.beam(v(0.0, 0.0, 0.68), v(0.0, -0.12, 0.68), Vec3::X, 0.015, 0.015, 1.0);
+        a.beam(v(0.0, 0.0, 0.68 * k), v(0.0, -0.12, 0.68 * k), Vec3::X, 0.015, 0.015, 1.0);
     }
-    lantern(&mut p, v(0.0, -0.72, 0.68), 0.9, true);
+    lantern(&mut p, v(0.0, -0.72, 0.68 * k), 0.9, true);
+    p
+}
+
+/// Pots on the ground beside a street door: a geranium, a pair, or a
+/// potted shrub, `variant` 0..4.
+pub fn door_pot(variant: u8) -> P {
+    let mut p = P::new();
+    let mut rng = Rng::new(variant as u64 * 977 + 13);
+    match variant % 4 {
+        0 => flower_pot(&mut p, v(0.0, 0.0, 0.2), 1.3, &mut rng),
+        1 => {
+            flower_pot(&mut p, v(-0.1, 0.0, 0.2), 1.3, &mut rng);
+            flower_pot(&mut p, v(0.17, 0.0, 0.14), 0.9, &mut rng);
+        }
+        2 => {
+            // A tall glazed pot with an aspidistra-like clump.
+            let pot = [(0.0, 0.0), (0.1, 0.0), (0.14, 0.32), (0.155, 0.34), (0.15, 0.36), (0.12, 0.36)];
+            p.get(Mat::Terracotta).lathe(v(0.0, 0.0, 0.2), &pot, 12);
+            let blob: Vec<(f32, f32)> = (0..=6).map(|i| {
+                let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / 6.0;
+                (a.cos() * 0.2 * if i == 0 || i == 6 { 0.0 } else { 1.0 }, 0.5 + a.sin() * 0.25)
+            })
+            .collect();
+            p.get(Mat::Leaves).lathe(v(0.0, 0.0, 0.2), &blob, 8);
+        }
+        _ => {
+            // A trough of geraniums along the wall.
+            bx(&mut p, Mat::Terracotta, v(-0.3, 0.0, 0.04), v(0.3, 0.2, 0.26));
+            for x in [-0.18, 0.0, 0.18] {
+                flower_pot(&mut p, v(x, 0.06, 0.15), 0.8, &mut rng);
+            }
+        }
+    }
     p
 }
 
