@@ -21721,7 +21721,9 @@
             const pointCount = collections.reduce((sum,[,items]) => sum + (items || []).reduce((n,s)=>n+(s.points?.length||0),0),0);
             // Large/unusual documents keep the established lossless representation.
             if (pointCount * 32 > 64 * 1024 * 1024) return cloneSanitizedPageForStorage(page,sessionToken,isStale,false,normalizedInput);
-            const words = new Float64Array(pointCount * 4);
+            if (!await window.InhouseRust.ready) throw new Error('Rust core is required to pack ink checkpoints');
+            // The live point objects are read into typed arrays here; Rust decides which strokes are portable and lays out the words.
+            const raw = new Float64Array(pointCount * 3), tags = new Uint8Array(pointCount), counts = [], sources = [], targets = [];
             let used = 0, started = performance.now();
             const pause = async () => {
                 await yieldProcessingForUi();
@@ -21734,26 +21736,39 @@
                 for (const stroke of items.slice()) {
                     if (isStale()) return null;
                     const {points,...attributes}=stroke;
-                    const copy=structuredClone(attributes), offset=used;
-                    let portable=Array.isArray(points);
-                    if (portable) for (const point of points) {
-                        const keys=point && Object.keys(point);
-                        if (!keys || keys.some(k=>k!=='x'&&k!=='y'&&k!=='p') || typeof point.x!=='number' || typeof point.y!=='number'
-                            || ('p' in point && typeof point.p!=='number')) {portable=false;break;}
-                        words[used++]=point.x;words[used++]=point.y;
-                        words[used++]=point.p??0;words[used++]='p' in point?1:0;
-                        if (performance.now()-started>=3 && !await pause()) return null;
-                    }
-                    if (portable) copy.points={inkRange:[offset,points.length]};
-                    else {used=offset;copy.points=structuredClone(points);}
-                    result[key].push(copy);
+                    const copy=structuredClone(attributes);
+                    if (Array.isArray(points)) {
+                        if (used + points.length > pointCount) return null;
+                        for (let i=0;i<points.length;i++,used++) {
+                            const point=points[i];let tag=0;
+                            if (point===null || typeof point!=='object') tag=16;
+                            else {
+                                if (typeof point.x==='number') {tag|=1;raw[used*3]=point.x;}
+                                if (typeof point.y==='number') {tag|=2;raw[used*3+1]=point.y;}
+                                if ('p' in point) {tag|=4;if (typeof point.p==='number') {tag|=8;raw[used*3+2]=point.p;}}
+                                if (Object.keys(point).length!==((tag&4)?3:2)) tag|=16;
+                            }
+                            tags[used]=tag;
+                            if ((i&127)===127 && performance.now()-started>=3 && !await pause()) return null;
+                        }
+                        counts.push(points.length);sources.push(points);
+                    } else {counts.push(0xffffffff);copy.points=structuredClone(points);sources.push(null);}
+                    targets.push(copy);result[key].push(copy);
                     if (performance.now()-started>=3 && !await pause()) return null;
                 }
             }
             if (isStale()) return null;
+            const packed = window.InhouseRust.packInkWords(raw.subarray(0,used*3),tags.subarray(0,used),Uint32Array.from(counts));
+            for (let i=0;i<targets.length;i++) {
+                if (sources[i]===null) continue;
+                // A stroke with any other point shape keeps the established lossless representation.
+                targets[i].points=packed.offsets[i]>=0?{inkRange:[packed.offsets[i],sources[i].length]}:structuredClone(sources[i]);
+                if (performance.now()-started>=3 && !await pause()) return null;
+            }
+            const words = packed.words;
             // Transfer the numeric buffer; never post a document-sized object graph.
-            if (used) {
-                const bytes=used===words.length?words.buffer:words.buffer.slice(0,used*8);
+            if (words.length) {
+                const bytes=words.buffer;
                 // Retain a raw numeric copy until the worker succeeds: a cold
                 // offline launch can fail to load its script before SW control.
                 const fallback=bytes.slice(0);
@@ -21778,23 +21793,28 @@
             assertCurrent();
             const words=new Float64Array(raw.buffer,raw.byteOffset,raw.byteLength/8);
             const page=stripStoredPageSession(record);delete page.__inkCheckpoint;
-            let started=performance.now();
+            const decoded=[],ranges=[];
             for (const key of ['strokes','legacyCoverStrokes']) {
                 if(Array.isArray(page[key]))page[key]=page[key].map(stroke=>({...stroke}));
                 for (const stroke of page[key]||[]) {
-                if (!stroke.points?.inkRange) continue;
-                const [offset,count]=stroke.points.inkRange;
-                if (!Number.isSafeInteger(offset)||!Number.isSafeInteger(count)||offset<0||count<0||offset%4||offset+count*4>words.length) throw new Error('Invalid ink point range');
-                const points=[];
+                    if (!stroke.points?.inkRange) continue;
+                    const [offset,count]=stroke.points.inkRange;
+                    ranges.push(typeof offset==='number'?offset:NaN,typeof count==='number'?count:NaN);decoded.push(stroke);
+                }
+            }
+            // Rust checks every range and pressure flag in stroke order before any point object is built.
+            await window.InhouseRust.ready;
+            window.InhouseRust.validateInkWords(words,new Float64Array(ranges));
+            let started=performance.now();
+            for (let s=0;s<decoded.length;s++) {
+                const offset=ranges[s*2],count=ranges[s*2+1],points=[];
                 for(let i=0;i<count;i++) {
                     const j=offset+i*4,point={x:words[j],y:words[j+1]};
                     if(words[j+3]===1)point.p=words[j+2];
-                    else if(words[j+3]!==0)throw new Error('Invalid ink pressure flag');
                     points.push(point);
-                    if(performance.now()-started>=3){await yieldProcessingForUi();assertCurrent();started=performance.now();}
+                    if((i&127)===127 && performance.now()-started>=3){await yieldProcessingForUi();assertCurrent();started=performance.now();}
                 }
-                stroke.points=points;
-                }
+                decoded[s].points=points;
             }
             return page;
         }
