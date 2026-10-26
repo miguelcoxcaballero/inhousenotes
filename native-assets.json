@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "4018a54ac768bdcec43907ecee8b136757ec257e95c57a84655ab6e55078789f",
-      "size": 1927594,
+      "sha256": "388abc23112340e6e28160feb5eb12061800ba565ee2a97a0fb229b1a7ed6104",
+      "size": 1928817,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -62,8 +62,8 @@
       "mime": "application/javascript"
     },
     "/offline-store-v5.js": {
-      "sha256": "cf351998c63858f9a2466423cb4cd9440fdd4d1e1145b1e38b9bec818168fccb",
-      "size": 10618,
+      "sha256": "6beed1db4dc095cb4544b304e23724fdc691842d27b8f97b5dc092773bd9053d",
+      "size": 11268,
       "mime": "application/javascript"
     },
     "/offline-sync-v5.js": {

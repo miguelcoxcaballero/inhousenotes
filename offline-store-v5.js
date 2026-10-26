@@ -89,13 +89,22 @@
         });
     }
     async function acknowledge(account,id,generation,meta,blob) {
-        return transaction(['documents','outbox','entries'], 'readwrite', (s, done) => {
+        return transaction(['documents','outbox','entries','recoveries'], 'readwrite', (s, done) => {
             s.documents.get(key(account,id)).onsuccess = event => {
                 const doc = event.target.result;
                 if (!doc) { done(false); return; }
                 // Edits made while the upload was in flight must stay pending.
                 const settled = doc.generation === generation;
                 const next = {...doc,remoteId:meta.id || doc.remoteId || id,lastUploadMeta:meta,lastUploadedAt:Date.now()};
+                // Keep one recoverable editable draft before replacing it with
+                // the uploaded PDF. A successful HTTP response must not erase
+                // the only independent copy of the user's stroke data.
+                if (settled && doc.snapshot) {
+                    const recoveryId = `last-upload-draft:${id}`;
+                    s.recoveries.put({key:key(account,recoveryId),account,id:recoveryId,
+                        fileId:id,generation,snapshot:doc.snapshot,originalBlob:doc.originalBlob,
+                        previousBlob:doc.blob,uploadedMeta:meta,createdAt:Date.now()});
+                }
                 if (settled) next.baseMeta=meta;
                 if (settled) { next.dirty=false; next.offlineEdited=false; next.snapshot=null; next.analysis=null; next.originalBlob=null; next.preparedBlob=null; next.preparedGeneration=null; next.blob=blob || doc.blob; s.outbox.delete(doc.key); }
                 s.documents.put(next);

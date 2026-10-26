@@ -26004,6 +26004,9 @@
             });
         }
 
+        const driveUploadBlobIds = new WeakMap();
+        let driveUploadBlobSequence = 0;
+
         const DRIVE_RESUMABLE_CHUNK_BYTES = 1024 * 1024;
         const DRIVE_RESUMABLE_CHUNK_TIMEOUT_MS = 60000;
 
@@ -26016,11 +26019,20 @@
         async function uploadDriveBlobResumable({ url, method, metadata = null, blob, options = {}, contentType = 'application/pdf' }) {
             if (!(blob instanceof Blob)) throw new TypeError('Drive upload requires a Blob');
             if (!blob.size) throw new Error('Cannot upload an empty PDF to Drive');
+            const completedFile = async response => {
+                if (response.status !== 200 && response.status !== 201) throw new Error('Drive has not confirmed upload completion');
+                const file = await response.json();
+                if (!file || typeof file.id !== 'string' || !file.id) throw new Error('Drive upload response did not identify a completed file');
+                return file;
+            };
             const signal = options.signal;
             if (signal?.aborted) throw createAbortError('Drive save aborted');
             const useKeepalive = !!options.keepalive && blob.size <= 48 * 1024;
-            const contentIdentity = String(blob.inhouseContentHash || `blob-${blob.size}-${blob.type}`);
-            const resumeKey = String(options.resumeKey || `${method}:${url}:${blob.size}:${contentIdentity}:${metadata?.name || ''}:${(metadata?.parents || []).join(',')}`);
+            // A logical document hash (or byte length) does not identify PDF bytes.
+            // Resume only the exact immutable Blob whose bytes started this session.
+            if (!driveUploadBlobIds.has(blob)) driveUploadBlobIds.set(blob, ++driveUploadBlobSequence);
+            const contentIdentity = String(driveUploadBlobIds.get(blob));
+            const resumeKey = `${String(options.resumeKey || `${method}:${url}:${metadata?.name || ''}:${(metadata?.parents || []).join(',')}`)}:blob-${contentIdentity}`;
             const initiationHeaders = {
                 'X-Upload-Content-Type': contentType,
                 'X-Upload-Content-Length': String(blob.size)
@@ -26072,7 +26084,7 @@
                         acceptStatuses: [308]
                     });
                     if (status.status !== 308) {
-                        const result = await status.json();
+                        const result = await completedFile(status);
                         driveResumableSessions.delete(resumeKey);
                         driveUploadProgress = { sent: blob.size, total: blob.size };
                         return result;
@@ -26080,7 +26092,7 @@
                     offset = getDriveResumableAcknowledgedOffset(status);
                     driveUploadProgress.sent = offset;
                 } catch (statusError) {
-                    if (/Drive API error 404/.test(String(statusError?.message || statusError))) {
+                    if (/Drive API error (404|410)/.test(String(statusError?.message || statusError))) {
                         driveResumableSessions.delete(resumeKey);
                         sessionUrl = await startSession();
                         driveUploadProgress = { sent: 0, total: blob.size, sessionUrl };
@@ -26129,14 +26141,14 @@
                         }
                         continue;
                     }
-                    const result = await response.json();
+                    const result = await completedFile(response);
                     driveResumableSessions.delete(resumeKey);
                     driveUploadProgress = { sent: blob.size, total: blob.size };
                     return result;
                 } catch (error) {
                     if (signal?.aborted || error?.name === 'AbortError') throw error;
                     if (error?.uploadStalled) throw error;
-                    if (/Drive API error 404/.test(String(error?.message || error))) {
+                    if (/Drive API error (404|410)/.test(String(error?.message || error))) {
                         driveResumableSessions.delete(resumeKey);
                         throw new Error('Drive upload session expired; retrying with a new session');
                     }
@@ -26157,7 +26169,7 @@
                         acceptStatuses: [308]
                     });
                     if (status.status !== 308) {
-                        const result = await status.json();
+                        const result = await completedFile(status);
                         driveResumableSessions.delete(resumeKey);
                         driveUploadProgress = { sent: blob.size, total: blob.size };
                         return result;
@@ -26313,6 +26325,7 @@
             driveSaveInProgress = true;
             driveSavePhase = 'preparing';
             driveUploadProgress = null;
+            const hadPendingDriveContent = driveDirty || deferredDriveSave || state.needsMigrationResave;
             driveDirty = false;
             recordSaveDebug('Drive save started');
             clearDriveSyncTimers();
@@ -26354,7 +26367,7 @@
                         throw mergeErr;
                     }
                 }
-                const hasUnsyncedContent = driveContentVersion !== driveUploadedContentVersion;
+                const hasUnsyncedContent = hadPendingDriveContent || driveContentVersion !== driveUploadedContentVersion;
                 const needsPdf = state.pages.some(page => page?.pdfPageIndex);
                 if (needsPdf && !activePdfDocument) {
                     driveSavePhase = 'restoring';
@@ -28205,7 +28218,7 @@
                         };
                     }
                     markDriveHydrated(fileIdAtStart);
-                    markDriveContentUploaded();
+                    markDriveContentUploaded(contentVersionAtPullStart);
                     updateSyncBaseline();
                     showStatus('Already up to date', { savedAt: state.driveLastKnownModified || Date.now() });
                     return { changed: false, hasLocalMerges: false, duplicateRevision: true };
@@ -28367,7 +28380,7 @@
                     if (!options.uploadManagedExternally) requestImmediateDriveSave({ force: true });
                 } else {
                     if (!preserveLocalAtApply) {
-                        markDriveContentUploaded();
+                        markDriveContentUploaded(contentVersionAtPullStart);
                     }
                     if (remoteSyncEnvelope?.contentHash) {
                         driveConfirmedContentHash = remoteSyncEnvelope.contentHash;
@@ -30479,12 +30492,12 @@
             const local = getLocalSaveStatus();
             const connected = !!(state.driveAutosave && state.driveFileId);
             const offline = driveIsOffline();
-            const pendingDrive = hasPendingDriveSave();
+            const pendingDrive = hasPendingDriveSave() || !!(connected && window.InhouseOfflineLibrary?.record?.(state.offlineLocalId || state.driveFileId)?.dirty);
             const outbox = window.InhouseOfflineLibrary?.syncStatus?.();
             const outboxActive = outbox?.phase !== 'idle' && !!outbox?.id && [state.offlineLocalId,state.driveFileId].includes(outbox.id);
             const reconnect = connected && driveAuthNeedsReconnect;
             let phase = 'saved';
-            if (local.error || driveSaveBlockedReason) phase = 'error';
+            if (local.error || driveSaveBlockedReason || (pendingDrive && driveLastSaveError && !driveSaveInProgress)) phase = 'error';
             else if (local.pending) phase = 'saving';
             else if (driveSaveInProgress || outboxActive) phase = 'uploading';
             else if (collabPullInProgress) phase = 'syncing';
@@ -30526,7 +30539,7 @@
             } else if (pendingDrive) {
                 driveLabel = driveSavePhase === 'retrying' ? (driveLastSaveError ? 'Upload failed' : 'Retrying') : 'Waiting';
                 driveDetail = driveSavePhase === 'retrying'
-                    ? 'The last upload did not finish. Retrying automatically.'
+                    ? (window.InhouseOfflineLibrary?.syncErrorText(driveLastSaveError) || 'The last upload did not finish. Retrying automatically.')
                     : (local.pending ? 'Waiting for the local copy to finish saving.'
                         : 'Drive will update after you pause writing.');
                 driveClass = 'active';
