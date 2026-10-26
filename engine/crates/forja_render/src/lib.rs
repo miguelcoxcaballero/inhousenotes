@@ -18,6 +18,7 @@
 
 pub mod atmosphere;
 pub mod camera;
+pub mod env;
 
 use std::sync::Arc;
 
@@ -60,6 +61,8 @@ struct FrameUniforms {
     cascade_vp: [[[f32; 4]; 4]; 4],
     params: [f32; 4],
     screen: [f32; 4],
+    sh: [[f32; 4]; 9],
+    env_params: [f32; 4],
     lights: [GpuLight; MAX_LIGHTS],
 }
 
@@ -69,6 +72,7 @@ struct MaterialUniforms {
     base_color: [f32; 4],
     emissive: [f32; 4],
     params: [f32; 4],
+    layers: [f32; 4],
 }
 
 #[repr(C)]
@@ -152,6 +156,9 @@ pub struct Environment {
     pub bloom: f32,
     pub vignette: f32,
     pub shadow_distance: f32,
+    /// Light with the loaded HDRI ([`Renderer::set_environment`]) instead of
+    /// the analytic atmosphere. Its sun drives the shadows.
+    pub use_ibl: bool,
 }
 
 impl Default for Environment {
@@ -165,6 +172,7 @@ impl Default for Environment {
             bloom: 0.04,
             vignette: 0.35,
             shadow_distance: 220.0,
+            use_ibl: true,
         }
     }
 }
@@ -194,8 +202,19 @@ struct GpuMesh {
     skin: Option<wgpu::Buffer>,
     index: wgpu::Buffer,
     index_count: u32,
+    /// Simplified index buffers (LOD 1..).
+    lods: Vec<(wgpu::Buffer, u32)>,
     material: u32,
     aabb: Aabb,
+}
+
+impl GpuMesh {
+    fn indices(&self, lod: u32) -> (&wgpu::Buffer, u32) {
+        match lod {
+            0 => (&self.index, self.index_count),
+            l => self.lods.get(l as usize - 1).map(|(b, c)| (b, *c)).unwrap_or((&self.index, self.index_count)),
+        }
+    }
 }
 
 struct GpuMaterial {
@@ -248,6 +267,16 @@ struct Pipelines {
     fxaa: wgpu::RenderPipeline,
 }
 
+struct EnvInfo {
+    sun_dir: Vec3,
+    sun_color: Vec3,
+    sh: [Vec3; 9],
+    max_mip: f32,
+    zenith: Vec3,
+    horizon: Vec3,
+    ground: Vec3,
+}
+
 pub struct Renderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -267,6 +296,9 @@ pub struct Renderer {
     shadow_size: u32,
     linear_sampler: wgpu::Sampler,
     clamp_sampler: wgpu::Sampler,
+    shadow_sampler: wgpu::Sampler,
+    env_view: wgpu::TextureView,
+    env: Option<EnvInfo>,
     meshes: Vec<GpuMesh>,
     materials: Vec<GpuMaterial>,
     models: Vec<GpuModel>,
@@ -285,6 +317,13 @@ pub struct Renderer {
 /// elsewhere. `WGPU_BACKEND` overrides it.
 pub fn default_backends() -> wgpu::Backends {
     if cfg!(windows) { wgpu::Backends::DX12 | wgpu::Backends::VULKAN } else { wgpu::Backends::PRIMARY }
+}
+
+/// Instance bound to a window system display (needed by Wayland/GL; harmless elsewhere).
+pub fn create_instance_with_display(display: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>) -> wgpu::Instance {
+    let mut desc = wgpu::InstanceDescriptor::new_with_display_handle(display);
+    desc.backends = default_backends();
+    wgpu::Instance::new(desc.with_env())
 }
 
 /// Instance for offscreen rendering or platforms that need no display handle
@@ -374,6 +413,8 @@ impl Renderer {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
+                texture_entry(3),
+                sampler_entry(4),
             ],
         });
         let material_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -600,15 +641,19 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let frame_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("frame"),
-            layout: &frame_bgl,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: frame_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&shadow_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&shadow_sampler) },
-            ],
-        });
+        let env_view = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("env-none"),
+                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: HDR_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+        let frame_bind = make_frame_bind(&device, &frame_bgl, &frame_buf, &shadow_view, &shadow_sampler, &env_view, &linear_sampler);
         let cascade_bufs: Vec<wgpu::Buffer> = (0..4)
             .map(|_| device.create_buffer(&wgpu::BufferDescriptor { label: Some("cascade"), size: 64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }))
             .collect();
@@ -642,6 +687,9 @@ impl Renderer {
             shadow_size,
             linear_sampler,
             clamp_sampler,
+            shadow_sampler,
+            env_view,
+            env: None,
             meshes: Vec::new(),
             materials: Vec::new(),
             models: Vec::new(),
@@ -655,9 +703,56 @@ impl Renderer {
             targets: None,
             stats: RenderStats::default(),
         };
-        let _ = (&r.frame_bgl, &r.shadow_view);
         r.resize(1280, 720);
         r
+    }
+
+    /// Uses an HDR photo for sky, reflections and ambient light (`None`
+    /// returns to the analytic atmosphere).
+    pub fn set_environment(&mut self, env: Option<&env::EnvMap>) {
+        let Some(e) = env else {
+            self.env = None;
+            return;
+        };
+        let (w, h, _) = e.mips[0];
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("env"),
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: e.mips.len() as u32,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: HDR_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for (level, (mw, mh, data)) in e.mips.iter().enumerate() {
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: level as u32, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                bytemuck::cast_slice(data),
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(mw * 8), rows_per_image: Some(*mh) },
+                wgpu::Extent3d { width: *mw, height: *mh, depth_or_array_layers: 1 },
+            );
+        }
+        self.env_view = tex.create_view(&Default::default());
+        self.frame_bind = make_frame_bind(&self.device, &self.frame_bgl, &self.frame_buf, &self.shadow_view, &self.shadow_sampler, &self.env_view, &self.linear_sampler);
+        let horizon = (0..8).map(|i| {
+            let a = i as f32 / 8.0 * std::f32::consts::TAU;
+            e.irradiance(Vec3::new(a.cos(), 0.0, a.sin()))
+        }).sum::<Vec3>() / 8.0;
+        self.env = Some(EnvInfo {
+            sun_dir: e.sun_dir,
+            sun_color: e.sun_color,
+            sh: e.sh,
+            max_mip: (e.mips.len() - 1) as f32,
+            zenith: e.irradiance(Vec3::Y),
+            horizon,
+            ground: e.irradiance(Vec3::NEG_Y),
+        });
+    }
+
+    /// Sun direction of the loaded HDRI, if any.
+    pub fn environment_sun(&self) -> Option<Vec3> {
+        self.env.as_ref().map(|e| e.sun_dir)
     }
 
     pub fn size(&self) -> (u32, u32) {
@@ -786,6 +881,7 @@ impl Renderer {
                 },
                 m.unlit as u32 as f32,
             ],
+            layers: [m.clearcoat, m.clearcoat_roughness, m.transmission, 0.0],
         };
         let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(&m.name), contents: bytemuck::bytes_of(&uniforms), usage: wgpu::BufferUsages::UNIFORM });
         let base = pick(m.base_color_tex, white_srgb);
@@ -806,7 +902,7 @@ impl Renderer {
                 wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&self.linear_sampler) },
             ],
         });
-        GpuMaterial { bind_group, blend: m.alpha == AlphaMode::Blend, double_sided: m.double_sided }
+        GpuMaterial { bind_group, blend: m.alpha == AlphaMode::Blend || m.transmission > 0.0, double_sided: m.double_sided }
     }
 
     /// Uploads a scene once; draw it with [`DrawInstance`]s.
@@ -843,8 +939,13 @@ impl Renderer {
                     self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skin"), contents: bytemuck::cast_slice(&sv), usage: wgpu::BufferUsages::VERTEX })
                 });
                 let material = mat_base + if scene.materials.is_empty() { 0 } else { p.material as u32 };
+                let lods = p
+                    .lods
+                    .iter()
+                    .map(|l| (self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("lod"), contents: bytemuck::cast_slice(l), usage: wgpu::BufferUsages::INDEX }), l.len() as u32))
+                    .collect();
                 ids.push(self.meshes.len() as u32);
-                self.meshes.push(GpuMesh { vertex, skin, index, index_count: p.indices.len() as u32, material, aabb: p.aabb });
+                self.meshes.push(GpuMesh { vertex, skin, index, index_count: p.indices.len() as u32, lods, material, aabb: p.aabb });
             }
             mesh_ids.push(ids);
         }
@@ -876,8 +977,20 @@ impl Renderer {
         let (width, height) = self.size();
         let cam = Camera { aspect: width as f32 / height as f32, ..frame.camera };
         let env = &frame.env;
-        let sun = env.sun_dir.normalize();
-        let sky = atmosphere::sky_lighting(sun, env.sun_illuminance, Vec3::new(0.25, 0.24, 0.22));
+        let ibl = self.env.as_ref().filter(|_| env.use_ibl);
+        let (sun, sky) = match ibl {
+            Some(e) => (e.sun_dir, atmosphere::SkyLighting { sun_color: e.sun_color, zenith: e.zenith, horizon: e.horizon, ground: e.ground }),
+            None => {
+                let sun = env.sun_dir.normalize();
+                (sun, atmosphere::sky_lighting(sun, env.sun_illuminance, Vec3::new(0.25, 0.24, 0.22)))
+            }
+        };
+        let mut sh = [[0.0f32; 4]; 9];
+        if let Some(e) = ibl {
+            for k in 0..9 {
+                sh[k] = e.sh[k].extend(0.0).to_array();
+            }
+        }
         let view = cam.view();
         let view_proj = cam.view_proj();
         let splits = camera::cascade_splits(cam.near.max(0.1), env.shadow_distance, 0.8);
@@ -908,6 +1021,8 @@ impl Renderer {
             cascade_vp: cascade_vp.map(|m| m.to_cols_array_2d()),
             params: [sorted.len().min(MAX_LIGHTS) as f32, 1.0 / self.shadow_size as f32, env.bloom, 0.0],
             screen: [width as f32, height as f32, 1.0 / width as f32, 1.0 / height as f32],
+            sh,
+            env_params: [ibl.is_some() as u32 as f32, ibl.map_or(0.0, |e| e.max_mip), 1.0, 0.0],
             lights,
         };
         self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&uniforms));
@@ -917,6 +1032,7 @@ impl Renderer {
 
         // Build instance batches: main view + one list per cascade.
         let frustum = Frustum::from_view_proj(&view_proj);
+        let tan_half_fov = (cam.fov_y * 0.5).tan();
         let cascade_planes: Vec<[Vec4; 6]> = cascade_vp.iter().map(camera::frustum_planes_standard).collect();
         let mut joints: Vec<[[f32; 4]; 4]> = Vec::new();
         // (mesh, skinned, joint offset, instance raw)
@@ -939,16 +1055,27 @@ impl Renderer {
                 let world = if skinned { inst.transform } else { inst.transform * node_m };
                 let bounds = if skinned { model.bounds.expanded(0.5) } else { mesh.aabb };
                 let wb = transform_aabb(&bounds, &world);
-                let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, 0, 0] };
+                // LOD from screen-space triangle density: the finest level
+                // with at most one triangle per two covered pixels.
+                let coverage = wb.half_extents().length() / ((wb.center() - cam.position).length().max(0.1) * tan_half_fov);
+                let pixels = std::f32::consts::PI * (coverage * height as f32 * 0.5).powi(2);
+                let budget = (pixels * 0.5) as u32;
+                let mut lod = 0;
+                while lod < mesh.lods.len() as u32 && mesh.indices(lod).1 / 3 > budget {
+                    lod += 1;
+                }
+                let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, lod, 0] };
                 if frustum.intersects_aabb(&wb) {
                     main.push((part.mesh, raw));
                 } else {
                     culled += 1;
                 }
                 if inst.cast_shadows && !self.materials[mesh.material as usize].blend {
+                    let mut sraw = raw;
+                    sraw.extra[2] = (lod + 1).min(mesh.lods.len() as u32);
                     for (c, planes) in cascade_planes.iter().enumerate() {
                         if aabb_in_planes(&wb, planes) {
-                            shadow[c].push((part.mesh, raw));
+                            shadow[c].push((part.mesh, sraw));
                         }
                     }
                 }
@@ -960,11 +1087,11 @@ impl Renderer {
             let m = &r.meshes[mesh as usize];
             let mat = &r.materials[m.material as usize];
             let pipe = if mat.blend { 3 } else if raw.extra[1] == 1 { 2 } else if mat.double_sided { 1 } else { 0 };
-            (pipe, m.material, mesh)
+            (pipe, m.material, mesh, raw.extra[2])
         };
         main.sort_by_key(|(m, raw)| key(self, *m, raw));
         for s in &mut shadow {
-            s.sort_by_key(|(m, raw)| (raw.extra[1], *m));
+            s.sort_by_key(|(m, raw)| (raw.extra[1], *m, raw.extra[2]));
         }
         let mut all: Vec<InstanceRaw> = Vec::with_capacity(main.len() + shadow.iter().map(Vec::len).sum::<usize>());
         all.extend(main.iter().map(|(_, r)| *r));
@@ -1034,8 +1161,9 @@ impl Renderer {
             while i < list.len() {
                 let mesh_id = list[i].0;
                 let sk = list[i].1.extra[1] == 1;
+                let lod = list[i].1.extra[2];
                 let mut j = i + 1;
-                while j < list.len() && list[j].0 == mesh_id && (list[j].1.extra[1] == 1) == sk {
+                while j < list.len() && list[j].0 == mesh_id && (list[j].1.extra[1] == 1) == sk && list[j].1.extra[2] == lod {
                     j += 1;
                 }
                 let mesh = &self.meshes[mesh_id as usize];
@@ -1047,8 +1175,9 @@ impl Renderer {
                 if sk && let Some(s) = &mesh.skin {
                     pass.set_vertex_buffer(2, s.slice(..));
                 }
-                pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.index_count, 0, base + i as u32..base + j as u32);
+                let (ib, count) = mesh.indices(lod);
+                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..count, 0, base + i as u32..base + j as u32);
                 stats.shadow_draws += 1;
                 i = j;
             }
@@ -1097,7 +1226,7 @@ impl Renderer {
                 while j < main.len() && key(self, main[j].0, &main[j].1) == k {
                     j += 1;
                 }
-                let (pipe, mat, _) = k;
+                let (pipe, mat, _, lod) = k;
                 if pipe != bound_pipe {
                     pass.set_pipeline(match pipe {
                         0 => &self.pipelines.opaque,
@@ -1119,11 +1248,12 @@ impl Renderer {
                 if pipe == 2 && let Some(s) = &mesh.skin {
                     pass.set_vertex_buffer(2, s.slice(..));
                 }
-                pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.index_count, 0, i as u32..j as u32);
+                let (ib, count) = mesh.indices(lod);
+                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..count, 0, i as u32..j as u32);
                 stats.draw_calls += 1;
                 stats.instances_drawn += (j - i) as u32;
-                stats.triangles += (mesh.index_count / 3) as u64 * (j - i) as u64;
+                stats.triangles += (count / 3) as u64 * (j - i) as u64;
                 i = j;
             }
             if !frame.lines.is_empty() {
@@ -1163,6 +1293,12 @@ impl Renderer {
 
     /// Renders offscreen and reads back RGBA8 pixels (screenshots, tests).
     pub fn render_to_image(&mut self, frame: &FrameDesc, width: u32, height: u32) -> image::RgbaImage {
+        let tex = self.render_offscreen(frame, width, height);
+        self.read_image(&tex)
+    }
+
+    /// Renders into a new texture (so callers can draw UI on top before reading it back).
+    pub fn render_offscreen(&mut self, frame: &FrameDesc, width: u32, height: u32) -> wgpu::Texture {
         self.resize(width, height);
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen"),
@@ -1175,11 +1311,17 @@ impl Renderer {
             view_formats: &[],
         });
         self.render(frame, &tex.create_view(&Default::default()));
+        tex
+    }
+
+    /// Copies an `output_format` texture back to the CPU.
+    pub fn read_image(&self, tex: &wgpu::Texture) -> image::RgbaImage {
+        let (width, height) = (tex.width(), tex.height());
         let row = (width * 4).div_ceil(256) * 256;
         let buf = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("readback"), size: (row * height) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
         let mut enc = self.device.create_command_encoder(&Default::default());
         enc.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(height) } },
             wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         );
@@ -1200,6 +1342,28 @@ impl Renderer {
         }
         img
     }
+}
+
+fn make_frame_bind(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    frame_buf: &wgpu::Buffer,
+    shadow_view: &wgpu::TextureView,
+    shadow_sampler: &wgpu::Sampler,
+    env_view: &wgpu::TextureView,
+    env_sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("frame"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: frame_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(shadow_view) },
+            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(shadow_sampler) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(env_view) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(env_sampler) },
+        ],
+    })
 }
 
 fn transform_aabb(b: &Aabb, m: &Mat4) -> Aabb {

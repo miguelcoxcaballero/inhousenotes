@@ -25,6 +25,12 @@ pub struct PolyHavenSource {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AmbientCgSource {
+    pub id: String,
+    pub res: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OsmSource {
     pub bbox: [f64; 4],
 }
@@ -54,6 +60,7 @@ pub enum AssetKind {
     Animation,
     Character,
     Sky,
+    Material,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,6 +84,8 @@ pub struct AssetEntry {
     #[serde(default)]
     pub polyhaven: Option<PolyHavenSource>,
     #[serde(default)]
+    pub ambientcg: Option<AmbientCgSource>,
+    #[serde(default)]
     pub osm: Option<OsmSource>,
     #[serde(default)]
     pub terrarium: Option<TerrariumSource>,
@@ -96,7 +105,15 @@ impl Manifest {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let m: Manifest = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
         for a in &m.assets {
-            let sources = [a.zip.is_some(), !a.files.is_empty(), a.polyhaven.is_some(), a.osm.is_some(), a.terrarium.is_some(), a.manual.is_some()];
+            let sources = [
+                a.zip.is_some(),
+                !a.files.is_empty(),
+                a.polyhaven.is_some(),
+                a.ambientcg.is_some(),
+                a.osm.is_some(),
+                a.terrarium.is_some(),
+                a.manual.is_some(),
+            ];
             if sources.iter().filter(|s| **s).count() != 1 {
                 return Err(format!("asset {} must have exactly one source", a.id));
             }

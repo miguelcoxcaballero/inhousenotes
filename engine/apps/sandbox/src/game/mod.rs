@@ -1,0 +1,215 @@
+//! The sandbox game, assembled from independent plugins. Each plugin owns
+//! its resources and systems and talks to the others only through the
+//! shared resources declared here, so any of them can be replaced.
+
+pub mod camera;
+pub mod combat;
+pub mod env;
+pub mod player;
+pub mod props;
+pub mod vehicles;
+pub mod world;
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use forja_assets::SceneData;
+use forja_core::{App, Stage};
+use forja_math::{Mat4, Vec2, Vec4};
+use forja_render::{Camera, Environment, LineVertex, PointLight};
+
+/// Where engine data and downloads live.
+#[derive(Clone)]
+pub struct Paths {
+    pub data: PathBuf,
+    pub downloaded: PathBuf,
+}
+
+impl Paths {
+    pub fn asset(&self, rel: &str) -> PathBuf {
+        self.downloaded.join(rel)
+    }
+}
+
+/// Player intent sampled once per frame from input (or a script) and
+/// consumed by the fixed-step systems. One-shot actions are latched until
+/// a system takes them.
+#[derive(Default, Clone)]
+pub struct Intent {
+    pub movement: Vec2,
+    pub look: Vec2,
+    pub sprint: bool,
+    pub aim: bool,
+    pub fire: bool,
+    pub handbrake: bool,
+    pub jump: bool,
+    pub enter: bool,
+    pub reload: bool,
+    pub select: Option<forja_gameplay::WeaponCategory>,
+    pub holster: bool,
+    pub use_item: Option<String>,
+    pub drop_item: Option<String>,
+    pub equip_item: Option<String>,
+}
+
+impl Intent {
+    pub fn take(flag: &mut bool) -> bool {
+        std::mem::take(flag)
+    }
+}
+
+#[derive(Clone)]
+pub struct RenderItem {
+    pub model: usize,
+    pub transform: Mat4,
+    pub nodes: Option<Arc<Vec<Mat4>>>,
+    pub joints: Option<Arc<Vec<Mat4>>>,
+    pub tint: Vec4,
+}
+
+impl RenderItem {
+    pub fn new(model: usize, transform: Mat4) -> Self {
+        Self { model, transform, nodes: None, joints: None, tint: Vec4::ONE }
+    }
+}
+
+/// Everything the renderer needs, filled by the plugins every frame.
+#[derive(Default)]
+pub struct RenderScene {
+    pub models: Vec<Arc<SceneData>>,
+    paths: HashMap<PathBuf, Option<usize>>,
+    pub statics: Vec<RenderItem>,
+    pub dynamic: Vec<RenderItem>,
+    pub lights: Vec<PointLight>,
+    pub lines: Vec<LineVertex>,
+    pub camera: Camera,
+    pub env: Environment,
+    /// Equirectangular HDR photo used for image-based lighting.
+    pub hdri: Option<PathBuf>,
+}
+
+impl RenderScene {
+    pub fn add_model(&mut self, scene: Arc<SceneData>) -> usize {
+        self.models.push(scene);
+        self.models.len() - 1
+    }
+
+    /// Loads a model once; `None` (and a warning) when the file is missing.
+    pub fn load(&mut self, path: &Path) -> Option<usize> {
+        if let Some(i) = self.paths.get(path) {
+            return *i;
+        }
+        let r = match forja_assets::load_model(path) {
+            Ok(mut s) => {
+                // Scanned assets are dense: build LOD chains for big meshes.
+                forja_assets::lod::generate_lods(&mut s, 6, 20_000);
+                Some(self.add_model(Arc::new(s)))
+            }
+            Err(e) => {
+                log::warn!("{e}");
+                None
+            }
+        };
+        self.paths.insert(path.to_path_buf(), r);
+        r
+    }
+
+    pub fn model(&self, i: usize) -> &SceneData {
+        &self.models[i]
+    }
+}
+
+/// HUD state produced by gameplay, drawn by the UI.
+#[derive(Default, Clone)]
+pub struct Hud {
+    pub map: String,
+    pub messages: Vec<(String, f32)>,
+    pub speed_kmh: Option<f32>,
+    pub gear: i32,
+    pub rpm: f32,
+    pub health: f32,
+    pub armor: f32,
+    pub weapon: Option<String>,
+    pub ammo: Option<(u32, u32)>,
+    pub reloading: Option<f32>,
+    pub aiming: bool,
+    pub hit_marker: f32,
+    pub interact_hint: Option<String>,
+    pub physics_ms: f32,
+    pub bodies: usize,
+    pub attribution: Vec<String>,
+}
+
+impl Hud {
+    pub fn message(&mut self, text: impl Into<String>) {
+        self.messages.push((text.into(), 4.0));
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapKind {
+    Track,
+    Kit,
+    Osm,
+    Terrain,
+}
+
+impl MapKind {
+    pub const ALL: [MapKind; 4] = [MapKind::Osm, MapKind::Terrain, MapKind::Track, MapKind::Kit];
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "track" => Self::Track,
+            "kit" | "city" => Self::Kit,
+            "osm" | "miami" => Self::Osm,
+            "terrain" | "hills" => Self::Terrain,
+            _ => return None,
+        })
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Track => "Test track",
+            Self::Kit => "Kenney city",
+            Self::Osm => "Miami Beach (OpenStreetMap)",
+            Self::Terrain => "Hollywood Hills terrain",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        let i = Self::ALL.iter().position(|m| m == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+}
+
+/// Builds the game for one map.
+pub fn build(map: MapKind, paths: Paths) -> App {
+    let mut app = App::new();
+    app.insert_resource(paths.clone())
+        .insert_resource(Intent::default())
+        .insert_resource(RenderScene { hdri: Some(paths.asset("hdri_wide_street/wide_street_01_2k.hdr")).filter(|p| p.exists()), ..Default::default() })
+        .insert_resource(Hud::default())
+        .add_plugin(forja_physics::PhysicsPlugin::default())
+        .add_plugin(world::WorldPlugin { map })
+        .add_plugin(env::EnvPlugin)
+        .add_plugin(props::PropsPlugin)
+        .add_plugin(vehicles::VehiclesPlugin)
+        .add_plugin(player::PlayerPlugin)
+        .add_plugin(combat::CombatPlugin)
+        .add_plugin(camera::CameraPlugin);
+    app.add_system(Stage::PreUpdate, "clear_frame", |w| {
+        let rs = w.res_mut::<RenderScene>();
+        rs.dynamic.clear();
+        rs.lights.clear();
+        rs.lines.clear();
+        let dt = w.res::<forja_core::Time>().delta;
+        let hud = w.res_mut::<Hud>();
+        for m in &mut hud.messages {
+            m.1 -= dt;
+        }
+        hud.messages.retain(|m| m.1 > 0.0);
+        hud.hit_marker = (hud.hit_marker - dt * 4.0).max(0.0);
+    });
+    app
+}

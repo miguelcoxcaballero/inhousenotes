@@ -150,6 +150,20 @@ fn smg_auto_rate_shotgun_pellets_and_falloff() {
 }
 
 #[test]
+fn car_concept_wheels_are_grouped() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/downloaded/khronos_car_concept/CarConcept.glb");
+    if !path.exists() {
+        return;
+    }
+    let scene = forja_assets::load_gltf(&path).unwrap();
+    let bound = bind_vehicle_model(forja_physics::VehicleConfig::sedan(), &scene, 1.0);
+    assert_eq!(bound.config.wheels.len(), 4, "tyre, rim and brake parts form 4 wheels");
+    assert!(bound.wheel_nodes.iter().all(|w| w.len() >= 3));
+    assert!(bound.config.wheels.iter().filter(|w| w.steer).all(|w| w.position.z > 0.5));
+    assert!(bound.config.wheels.iter().all(|w| w.radius > 0.25 && w.radius < 0.5), "{:?}", bound.config.wheels.iter().map(|w| w.radius).collect::<Vec<_>>());
+}
+
+#[test]
 fn health_and_armor() {
     let mut h = Health { armor: 50.0, ..Default::default() };
     assert!((h.damage(40.0) - 12.0).abs() < 1e-4);
@@ -168,10 +182,11 @@ fn kenney_sedan_binds_and_drives() {
     }
     let scene = forja_assets::load_gltf(&path).unwrap();
     let handling = HandlingRegistry::load(&data().join("handling")).unwrap();
-    let (cfg, offset) = bind_vehicle_model(handling.get("sedan").unwrap().clone(), &scene, 1.8);
+    let bound = bind_vehicle_model(handling.get("sedan").unwrap().clone(), &scene, 1.8);
+    let cfg = bound.config;
     assert_eq!(cfg.wheels.len(), 4);
     assert_eq!(cfg.wheels.iter().filter(|w| w.steer).count(), 2);
-    assert!(offset.y < 0.0);
+    assert!(cfg.wheels.iter().filter(|w| w.steer).all(|w| w.position.z > 0.0), "front wheels must be at +Z");
     let mut world = PhysicsWorld::default();
     world.add_collider(ColliderDesc::new(Shape::cuboid(vec3(200.0, 0.5, 200.0))).translation(vec3(0.0, -0.5, 0.0)), None);
     let mut car = Vehicle::spawn(&mut world, cfg, Iso::from_pos(vec3(0.0, 1.5, 0.0)));

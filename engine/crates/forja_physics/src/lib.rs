@@ -65,7 +65,7 @@ impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(PhysicsWorld::new(self.config.clone()))
             .insert_resource(Vehicles::default())
-            .add_system(Stage::FixedUpdate, "physics_step", physics_step);
+            .add_system_at(Stage::FixedUpdate, "physics_step", 100, physics_step);
     }
 }
 

@@ -5,14 +5,17 @@
 //! world importers consume. Nothing here touches the GPU, so it is fully
 //! testable and can run on background threads for streaming.
 
+pub mod lod;
 pub mod manifest;
 mod obj;
+pub mod pbr;
 
 use std::path::Path;
 
 use forja_math::{Aabb, Mat4, Quat, Vec2, Vec3, Vec4};
 
 pub use obj::load_obj;
+pub use pbr::{HdrImage, PbrSet, load_hdr, load_pbr_set};
 
 #[derive(Debug)]
 pub enum AssetError {
@@ -46,6 +49,8 @@ pub struct MeshData {
     pub weights: Vec<[f32; 4]>,
     pub material: usize,
     pub aabb: Aabb,
+    /// Simplified index lists (LOD 1, 2, ...) over the same vertices.
+    pub lods: Vec<Vec<u32>>,
 }
 
 impl MeshData {
@@ -149,6 +154,11 @@ pub struct MaterialData {
     pub double_sided: bool,
     /// KHR_materials_unlit: output base color without lighting.
     pub unlit: bool,
+    /// KHR_materials_transmission (rendered as tinted glass).
+    pub transmission: f32,
+    /// KHR_materials_clearcoat layer strength and roughness (car paint).
+    pub clearcoat: f32,
+    pub clearcoat_roughness: f32,
 }
 
 impl Default for MaterialData {
@@ -168,6 +178,9 @@ impl Default for MaterialData {
             alpha: AlphaMode::Opaque,
             double_sided: false,
             unlit: false,
+            transmission: 0.0,
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.03,
         }
     }
 }
@@ -218,7 +231,7 @@ pub struct NodeData {
     pub parent: Option<usize>,
     pub children: Vec<usize>,
     pub local: Trs,
-    /// Primitives drawn by this node.
+    /// Primitives drawn by this node (LOD 0).
     pub mesh: Option<usize>,
     pub skin: Option<usize>,
 }
@@ -384,6 +397,9 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
             },
             double_sided: m.double_sided(),
             unlit: m.unlit(),
+            transmission: m.transmission().map(|t| t.transmission_factor()).unwrap_or(0.0),
+            clearcoat: clearcoat(&doc, m.index()).0,
+            clearcoat_roughness: clearcoat(&doc, m.index()).1,
         });
     }
     let default_material = scene.materials.len();
@@ -408,6 +424,7 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
                     default_material
                 }),
                 aabb: Aabb::EMPTY,
+                lods: Vec::new(),
             };
             md.finalize();
             prims.push(md);
@@ -476,6 +493,18 @@ pub fn load_gltf(path: &Path) -> Result<SceneData, AssetError> {
         scene.clips.push(ClipData { name: anim.name().unwrap_or("clip").to_string(), duration, channels });
     }
     Ok(scene)
+}
+
+/// Reads KHR_materials_clearcoat from the raw JSON (the gltf crate does not
+/// expose it): `(factor, roughness)`.
+fn clearcoat(doc: &gltf::Document, index: Option<usize>) -> (f32, f32) {
+    let Some(i) = index else { return (0.0, 0.03) };
+    let json = doc.as_json();
+    let Some(m) = json.materials.get(i) else { return (0.0, 0.03) };
+    let Some(ext) = m.extensions.as_ref().and_then(|e| e.others.get("KHR_materials_clearcoat")) else { return (0.0, 0.03) };
+    let f = ext.get("clearcoatFactor").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+    let r = ext.get("clearcoatRoughnessFactor").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+    (f, r.max(0.02))
 }
 
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {

@@ -28,53 +28,90 @@ impl HandlingRegistry {
     }
 }
 
-/// Places the wheels of `config` at the model's `wheel*` nodes (scaled by
-/// `scale`) and sizes the chassis from the remaining geometry, so any car
-/// model with named wheels drives with any handling file.
-///
-/// Returns the config and the model offset: draw the model at
-/// `body_iso * translate(offset) * scale`.
-pub fn bind_vehicle_model(mut config: VehicleConfig, scene: &SceneData, scale: f32) -> (VehicleConfig, Vec3) {
+/// Result of binding handling data to a vehicle model.
+#[derive(Clone, Debug)]
+pub struct BoundVehicle {
+    pub config: VehicleConfig,
+    /// Model-to-body transform (offset, orientation, scale).
+    pub model_to_body: forja_math::Mat4,
+    /// Mesh nodes of each wheel, in `config.wheels` order.
+    pub wheel_nodes: Vec<Vec<usize>>,
+    /// Wheel centers in model space, in `config.wheels` order.
+    pub wheel_centers: Vec<Vec3>,
+}
+
+/// Places the wheels of `config` at the model's wheel nodes and sizes the
+/// chassis from the rest, so any car model with named wheels drives with any
+/// handling file. Wheel parts (tyre, rim, brake disc...) are grouped by
+/// position; models whose front wheels sit on -Z are turned around.
+pub fn bind_vehicle_model(mut config: VehicleConfig, scene: &SceneData, scale: f32) -> BoundVehicle {
     let world = scene.world_matrices();
-    let mut wheels: Vec<(Vec3, f32)> = Vec::new();
+    let mut parts: Vec<(usize, forja_math::Aabb, bool)> = Vec::new();
     let mut body = forja_math::Aabb::EMPTY;
     for (i, n) in scene.nodes.iter().enumerate() {
         let Some(m) = n.mesh else { continue };
         let mut b = forja_math::Aabb::EMPTY;
         for p in &scene.meshes[m] {
             for v in &p.positions {
-                b.grow_point(world[i].transform_point3(*v) * scale);
+                b.grow_point(world[i].transform_point3(*v));
             }
         }
         if b.is_empty() {
             continue;
         }
-        if n.name.to_ascii_lowercase().starts_with("wheel") {
-            let h = b.half_extents();
-            wheels.push((b.center(), h.y.max(h.z)));
+        let lname = n.name.to_ascii_lowercase();
+        if lname.starts_with("wheel") {
+            parts.push((i, b, lname.contains("front")));
         } else {
             body = body.union(&b);
         }
     }
-    if wheels.len() < 2 || body.is_empty() {
-        return (config, Vec3::ZERO);
+    // Cluster wheel parts whose centers are close.
+    let mut wheels: Vec<(Vec<usize>, forja_math::Aabb, bool)> = Vec::new();
+    for (node, b, front) in parts {
+        match wheels.iter_mut().find(|w| (w.1.center() - b.center()).length() < 0.35 * b.half_extents().max_element().max(0.2) * 4.0) {
+            Some(w) => {
+                w.0.push(node);
+                w.1 = w.1.union(&b);
+                w.2 |= front;
+            }
+            None => wheels.push((vec![node], b, front)),
+        }
     }
-    let front_z = wheels.iter().map(|w| w.0.z).fold(f32::MIN, f32::max);
+    let identity = BoundVehicle { config: config.clone(), model_to_body: forja_math::Mat4::IDENTITY, wheel_nodes: Vec::new(), wheel_centers: Vec::new() };
+    if wheels.len() < 2 || body.is_empty() {
+        return identity;
+    }
+    let all = wheels.iter().fold(body, |acc, w| acc.union(&w.1));
+    // Front axle: named "front", else the larger Z.
+    let named_front = wheels.iter().any(|w| w.2);
+    let max_z = wheels.iter().map(|w| w.1.center().z).fold(f32::MIN, f32::max);
+    let is_front = |w: &(Vec<usize>, forja_math::Aabb, bool)| if named_front { w.2 } else { (w.1.center().z - max_z).abs() < 0.2 };
+    let front_z: f32 = wheels.iter().filter(|w| is_front(w)).map(|w| w.1.center().z).sum::<f32>() / wheels.iter().filter(|w| is_front(w)).count().max(1) as f32;
+    let rear_z: f32 = wheels.iter().filter(|w| !is_front(w)).map(|w| w.1.center().z).sum::<f32>() / wheels.iter().filter(|w| !is_front(w)).count().max(1) as f32;
+    let flip = front_z < rear_z;
+    let orient = if flip { forja_math::Mat4::from_rotation_y(std::f32::consts::PI) } else { forja_math::Mat4::IDENTITY };
+    let center = all.center();
+    let model_to_body = orient * forja_math::Mat4::from_scale(Vec3::splat(scale)) * forja_math::Mat4::from_translation(-center);
+    let to_body = |p: Vec3| model_to_body.transform_point3(p);
+    let body_half = (body.half_extents() * scale) * Vec3::new(1.0, 0.6, 1.0);
     let template_front = config.wheels.iter().find(|w| w.steer).cloned().unwrap_or_default();
     let template_rear = config.wheels.iter().find(|w| !w.steer).cloned().unwrap_or_default();
-    // Chassis origin: body center; suspension top sits above the wheel center.
-    let center = body.center();
-    config.chassis_half = body.half_extents() * Vec3::new(1.0, 0.6, 1.0);
+    config.chassis_half = body_half;
     // Static sag so wheels sit where the artist modelled them at rest.
     let sag = (config.mass * 9.81 / wheels.len() as f32 / config.suspension_stiffness).min(0.9 * template_rear.suspension_length);
+    let mut wheel_nodes = Vec::new();
+    let mut wheel_centers = Vec::new();
     config.wheels = wheels
         .iter()
-        .map(|(c, r)| {
-            let front = (c.z - front_z).abs() < 0.2;
-            let t = if front { &template_front } else { &template_rear };
-            WheelConfig { position: *c - center + Vec3::Y * (t.suspension_length - sag), radius: *r, ..t.clone() }
+        .map(|w| {
+            let t = if is_front(w) { &template_front } else { &template_rear };
+            let h = w.1.half_extents() * scale;
+            wheel_nodes.push(w.0.clone());
+            wheel_centers.push(w.1.center());
+            WheelConfig { position: to_body(w.1.center()) + Vec3::Y * (t.suspension_length - sag), radius: h.y.max(h.z), ..t.clone() }
         })
         .collect();
     config.com = Vec3::new(0.0, -config.chassis_half.y * 0.6, 0.0);
-    (config, -center)
+    BoundVehicle { config, model_to_body, wheel_nodes, wheel_centers }
 }

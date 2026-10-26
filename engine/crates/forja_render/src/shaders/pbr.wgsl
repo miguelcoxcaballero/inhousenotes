@@ -5,6 +5,7 @@ struct Material {
     base_color: vec4<f32>,
     emissive: vec4<f32>,   // w: normal scale
     params: vec4<f32>,     // x: metallic, y: roughness, z: alpha cutoff, w: unlit
+    layers: vec4<f32>,     // x: clearcoat, y: clearcoat roughness, z: transmission
 };
 
 @group(0) @binding(1) var shadow_map: texture_depth_2d_array;
@@ -142,13 +143,24 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let nh = max(dot(n, h), 0.0);
     let vh = max(dot(v, h), 0.0);
 
+    // Clearcoat: a smooth dielectric layer over the base (car paint).
+    let cc = material.layers.x;
+    let cc_a = max(material.layers.y, 0.02) * max(material.layers.y, 0.02);
+    let ngc = ng;
     var color = vec3<f32>(0.0);
     if (nl > 0.0) {
         let shadow = shadow_factor(in.world_pos, ng, in.view_depth);
         let f = f_schlick(f0, vh);
         let spec = f * d_ggx(nh, a) * v_smith(nv, nl, a);
         let diff = (vec3<f32>(1.0) - f) * diffuse_color / PI;
-        color += (diff + spec) * frame.sun_color.rgb * nl * shadow;
+        var lit = diff + spec;
+        if (cc > 0.0) {
+            let fc = f_schlick(vec3<f32>(0.04), vh).x * cc;
+            let ncl = max(dot(ngc, l), 0.0);
+            let spec_c = fc * d_ggx(max(dot(ngc, h), 0.0), cc_a) * v_smith(max(dot(ngc, v), 1e-4), ncl, cc_a);
+            lit = lit * (1.0 - fc) + vec3<f32>(spec_c);
+        }
+        color += lit * frame.sun_color.rgb * nl * shadow;
     }
     // Point lights with smooth range falloff (Karis).
     let count = i32(frame.params.x);
@@ -174,8 +186,19 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let spec_occ = clamp(pow(nv + ao, exp2(-16.0 * rough - 1.0)) - 1.0 + ao, 0.0, 1.0);
     color += diffuse_color * ambient_sky(n) * ao;
     color += env_reflection(reflect(-v, n), rough) * env * spec_occ;
+    if (cc > 0.0) {
+        let fcv = f_schlick(vec3<f32>(0.04), max(dot(ngc, v), 1e-4)).x * cc;
+        color = color * (1.0 - fcv) + env_reflection(reflect(-v, ngc), material.layers.y) * fcv;
+    }
     color += textureSample(emissive_tex, tex_sampler, in.uv).rgb * material.emissive.rgb * 4.0;
 
     color = height_fog(color, in.world_pos, -v);
-    return vec4<f32>(color, base.a);
+    var alpha = base.a;
+    let tr = material.layers.z;
+    if (tr > 0.0) {
+        // Thin glass: transmit most light, keep Fresnel reflection opaque.
+        let fr = f_schlick(vec3<f32>(0.04), nv).x;
+        alpha = clamp(mix(1.0 - tr * 0.92, 1.0, fr), 0.05, 1.0);
+    }
+    return vec4<f32>(color, alpha);
 }

@@ -1,3 +1,4 @@
+const PI: f32 = 3.14159265359;
 // Shared frame data. Must match `FrameUniforms` in frame.rs.
 struct Light {
     pos_radius: vec4<f32>,
@@ -18,12 +19,28 @@ struct Frame {
     cascade_vp: array<mat4x4<f32>, 4>,
     params: vec4<f32>,          // x: light count, y: 1 / shadow size, z: bloom strength, w: debug view
     screen: vec4<f32>,          // xy: size, zw: 1 / size
+    sh: array<vec4<f32>, 9>,    // irradiance / pi (HDRI mode)
+    env_params: vec4<f32>,      // x: 1 = HDRI image lighting, y: max mip, z: intensity
     lights: array<Light, 64>,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
+@group(0) @binding(3) var env_tex: texture_2d<f32>;
+@group(0) @binding(4) var env_samp: sampler;
 
-const PI: f32 = 3.14159265359;
+fn equirect_uv(d: vec3<f32>) -> vec2<f32> {
+    return vec2<f32>(atan2(d.x, -d.z) / (2.0 * PI) + 0.5, acos(clamp(d.y, -1.0, 1.0)) / PI);
+}
+
+fn sh_irradiance(n: vec3<f32>) -> vec3<f32> {
+    var c = frame.sh[0].rgb * 0.282095;
+    c += frame.sh[1].rgb * 0.488603 * n.y + frame.sh[2].rgb * 0.488603 * n.z + frame.sh[3].rgb * 0.488603 * n.x;
+    c += frame.sh[4].rgb * 1.092548 * n.x * n.y + frame.sh[5].rgb * 1.092548 * n.y * n.z;
+    c += frame.sh[6].rgb * 0.315392 * (3.0 * n.z * n.z - 1.0) + frame.sh[7].rgb * 1.092548 * n.x * n.z;
+    c += frame.sh[8].rgb * 0.546274 * (n.x * n.x - n.y * n.y);
+    return max(c, vec3<f32>(0.0));
+}
+
 
 // --- Atmosphere (Rayleigh + Mie single scattering, Hillaire-style units in km).
 const EARTH_R: f32 = 6360.0;
@@ -133,6 +150,9 @@ fn env_brdf(f0: vec3<f32>, rough: f32, nv: f32) -> vec3<f32> {
 }
 
 fn ambient_sky(n: vec3<f32>) -> vec3<f32> {
+    if (frame.env_params.x > 0.5) {
+        return sh_irradiance(n);
+    }
     let up = n.y * 0.5 + 0.5;
     let sky = mix(frame.sky_horizon.rgb, frame.sky_zenith.rgb, clamp(n.y, 0.0, 1.0));
     return mix(frame.ground_color.rgb, sky, smoothstep(0.0, 1.0, up));
@@ -140,6 +160,12 @@ fn ambient_sky(n: vec3<f32>) -> vec3<f32> {
 
 // Blurry environment reflection from the analytic sky colors.
 fn env_reflection(r: vec3<f32>, rough: f32) -> vec3<f32> {
+    if (frame.env_params.x > 0.5) {
+        // Mip 0 holds the sun; start reflections at mip 1 to avoid double
+        // counting the analytic sun highlight.
+        let lod = 1.0 + rough * (frame.env_params.y - 1.0);
+        return textureSampleLevel(env_tex, env_samp, equirect_uv(r), lod).rgb;
+    }
     let sharp = mix(frame.sky_horizon.rgb, frame.sky_zenith.rgb, pow(clamp(r.y, 0.0, 1.0), 0.5));
     let below = frame.ground_color.rgb * 0.6;
     let env = select(below, sharp, r.y > -0.02);
