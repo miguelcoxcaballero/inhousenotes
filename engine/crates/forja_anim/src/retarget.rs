@@ -347,7 +347,7 @@ pub fn retarget(clip: &Clip, source: &Skeleton, target: &Skeleton, map: &Retarge
             // whatever either rig's rest pose was.
             delta.y = tgt_floor + (pos(&src_m[s]).y - src_floor) * ratio - pos(&tgt_rest[t]).y;
             // Back into the target root's parent space.
-            let parent_inv = target.joints[t].parent.map(|_| Quat::IDENTITY).unwrap_or_else(|| rot(&target.root_parent).inverse());
+            let parent_inv = target.parent_rest_rotation(t).inverse();
             root_t.push(target.joints[t].rest.t + parent_inv * delta);
         }
     }
