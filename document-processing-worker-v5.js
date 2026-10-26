@@ -6,8 +6,13 @@ let nextObject = 0;
 const documents = new Map();
 const objects = new Map();
 const pngRasterCache = new Map();
-let pngRasterCacheBytes = 0;
 const PNG_RASTER_CACHE_LIMIT = 32 * 1024 * 1024;
+const rasterBytes = raster => raster.colorBytes.byteLength + (raster.alphaBytes?.byteLength || 0);
+// Every kernel below is Rust. A missing WASM core is a hard error, never a slower path.
+async function rustCore() {
+    if (!(await self.InhouseRust?.ready) || !InhouseRust.available()) throw new Error('Rust core is unavailable; reload the app');
+    return InhouseRust;
+}
 async function preparedPng(bytes) {
     const buffer = bytes instanceof ArrayBuffer || ArrayBuffer.isView(bytes) ? bytes : null;
     const key = buffer && self.crypto?.subtle ? Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',buffer)),v=>v.toString(16).padStart(2,'0')).join('') : null;
@@ -17,13 +22,14 @@ async function preparedPng(bytes) {
     const {image:png}=await PDFLib.PngEmbedder.for(bytes);
     const [colorBytes,alphaBytes]=await Promise.all([deflateBytes(png.rgbChannel),png.alphaChannel?deflateBytes(png.alphaChannel):null]);
     const raster={width:png.width,height:png.height,colorBytes,alphaBytes};
-    const size=colorBytes.byteLength+(alphaBytes?.byteLength||0);
-    if(key && size<=PNG_RASTER_CACHE_LIMIT) {
-        while(pngRasterCacheBytes+size>PNG_RASTER_CACHE_LIMIT&&pngRasterCache.size) {
-            const oldest=pngRasterCache.keys().next().value, value=pngRasterCache.get(oldest);
-            pngRasterCacheBytes-=value.colorBytes.byteLength+(value.alphaBytes?.byteLength||0);pngRasterCache.delete(oldest);
+    if(key) {
+        // A concurrent decode of the same bytes may already have stored it: replace, never double count.
+        pngRasterCache.delete(key);
+        const plan=(await rustCore()).pngCachePlan(PNG_RASTER_CACHE_LIMIT,Array.from(pngRasterCache.values(),rasterBytes),rasterBytes(raster));
+        if(plan.store) {
+            for(const oldest of Array.from(pngRasterCache.keys()).slice(0,plan.evict)) pngRasterCache.delete(oldest);
+            pngRasterCache.set(key,raster);
         }
-        pngRasterCache.set(key,raster);pngRasterCacheBytes+=size;
     }
     return raster;
 }
@@ -81,11 +87,7 @@ function drawStroke(ctx, stroke) {
 async function compress(value) {
     const stream = new Blob([value]).stream().pipeThrough(new CompressionStream('deflate'));
     const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-    let binary = '';
-    for (let offset = 0; offset < bytes.length; offset += 16384) {
-        binary += String.fromCharCode(...bytes.subarray(offset, offset + 16384));
-    }
-    return btoa(binary);
+    return (await rustCore()).b64Encode(bytes);
 }
 
 async function deflateBytes(bytes) {
@@ -97,16 +99,9 @@ async function deflateBytes(bytes) {
 async function preparePdfRaster(canvas) {
     const { width, height } = canvas;
     const rgba = canvas.getContext('2d').getImageData(0, 0, width, height).data;
-    await self.InhouseRust?.ready;
-    const rustSplit = self.InhouseRust?.splitRgba(rgba);
-    const rgb = rustSplit?.rgb || new Uint8Array(width * height * 3);
-    const alpha = rustSplit ? rustSplit.alpha : new Uint8Array(width * height);
-    let transparent = rustSplit?.transparent || false;
-    if (!rustSplit) for (let p = 0, c = 0; p < alpha.length; p++, c += 4) {
-        rgb[p * 3] = rgba[c]; rgb[p * 3 + 1] = rgba[c + 1]; rgb[p * 3 + 2] = rgba[c + 2];
-        alpha[p] = rgba[c + 3];
-        transparent ||= alpha[p] !== 255;
-    }
+    const split = (await rustCore()).splitRgba(rgba);
+    if (!split) throw new Error('Rust RGBA split failed (page raster too large?)');
+    const { rgb, alpha, transparent } = split;
     const [colorBytes, alphaBytes] = await Promise.all([
         deflateBytes(rgb), transparent ? deflateBytes(alpha) : null
     ]);
@@ -155,13 +150,11 @@ async function processTask(type, data) {
         };
     }
     if (type === 'timelineHash') {
-        let hash = 0;
-        for (let i = 0; i < data.json.length; i++) hash = ((hash << 5) - hash + data.json.charCodeAt(i)) | 0;
-        return `${Math.abs(hash).toString(36).slice(0, 8)}:${data.json.length.toString(36)}`;
+        return (await rustCore()).timelineHash(data.json);
     }
     if (type === 'decodeTimeline') {
         if (data.payload.length > 48 * 1024 * 1024) throw new Error('Timeline exceeds safe input size');
-        const bytes = Uint8Array.from(atob(data.payload), c => c.charCodeAt(0));
+        const bytes = (await rustCore()).b64Decode(data.payload);
         const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate')).getReader();
         const chunks = [];
         let size = 0;
