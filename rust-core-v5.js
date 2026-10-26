@@ -367,47 +367,6 @@
         if (offset !== bytes.length) throw new Error('Trailing ink checkpoint bytes');
         return output;
     }
-    // Bounded, generation-scoped coordinates avoid re-packing long strokes on
-    // every eraser sample. A document edit invalidates all cached geometry.
-    const hitCache = new Map();
-    let hitCacheBytes = 0, hitGeneration = null;
-    function clearHitCache() {
-        for (const entry of hitCache.values()) core.free(entry.pointer, entry.bytes);
-        hitCache.clear(); hitCacheBytes = 0;
-    }
-    function strokeHitTest(points, x, y, radius, generation) {
-        if (!core?.editor_stroke_hit || !Array.isArray(points) || points.length < 256
-            || points.length > 262144 || ![x,y,radius].every(Number.isFinite)
-            || radius < 0 || Math.max(Math.abs(x),Math.abs(y),radius) > 1e9) return null;
-        if (generation !== hitGeneration) { clearHitCache(); hitGeneration = generation; }
-        const bytes = points.length * 16;
-        let entry = hitCache.get(points);
-        if (entry && entry.bytes !== bytes) {
-            core.free(entry.pointer,entry.bytes); hitCacheBytes -= entry.bytes;
-            hitCache.delete(points); entry = null;
-        }
-        if (!entry) {
-            while (hitCache.size >= 64 || hitCacheBytes + bytes > 4 * 1024 * 1024) {
-                const [key, oldest] = hitCache.entries().next().value;
-                core.free(oldest.pointer,oldest.bytes); hitCacheBytes -= oldest.bytes; hitCache.delete(key);
-            }
-            let pointer = 0;
-            try {
-                pointer = allocation(bytes).pointer;
-                const coords = new Float64Array(core.memory.buffer, pointer, points.length * 2);
-                for (let i=0;i<points.length;i++) {
-                    const point=points[i];
-                    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)
-                        || Math.max(Math.abs(point.x),Math.abs(point.y)) > 1e9) { core.free(pointer,bytes); return null; }
-                    coords[i*2]=point.x; coords[i*2+1]=point.y;
-                }
-                entry={pointer,bytes}; hitCacheBytes += bytes;
-            } catch (_) { if(pointer)core.free(pointer,bytes); return null; }
-        } else hitCache.delete(points);
-        hitCache.set(points,entry);
-        const result = core.editor_stroke_hit(entry.pointer,points.length,x,y,radius);
-        return result < 0 ? null : !!result;
-    }
     // Generic bridge to the ported logic modules (rust-core/src/bridge.rs).
     let textEncoder = null, textDecoder = null;
     const codecs = () => { textEncoder ||= new TextEncoder(); textDecoder ||= new TextDecoder(); };
@@ -436,7 +395,7 @@
     }
     // Typed-pointer access for hot kernels. The memory view must be re-read after every call.
     const runtime = Object.freeze({ allocation, view, release, exports: () => core });
-    const api = { ready, strokeHitTest, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
+    const api = { ready, checkpointCodec, unpackCheckpoint, warp, splitRgba, scanColors, balancePaper, separateInk, surfaceFit, inkAxes, inkRepair,
         folderMotion, folderFade, folderRows, callBytes, callJson, runtime, available: () => !!core };
     // >>> stream:scan_light (only this area edits between its markers)
     const scanLight = {};
@@ -568,6 +527,126 @@
     // >>> stream:scan_live (only this area edits between its markers)
     // <<< stream:scan_live
     // >>> stream:editor_input (only this area edits between its markers)
+    // Resident stroke store for the eraser: coordinates are uploaded once per stroke (and generation) and every
+    // later hit test sends only scalars plus a slot list. All geometry runs in rust-core/src/editor_input.rs.
+    {
+        const wasm = () => {
+            if (!core?.editor_input_version) throw new Error('Rust editor core is unavailable');
+            return core;
+        };
+        const entries = new WeakMap();
+        let epoch = 1, lastGeneration = null, generationSeq = 0, generationId = 0;
+        let boundsOut = 0, block = null, blockPoints = 0;
+        const registry = typeof FinalizationRegistry === 'function' ? new FinalizationRegistry(held => {
+            if (core && held.epoch === epoch) core.editor_input_slot_free(held.slot);
+        }) : null;
+        function clearStore() { core.editor_input_store_clear(); epoch++; }
+        function currentGeneration(text) {
+            if (text !== lastGeneration) { lastGeneration = text; generationSeq = generationSeq % 0xfffffffe + 1; generationId = generationSeq; }
+            return generationId;
+        }
+        function upload(points, count, slot, generation) {
+            const pointer = core.editor_input_scratch(count);
+            if (!pointer) throw new RangeError('Stroke has too many points');
+            const target = new Float64Array(core.memory.buffer, pointer, count * 2);
+            for (let i = 0; i < count; i++) {
+                const point = points[i];
+                if (point) { target[i * 2] = point.x; target[i * 2 + 1] = point.y; }
+                else { target[i * 2] = NaN; target[i * 2 + 1] = NaN; }
+            }
+            return core.editor_input_commit(slot, count, generation) === 1;
+        }
+        // The entry mirrors the old bounds cache: same array, length and end points means the stored bounds hold.
+        function entryFor(stroke) {
+            const points = stroke.points, count = points.length, first = points[0], last = points[count - 1];
+            let entry = entries.get(stroke);
+            if (entry && entry.epoch === epoch && entry.points === points && entry.count === count
+                && entry.fx === first.x && entry.fy === first.y && entry.lx === last.x && entry.ly === last.y) return entry;
+            if (!entry || entry.epoch !== epoch) {
+                const slot = core.editor_input_slot_alloc();
+                entry = { slot, epoch, bounds: null };
+                registry?.register(stroke, { slot, epoch });
+                entries.set(stroke, entry);
+            }
+            if (!upload(points, count, entry.slot, 0)) throw new Error('Rust stroke store rejected the stroke');
+            boundsOut ||= core.alloc(32);
+            core.editor_input_bounds(entry.slot, boundsOut);
+            const b = new Float64Array(core.memory.buffer, boundsOut, 4);
+            entry.bounds = { minX: b[0], minY: b[1], maxX: b[2], maxY: b[3] };
+            entry.points = points; entry.count = count; entry.fx = first.x; entry.fy = first.y; entry.lx = last.x; entry.ly = last.y;
+            return entry;
+        }
+        const usable = stroke => !!stroke && Array.isArray(stroke.points) && stroke.points.length > 0;
+        api.strokeBounds = stroke => { wasm(); return usable(stroke) ? entryFor(stroke).bounds : null; };
+        api.strokeMayIntersect = (stroke, x, y, radius, extra = 0) => {
+            const c = wasm();
+            return usable(stroke) && c.editor_input_may_intersect(entryFor(stroke).slot, x, y, radius, extra, (stroke.width || 0) * 0.5) === 1;
+        };
+        api.segmentDistance = (px, py, x1, y1, x2, y2) => wasm().editor_input_segment_distance(px, py, x1, y1, x2, y2);
+        // Per page: stroke objects, their point arrays and lengths, plus the slot/half-width lists the Rust query reads.
+        // Within one document generation, identical stroke and point-array references mean nothing changed, so a
+        // query validates with three comparisons per stroke instead of re-deriving each stroke's signature.
+        const pages = new WeakMap();
+        function pageList(strokes, n, id) {
+            let page = pages.get(strokes);
+            if (page && page.id === id && page.epoch === epoch && page.n === n) {
+                const { refs, arrays, counts } = page;
+                let i = 0;
+                for (; i < n; i++) {
+                    const stroke = strokes[i], points = stroke.points;
+                    if (stroke !== refs[i] || points !== arrays[i] || points.length !== counts[i]) break;
+                }
+                if (i === n) return page;
+            }
+            page = { id, epoch, n, refs: new Array(n), arrays: new Array(n), counts: new Uint32Array(n),
+                slots: new Uint32Array(n), widths: new Float64Array(n) };
+            for (let i = 0; i < n; i++) {
+                const stroke = strokes[i];
+                page.refs[i] = stroke; page.arrays[i] = stroke.points; page.counts[i] = stroke.points?.length ?? 0;
+                if (stroke.tool && stroke.tool.startsWith('eraser') || !usable(stroke)) continue;
+                page.slots[i] = entryFor(stroke).slot;
+                page.widths[i] = (stroke.width || 0) * 0.5;
+            }
+            pages.set(strokes, page);
+            return page;
+        }
+        // Indices (highest first) of the non-eraser strokes whose polyline passes within `radius` of (x, y).
+        // `generation` invalidates retained coordinates after any document edit.
+        api.strokesHitCircle = (strokes, x, y, radius, generation) => {
+            const c = wasm(), n = strokes.length;
+            if (!n) return [];
+            const id = currentGeneration(generation);
+            // A stroke that cannot be retained (store full) is tested once from the scratch buffer instead.
+            let cleared = false;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const extra = [], page = pageList(strokes, n, id);
+                let restart = false;
+                for (let pass = 0; pass < 2 && !restart; pass++) {
+                    const bytes = n * 20 + 8;
+                    if (!block || blockPoints < n) {
+                        if (block) c.free(block.pointer, block.bytes);
+                        block = allocation(bytes); blockPoints = n;
+                    }
+                    const base = block.pointer, slotsAt = base + n * 8, outAt = slotsAt + n * 4, countsAt = outAt + n * 8;
+                    new Float64Array(c.memory.buffer, base, n).set(page.widths);
+                    new Uint32Array(c.memory.buffer, slotsAt, n).set(page.slots);
+                    if (!c.editor_input_circle_query(slotsAt, base, n, x, y, radius, 2, id, 1, outAt, countsAt)) throw new Error('Rust eraser query rejected its arguments');
+                    const memory = c.memory.buffer, counts = new Uint32Array(memory, countsAt, 2);
+                    const hits = Array.from(new Uint32Array(memory, outAt, counts[0]));
+                    if (!counts[1]) return extra.length ? hits.concat(extra).sort((a, b) => b - a) : hits;
+                    for (const index of Array.from(new Uint32Array(memory, outAt + n * 4, counts[1]))) {
+                        const stroke = strokes[index], count = stroke.points.length;
+                        if (upload(stroke.points, count, entries.get(stroke).slot, id)) continue;
+                        if (!cleared) { clearStore(); cleared = true; restart = true; break; }
+                        // upload() left the points in the scratch buffer; test them without retaining.
+                        if (c.editor_input_scratch_hit(count, x, y, radius) === 1) extra.push(index);
+                        page.slots[index] = 0; page.id = 0;   // this list is only valid for the current query
+                    }
+                }
+            }
+            throw new RangeError('Rust stroke store could not hold the page');
+        };
+    }
     // <<< stream:editor_input
     // >>> stream:editor_render (only this area edits between its markers)
     // <<< stream:editor_render
