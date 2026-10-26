@@ -1,0 +1,12 @@
+[package]
+name = "forja_physics"
+description = "Forja rigid body physics: shapes, BVH broadphase, SAT/clipping narrowphase, soft-step solver, vehicles, bikes, characters"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+forja_math.workspace = true
+forja_core.workspace = true
+serde.workspace = true
+log.workspace = true

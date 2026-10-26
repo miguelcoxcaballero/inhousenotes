@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/forja_math",
+    "crates/forja_core",
+    "crates/forja_physics",
+    "crates/forja_assets",
+    "crates/forja_world",
+    "crates/forja_render",
+    "crates/forja_input",
+    "crates/forja_gameplay",
+    "tools/forja_fetch",
+    "apps/sandbox",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+
+[workspace.dependencies]
+forja_math = { path = "crates/forja_math" }
+forja_core = { path = "crates/forja_core" }
+forja_physics = { path = "crates/forja_physics" }
+forja_assets = { path = "crates/forja_assets" }
+forja_world = { path = "crates/forja_world" }
+forja_render = { path = "crates/forja_render" }
+forja_input = { path = "crates/forja_input" }
+forja_gameplay = { path = "crates/forja_gameplay" }
+
+glam = { version = "0.30", features = ["bytemuck", "serde"] }
+hecs = "0.11"
+serde = { version = "1", features = ["derive"] }
+toml = "0.9"
+thiserror = "2"
+log = "0.4"
+env_logger = "0.11"
+rayon = "1.10"
+bytemuck = { version = "1.23", features = ["derive"] }
+gltf = { version = "1.4", default-features = false, features = ["import", "utils", "names", "KHR_materials_emissive_strength", "extras"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+wgpu = "30"
+winit = "0.30"
+pollster = "0.4"
+quick-xml = "0.38"
+sha2 = "0.10"
+zip = { version = "4", default-features = false, features = ["deflate"] }
+ureq = "3"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = 1

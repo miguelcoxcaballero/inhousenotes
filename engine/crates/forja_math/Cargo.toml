@@ -1,0 +1,11 @@
+[package]
+name = "forja_math"
+description = "Math primitives for Forja: glam re-exports, AABB, rays, planes, frustum, isometries"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam.workspace = true
+serde.workspace = true
+bytemuck.workspace = true

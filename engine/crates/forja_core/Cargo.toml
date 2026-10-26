@@ -1,0 +1,11 @@
+[package]
+name = "forja_core"
+description = "Forja app shell: plugins, stages, resources, events and fixed-step time"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+forja_math.workspace = true
+hecs.workspace = true
+log.workspace = true
