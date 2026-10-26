@@ -120,7 +120,7 @@ fn scotopic(c: vec3<f32>, nits: f32, strength: f32) -> vec3<f32> {
 fn night_grade(lin: vec3<f32>, g: f32) -> vec3<f32> {
     var v = pow(clamp(lin, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2));
     // Black point: the darkest values sink to true black.
-    let bp = 0.006 * g;
+    let bp = 0.002 * g;
     v = max(v - vec3<f32>(bp), vec3<f32>(0.0)) / (1.0 - bp);
     // S-curve about the pivot (exponent > 1 on both sides).
     let pivot = 0.32;
@@ -132,7 +132,7 @@ fn night_grade(lin: vec3<f32>, g: f32) -> vec3<f32> {
     let l = luma(v);
     let shadow_w = (1.0 - l) * (1.0 - l) * (1.0 - l) * g;
     let high_w = l * l * g;
-    v *= mix(vec3<f32>(1.0), vec3<f32>(0.9, 1.0, 1.08), shadow_w);
+    v *= mix(vec3<f32>(1.0), vec3<f32>(0.94, 1.0, 1.05), shadow_w);
     v *= mix(vec3<f32>(1.0), vec3<f32>(1.06, 1.0, 0.9), high_w);
     // Film-like highlights: the brightest lamp-lit areas roll toward white
     // instead of saturating to pure orange.

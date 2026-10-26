@@ -223,10 +223,19 @@ aspecto diurno no cambia: preexposición 1, bloom y tonemap idénticos).
 | Sprites de luces | Punto gaussiano que conserva la intensidad, ≥ 1.5 px, aparece a partir de 50 m: las farolas lejanas siguen siendo puntos en vistas aéreas | < 0.05 |
 | Cielo nocturno | Cielo de luna (misma atmósfera ×2.5·10⁻⁶), cúpula de contaminación lumínica, estrellas | < 0.05 |
 | Adaptación | Histograma de luminancia en compute (¼ de píxeles), media entre percentiles 50–97 %, clave de Krawczyk (la noche sigue oscura), adaptación exponencial; iluminación preexpuesta (precisión f16) | 0.05 |
-| Post | Bloom con límite por píxel y peso por mip (halos ceñidos, sin velo); desplazamiento escotópico (Purkinje) en zonas < 3 cd/m² | 0 extra |
+| Post | Bloom con límite por píxel y peso por mip (halos ceñidos, sin velo); desplazamiento escotópico (Purkinje) en zonas < 3 cd/m²; gradación nocturna cinematográfica (`night_grade`: pie fílmico con negros reales, curva S, sombras azul verdoso y altas luces cálidas que viran a blanco) | 0 extra |
 
-Emisivos: el kit de la ciudad los autoriza ~20× más brillantes de lo físico
-para leerse al sol; los presets nocturnos aplican `emissive_scale = 0.05`.
+Calibración contra las referencias (`engine/screenshots/ref_night/`):
+percentiles p1/p10/p50/p90/p99 de luma y saturación de las altas luces. Calle
+estrecha de Madrid: p50 36 / p90 107 / sat 0.46 (refs 32–70 / 90–157 /
+0.19–0.46); plaza: p90 121 / p99 233 / sat 0.38 (ref 4: 128 / 240 / 0.37).
+
+Contenido: las luces del kit (`forja_city::nightlight`) están en ~cd/20 y sus
+emisivos en ~cd/m²/20; los ejemplos convierten las luces con 20/10⁴ y los
+presets aplican el mismo factor a los emisivos (`emissive_scale`). Las
+farolas, faroles de pared y báculos son conos de corte total hacia abajo
+(68°): iluminan el suelo, las fachadas solo reciben el derrame bajo y el
+cielo nada.
 Ejemplos: `NIGHT=1`, `DUSK=1`, `RAIN=1`, `WET=1`, `LEGACY=1` (la noche
 anterior, para comparar) en `city` y `street`.
 
