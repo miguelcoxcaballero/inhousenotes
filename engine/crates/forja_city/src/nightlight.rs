@@ -429,17 +429,21 @@ pub fn select(lights: &[CityLight], eye: Vec3, fwd: Vec3, budget: usize) -> Vec<
 pub fn glow_parts(lights: &[CityLight], eye: Vec3, near: f32, pixel_angle: f32, px: f32) -> Parts<Mat> {
     let mut p: Parts<Mat> = Parts::new();
     for l in lights {
-        if matches!(l.kind, LightKind::Window | LightKind::Shop | LightKind::Flood | LightKind::Accent | LightKind::Fountain) {
-            // Windows, shopfronts and floodlit walls are large emissive
-            // surfaces already.
-            continue;
-        }
         let d = (l.pos - eye).length();
-        if d < near {
+        // Floodlit walls and fountains are large lit surfaces; windows,
+        // shopfronts and signs too until they shrink to a pixel or two, then they
+        // become dimmer points of the carpet of lights.
+        let (min_d, dim) = match l.kind {
+            LightKind::Flood | LightKind::Accent | LightKind::Fountain => continue,
+            LightKind::Window | LightKind::Shop | LightKind::Sign => (near * 4.0, 0.35),
+            _ => (near, 1.0),
+        };
+        if d < min_d {
             continue;
         }
-        let r = (d * pixel_angle * px * 0.5).max(l.size * 0.5);
-        let key = Mat::Glow(to_rgb(l.color));
+        // A point, never a blob: at most a pixel or two, or the lamp head.
+        let r = (d * pixel_angle * px * 0.5).max((l.size * 0.5).min(0.25));
+        let key = Mat::Glow(to_rgb(l.color * dim));
         octahedron(p.get(key), l.pos, r);
     }
     p

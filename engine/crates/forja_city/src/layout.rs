@@ -39,6 +39,8 @@ pub struct CityLayout {
     pub stats: Vec<(String, usize)>,
     /// Street centrelines: `(a, b, width between building lines, district, avenue)`.
     pub streets: Vec<(Vec2, Vec2, f32, usize, bool)>,
+    /// Plazas: `(min, max)` corners and district.
+    pub plazas: Vec<(Vec2, Vec2, usize)>,
 }
 
 #[derive(Clone, Debug)]
@@ -268,6 +270,7 @@ pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLay
                 });
                 let b = Block { min: Vec2::new(x0, *za), max: Vec2::new(x1, *zb), corners, facing, plaza: is_plaza };
                 if is_plaza {
+                    lay.plazas.push((b.min, b.max, di));
                     plaza(&mut lib, &mut lay, &b, d, &mut rng);
                     blocks.push((di, Block { corners: [Corner::Sharp; 4], ..b }));
                     continue;
@@ -974,6 +977,7 @@ fn intersections(lib: &mut ModuleLib, lay: &mut CityLayout, segments: &[Segment]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nightlight::LightKind;
 
     #[test]
     fn block_rings_are_ccw_and_lots_tile_the_perimeter() {
@@ -1019,6 +1023,32 @@ mod tests {
                 assert!((w.y - 0.15).abs() < 3.0);
             }
         }
+    }
+
+    #[test]
+    fn night_lights_the_city_and_day_is_untouched() {
+        let styles = StyleLibrary::builtin();
+        let mut kit = Kit::load(None);
+        let day = build_city(&kit, &styles, &CityConfig::small());
+        kit.set_hour(14.0);
+        let afternoon = build_city(&kit, &styles, &CityConfig::small());
+        assert_eq!(day.out.placements.len(), afternoon.out.placements.len());
+        assert_eq!(day.out.scenes.len(), afternoon.out.scenes.len());
+        let night_mats = ["room_lit", "neon", "shop_sign_lit", "lantern_glass"];
+        let has = |c: &CityLayout, n: &str| c.out.scenes.iter().any(|s| s.materials.iter().any(|m| m.name == n));
+        for n in night_mats {
+            assert!(!has(&day, n), "day city has night material {n}");
+        }
+        kit.set_hour(22.5);
+        let night = build_city(&kit, &styles, &CityConfig::small());
+        // Same city, same layout: only modules and lights differ.
+        assert_eq!(day.out.buildings, night.out.buildings);
+        assert_eq!(day.out.lights.len(), night.out.lights.len());
+        assert!(has(&night, "room_lit") && has(&night, "lantern_glass"));
+        let count = |k: LightKind| night.out.city_lights.iter().filter(|l| l.kind == k).count();
+        assert!(count(LightKind::Window) > 50, "{} lit windows", count(LightKind::Window));
+        assert!(count(LightKind::Road) > 0 && count(LightKind::Wall) > 0);
+        assert!(night.out.city_lights.len() > day.out.city_lights.len() * 3);
     }
 
     #[test]

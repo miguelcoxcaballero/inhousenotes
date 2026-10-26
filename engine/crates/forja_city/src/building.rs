@@ -988,7 +988,7 @@ fn shop_lights(out: &mut CityOut, f: &Frame, key: &ShopKey, u: f32, kind: Premis
             Premises::Shop => nightlight::kelvin(if hash01(f.p(u, 0.0, 0.0), 37) < 0.5 { 3500.0 } else { 4300.0 }),
         };
         let open = 1.0 - [0.0, 0.3, 0.65, 1.0][key.shutter as usize % 4];
-        out.city_lights.push(CityLight::point(LightKind::Shop, f.p(u, (h - 0.55) * 0.6, 0.8), color, 20.0 * open * (w / 3.0), 8.0).with_size(w));
+        out.city_lights.push(CityLight::point(LightKind::Shop, f.p(u, (h - 0.55) * 0.6, 0.8), color, 12.0 * open * (w / 3.0), 8.0).with_size(w));
     }
     let sign_at = f.p(u, h - 0.27, 0.35);
     if key.neon & 15 != 0 {

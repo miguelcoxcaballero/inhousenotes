@@ -83,12 +83,23 @@ fn main() {
     let (m2_eye, m2_at) = street_shot(0, false, 5);
     let (v_eye, v_at) = street_shot(1, true, 4);
     let (v2_eye, v2_at) = street_shot(1, false, 3);
+    // From a corner of each plaza toward the facades across it.
+    let plaza_shot = |district: usize| {
+        let (a, b, _) = city.plazas.iter().find(|p| p.2 == district).copied().unwrap_or((forja_math::Vec2::ZERO, forja_math::Vec2::ONE, 0));
+        let c = (a + b) * 0.5;
+        let eye = forja_math::Vec2::new(c.x, a.y + (b.y - a.y) * 0.12);
+        (Vec3::new(eye.x, 1.7, eye.y), Vec3::new(c.x, 9.0, b.y + 10.0))
+    };
+    let (pm_eye, pm_at) = plaza_shot(0);
+    let (pv_eye, pv_at) = plaza_shot(1);
     let shots = [
         ("boulevard", Vec3::new(-6.0, 1.7, -40.0), Vec3::new(-12.0, 6.0, 20.0)),
         ("madrid_street", m_eye, m_at),
         ("madrid_street2", m2_eye, m2_at),
         ("valencia_street", v_eye, v_at),
         ("valencia_street2", v2_eye, v2_at),
+        ("plaza_madrid", pm_eye, pm_at),
+        ("plaza_valencia", pv_eye, pv_at),
         ("aerial", Vec3::new(-e.x * 0.8, 120.0, -e.y * 1.1), Vec3::new(0.0, 0.0, 0.0)),
     ];
     let only = std::env::var("CITY_SHOTS").ok();
@@ -146,7 +157,7 @@ fn night_hour() -> Option<f32> {
 fn night_env(env: &mut Environment, dark: f32) {
     env.use_ibl = false;
     env.sun_dir = Vec3::new(-0.35, 0.72, -0.55).normalize();
-    env.sun_illuminance = 0.06 + 14.0 * (1.0 - dark).powi(3);
+    env.sun_illuminance = 0.025 + 14.0 * (1.0 - dark).powi(3);
     env.exposure = 0.55 + 3.0 * dark;
     env.bloom = 0.04 + 0.04 * dark;
 }
