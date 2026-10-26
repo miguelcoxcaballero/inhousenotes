@@ -642,13 +642,13 @@ fn flower_bed(p: &mut Parts<Mat>, c: Vec2, r: f32, rng: &mut Rng) {
     let leaves = p.get(Mat::Leaves);
     let n = (r * r * 5.0) as i32;
     for _ in 0..n {
-        let q = c + Vec2::from_angle(rng.range(0.0, 6.28)) * r * rng.f().sqrt();
+        let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
         let s = rng.range(0.14, 0.24);
         leaves.lathe(Vec3::new(q.x, 0.2, q.y), &[(0.0, 0.0), (s, s * 0.4), (s * 0.8, s * 1.1), (0.0, s * 1.4)], 5);
     }
     let reds = p.get(Mat::Flowers(hex(0xd31f2a)));
     for _ in 0..n * 3 {
-        let q = c + Vec2::from_angle(rng.range(0.0, 6.28)) * r * rng.f().sqrt();
+        let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
         let y = 0.2 + rng.range(0.2, 0.34);
         reds.aabox(Vec3::new(q.x - 0.035, y, q.y - 0.035), Vec3::new(q.x + 0.035, y + 0.05, q.y + 0.035), 1.0);
     }
@@ -796,7 +796,7 @@ fn street_furniture(lib: &mut ModuleLib, lay: &mut CityLayout, s: &Segment, d: &
                 } else {
                     let qt = at(t, side * (road + 1.0));
                     place(lay, grate, qt, 0.15, dir);
-                    lay.props.push((PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, 6.28)), Vec3::new(qt.x, 0.14, qt.y))));
+                    lay.props.push((PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)), Vec3::new(qt.x, 0.14, qt.y))));
                 }
                 t += 9.0;
                 k += 1;
