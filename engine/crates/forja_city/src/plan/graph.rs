@@ -214,13 +214,19 @@ impl StreetGraph {
             };
             let prof = lib.get(pid);
             let fallback = prof.default_width();
+            // Canonical direction (by endpoints on the mm grid), so thinning and
+            // resampling do not depend on how the way was drawn.
+            let raw: Vec<(Vec2, f32)> = way.line.iter().enumerate().filter(|(_, p)| p.is_finite()).map(|(i, p)| (*p, way.width_at(i, fallback).max(0.0))).collect();
+            let backwards = match (raw.first(), raw.last()) {
+                (Some(f), Some(l)) if mm(f.0) != mm(l.0) => mm(f.0) > mm(l.0),
+                _ => raw.len() > 2 && mm(raw[1].0) > mm(raw[raw.len() - 2].0),
+            };
+            let raw: Vec<(Vec2, f32)> = if backwards { raw.into_iter().rev().collect() } else { raw };
+            let oneway = if backwards { -way.oneway.signum() } else { way.oneway.signum() };
             let mut pts: Vec<(Vec2, f32)> = Vec::new();
-            for (i, p) in way.line.iter().enumerate() {
-                if !p.is_finite() {
-                    continue;
-                }
-                let w = way.width_at(i, fallback).max(0.0);
-                let last = i + 1 == way.line.len();
+            for (i, &(p, w)) in raw.iter().enumerate() {
+                let p = &p;
+                let last = i + 1 == raw.len();
                 match pts.last() {
                     Some((q, _)) if q.distance(*p) < 0.5 && !last => continue,
                     Some((q, _)) if q.distance(*p) < 0.5 && last && pts.len() > 1 => {
@@ -259,7 +265,7 @@ impl StreetGraph {
             }
             let name = way.name.as_ref().and_then(|n| names.binary_search(n).ok()).unwrap_or(0) as u16;
             let carriage = way.carriageway.map(|c| (c.max(0.0) * 1000.0).round() as i64).unwrap_or(-1);
-            pre.push(Pre { pts: rp, w: rw, attr: Attr { profile: pid, carriage, name, zone: way.zone }, rank: prof.rank, oneway: way.oneway.signum(), osm: way.osm });
+            pre.push(Pre { pts: rp, w: rw, attr: Attr { profile: pid, carriage, name, zone: way.zone }, rank: prof.rank, oneway, osm: way.osm });
         }
         // 2. Split points per segment: crossings and vertices snapped onto
         // segments (T-junctions, collinear overlaps).
@@ -289,8 +295,12 @@ impl StreetGraph {
                     if wa == wb && sa.abs_diff(sb) <= 1 || !seen.insert(pair) {
                         continue;
                     }
-                    let (p1, q1) = (pre[wa].pts[sa], pre[wa].pts[sa + 1]);
-                    let (p2, q2) = (pre[wb].pts[sb], pre[wb].pts[sb + 1]);
+                    // Geometric order of the pair, so a crossing rounds to the same
+                    // millimetre whatever the order of the ways.
+                    let seg = |w: usize, k: usize| (pre[w].pts[k], pre[w].pts[k + 1]);
+                    let ((wa, sa), (wb, sb)) = if seg(wa, sa) <= seg(wb, sb) { ((wa, sa), (wb, sb)) } else { ((wb, sb), (wa, sa)) };
+                    let (p1, q1) = seg(wa, sa);
+                    let (p2, q2) = seg(wb, sb);
                     let (o1, o2, o3, o4) = (orient(p1, q1, p2), orient(p1, q1, q2), orient(p2, q2, p1), orient(p2, q2, q1));
                     if o1.signum() * o2.signum() < 0 && o3.signum() * o4.signum() < 0 {
                         // Proper crossing.
@@ -447,7 +457,7 @@ impl StreetGraph {
                 e.oneway = -e.oneway;
             }
             let k = (pts[e.u], pts[e.v]);
-            let score = |e: &Edge| (e.rank, ((e.wu.max(e.wv)) * 1000.0) as i64, e.attr.clone(), e.oneway, std::cmp::Reverse(e.osm));
+            let score = |e: &Edge| (e.rank, ((e.wu.max(e.wv)) * 1000.0) as i64, e.attr.clone(), e.oneway, std::cmp::Reverse(e.osm), (e.wu * 1000.0) as i64, (e.wv * 1000.0) as i64);
             match by_pair.get(&k) {
                 Some(old) if score(old) >= score(&e) => {}
                 _ => {
