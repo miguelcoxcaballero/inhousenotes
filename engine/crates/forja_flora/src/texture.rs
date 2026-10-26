@@ -707,15 +707,23 @@ pub fn foliage_atlas(st: &FoliageStyle, seed: u32) -> FoliageAtlas {
 
 fn finish_atlas(sp: &Species, mut l: Layers, slots: Vec<(SlotKind, Rect)>) -> FoliageAtlas {
     l.col.dilate();
+    let albedo = l.col.to_texture(&format!("{}_foliage_albedo", sp.id), true);
+    drop(l.col);
+    // Data maps at half resolution, built directly at that size.
     let n = ATLAS;
-    let normal = normal_map(&l.height, n, n, 3.0, false);
-    let orm: Vec<[f32; 4]> = l.rough.iter().map(|r| [1.0, r.clamp(0.2, 1.0), 0.0, 1.0]).collect();
     let n2 = n / 2;
+    let down = |v: &[f32]| -> Vec<f32> { (0..n2 * n2).map(|i| { let (x, y) = (i % n2 * 2, i / n2 * 2); (v[y * n + x] + v[y * n + x + 1] + v[(y + 1) * n + x] + v[(y + 1) * n + x + 1]) * 0.25 }).collect() };
+    let h2 = down(&l.height);
+    let r2 = down(&l.rough);
+    drop(l.height);
+    drop(l.rough);
+    let normal = normal_map(&h2, n2, n2, 1.5, false);
+    let orm: Vec<[f32; 4]> = r2.iter().map(|r| [1.0, r.clamp(0.2, 1.0), 0.0, 1.0]).collect();
     FoliageAtlas {
         tex: TextureSet {
-            albedo: l.col.to_texture(&format!("{}_foliage_albedo", sp.id), true),
-            normal: to_tex(half(&normal, n, n), n2, n2, &format!("{}_foliage_normal", sp.id), false),
-            orm: to_tex(half(&orm, n, n), n2, n2, &format!("{}_foliage_orm", sp.id), false),
+            albedo,
+            normal: to_tex(normal, n2, n2, &format!("{}_foliage_normal", sp.id), false),
+            orm: to_tex(orm, n2, n2, &format!("{}_foliage_orm", sp.id), false),
         },
         slots,
     }
