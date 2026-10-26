@@ -293,7 +293,7 @@ period = "19th_century"
 style = "Neoclassical, Colosseum-inspired brick arcades"
 built = "1851-1859"
 architect = "Sebastián Monleón"
-osm = []
+osm = ["relation/12942182"]
 pilot = true
 why = "Strong in all lists: 384-arch polygonal brick bullring beside the Estació del Nord."
 
