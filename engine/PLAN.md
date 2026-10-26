@@ -201,7 +201,34 @@ Las capturas (`render_to_image`) acumulan 8 frames con jitter (más uno de
 calentamiento para SSR) y convergen a una imagen supermuestreada;
 `render_live_to_image` muestra un frame de juego con la historia intacta.
 Interruptores: `FORJA_FX=-taa,-ao,-contact,-ssr`, `FORJA_CAPTURE_FRAMES=n`,
-`FORJA_DEBUG=ao|shadow|ssr`.
+`FORJA_DEBUG=ao|shadow|ssr`, `FORJA_SHADER_DIR=crates/forja_render/src/shaders`
+(lee los WGSL del disco: iterar shaders sin recompilar).
+
+### 5.5 Noche, anochecer y lluvia
+
+Unidades físicas escaladas (`lights.rs`): 1 unidad = 10⁴ lux / 10⁴ cd/m²; el
+sol del mediodía son ~10 unidades. Las luces se dan en lúmenes o candelas
+(`Light::point`, `Light::spot`, `candela`) con color por temperatura
+(`kelvin`, `LightColor::sodium/warm/led`). Presets `Environment::night()`,
+`dusk()`, `rainy_night()` y `with_wetness()`; por defecto todo apagado (el
+aspecto diurno no cambia: preexposición 1, bloom y tonemap idénticos).
+
+| Pase | Técnica | ms (1440p, RTX 3070) |
+|---|---|---|
+| Luces en CPU | Culling por frustum, orden por distancia, empaquetado (64 B/luz) | 0.05–0.3 ms CPU por 1000–5000 luces |
+| Clusters | Compute: teselas de 64 px × 32 cortes exponenciales (2–3000 m) + una columna por tesela para la niebla; esfera/cono (Wronski) contra cada cluster; ≤ 96 luces por cluster (las más cercanas) | 0.1–0.2 |
+| Luces locales | Inverso del cuadrado con radio de fuente, ventana suave, conos de foco, GGX ensanchado por el tamaño de la fuente; hasta 4 focos con sombra (1024², PCF 5 tomas) | 0.3–1.0 (+0.2 por foco con sombra) |
+| Mojado | Lagarde: porosidad → albedo más oscuro y menos rugosidad; charcos por ruido en XZ con normal plana; SSR y especular de las farolas dan los reflejos alargados | < 0.1 |
+| Halo en niebla | Integración equiangular (Kulla-Fajardo) de cada luz cercana (< `scatter_distance`) en la columna de la tesela, fase Henyey-Greenstein; también en el cielo | 0.3–0.8 |
+| Sprites de luces | Punto gaussiano que conserva la intensidad, ≥ 1.5 px, aparece a partir de 50 m: las farolas lejanas siguen siendo puntos en vistas aéreas | < 0.05 |
+| Cielo nocturno | Cielo de luna (misma atmósfera ×2.5·10⁻⁶), cúpula de contaminación lumínica, estrellas | < 0.05 |
+| Adaptación | Histograma de luminancia en compute (¼ de píxeles), media entre percentiles 50–97 %, clave de Krawczyk (la noche sigue oscura), adaptación exponencial; iluminación preexpuesta (precisión f16) | 0.05 |
+| Post | Bloom con límite por píxel y peso por mip (halos ceñidos, sin velo); desplazamiento escotópico (Purkinje) en zonas < 3 cd/m² | 0 extra |
+
+Emisivos: el kit de la ciudad los autoriza ~20× más brillantes de lo físico
+para leerse al sol; los presets nocturnos aplican `emissive_scale = 0.05`.
+Ejemplos: `NIGHT=1`, `DUSK=1`, `RAIN=1`, `WET=1`, `LEGACY=1` (la noche
+anterior, para comparar) en `city` y `street`.
 
 ## 6. Gameplay modular (`forja_gameplay`)
 

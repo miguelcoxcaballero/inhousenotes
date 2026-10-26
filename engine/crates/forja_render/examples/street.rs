@@ -2,7 +2,7 @@
 //! level: `cargo run --release -p forja_render --example street -- out_prefix`
 //! `NIGHT=1` / `DUSK=1` / `RAIN=1` / `WET=1` light it at night with street
 //! lamps, shop windows spilling light, neon signs and a low `along` shot
-//! down the (wet) road.
+//! down the (wet) road. `STREET_SHOTS=wide,along` renders only those shots.
 
 use std::path::PathBuf;
 
@@ -88,7 +88,7 @@ fn main() {
                     prev = q;
                 }
             }
-            lamps.push(Light::point(Vec3::new(cx + 6.2, 3.6, 0.9), Vec3::new(3.2, 0.12, 0.08), 9000.0).with_range(12.0).with_source_radius(1.5));
+            lamps.push(Light::point(Vec3::new(cx + 6.2, 3.6, 0.9), Vec3::new(3.2, 0.12, 0.08), 2500.0).with_range(12.0).with_source_radius(1.5));
             cx += 70.0;
         }
         for (j, (col, light)) in [([40u8, 255u8, 90u8], Vec3::new(0.1, 1.3, 0.25)), ([60, 230, 255], Vec3::new(0.12, 1.0, 1.6))].iter().enumerate() {
@@ -135,7 +135,11 @@ fn main() {
     }
     let legacy = suffix == "_before";
     let points: Vec<(Vec3, Vec3)> = frame.local_lights.iter().map(|l| (l.position, l.color)).collect();
+    let only = std::env::var("STREET_SHOTS").ok();
     for (name, eye, at) in shots {
+        if only.as_deref().is_some_and(|o| !o.split(',').any(|n| n.trim() == name)) {
+            continue;
+        }
         if legacy {
             frame.local_lights.clear();
             frame.lights = night::legacy_lights(&points, flip.transform_point3(eye));

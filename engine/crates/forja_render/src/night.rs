@@ -76,21 +76,21 @@ impl Environment {
     /// a light haze and distant light sprites. No sun shadows (the moon is
     /// ~100x dimmer than the street lighting).
     pub fn night() -> Self {
-        let pollution = crate::lights::kelvin(2300.0);
+        let pollution = crate::lights::kelvin(3000.0);
         Self {
             // The "sun" is the moon: the same atmosphere scattering at
             // 1/400000 of the sunlight gives the blue moonlit sky.
             sun_dir: Vec3::new(-0.35, 0.55, -0.45).normalize(),
             sun_illuminance: 14.0 * 2.5e-6,
             exposure: 1500.0,
-            fog_density: 0.0009,
+            fog_density: 0.0006,
             fog_falloff: 0.01,
             bloom: 0.05,
             vignette: 0.3,
             shadow_distance: 0.0,
             use_ibl: false,
             auto_exposure: Some(EyeAdaptation::default()),
-            night_sky: NightSky { zenith: Vec3::new(0.55, 0.7, 1.0) * nits(0.004), glow: pollution * nits(0.06), glow_height: 0.12, stars: nits(0.5) },
+            night_sky: NightSky { zenith: Vec3::new(0.45, 0.62, 1.0) * nits(0.006), glow: pollution * nits(0.045), glow_height: 0.1, stars: nits(0.08) },
             ambient_fill: crate::lights::kelvin(2600.0) * nits(0.03),
             light_scatter: 1.0,
             light_sprites: 1.0,

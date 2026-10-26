@@ -74,7 +74,7 @@ fn main() {
         for p in &ring {
             let out_dir = Vec3::new(p.x - plaza.x, 0.0, p.z - plaza.z).normalize_or_zero();
             let at = Vec3::new(p.x, 0.4, p.z) + out_dir * 1.0;
-            frame.local_lights.push(night::floodlight(at, at + out_dir * 22.0 + Vec3::Y * 13.0, 14000.0));
+            frame.local_lights.push(night::floodlight(at, at + out_dir * 22.0 + Vec3::Y * 13.0, 14000.0).with_scatter(0.25));
         }
         if fountain.is_some() {
             for k in 0..6 {
