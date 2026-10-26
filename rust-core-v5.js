@@ -541,6 +541,33 @@
         if (!plan) throw new Error('Rust PNG cache plan failed');
         return plan;
     };
+    // Library catalogue (rust-core/src/offline/library.rs): columnar JSON projections in, Uint32Array indexes out.
+    const libraryCall = (name, value) => {
+        offlineCore(); codecs();
+        const body = callBytes(name, textEncoder.encode(JSON.stringify(value)));
+        return new Uint32Array(body.buffer, body.byteOffset, body.length >> 2);
+    };
+    api.offlineLibrary = Object.freeze({
+        // -> {identity, kept, overlay, patches}: identity means every record stays as it is; otherwise the source
+        // indexes that survive, their remote overlay (or 0xFFFFFFFF), and (keptPosition, parentPosition, aliasTarget) triples
+        merge(columns) {
+            const words = libraryCall('offline.library_merge', columns), kept = words[0], patches = words[1];
+            if (words[2]) return { identity: true, kept: words.subarray(3, 3), overlay: words.subarray(3, 3), patches: words.subarray(3, 3) };
+            return { identity: false, kept: words.subarray(3, 3 + kept), overlay: words.subarray(3 + kept, 3 + 2 * kept), patches: words.subarray(3 + 2 * kept, 3 + 2 * kept + 3 * patches) };
+        },
+        // -> positions whose timestamp text only JavaScript can parse (answer them with `touch`)
+        load(columns) { return libraryCall('offline.library_load', columns); },
+        touch(changes) { libraryCall('offline.library_touch', changes); },
+        ranks(values) { libraryCall('offline.library_ranks', values); },
+        names(values) { libraryCall('offline.library_names', values); },
+        folder(parent, needle, local) { return libraryCall('offline.library_folder', { parent, needle, local }); },
+        sort(columns) { return libraryCall('offline.library_sort', columns); },
+        recents(columns) { return libraryCall('offline.library_recents', columns); },
+        home(quick) {
+            const words = libraryCall('offline.library_home', { quick }), a = words[0], b = words[1], c = words[2];
+            return [words.subarray(3, 3 + a), words.subarray(3 + a, 3 + a + b), words.subarray(3 + a + b, 3 + a + b + c)];
+        }
+    });
     // <<< stream:offline
     // >>> stream:docio (only this area edits between its markers)
     // <<< stream:docio
