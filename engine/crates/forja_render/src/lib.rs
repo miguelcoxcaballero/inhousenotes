@@ -2510,9 +2510,23 @@ mod tests {
 
     #[test]
     fn frame_uniforms_match_wgsl_layout() {
-        // WGSL uniform structs are 16-byte aligned; `lights` follows the
-        // vec4 fields directly.
-        assert_eq!(std::mem::size_of::<FrameUniforms>() % 16, 0);
-        assert_eq!(std::mem::offset_of!(FrameUniforms, lights) % 16, 0);
+        // Every field of `Frame` in frame.wgsl is a vec4, a mat4 or an array
+        // of them (no padding), so its size is the sum of the field sizes.
+        let src = FRAME.split("struct Frame {").nth(1).and_then(|s| s.split("};").next()).expect("struct Frame");
+        let mut size = 0usize;
+        for line in src.lines().map(|l| l.split("//").next().unwrap_or("").trim()).filter(|l| !l.is_empty()) {
+            let ty = line.split(':').nth(1).expect("field").trim().trim_end_matches(',');
+            size += match ty {
+                "vec4<f32>" => 16,
+                "mat4x4<f32>" => 64,
+                t if t.starts_with("array<mat4x4<f32>,") => 64 * t.trim_end_matches('>').rsplit(',').next().unwrap().trim().parse::<usize>().unwrap(),
+                t if t.starts_with("array<vec4<f32>,") => 16 * t.trim_end_matches('>').rsplit(',').next().unwrap().trim().parse::<usize>().unwrap(),
+                t => panic!("unexpected WGSL field type {t}"),
+            };
+        }
+        assert_eq!(std::mem::size_of::<FrameUniforms>(), size);
+        assert_eq!(std::mem::size_of::<lights::GpuLight>(), 64);
+        assert_eq!(lights::CLUSTER_STRIDE, 49, "CLUSTER_STRIDE in common.wgsl and cluster.wgsl");
+        assert!(COMMON.contains("const CLUSTER_STRIDE: u32 = 49u;"));
     }
 }

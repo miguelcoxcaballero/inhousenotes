@@ -309,7 +309,7 @@ fn night_sky(d: vec3<f32>) -> vec3<f32> {
         let el = (center.y - 0.5) * PI;
         let sd = vec3<f32>(cos(el) * sin(phi), sin(el), cos(el) * cos(phi));
         let ang = acos(clamp(dot(sd, d), -1.0, 1.0)) * frame.proj_params.w;
-        let mag = pow(h2.x, 18.0);
+        let mag = pow(h2.x, 40.0);
         // Stars fade into the light-pollution glow near the horizon.
         let vis = smoothstep(0.05, 0.35, d.y);
         c += vec3<f32>(0.9, 0.95, 1.1) * (mag * exp(-ang * ang * 1.2) * frame.fill.w * vis);

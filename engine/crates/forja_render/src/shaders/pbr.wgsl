@@ -428,7 +428,7 @@ fn wet_surface(albedo: vec3<f32>, rough: f32, metallic: f32, n: vec3<f32>, ng: v
     o.albedo = albedo * mix(1.0, 0.42, wet * porosity);
     o.rough = mix(rough, min(rough, mix(0.1, 0.24, porosity)), wet);
     // Water fills the small relief of the normal map.
-    o.n = normalize(mix(n, ng, wet * 0.6));
+    o.n = normalize(mix(n, ng, wet * (0.6 + 0.35 * porosity)));
     if (frame.wet.y > 0.0 && up > 0.9) {
         let th = 1.0 - 0.5 * frame.wet.y;
         let m = smoothstep(th - 0.05, th + 0.05, puddle_noise(p.xz)) * frame.wet.x * smoothstep(0.9, 0.98, up);
