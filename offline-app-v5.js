@@ -5,6 +5,32 @@
     function currentId() {return state.offlineLocalId || state.driveFileId || '';}
     function metadata() {return {id:state.driveFileId,headRevisionId:state.driveHeadRevisionId,version:state.driveRevisionVersion,
         modifiedTime:state.driveLastKnownModified?new Date(state.driveLastKnownModified).toISOString():null};}
+    // Immutable packed pages are reused only within one editor session and
+    // mutation generation. Bound retained snapshots by both bytes and pages.
+    const pageSnapshots = new Map();
+    let pageSnapshotSession = null, pageSnapshotBytes = 0;
+    const snapshotPageFields = ['pageId','strokes','images','legacyCoverStrokes',
+        'deletedStrokeIds','deletedStrokeStamps','backgroundImage','backgroundSource',
+        'templateKind','pdfPageIndex','pageWidth','pageHeight','sidePanel','unloaded'];
+    function pageSnapshotKey(page, index) {
+        return [pageDirtyGeneration.get(index) || 0,
+            ...snapshotPageFields.map(key=>page?.[key]), page?.strokes?.length,
+            page?.images?.length, page?.legacyCoverStrokes?.length];
+    }
+    function rememberPageSnapshot(owner, key, snapshot) {
+        const previous = pageSnapshots.get(owner);
+        if (previous) { pageSnapshotBytes -= previous.bytes; pageSnapshots.delete(owner); }
+        const bytes = (snapshot.__inkCheckpoint?.bytes?.byteLength || 0)
+            + (snapshot.backgroundImage?.length || 0) * 2
+            + (snapshot.images || []).reduce((n,image)=>n+(image.src?.length || 0)*2+256,0)
+            + [snapshot.strokes,snapshot.legacyCoverStrokes].reduce((n,strokes)=>n+(strokes || []).reduce((m,stroke)=>m+512+(Array.isArray(stroke.points)?stroke.points.length*48:0),0),0);
+        if (bytes > 16 * 1024 * 1024) return;
+        while (pageSnapshots.size && (pageSnapshots.size >= 64 || pageSnapshotBytes + bytes > 16 * 1024 * 1024)) {
+            const oldest = pageSnapshots.keys().next().value;
+            pageSnapshotBytes -= pageSnapshots.get(oldest).bytes; pageSnapshots.delete(oldest);
+        }
+        pageSnapshots.set(owner,{key,snapshot,bytes}); pageSnapshotBytes += bytes;
+    }
     async function capture() {
         const id=currentId();
         if(!id || !state.pages.length || driveOpenInProgress || state.driveCanEdit===false)return null;
@@ -14,6 +40,9 @@
         const existing=L.record(id);
         if(!documentSessionActivated && existing?.available && existing.session!==getOfflineDocumentSessionToken())return null;
         const token=getDocumentSessionToken(),version=driveContentVersion;
+        if (pageSnapshotSession !== token) {
+            pageSnapshots.clear(); pageSnapshotBytes = 0; pageSnapshotSession = token;
+        }
         const pages=[];
         const assertCurrent=()=>{
             if(token!==getDocumentSessionToken()||version!==driveContentVersion)
@@ -28,11 +57,18 @@
         // notebook in one main-thread task between two pen contacts.
         for(let i=0;i<state.pages.length;i++){
             await yieldCapture();
+            const owner=state.pages[i],key=pageSnapshotKey(owner,i),cached=pageSnapshots.get(owner);
+            if (cached && cached.key.every((value,index)=>value===key[index])) {
+                pageSnapshots.delete(owner); pageSnapshots.set(owner,cached);
+                pages.push(cached.snapshot); continue;
+            }
             const page=await loadPageDataForExport(i);assertCurrent();
             const copy=buildTimelineSnapshotFromPages([{...page,strokes:[],images:[],legacyCoverStrokes:null}])[0];
             if(typeof structuredClone==='function' && window.InhouseDocumentProcessing){
                 const packed=await packInkPageForStorage({...copy,strokes:page.strokes||[],images:page.images||[],legacyCoverStrokes:page.legacyCoverStrokes||null},token,()=>{assertCurrent();return false;},true);
-                assertCurrent();pages.push(packed);continue;
+                assertCurrent();
+                if (!packed) throw createAbortError('Page checkpoint interrupted');
+                rememberPageSnapshot(owner,key,packed);pages.push(packed);continue;
             }
             copy.legacyCoverStrokes=cloneTimelineValue(page.legacyCoverStrokes||null);
             let sliceStarted=performance.now();
@@ -40,7 +76,7 @@
                 copy[kind].push(cloneTimelineValue(item));
                 if(performance.now()-sliceStarted>=3){await yieldCapture();sliceStarted=performance.now();}
             }
-            pages.push(copy);
+            assertCurrent();rememberPageSnapshot(owner,key,copy);pages.push(copy);
         }
         assertCurrent();
         const snapshot={pages,collabStructure:getCollabStructureSnapshot(),collabFields:getCollabFieldSnapshot(),

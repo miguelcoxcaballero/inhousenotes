@@ -329,7 +329,9 @@
         );
         const STROKE_OP_COMPACT_THRESHOLD = 200;
         const STROKE_OP_FLUSH_BATCH_SIZE = 40;
-        const DRIVE_SYNC_IDLE_DELAY = 250;
+        const DOCUMENT_SAVE_IDLE_MS = 180;
+        function getDocumentSaveIdleWindow() { return DOCUMENT_SAVE_IDLE_MS; }
+        const DRIVE_SYNC_IDLE_DELAY = 40;
         // Keep the pen path completely free, but start preparing the next Drive
         // revision almost as soon as the gesture ends. 800 ms made a quick
         // "write, then leave" action pay the whole PDF build on the exit screen.
@@ -4468,7 +4470,7 @@
                 if (paintFrame) { cancelAnimationFrame(paintFrame); paintFrame = 0; }
                 activePointerId = null;
                 activeDrawingPointers.delete(canvas);
-                if (isDrawing) armPenWritingIdleTimer(1200);
+                if (isDrawing) armPenWritingIdleTimer(DOCUMENT_SAVE_IDLE_MS);
                 if (canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
                 if (state.isReadOnly) {
                     if (currentStroke && typeof publishLiveStrokePreview === 'function') {
@@ -7417,11 +7419,9 @@
         // driveFetch wraps fetch() with automatic token injection, 401-retry,
         // and request timeout. All Drive API calls go through this function.
         async function driveFetch(url, options = {}, _retried = false) {
-            const token = await ensureDriveToken(false);
-            const headers = new Headers(options.headers || {});
-            headers.set('Authorization', `Bearer ${token}`);
-
-            // Add timeout to prevent hanging requests
+            // The deadline includes authentication. Previously a stalled
+            // token refresh could leave "Checking Drive" pending forever
+            // before the request's timeout was even started.
             const timeoutMs = options.timeout || 60000;
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -7436,6 +7436,9 @@
             }
 
             try {
+                const token = await waitForDrivePreparation(ensureDriveToken(false), controller.signal);
+                const headers = new Headers(options.headers || {});
+                headers.set('Authorization', `Bearer ${token}`);
                 const fetchOptions = { ...options };
                 const acceptedStatuses = Array.isArray(fetchOptions.acceptStatuses)
                     ? fetchOptions.acceptStatuses
@@ -7472,10 +7475,9 @@
                     driveAccessToken = null;
                     driveTokenExpiry = 0;
                     try {
-                        await ensureDriveToken(false);
-                        return driveFetch(url, options, true);
+                        return await driveFetch(url, options, true);
                     } catch (refreshErr) {
-                        markDriveAuthNeedsReconnect(refreshErr?.message || '401 refresh failed');
+                        if (refreshErr?.name !== 'AbortError') markDriveAuthNeedsReconnect(refreshErr?.message || '401 refresh failed');
                         throw refreshErr;
                     }
                 }
@@ -22043,9 +22045,9 @@
             };
         }
 
-        // Journal writes and page compaction wait through the gaps between
-        // letters. Explicit exit checkpoints bypass the editing pause.
-        const PAGE_CHECKPOINT_IDLE_MS = 1200;
+        // Persist promptly after input ends. Active contacts always block the
+        // queue; a new contact interrupts workers. Exit checkpoints bypass it.
+        const PAGE_CHECKPOINT_IDLE_MS = DOCUMENT_SAVE_IDLE_MS;
         async function packInkPageForStorage(page, sessionToken, isStale, normalizedInput = false) {
             const sanitized = normalizedInput ? page : sanitizePageForStorage(page);
             const {strokes, legacyCoverStrokes, ...metadata} = sanitized;
@@ -24132,6 +24134,7 @@
                 pendingStrokeOpSequence.toString(36),
                 Math.random().toString(36).slice(2, 7)
             ].join('-');
+            invalidatePageMutationCaches(pageIndex);
             if (!options.skipDriveVersion) bumpDriveContentVersion();
             const existing = pendingStrokeOps.get(pageIndex) || [];
             existing.push(cloned);
@@ -24184,7 +24187,7 @@
             let pausedByAbort = false;
             try {
                 while (strokeOpsQueue.length > 0) {
-                    if (!await waitForHotInteractionToSettle({abortSignal, sessionToken, windowMs:1200})) { pausedByAbort = true; return false; }
+                    if (!await waitForHotInteractionToSettle({abortSignal, sessionToken, windowMs:DOCUMENT_SAVE_IDLE_MS})) { pausedByAbort = true; return false; }
                     if (abortSignal?.aborted || !isDocumentSessionTokenValid(sessionToken)) {
                         pausedByAbort = true;
                         return false;
@@ -24258,7 +24261,7 @@
             const abortSignal = options.abortSignal || null;
             const structureToken = options.structureToken || null;
             if (abortSignal?.aborted) return false;
-            if (!await waitForHotInteractionToSettle({abortSignal, sessionToken:getDocumentSessionToken(), windowMs:1200})) return false;
+            if (!await waitForHotInteractionToSettle({abortSignal, sessionToken:getDocumentSessionToken(), windowMs:DOCUMENT_SAVE_IDLE_MS})) return false;
 
             // A page-order owner may checkpoint the queue under its lock.
             // Everyone else must leave the numeric page mapping untouched.
@@ -24337,6 +24340,15 @@
             });
         }
 
+        function invalidatePageMutationCaches(pageIndex) {
+            pageMutationGeneration += 1;
+            pageDirtyGeneration.set(pageIndex, pageMutationGeneration);
+            const page = state.pages[pageIndex];
+            if (page) page.scrollPreviewDirty = true;
+            pdfExportCache.delete(pageIndex);
+            pdfLibOverlayCache.delete(pageIndex);
+        }
+
         function markPageDirty(pageIndex, mode = 'full') {
             if (!Number.isFinite(pageIndex)) return;
             if (pageIndex < 0 || pageIndex >= state.pages.length) return;
@@ -24350,11 +24362,7 @@
             const prevMode = pageDirtyMode.get(pageIndex) || 'stroke';
             pageDirtyMode.set(pageIndex, (prevMode === 'full' || mode === 'full') ? 'full' : 'stroke');
             pageDirty.add(pageIndex);
-            pageMutationGeneration += 1;
-            pageDirtyGeneration.set(pageIndex, pageMutationGeneration);
-            if(page)page.scrollPreviewDirty=true;
-            pdfExportCache.delete(pageIndex);
-            pdfLibOverlayCache.delete(pageIndex);
+            invalidatePageMutationCaches(pageIndex);
             // During interaction, just mark dirty — flushDeferredSavesAfterInteraction
             // will trigger scheduleDriveSync once the user lifts their finger/pen.
             if (!hasSmoothInteraction()) {
@@ -24877,7 +24885,7 @@
             penWritingIdleTimer = setTimeout(tick, delay);
         }
 
-        let penWritingIdleDelay = 1200;
+        let penWritingIdleDelay = DOCUMENT_SAVE_IDLE_MS;
         function notePenActivity() {
             const wasWriting = isPenWriting;
             noteRecentUserActivity();
@@ -24885,7 +24893,7 @@
             // Only update status indicator on the first pen event of a stroke,
             // not on every pointermove — avoids DOM thrashing during drawing.
             if (!wasWriting) {
-                penWritingIdleDelay = 1200;
+                penWritingIdleDelay = DOCUMENT_SAVE_IDLE_MS;
                 showPendingSaveStatus();
             }
             const now = Date.now();
@@ -24971,7 +24979,7 @@
             }
         }
 
-        function schedulePreparedDrivePdf(delay = 180) {
+        function schedulePreparedDrivePdf(delay = 40) {
             if (!state.driveAutosave || state.isReadOnly || !driveAccessToken) return;
             if (!state.pages.length || driveContentVersion === driveUploadedContentVersion) return;
             if (preparedDrivePdf?.version === driveContentVersion
@@ -25186,7 +25194,10 @@
                 state.driveRevisionVersion
             );
             if (incomingRevision && currentRevision && incomingRevision === currentRevision) {
-                return versionComparison === null || versionComparison >= 0;
+                // Presence/properties can advance the file version while the
+                // PDF head remains identical. Its verified content is still
+                // current; retain newer metadata without restarting the merge.
+                return true;
             }
             if (incomingRevision && currentRevision && incomingRevision !== currentRevision) {
                 if (versionComparison !== null) return versionComparison > 0;
@@ -30981,7 +30992,7 @@
                 await scheduler.postTask(() => {}, { priority: 'background', ...(options.signal ? {signal:options.signal} : {}) });
             } else await new Promise(resolve => setTimeout(resolve, 0));
             if (!await waitForHotInteractionToSettle({abortSignal:options.signal,
-                sessionToken:options.sessionToken, windowMs:1200})) {
+                sessionToken:options.sessionToken, windowMs:DOCUMENT_SAVE_IDLE_MS})) {
                 assertCurrent();
                 throw createAbortError('Background document work interrupted');
             }
