@@ -1116,6 +1116,8 @@ def step_catastro(ctx, sel, point_ll):
             try:
                 LOG(f"  catastro facade photo {rc}")
                 data = ctx["http"].get(CATASTRO_FACHADA.format(rc))
+                if not data:
+                    raise RuntimeError("no facade photo published (empty response)")
                 im = Image.open(io.BytesIO(data))
                 im.load()
                 if im.width < 200 or im.height < 200:
@@ -2387,7 +2389,7 @@ def main(argv=None):
     if dup:
         ap.error(f"duplicate slugs in list: {sorted(dup)}")
     for lm in landmarks:
-        if not re.match(r"^[a-z0-9][a-z0-9-]*$", lm.get("slug", "")):
+        if not re.match(r"^[a-z0-9][a-z0-9_-]*$", lm.get("slug", "")):
             ap.error(f"bad slug {lm.get('slug')!r}")
     only = [s.strip() for s in args.only.split(",") if s.strip()]
     if only:
