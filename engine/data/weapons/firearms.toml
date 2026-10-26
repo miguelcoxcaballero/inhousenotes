@@ -1,0 +1,111 @@
+# Weapon tuning. Damage is per pellet; spread is the cone half-angle.
+
+[[weapon]]
+id = "fists"
+name = "Fists"
+category = "melee"
+mode = "semi"
+damage = 15.0
+rpm = 90.0
+magazine = 1
+reload_time = 0.0
+range = 1.6
+falloff_start = 1.6
+spread_hip_deg = 0.0
+spread_aim_deg = 0.0
+impulse = 120.0
+
+[[weapon]]
+id = "service_pistol"
+name = "Service Pistol"
+category = "pistol"
+mode = "semi"
+damage = 26.0
+rpm = 400.0
+magazine = 12
+reload_time = 1.4
+ammo = "ammo_9mm"
+range = 120.0
+falloff_start = 30.0
+falloff_min = 0.5
+spread_hip_deg = 2.2
+spread_aim_deg = 0.6
+bloom_deg = 0.6
+recoil_deg = 1.8
+model = "polyhaven_service_pistol/service_pistol_1k.gltf"
+
+[[weapon]]
+id = "compact_smg"
+name = "Compact SMG"
+category = "smg"
+mode = "auto"
+damage = 18.0
+rpm = 900.0
+magazine = 30
+reload_time = 1.8
+ammo = "ammo_9mm"
+range = 90.0
+falloff_start = 20.0
+falloff_min = 0.4
+spread_hip_deg = 3.5
+spread_aim_deg = 1.4
+bloom_deg = 0.35
+bloom_recovery = 8.0
+recoil_deg = 0.8
+
+[[weapon]]
+id = "pump_shotgun"
+name = "Pump Shotgun"
+category = "shotgun"
+mode = "semi"
+damage = 12.0
+pellets = 8
+rpm = 70.0
+magazine = 8
+reload_time = 3.0
+ammo = "ammo_12g"
+range = 40.0
+falloff_start = 8.0
+falloff_min = 0.2
+spread_hip_deg = 5.0
+spread_aim_deg = 4.0
+recoil_deg = 4.5
+impulse = 160.0
+
+[[weapon]]
+id = "carbine"
+name = "Carbine Rifle"
+category = "rifle"
+mode = "burst"
+burst = 3
+damage = 32.0
+rpm = 700.0
+magazine = 30
+reload_time = 2.1
+ammo = "ammo_556"
+range = 300.0
+falloff_start = 80.0
+falloff_min = 0.6
+spread_hip_deg = 2.8
+spread_aim_deg = 0.35
+bloom_deg = 0.3
+recoil_deg = 1.2
+
+[[weapon]]
+id = "bolt_rifle"
+name = "Bolt-Action Rifle"
+category = "sniper"
+mode = "semi"
+damage = 110.0
+rpm = 45.0
+magazine = 5
+reload_time = 3.2
+ammo = "ammo_762"
+range = 800.0
+falloff_start = 300.0
+falloff_min = 0.8
+spread_hip_deg = 4.0
+spread_aim_deg = 0.05
+recoil_deg = 6.0
+impulse = 220.0
+model = "polyhaven_bolt_action_rifle/bolt_action_rifle_7_62_1k.gltf"

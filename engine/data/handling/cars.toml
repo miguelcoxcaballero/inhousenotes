@@ -1,0 +1,52 @@
+# Handling data in the spirit of handling.meta. Any field left out takes the
+# sedan default (see VehicleConfig). Wheel positions come from the model's
+# wheel nodes when bound with bind_vehicle_model.
+
+[[vehicle]]
+name = "sedan"
+mass = 1400.0
+peak_torque = 420.0
+grip = 1.25
+
+[[vehicle]]
+name = "sports"
+mass = 1250.0
+peak_torque = 620.0
+peak_torque_rpm = 5500.0
+redline_rpm = 8200.0
+gear_ratios = [3.1, 2.1, 1.55, 1.22, 1.0, 0.84, 0.7]
+grip = 1.45
+slide_grip = 0.8
+max_steer_deg = 32.0
+suspension_stiffness = 52000.0
+anti_roll = 14000.0
+downforce = 1.4
+drag = 0.32
+
+[[vehicle]]
+name = "suv"
+mass = 2100.0
+peak_torque = 520.0
+grip = 1.1
+suspension_stiffness = 46000.0
+suspension_compression_damping = 4200.0
+suspension_rebound_damping = 5200.0
+anti_roll = 12000.0
+drag = 0.5
+
+[[vehicle]]
+name = "truck"
+mass = 5200.0
+peak_torque = 1400.0
+peak_torque_rpm = 1800.0
+redline_rpm = 3200.0
+idle_rpm = 700.0
+gear_ratios = [6.0, 3.8, 2.4, 1.6, 1.15, 0.86]
+grip = 1.0
+suspension_stiffness = 120000.0
+suspension_compression_damping = 11000.0
+suspension_rebound_damping = 14000.0
+anti_roll = 40000.0
+brake_force = 42000.0
+max_steer_deg = 38.0
+drag = 0.9
