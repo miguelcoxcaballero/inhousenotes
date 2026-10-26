@@ -216,3 +216,36 @@ test('ink is visible before and after reopening, and new ink remains writable', 
   expect(await visibleRedInk()).toBeGreaterThan(40);
   expect(await page.evaluate(()=>__IHN_TEST_API__.snapshot().pages[0].strokes.length)).toBe(before.length+1);
 });
+
+test('writing keeps the large page bitmap idle until lift and displays ink on the live layer',async({page,context})=>{
+ const {cdp,target}=await startPen(page,context,40);
+ const result=await page.evaluate(async()=>{
+  const c=document.querySelector('canvas.page-canvas[data-page="0"]'),r=c.getBoundingClientRect();
+  const stroke=CanvasRenderingContext2D.prototype.stroke;let pagePaints=0,livePaints=0;
+  CanvasRenderingContext2D.prototype.stroke=function(...args){if(this.canvas===c)pagePaints++;if(this.canvas.classList?.contains('lasso-overlay'))livePaints++;return stroke.apply(this,args);};
+  for(let frame=0;frame<12;frame++){
+   for(let i=0;i<8;i++)c.dispatchEvent(new PointerEvent('pointermove',{pointerType:'pen',pointerId:penInputId,pressure:.5,buttons:1,bubbles:true,clientX:r.left+(100+frame*8+i)*r.width/794,clientY:r.top+400*r.height/1123}));
+   await new Promise(requestAnimationFrame);
+  }
+  const during=pagePaints;
+  const live=document.querySelector('.lasso-overlay'),pixels=live.getContext('2d').getImageData(0,0,live.width,live.height).data;
+  let visible=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])visible++;
+  c.dispatchEvent(new PointerEvent('pointerup',{pointerType:'pen',pointerId:penInputId,buttons:0,bubbles:true,clientX:r.left+200*r.width/794,clientY:r.top+400*r.height/1123}));
+  const after=pagePaints,cleared=live.getContext('2d').getImageData(0,0,live.width,live.height).data.every((v,i)=>i%4!==3||v===0);
+  CanvasRenderingContext2D.prototype.stroke=stroke;
+  return {during,after,livePaints,visible,cleared};
+ });
+ expect(result.during).toBe(0);expect(result.after).toBe(1);expect(result.livePaints).toBeGreaterThan(3);expect(result.visible).toBeGreaterThan(30);expect(result.cleared).toBe(true);
+ await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',...target,button:'left',buttons:0,clickCount:1,pointerType:'pen'});
+});
+
+test.describe('Android tablet canvas budget',()=>{
+ test.use({userAgent:'Mozilla/5.0 (Linux; Android 13; SM-X700) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',hasTouch:true,viewport:{width:1280,height:800}});
+ test('Tab S8 uses the touch canvas budget instead of a desktop bitmap',async({page})=>{
+  await page.goto('/?e2e=1');await page.waitForFunction(()=>window.__IHN_TEST_API__);
+  expect(await page.evaluate(()=>({device:detectDeviceType(),size:getTargetPageCanvasBackingSize(794,1123,4)})))
+   .toMatchObject({device:'tablet'});
+  const pixels=await page.evaluate(()=>{const s=getTargetPageCanvasBackingSize(794,1123,4);return s.targetWidth*s.targetHeight;});
+  expect(pixels).toBeLessThanOrEqual(16*1024*1024);
+ });
+});

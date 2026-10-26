@@ -3355,8 +3355,11 @@ function ihnLiveBroadcastRetryDelay(attempt) {
 
 async function ihnBroadcastDocument() {
     if (!ihnLiveBroadcastQueued || !ihnCanEditLiveDocument()) return;
-    if (ihnLiveBroadcastBusy || ihnLiveApplying || hasSmoothInteraction()) {
-        scheduleLiveDocumentBroadcast({ internal: true });
+    // A short lift between letters is not idle time for cloning, hashing and
+    // serializing a complete notebook. Live stroke packets remain immediate.
+    if (ihnLiveBroadcastBusy || ihnLiveApplying || hasSmoothInteraction()
+        || (typeof hasRecentUserActivity === 'function' && hasRecentUserActivity(1200))) {
+        scheduleLiveDocumentBroadcast({ internal: true, delay: 180 });
         return;
     }
     clearTimeout(ihnLiveBroadcastTimer);

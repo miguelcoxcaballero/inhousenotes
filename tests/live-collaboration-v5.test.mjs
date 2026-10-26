@@ -3321,3 +3321,16 @@ test('one slow or broken handshake does not hide other devices or later comment 
   assert.equal(harness.api.signalBusy(),false);
   assert.ok(harness.api.nextSignalPollDelay()>=1000,'failed requests still back off');
 });
+
+test('full snapshots wait across short pen lifts without delaying live stroke packets', async () => {
+  let copies=0;
+  const harness=createHarness({hasRecentUserActivity:()=>true,cloneSanitizedPageForStorage:async page=>{copies++;return JSON.parse(JSON.stringify(page));}});
+  harness.api.queue();
+  await harness.api.broadcast();
+  assert.equal(copies,0);
+  assert.equal(harness.api.queued(),true);
+  harness.context.hasRecentUserActivity=()=>false;
+  await harness.api.broadcast();
+  assert.ok(copies>0);
+  assert.equal(harness.api.queued(),false);
+});
