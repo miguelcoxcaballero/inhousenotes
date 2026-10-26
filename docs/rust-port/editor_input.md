@@ -60,6 +60,11 @@ Measured (node 22, main realm, 400-200 queries, microseconds per eraser query, o
 
 The first query after a document edit costs about what the old loop cost (strokes near the cursor are re-uploaded once).
 
+Browser results (lock script, 14 spec files, 85 tests): 81 pass. Failures that also fail on the untouched base commit 3edf36b:
+`editor-pen-input` "stationary pen ... 3000 pens" (30 s timeout) and the scanner specs "faded yellow stencil" / "calibration strip" in app-resilience.
+"scanner starts offline" failed once in the batch and passed twice when rerun alone (flaky, scanner area).
+`tests/native-assets.test.mjs` fails until the integrator regenerates native-assets.json (changed hashed files); not committed here by rule.
+
 Bytes: JS removed from app-v5.js 3,951 B deleted / 750 B glue added (net -3,201 B); rust-core-v5.js 2,531 B (`strokeHitTest`) deleted and
 8,164 B adapter added (the adapter is the upload/validation layer; it is the price of keeping geometry resident). Rust: editor_input.rs +16,236 B
 (11.8 KB code, 4.6 KB tests), editor.rs -1,342 B. Wasm 123,290 -> 131,025 B.
