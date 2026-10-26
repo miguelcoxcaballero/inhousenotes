@@ -1,13 +1,21 @@
 // Bloom (Jimenez 2014 down/up chain), AgX tonemapping and FXAA.
 struct PostParams {
-    texel: vec4<f32>,   // xy: source texel size
-    params: vec4<f32>,  // x: exposure, y: bloom strength, z: vignette, w: first-mip threshold flag
+    texel: vec4<f32>,   // xy: source texel size, z: first mip: bloom compression (1 / limit); tonemap: scotopic strength
+    params: vec4<f32>,  // x: exposure (upsample: mip weight), y: bloom strength, z: vignette, w: first-mip flag / tonemap: 1 = auto exposure
+};
+
+struct ExposureState {
+    pre: f32,
+    prev_pre: f32,
+    exposure: f32,
+    avg_log: f32,
 };
 
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> post: PostParams;
 @group(0) @binding(3) var bloom_tex: texture_2d<f32>;
+@group(0) @binding(4) var<storage, read> exposure_state: ExposureState;
 
 struct FsIn {
     @builtin(position) pos: vec4<f32>,
@@ -45,7 +53,7 @@ fn fs_downsample(in: FsIn) -> @location(0) vec4<f32> {
     var c0 = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
     if (post.params.w > 0.5) {
         // Karis average on the first mip kills fireflies.
-        c0 = c0 / (1.0 + luma(c0) * 0.25);
+        c0 = c0 / (1.0 + luma(c0) * post.texel.z);
     }
     return vec4<f32>(max(c0, vec3<f32>(0.0)), 1.0);
 }
@@ -59,7 +67,10 @@ fn fs_upsample(in: FsIn) -> @location(0) vec4<f32> {
         + textureSample(src, samp, uv + vec2<f32>(0.0, -t.y)).rgb + textureSample(src, samp, uv + vec2<f32>(0.0, t.y)).rgb) * 2.0;
     c += textureSample(src, samp, uv + vec2<f32>(-t.x, -t.y)).rgb + textureSample(src, samp, uv + vec2<f32>(t.x, -t.y)).rgb
         + textureSample(src, samp, uv + vec2<f32>(-t.x, t.y)).rgb + textureSample(src, samp, uv + vec2<f32>(t.x, t.y)).rgb;
-    return vec4<f32>(c / 16.0, 1.0);
+    // Weight of the wider mips (1 by day; < 1 keeps night halos tight
+    // instead of a veil).
+    let w = select(1.0, post.params.x, post.params.x > 0.0);
+    return vec4<f32>(c * (w / 16.0), 1.0);
 }
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
@@ -91,11 +102,29 @@ fn agx(c: vec3<f32>) -> vec3<f32> {
     return pow(clamp(v, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(2.2));
 }
 
+// Night vision (Purkinje shift): below ~3 cd/m² the rods take over, so dim
+// areas lose saturation and shift toward blue while lamp-lit ones keep their
+// colour (mesopic blend over 0.003..3 cd/m²). `nits` is the scene luminance.
+fn scotopic(c: vec3<f32>, nits: f32, strength: f32) -> vec3<f32> {
+    let s = 1.0 - smoothstep(-2.5, 0.48, log2(max(nits, 1e-6)) / 3.3219);
+    let rods = dot(c, vec3<f32>(0.06, 0.6, 0.34));
+    let night = rods * vec3<f32>(0.82, 0.96, 1.32);
+    return mix(c, night, s * strength);
+}
+
 @fragment
 fn fs_tonemap(in: FsIn) -> @location(0) vec4<f32> {
     let hdr = textureSample(src, samp, in.uv).rgb;
     let bloom = textureSample(bloom_tex, samp, in.uv).rgb;
-    var c = mix(hdr, bloom, post.params.y) * post.params.x;
+    var exposure = post.params.x;
+    if (post.params.w > 0.5) {
+        // Auto exposure: the HDR image is pre-exposed.
+        exposure = exposure_state.exposure / max(exposure_state.pre, 1e-8);
+    }
+    var c = mix(hdr, bloom, post.params.y) * exposure;
+    if (post.texel.z > 0.0) {
+        c = scotopic(c, luma(hdr) / max(exposure_state.pre, 1e-8) * 1e4, post.texel.z);
+    }
     c = agx(c);
     let d = in.uv - vec2<f32>(0.5);
     c *= 1.0 - dot(d, d) * post.params.z;
