@@ -29,6 +29,9 @@ pub struct PhysicsConfig {
     pub sleep_angular_threshold: f32,
     pub time_to_sleep: f32,
     pub max_linear_speed: f32,
+    /// Dynamic bodies farther than this (XZ, metres) from the focus set
+    /// with [`PhysicsWorld::set_focus`] are frozen; 0 disables it.
+    pub active_radius: f32,
 }
 
 impl Default for PhysicsConfig {
@@ -46,6 +49,7 @@ impl Default for PhysicsConfig {
             sleep_angular_threshold: 0.05,
             time_to_sleep: 0.5,
             max_linear_speed: 400.0,
+            active_radius: 0.0,
         }
     }
 }
@@ -57,6 +61,13 @@ pub struct StepStats {
     pub manifolds: usize,
     pub contact_points: usize,
     pub step_ms: f32,
+    /// Stage times of the last step (ms): broadphase update and pair
+    /// search, narrowphase, solver (constraint prep + substeps), and
+    /// write-back (sleep islands, collider sync).
+    pub broadphase_ms: f32,
+    pub narrowphase_ms: f32,
+    pub solver_ms: f32,
+    pub writeback_ms: f32,
 }
 
 /// Filter for scene queries.
@@ -98,6 +109,18 @@ pub struct RayHit {
     pub feature: u32,
 }
 
+/// Result of [`PhysicsWorld::cast_shape`].
+#[derive(Clone, Copy, Debug)]
+pub struct ShapeHit {
+    pub collider: ColliderHandle,
+    pub body: BodyHandle,
+    /// Distance travelled along the sweep direction.
+    pub toi: f32,
+    pub point: Vec3,
+    /// From the obstacle towards the swept shape.
+    pub normal: Vec3,
+}
+
 /// Sensor overlap or contact begin/end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollisionEvent {
@@ -116,6 +139,7 @@ pub struct PhysicsWorld {
     pub events: Vec<CollisionEvent>,
     pub stats: StepStats,
     scratch_manifolds: Vec<Manifold>,
+    focus: Option<Vec3>,
 }
 
 impl Default for PhysicsWorld {
@@ -143,7 +167,18 @@ impl PhysicsWorld {
             events: Vec::new(),
             stats: StepStats::default(),
             scratch_manifolds: Vec::new(),
+            focus: None,
         }
+    }
+
+    /// Centre of the simulated area (usually the player); see
+    /// [`PhysicsConfig::active_radius`].
+    pub fn set_focus(&mut self, focus: Option<Vec3>) {
+        self.focus = focus;
+    }
+
+    pub fn focus(&self) -> Option<Vec3> {
+        self.focus
     }
 
     /// Static body that owns colliders added without a parent.
@@ -219,6 +254,11 @@ impl PhysicsWorld {
 
     pub fn body(&self, h: BodyHandle) -> Option<&RigidBody> {
         self.bodies.get(h.0)
+    }
+
+    /// [`RigidBody::interpolated_iso`] of a body.
+    pub fn interpolated_iso(&self, h: BodyHandle, alpha: f32) -> Option<Iso> {
+        self.bodies.get(h.0).map(|b| b.interpolated_iso(alpha))
     }
 
     pub fn body_mut(&mut self, h: BodyHandle) -> Option<&mut RigidBody> {
@@ -302,6 +342,32 @@ impl PhysicsWorld {
     pub fn step(&mut self, dt: f32) {
         let t0 = std::time::Instant::now();
         self.events.clear();
+        // 0. Simulation focus: dynamic bodies far from it are frozen (put to
+        //    sleep) so distant debris and parked cars cost nothing.
+        let focus = self.focus.filter(|_| self.config.active_radius > 0.0);
+        if let Some(f) = focus {
+            let r2 = self.config.active_radius * self.config.active_radius;
+            for (_, b) in self.bodies.iter_mut() {
+                if b.body_type == BodyType::Dynamic && !b.sleeping && b.can_sleep {
+                    let d = b.iso.pos - f;
+                    if d.x * d.x + d.z * d.z > r2 {
+                        b.sleeping = true;
+                        b.linvel = Vec3::ZERO;
+                        b.angvel = Vec3::ZERO;
+                    }
+                }
+            }
+        }
+        let active_r2 = self.config.active_radius * self.config.active_radius;
+        let outside = move |p: Vec3| {
+            focus.is_some_and(|f| {
+                let d = p - f;
+                d.x * d.x + d.z * d.z > active_r2
+            })
+        };
+        for (_, b) in self.bodies.iter_mut() {
+            b.prev_iso = b.iso;
+        }
         // 1. Broadphase update for moving bodies.
         let moving: Vec<BodyHandle> = self
             .bodies
@@ -316,7 +382,7 @@ impl PhysicsWorld {
         // 2. Candidate pairs, waking sleeping bodies we touch.
         let mut queue: Vec<ColliderHandle> =
             moving.iter().flat_map(|h| self.bodies.get(h.0).map(|b| b.colliders.clone()).unwrap_or_default()).collect();
-        let mut candidates: HashSet<(ColliderHandle, ColliderHandle)> = HashSet::new();
+        let mut candidates: Vec<(ColliderHandle, ColliderHandle)> = Vec::new();
         let mut qi = 0;
         let mut found = Vec::new();
         while qi < queue.len() {
@@ -338,15 +404,19 @@ impl PhysicsWorld {
                 if ba.body_type != BodyType::Dynamic && bb.body_type != BodyType::Dynamic && !(c.sensor || oc.sensor) {
                     continue;
                 }
-                if bb.sleeping && bb.body_type == BodyType::Dynamic && c.aabb.intersects(&oc.aabb) && !c.sensor {
+                if bb.sleeping && bb.body_type == BodyType::Dynamic && c.aabb.intersects(&oc.aabb) && !c.sensor && !outside(bb.iso.pos) {
                     let ob = oc.body;
                     let cols = bb.colliders.clone();
                     self.bodies.get_mut(ob.0).expect("body").wake();
                     queue.extend(cols);
                 }
-                candidates.insert(if ch < o { (ch, o) } else { (o, ch) });
+                candidates.push(if ch < o { (ch, o) } else { (o, ch) });
             }
         }
+        // Sorted pairs: the solve order (and so the result) is deterministic.
+        candidates.sort_unstable();
+        candidates.dedup();
+        let t_broad = t0.elapsed().as_secs_f32() * 1000.0;
         // 3. Narrowphase.
         let base_margin = self.config.speculative_margin;
         let mut new_pairs: HashMap<(ColliderHandle, ColliderHandle), PairCache> = HashMap::with_capacity(candidates.len());
@@ -409,14 +479,26 @@ impl PhysicsWorld {
             }
         }
         self.pairs = new_pairs;
+        let t_narrow = t0.elapsed().as_secs_f32() * 1000.0;
         // 4. Solve.
         let stats = solver::solve(self, dt);
-        self.stats = StepStats { step_ms: t0.elapsed().as_secs_f32() * 1000.0, ..stats };
+        let step_ms = t0.elapsed().as_secs_f32() * 1000.0;
+        self.stats = StepStats {
+            step_ms,
+            broadphase_ms: t_broad,
+            narrowphase_ms: t_narrow - t_broad,
+            solver_ms: step_ms - t_narrow - stats.writeback_ms,
+            ..stats
+        };
     }
 
-    pub(crate) fn body_colliders_sync_all(&mut self, handles: &[BodyHandle]) {
+    /// Refreshes collider poses after the solve. The fat AABBs are stretched
+    /// along the predicted motion of the next step, so the next pair search
+    /// sees what a fast body is about to reach (no broadphase tunnelling).
+    pub(crate) fn body_colliders_sync_all(&mut self, handles: &[BodyHandle], dt: f32) {
         for h in handles {
-            self.sync_body_colliders(*h, Vec3::ZERO);
+            let disp = self.bodies.get(h.0).map_or(Vec3::ZERO, |b| b.linvel * dt);
+            self.sync_body_colliders(*h, disp);
         }
     }
 
@@ -470,6 +552,76 @@ impl PhysicsWorld {
             out.extend(tmp.iter().map(|m| (ch, *m)));
         });
         out
+    }
+
+    /// Sweeps `shape` from `iso` along the unit vector `dir` up to
+    /// `max_dist` and returns the first hit (conservative advancement on the
+    /// narrowphase's closest features: Mirtich 1996, as used for character
+    /// sweeps by PhysX and Jolt). Contacts the shape is already leaving are
+    /// ignored, so a shape resting on a floor can sweep along it. The
+    /// returned normal points from the obstacle towards the shape.
+    pub fn cast_shape(&self, shape: &Shape, iso: &Iso, dir: Vec3, max_dist: f32, filter: QueryFilter) -> Option<ShapeHit> {
+        let start = shape.aabb(iso);
+        let end = shape.aabb(&Iso::new(iso.pos + dir * max_dist, iso.rot));
+        let swept = start.union(&end).expanded(0.02);
+        let mut cands: Vec<ColliderHandle> = Vec::new();
+        self.query_aabb(&swept, filter, |ch, _| cands.push(ch));
+        if cands.is_empty() {
+            return None;
+        }
+        let mut tmp = Vec::new();
+        let mut t = 0.0f32;
+        for _ in 0..12 {
+            let at = Iso::new(iso.pos + dir * t, iso.rot);
+            let mut best: Option<(f32, ShapeHit)> = None;
+            for &ch in &cands {
+                let c = self.colliders.get(ch.0).expect("candidate");
+                tmp.clear();
+                narrowphase::collide(shape, &at, &c.shape, &c.world_iso, max_dist - t + 0.01, &mut tmp);
+                for m in &tmp {
+                    let approach = m.normal.dot(dir);
+                    if approach <= 1e-3 {
+                        continue;
+                    }
+                    for p in m.points() {
+                        let step = p.separation / approach;
+                        if best.as_ref().is_none_or(|b| step < b.0) {
+                            best = Some((step, ShapeHit { collider: ch, body: c.body, toi: t, point: p.point, normal: -m.normal }));
+                        }
+                    }
+                }
+            }
+            let (step, mut hit) = best?;
+            if step <= 1e-3 {
+                hit.toi = t.max(0.0);
+                return Some(hit);
+            }
+            t += step;
+            if t > max_dist {
+                return None;
+            }
+        }
+        // Grazing contact that keeps receding: report where we got to.
+        Some(ShapeHit { toi: t.min(max_dist), ..self.cast_shape_hit_at(shape, iso, dir, t, &cands)? })
+    }
+
+    fn cast_shape_hit_at(&self, shape: &Shape, iso: &Iso, dir: Vec3, t: f32, cands: &[ColliderHandle]) -> Option<ShapeHit> {
+        let at = Iso::new(iso.pos + dir * t, iso.rot);
+        let mut tmp = Vec::new();
+        let mut best: Option<(f32, ShapeHit)> = None;
+        for &ch in cands {
+            let c = self.colliders.get(ch.0)?;
+            tmp.clear();
+            narrowphase::collide(shape, &at, &c.shape, &c.world_iso, 0.05, &mut tmp);
+            for m in &tmp {
+                for p in m.points() {
+                    if best.as_ref().is_none_or(|b| p.separation < b.0) {
+                        best = Some((p.separation, ShapeHit { collider: ch, body: c.body, toi: t, point: p.point, normal: -m.normal }));
+                    }
+                }
+            }
+        }
+        best.map(|b| b.1)
     }
 
     /// Total normal impulse of the last step between two colliders.

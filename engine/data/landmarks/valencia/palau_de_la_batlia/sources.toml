@@ -22,6 +22,24 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 9261.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5832106&rc2=YJ2753B", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 6, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 4 parts" }
 
+measured_facade_length = { value = 25.0, unit = "m", source = "IGN PNOA orthophoto WMS (CC BY 4.0), 5 cm/px: front-wing roof incl. cornice x -12.6..13.2 (25.8 m) minus 2 x 0.35 m cornice projection; bundle adjustment with free scale gives 22.0 +- 4.2 m; 0.95 m balcony railing check (photo 01)", note = "OSM way 1303164127 is 22.7 m and ~0.8 m north of the Catastro plaza line; its E end stops 1.5 m short of the roof gap seen on PNOA" }
+measured_facade_line = { value = "SW (-11.74, 17.05) -> SE (13.22, 18.50), azimuth 93.3", source = "Catastro INSPIRE BU (part 5 SW corner and the plaza line of the neighbouring parcels); PNOA shows the facade strip with balconies south of the leaning roof edge" }
+measured_front_wing_depth = { value = 7.0, unit = "m", source = "PNOA roof gap at z 9.2 + 1.5 m roof lean; Catastro part 7 (patio) S edge at z 10.7" }
+measured_cornice_top = { value = 17.5, unit = "m", source = "constrained bundle adjustment of photos 01, 06 and the Catastro photo (29 matches, f 2917 px from EXIF for the Catastro photo), scale = facade length 25.0 m", note = "+- 0.3 m; Catastro 4-5 floors" }
+measured_blocking_course_top = { value = 18.2, unit = "m", source = "photo 01: blocking course 33 px over the 72 px frieze-cornice zone (1.6 m)" }
+measured_crest_apex = { value = 18.86, unit = "m", source = "bundle adjustment (segmental crest over the centre bay, chord 5.6 m from photo 01 back-projection u 9.6-15.4)" }
+measured_frieze_band = { value = 15.9, unit = "m", source = "bundle adjustment: band under the attic oculi" }
+measured_second_floor_string = { value = 11.65, unit = "m", source = "bundle adjustment" }
+measured_ground_floor_cornice = { value = 6.62, unit = "m", source = "bundle adjustment" }
+measured_portal = { value = "2.2 m wide, apex 4.95 m, centre u 12.5", source = "photo 01 back-projection on the solved camera (u 11.49-13.69) and bundle adjustment" }
+measured_bays = { value = "5 bays, window centres at -10.2, -5.15, 0, 5.15, 10.2 m from the centre", source = "photo 07 (near frontal) and photo 01 back-projection" }
+measured_main_floor_windows = { value = "1.5 x 3.35 m, sill 6.75 m, balconies 2.6 m (centre 5.5 m), railing 0.95 m", source = "photo 01 back-projection" }
+measured_second_floor_windows = { value = "1.25 x 2.6 m, sill 11.95 m, segmental hoods to ~15.0 m", source = "photo 07 overlay (cycle 2)" }
+measured_ground_floor_windows = { value = "1.35 x 2.5 m, sill 2.8 m; basement grilles 1.15 x 0.85 m at 0.85 m", source = "photo 01 back-projection" }
+measured_pilasters = { value = "u 0.6, 4.4, 10.1, 14.9, 20.6, 24.4 (banded on the main floor, panelled on the second)", source = "photo 07 at the main-floor level" }
+measured_rear_heights = { value = "inner block 20.0 m (Catastro part 2, 6 floors), rear block 15.5 m (4 floors), NE wing 10.8 m (part 3, 3 floors), covered patio roof 4.6 m (part 7, 1 floor)", source = "Catastro floor counts x 3.2 m + 1 m, not visible in any photo" }
+ficha_pgou = { value = "Palacio Bailía, BRL 01.01.25, parcel 06 (part), 1315.75 m2, 4 floors, corner plot", source = "Ajuntament de València, Catàleg de Béns, ficha 1.25 (plans/01_1_25_PALACIO_BAILIA_firmado.jpg)" }
+
 [[photo]]
 file = "photos/01_Diputacion_palau.jpg"
 title = "File:Diputacion palau.jpg"
@@ -31,8 +49,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 999
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S"
 
 [[photo]]
 file = "photos/02_Palau_de_la_Batlia_Bandera_Ucrainesa.jpg"
@@ -44,8 +62,8 @@ width = 1280
 height = 961
 camera = [-35.52, 86.13]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S"
 
 [[photo]]
 file = "photos/03_Palau_de_la_Batlia_o_Jaudenes_Valencia.jpg"
@@ -56,8 +74,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (from SW)"
 
 [[photo]]
 file = "photos/04_Facana_del_palau_de_la_Batlia_de_Valencia.jpg"
@@ -68,8 +86,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (from SW, close)"
 
 [[photo]]
 file = "photos/05_At_Valencia_2025_179.jpg"
@@ -81,8 +99,8 @@ width = 1280
 height = 853
 camera = [-6.02, 39.69]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (dusk)"
 
 [[photo]]
 file = "photos/06_412_Palau_de_la_Batlia_pl_Manises_Valencia_seu_de_la_Diputac.jpg"
@@ -93,8 +111,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S+W corner (from SW)"
 
 [[photo]]
 file = "photos/07_Valencia_palau_de_la_Batlia.jpg"
@@ -105,8 +123,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 857
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S"
 
 [[photo]]
 file = "photos/08_Escut_del_palau_de_la_Batlia_Valencia.jpg"
@@ -118,7 +136,7 @@ width = 1280
 height = 1073
 exterior = true
 selected = false
-side = ""
+side = "detail"
 
 [[photo]]
 file = "photos/09_Per_un_financament_just_palau_de_la_Batlia_Valencia.jpg"
@@ -130,7 +148,7 @@ width = 1280
 height = 877
 exterior = true
 selected = false
-side = ""
+side = "detail"
 
 [[photo]]
 file = "photos/catastro_5832106YJ2753B.jpg"
@@ -141,8 +159,8 @@ license = "Catastro open data (attribution required)"
 width = 4000
 height = 3000
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (from SE)"
 
 [[plan]]
 file = "plans/01_1_25_PALACIO_BAILIA_firmado.jpg"
@@ -201,3 +219,80 @@ notes = "Wikidata P973"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=4481"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[photo]]
+file = "photos/12_Valencia_Ciutat_Vella_Diputacio_IMG_2662.jpg"
+title = "File:Valencia-Ciutat Vella, de Diputació de València op het Plaça de Manises IMG 2662 2026-08-23 09.57.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia-Ciutat_Vella,_de_Diputació_de_València_op_het_Plaça_de_Manises_IMG_2662_2026-08-23_09.57.jpg"
+author = "Michielverbeek"
+license = "CC BY-SA 4.0"
+width = 1280
+exterior = true
+selected = true
+side = "S (from SW, far)"
+
+[[photo]]
+file = "photos/13_Placa_de_Manises_Valencia.jpg"
+title = "File:Plaça de Manises, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaça_de_Manises,_València.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+exterior = true
+selected = true
+side = "S+E end (from E)"
+
+[[photo]]
+file = "photos/14_137_Placa_de_Manises.jpg"
+title = "File:137 Plaça de Manises (València).JPG"
+url = "https://commons.wikimedia.org/wiki/File:137_Plaça_de_Manises_(València).JPG"
+author = "Enfo"
+license = "CC BY-SA 3.0"
+width = 1280
+exterior = true
+selected = true
+side = "S (from W, Batlia at the left edge)"
+
+[[photo]]
+file = "photos/15_20211115_Valencia_062.jpg"
+title = "File:20211115.Valencia.-062.jpg"
+url = "https://commons.wikimedia.org/wiki/File:20211115.Valencia.-062.jpg"
+author = "Bybbisch94, Christian Gebhardt"
+license = "CC BY-SA 4.0"
+width = 1280
+exterior = true
+selected = true
+side = "S (from E, left edge)"
+
+[[photo]]
+file = "photos/16_Valencia_placa_de_Manises.jpg"
+title = "File:València, plaça de Manises.JPG"
+url = "https://commons.wikimedia.org/wiki/File:València,_plaça_de_Manises.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+exterior = true
+selected = true
+side = "S (from E)"
+
+[[photo]]
+file = "photos/17_At_Valencia_2025_125.jpg"
+title = "File:At Valencia 2025 125.jpg"
+url = "https://commons.wikimedia.org/wiki/File:At_Valencia_2025_125.jpg"
+author = "Photograph by Mike Peel (www.mikepeel.net)."
+license = "CC BY-SA 4.0"
+width = 1280
+exterior = true
+selected = true
+side = "SW corner (right edge)"
+
+[[photo]]
+file = "photos/18_Placa_de_Manises_de_Valencia.jpg"
+title = "File:Plaça de Manises de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Plaça_de_Manises_de_València.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+exterior = true
+selected = true
+side = "S (from E, left edge)"

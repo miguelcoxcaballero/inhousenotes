@@ -50,6 +50,9 @@
 
 pub mod atmosphere;
 pub mod brdf;
+pub mod gpu;
+pub mod fog;
+pub mod motion;
 pub mod capture;
 pub mod camera;
 pub mod env;
@@ -83,7 +86,8 @@ const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const NORMAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+/// GTAO: bent normal (rgb, world space, 0.5 + 0.5 n) and visibility (a).
+const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const BLOOM_MIPS: usize = 6;
 /// Most lights per frame (clustered; each cluster keeps its closest
 /// [`lights::CLUSTER_CAP`]).
@@ -133,6 +137,8 @@ struct FrameUniforms {
     night_zenith: [f32; 4],
     sky_glow: [f32; 4],
     scatter: [f32; 4],
+    features: [f32; 4],
+    fog_volume: [f32; 4],
     spot_vp: [[[f32; 4]; 4]; lights::MAX_SPOT_SHADOWS],
 }
 
@@ -164,6 +170,9 @@ struct MaterialUniforms {
 struct QualityUniforms {
     /// x: PCSS cascades, y: SSR steps, z: contact-shadow steps, w: AO scale.
     params: [f32; 4],
+    /// x: 1 = GTAO bent normals (cone specular occlusion), y: 1 = sky-view
+    /// LUT (0: per-pixel raymarch), z: 1 = FSR 1 EASU upscale, w: unused.
+    extra: [f32; 4],
 }
 
 #[repr(C)]
@@ -244,11 +253,15 @@ pub struct DrawInstance {
     pub joints: Option<Arc<Vec<Mat4>>>,
     pub tint: Vec4,
     pub cast_shadows: bool,
+    /// Stable id of a moving object (0: none). The renderer keeps each id's
+    /// transform for one frame so the prepass can write object motion
+    /// (motion blur, TAA reprojection); without one only the camera moves.
+    pub motion_id: u64,
 }
 
 impl DrawInstance {
     pub fn new(model: ModelHandle, transform: Mat4) -> Self {
-        Self { model, transform, nodes: None, joints: None, tint: Vec4::ONE, cast_shadows: true }
+        Self { model, transform, nodes: None, joints: None, tint: Vec4::ONE, cast_shadows: true, motion_id: 0 }
     }
 }
 
@@ -305,6 +318,12 @@ pub struct Environment {
     pub fog_density: f32,
     /// Inverse scale height of the aerosol (1/m).
     pub fog_falloff: f32,
+    /// Low ground haze (extinction at ground level, 1/m; scale height
+    /// 80 m) on top of `fog_density`: the morning and evening haze that
+    /// shows light shafts in the volumetric fog. `None`: automatic, zero
+    /// with the sun above ~20 degrees and at night, rising to 6e-4 (a 6%
+    /// veil per 100 m) as the sun reaches the horizon.
+    pub haze: Option<f32>,
     /// Share of the light spread by the lens' veiling glare (0.02-0.04 for
     /// a good lens); the blur is energy conserving.
     pub bloom: f32,
@@ -386,6 +405,7 @@ impl Default for Environment {
             exposure_adaptation: 0.4,
             fog_density: 1.3e-4,
             fog_falloff: 1.0e-3,
+            haze: None,
             bloom: 0.02,
             vignette: 0.3,
             tone: tonemap::ToneCurve::default(),
@@ -495,6 +515,18 @@ pub struct RenderSettings {
     /// `FORJA_DOF=<focus m>,<f-stop>` forces a depth of field on every
     /// frame (photo-mode previews of the examples).
     pub dof_override: Option<DepthOfField>,
+    /// Camera + object motion blur (`-motion`) and its gather samples.
+    pub motion_blur: bool,
+    pub motion_blur_samples: u32,
+    /// Froxel volumetric fog quality 0-3 (`-fog`: 0, analytic fog).
+    pub volumetric_fog: u32,
+    /// GTAO bent normals for cone specular occlusion (`-bent`).
+    pub bent_normals: bool,
+    /// Sky-view LUT instead of the per-pixel sky raymarch (`-skylut`).
+    pub sky_lut: bool,
+    /// FSR 1 EASU upscaling when the target is larger than the internal
+    /// resolution (`-fsr`: bilinear + CAS).
+    pub fsr: bool,
 }
 
 impl Default for RenderSettings {
@@ -531,6 +563,12 @@ impl Default for RenderSettings {
             micro_shadow: true,
             specular_factor: true,
             dof_override: None,
+            motion_blur: true,
+            motion_blur_samples: 10,
+            volumetric_fog: 2,
+            bent_normals: true,
+            sky_lut: true,
+            fsr: true,
         }
     }
 }
@@ -602,6 +640,11 @@ impl RenderSettings {
         self.hlod_distance = g.hlod_distance;
         self.max_texture_size = g.max_texture_size;
         self.dof = g.dof;
+        self.motion_blur = g.motion_blur;
+        self.motion_blur_samples = g.motion_blur_samples;
+        self.volumetric_fog = g.volumetric_fog;
+        self.bent_normals = g.bent_normals;
+        self.fsr = g.fsr;
     }
 
     /// Applies a `FORJA_FX` list: `name` or `+name` enables, `-name`
@@ -631,6 +674,11 @@ impl RenderSettings {
                 "specaa" => self.specular_aa = on,
                 "micro" => self.micro_shadow = on,
                 "porous" => self.specular_factor = on,
+                "motion" | "mb" => self.motion_blur = on,
+                "fog" | "volfog" => self.volumetric_fog = if on { self.volumetric_fog.max(2) } else { 0 },
+                "bent" => self.bent_normals = on,
+                "skylut" => self.sky_lut = on,
+                "fsr" => self.fsr = on,
                 // Read by `env::EnvMap::from_hdr` (box-filtered mips).
                 "ggx" => {}
                 _ => log::warn!("FORJA_FX: unknown effect {name}"),
@@ -795,6 +843,10 @@ struct Targets {
     dof_tonemap: wgpu::BindGroup,
     /// Eye adaptation compute inputs (reads `resolved`).
     exposure_bind: wgpu::BindGroup,
+    /// Prepass screen motion (px per frame).
+    velocity: wgpu::TextureView,
+    /// TAA history view (the motion blur reads it: a copy of `resolved`).
+    history: wgpu::TextureView,
 }
 
 struct PostBinds {
@@ -855,6 +907,9 @@ pub struct Renderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub adapter_info: wgpu::AdapterInfo,
+    /// The adapter the device was opened on ([`Renderer::new`]; `None`
+    /// with [`Renderer::with_device`]).
+    pub adapter: Option<wgpu::Adapter>,
     pub output_format: wgpu::TextureFormat,
     pipelines: Pipelines,
     frame_bgl: wgpu::BindGroupLayout,
@@ -933,6 +988,14 @@ pub struct Renderer {
     scratch: Vec<InstanceRaw>,
     /// Batches of the last frame: camera, then every shadow view.
     last_batches: (Vec<Batch>, Vec<Batch>),
+    sky_bgl: wgpu::BindGroupLayout,
+    /// Sky LUTs and the froxel fog volume.
+    fog: fog::Fog,
+    motion: motion::MotionBlur,
+    /// Last frame's transform of every `DrawInstance::motion_id`.
+    prev_motion: std::collections::HashMap<u64, Mat4>,
+    /// Sky pass inputs (LUTs, fog volume); rebuilt when the volume changes.
+    sky_bind: Option<wgpu::BindGroup>,
 }
 
 /// Last rendered state of a shadow cascade (far cascades are refreshed
@@ -1054,6 +1117,15 @@ fn cluster_buffer(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Buffe
     device.create_buffer(&wgpu::BufferDescriptor { label: Some("clusters"), size: words as u64 * 4, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false })
 }
 
+fn volume_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D3, multisampled: false },
+        count: None,
+    }
+}
+
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry { binding, visibility, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None }
 }
@@ -1066,57 +1138,55 @@ impl Renderer {
     /// Creates a renderer. Pass the window surface when there is one; the
     /// output format follows the surface (or sRGB RGBA8 offscreen).
     pub fn new(instance: &wgpu::Instance, surface: Option<&wgpu::Surface<'_>>) -> Result<Self, String> {
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: surface,
-            ..Default::default()
-        }))
-        .map_err(|e| format!("no GPU adapter: {e}"))?;
+        Self::new_with(instance, surface, &gpu::AdapterChoice::from_env())
+    }
+
+    /// [`Renderer::new`] on a chosen adapter (see [`gpu`]: best GPU first,
+    /// falling back adapter by adapter, DX12 -> Vulkan).
+    pub fn new_with(instance: &wgpu::Instance, surface: Option<&wgpu::Surface<'_>>, choice: &gpu::AdapterChoice) -> Result<Self, String> {
+        let (adapter, device, queue) = gpu::open(instance, surface, choice)?;
         let adapter_info = adapter.get_info();
-        log::info!("GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("forja"),
-            required_features: profiler::GpuProfiler::wanted_features(&adapter) | (adapter.features() & wgpu::Features::TEXTURE_COMPRESSION_BC),
-            required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            memory_hints: wgpu::MemoryHints::Performance,
-            trace: wgpu::Trace::Off,
-        }))
-        .map_err(|e| format!("device: {e}"))?;
         let output_format = surface
             .map(|s| {
                 let caps = s.get_capabilities(&adapter);
                 caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(caps.formats[0])
             })
             .unwrap_or(wgpu::TextureFormat::Rgba8UnormSrgb);
-        Ok(Self::with_device(device, queue, adapter_info, output_format))
+        let mut r = Self::with_device(device, queue, adapter_info, output_format);
+        r.adapter = Some(adapter);
+        Ok(r)
     }
 
     pub fn with_device(device: wgpu::Device, queue: wgpu::Queue, adapter_info: wgpu::AdapterInfo, output_format: wgpu::TextureFormat) -> Self {
+        // The frame group is also read by the compute passes (froxel fog).
+        let fc = wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE;
+        let with_vis = |mut e: wgpu::BindGroupLayoutEntry, v: wgpu::ShaderStages| {
+            e.visibility = v;
+            e
+        };
         let frame_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("frame"),
             entries: &[
-                uniform_entry(0, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT),
+                uniform_entry(0, wgpu::ShaderStages::VERTEX | fc),
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: fc,
                     ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
-                texture_entry(3),
-                sampler_entry(4),
-                storage_entry(5, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, true),
-                storage_entry(6, wgpu::ShaderStages::FRAGMENT, true),
-                storage_entry(7, wgpu::ShaderStages::FRAGMENT, true),
+                wgpu::BindGroupLayoutEntry { binding: 2, visibility: fc, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
+                with_vis(texture_entry(3), fc),
+                with_vis(sampler_entry(4), fc),
+                storage_entry(5, wgpu::ShaderStages::VERTEX | fc, true),
+                storage_entry(6, fc, true),
+                storage_entry(7, fc, true),
                 wgpu::BindGroupLayoutEntry {
                     binding: 8,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: fc,
                     ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false },
                     count: None,
                 },
-                texture_entry(9),
+                with_vis(texture_entry(9), fc),
             ],
         });
         let material_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1166,19 +1236,32 @@ impl Renderer {
         // (screen-space reflections).
         let screen_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("screen"),
-            entries: &[texture_entry(0), depth_entry(1), texture_entry(2), sampler_entry(3), texture_entry(4), uniform_entry(5, wgpu::ShaderStages::FRAGMENT)],
+            entries: &[
+                texture_entry(0),
+                depth_entry(1),
+                texture_entry(2),
+                sampler_entry(3),
+                texture_entry(4),
+                uniform_entry(5, wgpu::ShaderStages::FRAGMENT),
+                volume_entry(6),
+                sampler_entry(7),
+            ],
         });
+        // Sky pass: sky-view and transmittance LUTs, the froxel fog volume.
+        let sky_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("sky"), entries: &[texture_entry(0), texture_entry(1), sampler_entry(2), volume_entry(3)] });
         let gtao_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("gtao"), entries: &[depth_entry(0), texture_entry(1), texture_entry(2), uniform_entry(3, wgpu::ShaderStages::FRAGMENT)] });
         let taa_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("taa"),
-            entries: &[texture_entry(0), texture_entry(1), depth_entry(2), sampler_entry(3), uniform_entry(4, wgpu::ShaderStages::FRAGMENT)],
+            entries: &[texture_entry(0), texture_entry(1), depth_entry(2), sampler_entry(3), uniform_entry(4, wgpu::ShaderStages::FRAGMENT), texture_entry(5)],
         });
 
-        let pbr = shader(&device, "pbr", include_str!("shaders/pbr.wgsl"), true);
-        let sky = shader(&device, "sky", include_str!("shaders/sky.wgsl"), true);
+        let fog_apply = wgsl("fog_apply", include_str!("shaders/fog_apply.wgsl"));
+        let pbr = shader(&device, "pbr (fog)", &format!("{}\n{fog_apply}", wgsl("pbr", include_str!("shaders/pbr.wgsl"))), true);
+        let sky = shader(&device, "sky (fog)", &format!("{}\n{fog_apply}", wgsl("sky", include_str!("shaders/sky.wgsl"))), true);
         let lines = shader(&device, "lines", include_str!("shaders/lines.wgsl"), true);
         let shadow = shader(&device, "shadow", include_str!("shaders/shadow.wgsl"), false);
-        let post = shader(&device, "post", include_str!("shaders/post.wgsl"), false);
+        let easu_src = wgsl("easu", include_str!("shaders/easu.wgsl"));
+        let post = shader(&device, "post (easu)", &format!("{}\n{easu_src}", wgsl("post", include_str!("shaders/post.wgsl"))), false);
         let gtao = shader(&device, "gtao", include_str!("shaders/gtao.wgsl"), true);
         let taa = shader(&device, "taa", include_str!("shaders/taa.wgsl"), true);
         let sprites = shader(&device, "sprites", include_str!("shaders/sprites.wgsl"), true);
@@ -1195,6 +1278,7 @@ impl Renderer {
         let scene_layout = layout(&[&frame_bgl, &material_bgl, &joints_bgl, &screen_bgl]);
         let prepass_layout = layout(&[&frame_bgl, &material_bgl, &joints_bgl]);
         let frame_layout = layout(&[&frame_bgl]);
+        let sky_layout = layout(&[&frame_bgl, &sky_bgl]);
         let shadow_layout = layout(&[&cascade_bgl, &joints_bgl]);
         let shadow_masked_layout = layout(&[&cascade_bgl, &joints_bgl, &material_bgl]);
         let post_layout = layout(&[&post_bgl]);
@@ -1256,7 +1340,7 @@ impl Renderer {
                     module: &pbr,
                     entry_point: Some(if masked { "fs_prepass_masked" } else { "fs_prepass" }),
                     compilation_options: Default::default(),
-                    targets: &[Some(NORMAL_FORMAT.into())],
+                    targets: &[Some(NORMAL_FORMAT.into()), Some(motion::VELOCITY_FORMAT.into())],
                 }),
                 multiview_mask: None,
                 cache: None,
@@ -1316,7 +1400,7 @@ impl Renderer {
 
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sky"),
-            layout: Some(&frame_layout),
+            layout: Some(&sky_layout),
             vertex: wgpu::VertexState { module: &sky, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -1565,13 +1649,16 @@ impl Renderer {
         let line_cap = 65536 * std::mem::size_of::<LineVertex>() as u64;
         let line_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("lines"), size: line_cap, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let taa_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("taa"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        let quality_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("quality"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let quality_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("quality"), size: std::mem::size_of::<QualityUniforms>() as u64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let gpu_profiler = profiler::GpuProfiler::new(&device, &queue);
+        let fog = fog::Fog::new(&device, &queue, &frame_bgl);
+        let motion = motion::MotionBlur::new(&device, &frame_bgl, HDR_FORMAT);
         let camera_fx = look::CameraFx::new(&device, output_format, &frame_bgl, &taa_bgl);
         let mut r = Self {
             device,
             queue,
             adapter_info,
+            adapter: None,
             output_format,
             pipelines,
             frame_bgl,
@@ -1639,6 +1726,11 @@ impl Renderer {
             pending_upload: 0,
             scratch: Vec::new(),
             last_batches: Default::default(),
+            sky_bgl,
+            fog,
+            motion,
+            prev_motion: Default::default(),
+            sky_bind: None,
         };
         r.resize(1280, 720);
         // `FORJA_PRESET=low|medium|high|ultra`: a quality preset for tools
@@ -1657,6 +1749,8 @@ impl Renderer {
     /// starts TAA accumulation from scratch.
     pub fn reset_history(&mut self) {
         self.cascade_cache = Default::default();
+        self.fog.reset_history();
+        self.prev_motion.clear();
         self.temporal.history_valid = false;
         self.temporal.still_frames = 0;
         self.temporal.prev_key = None;
@@ -1784,6 +1878,7 @@ impl Renderer {
         let hdr = tex("hdr", width, height, HDR_FORMAT);
         let depth = tex("depth", width, height, DEPTH_FORMAT);
         let normal = tex("normal", width, height, NORMAL_FORMAT);
+        let velocity = tex("velocity", width, height, motion::VELOCITY_FORMAT);
         let ao_raw = tex("ao_raw", width, height, AO_FORMAT);
         let ao = tex("ao", width, height, AO_FORMAT);
         let (hw, hh) = (width.div_ceil(2), height.div_ceil(2));
@@ -1814,6 +1909,7 @@ impl Renderer {
                 entry(2, &depth),
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
                 wgpu::BindGroupEntry { binding: 4, resource: self.taa_buf.as_entire_binding() },
+                entry(5, &velocity),
             ],
         });
         let screen_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1826,13 +1922,16 @@ impl Renderer {
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
                 entry(4, &normal),
                 wgpu::BindGroupEntry { binding: 5, resource: self.quality_buf.as_entire_binding() },
+                entry(6, self.fog.apply_view()),
+                wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::Sampler(&self.fog.sampler) },
             ],
         });
         self.temporal.history_valid = false;
         // Render target memory: hdr, normal, resolved, history (8 B/px),
         // depth (4), ldr (4), ao x2 (1), half ao x2, bloom chain (~1/3 hdr).
         let px = width as u64 * height as u64;
-        self.target_bytes = px * (8 * 4 + 4 + 4 + 2) + px / 2 + px * 8 / 3;
+        // Plus velocity (4), RGBA8 bent-normal AO (x4) and the motion tiles.
+        self.target_bytes = px * (8 * 4 + 4 + 4 + 2) + px / 2 + px * 8 / 3 + px * 4 + px * 6 + self.motion.target_bytes();
         let mut bloom = Vec::new();
         let (mut w, mut h) = (width, height);
         for _ in 0..BLOOM_MIPS {
@@ -1886,7 +1985,7 @@ impl Renderer {
         let tonemap = bind(&resolved, &tu, &bloom[0].0, &exposure);
         let dof_tonemap = bind(&hdr, &tu, &bloom[0].0, &exposure);
         let dof_down = bind(&hdr, &uniforms[0], &dummy, &dummy);
-        let camera = self.camera_fx.targets(&self.device, self.output_format, (width, height), &self.taa_bgl, &resolved, &depth);
+        let camera = self.camera_fx.targets(&self.device, self.output_format, (width, height), &self.taa_bgl, &resolved, &depth, &velocity);
         uniforms.push(tu);
         // Final pass uniform is rewritten each frame (FXAA or sharpening).
         let fu = mk_uniform([1.0 / width as f32, 1.0 / height as f32], [1.0, 0.0, 0.0, 0.0]);
@@ -1906,6 +2005,7 @@ impl Renderer {
                 entry(3, &resolved),
             ],
         });
+        self.motion.resize(&self.device, (width, height), &history, &depth, &velocity);
         self.targets = Some(Targets {
             width,
             height,
@@ -1934,6 +2034,8 @@ impl Renderer {
             dof_down,
             dof_tonemap,
             exposure_bind,
+            velocity,
+            history,
         });
         let grid = lights::cluster_grid(width, height);
         if grid != self.cluster_grid {
@@ -1941,6 +2043,37 @@ impl Renderer {
             self.cluster_buf = cluster_buffer(&self.device, width, height);
             self.rebuild_frame_bind();
         }
+    }
+
+    /// Main pass screen inputs (rebuilt when the fog volume changes).
+    fn make_screen_bind(&self, ao: &wgpu::TextureView, depth: &wgpu::TextureView, history: &wgpu::TextureView, normal: &wgpu::TextureView) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("screen"),
+            layout: &self.screen_bgl,
+            entries: &[
+                view_entry(0, ao),
+                view_entry(1, depth),
+                view_entry(2, history),
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.clamp_sampler) },
+                view_entry(4, normal),
+                wgpu::BindGroupEntry { binding: 5, resource: self.quality_buf.as_entire_binding() },
+                view_entry(6, self.fog.apply_view()),
+                wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::Sampler(&self.fog.sampler) },
+            ],
+        })
+    }
+
+    fn make_sky_bind(&self) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sky"),
+            layout: &self.sky_bgl,
+            entries: &[
+                view_entry(0, &self.fog.skyview),
+                view_entry(1, &self.fog.transmittance),
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.fog.sampler) },
+                view_entry(3, self.fog.apply_view()),
+            ],
+        })
     }
 
     /// Recreates the bind groups that reference the frame's buffers (after
@@ -2573,6 +2706,11 @@ impl Renderer {
             self.queue.write_buffer(&self.exposure_state, 0, bytemuck::cast_slice(&[1.0f32, 1.0, env.exposure, 0.0]));
         }
         self.auto_exposure_prev = auto.is_some();
+        // Real frame time (motion blur shutter); 1/60 for stills and jumps.
+        let frame_dt = {
+            let dt = frame.time - self.prev_time;
+            if dt > 1e-4 && dt < 0.5 { dt } else { 1.0 / 60.0 }
+        };
         self.prev_time = frame.time;
         let ibl = self.env.as_ref().filter(|_| env.use_ibl);
         let (sun, mut sky) = match ibl {
@@ -2682,6 +2820,19 @@ impl Renderer {
         }
         let proj = cam.proj();
         let fx_on = |b: bool| b as u32 as f32;
+        // Froxel fog grid for this viewport and quality (rebinds the main
+        // and sky passes when the volume changes).
+        if self.fog.configure(&self.device, (width, height), s.volumetric_fog) || self.sky_bind.is_none() {
+            self.sky_bind = Some(self.make_sky_bind());
+            if let Some(t) = &self.targets {
+                let b = self.make_screen_bind(&t.ao, &t.depth, &t.history, &t.normal);
+                self.targets.as_mut().expect("resized").screen_bind = b;
+            }
+        }
+        // Low dawn/dusk haze: zero above ~20 degrees of sun and with the
+        // night camera, 6e-4 1/m at the horizon (80 m scale height).
+        let haze = env.haze.unwrap_or_else(|| if daylight { 6.0e-4 * (1.0 - ((sun.y - 0.05) / 0.3).clamp(0.0, 1.0)).powi(2) } else { 0.0 });
+        let fog_volume = self.fog.uniform_params((haze.max(0.0), 1.0 / 80.0));
         let (tiles_x, tiles_y) = self.cluster_grid;
         let slice_k = lights::CLUSTER_SLICES as f32 / (lights::CLUSTER_FAR / lights::CLUSTER_NEAR).ln();
         let ns = &night_sky;
@@ -2716,10 +2867,15 @@ impl Renderer {
             night_zenith: ns.zenith.extend(env.sprite_min_pixels).to_array(),
             sky_glow: ns.glow.extend(ns.glow_height.max(0.005)).to_array(),
             scatter: [env.scatter_anisotropy.clamp(-0.95, 0.95), env.light_sprites, n_spot as f32, fx_on(env.wetness > 0.0)],
+            features: [fx_on(s.sky_lut), 0.0, 0.0, 0.0],
+            fog_volume,
             spot_vp: spot_vp.map(|m| m.to_cols_array_2d()),
         };
         let half_ao = s.ssao && s.ao_half_res;
-        let quality = QualityUniforms { params: [s.pcss_cascades as f32, s.ssr_steps.max(4) as f32, s.contact_steps.max(1) as f32, if half_ao { 2.0 } else { 1.0 }] };
+        let quality = QualityUniforms {
+            params: [s.pcss_cascades as f32, s.ssr_steps.max(4) as f32, s.contact_steps.max(1) as f32, if half_ao { 2.0 } else { 1.0 }],
+            extra: [fx_on(s.bent_normals && s.ssao), fx_on(s.sky_lut), fx_on(s.fsr), 0.0],
+        };
         self.queue.write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&uniforms));
         self.queue.write_buffer(&self.quality_buf, 0, bytemuck::bytes_of(&quality));
         self.queue.write_buffer(&self.taa_buf, 0, bytemuck::bytes_of(&tf.taa_params));
@@ -2782,6 +2938,9 @@ impl Renderer {
         let mut main: Vec<(u32, InstanceRaw)> = Vec::new();
         let mut shadow: [Vec<(u32, InstanceRaw)>; 4 + lights::MAX_SPOT_SHADOWS] = Default::default();
         let mut culled = 0u32;
+        // Object motion: last frame's transform of each `motion_id`.
+        let mut motion_now: std::collections::HashMap<u64, Mat4> = std::collections::HashMap::with_capacity(self.prev_motion.len());
+        let mut object_motion = false;
         for inst in &frame.instances {
             let Some(model) = self.models.get(inst.model.0 as usize) else { continue };
             // Whole-instance tests first: frustum, sub-pixel detail and
@@ -2816,6 +2975,12 @@ impl Renderer {
                 0
             };
             let inst_pixels = std::f32::consts::PI * px_radius * px_radius;
+            let prev_inst = if inst.motion_id != 0 {
+                motion_now.insert(inst.motion_id, inst.transform);
+                self.prev_motion.get(&inst.motion_id).copied().filter(|p| *p != inst.transform)
+            } else {
+                None
+            };
             for part in &model.parts {
                 let mesh = &self.meshes[part.mesh as usize];
                 let skinned = mesh.skin.is_some() && inst.joints.is_some();
@@ -2829,7 +2994,17 @@ impl Renderer {
                     (in_main, inst_pixels, None)
                 };
                 let lod = Self::lod_for(&self.meshes, part.mesh, pixels * 0.5 * s.lod_detail, 0);
-                let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, lod, 0] };
+                // extra.w: 1 + index of last frame's model matrix in the
+                // joint buffer (prepass velocity), 0 when it did not move.
+                let prev_slot = match prev_inst {
+                    Some(p) if visible => {
+                        object_motion = true;
+                        joints.push((if skinned { p } else { p * node_m }).to_cols_array_2d());
+                        joints.len() as u32
+                    }
+                    _ => 0,
+                };
+                let raw = InstanceRaw { model: world.to_cols_array_2d(), tint: inst.tint.to_array(), extra: [joint_offset, skinned as u32, lod, prev_slot] };
                 let role = mesh.shadow;
                 if visible && role != ShadowRole::Proxy {
                     main.push((part.mesh, raw));
@@ -2858,6 +3033,7 @@ impl Renderer {
                 }
             }
         }
+        self.prev_motion = motion_now;
         // Dynamic lists -> batches (skinned meshes without joints fall back
         // to the static pipeline, i.e. the bind pose).
         let main_key = |r: &Renderer, mesh: u32, raw: &InstanceRaw| {
@@ -2992,7 +3168,7 @@ impl Renderer {
         self.queue.write_buffer(
             &pu[pu.len() - 1],
             0,
-            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!s.taa) as u32 as f32, sharpen, (!self.output_format.is_srgb()) as u32 as f32, 0.0], ..Default::default() }),
+            bytemuck::bytes_of(&PostUniforms { texel: [1.0 / width as f32, 1.0 / height as f32, 0.0, 0.0], params: [(!s.taa) as u32 as f32, sharpen, (!self.output_format.is_srgb()) as u32 as f32, fx_on(s.fsr)], ..Default::default() }),
         );
         self.cpu.add("upload", t_up.elapsed().as_secs_f32() * 1000.0);
 
@@ -3006,6 +3182,7 @@ impl Renderer {
         // The night grade (post.wgsl) already grades night frames: fade
         // the look's colour grade out so they are not graded twice.
         let look = look.under_night_grade(env.night_grade);
+        self.camera_fx.fsr = s.fsr;
         let (dof_on, camera_on) = self.camera_fx.prepare(&self.queue, &look, frame.camera.fov_y, (width, height), tf.frame_index, self.settings.look);
         let t = self.targets.as_ref().expect("resized");
         if camera_on && !self.output_format.is_srgb() {
@@ -3101,12 +3278,15 @@ impl Renderer {
         {
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("prepass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &t.normal,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 1.0, b: 0.0, a: 0.0 }), store: wgpu::StoreOp::Store },
-                })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &t.normal,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 1.0, b: 0.0, a: 0.0 }), store: wgpu::StoreOp::Store },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment { view: &t.velocity, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } }),
+                ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &t.depth,
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Store }),
@@ -3179,6 +3359,10 @@ impl Renderer {
             let clusters = tiles_x * tiles_y * (lights::CLUSTER_SLICES + 1);
             compute(&mut enc, &self.pipelines.cluster, &self.cluster_bind, (clusters.div_ceil(64), 1), "light clusters");
         }
+        // 3c. Sky-view LUT (and the transmittance LUT once), then the froxel
+        // fog: lit by this frame's shadow maps and light clusters.
+        self.fog.encode_sky(&self.device, &mut enc, &self.frame_bind, prof);
+        self.fog.encode_volume(&self.queue, &mut enc, &self.frame_bind, prof);
         // 4. Main HDR pass + sky + lines, depth-tested against the prepass
         // (read-only, so the shaders can also sample it).
         {
@@ -3205,6 +3389,7 @@ impl Renderer {
                 if blend_start && !sky_drawn {
                     pass.set_pipeline(&self.pipelines.sky);
                     pass.set_bind_group(0, &self.frame_bind, &[]);
+                    pass.set_bind_group(1, self.sky_bind.as_ref().expect("sky bind"), &[]);
                     pass.draw(0..3, 0..1);
                     if env.light_sprites > 0.0 && n_lights > 0 {
                         pass.set_pipeline(&self.pipelines.sprites);
@@ -3258,6 +3443,11 @@ impl Renderer {
             wgpu::TexelCopyTextureInfo { texture: &t.history_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         );
+        // 5a. Motion blur: reads the history copy (= this frame's resolved
+        // image), writes `resolved`; the TAA history stays sharp.
+        if s.motion_blur && (!still || object_motion) {
+            self.motion.encode(&self.queue, &mut enc, &self.frame_bind, &t.resolved, s.motion_blur_samples, frame_dt, prof);
+        }
         // 5b. Depth of field (look.rs) into `hdr`, which is free after TAA.
         if dof_on {
             self.camera_fx.dof_pass(&mut enc, &t.hdr, &self.frame_bind, &t.camera, prof.pass("dof"));

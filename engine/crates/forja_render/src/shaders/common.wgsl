@@ -265,34 +265,53 @@ fn ambient_mean() -> vec3<f32> {
     return (frame.sky_zenith.rgb + frame.sky_horizon.rgb * 2.0 + frame.ground_color.rgb) * 0.25;
 }
 
-// Aerial perspective: single scattering in an exponential aerosol layer
-// (density `sky_horizon.w` at sea level, inverse scale height
-// `ground_color.w`) plus clear-air Rayleigh. Light scattered in comes from
-// the sun through a Henyey-Greenstein lobe and from the sky's mean
-// radiance, so the haze is blue-grey away from the sun and brighter toward
-// it, and it only shows over real distances (30 km visibility: 1.3% at
-// 100 m, 5% at 400 m).
-fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
-    let cam = frame.camera_pos.xyz;
-    let dist = length(world_pos - cam);
-    let density = frame.sky_horizon.w;
-    let falloff = frame.ground_color.w;
-    let dy = world_pos.y - cam.y;
-    var integral = dist * exp(-falloff * max(cam.y, 0.0));
+// Optical depth integral of an exponential layer (inverse scale height
+// `falloff`) between two points, per unit ground-level density.
+fn layer_integral(o: vec3<f32>, p: vec3<f32>, falloff: f32) -> f32 {
+    let dist = length(p - o);
+    let dy = p.y - o.y;
+    var integral = dist * exp(-falloff * max(o.y, 0.0));
     if (abs(dy * falloff) > 1e-4) {
         integral *= (1.0 - exp(-falloff * dy)) / (falloff * dy);
     }
+    return integral;
+}
+
+// Aerosol optical depth between two points: the height fog (density
+// `sky_horizon.w`, inverse scale height `ground_color.w`) plus the low haze
+// layer of dawn and dusk (`fog_volume.xy`, zero by day and at night).
+fn aerosol_depth(o: vec3<f32>, p: vec3<f32>) -> f32 {
+    var tau = frame.sky_horizon.w * layer_integral(o, p, frame.ground_color.w);
+    if (frame.fog_volume.x > 0.0) {
+        tau += frame.fog_volume.x * layer_integral(o, p, frame.fog_volume.y);
+    }
+    return tau;
+}
+
+// Aerial perspective: single scattering in an exponential aerosol layer
+// (density `sky_horizon.w` at sea level, inverse scale height
+// `ground_color.w`, plus the low haze of `fog_volume.xy`) and clear-air
+// Rayleigh. Light scattered in comes from the sun through a
+// Henyey-Greenstein lobe and from the sky's mean radiance, so the haze is
+// blue-grey away from the sun and brighter toward it, and it only shows
+// over real distances (30 km visibility: 1.3% at 100 m, 5% at 400 m).
+fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
+    return height_fog_from(color, frame.camera_pos.xyz, world_pos, view_dir);
+}
+
+// The same along the segment from `o` to `world_pos` (the part of a view ray
+// beyond the froxel fog volume).
+fn height_fog_from(color: vec3<f32>, o: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> vec3<f32> {
+    let dist = length(world_pos - o);
+    let tau_m = aerosol_depth(o, world_pos);
     if (frame.params.w < 0.5) {
         // Night camera (Environment::camera = CameraModel::Night): the grey height fog
         // the night presets were tuned with; their lamps glow in it through
         // `local_inscatter`.
-        let fog = 1.0 - exp(-density * integral);
-        let sun_amount = pow(max(dot(view_dir, frame.sun_dir.xyz), 0.0), 8.0);
-        let fog_color = mix(frame.sky_horizon.rgb, frame.sun_color.rgb * 0.5, sun_amount * 0.5);
-        return mix(color, fog_color, clamp(fog, 0.0, 1.0));
+        let fog = 1.0 - exp(-tau_m);
+        return mix(color, night_fog_color(dot(view_dir, frame.sun_dir.xyz), 1.0), clamp(fog, 0.0, 1.0));
     }
     // Optical depths: aerosol (grey) and Rayleigh (per channel, 1/m).
-    let tau_m = density * integral;
     let tau_r = vec3<f32>(5.8e-6, 13.6e-6, 33.1e-6) * dist;
     let tau = vec3<f32>(tau_m) + tau_r;
     let trans = exp(-tau);
@@ -304,6 +323,14 @@ fn height_fog(color: vec3<f32>, world_pos: vec3<f32>, view_dir: vec3<f32>) -> ve
     let j_r = sun * phase_rayleigh(c) + amb;
     let inscatter = (j_m * tau_m + j_r * tau_r) / max(tau, vec3<f32>(1e-9));
     return color * trans + inscatter * (vec3<f32>(1.0) - trans);
+}
+
+// Source radiance of the night fog toward the camera (`c`: cosine between
+// the view ray and the sun/moon), with the moon's share scaled by its
+// shadow visibility.
+fn night_fog_color(c: f32, sun_vis: f32) -> vec3<f32> {
+    let sun_amount = pow(max(c, 0.0), 8.0);
+    return frame.sky_horizon.rgb * (1.0 - 0.5 * sun_amount) + frame.sun_color.rgb * (0.25 * sun_amount * sun_vis);
 }
 
 // ---- Clustered local lights -------------------------------------------------
@@ -349,20 +376,21 @@ fn phase_hg(cos_t: f32, g: f32) -> f32 {
     return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * cos_t, 1e-4), 1.5));
 }
 
-// Height-fog extinction coefficient at height y (m^-1).
+// Aerosol extinction coefficient at height y (m^-1): height fog plus haze.
 fn fog_sigma(y: f32) -> f32 {
-    return frame.sky_horizon.w * exp(-frame.ground_color.w * max(y, 0.0));
+    return frame.sky_horizon.w * exp(-frame.ground_color.w * max(y, 0.0)) + frame.fog_volume.x * exp(-frame.fog_volume.y * max(y, 0.0));
 }
 
 // Light scattered toward the camera by the height fog from the local lights
-// of this pixel's tile column, between the camera and `t_max` along `dir`.
+// of this pixel's tile column, between `t_min` and `t_max` along `dir`
+// (`t_min` > 0 when the froxel fog volume covers the first stretch).
 // Each light is integrated in closed form over the angle it subtends
 // (equiangular parameterization, Kulla & Fajardo 2012: dt / d² = dθ / h),
 // so a point light needs only a few deterministic nodes for the
 // Henyey-Greenstein phase and the fog density; spot cones get more.
 // Gives lamps their halo in haze and spot beams their visible cone.
 // Cost: (3 or 6) x lights within `cluster_z.w` metres in the tile.
-fn local_inscatter(pix: vec2<f32>, dir: vec3<f32>, t_max: f32) -> vec3<f32> {
+fn local_inscatter(pix: vec2<f32>, dir: vec3<f32>, t_min: f32, t_max: f32) -> vec3<f32> {
     if (frame.lighting.x <= 0.0 || frame.lighting.z <= 0.0 || frame.sky_horizon.w <= 0.0) { return vec3<f32>(0.0); }
     let cam = frame.camera_pos.xyz;
     let base = column_of(pix);
@@ -377,7 +405,7 @@ fn local_inscatter(pix: vec2<f32>, dir: vec3<f32>, t_max: f32) -> vec3<f32> {
         let h2 = max(dot(to, to) - tc * tc, 0.0);
         if (h2 >= r * r) { continue; }
         let half_chord = sqrt(r * r - h2);
-        let ta = max(tc - half_chord, 0.0);
+        let ta = max(tc - half_chord, t_min);
         let tb = min(tc + half_chord, t_max);
         if (tb <= ta) { continue; }
         let h = sqrt(h2 + l.color.w * l.color.w + 1e-4);
@@ -441,13 +469,56 @@ fn ambient_fill() -> vec3<f32> {
 
 // Height-fog transmittance from the camera to `p`.
 fn fog_transmittance(p: vec3<f32>) -> f32 {
-    let cam = frame.camera_pos.xyz;
-    let dist = length(p - cam);
-    let falloff = frame.ground_color.w;
-    let dy = p.y - cam.y;
-    var integral = dist * exp(-falloff * max(cam.y, 0.0));
-    if (abs(dy) > 0.01) {
-        integral *= (1.0 - exp(-falloff * dy)) / (falloff * dy);
+    return exp(-aerosol_depth(frame.camera_pos.xyz, p));
+}
+
+// ---- Sky LUTs (Hillaire 2020, "A Scalable and Production Ready Sky and
+// Atmosphere Rendering Technique") --------------------------------------------
+
+// Transmittance LUT (256 x 64): x maps the distance to the top of the
+// atmosphere along the ray, y the height (Bruneton & Neyret 2008 mapping).
+fn transmittance_uv(r: f32, mu: f32) -> vec2<f32> {
+    let hh = sqrt(ATMO_R * ATMO_R - EARTH_R * EARTH_R);
+    let rho = sqrt(max(r * r - EARTH_R * EARTH_R, 0.0));
+    let disc = r * r * (mu * mu - 1.0) + ATMO_R * ATMO_R;
+    let d = max(-r * mu + sqrt(max(disc, 0.0)), 0.0);
+    let d_min = ATMO_R - r;
+    let d_max = rho + hh;
+    return vec2<f32>((d - d_min) / max(d_max - d_min, 1e-6), rho / hh);
+}
+
+// Inverse of `transmittance_uv`: (r, mu).
+fn transmittance_params(uv: vec2<f32>) -> vec2<f32> {
+    let hh = sqrt(ATMO_R * ATMO_R - EARTH_R * EARTH_R);
+    let rho = hh * uv.y;
+    let r = sqrt(rho * rho + EARTH_R * EARTH_R);
+    let d_min = ATMO_R - r;
+    let d_max = rho + hh;
+    let d = d_min + uv.x * (d_max - d_min);
+    var mu = 1.0;
+    if (d > 0.0) { mu = (hh * hh - rho * rho - d * d) / (2.0 * r * d); }
+    return vec2<f32>(r, clamp(mu, -1.0, 1.0));
+}
+
+// Sky-view LUT (192 x 108) mapping: x is the azimuth from the sun (finer
+// toward it), y the zenith angle with half the texels on each side of the
+// horizon, compressed toward it (where the sky changes fastest).
+fn skyview_uv(d: vec3<f32>, sun: vec3<f32>, alt_km: f32) -> vec2<f32> {
+    let h = EARTH_R + max(alt_km, 0.001);
+    let cos_beta = sqrt(max(h * h - EARTH_R * EARTH_R, 0.0)) / h;
+    let beta = acos(clamp(cos_beta, -1.0, 1.0));
+    let zenith_horizon = PI - beta;
+    let zenith = acos(clamp(d.y, -1.0, 1.0));
+    var v: f32;
+    if (zenith < zenith_horizon) {
+        v = 0.5 * (1.0 - sqrt(max(1.0 - zenith / zenith_horizon, 0.0)));
+    } else {
+        v = 0.5 + 0.5 * sqrt(clamp((zenith - zenith_horizon) / max(beta, 1e-5), 0.0, 1.0));
     }
-    return exp(-frame.sky_horizon.w * integral);
+    let dxz = vec2<f32>(d.x, d.z);
+    let sxz = vec2<f32>(sun.x, sun.z);
+    var cos_az = 1.0;
+    if (dot(dxz, dxz) > 1e-8 && dot(sxz, sxz) > 1e-8) { cos_az = dot(normalize(dxz), normalize(sxz)); }
+    let u = sqrt(clamp(-cos_az * 0.5 + 0.5, 0.0, 1.0));
+    return vec2<f32>(u, v);
 }

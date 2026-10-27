@@ -64,10 +64,15 @@ impl PerfState {
             }),
             Err(_) => GraphicsConfig::default(),
         };
-        let auto_preset = GraphicsConfig::auto_preset(&renderer.adapter_info);
+        let (auto_preset, auto_cfg) = GraphicsConfig::for_adapter(&renderer.adapter_info);
         if cfg.auto {
             let keep = cfg.clone();
-            cfg.apply_preset(auto_preset);
+            // The preset of this adapter class with its tuning (Intel
+            // iGPUs: see `GraphicsConfig::for_adapter`).
+            cfg = GraphicsConfig { auto: true, ..auto_cfg };
+            if forja_render::quality::is_intel_integrated(&renderer.adapter_info) {
+                log::info!("graphics: Intel integrated GPU profile ({} look, {:.1} MP internal, FSR 1 upscale)", auto_preset.label(), cfg.max_render_mpix);
+            }
             cfg.vsync = keep.vsync;
             cfg.frame_latency = keep.frame_latency;
             cfg.target_fps = keep.target_fps;
@@ -167,9 +172,12 @@ impl PerfState {
 
     /// Render scale for the next frame (dynamic resolution from GPU time;
     /// without timestamp queries the frame time stands in for it).
-    pub fn next_scale(&mut self) -> f32 {
+    /// Internal resolution scale for a `width` x `height` output (dynamic
+    /// resolution within the preset's pixel budget).
+    pub fn next_scale(&mut self, width: u32, height: u32) -> f32 {
         let gpu = if self.gpu_timing { self.last.gpu_ms } else { self.last.frame_ms * 0.9 };
-        self.drs.update(gpu, &self.cfg)
+        let max = self.cfg.max_scale_for(width, height);
+        self.drs.update_capped(gpu, &self.cfg, max)
     }
 
     pub fn save(&mut self) {
@@ -340,6 +348,28 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
             g.end_row();
             g.label("Depth of field (cutscenes)");
             custom |= g.checkbox(&mut c.dof, "").changed();
+            g.end_row();
+            g.label("Motion blur");
+            g.horizontal(|g| {
+                custom |= g.checkbox(&mut c.motion_blur, "on").changed();
+                custom |= g.add(egui::Slider::new(&mut c.motion_blur_samples, 4..=24).text("samples")).changed();
+            });
+            g.end_row();
+            g.label("Volumetric fog");
+            g.horizontal(|g| {
+                for (n, label) in [(0, "off"), (1, "low"), (2, "high"), (3, "ultra")] {
+                    custom |= g.selectable_value(&mut c.volumetric_fog, n, label).changed();
+                }
+            });
+            g.end_row();
+            g.label("Bent-normal occlusion");
+            custom |= g.checkbox(&mut c.bent_normals, "").changed();
+            g.end_row();
+            g.label("FSR 1 upscaling");
+            custom |= g.checkbox(&mut c.fsr, "").changed();
+            g.end_row();
+            g.label("Max internal pixels");
+            custom |= g.add(egui::Slider::new(&mut c.max_render_mpix, 0.5..=8.3).suffix(" MP")).changed();
             g.end_row();
             g.label("Lights per frame");
             g.horizontal(|g| {

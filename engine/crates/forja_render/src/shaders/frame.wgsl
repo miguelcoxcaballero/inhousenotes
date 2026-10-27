@@ -40,6 +40,8 @@ struct Frame {
     night_zenith: vec4<f32>,    // rgb: night sky radiance, w: light sprite minimum size (px)
     sky_glow: vec4<f32>,        // rgb: light-pollution glow at the horizon, w: its height (sin elevation)
     scatter: vec4<f32>,         // x: fog phase anisotropy g, y: light sprite strength, z: shadowed spot count, w: 1 = wetness on
+    features: vec4<f32>,        // x: 1 = sky-view LUT (0: per-pixel sky raymarch), yzw: unused
+    fog_volume: vec4<f32>,      // x: low haze extinction at ground (1/m), y: its inverse scale height (1/m), z: froxel fog range (m, 0 = analytic fog only), w: froxel depth slices
     spot_vp: array<mat4x4<f32>, 4>,
 };
 

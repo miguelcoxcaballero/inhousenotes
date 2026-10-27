@@ -1,4 +1,26 @@
 // Full-screen atmosphere at the far plane (reverse-Z depth 0).
+// The single-scattering sky comes from the sky-view LUT (skylut.wgsl,
+// Hillaire 2020): one bilinear tap per pixel instead of a 16 x 6 step
+// raymarch; `features.x = 0` (FORJA_FX=-skylut) restores the raymarch.
+
+@group(1) @binding(0) var skyview_lut: texture_2d<f32>;
+@group(1) @binding(1) var transmittance_lut: texture_2d<f32>;
+@group(1) @binding(2) var fog_samp: sampler;
+@group(1) @binding(3) var fog_volume: texture_3d<f32>;
+
+fn sky_lut_radiance(d: vec3<f32>, l: vec3<f32>, alt_km: f32) -> vec3<f32> {
+    if (frame.features.x < 0.5) { return sky_radiance(d, l, alt_km); }
+    return textureSampleLevel(skyview_lut, fog_samp, skyview_uv(d, l, alt_km), 0.0).rgb;
+}
+
+fn sun_lut_transmittance(alt_km: f32, l: vec3<f32>) -> vec3<f32> {
+    let p = vec3<f32>(0.0, EARTH_R + max(alt_km, 0.001), 0.0);
+    if (frame.features.x < 0.5) { return sun_transmittance(p, l); }
+    let r = length(p);
+    let horizon = -sqrt(max(1.0 - (EARTH_R * EARTH_R) / (r * r), 0.0));
+    if (l.y < horizon) { return vec3<f32>(0.0); }
+    return textureSampleLevel(transmittance_lut, fog_samp, transmittance_uv(r, l.y), 0.0).rgb;
+}
 struct SkyOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) ndc: vec2<f32>,
@@ -30,7 +52,7 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
         if (w > 0.0) {
             // Below the horizon blend the horizon sky into the fogged ground.
             let dh = normalize(vec3<f32>(d.x, max(d.y, 0.0), d.z));
-            var a = sky_radiance(dh, frame.sun_dir.xyz, h * 0.001) * frame.params.x;
+            var a = sky_lut_radiance(dh, frame.sun_dir.xyz, h * 0.001) * frame.params.x;
             let dist = min(h / max(-d.y, 1e-4), 3e4);
             // Land beyond the city seen from above (towns, orchards, dry
             // fields) reflects ~10%, darker than the 17% paving of the
@@ -41,17 +63,17 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
             a = mix(a, ground, smoothstep(0.0, 0.1, -d.y));
             c = mix(c, a, w);
         }
-        c += local_inscatter(in.clip.xy, d, 1e9);
+        c = apply_fog_sky(c, d, in.clip.xy);
         return vec4<f32>(min(c * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
     }
     let l = frame.sun_dir.xyz;
     let alt = frame.camera_pos.y * 0.001;
-    var c = sky_radiance(d, l, alt) * frame.sun_dir.w;
+    var c = sky_lut_radiance(d, l, alt) * frame.sun_dir.w;
     // Sun disc with limb darkening.
     let cos_sun = dot(d, l);
     let disc = smoothstep(0.99996, 0.99999, cos_sun);
     if (disc > 0.0) {
-        let ts = sun_transmittance(vec3<f32>(0.0, EARTH_R + max(alt, 0.001), 0.0), l);
+        let ts = sun_lut_transmittance(alt, l);
         c += ts * frame.sun_dir.w * 40.0 * disc;
     }
     // Night: dark zenith, light-pollution dome, stars (zero by day).
@@ -60,7 +82,8 @@ fn fs_main(in: SkyOut) -> @location(0) vec4<f32> {
     if (d.y < 0.0) {
         c = mix(c, frame.ground_color.rgb * 0.5, clamp(-d.y * 4.0, 0.0, 1.0));
     }
-    // Glow of the lamps in the haze in front of the sky.
-    c += local_inscatter(in.clip.xy, d, 1e9);
+    // The fog in front of the sky: the froxel volume (light shafts, lamp
+    // glow) or the glow of the lamps in the haze.
+    c = apply_fog_sky(c, d, in.clip.xy);
     return vec4<f32>(min(c * exposure_state.pre, vec3<f32>(60000.0)), 1.0);
 }

@@ -7,6 +7,7 @@
 struct LookParams {
     a: vec4<f32>,  // x: grade strength, y: grain amount, z: grain size (px), w: vignette
     b: vec4<f32>,  // x: aberration (px at the corners), y: frame index, zw: 1 / size
+    c: vec4<f32>,  // x: 1 = FSR 1 EASU when upscaling to the output
 };
 
 // 1 when the output is a plain UNORM surface: this pass, the last one, then
@@ -83,14 +84,25 @@ fn fs_camera(in: FsIn) -> @location(0) vec4<f32> {
     // height (a short lens's dominant transverse colour error).
     var c: vec3<f32>;
     let ca = look.b.x * res;
+    // Render scale < 1: this pass upsamples to the output; FSR 1 EASU keeps
+    // edges sharp (the aberration then offsets red and blue around it).
+    let up = look.c.x > 0.5 && easu_upscaling(src, uv);
     if (ca > 0.01) {
         let shift = d / max(length(d), 1e-4) * ca * r * r * look.b.zw;
         c = vec3<f32>(
             textureSampleLevel(src, samp, uv - shift, 0.0).r,
             textureSampleLevel(src, samp, uv, 0.0).g,
             textureSampleLevel(src, samp, uv + shift, 0.0).b);
+        if (up) {
+            let base = textureSampleLevel(src, samp, uv, 0.0).rgb;
+            c = easu(src, uv) + (c - base);
+        }
     } else {
-        c = textureSampleLevel(src, samp, uv, 0.0).rgb;
+        if (up) {
+            c = easu(src, uv);
+        } else {
+            c = textureSampleLevel(src, samp, uv, 0.0).rgb;
+        }
     }
     // Natural vignetting: cos^4 of the field angle (a ~40 degree half
     // diagonal at full strength).

@@ -37,8 +37,13 @@ struct Quality {
     // x: cascades below this index use PCSS, the rest a fixed 4-tap PCF;
     // y: SSR ray steps; z: contact-shadow steps; w: AO scale.
     params: vec4<f32>,
+    // x: 1 = GTAO bent normals, y: 1 = sky-view LUT, z: 1 = FSR upscale.
+    extra: vec4<f32>,
 };
 @group(3) @binding(5) var<uniform> quality: Quality;
+// Froxel fog: integrated in-scattering (rgb, pre-exposed) and transmittance.
+@group(3) @binding(6) var fog_volume: texture_3d<f32>;
+@group(3) @binding(7) var fog_samp: sampler;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -67,11 +72,15 @@ struct VertexOut {
     @location(3) tangent: vec4<f32>,
     @location(4) tint: vec4<f32>,
     @location(5) view_depth: f32,
+    // Last frame's clip position (unjittered): screen motion for the
+    // velocity target of the prepass.
+    @location(6) prev_clip: vec4<f32>,
 };
 
-fn finish(world: vec4<f32>, n: vec3<f32>, t: vec3<f32>, tw: f32, uv: vec2<f32>, tint: vec4<f32>) -> VertexOut {
+fn finish(world: vec4<f32>, prev_world: vec4<f32>, n: vec3<f32>, t: vec3<f32>, tw: f32, uv: vec2<f32>, tint: vec4<f32>) -> VertexOut {
     var out: VertexOut;
     out.clip = frame.view_proj * world;
+    out.prev_clip = frame.prev_view_proj * prev_world;
     out.world_pos = world.xyz;
     out.normal = normalize(n);
     out.tangent = vec4<f32>(normalize(t), tw);
@@ -81,11 +90,19 @@ fn finish(world: vec4<f32>, n: vec3<f32>, t: vec3<f32>, tw: f32, uv: vec2<f32>, 
     return out;
 }
 
+// Last frame's model matrix: `extra.w` - 1 indexes it in the joint buffer
+// for moving objects (0: did not move, the static world).
+fn prev_model(v: VertexIn, model: mat4x4<f32>) -> mat4x4<f32> {
+    if (v.extra.w == 0u) { return model; }
+    return joints[v.extra.w - 1u];
+}
+
 @vertex
 fn vs_main(v: VertexIn) -> VertexOut {
     let model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
     let m3 = mat3x3<f32>(model[0].xyz, model[1].xyz, model[2].xyz);
-    return finish(model * vec4<f32>(v.position, 1.0), m3 * v.normal, m3 * v.tangent.xyz, v.tangent.w, v.uv, v.tint);
+    let p = vec4<f32>(v.position, 1.0);
+    return finish(model * p, prev_model(v, model) * p, m3 * v.normal, m3 * v.tangent.xyz, v.tangent.w, v.uv, v.tint);
 }
 
 @vertex
@@ -95,9 +112,13 @@ fn vs_skinned(v: VertexIn, s: SkinIn) -> VertexOut {
         + joints[base + s.joint_ids.y] * s.weights.y
         + joints[base + s.joint_ids.z] * s.weights.z
         + joints[base + s.joint_ids.w] * s.weights.w;
-    let model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3) * skin;
+    let inst = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
+    let model = inst * skin;
     let m3 = mat3x3<f32>(model[0].xyz, model[1].xyz, model[2].xyz);
-    return finish(model * vec4<f32>(v.position, 1.0), m3 * v.normal, m3 * v.tangent.xyz, v.tangent.w, v.uv, v.tint);
+    let p = vec4<f32>(v.position, 1.0);
+    // Last frame's pose is not kept: the current skin under last frame's
+    // placement (whole-body motion; limb motion is not blurred).
+    return finish(model * p, prev_model(v, inst) * skin * p, m3 * v.normal, m3 * v.tangent.xyz, v.tangent.w, v.uv, v.tint);
 }
 
 // ---- Lighting helpers (render-owned). --------------------------------------
@@ -121,20 +142,33 @@ fn impostor_hidden(in: VertexOut, front: bool, face: vec3<f32>) -> bool {
     return c < mix(0.42, 0.72, fract(h * 7.31));
 }
 
-@fragment
-fn fs_prepass(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    let n = normalize(in.normal);
-    return vec4<f32>(select(-n, n, front), 1.0);
+struct PrepassOut {
+    @location(0) normal: vec4<f32>,
+    // Screen motion since last frame (px, y down), camera and object.
+    @location(1) velocity: vec4<f32>,
+};
+
+fn screen_velocity(in: VertexOut) -> vec4<f32> {
+    if (in.prev_clip.w <= 1e-5) { return vec4<f32>(0.0); }
+    let ndc = vec2<f32>(in.clip.x * frame.screen.z * 2.0 - 1.0, 1.0 - in.clip.y * frame.screen.w * 2.0) - frame.jitter.xy;
+    let prev = in.prev_clip.xy / in.prev_clip.w;
+    return vec4<f32>((ndc - prev) * vec2<f32>(0.5, -0.5) * frame.screen.xy, 0.0, 0.0);
 }
 
 @fragment
-fn fs_prepass_masked(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn fs_prepass(in: VertexOut, @builtin(front_facing) front: bool) -> PrepassOut {
+    let n = normalize(in.normal);
+    return PrepassOut(vec4<f32>(select(-n, n, front), 1.0), screen_velocity(in));
+}
+
+@fragment
+fn fs_prepass_masked(in: VertexOut, @builtin(front_facing) front: bool) -> PrepassOut {
     let face = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let a = textureSample(base_tex, tex_sampler, in.uv).a * material.base_color.a * in.tint.a;
     if (a < material.params.z) { discard; }
     if (impostor_hidden(in, front, face)) { discard; }
     let n = normalize(in.normal);
-    return vec4<f32>(select(-n, n, front || material.foliage.z > 0.5), 1.0);
+    return PrepassOut(vec4<f32>(select(-n, n, front || material.foliage.z > 0.5), 1.0), screen_velocity(in));
 }
 
 fn screen_max() -> vec2<i32> {
@@ -416,11 +450,45 @@ fn ao_multibounce(ao: f32, albedo: vec3<f32>) -> vec3<f32> {
     return max(vec3<f32>(ao), ((ao * a + b) * ao + c) * ao);
 }
 
-// Ambient occlusion from GTAO at this pixel (1 for blended surfaces).
-fn screen_ao(clip: vec4<f32>, on_surface: bool) -> f32 {
-    if (!on_surface || frame.fx.x <= 0.0) { return 1.0; }
-    let ao = textureLoad(ssao_tex, vec2<i32>(clip.xy), 0).r;
-    return pow(ao, frame.fx.x);
+// Ambient occlusion from GTAO at this pixel (1 for blended surfaces) and
+// its bent normal (world space; `ng` where there is none).
+fn screen_ao(clip: vec4<f32>, on_surface: bool, ng: vec3<f32>) -> vec4<f32> {
+    if (!on_surface || frame.fx.x <= 0.0) { return vec4<f32>(ng, 1.0); }
+    let t = textureLoad(ssao_tex, vec2<i32>(clip.xy), 0);
+    let b = t.rgb * 2.0 - vec3<f32>(1.0);
+    let bl = dot(b, b);
+    let bent = select(ng, b * inverseSqrt(max(bl, 1e-8)), bl > 0.04);
+    return vec4<f32>(bent, pow(t.a, frame.fx.x));
+}
+
+// Solid angle of the intersection of two spherical caps (Oat & Sander
+// 2007, "Ambient Aperture Lighting", smoothstep approximation), cosines of
+// their half angles and of the angle between their axes.
+fn cap_intersection(cos1: f32, cos2: f32, cos_d: f32) -> f32 {
+    let r1 = acos(clamp(cos1, -1.0, 1.0));
+    let r2 = acos(clamp(cos2, -1.0, 1.0));
+    let d = acos(clamp(cos_d, -1.0, 1.0));
+    let full = 2.0 * PI - 2.0 * PI * max(cos1, cos2);
+    if (min(r1, r2) <= max(r1, r2) - d) { return full; }
+    if (r1 + r2 <= d) { return 0.0; }
+    let delta = abs(r1 - r2);
+    let x = 1.0 - clamp((d - delta) / max(r1 + r2 - delta, 1e-4), 0.0, 1.0);
+    return full * smoothstep(0.0, 1.0, x);
+}
+
+// Cone-traced specular occlusion (Jimenez et al. 2016, "Practical
+// Real-Time Strategies for Accurate Indirect Occlusion", GTSO): the
+// visible cone around the GTAO bent normal (cos = sqrt(1 - visibility))
+// intersected with a cone bounding the GGX lobe around the reflection
+// vector (Phong-equivalent exponent 2 / a^2 - 2, cos = 0.244^(1/(n+1))),
+// as a fraction of the lobe's cone. ~40 ALU, 3 acos.
+fn cone_specular_occlusion(bent: vec3<f32>, vis: f32, r: vec3<f32>, rough: f32) -> f32 {
+    let cos_v = sqrt(clamp(1.0 - vis, 0.0, 1.0));
+    let a = max(rough * rough, 0.02);
+    let n = 2.0 / (a * a) - 2.0;
+    let cos_s = clamp(pow(0.244, 1.0 / (n + 1.0)), 0.0, 0.9999);
+    let lobe = 2.0 * PI * (1.0 - cos_s);
+    return clamp(cap_intersection(cos_v, cos_s, dot(bent, r)) / lobe, 0.0, 1.0);
 }
 
 
@@ -677,11 +745,21 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     // dielectrics keep their energy (no dark rims) and diffuse loses what
     // the specular layer reflects (energy conservation).
     let ibl = ibl_weights(f0, spec_k, rough, nv);
-    let occ = min(ao, screen_ao(in.clip, on_surface));
-    let spec_occ = mix(1.0, clamp(pow(nv + occ, exp2(-16.0 * rough - 1.0)) - 1.0 + occ, 0.0, 1.0), frame.ao_params.y);
+    let sao = screen_ao(in.clip, on_surface, ng);
+    let occ = min(ao, sao.a);
     let r = reflect(-v, n);
+    var spec_occ = clamp(pow(nv + occ, exp2(-16.0 * rough - 1.0)) - 1.0 + occ, 0.0, 1.0);
+    var nd_amb = nd;
+    if (quality.extra.x > 0.5 && on_surface && frame.fx.x > 0.0) {
+        // Bent normals: reflections occluded by the cone of open sky the
+        // horizon search found, and the diffuse ambient looked up along the
+        // least occluded direction (the bend applied to the mapped normal).
+        spec_occ = cone_specular_occlusion(sao.xyz, occ, r, rough);
+        nd_amb = normalize(nd + (sao.xyz - ng) * 0.7);
+    }
+    spec_occ = mix(1.0, spec_occ, frame.ao_params.y);
     let horizon = clamp(1.0 + 1.2 * dot(r, ng), 0.0, 1.0);
-    color += diffuse_color * ibl.diffuse * ambient_sky(nd) * ao_multibounce(occ, diffuse_color);
+    color += diffuse_color * ibl.diffuse * ambient_sky(nd_amb) * ao_multibounce(occ, diffuse_color);
     color += ibl.multi * ambient_sky(n) * (occ * spec_occ);
     spec_dbg += ibl.multi * ambient_sky(n) * (occ * spec_occ);
     // One screen-space reflection ray per pixel, along the glossiest lobe
@@ -717,8 +795,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     color += textureSample(emissive_tex, tex_sampler, in.uv).rgb * material.emissive.rgb * (4.0 * frame.wet.w);
 
     let dist = length(in.world_pos - frame.camera_pos.xyz);
-    let glow = local_inscatter(in.clip.xy, -v, dist);
-    color = height_fog(color, in.world_pos, -v) + glow;
+    color = apply_fog(color, in.world_pos, -v, in.clip.xy, in.view_depth, dist);
     var alpha = base.a;
     let tr = material.layers.z;
     if (tr > 0.0) {
@@ -728,7 +805,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         let fr = f_schlick(vec3<f32>(0.04), nv).x;
         alpha = clamp(fr + (1.0 - tr) * (1.0 - fr), 0.03, 1.0);
         let refl = mix(env_reflection(r, rough), ssr.rgb, ssr.a) + glass_sun * fr / max(alpha, 0.03);
-        color = height_fog(refl * (fr / alpha) + albedo * ambient_sky(n) * (1.0 - fr / alpha) * 0.3, in.world_pos, -v) + glow;
+        color = apply_fog(refl * (fr / alpha) + albedo * ambient_sky(n) * (1.0 - fr / alpha) * 0.3, in.world_pos, -v, in.clip.xy, in.view_depth, dist);
     }
     return vec4<f32>(min(color * exposure_state.pre, vec3<f32>(60000.0)), alpha);
 }

@@ -20,6 +20,26 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 11909.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5535917&rc2=YJ2753F", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 2 parts" }
 
+# --- measured dimensions (convent_del_carme model; local frame = landmark-local metres; church frame a/b along the facade / axis) ---
+church_axis_azimuth = { value = 17.0, unit = "deg", source = "Catastro context ring 209 / OSM way 264453281 (facade line 11.44,71.38 -> 29.70,76.97 and nave flank), checked on IGN PNOA orthophoto WMS (CC BY 4.0), https://www.ign.es/wms-inspire/pnoa-ma", note = "the front faces azimuth 197 on the Placa del Carme" }
+facade_screen_width = { value = 19.7, unit = "m", source = "Catastro / OSM ring of the church: front between the Sant Elies annex and the oval chapel; photo 11 (frontal) shows the top cornice symmetric about the retable", note = "block 3.0 m deep, 8.5 m deep in its east part (LiDAR 27-28 m cells; deep east side face in photos 02, 09, 14, 15, 32)" }
+retable_lower_width = { value = 13.57, unit = "m", source = "Catastro ring notches of the column pedestals (a = 3.08 .. 16.65 m, projections 0.21-1.27 m)", note = "centred 9.86 m from the west end; door bay 7.8-11.86 m" }
+retable_bodies = { value = [2.95, 10.5, 17.6, 22.0], unit = "m", source = "photo 02 (perspective-corrected): heights along the facade proportional to the screen height under its cornice (25.3 m)", note = "pedestal top, top of the lower (Ionic), second (Corinthian) and third (Solomonic) bodies" }
+h_screen_cornice = { value = [25.3, 26.5], unit = "m", source = "camera fit of photo 15 (FinePix S1, 4.3 mm = 24 mm eq., eye 1.6 m, plan from Catastro): 25.3 under / 26.5 top of the cornice; LiDAR max 27-28 includes the cross and finials", note = "+-1 m" }
+h_nave = { value = [16.8, 20.6], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "eaves (LiDAR 17-18 at the walls) and ridge (19-20 along the axis); nave 16 m over the walls, apse at b = 50.5-54.4 m" }
+h_side_chapels = { value = [11.5, 12.5], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "west / east chapel roofs between the buttresses (LiDAR 10-13); buttresses to 15.2 (LiDAR 14-17)" }
+oval_chapel = { value = [8.4, 16.0], unit = "m", source = "Catastro ring (front 8.37 m, rounded SE flank) and photo 15 fit (cornice 14.6-16.4) / photo 02 ratio 0.69 of the screen", note = "chapel of the Mare de Deu del Carme by Vicente Gasco (plaque, photo 43)" }
+h_oval_lantern = { value = 26.2, unit = "m", source = "photo 15 fit 25.6 m; LiDAR 27; level with the screen cornice in photos 09, 14, 15", note = "glazed dome r 5.2 m on a tiled ring, apex 21.8 m, brick lantern 2.7 m" }
+communion_chapel = { value = [12.0, 23.8], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0); PNOA drum shadow", note = "body eaves 12, drum 12.6-17.0, tiled dome, lantern cross ~24.6 (LiDAR 21-24)" }
+tower_plan = { value = 6.55, unit = "m", source = "OSM way 264453281 / Catastro corner on the Carrer del Museu: square (-0.41,61.02)-(3.02,55.45)-(8.66,58.91)-(5.23,64.48), turned 31.5 deg from the grid" }
+tower_heights = { value = [18.5, 29.5, 36.0, 39.6, 41.6], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (37-43 m at the tower cells) with photo ratios (17: belfry ~6 m, lantern + statue ~5.6 m above it; 30, 01)", note = "string course, shaft cornice, belfry cornice, lantern, statue; +-1.5 m" }
+h_sant_elies = { value = 12.5, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0) (14-15 incl. roof)" }
+h_convent_ranges = { value = [9.5, 17.0], unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "terraces 8-10; Carrer del Museu range 11.5 (11-15 with skylights); north range 15.4; dormitory/link range 17.0; NW range ~15; staircase dome 20.8; NE exhibition ranges 8.5-13.5" }
+gothic_cloister = { value = [22.3, 4, 7.6], unit = "m", source = "OSM inner ring (22.3 x 22.4 m); Wikipedia es (four pointed arches per side); photo 25", note = "walks 4.6 m wide, terraces at 8.5 (LiDAR 7.5-9)" }
+renaissance_cloister = { value = [22.6, 8, 16], unit = "m", source = "OSM inner ring; Wikipedia es (two storeys: 8 arches below, 16 above per side)" }
+museu_front = { value = 57.2, unit = "m", source = "OSM edges 63-65 (azimuth 219)", note = "brick, stone plinth 1.3 m, neoclassical portal of 1778 about 5 m from the tower (Catastro photo, photos 26, 31)" }
+lidar_offset = { value = 2.7, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR building heights, GetFeatureInfo, 2.5 m cells, CC BY 4.0)", note = "LiDAR cells appear about 2.7 m south (church frame -b) of the Catastro / orthophoto features; tall-object lean in PNOA" }
+
 [[photo]]
 file = "photos/01_Facana_del_Carme_abans_de_la_seua_restauracio.jpg"
 title = "File:Façana del Carme abans de la seua restauració.jpg"
@@ -29,8 +49,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 950
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (facade and tower, before the restoration), view facade_sw_01"
 
 [[photo]]
 file = "photos/02_Iglesia_del_Carmen_Valencia.jpg"
@@ -42,8 +62,8 @@ width = 1280
 height = 1920
 camera = [23.72, 72.08]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE (facade screen and oval chapel front), view plaza_se_02"
 
 [[photo]]
 file = "photos/03_Columnes_de_la_facana_de_l_esglesia_del_Carme_Valencia.jpg"
@@ -78,8 +98,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW (facade, retable), view facade_sw_05"
 
 [[photo]]
 file = "photos/06_Convent_carme_facana.jpg"
@@ -90,8 +110,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (retable, frontal)"
 
 [[photo]]
 file = "photos/07_Plaza_de_la_Santisima_Cruz_ubicada_en_la_Plaza_del_Carmen.jpg"
@@ -116,8 +136,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E (Communion chapel dome and tower top from the garden)"
 
 [[photo]]
 file = "photos/09_Facana_i_cupula_convent_del_Carme_de_Valencia.jpg"
@@ -128,8 +148,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1718
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE (screen east block and oval chapel dome)"
 
 [[photo]]
 file = "photos/10_Valencia_Reial_Monestir_de_Nostra_Senyora_del_Carme_Centre_d.jpg"
@@ -152,8 +172,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (retable upper bodies, frontal)"
 
 [[photo]]
 file = "photos/12_673_Esglesia_del_Carme_Valencia_facana_sud_campanar_d_espada.jpg"
@@ -176,8 +196,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (retable lower body)"
 
 [[photo]]
 file = "photos/catastro_5535917YJ2753F.jpg"
@@ -188,8 +208,408 @@ license = "Catastro open data (attribution required)"
 width = 3000
 height = 4000
 exterior = true
+selected = true
+side = "SW (Carrer del Museu front and portal), view museu_catastro"
+
+
+[[photo]]
+file = "photos/14_681_angle_sud_est.jpg"
+title = "File:681 Església del Carme (València), angle sud-est.jpg"
+url = "https://commons.wikimedia.org/wiki/File:681_Esgl%C3%A9sia_del_Carme_%28Val%C3%A8ncia%29%2C_angle_sud-est.jpg"
+author = "Enric"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "SE (oval chapel and screen east block), view oval_chapel_14"
+note = "camera: Canon PowerShot G15, 11212/1000 mm (35 mm eq. None)"
+
+[[photo]]
+file = "photos/15_Santa_Cruz_01.jpg"
+title = "File:Exterior de la Iglesia de la Santa Cruz, Valencia 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_Iglesia_de_la_Santa_Cruz%2C_Valencia_01.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "SE (plaza: screen, oval chapel, Communion dome), view plaza_se_15"
+note = "camera: FinePix S1, 430/100 mm (35 mm eq. None)"
+
+[[photo]]
+file = "photos/16_Campanar_del_Carme.jpg"
+title = "File:Campanar del Carme.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar_del_Carme.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 1685
+exterior = true
+selected = true
+side = "W (tower belfry and lantern)"
+note = "camera: DC E1020, 1370/100 mm (35 mm eq. 77)"
+
+[[photo]]
+file = "photos/17_Campanar_del_Carme_Valencia.jpg"
+title = "File:Campanar del Carme, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar_del_Carme%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "NW (tower belfry from the Carrer del Museu), view tower_street_17"
+note = "camera: DC E1020, 1710/100 mm (35 mm eq. 96)"
+
+[[photo]]
+file = "photos/18_Campanar_des_del_claustre.jpg"
+title = "File:Campanar del Carme des del claustre gòtic.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar_del_Carme_des_del_claustre_g%C3%B2tic.JPG"
+author = "Joanbanjo"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
 selected = false
 side = ""
+note = "camera: DC X720, 62/10 mm (35 mm eq. 37)"
+
+[[photo]]
+file = "photos/19_Campanar_vist_des_del_claustre.jpg"
+title = "File:Campanar del Carme vist des del claustre gòtic, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar_del_Carme_vist_des_del_claustre_g%C3%B2tic%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 982
+exterior = true
+selected = true
+side = "N (tower and nave buttresses from the Gothic cloister), view tower_cloister_19"
+note = "camera: DC E1020, 570/100 mm (35 mm eq. 32)"
+
+[[photo]]
+file = "photos/20_Campanar_del_convent.jpg"
+title = "File:Campanar del convent del Carme, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Campanar_del_convent_del_Carme%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1870
+exterior = true
+selected = true
+side = "NE (tower from the cloister side)"
+note = "camera: NIKON D3100, 340/10 mm (35 mm eq. 51)"
+
+[[photo]]
+file = "photos/21_Valencia_campanar.jpg"
+title = "File:València, campanar del convent del Carme.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia%2C_campanar_del_convent_del_Carme.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1970
+exterior = true
+selected = false
+side = ""
+note = "camera: NIKON D3100, 380/10 mm (35 mm eq. 57)"
+
+[[photo]]
+file = "photos/22_P1400009.jpg"
+title = "File:Convent del Carme P1400009.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Convent_del_Carme_P1400009.JPG"
+author = "Pere prlpz (talk)"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+note = "camera: DMC-FX50, 168/10 mm (35 mm eq. 102)"
+
+[[photo]]
+file = "photos/23_P1400010.jpg"
+title = "File:Convent del Carme P1400010.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Convent_del_Carme_P1400010.JPG"
+author = "Pere prlpz (talk)"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+note = "camera: DMC-FX50, 168/10 mm (35 mm eq. 102)"
+
+[[photo]]
+file = "photos/24_P1400011.jpg"
+title = "File:Convent del Carme P1400011.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Convent_del_Carme_P1400011.JPG"
+author = "Pere prlpz (talk)"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+note = "camera: DMC-FX50, 168/10 mm (35 mm eq. 102)"
+
+[[photo]]
+file = "photos/25_Cine_claustre_gotic.jpg"
+title = "File:Cine al claustre gòtic, convent del Carme de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Cine_al_claustre_g%C3%B2tic%2C_convent_del_Carme_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 866
+exterior = true
+selected = true
+side = "Gothic cloister (courtyard walks)"
+note = "camera: NIKON D3100, 180/10 mm (35 mm eq. 27)"
+
+[[photo]]
+file = "photos/26_portalada_neoclassica.jpg"
+title = "File:Convent del Carme de València, portalada neoclàssica.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Convent_del_Carme_de_Val%C3%A8ncia%2C_portalada_neocl%C3%A0ssica.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1879
+exterior = true
+selected = true
+side = "SW (1778 portal, Carrer del Museu)"
+note = "camera: NIKON D3100, 180/10 mm (35 mm eq. 27)"
+
+[[photo]]
+file = "photos/27_cupula_Comunio_exterior.jpg"
+title = "File:Exterior de la cúpula de la capella de la Comunió, convent del Carme, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Exterior_de_la_c%C3%BApula_de_la_capella_de_la_Comuni%C3%B3%2C_convent_del_Carme%2C_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 901
+exterior = true
+selected = false
+side = ""
+note = "camera: NIKON D3100, 310/10 mm (35 mm eq. 46)"
+
+[[photo]]
+file = "photos/28_Antiguo_convento_panoramio.jpg"
+title = "File:Antiguo convento del Carmen - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Antiguo_convento_del_Carmen_-_panoramio.jpg"
+author = "Frank Baulo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = ""
+note = "camera: Canon EOS 1000D, 18/1 mm (35 mm eq. None)"
+
+[[photo]]
+file = "photos/29_Carmen2.jpg"
+title = "File:Carmen2.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Carmen2.JPG"
+author = "Un valencià"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+note = "camera: DMC-FX10, 58/10 mm (35 mm eq. 48)"
+
+[[photo]]
+file = "photos/30_Carmen3.jpg"
+title = "File:Carmen3.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Carmen3.JPG"
+author = "Un valencià"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "S (screen and tower, frontal), view facade_tower_30"
+note = "camera: DMC-FX10, 58/10 mm (35 mm eq. 35)"
+
+[[photo]]
+file = "photos/31_Carmen4.jpg"
+title = "File:Carmen4.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Carmen4.JPG"
+author = "Un valencià"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "SW (Carrer del Museu: portal, tower, Sant Elies, screen), view museu_tower_31"
+note = "camera: DMC-FX10, 66/10 mm (35 mm eq. 55)"
+
+[[photo]]
+file = "photos/32_Reial_Monestir_01.jpg"
+title = "File:Valencia - Reial Monestir de Nostra Senyora del Carme (Centre del Carme) 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Reial_Monestir_de_Nostra_Senyora_del_Carme_%28Centre_del_Carme%29_01.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 918
+exterior = true
+selected = true
+side = "SE (plaza: oval chapel, screen, Communion dome), view plaza_far_32"
+
+[[photo]]
+file = "photos/33_Reial_Monestir_02.jpg"
+title = "File:Valencia - Reial Monestir de Nostra Senyora del Carme (Centre del Carme) 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Reial_Monestir_de_Nostra_Senyora_del_Carme_%28Centre_del_Carme%29_02.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/34_Reial_Monestir_06.jpg"
+title = "File:Valencia - Reial Monestir de Nostra Senyora del Carme (Centre del Carme) 06.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Reial_Monestir_de_Nostra_Senyora_del_Carme_%28Centre_del_Carme%29_06.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "SW (tower and Sant Elies from the street)"
+
+[[photo]]
+file = "photos/35_Reial_Monestir_07.jpg"
+title = "File:Valencia - Reial Monestir de Nostra Senyora del Carme (Centre del Carme) 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Valencia_-_Reial_Monestir_de_Nostra_Senyora_del_Carme_%28Centre_del_Carme%29_07.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1549
+exterior = true
+selected = false
+side = ""
+
+[[photo]]
+file = "photos/36_Marcok_f01.jpg"
+title = "File:Església parroquial de la Santa Creu Convent del Carme València Marcok 2023-09-2 f01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_parroquial_de_la_Santa_Creu_Convent_del_Carme_Val%C3%A8ncia_Marcok_2023-09-2_f01.jpg"
+author = "Marcok"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+note = "camera: iPhone 12 Pro, 77/50 mm (35 mm eq. 17)"
+
+[[photo]]
+file = "photos/37_Marcok_f02.jpg"
+title = "File:Església parroquial de la Santa Creu Convent del Carme València Marcok 2023-09-2 f02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Esgl%C3%A9sia_parroquial_de_la_Santa_Creu_Convent_del_Carme_Val%C3%A8ncia_Marcok_2023-09-2_f02.jpg"
+author = "Marcok"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+note = "camera: iPhone 12 Pro, 77/50 mm (35 mm eq. 16)"
+
+[[photo]]
+file = "photos/38_Barrio_del_Carmen_17A.jpg"
+title = "File:Barrio del Carmen 17.A.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Barrio_del_Carmen_17.A.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+note = "camera: FinePix S1, 880/100 mm (35 mm eq. None)"
+
+[[photo]]
+file = "photos/39_Barrio_del_Carmen_25A.jpg"
+title = "File:Barrio del Carmen 25.A.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Barrio_del_Carmen_25.A.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = ""
+note = "camera: FinePix S1, 430/100 mm (35 mm eq. None)"
+
+[[photo]]
+file = "photos/40_Arriba_panoramio.jpg"
+title = "File:Arriba. - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Arriba._-_panoramio.jpg"
+author = "Frank Baulo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 853
+exterior = false
+selected = false
+side = ""
+note = "camera: Canon EOS 1000D, 18/1 mm (35 mm eq. None)"
+
+[[photo]]
+file = "photos/41_Contrafuertes.jpg"
+title = "File:Contrafuertes del Covento del Carmen.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Contrafuertes_del_Covento_del_Carmen.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = false
+selected = false
+side = ""
+note = "camera: iPhone 15, 149/25 mm (35 mm eq. 26)"
+
+[[photo]]
+file = "photos/42_Perez_Pont_7.jpg"
+title = "File:Concentració suport a Pérez Pont 7.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Concentraci%C3%B3_suport_a_P%C3%A9rez_Pont_7.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+exterior = true
+selected = false
+side = ""
+note = "camera: M2007J17G, 5430/1000 mm (35 mm eq. 25)"
+
+[[photo]]
+file = "photos/43_Barrio_del_Carmen_18A.jpg"
+title = "File:Barrio del Carmen 18.A.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Barrio_del_Carmen_18.A.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = false
+selected = false
+side = ""
+note = "camera: FinePix S1, 1760/100 mm (35 mm eq. None)"
+
+[[photo]]
+file = "photos/44_Palau_Forcallo_campanar.jpg"
+title = "File:Palau de Forcalló, campanar del Carme vist des del jardí.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Forcall%C3%B3%2C_campanar_del_Carme_vist_des_del_jard%C3%AD.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1884
+exterior = true
+selected = false
+side = ""
+note = "camera: NIKON D3100, 380/10 mm (35 mm eq. 57)"
 
 [[plan]]
 file = "plans/01_1_05_EXCONVENTO_DEL_CARMEN_firmado.jpg"
@@ -252,3 +672,8 @@ notes = "built=1788; use=4_3_publicServices; area=11909; area_in_outline=4792.1"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1405"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://www.openstreetmap.org/way/264453281"
+title = "OSM way 264453281 (Esglesia de la Santissima Creu)"
+notes = "church outline (= Catastro context 209)"

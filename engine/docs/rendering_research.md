@@ -24,12 +24,14 @@ was there before this pass, and `next` is a recommendation.
 | 6 | Optical cos^4 vignette + lateral chromatic aberration | Medium: photographic lens signature | in camera pass (2 extra taps) | done |
 | 7 | Physical thin-lens depth of field (scatter-as-gather) | High for cutscenes and photo mode | ~1 ms, only when enabled | done |
 | 8 | Roughness-aware SSR (stochastic GGX + rough fade) | Medium | existing (fades out at r 0.45–0.62) | existing |
-| 9 | Bent normals / cone-traced (GTAO) specular occlusion | Medium: better occlusion of sky reflections in street canyons | +0.1 ms (GTAO already marches the horizons) | next |
-| 10 | Camera motion blur (McGuire reconstruction filter) | Medium in fast camera moves | ~0.5–0.8 ms with tile max/neighbour max | next |
-| 11 | Froxel volumetric fog with shadowed sun (Wronski / Hillaire) | High at dawn and dusk, god rays down streets | 0.6–1.2 ms | next (fog owned by the lighting team) |
-| 12 | Sky-view / aerial-perspective LUTs (Hillaire 2020) | Medium: cheaper sky and correct aerial perspective | ~0.2 ms, less than today's per-pixel raymarch | next (lighting team) |
+| 9 | Bent normals / cone-traced (GTAO) specular occlusion | Medium: better occlusion of sky reflections in street canyons | +0.05 ms GTAO (RGBA8 output), ~40 ALU per pixel in the main pass | done (Medium+) |
+| 10 | Camera + object motion blur (McGuire reconstruction filter) | Medium in fast camera moves, driving | 0.3 / 0.45 / 0.7 ms (Medium 6 / High 10 / Ultra 16 samples, 1080p); 0 on still frames and on Low | done (off on Low and Intel iGPU) |
+| 11 | Froxel volumetric fog with shadowed sun and lamps (Wronski / Hillaire) | High at dawn and dusk, god rays down streets, lamp halos under spot shadows | 0.25 / 0.5 / 1.1 ms (Medium 120x68x48, High 160x90x64, Ultra 240x135x96 at 1080p) | done (off on Low and Intel iGPU: analytic fog) |
+| 12 | Sky-view + transmittance LUTs (Hillaire 2020) | Medium: same sky, much cheaper | ~0.02 ms LUT + 1 tap per sky pixel (was 96 density evaluations per sky pixel: 0.5–1.5 ms with open sky at 1080p) | done (aerial perspective: analytic + froxel volume) |
 | 13 | Physically based camera exposure (EV100, Lagarde) | Medium: consistent day/night exposure | ~0 | next (lighting team) |
 | 14 | Subtle anamorphic-free lens flare / ghosting (bloom-chain based) | Low-medium, easy to overdo | ~0.1 ms | next |
+| 15 | FSR 1 EASU edge-adaptive upscaling + per-preset internal pixel budget | Very high on weak GPUs and high-DPI laptops: 2880x1800 renders 1.2 MP instead of 5.2 MP | ~0.3–0.5 ms at the output resolution, saves 60–75% of every per-pixel pass | done |
+| 16 | TAAU (temporal upsampling in the TAA resolve) | High: sharper than EASU at 50% scale | TAA at output resolution (~+0.3 ms) | next |
 
 ## Why the facades looked like plastic (diagnosis)
 
@@ -126,7 +128,60 @@ These measurements were taken on the `street` example with the
   the LUT, because a LUT cannot create texture.
   https://docs.unity3d.com/2017.3/Documentation/Manual/PostProcessing-Grain.html
 
-## Implemented in this pass (where to look)
+## Research pass 2 (Windows, weak GPUs, items 9-12 and 15)
+
+Measured on lavapipe (software rasterizer, so only the proportions are
+meaningful) on the procedural default map at dusk, 960x540, 10 frames per
+preset: the sky LUT is 0.2-0.5% of the GPU sum, the froxel fog 0.9%
+(Medium) / 0.7% (High) / 1.3% (Ultra) and the motion blur 0.4-0.8%, and on
+High the `main+sky` pass dropped from 1288 to 939 ms (-27%) once the sky
+raymarch became a LUT tap. The ms figures in the table are estimates for a
+GTX 1660 class GPU at 1080p from the tap/ALU counts in the shader headers
+(compute-heavy passes are relatively cheaper on lavapipe than on a GPU, so
+the estimates are kept above the measured shares). Before/after images:
+`engine/screenshots/agents/gfx3/{before,after}_{day,dusk,night}_high.png`
+(day and night are unchanged by design; dusk gains the low haze).
+
+- **Bent normals (9)**: GTAO now writes the bent normal (XeGTAO's
+  per-slice arc integrals) with the visibility in an RGBA8 target; the main
+  pass intersects the visibility cone (cos = sqrt(1 - AO)) with a cone
+  bounding the GGX lobe (Phong-equivalent exponent, cos = 0.244^(1/(n+1)),
+  Jimenez et al. 2016) using Oat & Sander's cap intersection, and looks the
+  diffuse ambient up along the bent direction. `FORJA_FX=-bent` restores
+  the Lagarde fit.
+- **Motion blur (10)**: the prepass writes per-pixel screen motion
+  (camera from depth, objects from last frame's transform:
+  `DrawInstance::motion_id`, set by the game for the player, cars, traffic
+  and pedestrians); tile max (K = height / 60 px), 3x3 neighbour max and
+  the McGuire 2012 gather with Guertin 2014's alternating centre-velocity
+  samples, over a fixed 1/120 s shutter. It reads the TAA history copy and
+  writes `resolved`, so the history stays sharp. `FORJA_FX=-motion`.
+- **Froxel fog (11)**: the analytic fog (aerosol + new dawn/dusk haze
+  layer, `Environment::haze`) is voxelized out to 120-200 m, lit by the sun
+  through the cascades and by every clustered light with its spot shadow,
+  temporally reprojected (12% per frame, jittered slices) and integrated
+  front to back; past the volume the closed-form fog and the equiangular
+  lamp glow continue from where it ends, so Low (no volume) shows the same
+  fog without shafts. `FORJA_FX=-fog`.
+- **Sky LUTs (12)**: transmittance LUT once, sky-view LUT per frame
+  (Hillaire's horizon-compressed latitude and sun-relative azimuth), the
+  sky pass reads one tap; same single-scattering model and units as
+  before (no multiple-scattering LUT, so the look is unchanged).
+  `FORJA_FX=-skylut` restores the raymarch.
+- **FSR 1 (15)**: every preset has an internal pixel budget (Low 1.0 MP,
+  Medium 2.1, High 3.7, Ultra 8.3; Intel iGPU 1.2) on top of the render
+  scale and the dynamic resolution, and the last pass that changes
+  resolution (the camera stage, or the final pass without it) upsamples
+  with EASU instead of a bilinear tap.
+
+References added: Oat & Sander, "Ambient Aperture Lighting", I3D 2007;
+AMD FidelityFX Super Resolution 1.0 (T. Lottes, `ffx_fsr1.h`, MIT);
+Kulla & Fajardo, "Importance Sampling Techniques for Path Tracing in
+Participating Media", EGSR 2012 (the equiangular lamp glow kept past the
+froxel range); E. Bruneton, F. Neyret, "Precomputed Atmospheric
+Scattering", EGSR 2008 (transmittance LUT mapping).
+
+## Implemented in the first pass (where to look)
 
 | Item | Code | Settings |
 |---|---|---|
@@ -136,3 +191,8 @@ These measurements were taken on the `street` example with the
 | Porous specular, micro-shadowing | `forja_city::kit::porous_specular`, `MaterialData::specular`; `pbr.wgsl` | automatic, `FORJA_FX=-porous`, `-micro` |
 | 3D LUT grade, grain, vignette, CA | `look.rs` (`Look`, `Grade`, `CameraFx`), `shaders/cinematic.wgsl` | `FrameDesc::look` (default `Look::cinematic()`), `FORJA_FX=-look` |
 | Thin-lens DOF | `look.rs` `DepthOfField`, `shaders/dof.wgsl` | `Look::photo(focus, f_stop)`, `FORJA_DOF=<m>,<f>`, `FORJA_FX=-dof` |
+| Bent normals, cone specular occlusion | `shaders/gtao.wgsl` (`pack_ao`), `pbr.wgsl` `cone_specular_occlusion` | `bent_normals`, `FORJA_FX=-bent` |
+| Motion blur | `motion.rs`, `shaders/motion.wgsl`, prepass `screen_velocity` | `motion_blur`, `motion_blur_samples`, `FORJA_FX=-motion` |
+| Froxel fog | `fog.rs`, `shaders/fog.wgsl`, `shaders/fog_apply.wgsl` | `volumetric_fog` 0-3, `Environment::haze`, `FORJA_FX=-fog` |
+| Sky LUTs | `fog.rs` (`encode_sky`), `shaders/skylut.wgsl`, `sky.wgsl` | `FORJA_FX=-skylut` |
+| FSR 1 EASU, pixel budget | `shaders/easu.wgsl`, `quality.rs` `max_render_mpix`, `max_scale_for` | `fsr`, `max_render_mpix`, `FORJA_FX=-fsr` |

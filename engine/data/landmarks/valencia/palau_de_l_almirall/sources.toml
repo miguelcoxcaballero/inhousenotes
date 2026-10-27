@@ -22,6 +22,18 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 6371.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6029105&rc2=YJ2763A", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 8, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 9 parts" }
 
+pgou_floors = { value = 3, source = "https://commons.wikimedia.org/wiki/File:1.21_CASA_DEL_ALMIRANTE_DE_VALENCIA_firmado.pdf", note = "PGOU catalogue ficha BIC 01.02.21: 3 plantas, parcel 1440.29 m2 (matches the OSM outline, 1439 m2)" }
+measured_facade_orientation = { value = "street front on Carrer del Palau faces azimuth 17 (NNE); west end at (-0.86, -26.58), NE corner at the Banys de l'Almirall alley", source = "OSM way 218841696 + photos (all street photos look west from the NE corner: stone corner strip on the left, portal right of centre)" }
+measured_facade_length = { value = 29.8, unit = "m", source = "IGN PNOA orthophoto WMS (CC BY 4.0), https://www.ign.es/wms-inspire/pnoa-ma, 5 cm/px; IGN PNOA-LiDAR WMS GetFeatureInfo edificios-h30 (CC BY 4.0), https://wms-mapa-lidar.idee.es/lidar, 2.5 m cells", note = "OSM edge is 30.8 m; the east wall is trimmed 1.0 m: PNOA roof edges end at x ~ 27.0-27.3 and LiDAR cells at x = 27.8 are empty (alley) from z -18.5 to -3.5; back-projection of the corner in photos 01/03/11 gives u_east 0.1-0.3 m" }
+measured_north_wing_depth = { value = 7.0, unit = "m", source = "IGN PNOA orthophoto WMS (CC BY 4.0), https://www.ign.es/wms-inspire/pnoa-ma, 5 cm/px", note = "tile band 6.5 m plus gutter strip" }
+measured_eave_height = { value = 15.6, unit = "m", source = "IGN PNOA-LiDAR WMS GetFeatureInfo edificios-h30 (CC BY 4.0), https://wms-mapa-lidar.idee.es/lidar, 2.5 m cells; photo 01 (f free) cross-ratio along bay 1 with eye-height scale; camera solves of 10 views with eye-height prior", note = "LiDAR front-row cells 15.5-16.0 (2.5-4 m inside the facade); photo 05 (EXIF 71 mm, fov fixed) solves at eye height 1.7 m with RMS 11 px on 6 points using these levels; railing check 1.0-1.07 m" }
+measured_ridge_height = { value = 17.4, unit = "m", source = "IGN PNOA-LiDAR WMS GetFeatureInfo edificios-h30 (CC BY 4.0), https://wms-mapa-lidar.idee.es/lidar, 2.5 m cells", note = "deepest north-wing cells 16.0-17.6; 25 deg gable over the 7 m wing" }
+measured_core_height = { value = 16.5, unit = "m", source = "IGN PNOA-LiDAR WMS GetFeatureInfo edificios-h30 (CC BY 4.0), https://wms-mapa-lidar.idee.es/lidar, 2.5 m cells", note = "cells around the patio 16.1-17.6 (east), 13.9-15.5 (west range, modelled 14.6); patio and NE light well empty" }
+measured_annex_heights = { value = "annex_mid 12.4, annex_south 10.6, atrium 7.4 (glass), west range 16.4 + hip (ridge 19.5), south tail 11.0", unit = "m", source = "IGN PNOA-LiDAR WMS GetFeatureInfo edificios-h30 (CC BY 4.0), https://wms-mapa-lidar.idee.es/lidar, 2.5 m cells", note = "cells 9.4-13.9 / 10.3-12.2 / empty on glass / 16.5-19.7 / 10.6-11.1; Catastro floors 4/5/2/8/3-5" }
+lidar_offset = { value = "~1 m south, no measurable street bias (street cells return no building)", source = "IGN PNOA-LiDAR WMS GetFeatureInfo edificios-h30 (CC BY 4.0), https://wms-mapa-lidar.idee.es/lidar, 2.5 m cells", note = "fitted on the Carrer del Palau facade edge (street cells z -26..-21 by x) and the Banys alley (x 27.8 empty)" }
+measured_string_course = { value = 9.4, unit = "m", source = "photo 01 cross-ratio (0.61 of the eave) and camera solves of views p01/p11/catastro", note = "stone ashlar below, plastered top floor above" }
+measured_openings = { value = "u from the NE corner: vents 0.85x0.7 @0.35 under the windows; large Gothic windows 1.75x1.85 @2.35 at u 5.2, 9.2; small framed windows 1.15x1.75 @2.45 at u 23.6, 26.5; portal 3.0x4.5 at u 17.5 (eared frame 0.55); main floor 1.6x3.2 @5.5 at u 4.8, 10.6, 16.4, 21.6 (balconies 0.85 deep, 3.2 wide); top floor 1.2x2.5 @11.3 at u 5.1, 10.8, 16.6, 21.7 (balconies 0.7 deep)", source = "cross-ratio along the base line between the facade ends in photos 01 (40 mm) and 03 (28 mm); back-projection with the solved cameras of views p01, p07, p13 (portal 15.7-19.1 wide, top 4.35-4.67; main-floor top 8.4-8.9; top-floor top 13.5-14.0)" }
+
 [[photo]]
 file = "photos/01_Exterior_del_palau_de_l_Almirall_de_Valencia.jpg"
 title = "File:Exterior del palau de l'Almirall de València.JPG"
@@ -31,8 +43,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1867
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/02_Palau_de_l_Almirall_de_Valencia_facana.jpg"
@@ -43,8 +55,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1052
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/03_Palau_de_l_Almirall_P1140102.jpg"
@@ -55,8 +67,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/04_Palacio_del_Almirante_en_obras.jpg"
@@ -67,8 +79,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/05_213_Carrer_del_Palau_Valencia_al_fons_el_palau_de_l_Almirall.jpg"
@@ -79,8 +91,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/06_216_Palau_de_l_Almirall_Valencia_Conselleria_d_Hisenda_de_la.jpg"
@@ -91,8 +103,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/07_Palau_de_l_Almirall_facana.jpg"
@@ -103,8 +115,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/08_Palau_de_l_Almirall_porta.jpg"
@@ -115,8 +127,8 @@ license = "CC BY-SA 3.0 es"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/09_Palau_de_l_Almirall_P1140103.jpg"
@@ -127,8 +139,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/10_Palau_de_l_Almirall_P1140107.jpg"
@@ -139,8 +151,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/catastro_6029105YJ2763A.jpg"
@@ -151,8 +163,177 @@ license = "Catastro open data (attribution required)"
 width = 1200
 height = 1600
 exterior = true
+selected = true
+side = "n"
+
+[[photo]]
+file = "photos/11_Valencia_palau_de_l_Almirall.jpg"
+title = "File:València, palau de l'Almirall.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia,_palau_de_l%27Almirall.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1817
+exterior = true
+selected = true
+side = "ne"
+notes = "NE corner, side wall on the alley"
+
+[[photo]]
+file = "photos/12_Palau_de_l_Almirall_09.jpg"
+title = "File:Palau de l'Almirall 09.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_09.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "n"
+notes = "east bays from the street"
+
+[[photo]]
+file = "photos/13_Palau_de_l_Almirall_P1140105.jpg"
+title = "File:Palau de l'Almirall P1140105.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_P1140105.JPG"
+author = "Pere prlpz"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "n"
+notes = "portal bays"
+
+[[photo]]
+file = "photos/14_Palau_de_l_Almirall_P1140106.jpg"
+title = "File:Palau de l'Almirall P1140106.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_P1140106.JPG"
+author = "Pere prlpz"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "n"
+notes = "bays 1-2 upper floors"
+
+[[photo]]
+file = "photos/15_Palau_de_l_Almirall_P1140108.jpg"
+title = "File:Palau de l'Almirall P1140108.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_P1140108.JPG"
+author = "Pere prlpz"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "n"
+notes = "Gothic window detail"
+
+[[photo]]
+file = "photos/16_Palau_de_l_Almirall_10.jpg"
+title = "File:Palau de l'Almirall 10.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_10.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "n"
+notes = "portal jamb with roundels"
+
+[[photo]]
+file = "photos/17_Palau_de_l_Almirall_balco.jpg"
+title = "File:Palau de l'Almirall, balcó.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall,_balc%C3%B3.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 1022
+exterior = true
+selected = true
+side = "n"
+notes = "main-floor balcony detail"
+
+[[photo]]
+file = "photos/18_Galeria_d_arquets_del_palau_de_l_Almirall.jpg"
+title = "File:Galeria d'arquets del palau de l'Almirall de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Galeria_d%27arquets_del_palau_de_l%27Almirall_de_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = false
 selected = false
-side = ""
+side = "patio"
+notes = "patio upper gallery"
+
+[[photo]]
+file = "photos/p01_Palau_de_l_Almirall_01.jpg"
+title = "File:Palau de l'Almirall 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = false
+selected = false
+side = "patio"
+notes = "patio arcade"
+
+[[photo]]
+file = "photos/p02_Palau_de_l_Almirall_02.jpg"
+title = "File:Palau de l'Almirall 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_02.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = false
+selected = false
+side = "patio"
+notes = "patio arcade"
+
+[[photo]]
+file = "photos/p03_Palau_de_l_Almirall_03.jpg"
+title = "File:Palau de l'Almirall 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_03.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = false
+selected = false
+side = "patio"
+notes = "patio arcade"
+
+[[photo]]
+file = "photos/p04_Palau_de_l_Almirall_04.jpg"
+title = "File:Palau de l'Almirall 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_04.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = false
+selected = false
+side = "patio"
+notes = "patio upper gallery"
+
+[[photo]]
+file = "photos/p07_Palau_de_l_Almirall_07.jpg"
+title = "File:Palau de l'Almirall 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Almirall_07.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = false
+selected = false
+side = "patio"
+notes = "patio from the vestibule"
 
 [[plan]]
 file = "plans/01_1_21_CASA_DEL_ALMIRANTE_DE_VALENCIA_firmado.jpg"
@@ -171,6 +352,16 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [725871.61, 4372723.48, 725983.26, 4372843.05], 0.080 m/px, north up; roman numerals = floors above ground; parcels 6029105YJ2763A, 6029104YJ2763A"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto WMS"
+notes = "plan of roofs, patio, NE light well; CC BY 4.0"
+
+[[reference]]
+url = "https://wms-mapa-lidar.idee.es/lidar"
+title = "IGN PNOA-LiDAR WMS (building heights, 2.5 m cells)"
+notes = "136 cells sampled over the palace, the annex and the streets; CC BY 4.0"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q608414"

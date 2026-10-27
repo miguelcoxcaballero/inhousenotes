@@ -5,6 +5,9 @@ mod ink;
 mod ink_repair;
 mod folder;
 mod checkpoint;
+mod editor;
+mod document_work;
+mod pdf_ink;
 #[no_mangle]
 pub extern "C" fn core_abi_version() -> u32 { 1 }
 
