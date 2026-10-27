@@ -50,7 +50,7 @@
             this.records=new Map();this.sources=new Map();this.seen=new Map();
             this.readTasks=new Map();this.applyChain=Promise.resolve();this.bootstrapWait=null;
             this.outboxReady=!!this.store.patchAndQueue;this.persistChain=Promise.resolve();this.stopped=false;this.writing=false;this.reading=false;
-            this.nextOutboxCheck=0;this.outboxWakeVersion=0;this.announcements=new Map();this.announcing=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.folder=null;this.lastError='';
+            this.nextOutboxCheck=0;this.outboxWakeVersion=0;this.announcements=new Map();this.announcing=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.tickAt=0;this.schedulerStarted=false;this.folder=null;this.lastError='';
         }
         key(record){return `${PREFIX}${record.docId}:${record.actor}:${record.part}`;}
         async read(key){return this.store.read('settings',this.account,key);}
@@ -103,6 +103,11 @@
             if(!this.sources.has(id)&&this.sources.size<4096)this.sources.set(id,{next:0,retryAt:0,rev:0,hotUntil:0,idleReads:0});
             const source=this.sources.get(id);
             if(source&&active){source.hotUntil=Date.now()+6000;if(source.next!==Infinity)source.next=Math.max(source.retryAt||0,Math.min(source.next,Date.now()+120));}
+            // Receive activity only advances the scheduler. It does not reset
+            // the independent outbox cooldown or bypass a source's backoff.
+            if(source&&this.schedulerStarted&&!source.retired&&!this.readTasks.has(id)
+                &&this.readTasks.size<4&&Number.isFinite(source.next))
+                this.scheduleTick(Math.max(0,Math.max(source.next,source.retryAt||0)-Date.now()));
         }
         async ensureFolder(){
             if(this.folder)return this.folder;
@@ -391,19 +396,48 @@
             await Promise.allSettled(started);
         }
         fail(error){if(error?.name!=='AbortError'){this.lastError=String(error?.message||error);this.host.error?.(error);}}
+        scheduleTick(delay=120){
+            if(this.stopped||!this.schedulerStarted)return;
+            const requested=Math.max(0,delay);
+            if(!Number.isFinite(requested))return;
+            const wait=Math.min(2147483647,requested),due=Date.now()+wait;
+            if(this.timer&&this.tickAt<=due)return;
+            clearTimeout(this.timer);this.tickAt=due;
+            this.timer=setTimeout(()=>{this.timer=null;this.tickAt=0;this.tick();},wait);
+        }
+        nextTickDelay(){
+            // Completion may open a read lane, release a lease, or install a
+            // predecessor. Retain the established bounded probe while I/O is
+            // outstanding; only a fully idle journal sleeps to its deadlines.
+            const now=Date.now();
+            const usefulAt=deadline=>deadline>now?deadline:now+120;
+            let next=Math.min(now+2000,usefulAt(Math.max(this.lastWrite+120,this.nextOutboxCheck)));
+            // An earlier receive wake may replace a pending upload timer. Keep
+            // its original rate-limit deadline even if that read is still busy.
+            if(this.writing||this.reading||this.discovery||this.bootstrapWait||this.readTasks.size)
+                return Math.min(120,next-now);
+            if(this.docId){
+                next=Math.min(next,usefulAt(this.nextDiscovery));
+                for(const source of this.sources.values())if(!source.retired&&Number.isFinite(source.next))
+                    next=Math.min(next,usefulAt(Math.max(source.next,source.retryAt||0)));
+            }
+            // A busy lease or failed scan can leave its deadline due. Never
+            // spin at zero delay while waiting for that work to become useful.
+            return next-now;
+        }
         wake(){
             if(this.stopped)return;
-            this.nextOutboxCheck=0;this.outboxWakeVersion++;
-            clearTimeout(this.timer);
-            this.timer=setTimeout(()=>{this.timer=null;this.tick();},Math.max(0,this.lastWrite+120-Date.now()));
+            this.schedulerStarted=true;this.nextOutboxCheck=0;this.outboxWakeVersion++;
+            this.scheduleTick(Math.max(0,this.lastWrite+120-Date.now()));
         }
         tick(){
             if(this.stopped)return;
+            this.schedulerStarted=true;
             // Receiving may wait for the local pen to lift. It must never hold
             // the independent durable upload queue behind that wait.
             void this.flush().catch(error=>this.fail(error));
             void this.poll().catch(error=>this.fail(error));
-            this.timer=setTimeout(()=>{this.timer=null;this.tick();},120);
+            this.scheduleTick(this.nextTickDelay());
         }
         async retry(){
             this.lastWrite=0;
@@ -416,7 +450,7 @@
             this.wake();
         }
         start(){this.wake();return this;}
-        stop(){this.stopped=true;this.announcements.clear();for(const controller of this.controllers)controller.abort();clearTimeout(this.timer);this.timer=null;}
+        stop(){this.stopped=true;this.schedulerStarted=false;this.announcements.clear();for(const controller of this.controllers)controller.abort();clearTimeout(this.timer);this.timer=null;this.tickAt=0;}
     }
     return {Journal,KIND};
 });

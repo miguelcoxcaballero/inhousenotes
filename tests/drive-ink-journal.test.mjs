@@ -520,3 +520,215 @@ test('size classification never masks a real local persistence failure',async()=
  await assert.rejects(writer.j.enqueue({v:1,pages:[{backgroundImage:'small'}]},1),error=>error===failure);
  assert.equal(writer.j.status().pending,1);assert.equal(writer.receipts.length,0);writer.j.stop();
 });
+
+function usePeriodicJournalScheduler(journal){
+ // Preserve the previous scheduler as a measured baseline, including its
+ // receive-hint behavior (schedulerStarted stays false).
+ journal.wake=function(){
+  if(this.stopped)return;this.nextOutboxCheck=0;this.outboxWakeVersion++;
+  clearTimeout(this.timer);this.timer=setTimeout(()=>{this.timer=null;this.tick();},Math.max(0,this.lastWrite+120-Date.now()));
+ };
+ journal.tick=function(){
+  if(this.stopped)return;
+  void this.flush().catch(error=>this.fail(error));void this.poll().catch(error=>this.fail(error));
+  this.timer=setTimeout(()=>{this.timer=null;this.tick();},120);
+ };
+}
+async function idleJournalTrace(t,scenario,periodic){
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const api=fakeInkDrive(),store=memoryInkStore();
+ const trace={ticks:0,leases:[],outbox:[],discovery:[],reads:[],sourceVisits:0};
+ const read=store.read,lease=store.withLease;
+ store.read=(name,account,id)=>{if(id==='ink-journal-outbox')trace.outbox.push(Date.now());return read(name,account,id);};
+ store.withLease=(...args)=>{trace.leases.push(Date.now());return lease(...args);};
+ const journal=new Journal({store,account:'a',actor:'reader',docId:scenario==='home'?'':'doc',fetch:(url,options)=>{
+  if(url.includes('alt=media'))trace.reads.push(Date.now());
+  if(url.includes('?q='))trace.discovery.push(Date.now());return api.fetch(url,options);
+ }});
+ if(scenario==='sealed')for(let i=0;i<4000;i++)journal.sources.set(`sealed-${i}`,{retired:true,next:Infinity});
+ if(scenario==='quiet-source'){
+  const raw=JSON.stringify({v:1,docId:'doc',actor:'other',part:0,rev:1,ops:[{stroke:'received'}]});
+  api.files.set('quiet',{id:'quiet',raw,appProperties:{ihnKind:'ink-journal-v1',ihnDoc:'doc'}});
+  journal.sources.set('quiet',{next:101250,retryAt:0,rev:1,hotUntil:0,idleReads:20,raw});
+  journal.seen.set('quiet',1);
+ }
+ for(const method of ['entries','values']){
+  const iterate=journal.sources[method].bind(journal.sources);
+  journal.sources[method]=function*(){for(const entry of iterate()){trace.sourceVisits++;yield entry;}};
+ }
+ if(periodic)usePeriodicJournalScheduler(journal);
+ const tick=journal.tick;journal.tick=function(){trace.ticks++;return tick.call(this);};
+ const settled=()=>!journal.writing&&!journal.discovery&&!journal.bootstrapWait&&!journal.readTasks.size;
+ try{
+  journal.start();t.mock.timers.tick(0);await settleUntil(settled);
+  for(let elapsed=10;elapsed<60000;elapsed+=10){t.mock.timers.tick(10);await settleUntil(settled);}
+  const calls=trace.ticks;journal.stop();t.mock.timers.tick(60000);await new Promise(setImmediate);assert.equal(trace.ticks,calls);
+  return trace;
+ }finally{journal.stop();t.mock.timers.reset();}
+}
+for(const scenario of ['home','empty-document','sealed','quiet-source'])test(`idle journal deadline scheduling reduces ${scenario} work without increasing I/O`,async t=>{
+ const old=await idleJournalTrace(t,scenario,true),next=await idleJournalTrace(t,scenario,false);
+ assert.ok(next.ticks<old.ticks/3,JSON.stringify({scenario,old,next}));
+ if(old.sourceVisits)assert.ok(next.sourceVisits<old.sourceVisits/3,'include planner traversal when counting source work');
+ for(const kind of ['leases','outbox','discovery','reads']){
+  assert.equal(next[kind].length,old[kind].length,kind);
+  next[kind].forEach((at,index)=>assert.ok(at<=old[kind][index],`${kind} ${index} was delayed`));
+ }
+ for(let i=1;i<next.outbox.length;i++)assert.ok(next.outbox[i]-next.outbox[i-1]>=2000);
+ for(let i=1;i<next.discovery.length;i++)assert.ok(next.discovery[i]-next.discovery[i-1]>=5000);
+ if(scenario==='quiet-source'){assert.equal(next.reads[0],101250);assert.ok(next.reads[1]-next.reads[0]>=30000);}
+ console.log('JOURNAL_IDLE_DEADLINES',JSON.stringify({scenario,ticks:[old.ticks,next.ticks],sourceVisits:[old.sourceVisits,next.sourceVisits],
+  leases:[old.leases.length,next.leases.length],discovery:[old.discovery.length,next.discovery.length],reads:[old.reads,next.reads]}));
+});
+
+test('an idle journal recovers another tab outbox within two seconds without a local wake',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:200000});
+ const api=fakeInkDrive(),store=memoryInkStore(),starts=[];
+ const journal=new Journal({store,account:'a',actor:'reader',fetch:(url,options)=>{
+  if(url.includes('uploadType'))starts.push(Date.now());return api.fetch(url,options);
+ }});
+ const other=new Journal({store,account:'a',actor:'other-tab',docId:'doc',fetch:api.fetch});other.wake=()=>{};
+ try{
+  journal.start();t.mock.timers.tick(0);await settleUntil(()=>!journal.writing);
+  await other.enqueue({stroke:'cross-tab'},1);
+  for(let i=0;i<20&&!starts.length;i++){t.mock.timers.tick(100);await settleUntil(()=>!journal.writing);}
+  assert.deepEqual(starts,[202000]);assert.equal((await journal.read(other.key(other.current))).ack,1);
+ }finally{journal.stop();other.stop();t.mock.timers.reset();}
+});
+
+test('receive hints preempt idle deadlines without resetting the outbox or postponing an earlier read for a write',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:300000});
+ const api=fakeInkDrive(),reads=[],writes=[];
+ api.files.set('remote',{id:'remote',raw:JSON.stringify({v:1,docId:'doc',actor:'remote',part:0,rev:1,ops:[{stroke:1}]})});
+ const journal=new Journal({store:memoryInkStore(),account:'a',actor:'local',docId:'doc',apply:async()=>{},fetch:(url,options)=>{
+  if(url.includes('/remote?alt=media'))reads.push(Date.now());if(url.includes('uploadType'))writes.push(Date.now());return api.fetch(url,options);
+ }});
+ try{
+  journal.start();t.mock.timers.tick(0);await settleUntil(()=>!journal.writing&&!journal.discovery&&!journal.bootstrapWait);
+  t.mock.timers.tick(120);await new Promise(setImmediate);
+  const outbox=journal.nextOutboxCheck;
+  journal.sources.set('remote',{next:330000,retryAt:0,hotUntil:0,rev:0});journal.hint('remote');
+  assert.equal(journal.nextOutboxCheck,outbox);assert.equal(journal.tickAt,300240);
+  // A newer outgoing rate limit must not postpone the already-armed receiver.
+  journal.lastWrite=300180;await journal.enqueue({stroke:'local'},1);assert.equal(journal.tickAt,300240);
+  t.mock.timers.tick(120);await settleUntil(()=>!journal.readTasks.size&&!journal.writing);
+  assert.deepEqual(reads,[300240]);assert.equal(writes.length,0);
+  // The earlier receive pass must retain the exact pending write deadline.
+  t.mock.timers.tick(60);await settleUntil(()=>!journal.writing&&journal.status().pending===0);
+  assert.deepEqual(writes,[300300]);assert.equal(journal.status().pending,0);
+ }finally{journal.stop();t.mock.timers.reset();}
+});
+
+test('an occupied write lease keeps the old120ms probe and recovers as soon as it releases',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:400000});
+ const api=fakeInkDrive(),store=memoryInkStore(),starts=[];let busy=true,leases=0;
+ const lease=store.withLease;store.withLease=(...args)=>{leases++;return busy?Promise.resolve({busy:true}):lease(...args);};
+ const journal=new Journal({store,account:'a',actor:'writer',docId:'doc',fetch:(url,options)=>{
+  if(url.includes('uploadType'))starts.push(Date.now());return api.fetch(url,options);
+ }});
+ try{
+  await journal.enqueue({stroke:'waiting-for-lease'},1);t.mock.timers.tick(0);await settleUntil(()=>!journal.writing&&!journal.discovery);
+  for(let i=0;i<10;i++){t.mock.timers.tick(120);await settleUntil(()=>!journal.writing);}
+  assert.equal(leases,11);assert.equal(starts.length,0);
+  busy=false;t.mock.timers.tick(120);await settleUntil(()=>!journal.writing&&journal.status().pending===0);
+  assert.deepEqual(starts,[401320]);
+ }finally{journal.stop();t.mock.timers.reset();}
+});
+
+test('active hints preserve failed read backoff and passive retired hints do not wake an idle journal',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:500000});
+ const api=fakeInkDrive(),reads=[];let fail=true;
+ api.files.set('remote',{id:'remote',raw:JSON.stringify({v:1,docId:'doc',actor:'remote',part:0,rev:1,ops:[{stroke:'after-backoff'}]})});
+ const journal=new Journal({store:memoryInkStore(),account:'a',actor:'local',docId:'doc',apply:async()=>{},fetch:(url,options)=>{
+  if(url.includes('/remote?alt=media')){reads.push(Date.now());if(fail)return Promise.resolve(new Response('{}',{status:503}));}
+  return api.fetch(url,options);
+ }});
+ try{
+  journal.start();journal.hint('remote');t.mock.timers.tick(0);await settleUntil(()=>!journal.writing&&!journal.discovery&&!journal.readTasks.size);
+  const retryAt=journal.sources.get('remote').retryAt;assert.equal(retryAt,505000);
+  for(let i=0;i<49;i++){
+   t.mock.timers.tick(100);await settleUntil(()=>!journal.writing&&!journal.discovery&&!journal.readTasks.size);
+   const outbox=journal.nextOutboxCheck;journal.hint('remote');assert.equal(journal.nextOutboxCheck,outbox);
+  }
+  assert.deepEqual(reads,[500000]);fail=false;t.mock.timers.tick(100);await settleUntil(()=>!journal.writing&&!journal.discovery&&!journal.readTasks.size);
+  assert.deepEqual(reads,[500000,505000]);
+  const source=journal.sources.get('remote');journal.retireSource(source);
+  const timer=journal.timer,due=journal.tickAt,outbox=journal.nextOutboxCheck;
+  for(let i=0;i<20;i++)journal.hint('remote',false);
+  assert.equal(journal.timer,timer);assert.equal(journal.tickAt,due);assert.equal(journal.nextOutboxCheck,outbox);
+ }finally{journal.stop();t.mock.timers.reset();}
+});
+
+test('a direct receive hint bypasses stalled bootstrap discovery and stop prevents late rearming',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:600000});
+ const api=fakeInkDrive(),reads=[];let release;const gate=new Promise(resolve=>release=resolve);
+ api.files.set('remote',{id:'remote',raw:JSON.stringify({v:1,docId:'doc',actor:'remote',part:0,rev:1,ops:[{stroke:'direct'}]})});
+ const journal=new Journal({store:memoryInkStore(),account:'a',actor:'local',docId:'doc',apply:async()=>{},fetch:async(url,options)=>{
+  if(url.includes('?q=')){await gate;return new Response('{"files":[]}');}
+  if(url.includes('alt=media'))reads.push(Date.now());return api.fetch(url,options);
+ }});
+ try{
+  journal.start();t.mock.timers.tick(0);await settleUntil(()=>!journal.writing&&!!journal.bootstrapWait);
+  t.mock.timers.tick(30);journal.hint('remote');assert.equal(journal.tickAt,600030);
+  t.mock.timers.tick(0);await settleUntil(()=>!journal.readTasks.size&&journal.seen.get('remote')===1);
+  assert.deepEqual(reads,[600030]);journal.stop();release();await settleUntil(()=>!journal.discovery&&!journal.bootstrapWait);
+  t.mock.timers.tick(60000);await new Promise(setImmediate);assert.equal(journal.timer,null);assert.equal(journal.tickAt,0);assert.equal(reads.length,1);
+ }finally{release();journal.stop();t.mock.timers.reset();}
+});
+
+test('four blocked receive lanes keep bounded probes and a queued source uses the next freed lane',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:700000});
+ const api=fakeInkDrive(),started=[];let ticks=0;const gates=new Map();
+ for(let i=0;i<5;i++){
+  const id=`remote-${i}`;api.files.set(id,{id,raw:JSON.stringify({v:1,docId:'doc',actor:id,part:0,rev:1,ops:[{stroke:id}]})});
+  if(i<4){let release;const promise=new Promise(resolve=>release=resolve);gates.set(id,{promise,release});}
+ }
+ const journal=new Journal({store:memoryInkStore(),account:'a',actor:'local',docId:'doc',apply:async()=>{},fetch:async(url,options)=>{
+  const id=new URL(url).pathname.split('/').at(-1);
+  if(url.includes('alt=media')){started.push(id);if(gates.has(id))await gates.get(id).promise;}return api.fetch(url,options);
+ }});
+ const tick=journal.tick;journal.tick=function(){ticks++;return tick.call(this);};
+ try{
+  journal.start();for(let i=0;i<4;i++)journal.hint(`remote-${i}`);t.mock.timers.tick(0);
+  await settleUntil(()=>!journal.writing&&!journal.discovery&&journal.readTasks.size===4);assert.equal(started.length,4);
+  journal.hint('remote-4');
+  for(let i=0;i<10;i++){t.mock.timers.tick(120);await new Promise(setImmediate);}
+  assert.equal(ticks,11);assert.equal(started.length,4);
+  gates.get('remote-0').release();await settleUntil(()=>journal.readTasks.size===3);
+  t.mock.timers.tick(120);await settleUntil(()=>journal.seen.get('remote-4')===1);assert.ok(started.includes('remote-4'));
+  journal.stop();for(const gate of gates.values())gate.release();await settleUntil(()=>journal.readTasks.size===0);
+  const count=ticks;t.mock.timers.tick(60000);await new Promise(setImmediate);assert.equal(ticks,count);
+ }finally{journal.stop();for(const gate of gates.values())gate.release();t.mock.timers.reset();}
+});
+
+test('an earlier receive wake preserves a queued upload deadline while its response is stalled',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:800000});
+ const api=fakeInkDrive(),starts=[];let release;const gate=new Promise(resolve=>release=resolve);
+ const journal=new Journal({store:memoryInkStore(),account:'a',actor:'local',docId:'doc',apply:async()=>{},fetch:async(url,options)=>{
+  if(url.includes('/slow?alt=media')){await gate;return new Response(JSON.stringify({v:1,docId:'doc',actor:'slow',part:0,rev:0,ops:[]}));}
+  if(url.includes('uploadType'))starts.push(Date.now());return api.fetch(url,options);
+ }});
+ try{
+  journal.start();t.mock.timers.tick(0);await settleUntil(()=>!journal.writing&&!journal.discovery&&!journal.bootstrapWait);
+  journal.lastWrite=800000;await journal.enqueue({stroke:'pending'},1);assert.equal(journal.tickAt,800120);
+  t.mock.timers.tick(50);journal.hint('slow');assert.equal(journal.tickAt,800050);
+  t.mock.timers.tick(0);await settleUntil(()=>journal.readTasks.size===1);
+  assert.equal(journal.tickAt,800120);t.mock.timers.tick(69);await new Promise(setImmediate);assert.equal(starts.length,0);
+  t.mock.timers.tick(1);await settleUntil(()=>!journal.writing&&journal.status().pending===0);assert.deepEqual(starts,[800120]);
+ }finally{journal.stop();release();await settleUntil(()=>journal.readTasks.size===0);t.mock.timers.reset();}
+});
+
+test('scheduler rejects nonfinite delays and bounds huge hints without replacing an earlier timer',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:900000});
+ const journal=new Journal({store:memoryInkStore(),account:'a',actor:'local'});journal.schedulerStarted=true;
+ let ticks=0;journal.tick=()=>{ticks++;};
+ try{
+  for(const delay of [NaN,Infinity])journal.scheduleTick(delay);assert.equal(journal.timer,null);
+  journal.scheduleTick(Number.MAX_SAFE_INTEGER);assert.equal(journal.tickAt,900000+2147483647);
+  t.mock.timers.tick(1000);assert.equal(ticks,0);
+  journal.scheduleTick(20);const timer=journal.timer,due=journal.tickAt;
+  journal.sources.set('remote',{next:Date.now()+10,retryAt:Infinity});journal.hint('remote',false);
+  journal.scheduleTick(Number.MAX_SAFE_INTEGER);assert.equal(journal.timer,timer);assert.equal(journal.tickAt,due);
+  t.mock.timers.tick(19);assert.equal(ticks,0);t.mock.timers.tick(1);assert.equal(ticks,1);
+ }finally{journal.stop();t.mock.timers.reset();}
+});
