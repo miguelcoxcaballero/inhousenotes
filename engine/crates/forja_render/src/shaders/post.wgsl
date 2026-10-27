@@ -288,6 +288,10 @@ fn encode_output(c: vec3<f32>) -> vec4<f32> {
 fn fs_fxaa(in: FsIn) -> @location(0) vec4<f32> {
     let t = post.texel.xy;
     let uv = in.uv;
+    // Render scale < 1 and this is the last pass: FSR 1 EASU upsampling
+    // (params.w = 1) instead of a bilinear tap.
+    let up = easu_upscaling(src, uv);
+    if (post.params.w > 0.5 && up && post.params.x < 0.5) { return encode_output(easu(src, uv)); }
     if (post.params.x < 0.5) { return sharpen(uv, t); }
     let cm = textureSampleLevel(src, samp, uv, 0.0);
     let lm = cm.a;

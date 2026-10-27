@@ -193,7 +193,7 @@ struct AiPed {
 
 fn crowd_render(w: &mut forja_core::World) {
     let crowd = w.res::<Crowd>();
-    let items: Vec<_> = crowd.peds.iter().map(|p| p.person.render_item(p.transform())).chain(crowd.ai.iter().map(|p| p.person.render_item(p.transform()))).collect();
+    let items: Vec<_> = crowd.peds.iter().map(|p| p.person.render_item(p.transform()).with_id(3 << 40 | p.id)).chain(crowd.ai.iter().map(|p| p.person.render_item(p.transform()).with_id(4 << 40 | p.id))).collect();
     w.res_mut::<RenderScene>().dynamic.extend(items);
 }
 

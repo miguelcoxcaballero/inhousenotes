@@ -71,11 +71,20 @@ pub struct RenderItem {
     pub nodes: Option<Arc<Vec<Mat4>>>,
     pub joints: Option<Arc<Vec<Mat4>>>,
     pub tint: Vec4,
+    /// Stable id of a moving object for motion blur (0: none). Ranges:
+    /// player 1, player vehicles 1 << 40 | index, traffic 2 << 40 | id,
+    /// pedestrians 3 << 40 | id (see `forja_render::DrawInstance::motion_id`).
+    pub id: u64,
 }
 
 impl RenderItem {
     pub fn new(model: usize, transform: Mat4) -> Self {
-        Self { model, transform, nodes: None, joints: None, tint: Vec4::ONE }
+        Self { model, transform, nodes: None, joints: None, tint: Vec4::ONE, id: 0 }
+    }
+
+    pub fn with_id(mut self, id: u64) -> Self {
+        self.id = id;
+        self
     }
 }
 
