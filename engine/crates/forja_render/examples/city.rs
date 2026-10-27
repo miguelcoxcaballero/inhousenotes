@@ -228,10 +228,14 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         (v3(p, eye_h + f.ground.height_at(p)), v3(q, eye_h + 1.5 + f.ground.height_at(q)))
     };
     let relief = &f.ground.relief;
+    // Away from the edge of the map.
+    let inner = |p: Vec2| f.domain.boundary_distance(p) > 35.0;
     let longest = |pred: &dyn Fn(&forja_city::plan::Street) -> bool| g.streets.iter().enumerate().filter(|(_, s)| pred(s)).max_by(|a, b| a.1.len().total_cmp(&b.1.len())).map(|x| x.0);
     let prof = |s: &forja_city::plan::Street| forja_city::profile::ProfileLibrary::builtin().get(s.profile).clone();
     let lib = forja_city::profile::ProfileLibrary::builtin();
-    if let Some(s) = longest(&|s| lib.get(s.profile).class == Class::Avenue) {
+    // The grandest avenue (highest rank, then longest).
+    let grand = g.streets.iter().enumerate().filter(|(_, s)| lib.get(s.profile).class == Class::Avenue).max_by(|a, b| (lib.get(a.1.profile).rank, a.1.len()).partial_cmp(&(lib.get(b.1.profile).rank, b.1.len())).unwrap()).map(|x| x.0);
+    if let Some(s) = grand {
         let st = &g.streets[s];
         // From the middle of one carriageway (lanes, median, trees in
         // view), and from its sidewalk.
@@ -257,14 +261,13 @@ fn shots(city: &forja_city::layout::CityLayout) -> Vec<(&'static str, Vec3, Vec3
         let l = s.len();
         s.line.normal(4.0).angle_to(s.line.normal(l - 4.0)).abs()
     };
-    if let Some((s, _)) = g.streets.iter().enumerate().filter(|(_, s)| s.len() > 40.0 && s.carriageway > 0.0).max_by(|a, b| turn(a.1).total_cmp(&turn(b.1))) {
+    if let Some((s, _)) = g.streets.iter().enumerate().filter(|(_, s)| s.len() > 40.0 && s.carriageway > 0.0 && inner(s.line.at(s.len() * 0.5))).max_by(|a, b| turn(a.1).total_cmp(&turn(b.1))) {
         let st = &g.streets[s];
         let (e, a) = along(s, 4.0, st.width_at(4.0) * 0.25, 30.0, 1.7);
         out.push(("curved", e, a));
     }
     // A narrow alley at eye level, looking into the old town (not out at
     // the edge of the map).
-    let inner = |p: Vec2| f.domain.boundary_distance(p) > 35.0;
     if let Some((s, _)) = g.streets.iter().enumerate().filter(|(_, s)| lib.get(s.profile).class == Class::Alley && s.len() > 25.0 && inner(s.line.at((s.len() * 0.3 + 18.0).min(s.len())))).min_by(|a, b| a.1.min_width().total_cmp(&b.1.min_width()).then(b.1.len().total_cmp(&a.1.len()))) {
         let st = &g.streets[s];
         // From inside the alley, not from the square it opens onto.

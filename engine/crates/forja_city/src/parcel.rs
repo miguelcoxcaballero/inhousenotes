@@ -267,9 +267,11 @@ fn cut_frontage(ring: &BlockRing, rules: &LotRules, rng: &mut Rng) -> (Vec<Vec2>
         };
         // On a slope a house steps down with its street: its frontage
         // drops at most `rules.step`, so narrower houses climb stair streets.
-        let fit = |t: f32, mut w: f32| {
+        // Corner lots too: a corner house on a stair street gives up its
+        // reach rather than stand on a storey of plinth.
+        let fit = |t: f32, mut w: f32, dir: f32| {
             let floor = rules.min_width.max(rules.width[0] * 0.6);
-            while w > floor && (z_at(t + w) - z_at(t)).abs() > rules.step {
+            while w > floor && (z_at(t + dir * w) - z_at(t)).abs() > rules.step {
                 w = (w * 0.85).max(floor);
             }
             w
@@ -283,7 +285,8 @@ fn cut_frontage(ring: &BlockRing, rules: &LotRules, rng: &mut Rng) -> (Vec<Vec2>
             None => 0.0,
         };
         let (ts, te) = (corner_theta(i0, true), corner_theta(i1, false));
-        let (mut r0, mut r1) = (reach(ts, rng), reach(te, rng));
+        let (r0, r1) = (reach(ts, rng), reach(te, rng));
+        let (mut r0, mut r1) = (if r0 > 0.0 { fit(0.0, r0, 1.0) } else { 0.0 }, if r1 > 0.0 { fit(total, r1, -1.0) } else { 0.0 });
         let mut pos: Vec<f32> = Vec::new();
         if total - r0 - r1 < rules.width[0] {
             // No room for a middle lot: the corner lots share the run.
@@ -300,7 +303,7 @@ fn cut_frontage(ring: &BlockRing, rules: &LotRules, rng: &mut Rng) -> (Vec<Vec2>
             let end = total - r1;
             let mut t = r0;
             while end - t > 0.5 {
-                let mut w = fit(t, width(rng));
+                let mut w = fit(t, width(rng), 1.0);
                 if end - (t + w) < rules.width[0] {
                     w = end - t;
                 }
