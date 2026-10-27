@@ -1422,13 +1422,31 @@ ALWAYS_SKIP_SUBCAT = re.compile(r"interior|inside|indoor|\bviews? from\b|vistas?
                                 r"replica|r[eé]plica|exposition|\bmaps?\b|\bmapas?\b", re.I)
 
 
+def name_mask(main_cat, names) -> set:
+    """Normalised words of the landmark's own names that would by themselves
+    trigger the interior/skip vocabulary (e.g. 'Exposició' in Palau de
+    l'Exposició, 'Museu' in a museum's name). They are blanked out before
+    those rules run, so the building's name does not make every file of its
+    category look like an interior."""
+    text = " ".join([main_cat.split(":", 1)[-1] if main_cat else ""] + [n for n in names if n])
+    return {t for t in name_tokens(text)
+            if INTERIOR_RE.search(t) or SKIP_SUBCAT.search(t) or ALWAYS_SKIP_SUBCAT.search(t)}
+
+
+def mask_words(text: str, mask: set) -> str:
+    if not mask or not text:
+        return text
+    return re.sub(r"\w+", lambda m: " " if norm_text(m.group()) in mask else m.group(), text)
+
+
 def subcat_ok(name, main_cat, names):
     """Depth-1 subcategory filter: skip interiors/people/events/collections and
     subcategories about something else (no shared name token, e.g. a
     neighbouring building filed under the landmark)."""
-    if ALWAYS_SKIP_SUBCAT.search(name):
+    masked = mask_words(name, name_mask(main_cat, names))
+    if ALWAYS_SKIP_SUBCAT.search(masked):
         return False
-    if SKIP_SUBCAT.search(name) and not EXTERIOR_SUBCAT.search(name):
+    if SKIP_SUBCAT.search(masked) and not EXTERIOR_SUBCAT.search(name):
         return False
     toks = {t for t in name_tokens(" ".join([main_cat.split(":", 1)[-1] if main_cat else ""] + list(names)))
             if len(t) >= 4}
@@ -1458,12 +1476,17 @@ def step_commons(ctx, wd, names):
             v = wd_snak_value(c["mainsnak"])
             if isinstance(v, str):
                 wd_imgs.setdefault("File:" + v, role)
-    key = digest([VERSION, ctx["lm"].get("commons_category"), wd_string(wd, "P373"), sorted(wd_imgs.items())])
+    review = ctx.get("review") or {}
+    extra_cats = list(review.get("extra_categories", []))
+    extra_files = list(review.get("extra_files", []))
+    key = digest([VERSION, ctx["lm"].get("commons_category"), wd_string(wd, "P373"), sorted(wd_imgs.items())]
+                 + ([extra_cats, extra_files] if extra_cats or extra_files else []))
     if st.done("commons", key, [path]) and not ctx["force"]("commons"):
         doc = L.read_json(path)
         for r in doc.get("files", []):  # classification is cheap: always use current rules
-            classify(r, doc.get("category"))
+            classify(r, doc.get("category"), names)
         apply_subcat_rules(doc, names)
+        apply_review(doc, review)
         return doc
     http = ctx["http"]
     warns = []
@@ -1508,6 +1531,15 @@ def step_commons(ctx, wd, names):
                                                 "gsrnamespace": "6", "gsrsearch": f'"{nm}" valencia',
                                                 "gsrlimit": "100", **LIST_PROPS}, max_requests=4)
             add_pages(pages, "search:" + nm)
+    for xc in extra_cats:  # hand-picked extra categories (photo_review.toml)
+        xc = xc if xc.startswith("Category:") else "Category:" + xc
+        LOG(f"  commons extra category {xc}")
+        add_pages(list_category_files(http, xc, limit_requests=6), xc)
+    if extra_files:
+        for i in range(0, len(extra_files), 50):
+            pages, _ = commons_query_all(http, {"action": "query", "titles": "|".join(extra_files[i:i + 50]),
+                                                **LIST_PROPS}, max_requests=3)
+            add_pages(pages, "review")
     if wd_imgs:
         titles = list(wd_imgs)
         for i in range(0, len(titles), 50):
@@ -1536,11 +1568,12 @@ def step_commons(ctx, wd, names):
             "camera": [cams[0]["lat"], cams[0]["lon"]] if cams else None,
             "object": [objs[0]["lat"], objs[0]["lon"]] if objs else None,
         }
-        classify(rec, cat)
+        classify(rec, cat, names)
         out.append(rec)
     doc = {"category": cat, "category_how": how, "subcats_used": subcats_used,
            "subcats_skipped": subcats_skipped, "files": out, "warnings": warns}
     L.write_json(path, doc)
+    apply_review(doc, review)
     st.warn("commons", warns)
     st.mark("commons", key, digest([cat, sorted(r["title"] for r in out)]))
     n_plan = sum(r["class"] == "plan" for r in out)
@@ -1550,11 +1583,13 @@ def step_commons(ctx, wd, names):
     return doc
 
 
-def classify(rec, main_cat):
+def classify(rec, main_cat, names=()):
     title = rec["title"].split(":", 1)[1]
     base = re.sub(r"\.[a-z0-9]+$", "", title, flags=re.I)
     src_names = " ".join(s.split(":", 1)[-1] for s in rec["sources"])
     cats = " | ".join(rec["categories"])
+    mask = name_mask(main_cat, names)
+    m_base, m_cats = mask_words(base, mask), mask_words(cats, mask)
     strong = f"{base} | {cats} | {src_names}"
     weak = rec["description"]
     mime = rec["mime"]
@@ -1574,12 +1609,12 @@ def classify(rec, main_cat):
     court_src = any(COURTYARD_SUBCAT.search(s.split(":", 1)[-1]) for s in rec["sources"])
     aspect_src = any(ASPECT_EXT_SUBCAT.search(s.split(":", 1)[-1]) for s in rec["sources"])
     int_src = any(re.search(r"interior|inside", s, re.I) for s in rec["sources"])
-    if int_src or INTERIOR_RE.search(base) or INTERIOR_RE.search(cats):
+    if int_src or INTERIOR_RE.search(m_base) or INTERIOR_RE.search(m_cats):
         ext = False
     elif ext_src or court_src or aspect_src or EXTERIOR_RE.search(base) or rec["wikidata_role"] in ("image", "aerial", "night",
                                                                            "panorama", "view", "winter"):
         ext = True
-    elif INTERIOR_RE.search(weak):
+    elif INTERIOR_RE.search(mask_words(weak, mask)):
         ext = False
     elif EXTERIOR_RE.search(weak) or EXTERIOR_RE.search(cats):
         ext = True
@@ -1599,7 +1634,25 @@ def classify(rec, main_cat):
 
 def class_digest(com):
     return digest([(r["title"], r["class"], r["plan_kind"], r["exterior"], r["closeup"], r["night"],
-                    r["historic"], r.get("courtyard"), r.get("vegetation")) for r in com.get("files", [])])
+                    r["historic"], r.get("courtyard"), r.get("vegetation"), r.get("reviewed"))
+                   for r in com.get("files", [])])
+
+
+def apply_review(doc, review):
+    """Hand review from photo_review.toml (looked at on the contact sheets):
+    'exterior' titles are confirmed exterior views of the building, 'exclude'
+    titles are interiors, objects, people or another building and are never
+    selected. It runs after classify, so it wins over the text rules."""
+    if not review:
+        return
+    ext = set(review.get("exterior", []))
+    exc = set(review.get("exclude", []))
+    for r in doc.get("files", []):
+        if r["title"] in exc:
+            r["exterior"], r["reviewed"] = False, "exclude"
+        elif r["title"] in ext:
+            r["exterior"], r["reviewed"] = True, "exterior"
+            r["closeup"] = False
 
 
 def ll_dist(a, b):
@@ -1621,6 +1674,8 @@ def photo_score(r, anchor_ll, polys, anchor):
         s += 25
     if r["exterior"] is True:
         s += 15
+    if r.get("reviewed") == "exterior":
+        s += 25
     if r["ext_src"]:
         s += 6
     elif r["main_cat"]:
@@ -1819,8 +1874,10 @@ def step_photos(ctx, com, fp):
     raw, st = ctx["raw"], ctx["state"]
     meta_path = os.path.join(raw, "photos", "photos.json")
     anchor = tuple(fp["anchor"]) if fp else None
+    review = ctx.get("review") or {}
     key = digest([VERSION, RULES_VERSION, st.out("commons"), anchor, ctx["max_photos"], st.out("catastro"),
-                  class_digest(com)])
+                  class_digest(com)] + ([review.get("catastro_not_building")]
+                                        if review.get("catastro_not_building") else []))
     if st.done("photos", key, [meta_path]) and not ctx["force"]("photos"):
         return L.read_json(meta_path)
     polys = []
@@ -1903,7 +1960,10 @@ def step_photos(ctx, com, fp):
             os.remove(os.path.join(pdir, fn))
     cat = L.read_json(os.path.join(raw, "catastro", "catastro.json")) \
         if os.path.exists(os.path.join(raw, "catastro", "catastro.json")) else {}
+    bad_fac = set(review.get("catastro_not_building", []))
     for fph in cat.get("facade_photos", []):
+        if fph["refcat"] in bad_fac:  # reviewed: the parcel's facade photo shows another building
+            continue
         photos.append({
             "file": fph["file"], "title": f"Catastro fachada {fph['refcat']}", "url": fph["url"],
             "author": "Dirección General del Catastro", "license": "Catastro open data (attribution required)",
@@ -2283,8 +2343,10 @@ def process(lm, args, http):
     def force(step):
         return "all" in forced or step in forced
 
+    review = args.review.get(slug, {})
     ctx = {"lm": lm, "raw": raw, "data": data, "state": st, "http": http, "force": force,
-           "max_photos": args.max_photos, "max_plans": args.max_plans}
+           "max_photos": int(review.get("max_photos", args.max_photos)), "max_plans": args.max_plans,
+           "review": review}
     st.data["inputs"] = {k: lm.get(k) for k in ("rank", "slug", "name", "name_va", "wikidata",
                                                  "commons_category", "lat", "lon", "osm")}
     st.save()
@@ -2381,6 +2443,8 @@ def main(argv=None):
     ap.add_argument("--raw-dir", default=DEFAULT_RAW_DIR)
     ap.add_argument("--max-photos", type=int, default=16)
     ap.add_argument("--max-plans", type=int, default=6)
+    ap.add_argument("--review", default=None,
+                    help="photo_review.toml with per-slug hand review (default: next to --list, if present)")
     args = ap.parse_args(argv)
     args.force_steps = {s.strip() for s in args.force.split(",") if s.strip()}
     bad = args.force_steps - set(STEPS) - {"all", "images"}
@@ -2389,6 +2453,11 @@ def main(argv=None):
     with open(args.list, "rb") as f:
         lst = tomllib.load(f)
     landmarks = lst.get("landmark", [])
+    rpath = args.review or os.path.join(os.path.dirname(os.path.abspath(args.list)), "photo_review.toml")
+    args.review = {}
+    if os.path.exists(rpath):
+        with open(rpath, "rb") as f:
+            args.review = tomllib.load(f)
     slugs = [lm.get("slug") for lm in landmarks]
     dup = {s for s in slugs if slugs.count(s) > 1}
     if dup:

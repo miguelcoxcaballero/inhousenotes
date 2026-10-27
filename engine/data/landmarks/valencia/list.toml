@@ -563,7 +563,7 @@ period = "gothic"
 style = "Valencian Gothic, five parallel gabled naves"
 built = "14th-15th c."
 architect = ""
-osm = []
+osm = ["way/460056120", "way/460056118", "way/460056119", "way/460056121", "way/460056122"]
 pilot = false
 why = "Gothic royal shipyards of the port district (Poblats Marítims); unusual repeated-nave geometry."
 

@@ -148,3 +148,165 @@ fn samples_build_within_budget() {
         assert!(j["footprint"]["osm"]["iou"].as_f64().unwrap() > 0.6, "{}", j["footprint"]);
     }
 }
+
+// ---------------------------------------------------------- organic plans
+
+/// A block whose south front is a curve of `n` short facets.
+fn curved_block(n: usize, facet: f32) -> String {
+    let r = facet / (2.0 * (0.5f32.to_radians() * 0.5 * 26.0 / n as f32).sin().max(1e-4));
+    let span = 26.0f32.to_radians();
+    let mut pts: Vec<[f32; 2]> = (0..=n).map(|k| {
+        let a = span * 0.5 - span * k as f32 / n as f32;
+        [r * a.sin(), -r + r * a.cos() + 4.0]
+    }).collect();
+    let (w, e) = (pts[n], pts[0]);
+    pts.push([w[0], w[1] - 14.0]);
+    pts.push([e[0], e[1] - 14.0]);
+    let ring: Vec<String> = pts.iter().map(|p| format!("[{:.3}, {:.3}]", p[0], p[1])).collect();
+    format!("[{}]", ring.join(", "))
+}
+
+#[test]
+fn openings_follow_a_curved_facade_by_arc_length() {
+    let poly = curved_block(10, 2.5);
+    let t = format!(
+        "{HEAD}[[element]]\ntype = \"mass\"\npolygon = {poly}\nheight = 14\n[[element.openings]]\nedges = \"facing:s\"\nkind = \"door\"\nwidth = 1.4\nheight = 2.8\nlevels = [0]\nbays = {{ spacing = 3.4 }}\n[[element.openings]]\nedges = \"facing:s\"\nkind = \"window\"\nlevels = {{ start = 4.6, step = 3.2, count = 3 }}\nbays = {{ spacing = 3.4 }}\nbalcony = true\n"
+    );
+    let m = build_text(&t, None);
+    assert_sane(&m, "curved");
+    assert!(m.warnings.is_empty(), "{:?}", m.warnings);
+    // About 25 m of curved front at 3.4 m: 7 bays per row, 4 rows.
+    let glass = m.palette_id("glass").map(|g| m.geo.prims.get(&g).map(|p| p.tri_count()).unwrap_or(0)).unwrap_or(0);
+    let door = m.palette_id("door").map(|g| m.geo.prims.get(&g).map(|p| p.tri_count()).unwrap_or(0)).unwrap_or(0);
+    assert!(glass >= 21 * 2, "glass triangles {glass}");
+    assert!(door > 0, "doors");
+    // Every vertex lies on or behind the curved wall, never in the street
+    // beyond the balconies (0.6 m + ironwork).
+    let (_, mx) = super::mesh::bounds(&m.geo).unwrap();
+    assert!(mx.z < 4.0 + 0.9, "{mx}");
+}
+
+#[test]
+fn a_wide_gate_in_a_short_facade_is_kept_and_misses_are_reported() {
+    let t = format!("{HEAD}[[element]]\ntype = \"mass\"\npolygon = [[0,0],[7,0],[7,6],[0,6]]\nheight = 9\n[[element.openings]]\nedges = \"facing:s\"\nkind = \"arch\"\nwidth = 5.5\nheight = 6\n[[element.openings]]\nedges = \"facing:n\"\nkind = \"arch\"\nwidth = 7.5\nheight = 6\n");
+    let m = build_text(&t, None);
+    let dark = m.palette_id("dark").and_then(|g| m.geo.prims.get(&g)).map(|p| p.tri_count()).unwrap_or(0);
+    assert!(dark > 0, "the 5.5 m arch was dropped");
+    assert!(m.warnings.iter().any(|w| w.contains("openings[1]") && w.contains("wider than")), "{:?}", m.warnings);
+}
+
+#[test]
+fn rooms_behind_windows_stay_inside_thin_wings() {
+    let t = format!("{HEAD}[[element]]\ntype = \"mass\"\npolygon = [[0,0],[20,0],[20,1.5],[1.5,1.5],[1.5,20],[0,20]]\nheight = 8\n[[element.openings]]\nedges = \"facing:s\"\nkind = \"window\"\nlevels = [1.0, 4.5]\n");
+    let m = build_text(&t, None);
+    let (mn, mx) = super::mesh::bounds(&m.geo).unwrap();
+    assert!(mn.x > -0.01 && mn.z > -0.01 && mx.x < 20.01, "{mn} {mx}");
+}
+
+#[test]
+fn passages_cut_through_and_are_walkable() {
+    let t = format!("{HEAD}[[element]]\ntype = \"mass\"\nname = \"gate\"\npolygon = [[0,0],[8,0],[8,10],[0,10]]\nheight = 12\n[[element.openings]]\nedges = \"facing:s\"\nkind = \"passage\"\narch = \"pointed\"\nwidth = 4\nheight = 6\nbays = 1\n");
+    let m = build_text(&t, None);
+    assert_sane(&m, "passage");
+    assert!(m.warnings.is_empty(), "{:?}", m.warnings);
+    // The collider has the tunnel: a ray along the passage axis at 2 m
+    // height meets no triangle between the two facades.
+    let hit = m.collider.iter().any(|t| {
+        let o = Vec3::new(4.0, 2.0, -1.0);
+        let d = Vec3::Z;
+        let (e1, e2) = (t[1] - t[0], t[2] - t[0]);
+        let p = d.cross(e2);
+        let det = e1.dot(p);
+        if det.abs() < 1e-9 {
+            return false;
+        }
+        let s = o - t[0];
+        let u = s.dot(p) / det;
+        let q = s.cross(e1);
+        let v = d.dot(q) / det;
+        let tt = e2.dot(q) / det;
+        (0.0..=1.0).contains(&u) && v >= 0.0 && u + v <= 1.0 && tt > 0.0 && tt < 12.0
+    });
+    assert!(!hit, "the passage is blocked in the collider");
+}
+
+#[test]
+fn open_shells_unions_and_subtractions() {
+    let t = format!(
+        "{HEAD}[[element]]\ntype = \"mass\"\npolygon = \"square:10\"\nheight = 10\nopen_edges = \"facing:e\"\nwall_thickness = 1.5\n[[element]]\ntype = \"slab\"\npolygon = {{ shape = \"square\", width = 6, center = [20, 0], union = [[[22, -1], [27, -1], [27, 1], [22, 1]]], subtract = [\"circle:0.1\"] }}\ny = 0.3\n"
+    );
+    let m = build_text(&t, None);
+    assert_sane(&m, "shell");
+    // The open shell has an interior: its plan area is the walls only.
+    let s = super::poly::Shape::new(super::poly::rect(forja_math::Vec2::ZERO, forja_math::Vec2::splat(10.0), 0.0));
+    let shell = super::masses::open_shell(&s, &super::resolve::select(&s, &super::spec::EdgeSel(vec![super::spec::EdgeTok::parse("facing:e").unwrap()])), 1.5);
+    let area: f32 = shell.iter().map(|p| p.area()).sum();
+    assert!((area - (100.0 - 7.0 * 8.5)).abs() < 0.5, "{area}");
+}
+
+#[test]
+fn hip_roofs_follow_concave_and_courtyard_plans() {
+    for poly in ["[[0,0],[20,0],[20,6],[8,6],[8,20],[0,20]]", "[[0,0],[5,0],[5.1,0.14],[5.3,0],[12,0],[12,9],[0,9]]"] {
+        let t = format!("{HEAD}[[element]]\ntype = \"mass\"\npolygon = {poly}\nheight = 6\nroof = {{ shape = \"hip\", pitch = 30 }}\n");
+        let m = build_text(&t, None);
+        assert!(m.warnings.is_empty(), "{poly}: {:?}", m.warnings);
+    }
+    let t = format!("{HEAD}[[element]]\ntype = \"mass\"\npolygon = {{ points = [[0,0],[30,0],[30,24],[0,24]], holes = [[[8,7],[22,7],[22,17],[8,17]]] }}\nheight = 9\nroof = \"hip\"\n");
+    let m = build_text(&t, None);
+    assert!(m.warnings.is_empty(), "{:?}", m.warnings);
+    // Nothing of the roof over the courtyard.
+    let roof = m.palette_id("roof").and_then(|g| m.geo.prims.get(&g)).unwrap();
+    let inside = roof.positions.iter().any(|p| p.x > 9.0 && p.x < 21.0 && p.z > 8.0 && p.z < 16.0);
+    assert!(!inside);
+}
+
+#[test]
+fn bounded_resolutions_arrays_and_budget() {
+    for (bad, msg) in [
+        ("type = \"cylinder\"\nradius = 1\nheight = 2\nsegments = 5000000", "out of range"),
+        ("type = \"shell\"\nsurface = \"ellipsoid\"\nradius = 5\nsegments = [20000, 20000]", "out of range"),
+        ("type = \"array\"\nmode = \"linear\"\ncount = 1000000000\nstep = [1, 0, 0]\n[[element.children]]\ntype = \"box\"\nsize = [1, 1, 1]", "instances"),
+        ("type = \"array\"\nmode = \"linear\"\ncount = 150\nstep = [2, 0, 0]\n[[element.children]]\ntype = \"array\"\nmode = \"linear\"\ncount = 150\nstep = [0, 0, 2]\n[[element.children.children]]\ntype = \"sphere\"\nradius = 0.5\nsegments = 64", "triangles"),
+    ] {
+        let t = format!("{HEAD}[[element]]\n{bad}\n");
+        let spec = parse_spec(&t, "t").unwrap();
+        let e = build::build(&spec, None, &t, "t").err().unwrap_or_else(|| panic!("{bad} built"));
+        assert!(e.to_string().contains(msg), "{e}");
+    }
+}
+
+#[test]
+fn array_ramps_and_radial_without_rotation() {
+    let t = format!("{HEAD}[[element]]\ntype = \"array\"\nmode = \"linear\"\ncount = 5\nstep = [3, 0, 0]\nscale_end = [1, 3, 1]\nrotate_step = 10\n[[element.children]]\ntype = \"box\"\nsize = [1, 1, 1]\n");
+    let m = build_text(&t, None);
+    let (_, mx) = super::mesh::bounds(&m.geo).unwrap();
+    assert!((mx.y - 3.0).abs() < 1e-3, "{mx}");
+    let t = format!("{HEAD}[[element]]\ntype = \"array\"\nmode = \"radial\"\ncount = 8\nrotate = false\n[[element.children]]\ntype = \"box\"\ncenter = [10, 0.5, 0]\nsize = [1, 1, 1]\n");
+    let m = build_text(&t, None);
+    let (mn, mx) = super::mesh::bounds(&m.geo).unwrap();
+    assert!(mn.x < -9.0 && mx.z > 9.0, "{mn} {mx}");
+}
+
+#[test]
+fn mirrored_colliders_stay_outward() {
+    let t = format!("{HEAD}[[element]]\ntype = \"mass\"\npolygon = [[-2,0],[10,0],[10,10],[-2,10]]\nheight = 5\nmirror = \"x\"\n");
+    let m = build_text(&t, None);
+    // Both copies are closed and outward: positive volume each.
+    assert!(volume(&m.collider) > 0.0);
+    let half = m.collider.len() / 2;
+    assert!(volume(&m.collider[half..]) > 0.0 && volume(&m.collider[..half]) > 0.0);
+}
+
+#[test]
+fn closed_walls_any_winding_and_curved_arcades() {
+    for path in ["[[0,0],[10,0],[10,10],[0,10]]", "[[0,0],[0,10],[10,10],[10,0]]"] {
+        let t = format!("{HEAD}[[element]]\ntype = \"wall\"\npath = {path}\nclosed = true\nheight = 3\nthickness = 1\n");
+        let m = build_text(&t, None);
+        assert_eq!(m.geo.tri_count(), 24, "{path}");
+    }
+    // An arcade round a circular square: one bent arcade, no warnings.
+    let t = format!("{HEAD}[[element]]\ntype = \"arcade\"\npolygon = \"circle:14\"\nbays = 24\nimpost = 3\n");
+    let m = build_text(&t, None);
+    assert_sane(&m, "round arcade");
+    assert!(m.warnings.is_empty(), "{:?}", m.warnings);
+}

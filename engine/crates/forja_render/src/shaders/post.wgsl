@@ -1,13 +1,28 @@
-// Bloom (Jimenez 2014 down/up chain), AgX tonemapping and FXAA.
+// Bloom (Jimenez 2014 down/up chain), camera tone curve and FXAA.
 struct PostParams {
-    texel: vec4<f32>,   // xy: source texel size
-    params: vec4<f32>,  // x: exposure, y: bloom strength, z: vignette, w: first-mip threshold flag
+    // Daylight (look.w = 1) and night (look.w = 0) share the bloom chain and
+    // differ in the exposure, the first-mip average and the display transform.
+    texel: vec4<f32>,   // xy: source texel size, z: night first mip: bloom compression (1 / limit); night tonemap: scotopic strength, w: night tonemap: night grade / first mip: 1 = daylight Karis average
+    params: vec4<f32>,  // x: exposure (daylight tonemap: exposure at EV100 0; upsample: mip weight), y: bloom strength, z: vignette, w: first-mip flag / night tonemap: 1 = auto exposure
+    curve: vec4<f32>,   // daylight tone curve x^a / (x^(a d) b + c): a, a d, b, c
+    look: vec4<f32>,    // x: saturation, y: highlight desaturation, z: 1 / bloom levels, w: 1 = daylight camera
+    white: vec4<f32>,   // camera white balance gains (rgb)
+};
+
+struct ExposureState {
+    pre: f32,
+    prev_pre: f32,
+    exposure: f32,
+    avg_log: f32,
 };
 
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> post: PostParams;
 @group(0) @binding(3) var bloom_tex: texture_2d<f32>;
+@group(0) @binding(4) var<storage, read> exposure_state: ExposureState;
+// Daylight camera: adapted EV100 (R), written by `fs_meter`.
+@group(0) @binding(5) var exposure_tex: texture_2d<f32>;
 
 struct FsIn {
     @builtin(position) pos: vec4<f32>,
@@ -44,10 +59,30 @@ fn fs_downsample(in: FsIn) -> @location(0) vec4<f32> {
     let m = textureSample(src, samp, uv + t * vec2<f32>(1.0, -1.0)).rgb;
     var c0 = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
     if (post.params.w > 0.5) {
-        // Karis average on the first mip kills fireflies.
-        c0 = c0 / (1.0 + luma(c0) * 0.25);
+        if (post.texel.w > 0.5) {
+            // Karis average on the first mip: weight each 2x2 group by
+            // 1 / (1 + exposed luma) and renormalise, so sun glints and other
+            // single-pixel fireflies cannot flood the glare, while the energy of
+            // smooth areas is kept.
+            let g0 = min((j + k + l + m) * 0.25, vec3<f32>(6e4));
+            let g1 = min((a + b + d + e) * 0.25, vec3<f32>(6e4));
+            let g2 = min((b + c + e + f) * 0.25, vec3<f32>(6e4));
+            let g3 = min((d + e + g + h) * 0.25, vec3<f32>(6e4));
+            let g4 = min((e + f + h + i) * 0.25, vec3<f32>(6e4));
+            let x = post.params.x;
+            let w0 = 0.5 / (1.0 + luma(g0) * x);
+            let w1 = 0.125 / (1.0 + luma(g1) * x);
+            let w2 = 0.125 / (1.0 + luma(g2) * x);
+            let w3 = 0.125 / (1.0 + luma(g3) * x);
+            let w4 = 0.125 / (1.0 + luma(g4) * x);
+            c0 = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);
+        } else {
+            // Karis average on the first mip kills fireflies.
+            c0 = c0 / (1.0 + luma(c0) * post.texel.z);
+        }
     }
-    return vec4<f32>(max(c0, vec3<f32>(0.0)), 1.0);
+    // Half floats overflow on mirror-like sun glints; keep the chain finite.
+    return vec4<f32>(clamp(c0, vec3<f32>(0.0), vec3<f32>(6e4)), 1.0);
 }
 
 @fragment
@@ -59,7 +94,58 @@ fn fs_upsample(in: FsIn) -> @location(0) vec4<f32> {
         + textureSample(src, samp, uv + vec2<f32>(0.0, -t.y)).rgb + textureSample(src, samp, uv + vec2<f32>(0.0, t.y)).rgb) * 2.0;
     c += textureSample(src, samp, uv + vec2<f32>(-t.x, -t.y)).rgb + textureSample(src, samp, uv + vec2<f32>(t.x, -t.y)).rgb
         + textureSample(src, samp, uv + vec2<f32>(-t.x, t.y)).rgb + textureSample(src, samp, uv + vec2<f32>(t.x, t.y)).rgb;
-    return vec4<f32>(c / 16.0, 1.0);
+    // Weight of the wider mips (1 by day; < 1 keeps night halos tight
+    // instead of a veil).
+    let w = select(1.0, post.params.x, post.params.x > 0.0);
+    return vec4<f32>(c * (w / 16.0), 1.0);
+}
+
+// Camera meter: center-weighted average luminance of the frame, read from
+// the smallest bloom mip (a 1/64-resolution blur). It outputs the EV100 a
+// reflected-light meter reads (K = 12.5), kept within the allowed range
+// around the incident reading; the pipeline blends it with the previous
+// frame's EV, which is the camera adapting.
+// Meter uniform: texel = (manual flag, manual EV, compensation, -),
+// params = (lux per unit * 100 / K, incident EV, max opening, max closing).
+@fragment
+fn fs_meter(in: FsIn) -> @location(0) vec4<f32> {
+    let dim = textureDimensions(src, 0);
+    var sum = 0.0;
+    var wsum = 0.0;
+    for (var y = 0u; y < dim.y; y++) {
+        for (var x = 0u; x < dim.x; x++) {
+            let p = (vec2<f32>(f32(x), f32(y)) + 0.5) / vec2<f32>(dim) - 0.5;
+            let w = exp(-dot(p, p) * 6.25);
+            sum += luma(textureLoad(src, vec2<u32>(x, y), 0).rgb) * w;
+            wsum += w;
+        }
+    }
+    var ev = log2(max(sum / wsum, 1e-6) * post.params.x);
+    ev = clamp(ev, post.params.y - post.params.z, post.params.y + post.params.w);
+    if (post.texel.x > 0.5) { ev = post.texel.y; }
+    ev -= post.texel.z;
+    return vec4<f32>(ev, ev, ev, 1.0);
+}
+
+// Physical camera display transform (see tonemap.rs, which mirrors it):
+// a camera JPEG-like curve on max(r, g, b) that keeps the RGB ratios, so
+// hue and saturation survive; colours whiten only as the curve compresses
+// them, like a saturating sensor.
+fn camera_curve(x: f32) -> f32 {
+    return clamp(pow(x, post.curve.x) / (pow(x, post.curve.y) * post.curve.z + post.curve.w), 0.0, 1.0);
+}
+
+fn tonemap(c_in: vec3<f32>) -> vec3<f32> {
+    let c = max(c_in, vec3<f32>(0.0));
+    let peak = max(max(c.r, c.g), c.b);
+    if (peak <= 1e-8) { return vec3<f32>(0.0); }
+    let t = camera_curve(peak);
+    var ratio = c / peak;
+    let l = luma(ratio);
+    ratio = max(vec3<f32>(l) + (ratio - vec3<f32>(l)) * post.look.x, vec3<f32>(0.0));
+    ratio = ratio / max(max(ratio.r, ratio.g), max(ratio.b, 1e-6));
+    let g = 1.0 - 1.0 / (post.look.y * max(peak - t, 0.0) + 1.0);
+    return mix(ratio, vec3<f32>(1.0), g) * t;
 }
 
 // AgX (Troy Sobotka), polynomial fit by Benjamin Wrensch.
@@ -91,12 +177,78 @@ fn agx(c: vec3<f32>) -> vec3<f32> {
     return pow(clamp(v, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(2.2));
 }
 
+// Night vision (Purkinje shift): below ~3 cd/m² the rods take over, so dim
+// areas lose saturation and shift toward blue while lamp-lit ones keep their
+// colour (mesopic blend over 0.003..3 cd/m²). `nits` is the scene luminance.
+fn scotopic(c: vec3<f32>, nits: f32, strength: f32) -> vec3<f32> {
+    let s = 1.0 - smoothstep(-2.5, 0.48, log2(max(nits, 1e-6)) / 3.3219);
+    let rods = dot(c, vec3<f32>(0.06, 0.6, 0.34));
+    let night = rods * vec3<f32>(0.82, 0.96, 1.32);
+    return mix(c, night, s * strength);
+}
+
+// Cinematic night grade on the display image (after AgX, whose base look
+// is deliberately flat): an S-curve about a low pivot with a filmic toe
+// (true blacks, lamp-lit areas pushed toward white), teal shadows and warm
+// highlights, and highlights that roll off toward white like film.
+// Strength `g` (0 = off, the daytime path).
+fn night_grade(lin: vec3<f32>, g: f32) -> vec3<f32> {
+    var v = pow(clamp(lin, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2));
+    // Black point: the darkest values sink to true black.
+    let bp = 0.002 * g;
+    v = max(v - vec3<f32>(bp), vec3<f32>(0.0)) / (1.0 - bp);
+    // S-curve about the pivot (exponent > 1 on both sides).
+    let pivot = 0.32;
+    let k = 1.0 + 0.3 * g;
+    let lo = pivot * pow(v / pivot, vec3<f32>(k));
+    let hi = vec3<f32>(1.0) - (1.0 - pivot) * pow((vec3<f32>(1.0) - v) / (1.0 - pivot), vec3<f32>(k));
+    v = select(hi, lo, v < vec3<f32>(pivot));
+    // Split toning by display luminance.
+    let l = luma(v);
+    let shadow_w = (1.0 - l) * (1.0 - l) * (1.0 - l) * g;
+    let high_w = l * l * g;
+    v *= mix(vec3<f32>(1.0), vec3<f32>(0.94, 1.0, 1.05), shadow_w);
+    v *= mix(vec3<f32>(1.0), vec3<f32>(1.06, 1.0, 0.9), high_w);
+    // Film-like highlights: the brightest lamp-lit areas roll toward white
+    // instead of saturating to pure orange.
+    let l2 = luma(v);
+    v = vec3<f32>(l2) + (v - vec3<f32>(l2)) * (1.0 - 0.3 * g * smoothstep(0.35, 0.9, l2));
+    return pow(clamp(v, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(2.2));
+}
+
 @fragment
 fn fs_tonemap(in: FsIn) -> @location(0) vec4<f32> {
     let hdr = textureSample(src, samp, in.uv).rgb;
-    let bloom = textureSample(bloom_tex, samp, in.uv).rgb;
-    var c = mix(hdr, bloom, post.params.y) * post.params.x;
-    c = agx(c);
+    var c: vec3<f32>;
+    if (post.look.w > 0.5) {
+        // The up chain adds every level, so mip 0 holds the sum of
+        // BLOOM_MIPS mean-preserving blurs of growing radius; dividing by the
+        // count makes it one energy-conserving glare kernel (equal energy per
+        // octave, a ~1/r^2 point spread like a real lens' veiling glare).
+        let bloom = textureSample(bloom_tex, samp, in.uv).rgb * post.look.z;
+        // Exposure from the camera's EV100: params.x = 0.18 * lux per unit * 100 / K.
+        let ev = textureLoad(exposure_tex, vec2<u32>(0u, 0u), 0).r;
+        c = mix(hdr, bloom, post.params.y) * (post.params.x * exp2(-ev)) * post.white.rgb;
+        // Display-linear out; the sRGB target encodes it.
+        c = tonemap(c);
+    } else {
+        // Night camera: eye adaptation (or a manual linear exposure), AgX and
+        // the cinematic night grade, unchanged from the night renderer.
+        let bloom = textureSample(bloom_tex, samp, in.uv).rgb;
+        var exposure = post.params.x;
+        if (post.params.w > 0.5) {
+            // Auto exposure: the HDR image is pre-exposed.
+            exposure = exposure_state.exposure / max(exposure_state.pre, 1e-8);
+        }
+        c = mix(hdr, bloom, post.params.y) * exposure;
+        if (post.texel.z > 0.0) {
+            c = scotopic(c, luma(hdr) / max(exposure_state.pre, 1e-8) * 1e4, post.texel.z);
+        }
+        c = agx(c);
+        if (post.texel.w > 0.0) {
+            c = night_grade(c, post.texel.w);
+        }
+    }
     let d = in.uv - vec2<f32>(0.5);
     c *= 1.0 - dot(d, d) * post.params.z;
     // Store perceptual luma in alpha for FXAA.
@@ -118,7 +270,17 @@ fn sharpen(uv: vec2<f32>, t: vec2<f32>) -> vec4<f32> {
     let amp = sqrt(clamp(min(mn, vec3<f32>(1.0) - mx) / max(mx, vec3<f32>(1e-4)), vec3<f32>(0.0), vec3<f32>(1.0)));
     let k = -amp * post.params.y * 0.2;
     let r = (c + (n + s + e + w) * k) / (vec3<f32>(1.0) + 4.0 * k);
-    return vec4<f32>(clamp(r, mn, mx), 1.0);
+    return encode_output(clamp(r, mn, mx));
+}
+
+// The output is display-linear for an sRGB target; a plain UNORM surface
+// (params.z = 1) gets the sRGB encoding here instead of washed-dark values.
+fn encode_output(c: vec3<f32>) -> vec4<f32> {
+    if (post.params.z > 0.5) {
+        let x = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
+        return vec4<f32>(select(1.055 * pow(x, vec3<f32>(1.0 / 2.4)) - 0.055, x * 12.92, x <= vec3<f32>(0.0031308)), 1.0);
+    }
+    return vec4<f32>(c, 1.0);
 }
 
 // FXAA 3.11 quality preset (simplified), reads the tonemapped linear image.
@@ -136,7 +298,7 @@ fn fs_fxaa(in: FsIn) -> @location(0) vec4<f32> {
     let lmax = max(lm, max(max(ln, ls), max(le, lw)));
     let lmin = min(lm, min(min(ln, ls), min(le, lw)));
     let range = lmax - lmin;
-    if (range < max(0.0312, lmax * 0.125)) { return vec4<f32>(cm.rgb, 1.0); }
+    if (range < max(0.0312, lmax * 0.125)) { return encode_output(cm.rgb); }
     let lne = textureSampleLevel(src, samp, uv + vec2<f32>(t.x, -t.y), 0.0).a;
     let lnw = textureSampleLevel(src, samp, uv + vec2<f32>(-t.x, -t.y), 0.0).a;
     let lse = textureSampleLevel(src, samp, uv + vec2<f32>(t.x, t.y), 0.0).a;
@@ -181,5 +343,5 @@ fn fs_fxaa(in: FsIn) -> @location(0) vec4<f32> {
     offset = max(offset, sub2 * sub2 * 0.75);
     var final_uv = uv;
     if (horizontal) { final_uv.y += offset * step_len; } else { final_uv.x += offset * step_len; }
-    return vec4<f32>(textureSampleLevel(src, samp, final_uv, 0.0).rgb, 1.0);
+    return encode_output(textureSampleLevel(src, samp, final_uv, 0.0).rgb);
 }

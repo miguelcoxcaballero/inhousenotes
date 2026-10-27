@@ -11,6 +11,7 @@ use forja_math::{Mat4, Vec2, Vec3};
 use crate::furniture;
 use crate::geom::{Parts, Prim, Rng, polyline_normals, signed_area};
 use crate::kit::{Kit, Mat, Rgb, assemble, hex};
+use crate::nightlight::{self, CityLight, LightKind, NightState, Premises, hash01};
 use crate::modules::{self, BalconyKey, P, Piece, PortalKey, REVEAL, ShopKey, ShopPiece, SurroundKind, WindowKey, facade_frame};
 use crate::style::{ShutterKind, Style, parse_material, parse_pattern, parse_rgb, parse_shutter};
 
@@ -49,8 +50,14 @@ pub struct CityOut {
     pub placements: Vec<(usize, Mat4)>,
     pub col_verts: Vec<Vec3>,
     pub col_tris: Vec<[u32; 3]>,
-    /// `(position, color)` of lamps.
+    /// `(position, color)` of lamps (kept for simple consumers; see
+    /// `city_lights` for the full records).
     pub lights: Vec<(Vec3, Vec3)>,
+    /// Every light of the city with intensity, range and optional spot
+    /// cone: lamps always, and at night ([`Kit::set_hour`]) lit windows,
+    /// shops, signs, neon, floodlights and fountains. Feed a renderer a
+    /// bounded subset with [`nightlight::select`].
+    pub city_lights: Vec<CityLight>,
     pub buildings: usize,
     /// Ground-floor premises on street fronts, for sidewalk dressing
     /// (bar terraces) by whoever knows the sidewalk widths.
@@ -614,6 +621,7 @@ pub fn build_into(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>
                             balcony: None,
                             mirador: None,
                             interior: rng.below(4) as u8,
+                            light: window_light(&lib.kit.night, f.p((k / 2) as f32 * 7.0, y, -50.0), f.p(u, y, 0.0)),
                             grille: false,
                         };
                         holes.push(Hole { u0: u - 0.5, u1: u + 0.5, v0: y, v1: y + 1.4 });
@@ -696,12 +704,20 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 frame,
                 awning: rng.chance(style.awnings * 2.0).then(|| rng.below(3) as u8),
                 interior: 0,
+                lit_sign: false,
+                neon: 0,
             };
             let (w, h) = (key.w_cm as f32 / 100.0, key.h_cm as f32 / 100.0);
             ground_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: 0.0, v1: h });
             let at = facade_frame(f.p(u, 0.0, 0.0), f.t, f.n);
+            let premises = if pharmacy { Premises::Pharmacy } else if bar { Premises::Bar } else { Premises::Shop };
+            let night = lib.kit.night;
+            let (key, lit_inside) = night_shop(&night, key, here, premises);
             for m in lib.shop(out, key) {
                 out.placements.push((m, at));
+            }
+            if night.is_night() {
+                shop_lights(out, f, &key, u, premises, lit_inside);
             }
             let open = shutter == 0;
             // Projecting signs on the pier beside the shop.
@@ -710,8 +726,9 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 let m = lib.named(out, "pharmacy_cross", furniture::pharmacy_cross);
                 out.placements.push((m, facade_frame(f.p(pier, h + 0.1, 0.0), f.t, f.n)));
                 out.lights.push((f.p(pier, h + 0.1, 0.55), Vec3::new(0.1, 0.9, 0.3)));
+                out.city_lights.push(CityLight::point(LightKind::Sign, f.p(pier, h + 0.1, 0.55), Vec3::new(0.1, 1.0, 0.3), 9.0, 6.0).with_size(0.6));
             } else if open && matches!(sign, 1 | 4 | 7 | 12 | 13 | 14) && rng.chance(0.45) {
-                let m = lib.named(out, &format!("blade_{sign}"), || furniture::blade_sign(sign));
+                let m = if key.lit_sign { lib.named(out, &format!("blade_lit_{sign}"), || furniture::blade_sign_lit(sign, true)) } else { lib.named(out, &format!("blade_{sign}"), || furniture::blade_sign(sign)) };
                 out.placements.push((m, facade_frame(f.p(pier, h + 0.05, 0.0), f.t, f.n)));
             }
             // A wine barrel as a standing table in front of the bar window.
@@ -740,8 +757,10 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 balcony: None,
                 mirador: None,
                 interior: rng.below(4) as u8,
+                light: window_light(&lib.kit.night, f.p(0.0, 0.0, -60.0), f.p(u, y, 0.0)),
                 grille: true,
             };
+            room_spill(out, &key, f.p(u, y + h * 0.6, 0.5));
             ground_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: y, v1: y + h });
             let at = facade_frame(f.p(u, y, 0.0), f.t, f.n);
             for m in lib.window(out, key) {
@@ -822,8 +841,10 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 balcony,
                 mirador: mirador.then(|| ((fh - 0.35) * 100.0) as u16),
                 interior: state,
+                light: window_light(&lib.kit.night, f.p(flat as f32 * 50.0, y, -40.0), f.p(u, wy, 0.0)),
                 grille: false,
             };
+            room_spill(out, &key, f.p(u, wy + h * 0.6, 0.6));
             upper_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: wy, v1: wy + h });
             let at = facade_frame(f.p(u, wy, 0.0), f.t, f.n);
             for m in lib.window(out, key) {
@@ -884,13 +905,102 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
     }
     // Wall lanterns on the piers at the top of the ground floor.
     if style.wall_lamps && bays >= 2 && *lamps < 2 {
-        let lamp = lib.named(out, "wall_lantern", modules::wall_lantern);
         let u = margin + bay_w;
         let y = c.gh - 0.3;
         let p = f.p(u, y, 0.0);
+        let bulb = p + f.n * 0.68 + Vec3::Y * -0.52;
+        let (color, _) = nightlight::street_lamp_color(bulb, style.city == "madrid");
+        let lamp = if lib.kit.night.is_night() {
+            let g = nightlight::to_rgb(color);
+            lib.named(out, &format!("wall_lantern_{g:?}"), || modules::wall_lantern_lit(g))
+        } else {
+            lib.named(out, "wall_lantern", modules::wall_lantern)
+        };
         out.placements.push((lamp, facade_frame(p, f.t, f.n)));
         out.lights.push((p + f.n * 0.68 + Vec3::Y * -0.5, Vec3::new(1.0, 0.78, 0.5)));
+        out.city_lights.push(nightlight::wall_lantern(bulb, color, f.n));
         *lamps += 1;
+    }
+}
+
+/// Night light of one window: flats (identified by any point `flat`
+/// shared by their windows) are awake with the hour's probability and
+/// light most of their rooms in one tone; a few rooms differ, some have
+/// the curtains drawn. 0 by day.
+pub fn window_light(n: &NightState, flat: Vec3, at: Vec3) -> u8 {
+    if !n.is_night() || hash01(flat, 21) >= n.lit_flats() * n.dark.sqrt() {
+        return 0;
+    }
+    if hash01(at, 22) > 0.7 {
+        return 0;
+    }
+    let tone = if hash01(at, 25) < 0.18 { nightlight::pick_room_tone(hash01(at, 26)) } else { nightlight::pick_room_tone(hash01(flat, 23) * 0.9) };
+    let curtain = if hash01(at, 24) < 0.3 { modules::LIGHT_CURTAIN } else { 0 };
+    1 + tone + curtain
+}
+
+/// Faint spill of a lit window onto its balcony and the street.
+fn room_spill(out: &mut CityOut, key: &WindowKey, p: Vec3) {
+    if key.light == 0 {
+        return;
+    }
+    let (c, level) = nightlight::room_tone((key.light & 7) - 1);
+    let dim = if key.light & modules::LIGHT_CURTAIN != 0 { 0.5 } else { 1.0 };
+    out.city_lights.push(CityLight::point(LightKind::Window, p, c, 3.0 * level * dim, 4.5).with_size(0.8));
+}
+
+/// Shopfront at night: premises that closed since the afternoon pull
+/// their shutter down; open ones keep their sign lit and some bars and
+/// shops add neon. Returns the key and whether the inside is lit.
+fn night_shop(n: &NightState, mut key: ShopKey, at: Vec3, kind: Premises) -> (ShopKey, bool) {
+    if !n.is_night() {
+        return (key, key.shutter == 0);
+    }
+    let day_open = key.shutter == 0;
+    let open = day_open && hash01(at, 31) < n.open_chance(kind);
+    if day_open && !open {
+        key.shutter = 3;
+        key.graffiti = if hash01(at, 32) < 0.4 { 1 + (hash01(at, 33) * 3.0) as u8 % 3 } else { 0 };
+    }
+    let h = hash01(at, 34);
+    key.lit_sign = if open { h < 0.92 } else { h < 0.3 };
+    if open {
+        let neon = hash01(at, 35);
+        let color = 1 + (hash01(at, 36) * modules::NEON.len() as f32) as u8 % modules::NEON.len() as u8;
+        // Neon stays a small sign on a few bars and fewer shops (no tube
+        // outlines around whole shopfronts: they are rare in Spain).
+        key.neon = match kind {
+            Premises::Bar if neon < 0.25 => color,
+            Premises::Shop if neon < 0.05 => color,
+            _ => 0,
+        };
+    }
+    // Partly lowered shutters (closing up) keep their lights on.
+    let lit = open || (key.shutter > 0 && key.shutter < 3);
+    (key, lit)
+}
+
+/// Light pouring out of an open shopfront, its neon and its lit sign.
+fn shop_lights(out: &mut CityOut, f: &Frame, key: &ShopKey, u: f32, kind: Premises, lit_inside: bool) {
+    let (w, h) = (key.w_cm as f32 / 100.0, key.h_cm as f32 / 100.0);
+    if lit_inside && key.shutter < 3 {
+        let color = match kind {
+            Premises::Bar => nightlight::kelvin(2700.0),
+            Premises::Pharmacy => nightlight::kelvin(5200.0),
+            Premises::Shop => nightlight::kelvin(if hash01(f.p(u, 0.0, 0.0), 37) < 0.5 { 3500.0 } else { 4300.0 }),
+        };
+        let open = 1.0 - [0.0, 0.3, 0.65, 1.0][key.shutter as usize % 4];
+        out.city_lights.push(CityLight::point(LightKind::Shop, f.p(u, (h - 0.55) * 0.6, 0.8), color, 12.0 * open * (w / 3.0), 8.0).with_size(w));
+    }
+    let sign_at = f.p(u, h - 0.27, 0.35);
+    if key.neon & 15 != 0 {
+        let c = modules::NEON[((key.neon & 15) as usize - 1) % modules::NEON.len()];
+        let lin = |v: u8| crate::noise::srgb_to_linear(v as f32 / 255.0);
+        let col = Vec3::new(lin(c[0]), lin(c[1]), lin(c[2]));
+        let strength = if key.neon & modules::NEON_FRAME != 0 { 14.0 } else { 7.0 };
+        out.city_lights.push(CityLight::point(LightKind::Sign, sign_at, col, strength, 6.0).with_size(w));
+    } else if key.lit_sign {
+        out.city_lights.push(CityLight::point(LightKind::Sign, sign_at, Vec3::new(1.0, 0.92, 0.82), 3.0, 3.5).with_size(w));
     }
 }
 
@@ -1015,6 +1125,7 @@ pub fn medianeras(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>
                         balcony: None,
                         mirador: None,
                         interior: state,
+                        light: window_light(&lib.kit.night, f.p(u, v, 0.0), f.p(u, v, 0.0)),
                         grille: false,
                     };
                     holes.push(Hole { u0: u - 0.35, u1: u + 0.35, v0: v, v1: v + 0.9 });
@@ -1576,6 +1687,7 @@ fn atico_storey(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, 
                         balcony: None,
                         mirador: None,
                         interior: state,
+                        light: window_light(&lib.kit.night, f.p(0.0, 0.0, -30.0), f.p(u, 0.0, 0.0)),
                         grille: false,
                     };
                     holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: 0.0, v1: 2.15 });
@@ -1728,6 +1840,7 @@ fn corner_tower(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>, 
             balcony: None,
             mirador: None,
             interior: (k + 2) as u8 % 4,
+            light: 0,
             grille: false,
         };
         // Dark backing so the window reads on the curved wall.
@@ -1837,6 +1950,7 @@ mod tests {
             balcony: Some(BalconyKey { width_cm: 190, depth_cm: 50, belly: false, ends: (true, true), pots: 0, awning: None, terrace: 0 }),
             mirador: None,
             interior: 0,
+            light: 0,
             grille: false,
         };
         let a = lib.window(&mut out, k);
