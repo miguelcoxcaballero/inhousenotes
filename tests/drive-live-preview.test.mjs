@@ -478,3 +478,127 @@ test('stopping removes an activity wake and later hints cannot restart it',async
   assert.equal(reader.live.pollTimer,null);assert.equal(reader.live.pollAt,0);assert.equal(reader.live.previewSources.size,0);assert.equal(api.calls.length,0);
  }finally{reader.live.stop();t.mock.timers.reset();}
 });
+
+async function idlePreviewTrace(t,scenario,baseline){
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const requests=[];let polls=0;
+ const live=new LivePreview({store:memoryInkStore(),account:'a',docId:'doc',actor:'reader',canPublish:false,
+  fetch:async url=>{
+   const media=url.includes('alt=media');requests.push({kind:media?'media':'discovery',at:Date.now()});
+   return new Response(JSON.stringify(media?{v:1,docId:'doc',actor:'writer',frame:1,
+    at:scenario==='inactive-frame'?100000:Date.now()-60000,packets:[]}:{files:[]}));
+  }});
+ const poll=live.pollFrames.bind(live);live.pollFrames=()=>{polls++;return poll();};
+ // Reproduce the previous fixed 100ms scheduling policy for comparison,
+ // retaining the same transport, sources, responses and discovery cadence.
+ if(baseline)live.schedulePoll=function(delay=100){return LivePreview.prototype.schedulePoll.call(this,Math.min(delay,100));};
+ if(scenario!=='no-sources')live.previewSources.set('remote',{next:scenario==='inactive-frame'?102000:115000,retryAt:0,frame:1,activeUntil:0});
+ try{
+  live.start();t.mock.timers.tick(0);await nextPreviewTurn();
+  for(let i=0;i<150;i++){t.mock.timers.tick(100);await nextPreviewTurn();}
+  const trace={polls,requests};live.stop();t.mock.timers.tick(60000);await nextPreviewTurn();
+  assert.equal(polls,trace.polls);assert.equal(live.pollTimer,null);return trace;
+ }finally{live.stop();t.mock.timers.reset();}
+}
+
+for(const scenario of ['no-sources','expired-source','inactive-frame'])test(`quiet ${scenario} polling sleeps without changing any request timestamp`,async t=>{
+ const baseline=await idlePreviewTrace(t,scenario,true),optimized=await idlePreviewTrace(t,scenario,false);
+ assert.deepEqual(optimized.requests,baseline.requests);assert.equal(baseline.polls,151);
+ assert.deepEqual(optimized.requests.filter(request=>request.kind==='discovery').map(request=>request.at),[100000,105000,110000,115000]);
+ if(scenario==='inactive-frame')assert.ok(optimized.polls<30);
+ else assert.equal(optimized.polls,7);
+ console.log('DRIVE_PREVIEW_IDLE_PASSES',JSON.stringify({scenario,before:baseline.polls,after:optimized.polls,requests:optimized.requests.length}));
+});
+
+test('new activity interrupts an idle deadline immediately and successive frames keep their 100ms cadence',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const requests=[],frames=[];let frame=1;
+ const live=new LivePreview({store:memoryInkStore(),account:'a',docId:'doc',actor:'reader',canPublish:false,
+  preview:value=>frames.push({value,at:Date.now()}),fetch:async url=>{
+   if(!url.includes('alt=media'))return new Response('{"files":[]}');
+   requests.push(Date.now());return new Response(JSON.stringify({v:1,docId:'doc',actor:'writer',frame,at:Date.now(),packets:[packet(frame,0,[1,frame+1])]}));
+  }});
+ live.previewSources.set('sleeping',{next:115000,retryAt:0,frame:0,activeUntil:0});
+ try{
+  live.start();t.mock.timers.tick(0);await nextPreviewTurn();
+  for(let i=0;i<60;i++){t.mock.timers.tick(100);await nextPreviewTurn();}
+  assert.equal(live.pollAt,110000);assert.equal(requests.length,0);
+  live.hint('sleeping');assert.equal(live.pollAt,106000);t.mock.timers.tick(0);await nextPreviewTurn();
+  assert.deepEqual(requests,[106000]);assert.equal(frames.length,1);
+  frame=2;t.mock.timers.tick(100);await nextPreviewTurn();
+  assert.deepEqual(requests,[106000,106100]);assert.equal(frames.length,2);assert.deepEqual(frames[1].value.points.map(point=>point.x),[1,3]);
+ }finally{live.stop();t.mock.timers.reset();}
+});
+
+test('quiet failure retries and discovery retain their absolute deadlines despite hints',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const requests=[];
+ const live=new LivePreview({store:memoryInkStore(),account:'a',docId:'doc',actor:'reader',canPublish:false,fetch:async url=>{
+  const media=url.includes('alt=media');requests.push({kind:media?'media':'discovery',at:Date.now()});
+  return media?new Response('{}',{status:503}):new Response('{"files":[]}');
+ }});
+ try{
+  live.hint('failing');live.start();t.mock.timers.tick(0);await nextPreviewTurn();
+  for(let i=0;i<51;i++){
+   t.mock.timers.tick(100);await nextPreviewTurn();
+   if(i===9||i===19){live.hint('failing');live.hint('failing',false);}
+  }
+  assert.deepEqual(requests.filter(request=>request.kind==='media').map(request=>request.at),[100000,103000]);
+  assert.deepEqual(requests.filter(request=>request.kind==='discovery').map(request=>request.at),[100000,105000]);
+  assert.equal(live.previewSources.get('failing').retryAt,106000);assert.equal(live.pollAt,106000);
+ }finally{live.stop();t.mock.timers.reset();}
+});
+
+test('no finite deadline waits for a real hint instead of clamping an infinite timer into a busy loop',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.live.nextList=Infinity;
+ reader.live.schedulePoll=LivePreview.prototype.schedulePoll;
+ const source={next:Infinity,retryAt:Infinity,frame:0,activeUntil:0};reader.live.previewSources.set('sleeping',source);
+ api.files.set('sleeping',{id:'sleeping',raw:JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]})});
+ try{
+  await reader.live.pollFrames();reader.live.schedulePoll(Infinity);reader.live.hint('sleeping');
+  assert.equal(reader.live.pollTimer,null);t.mock.timers.tick(1000);await nextPreviewTurn();assert.equal(api.calls.length,0);
+  reader.live.schedulePoll(Number.MAX_VALUE);assert.equal(reader.live.pollAt,Date.now()+2147483647);
+  t.mock.timers.tick(1);await nextPreviewTurn();assert.equal(api.calls.length,0);
+  source.retryAt=0;reader.live.hint('sleeping');assert.equal(reader.live.pollAt,Date.now());
+  t.mock.timers.tick(0);await nextPreviewTurn();assert.equal(reader.frames.length,1);assert.equal(api.calls.length,1);
+ }finally{reader.live.stop();t.mock.timers.reset();}
+});
+
+test('four stalled read lanes retain bounded 100ms scheduling and a queued source starts when a lane returns',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const gates=new Map(),calls=[];let active=0,maximum=0,polls=0;
+ const live=new LivePreview({store:memoryInkStore(),account:'a',docId:'doc',actor:'reader',canPublish:false,fetch:async url=>{
+  const id=new URL(url).pathname.split('/').at(-1);calls.push(id);maximum=Math.max(maximum,++active);
+  const gate=gates.get(id);if(gate)await gate.promise;active--;
+  return new Response(JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now()-60000,packets:[]}));
+ }});
+ live.nextList=Infinity;const poll=live.pollFrames.bind(live);live.pollFrames=()=>{polls++;return poll();};
+ for(let i=0;i<4;i++){gates.set('slow-'+i,previewGate());live.hint('slow-'+i);}
+ try{
+  live.start();t.mock.timers.tick(0);await nextPreviewTurn();
+  for(let i=0;i<10;i++){t.mock.timers.tick(100);await nextPreviewTurn();}
+  assert.equal(polls,11);assert.equal(calls.length,4);assert.equal(maximum,4);assert.equal(live.pollAt,101100);
+  live.hint('waiting',false);t.mock.timers.tick(0);await nextPreviewTurn();assert.equal(calls.length,4);assert.equal(live.pollAt,101100);
+  gates.get('slow-0').release();await nextPreviewTurn();t.mock.timers.tick(100);await nextPreviewTurn();
+  assert.equal(calls.at(-1),'waiting');assert.equal(calls.length,5);assert.equal(maximum,4);
+ }finally{live.stop();for(const gate of gates.values())gate.release();await nextPreviewTurn();t.mock.timers.reset();}
+});
+
+test('an in-flight discovery retains bounded polling while a direct hint delivers new ink immediately',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const gate=previewGate(),frames=[];let polls=0,listings=0,reads=0;
+ const live=new LivePreview({store:memoryInkStore(),account:'a',docId:'doc',actor:'reader',canPublish:false,
+  preview:value=>frames.push(value),fetch:async url=>{
+   if(!url.includes('alt=media')){listings++;await gate.promise;return new Response('{"files":[]}');}
+   reads++;return new Response(JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]}));
+  }});
+ const poll=live.pollFrames.bind(live);live.pollFrames=()=>{polls++;return poll();};
+ try{
+  live.start();t.mock.timers.tick(0);await nextPreviewTurn();
+  for(let i=0;i<10;i++){t.mock.timers.tick(100);await nextPreviewTurn();}
+  assert.equal(polls,11);assert.equal(listings,1);assert.equal(reads,0);assert.equal(live.pollAt,101100);
+  live.hint('active');assert.equal(live.pollAt,101000);t.mock.timers.tick(0);await nextPreviewTurn();
+  assert.equal(reads,1);assert.equal(frames.length,1);assert.equal(listings,1);assert.equal(live.pollAt,101100);
+ }finally{live.stop();gate.release();await nextPreviewTurn();t.mock.timers.reset();}
+});

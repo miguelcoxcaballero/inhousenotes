@@ -147,7 +147,9 @@
         }
         schedulePoll(delay=FRAME_MS){
             if(this.stopped||!this.docId)return;
-            const wait=Math.max(0,delay),at=Date.now()+wait;
+            const requested=Math.max(0,delay);
+            if(!Number.isFinite(requested))return;
+            const wait=Math.min(2147483647,requested),at=Date.now()+wait;
             if(this.pollTimer&&this.pollAt<=at)return;
             clearTimeout(this.pollTimer);this.pollAt=at;
             this.pollTimer=setTimeout(()=>{this.pollTimer=null;this.pollAt=0;void this.pollFrames();},wait);
@@ -236,7 +238,20 @@
             const reads=due.map(([id,source])=>this.readPreview(id,source));
             // Run the next scheduling pass independently. One stalled device
             // consumes one slot, never the next frames of every healthy peer.
-            this.schedulePoll();
+            let delay=FRAME_MS;
+            if(!this.discovery&&!sources.some(([,source])=>source.inFlight)){
+                // Quiet sources already have freshness/retry deadlines. Sleep
+                // until useful work is due; a new activity hint can preempt
+                // this timer immediately without renewing static listings.
+                let next=this.nextList;
+                for(const [id,source]of sources){
+                    if(id===this.fileId)continue;
+                    const deadline=Math.max(source.next,source.retryAt||0);
+                    if(Number.isFinite(deadline))next=Math.min(next,deadline);
+                }
+                delay=next-Date.now();
+            }
+            this.schedulePoll(delay);
             await Promise.allSettled(reads);
         }
         start(){if(this.host.canPublish!==false){this.frame++;this.scheduleFrame();}this.schedulePoll(0);return this;}
