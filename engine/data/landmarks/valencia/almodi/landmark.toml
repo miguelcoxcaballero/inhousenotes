@@ -1,0 +1,526 @@
+# Almodí de València (Almudín), the municipal granary next to the cathedral apse.
+# Plan: Catastro 6031201YJ2753B (a trapezoid: west front 21.0 m, east front 17.4 m,
+# long sides 43.9 / 44.1 m), checked on the IGN PNOA orthophoto. Heights solved by a
+# constrained bundle adjustment of 5 photos (see sources.toml [facts]).
+# Local axis of the hall: u = (0.977, 0.2127) along the south front (azimuth 102.3°),
+# t = distance north of the south wall line; the nave (raised central hall with a
+# clerestory) has its walls at t = 4.6 .. 15.85 m and its gable faces at u = 4.3 .. 35.3 m.
+
+[landmark]
+name = "Almodí de València"
+main_facade = "facing:e"
+notes = "Gothic granary (works 1417, porch 16th c., roofs 17th c.); basilical hall: low hipped roof over the aisles, gabled clerestory nave, serliana-like porch of three round arches on the Plaça de Sant Lluís Bertran"
+
+[landmark.info]
+built = "1417-c. 1455, porch 16th c., roof 17th c., restored 1993-1996"
+architects = "Guillem Just, Miquel Navarro, Francesc Baldomar"
+
+[defaults]
+material = "tapia"
+roof_material = "roof"
+
+[render]
+sun = [120, 45]
+paving = 45
+hide_context = [60]
+
+[reference_heights]
+"catastro:0" = { height = 15.16, tolerance = 0.6, source = "ridge of the clerestory nave, bundle adjustment of photos 02 03 06 09 15" }
+eave_core = { height = 9.65, tolerance = 0.3 }
+gable_w = { height = 15.16, tolerance = 0.3, source = "apex of the west gable coping, bundle adjustment" }
+gable_e = { height = 15.16, tolerance = 0.3 }
+
+# ---------------------------------------------------------------- materials
+[material.tapia]          # Valencian tapia: lime-rubble walls laced with brick ends
+kind = "travertine"
+tint = "#e9e6ee"
+uv_scale = 1.2
+weathering = 0.3
+
+[material.ashlar]         # limestone ashlar of the porch front and the corners
+kind = "limestone"
+tint = "#d8d0c2"
+block = [0.8, 0.4]
+weathering = 0.35
+
+[material.voussoir]
+kind = "limestone"
+tint = "#d8c7a8"
+
+[material.brick_arch]
+kind = "brick"
+tint = "#e0b89a"
+
+[material.infill]
+kind = "plaster"
+tint = "#efe8dc"
+
+[material.nave]
+kind = "travertine"
+tint = "#dcd6e0"
+uv_scale = 2.0
+weathering = 0.2
+
+[material.timber]
+kind = "wood"
+tint = "#7a3f24"
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#8a7f74"
+weathering = 0.6
+
+[material.porch_glass]
+kind = "glass"
+tint = "#3a2224"
+
+[material.dark_iron]
+kind = "iron"
+tint = "#2a2624"
+
+# ---------------------------------------------------------------- walls
+# Lower storey (0 - 5.4 m): ashlar on the porch front, tapia elsewhere.
+[[element]]
+type = "mass"
+name = "body_low"
+polygon = "catastro:0"
+y0 = 0
+height = 5.4
+top = false
+edge_materials = [{ edges = "facing:e", material = "ashlar" }]
+
+  # Porch on the Plaça de Sant Lluís Bertran: three round arches on two pairs of
+  # polygonal piers, a rectangular opening between each pair (photo 09, 68.9 px/m):
+  # 1.7 | arch 3.4 | 0.5 | 1.15 | 0.5 | arch 3.0 | 0.5 | 1.15 | 0.5 | arch 3.4 | 1.6
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "arch"
+  arch = "round"
+  width = 3.4
+  height = 4.64
+  levels = [0]
+  bays = { at = [3.4, 14.1] }
+  infill = "glass"
+  frame = 0.06
+  transoms = 1
+  depth = 0.45
+  surround = { width = 0.38, projection = 0.03 }
+  frame_material = "dark_iron"
+  material = "voussoir"
+  glass_material = "porch_glass"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "arch"
+  arch = "round"
+  width = 3.0
+  height = 4.57
+  levels = [0]
+  bays = { at = [8.75] }
+  infill = "glass"
+  frame = 0.06
+  transoms = 1
+  depth = 0.45
+  surround = { width = 0.38, projection = 0.03 }
+  frame_material = "dark_iron"
+  material = "voussoir"
+  glass_material = "porch_glass"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "door"
+  arch = "flat"
+  width = 1.15
+  height = 3.17
+  levels = [0]
+  bays = { at = [6.175, 11.325] }
+  infill = "glass"
+  frame = 0.06
+  frame_material = "dark_iron"
+  depth = 0.45
+  glass_material = "porch_glass"
+
+  # South front (Carrer de l'Almodí): tall pointed doorway and the walled-up arch
+  # near the SW corner (positions along the front from the bundle adjustment).
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "door"
+  arch = "pointed"
+  width = 1.8
+  height = 5.0
+  levels = [0]
+  bays = { at = [21.34] }
+  infill = "door"
+  depth = 0.5
+  door_material = "timber"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "blind"
+  arch = "round"
+  width = 2.1
+  height = 3.0
+  levels = [0]
+  bays = { at = [2.91] }
+  depth = 0.08
+  voussoirs = { count = 15, width = 0.45 }
+  material = "brick_arch"
+
+# Upper storey (5.4 - 8.6 m): tapia with the row of small square windows between
+# brick piers under the eaves (the old crenels; 12 on the porch front, pitch 1.38 m).
+[[element]]
+type = "mass"
+name = "body_high"
+polygon = "catastro:0"
+y0 = 5.4
+height = 3.35
+top = true
+string_courses = [8.5]
+
+  [[element.openings]]
+  edges = "all"
+  kind = "window"
+  arch = "flat"
+  width = 0.64
+  height = 0.86
+  levels = [7.55]
+  bays = { spacing = 1.383, margin = 0.6 }
+  infill = "dark"
+  depth = 0.35
+  sill = { depth = 0.06, height = 0.05 }
+
+# Dark timber band behind the exposed rafters (wall plate to roof boards).
+[[element]]
+type = "mass"
+name = "eave_core"
+material = "timber"
+polygon = { ref = "catastro:0", inset = 0.05 }
+y0 = 8.75
+height = 0.9
+
+[[element]]
+type = "array"
+name = "rafters"
+mode = "edges"
+polygon = "catastro:0"
+edges = "all"
+spacing = 1.383
+corners = "skip"
+y = 8.86
+material = "timber"
+  [[element.children]]
+  type = "box"
+  min = [-0.08, 0.0, -0.05]
+  max = [0.08, 0.24, 1.42]
+
+# Lower roof: one hipped roof over the whole trapezoid, eave edge 1.5 m out at 9.19 m,
+# 16° (meets the nave wall at 10.9 m, measured 10.86 m).
+[[element]]
+type = "roof"
+name = "aisle_roof"
+polygon = { ref = "catastro:0", offset = 1.5 }
+y = 9.19
+shape = "hip"
+pitch = 16
+overhang = 0
+thickness = 0.22
+ridge_cap = true
+
+# ---------------------------------------------------------------- nave
+[[element]]
+type = "mass"
+name = "nave"
+material = "nave"
+polygon = [[-17.82, 2.25], [11.19, 8.56], [13.58, -2.43], [-15.42, -8.74]]
+y0 = 9.5
+y1 = 13.2
+top = true
+
+  [[element.openings]]   # clerestory glazing band
+  edges = ["facing:s", "facing:n"]
+  kind = "window"
+  arch = "flat"
+  width = 1.55
+  height = 1.2
+  levels = [11.3]
+  bays = { spacing = 1.75, margin = 0.5 }
+  infill = "glass"
+  frame = 0.07
+  mullions = 1
+  depth = 0.2
+
+[[element]]
+type = "roof"
+name = "nave_roof"
+on = "nave"
+shape = "gable"
+ridge = "long"
+pitch = 18
+overhang = 0.62
+thickness = 0.2
+ridge_cap = true
+
+# Gable walls rising as parapets with a coping over the nave roof (photos 06, 09, 15).
+[[element]]
+type = "wall"
+name = "gable_w"
+material = "nave"
+path = [[-18.27, 2.79], [-15.62, -9.39]]
+y0 = 12.0
+top_profile = [[0, 13.16], [6.24, 15.16], [12.47, 13.16]]
+thickness = 0.64
+
+[[element]]
+type = "wall"
+name = "gable_e"
+material = "nave"
+path = [[11.38, 9.25], [14.03, -2.94]]
+y0 = 12.0
+top_profile = [[0, 13.16], [6.24, 15.16], [12.47, 13.16]]
+thickness = 0.64
+
+# ---------------------------------------------------------------- details
+# Royal escutcheons over the three arches of the porch front (photo 09).
+[[element]]
+type = "relief"
+name = "shield_0"
+material = "voussoir"
+at = [20.12, 5.45, 11.69]
+facing = 100.8
+size = [0.36, 0.45]
+shape = "shield"
+depth = 0.06
+relief = "boss"
+
+[[element]]
+type = "relief"
+name = "shield_1"
+material = "voussoir"
+at = [21.14, 5.45, 6.33]
+facing = 100.8
+size = [0.36, 0.45]
+shape = "shield"
+depth = 0.06
+relief = "boss"
+
+[[element]]
+type = "relief"
+name = "shield_2"
+material = "voussoir"
+at = [22.12, 5.45, 1.22]
+facing = 100.8
+size = [0.36, 0.45]
+shape = "shield"
+depth = 0.06
+relief = "boss"
+
+# Ashlar corner stones up the south front at both ends (photos 03, 06, 08).
+[[element]]
+type = "relief"
+name = "quoin_sw"
+material = "ashlar"
+at = [-22.84, 0.0, 5.86]
+facing = 192.3
+size = [1.6, 5.4]
+depth = 0.03
+frame = 0
+
+[[element]]
+type = "relief"
+name = "quoin_se"
+material = "ashlar"
+at = [18.69, 0.0, 14.9]
+facing = 192.3
+size = [1.6, 5.4]
+depth = 0.03
+frame = 0
+
+# Walled-up arch infill near the SW corner.
+[[element]]
+type = "relief"
+name = "blocked_arch_infill"
+at = [-20.78, 0.0, 6.31]
+facing = 192.3
+size = [1.05, 2.01]
+shape = "arched"
+depth = 0.04
+frame = 0
+material = "infill"
+
+# ---------------------------------------------------------------- views
+# Matches: footprint corners (Catastro), eave tips (1.5 m overhang, 9.19 m), nave gable
+# copings, arches/doors/windows of the porch front at their measured positions.
+
+[[view]]
+name = "south_west_from_almoina"
+photo = "photos/06_Palau_de_Colomina_i_Almodi_Valencia_01.jpg"
+eye_height = 1.6
+match = [
+  { px = [566, 735], world = [-23.62, 0, 5.69] },  # SWg
+  { px = [557, 363], world = [-25.4, 9.19, 6.84] },  # SWe
+  { px = [328, 680], world = [-19.22, 0, -14.82] },  # NWg
+  { px = [291, 478], world = [-20.34, 9.19, -16.73] },  # NWe
+  { px = [573, 294], world = [-17.26, 15.16, -3.36] },  # NapexW
+  { px = [651, 308], world = [-18.58, 13.16, 2.72] },  # NswTop
+  { px = [662, 651], world = [-20.78, 2.01, 6.31] },  # Ac
+  { px = [662, 727], world = [-20.78, 0, 6.31] },  # Ab
+  { px = [1115, 592], world = [-2.77, 5.0, 10.23] },  # Dc
+]
+
+[[view]]
+name = "from_the_cathedral"
+context = false
+photo = "photos/15_Placa_de_l_Almoina_des_de_la_catedral_Valencia.jpg"
+eye_height = 20
+eye_height_sigma = 8
+match = [
+  { px = [146, 275], world = [-25.4, 9.19, 6.84] },  # SWe
+  { px = [22, 236], world = [-20.34, 9.19, -16.73] },  # NWe
+  { px = [159, 424], world = [-23.62, 0, 5.69] },  # SWg
+  { px = [157, 150], world = [-17.26, 15.16, -3.36] },  # NapexW
+  { px = [198, 185], world = [-18.58, 13.16, 2.72] },  # NswTop
+  { px = [120, 181], world = [-15.93, 13.16, -9.46] },  # NnwTop
+  { px = [212, 386], world = [-20.78, 2.01, 6.31] },  # Ac
+  { px = [491, 321], world = [-2.77, 5.0, 10.23] },  # Dc
+]
+
+[[view]]
+name = "south_west_corner"
+photo = "photos/03_Almudin_de_Valencia_001.jpg"
+upright = true
+eye_height = 1.6
+match = [
+  { px = [492, 775], world = [-23.62, 0, 5.69] },  # SWg
+  { px = [475, 79], world = [-25.4, 9.19, 6.84] },  # SWe
+  { px = [178, 700], world = [-19.22, 0, -14.82] },  # NWg
+  { px = [130, 452], world = [-20.34, 9.19, -16.73] },  # NWe
+  { px = [1044, 694], world = [19.48, 0, 15.07] },  # SEg
+  { px = [1066, 546], world = [20.67, 9.19, 16.86] },  # SEe
+  { px = [625, 642], world = [-20.78, 2.01, 6.31] },  # Ac
+  { px = [625, 760], world = [-20.78, 0, 6.31] },  # Ab
+  { px = [945, 584], world = [-2.77, 5.0, 10.23] },  # Dc
+  { px = [945, 702], world = [-2.77, 0, 10.23] },  # Db
+]
+
+[[view]]
+name = "carrer_de_l_almodi"
+photo = "photos/02_Carrer_de_l_Almodi_panoramio.jpg"
+eye_height = 1.6
+match = [
+  { px = [479, 151], world = [20.67, 9.19, 16.86] },  # SEe
+  { px = [1240, 361], world = [24.46, 9.19, -3.04] },  # NEe
+  { px = [556, 830], world = [19.48, 0, 15.07] },  # SEg
+  { px = [1218, 758], world = [22.73, 0, -2.0] },  # NEg
+  { px = [210, 765], world = [-23.62, 0, 5.69] },  # SWg
+  { px = [162, 587], world = [-25.4, 9.19, 6.84] },  # SWe
+  { px = [258, 615], world = [-2.77, 5.0, 10.23] },  # Dc
+]
+
+[[view]]
+name = "porch_front_fountain"
+photo = "photos/09_203_L_Almodi_Valencia_facana_est_pl_Sant_Lluis_Bertran.jpg"
+eye_height = 1.6
+upright = true
+fix = ["height"]
+match = [
+  { px = [90, 777], world = [19.48, 0, 15.07] },  # SEg
+  { px = [1272, 766], world = [22.73, 0, -2.0] },  # NEg
+  { px = [717, 87], world = [13.02, 15.16, 3.23] },  # NapexE
+  { px = [672, 465], world = [21.12, 4.57, 6.48] },  # A2
+  { px = [567, 570], world = [20.84, 3.07, 7.95] },  # A2l
+  { px = [772, 570], world = [21.4, 3.07, 5.0] },  # A2r
+  { px = [126, 204], world = [19.62, 8.41, 14.32] },  # W1tl
+  { px = [1218, 204], world = [22.59, 8.41, -1.25] },  # W12tr
+]
+
+[[view]]
+name = "south_east_corner"
+photo = "photos/08_204_L_Almodi_Valencia_angle_sud_est.jpg"
+eye_height = 1.6
+match = [
+  { px = [492, 816], world = [19.48, 0, 15.07] },  # SEg
+  { px = [651, 509], world = [20.12, 4.64, 11.73] },  # A1
+  { px = [884, 529], world = [21.12, 4.57, 6.48] },  # A2
+  { px = [1055, 543], world = [22.12, 4.64, 1.22] },  # A3
+  { px = [1158, 749], world = [22.73, 0, -2.0] },  # NEg
+  { px = [501, 241], world = [19.62, 8.41, 14.32] },  # W1tl
+  { px = [1109, 379], world = [22.59, 8.41, -1.25] },  # W12tr
+  { px = [410, 128], world = [20.67, 9.19, 16.86] },  # SEe
+  { px = [1180, 357], world = [24.46, 9.19, -3.04] },  # NEe
+  { px = [164, 606], world = [-2.77, 5.0, 10.23] },  # Dc
+  { px = [165, 762], world = [-2.77, 0, 10.23] },  # Db
+]
+
+[[view]]
+name = "porch_from_the_north_east"
+photo = "photos/01_L_almodi_de_Valencia.jpg"
+context = false
+eye_height = 1.6
+match = [
+  { px = [105, 815], world = [19.48, 0, 15.07] },  # SEg
+  { px = [1040, 868], world = [22.73, 0, -2.0] },  # NEg
+  { px = [212, 553], world = [20.12, 4.64, 11.73] },  # A1
+  { px = [455, 528], world = [21.12, 4.57, 6.48] },  # A2
+  { px = [790, 492], world = [22.12, 4.64, 1.22] },  # A3
+  { px = [140, 368], world = [19.62, 8.41, 14.32] },  # W1tl
+  { px = [972, 180], world = [22.59, 8.41, -1.25] },  # W12tr
+  { px = [30, 335], world = [20.67, 9.19, 16.86] },  # SEe
+  { px = [1130, 20], world = [24.46, 9.19, -3.04] },  # NEe
+  { px = [298, 632], world = [20.53, 3.17, 9.57] },  # D1t
+  { px = [628, 612], world = [21.71, 3.17, 3.38] },  # D2t
+]
+
+[[view]]
+name = "porch_close_south"
+photo = "photos/12_Valencia_Almodi_1.jpg"
+eye_height = 1.6
+match = [
+  { px = [255, 418], world = [20.12, 4.64, 11.73] },  # A1
+  { px = [665, 447], world = [21.12, 4.57, 6.48] },  # A2
+  { px = [970, 472], world = [22.12, 4.64, 1.22] },  # A3
+  { px = [405, 555], world = [20.43, 2.94, 10.06] },  # A1r
+  { px = [452, 553], world = [20.53, 3.17, 9.57] },  # D1t
+  { px = [865, 560], world = [21.71, 3.17, 3.38] },  # D2t
+  { px = [1050, 565], world = [22.43, 2.94, -0.45] },  # A3r
+  { px = [1125, 757], world = [22.73, 0, -2.0] },  # NEg
+  { px = [410, 820], world = [20.43, 0, 10.06] },  # P1b
+  { px = [1075, 252], world = [22.59, 8.41, -1.25] },  # W12tr
+  { px = [1180, 210], world = [24.46, 9.19, -3.04] },  # NEe
+  { px = [578, 560], world = [20.84, 3.07, 7.95] },  # A2l
+  { px = [757, 565], world = [21.4, 3.07, 5.0] },  # A2r
+]
+
+[[view]]
+name = "fountain_wide_south_east"
+photo = "photos/13_The_Almudin_and_Fuente_de_San_Lluis_Bertran_in_Ciutat_Vella_.jpg"
+eye_height = 1.6
+match = [
+  { px = [100, 835], world = [19.48, 0, 15.07] },  # SEg
+  { px = [340, 520], world = [20.12, 4.64, 11.73] },  # A1
+  { px = [610, 548], world = [21.12, 4.57, 6.48] },  # A2
+  { px = [785, 570], world = [22.12, 4.64, 1.22] },  # A3
+  { px = [865, 745], world = [22.73, 0, -2.0] },  # NEg
+  { px = [190, 272], world = [19.62, 8.41, 14.32] },  # W1tl
+  { px = [845, 440], world = [22.59, 8.41, -1.25] },  # W12tr
+  { px = [20, 108], world = [20.67, 9.19, 16.86] },  # SEe
+  { px = [895, 437], world = [24.46, 9.19, -3.04] },  # NEe
+  { px = [480, 615], world = [20.53, 3.17, 9.57] },  # D1t
+  { px = [730, 622], world = [21.71, 3.17, 3.38] },  # D2t
+]
+
+[[view]]
+name = "catastro_facade_photo"
+photo = "photos/catastro_6031201YJ2753B.jpg"
+eye_height = 1.6
+match = [
+  { px = [634, 188], world = [20.67, 9.19, 16.86] },  # SEe
+  { px = [688, 968], world = [19.48, 0, 15.07] },  # SEg
+  { px = [869, 625], world = [20.12, 4.64, 11.73] },  # A1
+  { px = [1131, 662], world = [21.12, 4.57, 6.48] },  # A2
+  { px = [1325, 685], world = [22.12, 4.64, 1.22] },  # A3
+  { px = [1400, 925], world = [22.73, 0, -2.0] },  # NEg
+  { px = [1494, 481], world = [24.46, 9.19, -3.04] },  # NEe
+  { px = [722, 327], world = [19.62, 8.41, 14.32] },  # W1tl
+  { px = [304, 706], world = [-2.77, 5.0, 10.23] },  # Dc
+  { px = [306, 875], world = [-2.77, 0, 10.23] },  # Db
+]

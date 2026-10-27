@@ -20,6 +20,29 @@ catastro_refcat = { value = "6031201YJ2753B", source = "https://www1.sedecatastr
 catastro_built = { value = 1417, source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6031201&rc2=YJ2753B", note = "Catastro dateOfConstruction (often the last major works)" }
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6031201&rc2=YJ2753B" }
 catastro_floor_area = { value = 847.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6031201&rc2=YJ2753B", note = "Catastro officialArea (gross floor area)" }
+plan_source = { value = "Catastro 6031201YJ2753B (4-corner trapezoid)", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6031201&rc2=YJ2753B", note = "checked on the IGN PNOA orthophoto WMS pnoa-ma (CC BY 4.0), 0.05 m/px, BBOX 725843.19,4372916.50,725923.19,4372996.50: roof edges 0.4-1.35 m outside the Catastro walls on the south/north (eave), no measurable lean; OSM way 227916537 lies ~0.8 m north of the south wall (IoU 0.875 with the model)" }
+length_south = { value = 44.11, unit = "m", source = "Catastro 6031201YJ2753B", note = "SW (-23.62, 5.69) to SE (19.48, 15.07) local" }
+length_north = { value = 43.86, unit = "m", source = "Catastro 6031201YJ2753B" }
+width_east = { value = 17.38, unit = "m", source = "Catastro 6031201YJ2753B", note = "porch front on the Plaça de Sant Lluís Bertran; photo 09 width/height ratio agrees (68.9 px/m)" }
+width_west = { value = 20.98, unit = "m", source = "Catastro 6031201YJ2753B", note = "the plan is a trapezoid: the north wall diverges 3.6 m over the length; confirmed on the PNOA orthophoto" }
+footprint_area = { value = 841, unit = "m2", source = "model check", note = "Catastro officialArea 847 m2" }
+eave_tip_height = { value = 9.19, unit = "m", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed", note = "top of the tiles at the roof corners, +-0.03 m (formal)" }
+eave_overhang = { value = 1.5, unit = "m", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed", note = "BA gives 1.64 m, the PNOA roof edge 1.0-1.35 m outside Catastro: 1.5 m adopted; exposed timber rafters every 1.38 m" }
+window_band = { value = "sill 7.55 m, head 8.41 m, 0.64 x 0.86 m, pitch 1.383 m, 12 on the east front", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed; photo 09 (Enric, CC BY-SA 4.0) for widths and pitch", note = "small square windows in the old crenels between brick piers under the eaves; head height BA 8.45 +- 0.03" }
+wall_top = { value = 8.75, unit = "m", source = "photo 09 (wall plate 0.2 m above the window heads)", note = "inferred, not directly observable under the eave" }
+lower_roof = { value = "hip over the whole plan, 16 deg", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed", note = "meets the nave wall at 10.86 +- 0.11 m; hip lines visible on the PNOA orthophoto and photo 15" }
+nave_walls = { value = "t = 4.6 .. 15.85 m north of the south wall (11.25 m wide)", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed + PNOA orthophoto (ridge line t ~ 11, north eave t ~ 16.3, west gable shadow)", note = "coping edges BA t = 3.97 / 16.44 +- 0.2" }
+nave_length = { value = 31.0, unit = "m", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed", note = "gable faces 4.29 and 35.28 m east of the SW corner along the south wall; PNOA: 4.5-5.5 and ~35" }
+nave_eave = { value = 13.16, unit = "m", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed", note = "rake ends of the gable copings, +-0.12" }
+nave_ridge = { value = 15.16, unit = "m", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed", note = "gable coping apex, +-0.15; roof pitch ~18 deg (photo 09 east gable 19 deg)" }
+porch = { value = "three round arches 3.4 / 3.0 / 3.4 m, crowns 4.64 / 4.57 / 4.64 m, rectangular openings 1.15 x 3.17 m between pairs of 0.5 m piers, end piers 1.7 / 1.6 m", source = "photo 09 (68.9 px/m) for widths, bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed for heights", note = "ca.wikipedia: three stone arches on two pairs of polygonal pillars (16th c.)" }
+south_door = { value = "pointed, 1.8 x 5.0 m, centre 21.34 m from the SW corner", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed", note = "width estimated from photos 06/15" }
+blocked_arch = { value = "brick ring ~2.1 m wide, walled-up opening 1.05 x 2.01 m, centre 2.91 m from the SW corner", source = "bundle adjustment (scratchpad ba.py) of 10 Commons/Catastro photos, 105 point matches, per-photo free focal + radial k1, eye-height prior 1.6 m, Catastro corners fixed" }
+shields = { value = 3, source = "photo 09", note = "royal escutcheons over the arches, bottom 5.45 m, at 3.44 / 8.9 / 14.1 m from the SE corner" }
+materials = { value = "tapia walls laced with brick, limestone ashlar porch front and corners, timber eaves", source = "https://ca.wikipedia.org/wiki/Almod%C3%AD_de_Val%C3%A8ncia", note = "infobox: white limestone and wood; text: tapia, stone corners, cut-stone arches, timber roofs" }
+roof_history = { value = "17th c. roof: gabled centre, sloping side roofs (basilical)", source = "https://ca.wikipedia.org/wiki/Almod%C3%AD_de_Val%C3%A8ncia" }
+works = { value = "begun 1417 (Guillem Just, Miquel Navarro), c. 1455 Francesc Baldomar, porch 16th c., restored 1993-1996", source = "https://ca.wikipedia.org/wiki/Almod%C3%AD_de_Val%C3%A8ncia" }
+exif = { value = "unavailable", source = "Commons API", note = "Commons API answered HTTP 429 for 40+ minutes; focal lengths solved per photo instead" }
 catastro_floors_max = { value = 1, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 1 parts" }
 
 [[photo]]
@@ -32,8 +55,8 @@ width = 1280
 height = 973
 camera = [-6.33, 10.84]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/02_Carrer_de_l_Almodi_panoramio.jpg"
@@ -45,8 +68,8 @@ width = 1280
 height = 960
 camera = [27.83, 12.84]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/03_Almudin_de_Valencia_001.jpg"
@@ -58,8 +81,8 @@ width = 1280
 height = 853
 camera = [-47.56, 13.93]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/04_Almodi_de_Valencia_porxo.jpg"
@@ -82,8 +105,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/06_Palau_de_Colomina_i_Almodi_Valencia_01.jpg"
@@ -94,8 +117,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/07_Facana_de_l_Almodi_a_la_Placa_de_Sant_Lluis_Bertran.jpg"
@@ -106,8 +129,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/08_204_L_Almodi_Valencia_angle_sud_est.jpg"
@@ -118,8 +141,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/09_203_L_Almodi_Valencia_facana_est_pl_Sant_Lluis_Bertran.jpg"
@@ -130,8 +153,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/10_Porxo_de_l_Almodi_Valencia.jpg"
@@ -154,8 +177,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/12_Valencia_Almodi_1.jpg"
@@ -166,8 +189,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/13_The_Almudin_and_Fuente_de_San_Lluis_Bertran_in_Ciutat_Vella_.jpg"
@@ -178,8 +201,8 @@ license = "CC0"
 width = 1280
 height = 1075
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/14_206_Font_de_la_pl_Sant_Lluis_Bertran_Valencia_al_fons_l_Almo.jpg"
@@ -203,8 +226,8 @@ width = 1280
 height = 929
 camera = [-35.81, 42.03]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/16_Facana_de_l_Almodi_a_la_Placa_de_Sant_Lluis_Bertran_02.jpg"
@@ -215,8 +238,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_6031201YJ2753B.jpg"
@@ -227,8 +250,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -238,6 +261,15 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [725830.46, 4372912.26, 725936.71, 4373002.17], 0.080 m/px, north up; roman numerals = floors above ground; parcels 6031201YJ2753B"
+
+[[plan]]
+file = "(not stored: scratchpad)"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 725843-725923, N 4372916-4372996"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=725843.19,4372916.50,725923.19,4372996.50&WIDTH=1600&HEIGHT=1600&FORMAT=image/jpeg"
+author = "Instituto Geográfico Nacional"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "0.05 m/px; used for the plan check, the nave (clerestory) position and the hip lines"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q8196158"
