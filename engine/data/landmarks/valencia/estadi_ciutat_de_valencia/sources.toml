@@ -19,6 +19,20 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 31198.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6852101&rc2=YJ2765B", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 2, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 9 parts" }
 
+pitch = { value = "105 x 68 m", source = "PNOA 2024-05 orthophoto (IGN, CC BY 4.0) rectified on the stadium axis: goal lines 105.3 m apart, penalty boxes 40.3 m wide, goal areas 18.7 x 5.8 m, centre circle r 9 m", note = "centre spot at local (2.52, 1.84); frame (u, v) with v along the pitch at az 193.3 deg" }
+stadium_axis = { value = "long axis az 13.3 deg (north end turned east)", source = "PNOA 2024 halfway line and goal-to-goal line (13.3-13.4 deg); OSM inner ring of relation 12211578 agrees" }
+inner_edge = { value = "front of the stands u -43.4/+42.6, v -58.2/+60.3 (86 x 118.5 m), rounded corners", source = "OSM relation 12211578 inner ring; Catastro 6852101YJ2765B hole u -42.1/+44.0, v -58.3/+60.1" }
+outer_outline = { value = "east u +73.5 (bowed), ends v -90.3/+90.0, tribuna facade u -79.0 (bowed to -74 at the ends), large rounded corners", source = "OSM relation 12211578 outer ring; Catastro part 2 u -79.4/+73.8, v -90.5/+90.4" }
+tribuna_block = { value = "115 m long (v -58 .. +57.5), 10 m deep (u -79 .. -69), 15.0 m high: ground floor 4.3 m + three ~3.4 m floors + parapet", source = "OSM outline step at v +-57.5; PNOA 2024 flat roof strip u -74..-68 apparent; heights from photos 03, 04, 01 scaled by the doors (2.7 m) and the ground floor band" }
+stand_profile = { value = "first row 1.4 m, lower tier to 5.0 m at 12 m, walkway 5.4 m with a 6.35 m advertising band, upper tier 6.9 -> 15.0 m (d 13.9-29.5 m), top band 15.3-15.8 m at the back (east u 72)", source = "camera solve of photo 10 (Francesc Fort 2024, 7 pitch markings, rms 3 px, f 1008 px = fov_y 51 deg, eye 9.2 m in the west stand)" }
+west_stand = { value = "25.6 m deep, last row ~12.5 m, top band 13.8 m", source = "same profile on the shallower west stand (back on the tribuna block); not measured directly" }
+ring_roof = { value = "front fascia 22.8-24.6 m, 1.4 m in front of the first row; back underside 18.7 m on posts over the stand top; 30 m deep", source = "photo 10 solve (roof front top 24.6 m, front bottom 22.8 m, back underside 18.7 m); plan from PNOA 2024 (inner edge u +-41.5 / v -60..+60 after a ~0.06 m/m NNW relief lean estimated from the roof outline)", note = "built 2019-2021 (present in the Dec 2021 photo 11, absent in the Oct 2018 photo 12)" }
+roof_cushions = { value = "white membrane cushions in ~10.5 m bays on the inner 13 m band; flat white outer band", source = "PNOA 2024; photos 08-11 (domes rise < 2.4 m above the roof: hidden behind the east front edge in photo 10)" }
+roof_posts = { value = "posts about every 9.6 m (main posts every ~19 m) between the stand top and the roof", source = "photo 10 (post spacing 144 px at ~133 m)" }
+old_west_roof = { value = "pre-2019 tribuna roof 17-19 m over u -48 .. -80", source = "IGN PNOA-LiDAR building heights (wms-mapa-lidar.idee.es gfi-edificios-h30), radial profile W of the centre; LiDAR predates the ring roof" }
+colours = { value = "ground floor and gates Levante blue, raking frames navy, tribuna upper floors dark grey, seats blue with white lettering", source = "photos 01 (2023), 06/07 (2024), 08-10 (2024)" }
+pitch_check = { value = "camera solves of photos 11 (rms 1.2 px), 12 (2.9 px) and 13 (11 px) from pitch markings put their eyes 1.5-2.5 m above the modelled seats at the ends and corners", source = "solves in the session scratchpad (ecv/cam.py)", note = "suggests the north/south ends and corners are 1-2 m lower than the east-stand profile used all round; not corrected (no direct measurement)" }
+
 [[photo]]
 file = "photos/01_Estadi_Ciutat_de_Valencia_Vamos_a_subir.jpg"
 title = "File:Estadi Ciutat de València - Vamos a subir.jpg"
@@ -29,8 +43,8 @@ width = 1280
 height = 961
 camera = [-69.86, -2.7]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w (tribuna ground floor, VIP and changing-room doors, 2023)"
 
 [[photo]]
 file = "photos/02_Estacio_del_Camp_de_Llevant.jpg"
@@ -41,8 +55,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w (tribuna from the Camp de Llevant tram stop, 2012)"
 
 [[photo]]
 file = "photos/03_Ciutat_de_Valencia_fuera.jpg"
@@ -53,8 +67,8 @@ license = "CC BY 2.0"
 width = 960
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w/sw (tribuna facade from the car park, 2010)"
 
 [[photo]]
 file = "photos/04_Valencia84.jpg"
@@ -65,8 +79,8 @@ license = "CC BY-SA 3.0"
 width = 500
 height = 375
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w (centre of the tribuna facade, 2009)"
 
 [[photo]]
 file = "photos/05_Estadio_Azul_Grana.jpg"
@@ -77,9 +91,9 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 camera = [-11141391.38, -7478968.38]
-exterior = true
+exterior = false
 selected = false
-side = ""
+side = "not this stadium (Estadio Azulgrana, Mexico City; geotag far away)"
 
 [[photo]]
 file = "photos/06_Bus_Alcorcon_al_Ciutat.jpg"
@@ -91,8 +105,8 @@ width = 500
 height = 375
 camera = [-51.51, 0.65]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw corner (navy raking frames, blue ground floor, 2024; no view: camera position unclear)"
 
 [[photo]]
 file = "photos/07_Bus_AD_Alcorcon.jpg"
@@ -104,8 +118,8 @@ width = 500
 height = 375
 camera = [-51.51, 0.65]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw corner (same place as 06)"
 
 [[photo]]
 file = "photos/catastro_6852101YJ2765B.jpg"
@@ -116,8 +130,93 @@ license = "Catastro open data (attribution required)"
 width = 2592
 height = 1944
 exterior = true
+selected = true
+side = "sw (whole west front across the tram line, about 2012)"
+
+
+[[photo]]
+file = "photos/08_Estadi_Ciutat_de_Valencia_des_de_dins.jpg"
+title = "File:Estadi Ciutat de València des de dins.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadi_Ciutat_de_Val%C3%A8ncia_des_de_dins.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+exterior = false
+selected = true
+side = "interior: east stand and ring roof from the west stand (2024)"
+
+[[photo]]
+file = "photos/09_Estadi_Ciutat_de_Valencia_interior.jpg"
+title = "File:Estadi Ciutat de València interior.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadi_Ciutat_de_Val%C3%A8ncia_interior.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+exterior = false
+selected = true
+side = "interior: east and south stands, SW roof underside (2024)"
+
+[[photo]]
+file = "photos/10_Estadi_Ciutat_de_Valencia_interior_2.jpg"
+title = "File:Estadi Ciutat de València interior 2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadi_Ciutat_de_Val%C3%A8ncia_interior_2.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+exterior = false
+selected = true
+side = "interior: east stand, ring roof (2024; calibration of the heights)"
+
+[[photo]]
+file = "photos/11_Estadi_Ciutat_de_Valencia_nocturna.jpg"
+title = "File:Estadi Ciutat de València - nocturna.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Estadi_Ciutat_de_Val%C3%A8ncia_-_nocturna.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 961
+exterior = false
+selected = true
+side = "interior: night, east stand under the new roof from the north (Dec 2021)"
+
+[[photo]]
+file = "photos/12_Levante2_0Lega2018.jpg"
+title = "File:Levante2-0Lega2018.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Levante2-0Lega2018.jpg"
+author = "Miguelazo84"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = false
+selected = true
+side = "interior: whole bowl from the NE corner before the ring roof (2018)"
+
+[[photo]]
+file = "photos/13_Het_stadion_van_Levante_vanaf_de_noordtribune.jpg"
+title = "File:Het stadion van Levante, vanaf de noordtribune.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Het_stadion_van_Levante,_vanaf_de_noordtribune.JPG"
+author = "JorisMol"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = false
+selected = true
+side = "interior: from the north stand before the ring roof (2012)"
+
+[[photo]]
+file = "photos/14_Ciutat_de_valencia.jpg"
+title = "File:Ciutat de valencia.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Ciutat_de_valencia.jpg"
+author = "Andreuet"
+license = "Public domain"
+width = 1280
+height = 960
+exterior = false
 selected = false
-side = ""
+side = "interior: west/north stands at night, about 2008 (distorted crop, not used as a view)"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -127,6 +226,15 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [726573.6, 4374867.75, 726798.88, 4375117.12], 0.125 m/px, north up; roman numerals = floors above ground; parcels 6852101YJ2765B"
+
+[[plan]]
+file = "plans/pnoa_2024.jpg"
+title = "IGN PNOA orthophoto 2024-05 (0.25 m), fetched at 0.1 m/px for this model"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=726576.31,4374878.99,726796.31,4375108.99&WIDTH=2200&HEIGHT=2300&FORMAT=image/jpeg"
+author = "Instituto Geografico Nacional (PNOA)"
+license = "CC BY 4.0 (scne.es)"
+kind = "orthophoto"
+notes = "EPSG:25830 bbox [726576.31, 4374878.99, 726796.31, 4375108.99], 0.1 m/px, north up; flight 2024-05 (OI.MosaicElement)"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q1122715"

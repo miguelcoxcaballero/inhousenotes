@@ -19,6 +19,15 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 49850.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6799701&rc2=YJ2760B", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 58 parts" }
 
+plan_size = { value = "152 x 118 m", source = "OSM way 1014385791 outline in the arena frame (long axis az 59): u -77.9..73.9 (plus 15 m loading annex to 88.7), v -60.7..57.7; checked on ICV 2024 orthophoto (terramapas.icv.gva.es 0202_2024CVAL0025, 0.2 m/px) and IGN PNOA" }
+skin_crest_height = { value = 35.5, unit = "m", source = "Catastro facade photo 2025-08-05 (EXIF Canon EOS 700D 13 mm, fov_y 59.6), range fixed by the 118 m SE face width; crest matched in [[view]] catastro_se; consistent with photos 01/02/10 overlays" }
+skin_lower_edge = { value = "13 m along NE/NW faces, 20.8 m over the SE podium, dipping to about 2 m at the west corner either side of the Ojo", unit = "m", source = "photo overlays (views fanpark_nw, courts_n, eye_plaza, catastro_se) after the camera fits" }
+podium = { value = "5.4 m glazed ground floor, upper glazed level to 13 m set back 7.5 m; SE terrace decks at 5.4-8.7 m and 13.6-17.2 m on V struts", source = "Catastro facade photo and photo 13" }
+ojo_screen = { value = "48 x 10 m", source = "https://valencianews.es/valencia/el-roig-arena-abre-su-parking-con-una-capacidad-de-mas-de-mil-plazas-para-vehiculos/ ; metalocus.es (El Ojo exterior LED screen 48 x 10 m)", note = "modelled 20.1-29.6 m high on the west corner, from photos 07/09" }
+ceramic_slats = { value = "8 600 identical 1.00 x 1.20 m slats tilted 10-63 deg, three blue enamel shades", source = "https://www.metalocus.es/en/news/mediterranean-light-and-local-craftsmanship-roig-arena-hok-and-erre", note = "modelled as 47 rows (0.9 m pitch) of 1.05 m scales tilted 24-42 deg" }
+roof_trusses = { value = "8 trusses of 123 m", source = "https://www.metalocus.es/en/news/mediterranean-light-and-local-craftsmanship-roig-arena-hok-and-erre" }
+built_area_published = { value = 58500.0, unit = "m2", source = "metalocus.es (HOK/ERRE project data); 47 000 m2 per Wikidata/elespanol" }
+lidar = { value = "no data", source = "https://wms-mapa-lidar.idee.es/lidar GetFeatureInfo at 4 cells over the arena returned only vegetation/tile layers (flight predates the 2020-2025 construction)" }
 [[photo]]
 file = "photos/01_Roig_Arena.jpg"
 title = "File:Roig Arena.jpg"
@@ -30,8 +39,8 @@ height = 960
 camera = [-170.56, -146.27]
 heading = 132.4
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/02_Roig_Arena_1492.jpg"
@@ -44,8 +53,8 @@ height = 960
 camera = [-121.3, -7.95]
 heading = 92.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/03_Roig_Arena_y_alrededores_03.jpg"
@@ -70,8 +79,8 @@ height = 960
 camera = [-192.5, -169.07]
 heading = 138.9
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/05_Roig_Arena_Basket_Court.jpg"
@@ -84,8 +93,8 @@ height = 960
 camera = [-73.53, -126.89]
 heading = 183.5
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/06_Roig_Arena_Valencia_Museo_Tienda.jpg"
@@ -96,8 +105,8 @@ license = "CC0"
 width = 960
 height = 711
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/07_Roig_Arena_Valencia.jpg"
@@ -108,8 +117,8 @@ license = "CC0"
 width = 960
 height = 708
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/08_Roig_Arena_y_alrededores_02.jpg"
@@ -120,8 +129,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/09_Roig_Arena_Valencia_ESP_2025.jpg"
@@ -132,8 +141,8 @@ license = "CC0"
 width = 960
 height = 589
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/10_Roig_Arena01.jpg"
@@ -146,8 +155,8 @@ height = 960
 camera = [193.62, 548.88]
 heading = 343.8
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/11_Roig_Arena_y_alrededores_01.jpg"
@@ -170,8 +179,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/13_Roig_Arena_y_alrededores_06.jpg"
@@ -182,8 +191,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/catastro_6799701YJ2760B.jpg"
@@ -194,8 +203,58 @@ license = "Catastro open data (attribution required)"
 width = 5184
 height = 3456
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
+
+[[photo]]
+file = "photos/14_Roig_Arena_00.jpg"
+title = "File:Roig Arena 00.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_00.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+exterior = true
+selected = true
+side = "s"
+
+[[photo]]
+file = "photos/16_Roig_Arena_y_alrededores_07.jpg"
+title = "File:Roig Arena y alrededores 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_07.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+exterior = true
+selected = true
+side = "e"
+
+[[photo]]
+file = "photos/19_Roig_Arena_y_alrededores_16.jpg"
+title = "File:Roig Arena y alrededores 16.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_16.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "photos/20_Roig_Arena_y_alrededores_18_cropped.jpg"
+title = "File:Roig Arena y alrededores 18 (cropped).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_18_%28cropped%29.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+exterior = true
+selected = true
+side = "nw"
+
+[[photo]]
+file = "photos/21_Roig_Arena_y_alrededores_19.jpg"
+title = "File:Roig Arena y alrededores 19.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Roig_Arena_y_alrededores_19.jpg"
+author = "19Tarrestnom65"
+license = "CC BY-SA 4.0"
+exterior = true
+selected = true
+side = "ne"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -205,6 +264,20 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [726684.23, 4369813.15, 726898.53, 4370041.08], 0.114 m/px, north up; roman numerals = floors above ground; parcels 6799701YJ2760B"
+
+[[plan]]
+file = "plans/icv_orto_2024.jpg"
+title = "ICV orthophoto 2024"
+url = "https://terramapas.icv.gva.es/0202_2024CVAL0025?SERVICE=WMS&REQUEST=GetMap&LAYERS=2024CVAL0025_RGB&CRS=EPSG:25830&BBOX=726670.6,4369811.2,726910.6,4370051.2"
+author = "Institut Cartogràfic Valencià"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "newest orthophoto with the finished arena (2024 flight); EPSG:25830 bbox [726670.6, 4369811.2, 726910.6, 4370051.2], 0.2 m/px, north up; used to check the OSM outline"
+
+[[reference]]
+url = "https://www.metalocus.es/en/news/mediterranean-light-and-local-craftsmanship-roig-arena-hok-and-erre"
+title = "Metalocus: Roig Arena by HOK and ERRE"
+notes = "8 600 slats 1.0 x 1.2 m tilted 10-63 deg, 8 trusses of 123 m, El Ojo 48 x 10 m, 5 levels"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q82992187"
