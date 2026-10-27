@@ -1,5 +1,5 @@
 'use strict';
-const VERSION='5.17.9';
+const VERSION='5.17.10';
 const CACHE=`inhouse-shell-${VERSION}`;
 importScripts('offline-assets.js', 'offline-store-v5.js', 'offline-sync-v5.js');
 self.addEventListener('install',event=>event.waitUntil((async()=>{

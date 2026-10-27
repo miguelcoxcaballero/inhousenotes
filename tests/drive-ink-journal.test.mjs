@@ -331,3 +331,144 @@ test('new samples wake the scan without bypassing a failed file write backoff',a
  const stored=await a.j.read(a.j.key(a.j.current));assert.equal(stored.rev,2);assert.equal(stored.retryAt,retryAt);
  await a.j.retry();await a.j.flush();assert.equal(a.receipts.at(-1).version,2);assert.equal(a.j.status().pending,0);a.j.stop();
 });
+
+for(const result of ['changed','unchanged','failed'])test(`an in-flight ${result} self-read cannot reactivate an acknowledged journal`,async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer');writer.j.nextDiscovery=Infinity;
+ let releaseWrite,releaseRead,readStarted=false,reads=0;
+ api.hold=new Promise(r=>releaseWrite=r);const readGate=new Promise(r=>releaseRead=r),fetch=writer.j.host.fetch;
+ writer.j.host.fetch=async(url,options)=>{
+  const response=await fetch(url,options);
+  if(url.includes('alt=media')){reads++;readStarted=true;await readGate;if(result==='failed')throw Error('Obsolete read failed');}
+  return response;
+ };
+ await writer.j.enqueue({stroke:'first'},1);const writing=flush(writer.j);
+ while(![...api.files.values()].some(f=>f.raw))await new Promise(r=>setTimeout(r,0));
+ const file=[...api.files.values()].find(f=>f.raw);writer.j.hint(file.id);
+ if(result==='unchanged')writer.j.sources.get(file.id).raw=file.raw;
+ const reading=writer.j.poll();while(!readStarted)await new Promise(r=>setTimeout(r,0));
+ try{
+  releaseWrite();await writing;api.hold=null;
+  const source=writer.j.sources.get(file.id);assert.equal(source.next,Infinity);assert.equal(source.local,true);
+  await writer.j.enqueue({stroke:'second'},2);
+  releaseRead();await reading;
+  assert.equal(source.next,Infinity);assert.equal(source.retryAt||0,0);assert.equal(writer.j.status().error,'');
+  assert.equal(writer.j.status().pending,1);assert.equal(writer.receipts.at(-1).version,1);
+  writer.j.hint(file.id);await writer.j.retry();await writer.j.poll();assert.equal(reads,1);
+  await flush(writer.j);assert.equal(writer.j.status().pending,0);assert.equal(writer.receipts.at(-1).version,2);
+ }finally{releaseWrite();releaseRead();await Promise.allSettled([writing,reading]);writer.j.stop();}
+});
+
+test('a sealed predecessor ignores an old refresh but reactivates for a genuinely newer required revision',async()=>{
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.j.nextDiscovery=Infinity;
+ const initial={v:1,docId:'doc',actor:'remote',part:0,rev:1,ops:[{n:1}]};
+ api.files.set('head',{id:'head',raw:JSON.stringify(initial)});
+ api.files.set('tail',{id:'tail',raw:JSON.stringify({v:1,docId:'doc',actor:'remote',part:1,rev:1,previous:'head',previousRev:1,ops:[{n:3}]})});
+ reader.j.hint('head');await reader.j.poll();assert.equal(reader.applied.length,1);
+ let release,started=false;const gate=new Promise(r=>release=r),fetch=reader.j.host.fetch;
+ reader.j.host.fetch=async(url,options)=>{
+  const response=await fetch(url,options);
+  if(url.includes('/head?alt=media')){started=true;await gate;}
+  return response;
+ };
+ reader.j.sources.get('head').next=0;const oldRead=reader.j.poll();while(!started)await new Promise(r=>setTimeout(r,0));
+ try{
+  reader.j.hint('tail');await reader.j.poll();const source=reader.j.sources.get('head');
+  assert.equal(source.next,Infinity);assert.equal(source.retired,true);
+  release();await oldRead;assert.equal(source.next,Infinity);
+  // A later successor can prove the predecessor was not complete after all.
+  // This explicitly starts a new read generation, rather than trusting the old response.
+  api.files.get('head').raw=JSON.stringify({...initial,rev:2,ops:[{n:1},{n:2}]});
+  api.files.get('tail').raw=JSON.stringify({v:1,docId:'doc',actor:'remote',part:1,rev:2,previous:'head',previousRev:2,ops:[{n:3},{n:4}]});
+  reader.j.sources.get('tail').next=0;await reader.j.poll();
+  assert.equal(source.retired,false);assert.equal(source.next,0);
+  await reader.j.poll();assert.equal(source.rev,2);assert.equal(source.next,Infinity);
+  assert.deepEqual(reader.applied.map(op=>op.n).sort(),[1,2,3,4]);
+ }finally{release();await oldRead;reader.j.stop();}
+});
+
+test('recovering another tab journal does not suppress its current or future edits',async()=>{
+ const api=fakeInkDrive(),store=memoryInkStore(),a=replica(api,'tab-a',store),b=replica(api,'tab-b',store);
+ await a.j.enqueue({writer:'a',n:1},1);await flush(b.j);
+ const record=await a.j.read(a.j.key(a.j.current)),source=b.j.sources.get(record.fileId);
+ assert.ok(source);assert.notEqual(source.local,true);assert.notEqual(source.next,Infinity);assert.equal(source.rev,0);
+ await poll(b.j);assert.deepEqual(b.applied,[{writer:'a',n:1}]);
+ await a.j.enqueue({writer:'a',n:2},2);await flush(a.j);await poll(b.j);
+ assert.deepEqual(b.applied,[{writer:'a',n:1},{writer:'a',n:2}]);
+ assert.equal(a.j.sources.get(record.fileId).local,true);assert.equal(a.j.sources.get(record.fileId).next,Infinity);
+ a.j.stop();b.j.stop();
+});
+
+test('outbox recovery of another document does not add a wrong-document read source',async()=>{
+ const api=fakeInkDrive(),store=memoryInkStore(),a=replica(api,'tab-a',store,'other-doc'),b=replica(api,'tab-b',store,'doc');
+ await a.j.enqueue({writer:'a',n:1},1);await flush(b.j);
+ assert.equal(b.j.sources.size,0);assert.equal(b.j.status().error,'');
+ assert.equal((await a.j.read(a.j.key(a.j.current))).ack,1);a.j.stop();b.j.stop();
+});
+
+test('a queued self-read retired before merge cannot reactivate the source',async()=>{
+ const api=fakeInkDrive(),writer=replica(api,'writer');writer.j.nextDiscovery=Infinity;
+ let releaseWrite,releaseApply;api.hold=new Promise(r=>releaseWrite=r);
+ writer.j.applyChain=new Promise(r=>releaseApply=r);
+ await writer.j.enqueue({stroke:'first'},1);const writing=flush(writer.j);
+ while(![...api.files.values()].some(f=>f.raw))await new Promise(r=>setTimeout(r,0));
+ const file=[...api.files.values()].find(f=>f.raw);writer.j.hint(file.id);
+ const previousApply=writer.j.applyChain,reading=writer.j.poll();
+ while(writer.j.applyChain===previousApply)await new Promise(r=>setTimeout(r,0));
+ try{
+  releaseWrite();await writing;assert.equal(writer.j.sources.get(file.id).next,Infinity);
+  releaseApply();await reading;
+  assert.equal(writer.j.sources.get(file.id).next,Infinity);assert.equal(writer.j.seen.has(file.id),false);
+  assert.equal(writer.applied.length,0);assert.equal(writer.j.status().error,'');
+ }finally{releaseWrite();releaseApply();await Promise.allSettled([writing,reading]);writer.j.stop();}
+});
+
+async function settleUntil(predicate){
+ for(let i=0;i<200;i++){if(predicate())return;await new Promise(setImmediate);}
+ assert.ok(predicate(),'asynchronous journal work did not settle');
+}
+
+test('a successful slow upload immediately drains queued edits after releasing its lease',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:1_000_000});
+ const api=fakeInkDrive(),store=memoryInkStore(),receipts=[],starts=[];let active=0,peak=0,leases=0,release;
+ const lease=store.withLease;store.withLease=(...args)=>{leases++;return lease(...args);};
+ api.hold=new Promise(r=>release=r);
+ const journal=new Journal({store,account:'a',docId:'doc',actor:'writer',receipt:r=>receipts.push(r),fetch:async(url,options)=>{
+  if(!url.includes('uploadType'))return api.fetch(url,options);
+  starts.push(Date.now());active++;peak=Math.max(peak,active);
+  try{return await api.fetch(url,options);}finally{active--;}
+ }});journal.poll=async()=>{};
+ try{
+  await journal.enqueue({stroke:1},1);t.mock.timers.tick(0);
+  await settleUntil(()=>[...api.files.values()].some(f=>f.raw));
+  await journal.enqueue({stroke:2},2);
+  t.mock.timers.tick(120);t.mock.timers.tick(10); // The periodic timer now waits until 240 ms.
+  api.hold=null;release();await settleUntil(()=>!journal.writing&&receipts.length===1);
+  t.mock.timers.tick(0);await settleUntil(()=>!journal.writing&&journal.status().pending===0);
+  assert.deepEqual(starts,[1_000_000,1_000_130]);assert.equal(peak,1);assert.equal(receipts.at(-1).version,2);
+  t.mock.timers.tick(120);await settleUntil(()=>!journal.writing);
+  const idleLeases=leases;assert.equal(idleLeases,3);
+  t.mock.timers.tick(1500);await settleUntil(()=>!journal.writing);
+  assert.equal(leases,idleLeases);assert.equal(starts.length,2);
+ }finally{release();journal.stop();t.mock.timers.reset();}
+});
+
+test('success follow-up enforces the write rate limit and failures never schedule a retry burst',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:2_000_000});
+ const api=fakeInkDrive(),starts=[];let fail=false;
+ const journal=new Journal({store:memoryInkStore(),account:'a',docId:'doc',actor:'writer',fetch:async(url,options)=>{
+  if(url.includes('uploadType')){starts.push(Date.now());if(fail)return new Response('{}',{status:503});}
+  return api.fetch(url,options);
+ }});journal.poll=async()=>{};
+ try{
+  await journal.enqueue({stroke:1},1);t.mock.timers.tick(0);await settleUntil(()=>!journal.writing&&journal.status().pending===0);
+  await journal.enqueue({stroke:2},2);t.mock.timers.tick(119);await new Promise(setImmediate);assert.equal(starts.length,1);
+  t.mock.timers.tick(1);await settleUntil(()=>!journal.writing&&journal.status().pending===0);
+  assert.deepEqual(starts,[2_000_000,2_000_120]);
+  fail=true;await journal.enqueue({stroke:3},3);t.mock.timers.tick(120);
+  await settleUntil(()=>!journal.writing&&!!journal.lastError);assert.equal(starts.length,3);
+  t.mock.timers.tick(0);await new Promise(setImmediate);assert.equal(starts.length,3);
+  t.mock.timers.tick(120);await settleUntil(()=>!journal.writing);
+  t.mock.timers.tick(479);await new Promise(setImmediate);assert.equal(starts.length,3);
+  const saved=await journal.read(journal.key(journal.current));assert.equal(saved.ack,2);assert.equal(saved.rev,3);
+ }finally{journal.stop();t.mock.timers.reset();}
+});

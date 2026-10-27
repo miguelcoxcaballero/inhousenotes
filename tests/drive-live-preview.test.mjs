@@ -129,3 +129,127 @@ test('preview polling bounds concurrency and ignores late responses after leavin
  reader.live.stop();release();await first;
  assert.equal(reader.frames.length,0);
 });
+
+function previewGate(){let release;const promise=new Promise(resolve=>release=resolve);return {promise,release};}
+const nextPreviewTurn=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('cold preview folder discovery and ID reservation begin concurrently',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),folderGate=previewGate(),idGate=previewGate();
+ const ensure=a.live.ensureFolder.bind(a.live),fetch=a.live.host.fetch;let folderStarted=false,idStarted=false;
+ a.live.ensureFolder=async()=>{folderStarted=true;await folderGate.promise;return ensure();};
+ a.live.host.fetch=async(url,options)=>{if(url.includes('/generateIds?')){idStarted=true;await idGate.promise;}return fetch(url,options);};
+ a.live.push(packet(1,0,[1,2]));const sending=a.live.flushFrame();
+ try{
+  await nextPreviewTurn();assert.ok(folderStarted&&idStarted,'both independent requests start before either is released');
+  assert.equal(a.live.writing,true);assert.equal(api.calls.filter(c=>c.url.includes('uploadType')).length,0);
+  folderGate.release();await nextPreviewTurn();assert.equal(a.live.writing,true);
+  idGate.release();await sending;
+  assert.equal(a.live.exists,true);assert.equal(a.live.sentFrame,1);
+  assert.equal(api.calls.filter(c=>c.url.includes('/generateIds?')).length,1);
+ }finally{folderGate.release();idGate.release();await sending;a.live.stop();}
+});
+
+test('existing preview updates need neither folder discovery nor another reserved ID',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer');
+ a.live.push(packet(1,0,[1,2]));await a.live.flushFrame();const id=a.live.fileId;
+ a.live.folder=null;a.live.ensureFolder=async()=>{throw Error('An existing media update must not resolve its folder');};
+ a.live.push(packet(2,1,[2,3]));await a.live.flushFrame();
+ assert.equal(a.live.fileId,id);assert.equal(a.live.sentFrame,2);
+ assert.equal(api.calls.filter(c=>c.url.includes('/generateIds?')).length,1);
+ assert.deepEqual(JSON.parse(api.files.get(id).raw).packets[0].points.map(p=>p.x),[1,2,3]);a.live.stop();
+});
+
+for(const failed of ['folder','reservation'])test(`failed ${failed} setup waits for the other branch before a safe preview retry`,async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),gate=previewGate();
+ const ensure=a.live.ensureFolder.bind(a.live),fetch=a.live.host.fetch;let first=true,reservations=0,folders=0;
+ a.live.ensureFolder=async()=>{
+  folders++;
+  if(first&&failed==='folder')throw Error('Folder temporarily unavailable');
+  if(first)await gate.promise;
+  return ensure();
+ };
+ a.live.host.fetch=async(url,options)=>{
+  if(url.includes('/generateIds?')){
+   reservations++;
+   if(first&&failed==='reservation')throw Error('Reservation temporarily unavailable');
+   if(first)await gate.promise;
+  }
+  return fetch(url,options);
+ };
+ a.live.push(packet(1,0,[1,2]));const sending=a.live.flushFrame();
+ try{
+  await nextPreviewTurn();assert.equal(a.live.writing,true,'one rejection cannot release the write lock');
+  await a.live.flushFrame();assert.equal(folders,1);assert.equal(reservations,1);
+  gate.release();await sending;assert.equal(a.live.writing,false);assert.equal(a.live.sentFrame,0);
+  assert.equal(api.calls.filter(c=>c.url.includes('uploadType')).length,0);
+  const reservedId=a.live.fileId;first=false;await a.live.flushFrame();
+  assert.equal(a.live.exists,true);assert.equal(a.live.sentFrame,1);
+  if(failed==='folder'){assert.ok(reservedId);assert.equal(a.live.fileId,reservedId);assert.equal(reservations,1);}
+  else assert.equal(reservations,2);
+ }finally{gate.release();await sending;a.live.stop();}
+});
+
+test('stopping during cold preview setup awaits both branches without publishing or accepting a late ID',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),folderGate=previewGate(),idGate=previewGate();
+ const ensure=a.live.ensureFolder.bind(a.live),fetch=a.live.host.fetch;
+ a.live.ensureFolder=async()=>{await folderGate.promise;return ensure();};
+ a.live.host.fetch=async(url,options)=>{if(url.includes('/generateIds?'))await idGate.promise;return fetch(url,options);};
+ a.live.push(packet(1,0,[1,2]));const sending=a.live.flushFrame();
+ try{
+  await nextPreviewTurn();a.live.stop();folderGate.release();await nextPreviewTurn();
+  assert.equal(a.live.writing,true,'cancellation still waits for the reserved-ID request to settle');
+  idGate.release();await sending;
+  assert.equal(a.live.writing,false);assert.equal(a.live.fileId,'');assert.equal(a.live.exists,false);assert.equal(a.live.sentFrame,0);
+  assert.equal(api.calls.filter(c=>c.url.includes('uploadType')).length,0);assert.equal(a.receipts.length,0);
+ }finally{folderGate.release();idGate.release();await sending;a.live.stop();}
+});
+
+test('the first cold preview upload includes points that arrived during setup',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),gate=previewGate();
+ const ensure=a.live.ensureFolder.bind(a.live);a.live.ensureFolder=async()=>{await gate.promise;return ensure();};
+ a.live.frame=1; // Empty prewarm frame, as start() would schedule.
+ const sending=a.live.flushFrame();
+ try{
+  await nextPreviewTurn();a.live.push(packet(1,0,[1,2]));a.live.push(packet(2,1,[2,3,4]));
+  assert.equal(api.calls.filter(c=>c.url.includes('uploadType')).length,0);
+  gate.release();await sending;
+  const first=JSON.parse(api.files.get(a.live.fileId).raw);
+  assert.equal(first.frame,3);assert.equal(a.live.sentFrame,3);assert.equal(a.live.sentFrame,a.live.frame);
+  assert.deepEqual(first.packets[0].points.map(point=>point.x),[1,2,3,4]);
+  assert.equal(api.calls.filter(c=>c.url.includes('uploadType')).length,1);
+ }finally{gate.release();await sending;a.live.stop();}
+});
+
+for(const change of ['cancel','retire'])test(`a ${change} during cold setup cannot publish the superseded stroke`,async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),gate=previewGate();
+ const ensure=a.live.ensureFolder.bind(a.live);a.live.ensureFolder=async()=>{await gate.promise;return ensure();};
+ const stamp={clock:2,actor:'writer'};
+ a.live.push(packet(1,0,[1,2],{final:true,finalBatch:true,totalPoints:2,syncStamp:stamp}));
+ const sending=a.live.flushFrame();
+ try{
+  await nextPreviewTurn();
+  if(change==='cancel')a.live.push(packet(2,0,[],{cancel:true}));
+  else a.live.retireConfirmed([JSON.stringify({kind:'stroke',stroke:{id:'pen',syncStamp:stamp}})]);
+  gate.release();await sending;
+  const first=JSON.parse(api.files.get(a.live.fileId).raw);
+  assert.equal(first.frame,2);assert.equal(a.live.sentFrame,2);
+  if(change==='cancel'){assert.equal(first.packets[0].cancel,true);assert.deepEqual(first.packets[0].points,[]);}
+  else assert.deepEqual(first.packets,[]);
+ }finally{gate.release();await sending;a.live.stop();}
+});
+
+test('latest-frame serialization retains the byte bound and can recover with the reserved identity',async()=>{
+ const api=fakeInkDrive(),a=replica(api,'writer'),gate=previewGate();
+ const ensure=a.live.ensureFolder.bind(a.live);a.live.ensureFolder=async()=>{await gate.promise;return ensure();};
+ a.live.frame=1;const sending=a.live.flushFrame();
+ try{
+  await nextPreviewTurn();
+  a.live.push({...packet(1,0,[1]),points:[{x:1,y:1,p:.5,extra:'x'.repeat(2*1024*1024)}]});
+  gate.release();await sending;
+  const id=a.live.fileId;assert.ok(id);assert.equal(a.live.sentFrame,0);assert.equal(a.live.exists,false);
+  assert.equal(api.calls.filter(c=>c.url.includes('uploadType')).length,0);
+  a.live.push(packet(2,0,[],{cancel:true}));await a.live.flushFrame();
+  assert.equal(a.live.fileId,id);assert.equal(a.live.sentFrame,3);assert.equal(a.live.exists,true);
+  assert.equal(api.calls.filter(c=>c.url.includes('/generateIds?')).length,1);
+ }finally{gate.release();await sending;a.live.stop();}
+});
