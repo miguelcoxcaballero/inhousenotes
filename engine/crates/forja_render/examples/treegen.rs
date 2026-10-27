@@ -12,7 +12,9 @@
 //! Build: `cargo build --release -p forja_render --example treegen`.
 //! Each species gets `<id>_tree.png` (whole tree with a 1.75 m figure),
 //! `<id>_crown.png`, `<id>_bark.png` (and `<id>_lod.png`: LOD 0/1/2 side
-//! by side); `all` also renders `lineup.png`.
+//! by side); `all` also renders `lineup.png`. With several species each
+//! one is rendered by a child process (peak ~1.5 GB each on llvmpipe; the
+//! lineup ~2.8 GB) instead of holding every tree in one process.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -102,6 +104,28 @@ fn main() {
         }
     }
     std::fs::create_dir_all(&args.out).expect("create --out");
+    // Several species: render each in its own process so its geometry,
+    // textures and GPU buffers are freed before the next one (one process
+    // for all of them ran out of memory on a software adapter).
+    if ids.len() > 1 && !args.stats {
+        let exe = std::env::current_exe().expect("current exe");
+        let rest: Vec<String> = std::env::args().skip(2).collect();
+        let mut failed = Vec::new();
+        for id in &ids {
+            let ok = std::process::Command::new(&exe).arg(id).args(&rest).arg("--no-lineup").status().map(|s| s.success()).unwrap_or(false);
+            if !ok {
+                failed.push(id.clone());
+            }
+        }
+        if args.lineup {
+            lineup(&lib, &ids, &args, &root.join("assets/downloaded"));
+        }
+        if !failed.is_empty() {
+            eprintln!("failed: {}", failed.join(", "));
+            std::process::exit(1);
+        }
+        return;
+    }
     // Generate.
     let mut trees: Vec<TreeAsset> = Vec::new();
     for id in &ids {
@@ -127,19 +151,32 @@ fn main() {
                 }
             }
         }
-        trees.push(t);
+        if !args.stats {
+            trees.push(t);
+        }
     }
     if args.stats {
         return;
     }
     let dl = root.join("assets/downloaded");
-    let mut r = Renderer::new(&create_instance(), None).expect("renderer");
-    println!("adapter: {:?}", r.adapter_info.name);
-    if let Ok(img) = forja_assets::load_hdr(&dl.join("polyhaven_sky_kloofendal/kloofendal_48d_partly_cloudy_puresky_2k.hdr")).or_else(|_| forja_assets::load_hdr(&dl.join("hdri_wide_street/wide_street_01_2k.hdr"))) {
-        r.set_environment(Some(&env::EnvMap::from_hdr(&img, 14.0)));
-    }
-    // Impostors.
+    // The renderer keeps every uploaded scene until it is dropped, so each
+    // species gets its own and the lineup a fresh one: rendering all of them
+    // with one renderer runs out of memory on a software adapter.
+    let new_renderer = || {
+        let mut r = Renderer::new(&create_instance(), None).expect("renderer");
+        if let Ok(img) = forja_assets::load_hdr(&dl.join("polyhaven_sky_kloofendal/kloofendal_48d_partly_cloudy_puresky_2k.hdr")).or_else(|_| forja_assets::load_hdr(&dl.join("hdri_wide_street/wide_street_01_2k.hdr"))) {
+            r.set_environment(Some(&env::EnvMap::from_hdr(&img, 14.0)));
+        }
+        r
+    };
+    let (w, h) = (args.width, args.width * 9 / 16);
+    let mut first = true;
     for t in &mut trees {
+        let mut r = new_renderer();
+        if first {
+            println!("adapter: {:?}", r.adapter_info.name);
+            first = false;
+        }
         let t0 = Instant::now();
         if args.gpu_impostor {
             let scene = t.lod_scene(0);
@@ -159,17 +196,14 @@ fn main() {
             forja_flora::gltf::write_glb(t, &p).expect("write glb");
             println!("  {}", p.display());
         }
-    }
-    let ground = r.upload_scene(&grass(&dl));
-    let figure = r.upload_scene(&scale_figure(&dl));
-    let (w, h) = (args.width, args.width * 9 / 16);
-    let mut frame = FrameDesc::default();
-    frame.env.shadow_distance = 60.0;
-    for t in &trees {
+        let ground = r.upload_scene(&grass(&dl));
+        let figure = r.upload_scene(&scale_figure(&dl));
+        let mut frame = FrameDesc::default();
+        frame.env.shadow_distance = 60.0;
         let model = r.upload_scene(&t.scene);
         let rr = t.crown_radii.x.max(t.crown_radii.z);
         let fig_pos = Vec3::new(t.capsule.radius + 1.6, 0.0, 1.2);
-        let base = vec![DrawInstance::new(ground, Mat4::IDENTITY), DrawInstance::new(model, Mat4::IDENTITY)];
+        let base = vec![ground_instance(ground), DrawInstance::new(model, Mat4::IDENTITY)];
         for view in &args.views {
             let mut inst = base.clone();
             let (eye, at, fov) = match view.as_str() {
@@ -217,9 +251,6 @@ fn main() {
             println!("  {} ({:.1}s, {} tris)", p.display(), t0.elapsed().as_secs_f32(), r.stats.triangles);
         }
     }
-    if ids.len() > 1 && args.lineup {
-        lineup(&mut r, &trees, ground, figure, &args.out, w);
-    }
     if let Some(dir) = &args.compare {
         for t in &trees {
             compare(&args.out, dir, &t.species);
@@ -227,20 +258,33 @@ fn main() {
     }
 }
 
-fn lineup(r: &mut Renderer, trees: &[TreeAsset], ground: ModelHandle, figure: ModelHandle, out: &Path, w: u32) {
+/// All species side by side. Trees are generated one at a time and only
+/// their full-detail LOD is uploaded, so just one CPU-side tree is alive.
+fn lineup(lib: &SpeciesLibrary, ids: &[String], args: &Args, dl: &Path) {
+    let mut r = Renderer::new(&create_instance(), None).expect("renderer");
+    if let Ok(img) = forja_assets::load_hdr(&dl.join("polyhaven_sky_kloofendal/kloofendal_48d_partly_cloudy_puresky_2k.hdr")).or_else(|_| forja_assets::load_hdr(&dl.join("hdri_wide_street/wide_street_01_2k.hdr"))) {
+        r.set_environment(Some(&env::EnvMap::from_hdr(&img, 14.0)));
+    }
+    let ground = r.upload_scene(&grass(dl));
+    let figure = r.upload_scene(&scale_figure(dl));
+    let mut models = Vec::new();
+    for id in ids {
+        let t = generate(lib.get(id).unwrap(), args.seed, &args.params);
+        let wd = t.crown_radii.x.max(t.crown_radii.z).max(1.2) * 1.6 + 1.0;
+        models.push((r.upload_scene(&t.lod_scene(0)), wd, t.height));
+    }
+    let w = args.width;
     let mut frame = FrameDesc::default();
     frame.env.shadow_distance = 160.0;
-    frame.instances.push(DrawInstance::new(ground, Mat4::IDENTITY));
+    frame.instances.push(ground_instance(ground));
     frame.env.fog_density *= 0.35;
-    let widths: Vec<f32> = trees.iter().map(|t| t.crown_radii.x.max(t.crown_radii.z).max(1.2) * 1.6 + 1.0).collect();
-    let total: f32 = widths.iter().sum();
+    let total: f32 = models.iter().map(|m| m.1).sum();
     let mut x = -total * 0.5;
     let mut hmax: f32 = 0.0;
-    for (t, wd) in trees.iter().zip(&widths) {
-        let m = r.upload_scene(&t.scene);
+    for &(m, wd, ht) in &models {
         frame.instances.push(DrawInstance::new(m, Mat4::from_translation(Vec3::new(x + wd * 0.5, 0.0, 0.0))));
         x += wd;
-        hmax = hmax.max(t.height);
+        hmax = hmax.max(ht);
     }
     frame.instances.push(DrawInstance::new(figure, Mat4::from_translation(Vec3::new(-total * 0.5 - 1.0, 0.0, 3.0))));
     let fov = 30f32;
@@ -248,14 +292,16 @@ fn lineup(r: &mut Renderer, trees: &[TreeAsset], ground: ModelHandle, figure: Mo
     frame.camera = Camera::look_at(Vec3::new(0.0, 2.0, d), Vec3::new(0.0, hmax * 0.42, 0.0));
     frame.camera.fov_y = fov.to_radians();
     let img = r.render_to_image(&frame, w * 2, w * 9 / 16);
-    let p = out.join("lineup.png");
+    let p = args.out.join("lineup.png");
     img.save(&p).expect("save");
     println!("  {}", p.display());
 }
 
 /// Side-by-side sheet: our `<id>_tree.png` next to reference photos.
 fn compare(out: &Path, photos: &Path, id: &str) {
-    let Ok(ours) = image::open(out.join(format!("{id}_tree.png"))) else { return };
+    let Ok(ours) = image::open(out.join(format!("{id}_tree.png"))) else {
+        return;
+    };
     let ours = ours.to_rgba8();
     let mut refs: Vec<image::RgbaImage> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(photos) {
@@ -287,6 +333,13 @@ fn compare(out: &Path, photos: &Path, id: &str) {
     let path = out.join(format!("{id}_compare.png"));
     sheet.save(&path).expect("save");
     println!("  {}", path.display());
+}
+
+/// The flat ground receives shadows but casts none (it can only shadow itself).
+fn ground_instance(ground: ModelHandle) -> DrawInstance {
+    let mut g = DrawInstance::new(ground, Mat4::IDENTITY);
+    g.cast_shadows = false;
+    g
 }
 
 fn grass(dl: &Path) -> SceneData {

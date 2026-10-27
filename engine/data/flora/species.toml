@@ -344,11 +344,11 @@ twig = "#6a6a5a"
 underside_share = 0.12
 roughness = 0.32
 translucency = 0.3
-card_size = 1.1
-density = 6.0
+card_size = 1.55
+density = 8.0
 min_cards = 1600
 max_cards = 4800
-per_card = 14
+per_card = 22
 outward = 0.55
 droop = 0.2
 fold = 18.0
@@ -361,7 +361,7 @@ colors = ["#5c5a54", "#74716a"]
 count = 11
 length = 4.5
 radius = 0.42
-aerial = 0.05
+aerial = 0.12
 pillars = 0.3
 
 [[species]]

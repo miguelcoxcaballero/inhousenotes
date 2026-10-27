@@ -95,7 +95,7 @@ pub fn build(sp: &Species, pd: &PalmDef, g: &Growth, rng: &mut Rng) -> PalmTree 
         let base = top - top_dir * r * boot * 0.55 + h * top_r * 0.5;
         let droop = pd.droop * (0.25 + 0.95 * r) * rng.range(0.8, 1.2);
         let kind = if r > 0.55 && rng.chance(0.35) { FrondKind::Inner } else { FrondKind::Green };
-        fronds.push(Frond { base, dir: d, length: len, droop, kind, roll: rng.signed() * 0.25, variant: rng.below(2), open: rng.range(4.4, 5.2) });
+        fronds.push(Frond { base, dir: d, length: len, droop, kind, roll: rng.signed() * 0.25, variant: rng.below(2), open: rng.range(2.9, 3.6) });
     }
     let trimmed = g.pruning == Pruning::Trimmed;
     if !trimmed {
@@ -250,11 +250,19 @@ pub fn mesh_fronds(mb: &mut MeshBuilder, pd: &PalmDef, fronds: &[Frond], atlas: 
                     let dir = side * a.sin() + fwd * a.cos();
                     let pleat = if lod == 0 { ((j % 2) as f32 - 0.5) * 0.08 * radius * rho } else { 0.0 };
                     let sag = -Vec3::Y * rho * rho * radius * if dead { 0.15 } else { 0.35 };
-                    let curl = up * rho * rho * radius * 0.12 * (a.abs() / (open * 0.5)).powi(2);
-                    let q = h + dir * rho * radius + up * pleat + sag + curl;
+                    // Costapalmate: the two halves fold up along the costa
+                    // (a shallow V, not a flat disc), and past the split the
+                    // free segment tips hang down.
+                    let side_frac = (a.abs() / (open * 0.5)).min(1.0);
+                    let fold = up * rho * radius * 0.28 * side_frac;
+                    let hang = -Vec3::Y * (rho - 0.5).max(0.0).powi(2) * radius * if dead { 0.4 } else { 1.5 };
+                    let curl = up * rho * rho * radius * 0.06 * side_frac * side_frac;
+                    let q = h + dir * rho * radius + up * pleat + sag + fold + hang + curl;
                     let n = (up * 0.45 + crown_n(q) * 0.75).normalize();
                     // Texture angle matches the drawing: blade centre at the slot centre.
-                    let ta = a - std::f32::consts::FRAC_PI_2;
+                    // The drawing is a full disc of segments: a narrower
+                    // blade samples a wider arc so segments keep their width.
+                    let ta = a * (4.8 / open).max(1.0) - std::f32::consts::FRAC_PI_2;
                     let uv = Vec2::new(
                         (rect[0] + rect[2]) * 0.5 + ta.cos() * rho * 0.48 * (rect[2] - rect[0]),
                         (rect[1] + rect[3]) * 0.5 + ta.sin() * rho * 0.48 * (rect[3] - rect[1]),
