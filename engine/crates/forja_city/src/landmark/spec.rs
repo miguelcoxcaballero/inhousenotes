@@ -150,6 +150,8 @@ checked!(SIDES, de_side, de_side_opt, "side", ["left", "right"]);
 checked!(PLANES, de_plane, de_plane_opt, "extrusion plane", ["xy", "xz", "yz", "zy"]);
 checked!(SKIES, de_sky, de_sky_opt, "sky", ["clear", "sky", "street", "atmosphere"]);
 checked!(TIMES, de_time, de_time_opt, "time of day", ["day", "morning", "evening", "dusk", "night"]);
+checked!(RELIEFS, de_relief, de_relief_opt, "relief", ["none", "boss", "panel", "figure"]);
+checked!(VIEW_FIX, de_fix, de_fix_opt, "fixed camera parameter", ["fov", "eye", "height", "roll", "pitch"]);
 
 /// Smoothing: `true` (40 degree crease), `false`, or a crease angle.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -1302,6 +1304,9 @@ pub struct DrumSpec {
     /// Pilasters or buttresses between windows.
     #[serde(default)]
     pub pilasters: bool,
+    /// Any openings on the drum (as on a mass), besides `windows`.
+    #[serde(default)]
+    pub openings: Vec<Openings>,
 }
 fn d_drum_h() -> f32 {
     3.0
@@ -1333,6 +1338,7 @@ impl Shorthand for DrumSpec {
             window_infill: d_drum_inf(),
             cornice: Flex(None),
             pilasters: false,
+            openings: Vec::new(),
         })
     }
 }
@@ -1677,11 +1683,14 @@ macro_rules! element {
             #[serde(default)] pub collide: Option<bool>,
             /// Free text for modellers (sources, reasoning).
             #[serde(default)] pub note: Option<String>,
+            /// `false`: an open or thin surface (canopy, open shell): kept
+            /// in the collider but left out of the plan slice of `check`.
+            #[serde(default)] pub solid: Option<bool>,
             $($(#[$fm])* pub $f: $t),*
         }
         impl HasCommon for $name {
             fn common(&self) -> Common<'_> {
-                Common { name: self.name.as_deref(), material: self.material.as_deref(), transform: self.transform.as_ref(), mirror: self.mirror.as_ref(), enabled: self.enabled, collide: self.collide }
+                Common { name: self.name.as_deref(), material: self.material.as_deref(), transform: self.transform.as_ref(), mirror: self.mirror.as_ref(), enabled: self.enabled, collide: self.collide, solid: self.solid }
             }
         }
     };
@@ -1696,6 +1705,7 @@ pub struct Common<'a> {
     pub mirror: Option<&'a Mirror>,
     pub enabled: bool,
     pub collide: Option<bool>,
+    pub solid: Option<bool>,
 }
 
 pub trait HasCommon {
@@ -1841,7 +1851,18 @@ element! {
         #[serde(default)] pub roof: Flex<RoofSpec>,
         /// Material of the top cap (flat roofs, terraces).
         #[serde(default)] pub top_material: Option<String>,
+        /// Wall materials per edge: `[{ edges = "facing:n", material = "brick" }]`
+        /// (later entries win; a material change splits the facade run).
+        #[serde(default)] pub edge_materials: Vec<EdgeMaterial>,
     }
+}
+
+/// A wall material for some edges of a mass.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeMaterial {
+    pub edges: EdgeSel,
+    pub material: String,
 }
 
 element! {
@@ -1872,6 +1893,10 @@ element! {
         #[serde(default)] pub closed: bool,
         #[serde(default)] pub openings: Vec<Openings>,
         #[serde(default)] pub coping: bool,
+        /// Stepped or raked top: `[[s, y], ...]`, the top height `y` at
+        /// distance `s` along the path from its first point (linear in
+        /// between; two points with the same `s` make a step).
+        #[serde(default)] pub top_profile: Option<Vec<[f32; 2]>>,
     }
 }
 fn d_wall_t() -> f32 {
@@ -2419,6 +2444,9 @@ element! {
         #[serde(default = "yes")] pub caps: bool,
         /// Faceted (flat shaded) instead of smooth.
         #[serde(default)] pub faceted: bool,
+        /// Openings in the wall of a vertical cylinder (drums, round
+        /// towers): laid out by arc length, `bays.azimuth` works.
+        #[serde(default)] pub openings: Vec<Openings>,
     }
 }
 fn d_cyl_r() -> f32 {
@@ -2507,6 +2535,10 @@ element! {
         #[serde(default)] pub up: Option<[f32; 3]>,
         /// Loop back to the first station.
         #[serde(default)] pub closed: bool,
+        /// Faces on both sides (open surfaces seen from inside and out).
+        #[serde(default)] pub double_sided: bool,
+        /// Turn the faces inside out.
+        #[serde(default)] pub flip: bool,
     }
 }
 fn d_loft_s() -> u32 {
@@ -2541,6 +2573,69 @@ element! {
 }
 fn d_shell_t() -> f32 {
     0.25
+}
+
+str_enum!(
+    /// Outline of a relief panel or plaque.
+    ReliefShape, "relief shape", { Rect => ["rect", "rectangle", "square"], Arched => ["arched", "arch", "round_top"], Circle => ["circle", "round", "tondo"], Oval => ["oval", "ellipse"], Shield => ["shield", "escutcheon", "coat_of_arms"], Cartouche => ["cartouche"] }
+);
+
+element! {
+    /// Relief panel or plaque on a wall: a raised (or sunk) panel with a
+    /// frame, in the wall frame of `at` / `facing` (x along the wall, y
+    /// up, z out of the wall).
+    pub struct Relief {
+        #[serde(default)] pub at: [f32; 3],
+        #[serde(default)] pub facing: Option<Facing>,
+        /// [width, height] of the panel; `at` is its bottom centre.
+        #[serde(default = "d_relief_size")] pub size: [f32; 2],
+        #[serde(default = "d_relief_shape")] pub shape: ReliefShape,
+        /// Projection of the panel from the wall (negative: sunk into it).
+        #[serde(default = "d_relief_depth")] pub depth: f32,
+        /// Frame width (0 = none) and its extra projection.
+        #[serde(default = "d_relief_frame")] pub frame: f32,
+        #[serde(default = "d_relief_frame_depth")] pub frame_depth: f32,
+        /// Raised figure inside the frame: none, boss (low dome), panel
+        /// (inner raised field), figure (a low standing figure).
+        #[serde(default, deserialize_with = "de_relief_opt")] pub relief: Option<String>,
+        /// Material of the inner field (inscription stone, dark marble...).
+        #[serde(default)] pub field_material: Option<String>,
+    }
+}
+fn d_relief_size() -> [f32; 2] {
+    [1.0, 0.7]
+}
+fn d_relief_shape() -> ReliefShape {
+    ReliefShape::Rect
+}
+fn d_relief_depth() -> f32 {
+    0.06
+}
+fn d_relief_frame() -> f32 {
+    0.08
+}
+fn d_relief_frame_depth() -> f32 {
+    0.04
+}
+
+element! {
+    /// Sunken area below street level (moat, sunken plaza, light well):
+    /// floor at `-depth`, retaining walls facing inward, and a hole in the
+    /// ground (the render ground and [`Model::ground_cuts`]).
+    pub struct Sunken {
+        #[serde(default)] pub polygon: Option<PolySpec>,
+        #[serde(default = "d_sunk_depth")] pub depth: f32,
+        /// Floor (false: open, e.g. water drawn separately).
+        #[serde(default = "yes")] pub floor: bool,
+        #[serde(default)] pub floor_material: Option<String>,
+        /// Retaining walls around the edge.
+        #[serde(default = "yes")] pub walls: bool,
+        /// Coping kerb around the rim (height above the ground, 0 = none).
+        #[serde(default)] pub kerb: f32,
+    }
+}
+fn d_sunk_depth() -> f32 {
+    3.0
 }
 
 element! {
@@ -2692,6 +2787,8 @@ pub enum Element {
     Loft(Loft),
     Shell(Shell),
     Mesh(MeshEl),
+    Relief(Relief),
+    Sunken(Sunken),
     Group(Group),
     Array(Array),
     Instance(Instance),
@@ -2710,7 +2807,7 @@ impl Element {
     pub const TYPES: &'static [&'static str] = &[
         "mass", "prism", "slab", "wall", "openings", "cornice", "string_course", "plinth", "moulding", "parapet", "balustrade", "crenellations", "machicolations", "gargoyles", "roof", "dome", "tower", "column",
         "pilaster", "buttress", "flying_buttress", "pinnacle", "finial", "statue", "stairs", "arcade", "colonnade", "loggia", "lantern", "box", "cylinder", "cone", "sphere", "ellipsoid", "torus", "lathe", "extrude",
-        "sweep", "loft", "shell", "mesh", "group", "array", "instance",
+        "sweep", "loft", "shell", "mesh", "relief", "plaque", "sunken", "moat", "group", "array", "instance",
     ];
 
     pub fn type_name(&self) -> &'static str {
@@ -2759,6 +2856,8 @@ impl Element {
             Element::Loft(_) => "loft",
             Element::Shell(_) => "shell",
             Element::Mesh(_) => "mesh",
+            Element::Relief(_) => "relief",
+            Element::Sunken(_) => "sunken",
             Element::Group(_) => "group",
             Element::Array(_) => "array",
             Element::Instance(_) => "instance",
@@ -2800,6 +2899,8 @@ impl Element {
             Element::Loft(e) => e.common(),
             Element::Shell(e) => e.common(),
             Element::Mesh(e) => e.common(),
+            Element::Relief(e) => e.common(),
+            Element::Sunken(e) => e.common(),
             Element::Group(e) => e.common(),
             Element::Array(e) => e.common(),
             Element::Instance(e) => e.common(),
@@ -2808,7 +2909,7 @@ impl Element {
 
     /// A finial preset as an element (`finial = "cross"` shorthand).
     pub fn finial_preset(style: FinialStyle) -> Element {
-        Element::Finial(Finial { name: None, material: None, transform: None, mirror: None, enabled: true, collide: Some(false), note: None, at: [0.0; 3], style, size: d_fin_h(), facing: None })
+        Element::Finial(Finial { name: None, material: None, transform: None, mirror: None, enabled: true, collide: Some(false), note: None, solid: None, at: [0.0; 3], style, size: d_fin_h(), facing: None })
     }
 }
 
@@ -2897,6 +2998,8 @@ impl<'de> Deserialize<'de> for Element {
                     "loft" => Element::Loft(Loft::deserialize(md)?),
                     "shell" => Element::Shell(Shell::deserialize(md)?),
                     "mesh" => Element::Mesh(MeshEl::deserialize(md)?),
+                    "relief" | "plaque" => Element::Relief(Relief::deserialize(md)?),
+                    "sunken" | "moat" | "pit" => Element::Sunken(Sunken::deserialize(md)?),
                     "group" => Element::Group(Group::deserialize(md)?),
                     "array" => Element::Array(Array::deserialize(md)?),
                     "instance" => Element::Instance(Instance::deserialize(md)?),
@@ -3055,10 +3158,31 @@ pub struct ViewSpec {
     pub target: Option<[f32; 3]>,
     #[serde(default)]
     pub fov_y: Option<f32>,
+    /// 35 mm-equivalent focal length, or "exif" (read from the photo).
     #[serde(default)]
-    pub focal_35mm: Option<f32>,
+    pub focal_35mm: Option<Focal>,
     #[serde(default)]
     pub roll: f32,
+    /// Camera parameters `match` must keep as written: fov (from fov_y /
+    /// focal_35mm), eye, height (eye y), roll, pitch (of eye -> target).
+    #[serde(default, deserialize_with = "de_fix_list")]
+    pub fix: Vec<String>,
+    /// Level horizon: `match` keeps roll = 0.
+    #[serde(default)]
+    pub level: bool,
+    /// Perspective-corrected photo: level, upright camera (pitch 0,
+    /// verticals vertical) with vertical lens shift solved by `match`.
+    #[serde(default, alias = "corrected")]
+    pub upright: bool,
+    /// Lens shift [x, y] as fractions of the image (y > 0 raises the
+    /// frame), or "solve".
+    #[serde(default)]
+    pub shift: Option<ShiftSpec>,
+    /// Soft prior on the solved eye height (m) and its sigma.
+    #[serde(default)]
+    pub eye_height: Option<f32>,
+    #[serde(default)]
+    pub eye_height_sigma: Option<f32>,
     /// [azimuth, elevation] in degrees.
     #[serde(default)]
     pub sun: Option<[f32; 2]>,
@@ -3073,6 +3197,146 @@ pub struct ViewSpec {
     pub matches: Vec<MatchPoint>,
     #[serde(default)]
     pub note: Option<String>,
+}
+
+fn de_fix_list<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    struct One(String);
+    impl<'de> Deserialize<'de> for One {
+        fn deserialize<D2: Deserializer<'de>>(d: D2) -> Result<Self, D2::Error> {
+            de_fix(d).map(One)
+        }
+    }
+    Ok(Vec::<One>::deserialize(d)?.into_iter().map(|o| o.0).collect())
+}
+
+/// A focal length in mm or "exif".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Focal {
+    Mm(f32),
+    Exif,
+}
+impl<'de> Deserialize<'de> for Focal {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = Focal;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a focal length in mm or \"exif\"")
+            }
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Focal, E> {
+                if s.trim().eq_ignore_ascii_case("exif") { Ok(Focal::Exif) } else { Err(E::custom(format!("focal_35mm `{s}`: expected a number of mm or \"exif\""))) }
+            }
+            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Focal, E> {
+                Ok(Focal::Mm(v as f32))
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Focal, E> {
+                Ok(Focal::Mm(v as f32))
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+/// Lens shift: fixed `[x, y]` or "solve".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ShiftSpec {
+    Fixed([f32; 2]),
+    Solve,
+}
+impl<'de> Deserialize<'de> for ShiftSpec {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = ShiftSpec;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("[x, y] (fractions of the image) or \"solve\"")
+            }
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<ShiftSpec, E> {
+                if s.trim().eq_ignore_ascii_case("solve") { Ok(ShiftSpec::Solve) } else { Err(E::custom(format!("shift `{s}`: expected [x, y] or \"solve\""))) }
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, a: A) -> Result<ShiftSpec, A::Error> {
+                Ok(ShiftSpec::Fixed(<[f32; 2]>::deserialize(de::value::SeqAccessDeserializer::new(a))?))
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+/// A context building to hide: its index or "context:<i | id | refcat>".
+#[derive(Clone, Debug, PartialEq)]
+pub enum CtxRef {
+    Index(usize),
+    Ref(String),
+}
+impl<'de> Deserialize<'de> for CtxRef {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = CtxRef;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a context index or \"context:<i|id>\"")
+            }
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<CtxRef, E> {
+                Ok(CtxRef::Ref(s.to_string()))
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<CtxRef, E> {
+                usize::try_from(v).map(CtxRef::Index).map_err(|_| E::custom("context index must be >= 0"))
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<CtxRef, E> {
+                Ok(CtxRef::Index(v as usize))
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+/// A measured reference height: metres, or a table with a tolerance and a
+/// source.
+#[derive(Clone, Debug)]
+pub struct RefHeight {
+    pub height: f32,
+    pub tolerance: Option<f32>,
+    pub source: Option<String>,
+}
+impl<'de> Deserialize<'de> for RefHeight {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct T {
+            height: f32,
+            #[serde(default)]
+            tolerance: Option<f32>,
+            #[serde(default, alias = "note")]
+            source: Option<String>,
+        }
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = RefHeight;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a height in metres or { height, tolerance, source }")
+            }
+            fn visit_f64<E: de::Error>(self, v: f64) -> Result<RefHeight, E> {
+                Ok(RefHeight { height: v as f32, tolerance: None, source: None })
+            }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<RefHeight, E> {
+                Ok(RefHeight { height: v as f32, tolerance: None, source: None })
+            }
+            fn visit_map<A: MapAccess<'de>>(self, m: A) -> Result<RefHeight, A::Error> {
+                let t = T::deserialize(MapAccessDeserializer::new(m))?;
+                Ok(RefHeight { height: t.height, tolerance: t.tolerance, source: t.source })
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+/// `[ground]`: holes in the street level (moats, sunken plazas, ramps
+/// down), besides the `sunken` elements.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroundSpec {
+    #[serde(default)]
+    pub cut: Vec<PolySpec>,
 }
 
 /// One correspondence: pixel `[u, v]` of the photo (from its top-left
@@ -3137,6 +3401,10 @@ pub struct RenderSpec {
     /// Paving radius around the building (metres).
     #[serde(default)]
     pub paving: Option<f32>,
+    /// Context buildings left out of the renders and the street camera's
+    /// obstacles: indices or "context:<i|id>".
+    #[serde(default)]
+    pub hide_context: Vec<CtxRef>,
 }
 
 /// A whole `landmark.toml`.
@@ -3158,4 +3426,11 @@ pub struct Spec {
     pub light: Vec<LightSpec>,
     #[serde(default)]
     pub render: RenderSpec,
+    /// Measured heights replacing tagged / level-based ones in `check`:
+    /// `"outline:0" = 32.5`, `"part:2" = { height = 21, source = "plan" }`,
+    /// an OSM id, `"catastro:1"`, or the name of an element.
+    #[serde(default)]
+    pub reference_heights: BTreeMap<String, RefHeight>,
+    #[serde(default)]
+    pub ground: GroundSpec,
 }

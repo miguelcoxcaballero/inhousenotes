@@ -659,7 +659,7 @@ fn arcade_flat(b: &mut Builder, a: &Arcade, len: f32, closed: bool, sc: &Scope, 
         let half = front_n * (depth * 0.5);
         let u = Vec3::new(-d.x, 0.0, -d.y);
         let wall_y0 = if use_cols { a.y + a.impost } else { a.y };
-        let f = Facade { plane: Plane::new(Vec3::new(p1.x, 0.0, p1.y) + half, u, Vec3::Y), len, v0: wall_y0, v1: top, uv_off: 0.0, mat: wall_m, outline: None, wrap: None };
+        let f = Facade { plane: Plane::new(Vec3::new(p1.x, 0.0, p1.y) + half, u, Vec3::Y), len, v0: wall_y0, v1: top, uv_off: 0.0, mat: wall_m, outline: None, wrap: None, top: None };
         let mut cuts = Vec::new();
         let n_arc = b.segs(span * 0.5, 8, 24);
         for k in 0..count {
@@ -756,5 +756,119 @@ fn arcade_flat(b: &mut Builder, a: &Arcade, len: f32, closed: bool, sc: &Scope, 
         }
     }
     o.collide_all();
+    Ok(())
+}
+
+/// Outline of a relief panel of `w` x `h` with its bottom centre at the
+/// origin (x along the wall, y up).
+pub fn relief_outline(shape: ReliefShape, w: f32, h: f32, seg: usize) -> Vec<Vec2> {
+    let (hw, n) = (w * 0.5, seg.max(8));
+    let arc = |c: Vec2, r: Vec2, a0: f32, a1: f32, k: usize| -> Vec<Vec2> { (0..=k).map(|i| c + Vec2::from_angle(a0 + (a1 - a0) * i as f32 / k as f32) * r).collect() };
+    use std::f32::consts::{FRAC_PI_2, PI, TAU};
+    match shape {
+        ReliefShape::Rect => vec![Vec2::new(-hw, 0.0), Vec2::new(hw, 0.0), Vec2::new(hw, h), Vec2::new(-hw, h)],
+        ReliefShape::Arched => {
+            // Semicircular top (segmental when the panel is low).
+            let rise = hw.min(h * 0.6);
+            let spring = h - rise;
+            let r = (hw * hw + rise * rise) / (2.0 * rise.max(1e-3));
+            let c = Vec2::new(0.0, h - r);
+            let a0 = (spring - c.y).atan2(hw);
+            let mut v = vec![Vec2::new(-hw, 0.0), Vec2::new(hw, 0.0)];
+            v.extend(arc(c, Vec2::splat(r), a0, PI - a0, n));
+            v
+        }
+        ReliefShape::Circle => {
+            let r = hw.min(h * 0.5);
+            arc(Vec2::new(0.0, h * 0.5), Vec2::splat(r), 0.0, TAU * (1.0 - 1.0 / n as f32), n - 1)
+        }
+        ReliefShape::Oval => arc(Vec2::new(0.0, h * 0.5), Vec2::new(hw, h * 0.5), 0.0, TAU * (1.0 - 1.0 / n as f32), n - 1),
+        ReliefShape::Shield => {
+            // Flat top, straight sides down to 45 %, curving to a point.
+            let mut v = vec![Vec2::new(-hw, h), Vec2::new(-hw, h * 0.45)];
+            let k = n / 2;
+            for i in 1..k {
+                let t = i as f32 / k as f32;
+                let a = t * FRAC_PI_2;
+                v.push(Vec2::new(-hw * a.cos(), h * 0.45 * (1.0 - a.sin())));
+            }
+            v.push(Vec2::new(0.0, 0.0));
+            for i in (1..k).rev() {
+                let t = i as f32 / k as f32;
+                let a = t * FRAC_PI_2;
+                v.push(Vec2::new(hw * a.cos(), h * 0.45 * (1.0 - a.sin())));
+            }
+            v.push(Vec2::new(hw, h * 0.45));
+            v.push(Vec2::new(hw, h));
+            v.reverse();
+            v
+        }
+        ReliefShape::Cartouche => {
+            // Rectangle with concave quarter-round corners.
+            let r = (w.min(h) * 0.18).max(0.01);
+            let k = (n / 4).max(3);
+            let mut v = Vec::new();
+            for (c, a0) in [(Vec2::new(-hw, 0.0), 0.0f32), (Vec2::new(hw, 0.0), FRAC_PI_2), (Vec2::new(hw, h), PI), (Vec2::new(-hw, h), 1.5 * PI)] {
+                // Corner arc centred on the corner, bulging inward.
+                let pts = arc(c, Vec2::splat(r), a0 + FRAC_PI_2, a0, k);
+                v.extend(pts);
+            }
+            v
+        }
+    }
+}
+
+/// Relief panel / plaque on a wall.
+pub fn relief(b: &mut Builder, r: &Relief, sc: &Scope, o: &mut Out) -> Result<()> {
+    let [w, h] = r.size;
+    if w <= 0.0 || h <= 0.0 {
+        return Err(Error::msg("relief `size` must be positive [width, height]"));
+    }
+    if r.depth <= 0.0 {
+        return Err(Error::msg("relief `depth` must be positive (its projection from the wall)"));
+    }
+    let m = facing_matrix(r.at, r.facing);
+    let seg = b.segs(w.max(h) * 0.5, 16, 64);
+    let outline = poly::normalize(&relief_outline(r.shape, w, h, seg), true).ok_or_else(|| Error::msg("relief outline is degenerate"))?;
+    let field_m = b.mat(r.field_material.as_deref(), sc.mat)?;
+    let plane = |z: f32| Plane::new(Vec3::new(0.0, 0.0, z), Vec3::X, Vec3::Y);
+    // The field (slightly into the wall so no gap shows).
+    let mut field = Prim::default();
+    mesh::extrude_shape(&mut field, &Shape::new(outline.clone()), &plane(-0.01), r.depth + 0.01);
+    let mut frame = Prim::default();
+    if r.frame > 0.0
+        && let Some(outer) = poly::offset(&outline, r.frame)
+        && let Some(ring) = (Shape { outer, holes: vec![outline.iter().rev().copied().collect()] }).normalized()
+    {
+        mesh::extrude_shape(&mut frame, &ring, &plane(-0.01), r.depth + r.frame_depth.max(0.0) + 0.01);
+    }
+    let z = r.depth;
+    let lift = (w.min(h) * 0.06).clamp(0.01, 0.12);
+    match r.relief.as_deref().unwrap_or("none") {
+        "boss" => {
+            // A low half-ellipsoid; its axis (y) turned into the wall normal (z).
+            let c = poly::centroid(&outline);
+            let mut boss = Prim::default();
+            mesh::ellipsoid(&mut boss, Vec3::ZERO, Vec3::new(w * 0.28, lift * 1.5, h * 0.28), (0.0, std::f32::consts::TAU), (0.0, std::f32::consts::FRAC_PI_2), 24, 8);
+            field.append(&boss, &(Mat4::from_translation(Vec3::new(c.x, c.y, z - 0.005)) * Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2)));
+        }
+        "panel" => {
+            if let Some(inner) = poly::offset(&outline, -(w.min(h) * 0.15)) {
+                mesh::extrude_shape(&mut field, &Shape::new(inner), &plane(z - 0.005), lift);
+            }
+        }
+        "figure" => {
+            let body: Vec<Vec2> = (0..24).map(|k| Vec2::new(0.0, h * 0.42) + Vec2::from_angle(k as f32 / 24.0 * std::f32::consts::TAU) * Vec2::new(w * 0.16, h * 0.3)).collect();
+            let head: Vec<Vec2> = (0..16).map(|k| Vec2::new(0.0, h * 0.8) + Vec2::from_angle(k as f32 / 16.0 * std::f32::consts::TAU) * Vec2::splat(h * 0.08)).collect();
+            for s in [body, head] {
+                if let Some(rg) = poly::normalize(&s, true) {
+                    mesh::extrude_shape(&mut field, &Shape::new(rg), &plane(z - 0.005), lift);
+                }
+            }
+        }
+        _ => {}
+    }
+    o.geo.get(field_m).append(&field, &m);
+    o.geo.get(sc.mat).append(&frame, &m);
     Ok(())
 }

@@ -20,6 +20,7 @@ $LM render lonja                     # images in screenshots/landmarks/lonja/
 $LM render lonja --clay              # untextured: no texture generation, a few seconds
 $LM render lonja --view plaza --edges-only   # one photo view, model edges over the photo, ~1 s, no GPU
 $LM render lonja --views photo --width 1600 --context off
+$LM render lonja --view street --clay      # one standard view only: ne se sw nw street plan
 $LM gallery                          # every landmark at its true position, aerial views
 $LM gallery /some/scratch/folder     # ...or the landmarks under these folders
 ```
@@ -115,6 +116,16 @@ street_target = [0, 8, 0]
 street_fov = 70
 exposure = 0.55
 paving = 80                    # paved radius around the building
+hide_context = [3, "context:12"]   # drop context parcels (index or context:<i|id|refcat>)
+                               # from renders and the street camera's obstacles
+
+[reference_heights]            # measured heights for `check` (section 8)
+"outline:0" = 32.5
+"part:2" = { height = 21.0, tolerance = 1.0, source = "elevation, plan 1882" }
+micalet = 51                   # an element name: its top
+
+[ground]
+cut = ["part:4"]               # holes in the street level (see `sunken`, 5.10)
 
 [material.stone]  ...          # palette (section 4)
 [component.pinnacle] ...       # reusable groups (section 5.10)
@@ -193,7 +204,8 @@ tint = "#e3d6bb"         # multiplies the texture ([r,g,b] 0..255 or 0..1 also o
 color = "#..."           # base colour of flat / curtain_wall kinds
 colors = ["#1f4f9c", "#2a5fb4", "#f3efe4"]   # palettes (glazed_tiles, trencadis, polychrome, stained_glass, marble veins)
 weights = [0.5, 0.4, 0.1]  # glazed_tiles: share of each colour, tiles picked at random
-pattern = "scales"       # glazed_tiles: scales chevron zigzag stripes checker diamond plain
+pattern = "scales"       # glazed_tiles: scales chevron zigzag stripes (vertical) stripes_h
+                         # (horizontal bands, alias hstripes / bands: no uv_rotate needed) checker diamond plain
                          # azulejo: checker_blue checker_green diamond_blue frieze white
 block = [0.95, 0.45]     # ashlar block length and course height (m)
 roughness = 0.6          # overrides the average roughness
@@ -246,6 +258,8 @@ mirror = "z"             # extra mirrored copy across x = 0 / z = 0 / both ("xz"
                          # or { axis = "x", at = 12.5 }
 enabled = false          # switch off while iterating
 collide = true           # in the collision mesh (structural types default on)
+solid = false            # an open / thin surface (canopy, loft sheet, open shell): still
+                         # collides but stays out of check's plan slices (footprint IoU)
 note = "source: plan 1882, sheet 3"
 ```
 
@@ -280,7 +294,12 @@ balustrade = { height = 0.95, finials = "urn" }
 roof = { shape = "hip", pitch = 28, overhang = 0.4 }
   [[element.openings]]   # see 5.2; any number of blocks
   ...
+edge_materials = [{ edges = "facing:n", material = "brick" }]   # wall material per edge
 ```
+
+`edge_materials`: walls of the selected edges use another material (later
+entries win); their reveals and trim follow it. A material change splits the
+facade run there, so bays are laid out per stretch. Not on battered walls.
 
 Windows show a room behind the glass; its depth is measured from the real
 plan (a ray from the window into the solid), so thin wings, L plans and
@@ -310,6 +329,18 @@ coping = true
 ```
 
 Wall paths are runs too: a curved garden wall gets its openings by arc length.
+
+**Stepped and raked tops** (`wall` only): `top_profile = [[s, y], ...]` gives
+the top height `y` at distance `s` along the path from its first point,
+linear in between; two points with the same `s` make a step. `y1`/`height`
+are then optional. Openings, top faces, step risers and the ends follow the
+profile; `coping` is not built on profiled walls.
+
+```toml
+type = "wall"
+path = [[0, 0], [30, 0]]
+top_profile = [[0, 7], [8, 7], [8, 5], [14, 5], [30, 2]]   # step down at 8 m, then a rake
+```
 
 ### 5.3 Openings
 
@@ -477,7 +508,9 @@ oculus = 0.8             # open eye with a ring
 base_ring = true
 rotation = 22.5
 drum = { height = 4.5, sides = 8, windows = 8, window_width = 1, window_height = 2.2,
-         window_arch = "round", window_infill = "glass", cornice = true, pilasters = true }
+         window_arch = "round", window_infill = "glass", cornice = true, pilasters = true,
+         openings = [{ kind = "oculus", width = 0.8, levels = [21], bays = { count = 8 } }] }
+                         # drum `openings`: any openings blocks, as on a mass
 drum_material = "stone"
 finial = "cross"         # preset, or [[element.finial]] tables
   [[element.lantern]]    # elements on the apex (origin at the apex)
@@ -528,6 +561,11 @@ stage keeps the previous plan with a warning.
 * `pinnacle`: `at`, `width`, `height`, `sides`, `crockets`, `shaft`.
 * `finial`: `at`, `style` (cross ball spike weathervane urn pinecone fleur crown star statue), `size`.
 * `statue`: `at`, `facing`, `height`, `style` (figure bust equestrian angel seated group), `pedestal`.
+* `relief` (`plaque`): a panel on a wall in the wall frame of `at` (bottom
+  centre) / `facing`: `size = [w, h]`, `shape` (rect arched circle oval shield
+  cartouche), `depth` (projection, > 0), `frame` (width, 0 = none) and
+  `frame_depth`, `relief` (none boss panel figure: a raised field or motif),
+  `field_material` (inscription stone, dark marble; frame = `material`).
 * `stairs`: straight `from = [x, z]` → `to` (ascending), `width`, `steps`,
   `rise`, `riser`, `tread`, `cheeks`; or `polygon` = podium top with `steps`
   around it.
@@ -541,7 +579,9 @@ stage keeps the previous plan with a warning.
 
 * `box`: `size` (+ `center`, default resting on y = 0) or `min`/`max`.
 * `cylinder` / `cone`: `at` + `height` or `from`/`to`; `radius`, `radius_top`,
-  `segments` (3..512), `caps`, `faceted`.
+  `segments` (3..512), `caps`, `faceted`. A vertical cylinder takes
+  `[[element.openings]]` like a mass (laid out round it by arc length;
+  `bays = { azimuth = [...] }` works); not cones or tilted cylinders.
 * `sphere` (`ellipsoid`): `center`, `radius` or `radii`, `lat = [-90, 90]`,
   `lon = [0, 360]`, `segments` (4..512).
 * `torus`: `center`, `radius`, `tube`, `axis`, `segments`.
@@ -554,7 +594,8 @@ stage keeps the previous plan with a warning.
   + `normal` (+ `axis`)), `twist`, `scale_end`, `caps`, `up`, `level`.
   Vertical arcs rise from their first axis.
 * `loft`: smooth surface through `stations = [{ at, section, scale = [s, u], twist, normal }]`,
-  `section` default, `samples` per span (≤ 256), `resolution`, `smooth`, `caps`, `closed`.
+  `section` default, `samples` per span (≤ 256), `resolution`, `smooth`, `caps`, `closed`,
+  `double_sided = true` (open surfaces visible from both sides), `flip = true` (inside out).
   For plumes, organic beams, ribs, wings.
 * `shell`: thin parametric surfaces with `thickness` and a rim; `center`,
   `clip = [[nx, ny, nz, d], ...]` keeps n·p ≤ d (cut openings and edges),
@@ -573,6 +614,14 @@ stage keeps the previous plan with a warning.
 
   L'Hemisfèric, Museu de les Ciències, Palau de les Arts, Candela's hypars.
 * `mesh`: `vertices`, `triangles` / `quads`, `smooth` (angle). Last resort.
+* `sunken` (`moat`, `pit`): an area below the street (moats, sunken plazas,
+  light wells): `polygon`, `depth` (m below 0, default 3), `floor = true`,
+  `floor_material` (default paving), `walls = true` (retaining walls facing
+  in, `material`), `kerb` (rim height above the street, 0 = none). Its plan
+  becomes a hole in the ground: the render ground and the world terrain stay
+  open there (`Landmark::ground_cuts`), and `check` does not warn about
+  geometry below the ground inside it. For custom pits (stairs down, ramps),
+  model them with any elements and list their plan in `[ground] cut`.
 * **Sections** (sweep/loft): `[[a, b], ...]` or `{ shape = ellipse circle rect square
   superellipse polygon lens teardrop i_beam, size = [w, h], radius, exponent, sides, rotate }`.
 * `group`: `children` (+ `component`), shares transform and material.
@@ -602,8 +651,13 @@ name = "plaza"
 photo = "photos/lonja_main_facade.jpg"   # relative to the raw folder
 eye = [-12.0, 1.6, 38.0]                  # camera; default: sources.toml camera at 1.6 m
 target = [0.0, 9.0, 0.0]                  # default: camera heading, else the model centre
-focal_35mm = 28                           # or fov_y = 54 (vertical degrees)
+focal_35mm = 28                           # or fov_y = 54 (vertical degrees), or "exif"
 roll = 0
+fix = ["fov"]                             # match keeps these as written: fov eye height roll pitch
+level = true                              # match keeps roll = 0
+upright = false                           # perspective-corrected photo (see below)
+shift = [0, 0.12]                         # lens shift (fractions of the image), or "solve"
+eye_height = 1.6                          # soft prior on the solved eye height (eye_height_sigma = 0.3)
 sun = [200, 50]                           # azimuth, elevation of the sun in the photo
 time = "dusk"                             # day morning evening dusk night (sky and light)
 context = true
@@ -632,6 +686,22 @@ How to set a view from a photo:
    (eye, target, fov, roll) by least squares and print it with the RMS error
    in pixels: < 5 px is good. Paste the printed eye/target/fov_y/roll into the
    view (or keep `match` there; it overrides them). Four points is the minimum.
+   **Constraints** make `match` well posed with few or coplanar points
+   (one facade only): `focal_35mm = "exif"` reads the 35 mm focal length
+   from the photo and holds the field of view; `fix = ["fov"]` holds a
+   written `fov_y`/`focal_35mm`; `eye_height = 1.6` pulls the eye to street
+   level; `fix = ["height"]` holds it exactly; `fix = ["eye"]` solves only
+   the direction, roll and fov (2 points suffice); `level = true` holds roll
+   at 0. **Perspective-corrected photos** (verticals parallel, typical of
+   architecture photos and Wikimedia "corrected" images): `upright = true`
+   holds pitch and roll at 0 and solves the vertical lens shift; the render
+   is shifted the same way (`shift` is printed; `shift = [x, y]` sets it by
+   hand, `"solve"` solves both). `check` lists per view `points` (each
+   match's `error_px` and `reprojected` pixel), `planarity`, `fixed`, and
+   warnings: nearly coplanar points without constraints, a camera solved
+   underground, a match far off (likely a wrong pixel or world point), too
+   few points; and for every view (and the street view) a camera standing
+   inside a context building (hide it with `[render] hide_context`).
 2. **By hand**: find the camera on the plan (`plan.png`, street names, the
    facades visible and how foreshortened they are). Phone photos are taken at
    1.5–1.7 m; a camera on a balcony is at about 3.2 m per floor. An object of
@@ -709,7 +779,15 @@ top-level element, with the line), `footprint.osm|catastro` (`iou`,
 reference covered; plan slice at 1–3 m; through passages are holes in it),
 `outlines|parts|catastro` (tagged height vs `model_median`, `model_p90`,
 `model_max`, `height_check`), `outline_edges`, `solved_views` (cameras from
-`match`), `warnings`. Low precision = something sticks out (porch, stairs,
+`match`, with per-point errors), `ground_cuts`, `reference_checks`,
+`warnings`. **Measured heights**: `[reference_heights]` keys
+`outline:<i>`, `part:<i>`, `catastro:<i>` (or a refcat), an OSM id
+(`way/123`) replace that polygon's tagged / level-based height: the row gets
+`reference_height`, `height_source = "reference"` and a `height_check`
+("model too high" when even its 90th percentile is above, "too low" when its
+highest point is below, beyond `tolerance`, default 1 m), and the OSM
+warning is replaced. Any other key is an element name, compared with the
+element's top (`reference_checks`, default tolerance 0.5 m). Low precision = something sticks out (porch, stairs,
 buttresses: fine if real); low recall = missing volume.
 
 ## 9. Budgets and limits
@@ -749,10 +827,18 @@ nu·nv ≤ 250 000, 256 loft samples. Rendering a typical landmark takes 15–40
 ```rust
 let lm = forja_city::landmark::load(Path::new("data/landmarks/valencia/lonja"))?;
 // lm.scene: SceneData (one mesh per material, crack-free LODs),
+// lm.ground_cuts: plan holes for the terrain (sunken parts),
 // lm.collider: triangle mesh, lm.bounds: local bounds,
 // lm.anchor: city position, lm.transform(): local -> city matrix.
 let (all, failed) = forja_city::landmark::load_all(Path::new("data/landmarks"));
 ```
+
+**Distance LODs** (`AssembleOptions { lods: true }`) collapse edges per
+material mesh with every crease vertex locked (faces meeting at more than
+30°: reveals, sills, balconies, pilasters, mouldings) and an absolute error
+of 2–30 cm per level, so window and door openings, balconies and pilasters
+keep the facade rhythm at any distance; smooth and gently faceted surfaces
+(domes, drums, vaults, shells) carry the reduction.
 
 `Landmark` keeps only what a world needs (scene, collider, anchor, bounds,
 warnings). `load_with(dir, &Library::new(&kit), AssembleOptions { lods })`
