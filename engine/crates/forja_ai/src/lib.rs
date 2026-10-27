@@ -18,6 +18,22 @@
 //! - [`peds`]: pedestrians (kerb waiting, crossing, activities, fleeing,
 //!   social forces, animation selection);
 //! - [`debug`]: a top-down raster view for review.
+//!
+//! ## Performance
+//!
+//! Fixed step of 1/20 s ([`SimConfig::dt`]), one thread, spatial hashing
+//! for vehicles and pedestrians. Measured in release on a shared 4-CPU
+//! container (other builds running, so these are upper bounds):
+//!
+//! | scene | agents | mean step | per 60 Hz frame |
+//! |---|---|---|---|
+//! | headless grid test, 5 min | 93 vehicles, 190 peds | 240 us | ~80 us |
+//! | full Spanish city (`city_review`), 8 min | 100 vehicles, 338 peds | 812 us (vehicles 357, peds 265) | ~270 us |
+//! | sandbox budget (70 vehicles, 56 peds near the player) | | | `sim 0.37 ms/frame` for the whole game |
+//!
+//! All well inside the 2 ms budget. The one long step is the first, which
+//! populates the whole spawn area at once (0.57 s for 338 pedestrians with
+//! their routes on the full map); after it, max steps stay at a few ms.
 
 pub mod adapter;
 #[cfg(feature = "city")]
