@@ -3,11 +3,11 @@
 //! every sign bound to the street end it faces.
 
 use forja_city::texgen::SignKind;
-use forja_city::traffic::TrafficInfo;
+use forja_city::traffic::{TrafficEnd, TrafficInfo};
 use forja_math::Vec2;
 
-use crate::adapter::{SegmentIn, SignIn, SignRule, SignUse, apply_signal_heads, build_graph};
-use crate::spec::{KMH, LaneSpec, ParkingSpec, RoadGraphSpec, RoadSource};
+use crate::adapter::{SegmentIn, SignIn, SignRule, SignUse, apply_signal_heads, apply_signs, build_graph};
+use crate::spec::{Control, EndSpec, KMH, LaneSpec, NodeSpec, ParkingSpec, RoadGraphSpec, RoadSource, StreetSpec};
 
 /// The road graph and what was bound to what.
 pub struct CityRoads {
@@ -32,8 +32,63 @@ pub fn rule(kind: SignKind) -> SignRule {
     }
 }
 
+/// The road graph a generator described with its own topology: its
+/// junctions and the streets between them as given (curved centrelines
+/// included), zebras and stop lines where it painted them.
+fn given_graph(info: &TrafficInfo) -> RoadGraphSpec {
+    let streets = info
+        .streets
+        .iter()
+        .map(|s| {
+            let nodes = s.nodes.expect("topology");
+            let given = |e: usize| s.ends.map_or(TrafficEnd { crosswalk: s.crosswalk, stop_line: s.stop_line }, |x| x[e]);
+            let end = |e: usize| EndSpec {
+                control: Control::None,
+                crosswalk: given(e).crosswalk,
+                crosswalk_width: 4.0,
+                stop_line: given(e).stop_line,
+                ahead_only: false,
+                median_open: s.median_half > 0.0 && info.median_openings.iter().any(|o| o.distance(info.nodes[nodes[e]]) < 12.0),
+            };
+            StreetSpec {
+                nodes,
+                points: s.centreline(),
+                road_half: s.road_half,
+                sidewalk: s.sidewalk,
+                median_half: s.median_half,
+                lanes: s.lanes.iter().map(|l| LaneSpec { offset: l.offset, forward: l.forward, width: l.width }).collect(),
+                parking: s.parking.iter().map(|&offset| ParkingSpec { offset, allowed: true }).collect(),
+                speed_limit: s.speed_kmh * KMH,
+                ends: [end(0), end(1)],
+            }
+        })
+        .collect();
+    RoadGraphSpec { nodes: info.nodes.iter().map(|&pos| NodeSpec { pos, signal_offset: 0.0 }).collect(), streets, ..Default::default() }
+}
+
 pub fn roads(info: &TrafficInfo) -> CityRoads {
-    let segs: Vec<SegmentIn> = info
+    let signs: Vec<SignIn> = info.signs.iter().map(|s| SignIn { rule: rule(s.kind), pos: s.pos, facing: s.facing }).collect();
+    let (mut spec, uses) = if info.has_topology() {
+        let mut spec = given_graph(info);
+        let uses = apply_signs(&mut spec, &signs);
+        (spec, uses)
+    } else {
+        build_graph(&soup(info), &signs)
+    };
+    let heads: Vec<(Vec2, Vec2)> = info.signals.iter().map(|p| (p.pos, p.facing)).collect();
+    apply_signal_heads(&mut spec, &heads);
+    // A green wave along z at about 50 km/h.
+    for n in &mut spec.nodes {
+        n.signal_offset = n.pos.y / 13.9 + n.pos.x.abs() / 40.0;
+    }
+    spec.plazas = info.plazas.clone();
+    spec.benches = info.benches.clone();
+    CityRoads { spec, heads, signs: uses }
+}
+
+/// The streets as straight pieces for [`build_graph`].
+fn soup(info: &TrafficInfo) -> Vec<SegmentIn> {
+    info
         .streets
         .iter()
         .map(|s| SegmentIn {
@@ -50,18 +105,7 @@ pub fn roads(info: &TrafficInfo) -> CityRoads {
             stop_line: s.stop_line,
             median_openings: if s.median_half > 0.0 { info.median_openings.clone() } else { Vec::new() },
         })
-        .collect();
-    let signs: Vec<SignIn> = info.signs.iter().map(|s| SignIn { rule: rule(s.kind), pos: s.pos, facing: s.facing }).collect();
-    let (mut spec, uses) = build_graph(&segs, &signs);
-    let heads: Vec<(Vec2, Vec2)> = info.signals.iter().map(|p| (p.pos, p.facing)).collect();
-    apply_signal_heads(&mut spec, &heads);
-    // A green wave along the boulevard (z) at about 50 km/h.
-    for n in &mut spec.nodes {
-        n.signal_offset = n.pos.y / 13.9 + n.pos.x.abs() / 40.0;
-    }
-    spec.plazas = info.plazas.clone();
-    spec.benches = info.benches.clone();
-    CityRoads { spec, heads, signs: uses }
+        .collect()
 }
 
 impl RoadSource for TrafficInfo {

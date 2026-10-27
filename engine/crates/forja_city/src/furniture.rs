@@ -344,3 +344,79 @@ mod tests {
         assert!(lo.x < 0.05 && hi.x > 0.95 && lo.y < 0.05 && hi.y > 0.95, "{lo} {hi}");
     }
 }
+
+// ------------------------------------------------------------ plazas and alleys
+
+/// Dense low planting with red and white flowers in a disc of radius `r`
+/// around `c`, standing on `y`.
+pub fn flower_bed(p: &mut P, c: Vec2, r: f32, y: f32, seed: u64) {
+    let mut rng = crate::geom::Rng::new(seed);
+    let n = (r * r * 5.0) as i32;
+    {
+        let leaves = p.get(Mat::Leaves);
+        for _ in 0..n {
+            let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
+            let s = rng.range(0.14, 0.24);
+            leaves.lathe(v(q.x, y, q.y), &[(0.0, 0.0), (s, s * 0.4), (s * 0.8, s * 1.1), (0.0, s * 1.4)], 5);
+        }
+    }
+    let reds = p.get(Mat::Flowers(hex(0xd31f2a)));
+    for _ in 0..n * 3 {
+        let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
+        let h = y + rng.range(0.2, 0.34);
+        reds.aabox(v(q.x - 0.035, h, q.y - 0.035), v(q.x + 0.035, h + 0.05, q.y + 0.035), 1.0);
+    }
+}
+
+/// Formal garden parterre of half size `s` with a statue on a granite
+/// plinth (Madrid squares). Origin at the centre on the paving.
+pub fn parterre(s: f32) -> P {
+    let mut p = P::new();
+    p.get(Mat::Granite).aabox(v(-s - 0.3, 0.0, -s - 0.3), v(s + 0.3, 0.3, s + 0.3), 1.5);
+    p.get(Mat::Grass).polygon(&[Vec2::new(-s, -s), Vec2::new(s, -s), Vec2::new(s, s), Vec2::new(-s, s)], 0.31, true, 3.0);
+    for q in 0..4u64 {
+        let c = Vec2::new(if q & 1 == 0 { -1.0 } else { 1.0 }, if q & 2 == 0 { -1.0 } else { 1.0 }) * s * 0.5;
+        flower_bed(&mut p, c, (s * 0.25).min(2.2), 0.31, 11 + q);
+    }
+    p.get(Mat::Granite).aabox(v(-1.0, 0.3, -1.0), v(1.0, 2.45, 1.0), 1.5);
+    p.get(Mat::Galvanized).lathe(v(0.0, 2.45, 0.0), &[(0.0, 0.0), (0.55, 0.0), (0.35, 0.4), (0.3, 1.4), (0.42, 1.7), (0.25, 2.1), (0.2, 2.4), (0.0, 2.5)], 12);
+    p
+}
+
+/// A cable strung across an alley between two facades, `span` metres
+/// along X, origin at its middle: a hanging lantern, or washing on a line.
+pub fn catenary(span: f32, laundry: bool, variant: u8) -> P {
+    let mut p = P::new();
+    let sag = (span * 0.06).clamp(0.08, 0.3);
+    let y = |x: f32| -sag * (1.0 - (2.0 * x / span).powi(2));
+    let n = 8;
+    for i in 0..n {
+        let (x0, x1) = (-span * 0.5 + span * i as f32 / n as f32, -span * 0.5 + span * (i + 1) as f32 / n as f32);
+        p.get(Mat::Iron).beam(v(x0, y(x0), 0.0), v(x1, y(x1), 0.0), Vec3::Z, 0.012, 0.012, 1.0);
+    }
+    for x in [-span * 0.5, span * 0.5] {
+        p.get(Mat::Iron).aabox(v(x - 0.04, -0.06, -0.04), v(x + 0.04, 0.06, 0.04), 1.0);
+    }
+    if !laundry {
+        p.get(Mat::Iron).beam(v(0.0, y(0.0), 0.0), v(0.0, y(0.0) - 0.35, 0.0), Vec3::X, 0.015, 0.015, 1.0);
+        modules::lantern(&mut p, v(0.0, y(0.0) - 0.9, 0.0), 0.9, true);
+        return p;
+    }
+    // Shirts, sheets and towels in Mediterranean colours.
+    let colours = [hex(0xf4f1ea), hex(0x3b6fb6), hex(0xd8553a), hex(0xf2c94c), hex(0x7bb661), hex(0xe9a7b8), hex(0xffffff)];
+    let mut rng = crate::geom::Rng::new(variant as u64 * 7 + 3);
+    let mut x = -span * 0.5 + 0.4;
+    while x < span * 0.5 - 0.6 {
+        let w = rng.range(0.35, 0.9);
+        let h = rng.range(0.4, 0.8);
+        let c = colours[rng.below(colours.len())];
+        let (a, b) = (x, (x + w).min(span * 0.5 - 0.3));
+        let (ya, yb) = (y(a), y(b));
+        let m = Mat::Plastic(c);
+        let cloth = p.get(m);
+        cloth.quad(v(a, ya - h, 0.0), v(b, yb - h, 0.0), v(b, yb, 0.0), v(a, ya, 0.0), 1.0);
+        cloth.quad(v(b, yb - h, 0.0), v(a, ya - h, 0.0), v(a, ya, 0.0), v(b, yb, 0.0), 1.0);
+        x = b + rng.range(0.1, 0.35);
+    }
+    p
+}

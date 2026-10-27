@@ -1000,6 +1000,7 @@ dependencies = [
  "forja_assets",
  "forja_math",
  "i_overlay",
+ "i_triangle",
  "log",
  "meshopt",
  "rayon",
@@ -1115,6 +1116,7 @@ dependencies = [
  "image",
  "log",
  "quick-xml 0.38.4",
+ "serde_json",
 ]
 
 [[package]]
@@ -1451,6 +1453,17 @@ name = "i_tree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "048af31de955890c62a8506fec511335a5089e91e1c516537add16f96c507d84"
+
+[[package]]
+name = "i_triangle"
+version = "0.50.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e474d42008ff6b8d0e213cbee6c8d9766981d25175771499252a6b906a3f037"
+dependencies = [
+ "i_key_sort",
+ "i_overlay",
+ "i_tree",
+]
 
 [[package]]
 name = "icu_collections"

@@ -18,15 +18,21 @@ use crate::builder::{MeshBuilder, signed_area};
 use crate::library::ContentLibrary;
 use crate::{SpawnKind, SpawnPoint, WorldDescription, WorldError, WorldSource};
 
+/// Parsed OpenStreetMap data. Input is untrusted: parsers reject
+/// non-finite coordinates, cap element counts and never panic.
 #[derive(Clone, Debug, Default)]
 pub struct OsmData {
     pub nodes: HashMap<i64, (f64, f64)>,
+    /// Tags of the nodes that have any (traffic signals, dead ends).
+    pub node_tags: HashMap<i64, HashMap<String, String>>,
     pub ways: Vec<OsmWay>,
+    pub relations: Vec<OsmRelation>,
     pub bounds: Option<[f64; 4]>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct OsmWay {
+    pub id: i64,
     pub refs: Vec<i64>,
     pub tags: HashMap<String, String>,
 }
@@ -37,54 +43,269 @@ impl OsmWay {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MemberKind {
+    Node,
+    Way,
+    Relation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Member {
+    pub kind: MemberKind,
+    pub id: i64,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct OsmRelation {
+    pub id: i64,
+    pub members: Vec<Member>,
+    pub tags: HashMap<String, String>,
+}
+
+impl OsmRelation {
+    pub fn tag(&self, k: &str) -> Option<&str> {
+        self.tags.get(k).map(String::as_str)
+    }
+}
+
+/// Most elements an extract may hold (a city tile has tens of thousands).
+pub const MAX_ELEMENTS: usize = 4_000_000;
+/// Most nodes in one way and members in one relation.
+pub const MAX_REFS: usize = 100_000;
+
+fn valid_coord(lon: f64, lat: f64) -> bool {
+    lon.is_finite() && lat.is_finite() && (-180.0..=180.0).contains(&lon) && (-90.0..=90.0).contains(&lat)
+}
+
+impl OsmData {
+    fn count(&self) -> usize {
+        self.nodes.len() + self.ways.len() + self.relations.len()
+    }
+
+    /// Bounds, given or from the nodes.
+    pub fn bbox(&self) -> Option<[f64; 4]> {
+        if let Some(b) = self.bounds {
+            return Some(b);
+        }
+        let (mut a, mut b, mut c, mut d) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        for (lon, lat) in self.nodes.values() {
+            a = a.min(*lon);
+            b = b.min(*lat);
+            c = c.max(*lon);
+            d = d.max(*lat);
+        }
+        (a <= c && b <= d).then_some([a, b, c, d])
+    }
+}
+
+/// Equirectangular projection around the bounding-box centre: metres, +X
+/// east, -Z north (accurate to centimetres at city scale).
+#[derive(Clone, Copy, Debug)]
+pub struct Projection {
+    pub lon0: f64,
+    pub lat0: f64,
+    kx: f64,
+    ky: f64,
+}
+
+impl Projection {
+    pub fn new(bbox: [f64; 4]) -> Self {
+        let (lon0, lat0) = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
+        const R: f64 = 6_378_137.0;
+        Projection { lon0, lat0, kx: R * lat0.to_radians().cos() * std::f64::consts::PI / 180.0, ky: R * std::f64::consts::PI / 180.0 }
+    }
+
+    pub fn point(&self, lon: f64, lat: f64) -> Vec2 {
+        Vec2::new(((lon - self.lon0) * self.kx) as f32, (-(lat - self.lat0) * self.ky) as f32)
+    }
+}
+
 pub fn parse_osm(xml: &str) -> Result<OsmData, WorldError> {
+    enum Ctx {
+        None,
+        Node(i64),
+        Way(OsmWay),
+        Rel(OsmRelation),
+    }
     let mut reader = quick_xml::Reader::from_str(xml);
     let mut data = OsmData::default();
-    let mut current: Option<OsmWay> = None;
+    let mut ctx = Ctx::None;
     let attr = |e: &quick_xml::events::BytesStart, key: &[u8]| -> Option<String> {
         e.attributes().flatten().find(|a| a.key.as_ref() == key).and_then(|a| a.unescape_value().ok()).map(|v| v.into_owned())
     };
     loop {
-        match reader.read_event() {
+        if data.count() > MAX_ELEMENTS {
+            return Err(WorldError::Parse("osm: too many elements".into()));
+        }
+        let ev = reader.read_event();
+        let empty = matches!(ev, Ok(Event::Empty(_)));
+        match ev {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match e.name().as_ref() {
                 b"bounds" => {
                     let g = |k: &[u8]| attr(&e, k).and_then(|v| v.parse::<f64>().ok());
                     if let (Some(a), Some(b), Some(c), Some(d)) = (g(b"minlon"), g(b"minlat"), g(b"maxlon"), g(b"maxlat")) {
-                        data.bounds = Some([a, b, c, d]);
+                        if valid_coord(a, b) && valid_coord(c, d) && a < c && b < d {
+                            data.bounds = Some([a, b, c, d]);
+                        }
                     }
                 }
                 b"node" => {
                     let id = attr(&e, b"id").and_then(|v| v.parse().ok());
-                    let lat = attr(&e, b"lat").and_then(|v| v.parse().ok());
-                    let lon = attr(&e, b"lon").and_then(|v| v.parse().ok());
+                    let lat = attr(&e, b"lat").and_then(|v| v.parse::<f64>().ok());
+                    let lon = attr(&e, b"lon").and_then(|v| v.parse::<f64>().ok());
                     if let (Some(id), Some(lat), Some(lon)) = (id, lat, lon) {
-                        data.nodes.insert(id, (lon, lat));
+                        if valid_coord(lon, lat) {
+                            data.nodes.insert(id, (lon, lat));
+                            if !empty {
+                                ctx = Ctx::Node(id);
+                            }
+                        }
                     }
                 }
-                b"way" => current = Some(OsmWay::default()),
+                b"way" => {
+                    let w = OsmWay { id: attr(&e, b"id").and_then(|v| v.parse().ok()).unwrap_or(0), ..Default::default() };
+                    if empty {
+                        data.ways.push(w);
+                    } else {
+                        ctx = Ctx::Way(w);
+                    }
+                }
+                b"relation" => {
+                    let r = OsmRelation { id: attr(&e, b"id").and_then(|v| v.parse().ok()).unwrap_or(0), ..Default::default() };
+                    if empty {
+                        data.relations.push(r);
+                    } else {
+                        ctx = Ctx::Rel(r);
+                    }
+                }
                 b"nd" => {
-                    if let (Some(w), Some(r)) = (current.as_mut(), attr(&e, b"ref").and_then(|v| v.parse().ok())) {
-                        w.refs.push(r);
+                    if let (Ctx::Way(w), Some(r)) = (&mut ctx, attr(&e, b"ref").and_then(|v| v.parse().ok())) {
+                        if w.refs.len() < MAX_REFS {
+                            w.refs.push(r);
+                        }
+                    }
+                }
+                b"member" => {
+                    if let Ctx::Rel(r) = &mut ctx {
+                        let kind = match attr(&e, b"type").as_deref() {
+                            Some("node") => Some(MemberKind::Node),
+                            Some("way") => Some(MemberKind::Way),
+                            Some("relation") => Some(MemberKind::Relation),
+                            _ => None,
+                        };
+                        if let (Some(kind), Some(id)) = (kind, attr(&e, b"ref").and_then(|v| v.parse().ok())) {
+                            if r.members.len() < MAX_REFS {
+                                r.members.push(Member { kind, id, role: attr(&e, b"role").unwrap_or_default() });
+                            }
+                        }
                     }
                 }
                 b"tag" => {
-                    if let (Some(w), Some(k), Some(v)) = (current.as_mut(), attr(&e, b"k"), attr(&e, b"v")) {
-                        w.tags.insert(k, v);
+                    if let (Some(k), Some(v)) = (attr(&e, b"k"), attr(&e, b"v")) {
+                        match &mut ctx {
+                            Ctx::Node(id) => {
+                                data.node_tags.entry(*id).or_default().insert(k, v);
+                            }
+                            Ctx::Way(w) => {
+                                w.tags.insert(k, v);
+                            }
+                            Ctx::Rel(r) => {
+                                r.tags.insert(k, v);
+                            }
+                            Ctx::None => {}
+                        }
                     }
                 }
                 _ => {}
             },
-            Ok(Event::End(e)) if e.name().as_ref() == b"way" => {
-                if let Some(w) = current.take() {
-                    data.ways.push(w);
-                }
-            }
+            Ok(Event::End(e)) => match e.name().as_ref() {
+                b"way" | b"relation" | b"node" => match std::mem::replace(&mut ctx, Ctx::None) {
+                    Ctx::Way(w) => data.ways.push(w),
+                    Ctx::Rel(r) => data.relations.push(r),
+                    _ => {}
+                },
+                _ => {}
+            },
             Ok(Event::Eof) => break,
             Err(e) => return Err(WorldError::Parse(format!("osm xml at {}: {e}", reader.buffer_position()))),
             _ => {}
         }
     }
     Ok(data)
+}
+
+/// Parses the OSM API's `map.json` (`/api/0.6/map.json`).
+pub fn parse_osm_json(text: &str) -> Result<OsmData, WorldError> {
+    let v: serde_json::Value = serde_json::from_str(text).map_err(|e| WorldError::Parse(format!("osm json: {e}")))?;
+    let mut data = OsmData::default();
+    let tags = |e: &serde_json::Value| -> HashMap<String, String> {
+        e.get("tags").and_then(|t| t.as_object()).map(|o| o.iter().filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string()))).collect()).unwrap_or_default()
+    };
+    if let Some(b) = v.get("bounds") {
+        let g = |k: &str| b.get(k).and_then(|x| x.as_f64());
+        if let (Some(a), Some(bb), Some(c), Some(d)) = (g("minlon"), g("minlat"), g("maxlon"), g("maxlat")) {
+            if valid_coord(a, bb) && valid_coord(c, d) && a < c && bb < d {
+                data.bounds = Some([a, bb, c, d]);
+            }
+        }
+    }
+    let Some(elements) = v.get("elements").and_then(|e| e.as_array()) else {
+        return Err(WorldError::Parse("osm json: no elements".into()));
+    };
+    if elements.len() > MAX_ELEMENTS {
+        return Err(WorldError::Parse("osm json: too many elements".into()));
+    }
+    for e in elements {
+        let id = e.get("id").and_then(|x| x.as_i64()).unwrap_or(0);
+        match e.get("type").and_then(|t| t.as_str()) {
+            Some("node") => {
+                let (lat, lon) = (e.get("lat").and_then(|x| x.as_f64()), e.get("lon").and_then(|x| x.as_f64()));
+                if let (Some(lat), Some(lon)) = (lat, lon) {
+                    if valid_coord(lon, lat) {
+                        data.nodes.insert(id, (lon, lat));
+                        let t = tags(e);
+                        if !t.is_empty() {
+                            data.node_tags.insert(id, t);
+                        }
+                    }
+                }
+            }
+            Some("way") => {
+                let refs = e.get("nodes").and_then(|n| n.as_array()).map(|a| a.iter().take(MAX_REFS).filter_map(|x| x.as_i64()).collect()).unwrap_or_default();
+                data.ways.push(OsmWay { id, refs, tags: tags(e) });
+            }
+            Some("relation") => {
+                let members = e
+                    .get("members")
+                    .and_then(|m| m.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .take(MAX_REFS)
+                            .filter_map(|m| {
+                                let kind = match m.get("type")?.as_str()? {
+                                    "node" => MemberKind::Node,
+                                    "way" => MemberKind::Way,
+                                    "relation" => MemberKind::Relation,
+                                    _ => return None,
+                                };
+                                Some(Member { kind, id: m.get("ref")?.as_i64()?, role: m.get("role").and_then(|r| r.as_str()).unwrap_or("").to_string() })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                data.relations.push(OsmRelation { id, members, tags: tags(e) });
+            }
+            _ => {}
+        }
+    }
+    Ok(data)
+}
+
+/// Parses XML or JSON by content.
+pub fn parse_any(text: &str) -> Result<OsmData, WorldError> {
+    if text.trim_start().starts_with('{') { parse_osm_json(text) } else { parse_osm(text) }
 }
 
 /// Road half-width in meters by `highway` class.
@@ -150,16 +371,7 @@ impl OsmWorld {
     }
 
     pub fn build_with(data: &OsmData, lib: Option<&ContentLibrary>) -> Result<WorldDescription, WorldError> {
-        let [min_lon, min_lat, max_lon, max_lat] = data.bounds.unwrap_or_else(|| {
-            let (mut a, mut b, mut c, mut d) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-            for (lon, lat) in data.nodes.values() {
-                a = a.min(*lon);
-                b = b.min(*lat);
-                c = c.max(*lon);
-                d = d.max(*lat);
-            }
-            [a, b, c, d]
-        });
+        let [min_lon, min_lat, max_lon, max_lat] = data.bbox().ok_or_else(|| WorldError::Parse("osm: no nodes".into()))?;
         let (lon0, lat0) = ((min_lon + max_lon) * 0.5, (min_lat + max_lat) * 0.5);
         const R: f64 = 6_378_137.0;
         let kx = R * lat0.to_radians().cos() * std::f64::consts::PI / 180.0;
@@ -503,9 +715,9 @@ impl WorldSource for OsmWorld {
     }
 
     fn build(&self) -> Result<WorldDescription, WorldError> {
-        let xml = std::fs::read_to_string(&self.path).map_err(|e| WorldError::Io(format!("{}: {e}", self.path.display())))?;
+        let text = std::fs::read_to_string(&self.path).map_err(|e| WorldError::Io(format!("{}: {e}", self.path.display())))?;
         let lib = self.content.as_ref().map(|c| ContentLibrary::load(c));
-        Self::build_with(&parse_osm(&xml)?, lib.as_ref())
+        Self::build_with(&parse_any(&text)?, lib.as_ref())
     }
 }
 
