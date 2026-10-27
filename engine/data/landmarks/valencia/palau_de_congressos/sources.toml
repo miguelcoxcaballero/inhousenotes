@@ -18,6 +18,23 @@ catastro_built = { value = 1998, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=3552301&rc2=YJ2735D" }
 catastro_floor_area = { value = 18397.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=3552301&rc2=YJ2735D", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 25 parts" }
+roof_outline = { value = "OSM way 23761809", source = "https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0)", note = "lens-shaped roof edge traced by OSM matches the PNOA roof rim within ~1 m on the long sides; the PNOA rim at the S tip ends ~2-3 m short of the OSM tip (relief lean / nosing), OSM kept" }
+roof_length = { value = 168.0, unit = "m", source = "OSM way 23761809 tip to tip (-16.2, 82.41) -> (26.0, -80.25), checked on https://www.ign.es/wms-inspire/pnoa-ma (IGN PNOA orthophoto, CC BY 4.0)" }
+roof_axis_azimuth = { value = 14.5, unit = "deg grid", source = "OSM tips" }
+roof_width = { value = 73.3, unit = "m", source = "OSM outline: 42.5 m west + 30.8 m east of the tip-to-tip axis at s = 84 m", note = "asymmetric lens" }
+roof_top_s_tip = { value = 19.0, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR, GetFeatureInfo edificios-h30, CC BY 4.0)", note = "cells at s = 1-6 m: 18.8-19.0 m (porch tip, highest point)" }
+roof_top_n_tip = { value = 10.5, unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR, GetFeatureInfo edificios-h30, CC BY 4.0)", note = "cells at s = 152-166 m: 10.3-11.0 m" }
+roof_axis_profile = { value = "s 0: 18.8, 43: 17.3, 86: 15.2, 126: 12.7, 166: 10.4", unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR, GetFeatureInfo edificios-h30, CC BY 4.0)", note = "s = metres from the S tip along the axis" }
+roof_edge_mid = { value = "west 10.0, east 9.5", unit = "m", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR, GetFeatureInfo edificios-h30, CC BY 4.0)", note = "cells 1.5-2 m inside the edge at s = 86 m; the crown rises ~6 m above the long edges at mid-length (parabolic section)" }
+roof_surface_fit = { value = 0.25, unit = "m rms", source = "https://wms-mapa-lidar.idee.es/lidar (IGN PNOA-LiDAR, GetFeatureInfo edificios-h30, CC BY 4.0)", note = "247 roof cells, smooth surface h = edge(s) + crown(s)(1 - (t/w)^2) with 15 knots; LiDAR cell grid matches the OSM outline with ~0 m offset (1 of 102 edge cells misclassified at 0 m, 6-7 at +-2.7 m)" }
+roof_edge_detail = { value = "nosing r 0.45 m, fascia 1.6 m, soffit 1.6-2.6 m below the top", source = "photos 05, 08, 11, 12 (scale from the 2.6 m doors of photo 10)", note = "estimated" }
+west_overhang = { value = 4.6, unit = "m", source = "Catastro parts 11/22 (stone west wall) vs the OSM roof edge" }
+east_glazing_inset = { value = 2.2, unit = "m", source = "photos 03, 05, 08 (roof nosing beyond the louvres)", note = "estimate; Catastro part 2 runs out to the roof edge" }
+louvre_rhythm = { value = 3.4, unit = "m", source = "photo 10: two pairs of 0.9 m door leaves per bay between louvre posts", note = "1.4 m wide pivoting translucent louvres, 4 panels high, one per mullion post, ~55 deg to the facade" }
+entrance_block_height = { value = 8.5, unit = "m", source = "photo 02 camera solved on the roof silhouette (rms 6.7 px): an 8.5 m corner reprojects within 20 px of the block's top corner", note = "two storeys of windows; glazing above it up to the soffit" }
+porch_columns = { value = 6, source = "photos 02, 04 (apparent column heights against the soffit, solved cameras)", note = "positions +-3 m; columns r 0.45 m" }
+porch_depth = { value = 30, unit = "m", source = "Catastro part 24 (porch, 1 floor) between the SW entrance front and the S roof tip" }
+camera_exif = { value = "02/03/05/11: 27-28 mm eq (Nikon D3100 18 mm), 08: 63 mm, 10: 82 mm, 12: 48 mm, 04: 24 mm (Canon R6), 09: 38 mm (Pentax Optio 30), 01: 35 mm (IXUS 65)", source = "Commons file metadata (API imageinfo)" }
 
 [[photo]]
 file = "photos/01_Palau_del_congres.jpg"
@@ -28,8 +45,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S porch (from the SW entrance plaza, dusk 2007)"
 
 [[photo]]
 file = "photos/02_Palau_de_Congressos_de_Valencia_Pais_Valencia.jpg"
@@ -40,8 +57,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 863
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW (porch and entrance front, pool since removed)"
 
 [[photo]]
 file = "photos/03_Facana_est_del_palau_de_congressos_Valencia.jpg"
@@ -52,8 +69,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 876
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E (louvred foyer facade, looking N)"
 
 [[photo]]
 file = "photos/04_Valencia_Palacio_de_Congresos.jpg"
@@ -64,8 +81,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (porch, on the roof axis)"
 
 [[photo]]
 file = "photos/05_Facana_lateral_del_palau_de_congressos_de_Valencia.jpg"
@@ -76,8 +93,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 876
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E (louvred foyer facade, looking S)"
 
 [[photo]]
 file = "photos/06_Palacio_congresos_valencia_panoramica.jpg"
@@ -88,8 +105,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 760
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE aerial from the hotel (roof, porch, east facade)"
 
 [[photo]]
 file = "photos/07_Palacio_de_Congresos_de_Valencia.jpg"
@@ -100,8 +117,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE aerial from the hotel (same panorama, wider crop)"
 
 [[photo]]
 file = "photos/08_Lateral_del_palau_de_congressos_Valencia.jpg"
@@ -112,8 +129,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 876
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E (louvres, looking N along the facade)"
 
 [[photo]]
 file = "photos/09_Palau_de_Congressos_de_Valencia_2006.jpg"
@@ -124,8 +141,8 @@ license = "CC BY 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (porch and entrance front, 2006)"
 
 [[photo]]
 file = "photos/10_Palau_de_congressos_de_Valencia_portes.jpg"
@@ -136,8 +153,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 872
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E (foyer doors and louvre pivots, scale)"
 
 [[photo]]
 file = "photos/11_Palau_de_congressos_de_Valencia_coberta_i_pilars.jpg"
@@ -148,8 +165,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 2006
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (porch roof tip, soffit and columns)"
 
 [[photo]]
 file = "photos/catastro_3552301YJ2735D.jpg"
@@ -160,8 +177,20 @@ license = "Catastro open data (attribution required)"
 width = 2592
 height = 1944
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W/SW (porch from the avenue)"
+
+[[photo]]
+file = "photos/12_Palau_de_Congressos_de_Valencia_detall_de_la_coberta.jpg"
+title = "File:Palau de Congressos de València, detall de la coberta.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_Congressos_de_Val%C3%A8ncia%2C_detall_de_la_coberta.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 858
+exterior = true
+selected = true
+side = "S (porch roof edge: nosing, panelled fascia, soffit beams, column head)"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -201,3 +230,13 @@ notes = "selection method: wikidata"
 url = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=3552301&rc2=YJ2735D"
 title = "Catastro parcel 3552301YJ2735D"
 notes = "built=1998; use=4_3_publicServices; area=18397; area_in_outline=7798.6"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto WMS (CC BY 4.0)"
+notes = "roof outline and porch checked; bbox E 723336-723456, N 4374966-4375166"
+
+[[reference]]
+url = "https://wms-mapa-lidar.idee.es/lidar"
+title = "IGN PNOA-LiDAR WMS (CC BY 4.0)"
+notes = "GetFeatureInfo building heights (edificios-h30), 2.5 m cells: 331 cells sampled, 247 on the roof"
