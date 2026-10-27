@@ -21,6 +21,18 @@ catastro_built = { value = 1969, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "4_2_retail", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6215901&rc2=YJ2761E" }
 catastro_floor_area = { value = 7684.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6215901&rc2=YJ2761E", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
+plan_outline = { value = "roof edge = Catastro outline 6215901YJ2761E without its ground-floor entrance notches (checked on PNOA profiles: west edge t -29.15, south s 37.2, east t = 32.47 + 0.0771 (s - 10), north s -46.4 west lobe / -34.8 east part, in the hall frame s->az 149.75, t->az 59.75, origin local (0, 3)); OSM way 12403536 is the same shape shifted ~1.1 m east", source = "https://www.ign.es/wms-inspire/pnoa-ma (CC BY 4.0) + Catastro + OSM" }
+roof_size = { value = "66.4 m (south front, roof edge) x 83.6 m (west front, roof edge); trapezoid 61.6 m wide at s 10, 63.7 m along the south front", unit = "m", source = "PNOA 2024 brightness profiles across the roof edges (0.08 m/px) and Catastro outline" }
+eave_top = { value = 10.15, unit = "m", source = "constrained bundle adjustment (own solver, eye-height prior 1.6 m, 3D eave lines, corner points, 2 ground points) of photos 04, 08, 12 and the Catastro photo: 9.98-10.31 +-0.15" }
+fascia = { value = 0.20, unit = "m", source = "same bundle adjustment (0.20-0.22 +-0.02)" }
+overhang = { value = 1.88, unit = "m", source = "same bundle adjustment (1.87-1.97 +-0.06); PNOA white roof rim 1.6-2.2 m wide" }
+soffit_at_wall = { value = 9.75, unit = "m", source = "same bundle adjustment (9.60-9.92)" }
+fins = { value = "vertical concrete blades 3.5-8.75 m, groups of 6 at 0.96 m pitch, 0.7 m piers, period 5.85 m; corner solid ~1.25 m", unit = "m", source = "bundle adjustment (fin top 8.65-8.95, bottom 3.45-3.58) and rays of the solved cameras of photos 08 and 12 intersected with the fin-wall planes" }
+fin_colours = { value = "west blue gradient (2010-2025), south red/orange/yellow, east greens (2015), north earth tones/pinks (2018-2022) with the MERCAT DE RUSSAFA lettering (also on the west and east fronts near the north end)", source = "photos 01-12, C" }
+ground_floor = { value = "ring of shops on the OSM/Catastro ground outline (entrance notches ~2 m deep at s -29.2/-24.9, -2.6/6.0, 28.5/32.5 west; -2.7/6.0, 28.3/32.7 east; t -0.2/5.9 south), ledge top 3.45 m, entrance canopies ~3.95 m", source = "Catastro parts, photos 07, 11, 12 (canopy height estimated)" }
+lantern = { value = "raised central roof t -13.1..18.4, s -23.1..32.5 (31.5 x 55.6 m), 2.2 m above the main roof", unit = "m", source = "PNOA rim and 1.1 m shadow on the main roof; sun tan 1.95 from the 5.2 m shadow of the 10.15 m NW eave" }
+brick_block = { value = "Catastro -I+IV block at the NE corner; raised part s -31.5..-22.8, t 7.3..27.0, top ~15 m", unit = "m", source = "PNOA shadow 8.6 m (-> 16.8 m) and Catastro photo with solved camera (14.8-15.6 m); 4 floors in Catastro" }
+rooftop_vents = { value = "two rows of 5 boxes at t -16 and +20, s -19.6/-9.2/1.2/10.0/20.4", source = "PNOA" }
 
 [[photo]]
 file = "photos/01_Russafa_Mercat_png.jpg"
@@ -31,8 +43,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 486
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw (west + south)"
 
 [[photo]]
 file = "photos/02_Mercat_de_Russafa_de_Valencia.jpg"
@@ -45,8 +57,8 @@ height = 1707
 camera = [-6.66, 42.96]
 heading = 356.6
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "west"
 
 [[photo]]
 file = "photos/03_Mercat_de_Russafa_i_campanar.jpg"
@@ -57,8 +69,8 @@ license = "Public domain"
 width = 1280
 height = 864
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "west"
 
 [[photo]]
 file = "photos/04_Mercat_de_Russafa.jpg"
@@ -69,8 +81,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw (west + south)"
 
 [[photo]]
 file = "photos/05_Fachada_mercado_de_Ruzafa.jpg"
@@ -81,8 +93,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "north"
 
 [[photo]]
 file = "photos/06_MERCAT_RUSAFA_52582980402.jpg"
@@ -93,8 +105,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "north"
 
 [[photo]]
 file = "photos/07_Mercat_de_Russafa_lateral_taronja.jpg"
@@ -105,8 +117,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 933
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "south"
 
 [[photo]]
 file = "photos/08_Mercat_de_Russafa_Valencia.jpg"
@@ -118,8 +130,8 @@ width = 1280
 height = 960
 camera = [-40.55, 13.07]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se (south + east)"
 
 [[photo]]
 file = "photos/09_VLC_20140501_16_14100252240.jpg"
@@ -130,8 +142,8 @@ license = "CC BY-SA 2.0"
 width = 1280
 height = 850
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "west"
 
 [[photo]]
 file = "photos/10_Campanar_i_mercat_Russafa.jpg"
@@ -142,8 +154,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 945
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "west"
 
 [[photo]]
 file = "photos/11_Mercado_Ruzafa.jpg"
@@ -154,8 +166,8 @@ license = "CC0"
 width = 960
 height = 720
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se (south + east)"
 
 [[photo]]
 file = "photos/12_Mercat_de_Russafa_cantonada.jpg"
@@ -166,8 +178,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 856
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se (south + east)"
 
 [[photo]]
 file = "photos/catastro_6215901YJ2761E.jpg"
@@ -178,8 +190,8 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "east"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -189,6 +201,15 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [726063.73, 4371271.66, 726220.61, 4371423.45], 0.080 m/px, north up; roman numerals = floors above ground; parcels 6215901YJ2761E"
+
+[[plan]]
+file = "plans/pnoa_ortho.jpg"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 726076-726206, N 4371286-4371416, 1625 px (0.08 m/px)"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=726076.06,4371285.56,726206.06,4371415.56&WIDTH=1625&HEIGHT=1625&FORMAT=image/jpeg"
+author = "Instituto Geografico Nacional (PNOA)"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "roof outline, lantern rim, rooftop vents and shadow-ratio heights measured on this image"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q59429024"
