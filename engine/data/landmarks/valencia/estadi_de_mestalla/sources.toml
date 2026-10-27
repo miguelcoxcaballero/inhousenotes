@@ -20,6 +20,20 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 36516.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=7329201&rc2=YJ2772G", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 17 parts" }
 
+pitch = { value = "105 x 68 m", source = "PNOA orthophoto (IGN, CC BY 4.0) rectified on the stadium axis: goal lines 104.4-104.8 m apart, penalty boxes 40.5 x 16.4 m; width 68 m from the east touchline and box centre", note = "centre at u 0.95, v 0.2 of the stadium frame (axis az 9.6 deg)" }
+stadium_axis = { value = "long axis az 9.6 deg (north end turned east)", source = "OSM relation 7886308 inner ring (both long sides 9.55-9.62 deg)" }
+inner_edge = { value = "78.6 x 116.4 m, corner radius 5.5 m", source = "OSM relation 7886308 inner ring; stands begin 4.3-5.7 m from the touch and goal lines" }
+outer_ground = { value = "north/south |v| 94.7 m, east u 89.3 m, west facade u -71 m from the bowl centre", source = "OSM relation 7886308 outer ring (matches the offset of the inner ring by 36.5 m at the rounded corners); west facade also Catastro 7329201YJ2772G" }
+upper_tier_plan = { value = "front wall |v| 76 / u 69, top rail |v| 99.6 / u 89.4", source = "OSM way 1239685453 (bleachers); confirmed on the PNOA with a relief lean of 0.29 m/m east and ~0.2 m/m south (roof eave and tier edges)" }
+south_stand_heights = { value = "tier-2 front 7.8 m, tier-3 front 18.9 m, top rail 38.3 m", source = "constrained camera solve of photo 12 (Anidae 2023) from 13 pitch markings, rms 2.2 px; rays near horizontal, +-0.5 m" }
+east_stand_heights = { value = "tier-3 front 27.8 m at u 69, top rail 46.5 m at u 89.4", source = "same solve of photo 12 (+-1.4 m); consistent with the PNOA lean (77 -> 69, 102.5 -> 89)", note = "OSM height=40 is too low" }
+north_stand_heights = { value = "outer wall top 33.5 m, top rail 41 +- 3.6 m at v -101", source = "constrained solve of photo 03 (EXIF 32 mm-eq, eye 1.4 m, 9 points, rms 4.3 px); photo 20 gives 37.6 +- 5 m; modelled like the south end (38.3 m rail, 39.4 m parapet)" }
+tribuna_facade = { value = "gallery slabs 5.1, 8.3, 11.7, 15.3 m; lattice 15.6-21.2 m; top 23.5 m; 27 bays of ~3.9 m", source = "photo 05 scaled by the 3.8 m Valencia CF coach and the eye-level horizon (rows of slabs, lattice, eave)" }
+tribuna_roof = { value = "steel gabled roof u -76.7 .. -36.3 (40.4 m deep), eaves 25 m, ridge ~31.5 m", source = "OSM way 1122832534; PNOA roof edges -69.5/-29 corrected for lean; photo 12 solve gives the front eave at 25.2 m; gable from photo 14" }
+towers = { value = "SW ring pavilion r 10.6 m (~11 m high), NE glazed stair tower r 11.2 m (~31 m), SE tower r 13.1 m (~34 m)", source = "circles of OSM relation 7886308; heights estimated from photos 04, 14, 11, 16, 18 relative to the stands" }
+gol_gran = { value = "south end (top tier of the south stand)", source = "ticket listings (koobit.com 'Gol Gran' = top tier of the south stand); uncertain", note = "the two ends are modelled with the same section" }
+steepest_tier = { value = "upper tiers 34-40 deg", source = "es.wikipedia (34-35 deg) and the measured sections" }
+
 [[photo]]
 file = "photos/01_Mestalla_panoramio_1.jpg"
 title = "File:Mestalla - panoramio (1).jpg"
@@ -30,8 +44,8 @@ width = 1280
 height = 853
 camera = [-94.09, 64.01]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n (north-west block from the north, geotag wrong)"
 
 [[photo]]
 file = "photos/02_Camp_de_Mestalla_2023.jpg"
@@ -43,8 +57,8 @@ width = 1280
 height = 961
 camera = [-101.57, -12.32]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/03_Estadi_del_Mestalla_Valencia.jpg"
@@ -55,8 +69,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n (north facade and west gable, gates N1-N6)"
 
 [[photo]]
 file = "photos/04_Cues_a_Mestalla_1.jpg"
@@ -67,8 +81,8 @@ license = "CC BY-SA 1.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/05_Mestalla_Placa_del_Valencia_C_F_01.jpg"
@@ -79,8 +93,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/06_Mestalla_con_autocares_del_Valencia_CF_y_FC_Barcelona_el_3_s.jpg"
@@ -91,8 +105,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/07_VCF_LlUE_febrer_2013_2.jpg"
@@ -115,8 +129,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 864
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/09_Estadio_Mestalla_2006.jpg"
@@ -127,8 +141,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "nw"
 
 [[photo]]
 file = "photos/10_MestallaValencia2024.jpg"
@@ -139,8 +153,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/11_Fachada_exterior_del_Mestalla_antes_del_partido_Valencia_Bar.jpg"
@@ -151,8 +165,118 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e (night)"
+
+[[photo]]
+file = "photos/12_Mestalla_antes_del_partido_Valencia_Barcelona_2023.jpg"
+title = "File:Mestalla antes del partido Valencia-Barcelona LaLiga 2023-2024.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_antes_del_partido_Valencia-Barcelona_LaLiga_2023-2024.jpg"
+author = "Anidae"
+license = "CC BY-SA 4.0"
+exterior = false
+selected = true
+side = "interior from the north upper tier (calibration)"
+
+[[photo]]
+file = "photos/13_Mestalla_03.jpg"
+title = "File:Mestalla 03.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_03.JPG"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+exterior = true
+selected = true
+side = "nw"
+
+[[photo]]
+file = "photos/14_Mestalla_panoramio_4.jpg"
+title = "File:Mestalla - panoramio (4).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_-_panoramio_(4).jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+exterior = true
+selected = true
+side = "sw"
+
+[[photo]]
+file = "photos/15_Lobo_Diarte_Estadi_de_Mestalla.jpg"
+title = "File:Lobo Diarte - Estadi de Mestalla.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Lobo_Diarte_-_Estadi_de_Mestalla.jpg"
+author = "Francesc Fort"
+license = "CC BY-SA 4.0"
+exterior = true
+selected = true
+side = "nw"
+
+[[photo]]
+file = "photos/16_Mestalla5.jpg"
+title = "File:Mestalla5.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla5.jpg"
+author = "Pepito"
+license = "CC BY-SA 3.0"
+exterior = true
+selected = true
+side = "e (stair tower)"
+
+[[photo]]
+file = "photos/17_Mestalla_pintant_se_2014_11.jpg"
+title = "File:Mestalla pintant-se (2014) - 11.jpeg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_pintant-se_(2014)_-_11.jpeg"
+author = "Coentor"
+license = "CC BY-SA 3.0"
+exterior = true
+selected = true
+side = "e"
+
+[[photo]]
+file = "photos/18_Mestalla_pintant_se_2014_2.jpg"
+title = "File:Mestalla pintant-se (2014) - 2.jpeg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_pintant-se_(2014)_-_2.jpeg"
+author = "Coentor"
+license = "CC BY-SA 3.0"
+exterior = true
+selected = true
+side = "se"
+
+[[photo]]
+file = "photos/19_Mestalla_panoramio_10.jpg"
+title = "File:Mestalla - panoramio (10).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_-_panoramio_(10).jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+exterior = false
+selected = true
+side = "interior: east stand"
+
+[[photo]]
+file = "photos/20_Mestalla_panoramio_9.jpg"
+title = "File:Mestalla - panoramio (9).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_-_panoramio_(9).jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+exterior = false
+selected = true
+side = "interior: north stand"
+
+[[photo]]
+file = "photos/21_Mestalla_panoramio_5.jpg"
+title = "File:Mestalla - panoramio (5).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_-_panoramio_(5).jpg"
+author = "Mister No"
+license = "CC BY 3.0"
+exterior = false
+selected = true
+side = "interior: south stand"
+
+[[photo]]
+file = "photos/22_Mestalla_mar.jpg"
+title = "File:Mestalla mar.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Mestalla_mar.jpg"
+author = "Felivet"
+license = "Public domain"
+exterior = true
+selected = true
+side = "w (distant)"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -217,3 +341,13 @@ notes = "area=0; area_in_outline=72.6"
 url = "https://www.valenciacf.com/es/club/facilities/mestalla"
 title = "Official website"
 notes = "Wikidata P856"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto (WMS, CC BY 4.0)"
+notes = "fetched 0.1 m/px over the stadium; used for the pitch lines and the lean-corrected tier edges"
+
+[[reference]]
+url = "https://stadiumdb.com/stadiums/esp/estadio_mestalla"
+title = "StadiumDB: Estadio de Mestalla"
+notes = "west main stand is the only roofed stand (gabled roof); east stand three tiers, slightly higher"
