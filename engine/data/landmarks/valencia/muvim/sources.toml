@@ -24,10 +24,10 @@ catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", 
 outline_length = { value = 95.0, unit = "m", source = "OSM way 15218690 / PNOA orthophoto", note = "NNE-SSW extent of the plan, tower (north) to the south end of the wing" }
 west_wing_length = { value = 63.0, unit = "m", source = "OSM way 15218690, east face edge 33 (44.4 m) plus the knee", note = "exhibition wing along the Jardi de l'Antic Hospital" }
 tower_plan = { value = [9.15, 15.3], unit = "m", source = "Catastro BuildingPart 14 + OSM part 7 (north face width) checked on PNOA" }
-tower_height = { value = 23.3, unit = "m", source = "constrained camera solve, Catastro facade photo (Canon SX270 4.5 mm, 25 mm eq.) + Commons photo 06 (Nikon D3100 18 mm): 23.3 / 22.6 m", note = "IGN LiDAR cells read 18.8-19.1 m over the tower; the photos show the tower about 6 m above the 17.4 m north block, so the photo value is used" }
-lantern_glass_bottom = { value = 15.7, unit = "m", source = "same camera solve (glass band 15.7-23.3 m on the north face)" }
+tower_height = { value = 19.4, unit = "m", source = "Catastro facade photo (Canon SX270, 25 mm eq., f = 1155 px) solved with the tower height and glass-band height free: 19.4 +- 0.2 m (rms 2.8 px; 19.25-19.49 for f = 1050-1250 px); photo 06 (Nikon D3100 18 mm, f = 1011 px) agrees (19.4); IGN PNOA-LiDAR 18.8-19.1 m over the whole tower", note = "review 2026-10: the earlier 23.3 m was an input of the previous solve, not a measurement" }
+lantern_glass_bottom = { value = 12.6, unit = "m", source = "same Catastro-photo solve (free unknown): 12.6 +- 0.1 m; photo 06 solve 12.8 m", note = "glass band 6.8 m = 0.35 of the tower height" }
 lantern_depth = { value = 8.0, unit = "m", source = "PNOA orthophoto: glazed roof over the north 8 m of the tower" }
-north_block_height = { value = 17.4, unit = "m", source = "IGN PNOA-LiDAR, median of 20 cells over OSM part 0" }
+north_block_height = { value = 17.4, unit = "m", source = "IGN PNOA-LiDAR, median of 20 cells over OSM part 0 (roof)", note = "parapet top 18.4 m: core corners project 21-28 px (about 1 m) above 17.4 m with the solved photo 06 camera; photo 04 solve gives 18.9 m at the plaza corner" }
 north_band_height = { value = 12.8, unit = "m", source = "IGN PNOA-LiDAR, median of 14 cells over OSM part 3 (north and north-west band)" }
 east_wing_height = { value = 16.5, unit = "m", source = "IGN PNOA-LiDAR, median of 12 cells over OSM part 2; skylight monitors to ~18 m" }
 west_wing_roof = { value = [17.0, 14.9], unit = "m", source = "IGN PNOA-LiDAR cells along OSM part 1: roof falls from 17.0 m at the knee to 14.9 m at the south end" }
@@ -37,6 +37,10 @@ canopy_height = { value = 4.25, unit = "m", source = "IGN PNOA-LiDAR, 17 cells o
 canopy_plan = { value = [25.0, 10.8], unit = "m", source = "PNOA orthophoto: free north edge 25 m at 15 deg, west end 10.8 m, reaching the north facade" }
 lidar_plan_offset = { value = [2.5, -1.5], unit = "m", source = "fit of 189 LiDAR cells against the OSM outline (x east, z south)", note = "the building:h30 layer returns nothing over the ground, so no street bias could be measured; the canopy and the Catastro-photo camera agree with the raw values" }
 
+plaza_glass = { value = [7.5, 9.0], unit = ["m", "deg"], source = "photo 04 (24 mm eq.) solved on the plaza corner of the north block: soffit of the concrete over the inclined glazing 7.5 +- 0.1 m; lean about 9 deg from the struts in photos 04 and 12", note = "glass bottom on the facade line, top 1.2 m back under the concrete" }
+passage_soffit = { value = 7.5, unit = "m", source = "photo 04: the passage soffit lines up with the 7.5 m head of the plaza glazing; photo 15: the frosted glass box reaches the soffit" }
+canopy_structure = { value = [3.1, 0.5, 0.3, 1.5], unit = "m", source = "photo 10: canopy depth about a third of the clear height; primary beams 0.5 m on two rows of columns, posts, secondary members 0.3 m at about 1.5 m (photos 03, 06, 10); LiDAR top 4.25 m", note = "values: soffit, primary depth, secondary depth, secondary spacing" }
+sign = { value = [8.8, 2.1, 13.3], unit = "m", source = "photos 04, 12, 15: perforated dark grey panel with silver serif letters MuVIM high on the passage front; bottom height from the photo 04 camera", note = "values: width, height, bottom height" }
 [[photo]]
 file = "photos/01_Museu_Valencia_de_la_Il_lustracio_i_de_la_Modernitat_Valenci.jpg"
 title = "File:Museu Valencià de la Il·lustració i de la Modernitat, València, País Valencià.JPG"
