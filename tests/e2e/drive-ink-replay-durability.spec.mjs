@@ -418,3 +418,69 @@ test('manual saving defers unregistered photo bytes after a partial merge until 
  expect(result.repaired).toEqual({ok:true,pending:false,photo:fixture.thirdPhoto,register:result.expected});
  expect(result.replayed).toEqual({seen:1,photo:fixture.thirdPhoto,register:result.expected});
 });
+
+test('Home keeps an unresolved photo checkpoint open and a stamped repair can exit and reopen offline',async({page,context})=>{
+ const api=fakeInkDrive();await setup(page,api);const fixture=await installTwoPagePhotoSource(page,api);
+ await page.evaluate(async({sourceId,thirdPhoto})=>{
+  const save=savePageToIndexedDb;
+  savePageToIndexedDb=async(index,...args)=>{
+   if(index===0){state.pages[1].backgroundImage=thirdPhoto;throw Error('Photo replaced before its causal field was stamped');}
+   return save(index,...args);
+  };
+  replayJournal.hint(sourceId);const source=replayJournal.sources.get(sourceId);
+  try{await replayJournal.readSource(sourceId,source);}finally{savePageToIndexedDb=save;}
+  queueSave=replayOriginalQueueSave;
+ },{sourceId:SOURCE,thirdPhoto:fixture.thirdPhoto});
+ await context.setOffline(true);
+ await page.locator('#btn-drive-home > svg').click();
+ await expect.poll(()=>page.evaluate(()=>getLocalSaveStatus().error)).not.toBe('');
+ await expect(page.locator('#loading-overlay')).not.toHaveClass(/visible/);
+ await expect(page.locator('#editor-view')).toBeVisible();
+ await expect(page.locator('#drive-home')).toBeHidden();
+ const blocked=await page.evaluate(async sourceId=>{
+  const key=getCollabPageFieldKey('second-photo','background'),meta=await loadFromIndexedDb();
+  const backup=JSON.parse(localStorage.getItem(DATA_STORAGE_KEY));
+  return {pending:hasPendingLocalSave(),photo:state.pages[1].backgroundImage,
+   register:getCollabFieldSnapshot().fields[key],storedRegister:meta.data.collabFields.fields[key],
+   backupRegister:backup.collabFields.fields[key],storedName:meta.data.collabFields.fields[COLLAB_DOC_NAME_KEY].value,
+   storedFirst:(await loadPageFromIndexedDb(0)).strokes.map(cloneStroke),
+   seen:replayJournal.seen.get(sourceId)||0};
+ },SOURCE);
+ expect(blocked).toEqual({pending:true,photo:fixture.thirdPhoto,register:fixture.register,
+  storedRegister:fixture.oldRegister,backupRegister:fixture.oldRegister,storedName:INITIAL_NAME,
+  storedFirst:[fixture.kept[0],fixture.remote],seen:0});
+ const register=await page.evaluate(()=>{
+  // The user resolves the pending background through the normal causal edit
+  // path. Home must accept this valid local photo without needing a peer retry.
+  noteCollabPageFieldChanged(state.pages[1],'background');markPageDirty(1);
+  return getCollabFieldSnapshot().fields[getCollabPageFieldKey('second-photo','background')];
+ });
+ await page.locator('#btn-drive-home > svg').click();
+ await expect(page.locator('#drive-home')).toBeVisible({timeout:3000});
+ await page.evaluate(async({id,name})=>{
+  await openDriveFile({id,name:`${name}.pdf`});InhouseDriveInk.stop();stopCollabPolling();
+ },{id:DOCUMENT,name:REMOTE_NAME});
+ await expect(page.locator('#editor-view')).toBeVisible();
+ const reopened=await page.evaluate(async()=>{
+  const doc=await InhouseOfflineStore.read('documents',InhouseOfflineLibrary.account(),state.driveFileId);
+  const key=getCollabPageFieldKey('second-photo','background');
+  const summarize=(pages,fields,name)=>({ids:pages.map(p=>p.pageId),strokes:pages.map(p=>p.strokes.map(cloneStroke)),
+   photo:pages[1].backgroundImage,register:fields.fields[key],name});
+  return {live:summarize(state.pages,getCollabFieldSnapshot(),state.exportName),
+   durable:summarize(await Promise.all(doc.snapshot.pages.map(unpackInkPageFromStorage)),
+    doc.snapshot.collabFields,doc.snapshot.exportName)};
+ });
+ const strokes=[[fixture.kept[0],fixture.remote],[fixture.kept[1]]];
+ const expected={ids:['replay-page','second-photo'],strokes,photo:fixture.thirdPhoto,register,name:REMOTE_NAME};
+ expect(reopened).toEqual({live:expected,durable:expected});
+ // Cached reopen shows the durable account snapshot immediately and migrates
+ // the session's numeric page store later. Finish that real migration before
+ // also checking the new session's compacted page and metadata stores.
+ expect(await page.evaluate(async()=>{
+  const outcome=await queueSave();
+  return {ok:outcome.ok,pending:hasPendingLocalSave(),migration:hasPendingLegacyPageMigration()};
+ })).toEqual({ok:true,pending:false,migration:false});
+ expect(await readTwoPagePhotoState(page)).toEqual({ids:['replay-page','second-photo'],strokes,storedStrokes:strokes,
+  photo:fixture.thirdPhoto,storedPhoto:fixture.thirdPhoto,register,storedRegister:register,
+  name:REMOTE_NAME,storedName:REMOTE_NAME});
+});

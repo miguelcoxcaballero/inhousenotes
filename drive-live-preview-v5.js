@@ -13,7 +13,7 @@
         constructor(host){
             super(host);this.paths=new Map();this.frame=0;this.sentFrame=0;
             this.fileId='';this.exists=false;this.frameTimer=null;this.lastFrameAt=0;
-            this.pollTimer=null;this.previewSources=new Map();this.nextList=0;this.retryAt=0;
+            this.pollTimer=null;this.pollAt=0;this.previewSources=new Map();this.nextList=0;this.retryAt=0;
             this.readCache=new Map();this.readCacheChars=0;
         }
         push(packet){
@@ -124,21 +124,33 @@
                 this.host.warning?.(error);
             }finally{this.writing=false;this.scheduleFrame();}
         }
-        hint(id){
-            if(typeof id!=='string'||!/^[\w-]{1,200}$/.test(id)||id===this.fileId)return;
-            const previous=this.previewSources.get(id);
-            if(previous){previous.activeUntil=Date.now()+5000;return;}
-            if(this.previewSources.size<128)this.previewSources.set(id,{next:0,frame:0,activeUntil:Date.now()+5000});
+        hint(id,active=true){
+            if(this.stopped||typeof id!=='string'||!/^[\w-]{1,200}$/.test(id)||id===this.fileId)return;
+            const now=Date.now(),previous=this.previewSources.get(id);
+            if(previous){
+                if(!active)return;
+                previous.activeUntil=now+5000;previous.wakeEpoch=(previous.wakeEpoch||0)+1;
+                previous.next=Math.max(previous.retryAt||0,Math.min(previous.next,now));
+                if(!previous.inFlight)this.schedulePoll(Math.max(0,previous.next-now));
+                return;
+            }
+            if(this.previewSources.size>=128)return;
+            // A newly discovered file gets one timely probe. Static listings
+            // cannot keep extending this initial priority or bypass failures.
+            this.previewSources.set(id,{next:0,retryAt:0,frame:0,activeUntil:now+5000,wakeEpoch:0});
             this.schedulePoll(0);
         }
         async discoverPreviews(){
             const q=`trashed=false and appProperties has { key='ihnKind' and value='${KIND}' } and appProperties has { key='ihnDoc' and value='${escape(this.docId)}' }`;
             const data=await(await this.request(`${API}?q=${encodeURIComponent(q)}&fields=files(id)&orderBy=modifiedTime%20desc&pageSize=30`)).json();
-            for(const file of data.files||[])this.hint(file.id);
+            for(const file of data.files||[])this.hint(file.id,false);
         }
         schedulePoll(delay=FRAME_MS){
-            if(this.stopped||!this.docId||this.pollTimer)return;
-            this.pollTimer=setTimeout(()=>{this.pollTimer=null;void this.pollFrames();},delay);
+            if(this.stopped||!this.docId)return;
+            const wait=Math.max(0,delay),at=Date.now()+wait;
+            if(this.pollTimer&&this.pollAt<=at)return;
+            clearTimeout(this.pollTimer);this.pollAt=at;
+            this.pollTimer=setTimeout(()=>{this.pollTimer=null;this.pollAt=0;void this.pollFrames();},wait);
         }
         forgetReadFrame(id){
             const cached=this.readCache.get(id);if(!cached)return;
@@ -159,16 +171,21 @@
                     ||now-cached.at>20000||cached.at>now+30000)this.forgetReadFrame(id);
         }
         async readPreview(id,source){
-            const now=Date.now();source.inFlight=true;source.next=now+2000;
+            const now=Date.now(),wakeEpoch=source.wakeEpoch||0;source.inFlight=true;source.next=now+2000;
             try{
                 const response=await this.request(`${API}/${id}?alt=media`,{headers:{'Cache-Control':'no-cache'},bufferResponse:true});
-                const raw=await response.text();if(this.stopped||raw.length>MAX_BYTES)return;
+                const raw=await response.text();if(this.stopped)return;
                 const receivedAt=Date.now(),cached=this.readCache.get(id);
+                // Invalid responses retain their ordinary cooldown even when
+                // another peer keeps announcing this file as active.
+                source.retryAt=receivedAt+2000;source.next=source.retryAt;
+                if(raw.length>MAX_BYTES)return;
                 // Only identical, already validated bytes can skip decoding.
                 // Keep timestamps live: repeated polls never refresh an old
                 // frame's age or extend its source's activity window.
                 if(cached?.source===source&&cached.docId===this.docId
                     &&cached.frame<=source.frame&&cached.raw===raw){
+                    source.retryAt=0;
                     if(receivedAt-cached.at>20000||cached.at>receivedAt+30000){
                         source.activeUntil=0;source.next=receivedAt+15000;this.forgetReadFrame(id);return;
                     }
@@ -179,6 +196,7 @@
                 const value=JSON.parse(raw);
                 if(value.v!==1||value.docId!==this.docId||value.actor===this.actor||!Number.isSafeInteger(value.frame)
                     ||!Array.isArray(value.packets)||value.packets.length>24||!Number.isFinite(value.at))return;
+                source.retryAt=0;
                 if(receivedAt-value.at>20000||value.at>receivedAt+30000){source.activeUntil=0;source.next=receivedAt+15000;this.forgetReadFrame(id);return;}
                 if(value.frame>source.frame){
                     for(const packet of value.packets){
@@ -191,8 +209,17 @@
                 // Install proof only after every preview callback succeeds.
                 // Bound retained strings across all sources, not just per file.
                 this.rememberReadFrame(id,source,raw,value);
-            }catch(_){source.next=Date.now()+3000;}
-            finally{source.inFlight=false;}
+            }catch(_){source.retryAt=Date.now()+3000;source.next=source.retryAt;}
+            finally{
+                source.inFlight=false;
+                // A fresh hint may arrive after this response was captured.
+                // Preserve one follow-up without another concurrent request
+                // or shortening a failed request's backoff.
+                if(!this.stopped&&this.previewSources.get(id)===source&&(source.wakeEpoch||0)!==wakeEpoch){
+                    source.next=Math.max(source.retryAt||0,Math.min(source.next,Date.now()));
+                    this.schedulePoll(Math.max(0,source.next-Date.now()));
+                }
+            }
         }
         async pollFrames(){
             if(this.stopped)return;
@@ -204,7 +231,7 @@
             }
             const sources=[...this.previewSources];
             const available=Math.max(0,4-sources.filter(([,source])=>source.inFlight).length);
-            const due=sources.filter(([id,source])=>id!==this.fileId&&!source.inFlight&&source.next<=now)
+            const due=sources.filter(([id,source])=>id!==this.fileId&&!source.inFlight&&source.next<=now&&(source.retryAt||0)<=now)
                 .sort((a,b)=>b[1].activeUntil-a[1].activeUntil||a[1].next-b[1].next).slice(0,available);
             const reads=due.map(([id,source])=>this.readPreview(id,source));
             // Run the next scheduling pass independently. One stalled device
@@ -213,7 +240,7 @@
             await Promise.allSettled(reads);
         }
         start(){if(this.host.canPublish!==false){this.frame++;this.scheduleFrame();}this.schedulePoll(0);return this;}
-        stop(){super.stop();clearTimeout(this.frameTimer);clearTimeout(this.pollTimer);this.paths.clear();this.previewSources.clear();this.readCache.clear();this.readCacheChars=0;}
+        stop(){super.stop();clearTimeout(this.frameTimer);clearTimeout(this.pollTimer);this.pollTimer=null;this.pollAt=0;this.paths.clear();this.previewSources.clear();this.readCache.clear();this.readCacheChars=0;}
     }
     root.InhouseDriveLivePreview=LivePreview;
     if(typeof module==='object'&&module.exports)module.exports={LivePreview};
