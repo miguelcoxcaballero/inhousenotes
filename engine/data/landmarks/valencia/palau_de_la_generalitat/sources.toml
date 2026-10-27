@@ -23,6 +23,25 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 5419.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5731601&rc2=YJ2753B", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 5, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 3 parts" }
 
+# ---- measured dimensions used by landmark.toml (added by the modeler)
+plan_source = { value = "OSM relation 11137438 + building:parts 1285287691/2/3 (= Catastro 5731601YJ2753B parts within 0.1 m, IoU 0.994)", source = "https://www.openstreetmap.org/relation/11137438", note = "checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0, 0.1 m/px): tower roofs lean ~2 m north at the top, bases on the footprint; courtyard glass roofs (pyramid west, flat east)" }
+overall_length = { value = 58.8, unit = "m", source = "OSM relation 11137438 (west face of the Torre Nova to east face of the Torre Vella)" }
+torre_nova_plan = { value = [21.15, 10.6], unit = "m", source = "OSM way 1285287691 (west face 21.15 m, north 10.73 m, south 10.56 m)" }
+torre_vella_plan = { value = [19.3, 10.7], unit = "m", source = "OSM way 1285287692 (east face 19.27 m, north 10.70 m, south 10.86 m)" }
+pgou_floors = { value = "4 cuerpo central, 5 torres; parcela 1124.93 m2", source = "Catalogo PGOU Valencia, ficha 1.15 Palau de la Generalitat (plans/02)" }
+tower_main_cornice_top = { value = 20.6, unit = "m", source = "constrained camera solves: photo 11 (EXIF 17 mm Canon 20D, f 1450 px, 8 px rms) 20.4-21.0 m, catastro photo (EXIF 4.5 mm, f 2917 px) 20.2-20.5 m", note = "top of the main cornice carrying the iron balcony; both towers (photos 02/09 overlays agree within ~2 %)" }
+tower_attic_cornice_top = { value = 26.0, unit = "m", source = "same solves: 25.7-26.6 m", note = "attic storey set back 0.4 m (photo 05 corner lines)" }
+tower_obelisk_tips = { value = 30.2, unit = "m", source = "same solves: 29.6-31.0 m (balustrade 26.0-27.1 m)" }
+tower_bays_west_face = { value = "3 bays at -6.9 / 0 / +6.9 m from the centre, slim lancets between", source = "photo 05 (frontal, EXIF 20 mm) bay centres at 0.33 / 0.67 of the cornice width; photo 07" }
+tower_bays_east_face = { value = "3 bays at 4.3 / 10.2 / 16.0 m from the south corner; Gothic windows in the two southern bays", source = "photos 02 and 09 overlays" }
+tower_levels = { value = "plinth 0-1.1, ground windows 2.6-5.3, Gothic three-light windows 6.9-11.2 with pediments to 12.8, mezzanine 13.1-14.4, upper windows 15.5-18.0, frieze 19.1-19.9, cornice 19.9-20.6, attic windows 21.7-24.0", unit = "m", source = "photo 07 (frontal west face, scale from the 6.9 m bay spacing: door 2.4 x 4.6 m, voussoir ring 1.4 m, Gothic sill 7.0 m, pediment top 12.75 m) and photo 11 overlay (mezzanine and upper windows)" }
+torre_nova_portal = { value = "round-arched door 2.4 x 4.6 m in the middle of the west face, voussoir ring 1.4 m deep (5.2 m outer span)", source = "photo 07" }
+manises_portal = { value = "round-arched Gothic portal 2.7 x 4.7 m with 1.45 m voussoirs, ~6 m west of the Torre Vella", source = "photos 04, 13 and 01" }
+palace_eaves = { value = 14.2, unit = "m", source = "catastro photo solve (eave edge at the Torre Nova corner)", note = "wall top 14.4 m, eaves projecting 1.35 m on corbels spaced with the gallery" }
+palace_gallery = { value = "round-arched top gallery 12.15-13.8 m, arches 0.82 m wide every 1.32 m on the Manises and Cavallers fronts", source = "photos 01, 04, 13, 14" }
+camera_focals = { value = "01 n/a; 02 free; 04 5.7 mm BenQ (32 mm-eq); 05 20 mm Nikon D3100 (f 1108 px); 08/14 4.6 mm Panasonic FX50 (28 mm-eq); 09 10.1 mm Canon G15 (f 2325 px); 11 17 mm Canon 20D (f 1450 px); 13 18 mm Nikon D3100 (f 997 px); catastro 4.5 mm Canon SX270 (f 2917 px)", source = "Commons file metadata (EXIF)" }
+camera_solver = { value = "constrained bundle adjustment (fixed EXIF focal, eye height prior 1.6 m, optional radial distortion), cross-checked with the landmark tool's match solver", source = "scratchpad gen/tools/ba.py", note = "published heights not found (Wikipedia API rate-limited during this session); OSM building:levels x 3.2 m (16 m) underestimates the towers, so check()'s 'model too high' warnings are expected" }
+
 [[photo]]
 file = "photos/01_Palau_de_la_Generalitat_Valencia.jpg"
 title = "File:Palau de la Generalitat- Valencia.jpg"
@@ -32,8 +51,8 @@ license = "CC BY 3.0"
 width = 1280
 height = 894
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/02_Valencia_Palau_de_la_Generalitat_Valenciana_from_the_southea.jpg"
@@ -45,8 +64,8 @@ width = 1280
 height = 1725
 camera = [50.1, 28.22]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/03_029_Palau_de_la_Generalitat_c_Cavallers_2_Valencia_des_de_la.jpg"
@@ -58,8 +77,8 @@ width = 1280
 height = 960
 camera = [-7.49, -0.87]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/04_Facana_que_recau_a_la_placa_Manises_del_palau_de_la_Generali.jpg"
@@ -70,8 +89,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/05_Torre_Nova_del_Palau_de_la_Generalitat_Valenciana.jpg"
@@ -82,8 +101,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/06_L04_316_Calle_de_los_Caballeros_Palacio_de_la_Generalidad_Va.jpg"
@@ -94,8 +113,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 2019
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/07_Palacio_de_la_Generalidad_Valenciana_Torreon.jpg"
@@ -106,8 +125,8 @@ license = "CC BY 3.0"
 width = 1280
 height = 1280
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/08_Palau_del_la_Generalitat_P1390952.jpg"
@@ -118,8 +137,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/09_326_Palau_de_la_Generalitat_Valencia_torre_antiga_des_de_la_.jpg"
@@ -130,8 +149,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/10_Generalitat_vista.jpg"
@@ -142,8 +161,8 @@ license = "Public domain"
 width = 1280
 height = 910
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/11_Palau_de_la_Generalitat_del_Pais_Valencia_2.jpg"
@@ -154,8 +173,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1920
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/12_Generalitat_alt.jpg"
@@ -166,8 +185,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/13_Palau_de_la_Generalitat_Valenciana_07.jpg"
@@ -178,8 +197,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "n"
 
 [[photo]]
 file = "photos/14_Palau_del_la_Generalitat_P1390956.jpg"
@@ -190,8 +209,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/15_L04_319_Plaza_de_la_Virgen.jpg"
@@ -202,8 +221,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 878
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_5731601YJ2753B.jpg"
@@ -214,8 +233,8 @@ license = "Catastro open data (attribution required)"
 width = 3000
 height = 4000
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[plan]]
 file = "plans/01_La_Casa_de_la_Ciutat_de_Valencia_el_1608_en_la_vista_axonome.jpg"

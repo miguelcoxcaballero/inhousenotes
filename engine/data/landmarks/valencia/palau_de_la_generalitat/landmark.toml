@@ -1,0 +1,1147 @@
+# Palau de la Generalitat Valenciana (Palau de la Generalitat, Valencia).
+# Valencian Gothic palace of the Generalitat (Diputacio del General), 15th
+# century, on Carrer de Cavallers / Placa de Manises; Renaissance tower (Torre Vella / Torre Antiga,
+# east, on Placa de la Mare de Deu side) 1518-1585; its twin, the Torre Nova
+# (west, on Placa de Manises / Carrer de Cavallers), built 1952 by Luis
+# Alberto Ballesteros to the old design.
+#
+# Volumes (OSM building:parts = Catastro parts, PGOU ficha: "4 cuerpo
+# central, 5 torres"):
+#   part:1  Torre Nova (west), 21.15 x 10.6 m, 5 floors
+#   part:2  Torre Vella (east), 19.3 x 10.7 m, 5 floors
+#   middle  Gothic palace (outline:0 minus the towers, two courtyards with
+#           glass roofs), 4 floors, top gallery of round arches under
+#           corbelled tile eaves.
+# Heights: constrained camera solves (scratchpad gen/tools/ba.py) on photos
+# catastro (EXIF 4.5 mm, f 2917 px), 11 and 05 (EXIF 20 mm): tower main
+# cornice top 20.6 m, attic cornice top 26.0 m, corner
+# obelisk tips ~30.2 m; middle block walls 14.4 m (eave edge 14.2 m). Details in
+# sources.toml [facts].
+
+
+[landmark]
+name = "Palau de la Generalitat Valenciana"
+slug = "palau_de_la_generalitat"
+main_facade = "facing:n"
+notes = "Gothic palace with two Renaissance towers (1518-1585 and 1952 twin), Placa de Manises / Carrer de Cavallers."
+
+[landmark.info]
+architect = "Luis Alberto Ballesteros (1952 extension and west tower)"
+built = "15th century; tower 1518-1585; west tower 1952"
+style = "Valencian Gothic and Renaissance"
+heritage = "BIC RI-51-0000971 (1931)"
+
+[defaults]
+material = "stone"
+roof_material = "roof"
+glass_material = "glass"
+door_material = "doors"
+frame_material = "frames"
+iron_material = "iron"
+
+[render]
+sun = [200, 50]
+paving = 70
+
+# ------------------------------------------------------------- materials
+
+[material.stone]
+kind = "ashlar"
+tint = "#cdbfa6"
+block = [0.9, 0.42]
+weathering = 0.35
+seed = 11
+
+[material.stone_old]
+kind = "ashlar"
+tint = "#a39079"
+block = [0.8, 0.4]
+weathering = 0.5
+seed = 5
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#d9cdb6"
+weathering = 0.25
+
+[material.voussoir]
+kind = "limestone"
+tint = "#e4dccb"
+weathering = 0.15
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#8c6c58"
+weathering = 0.55
+
+[material.doors]
+kind = "painted_wood"
+color = "#3b2a20"
+tint = "#3b2a20"
+
+[material.frames]
+kind = "painted_wood"
+color = "#4a3a2e"
+tint = "#4a3a2e"
+
+[material.glass]
+kind = "glass"
+
+[material.skylight]
+kind = "curtain_wall"
+color = "#9fb0b8"
+
+[material.iron]
+kind = "iron"
+tint = "#2b2b2b"
+
+# ------------------------------------------------------------ torre_nova
+[[element]]
+type = "mass"
+name = "torre_nova_shaft"
+polygon = "part:1"
+y0 = 0
+y1 = 20.60
+plinth = { profile = "plinth", size = 1.10 }
+string_courses = [6.75]
+note = "main cornice top 20.6 m: camera solves on photos catastro / 11 / 05"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "door"
+  arch = "round"
+  width = 2.5
+  height = 4.6
+  levels = [0.0]
+  bays = { offsets = [0.0] }
+  infill = "door"
+  depth = 0.6
+  voussoirs = { count = 15, width = 1.4 }
+  material = "voussoir"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "flat"
+  width = 2.0
+  height = 2.7
+  levels = [2.6]
+  bays = { offsets = [-6.9, 6.9] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.22, projection = 0.08 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "flat"
+  width = 2.4
+  height = 4.3
+  levels = [6.9]
+  bays = { offsets = [-6.9, 0.0, 6.9] }
+  mullions = 2
+  transoms = 1
+  depth = 0.35
+  frame = 0.09
+  surround = { width = 0.25, projection = 0.1, pediment = "triangle" }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "pointed"
+  width = 0.75
+  height = 3.3
+  levels = [7.2]
+  bays = { offsets = [-3.45, 3.45] }
+  depth = 0.3
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.3
+  levels = [13.1]
+  bays = { offsets = [-6.9, 0.0, 6.9] }
+  mullions = 1
+  depth = 0.3
+  surround = { width = 0.15, projection = 0.06 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { offsets = [-6.9, 0.0, 6.9] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  hood = { size = 0.14 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 2.0
+  height = 2.7
+  levels = [2.6]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.22, projection = 0.08 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 2.4
+  height = 4.3
+  levels = [6.9]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 2
+  transoms = 1
+  depth = 0.35
+  frame = 0.09
+  surround = { width = 0.25, projection = 0.1, pediment = "triangle" }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.3
+  levels = [13.1]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  depth = 0.3
+  surround = { width = 0.15, projection = 0.06 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  hood = { size = 0.14 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 2.0
+  height = 2.7
+  levels = [2.6]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.22, projection = 0.08 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 2.4
+  height = 4.3
+  levels = [6.9]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 2
+  transoms = 1
+  depth = 0.35
+  frame = 0.09
+  surround = { width = 0.25, projection = 0.1, pediment = "triangle" }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.3
+  levels = [13.1]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  depth = 0.3
+  surround = { width = 0.15, projection = 0.06 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  hood = { size = 0.14 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { offsets = [-5.5, 0.0, 5.5] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  sill = true
+  material = "stone_fine"
+
+[[element]]
+type = "cornice"
+on = "torre_nova_shaft"
+y = 19.10
+profile = "band"
+size = 0.80
+projection = 0.12
+material = "stone_fine"
+
+[[element]]
+type = "cornice"
+on = "torre_nova_shaft"
+y = 19.90
+profile = "classical"
+size = 0.70
+projection = 0.55
+material = "stone_fine"
+
+[[element]]
+type = "mass"
+name = "torre_nova_attic"
+polygon = { ref = "part:1", inset = 0.40 }
+y0 = 20.60
+y1 = 26.00
+cornice = { profile = "classical", size = 0.60, projection = 0.45 }
+note = "attic set back 0.40 m (photo 05 corner lines); top cornice 26.0 m"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { offsets = [-6.9, 0.0, 6.9] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { offsets = [-7.6, -3.8, 0.0, 3.8, 7.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+[[element]]
+type = "slab"
+material = "stone_fine"
+polygon = { ref = "part:1", offset = 1.0, subtract = [{ ref = "part:1", inset = 0.2 }] }
+y = 20.65
+thickness = 0.12
+
+[[element]]
+type = "array"
+mode = "edges"
+polygon = { ref = "part:1", offset = 0.95 }
+spacing = 0.16
+y = 20.65
+material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-0.012, 0.0, -0.012]
+  max = [0.012, 1.0, 0.012]
+
+[[element]]
+type = "cornice"
+polygon = { ref = "part:1", offset = 0.95 }
+y = 21.65
+profile = "band"
+size = 0.05
+projection = 0.04
+material = "iron"
+
+[[element]]
+type = "balustrade"
+polygon = { ref = "part:1", inset = 0.20 }
+y = 26.00
+height = 1.10
+pedestals = 2.7
+finials = "ball"
+material = "stone_fine"
+
+[[element]]
+type = "array"
+mode = "points"
+name = "torre_nova_obelisks"
+points = [[-24.48, 26.0, -15.6], [-28.28, 26.0, 4.19], [-18.9, 26.0, 5.99], [-15.0, 26.0, -13.38]]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [-0.45, 0.0, -0.45]
+  max = [0.45, 1.25, 0.45]
+  [[element.children]]
+  type = "pinnacle"
+  material = "stone_fine"
+  at = [0.0, 1.25, 0.0]
+  width = 0.62
+  height = 2.70
+  sides = 4
+  [[element.children]]
+  type = "sphere"
+  material = "stone_fine"
+  center = [0.0, 4.05, 0.0]
+  radius = 0.16
+  segments = 8
+
+[[element]]
+type = "roof"
+polygon = { ref = "part:1", inset = 0.90 }
+y = 26.00
+shape = "hip"
+pitch = 24
+overhang = 0.0
+ridge_cap = true
+
+# ------------------------------------------------------------ torre_vella
+[[element]]
+type = "mass"
+name = "torre_vella_shaft"
+polygon = "part:2"
+y0 = 0
+y1 = 20.60
+plinth = { profile = "plinth", size = 1.10 }
+string_courses = [6.75]
+note = "main cornice top 20.6 m: camera solves on photos catastro / 11 / 05"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 2.0
+  height = 2.7
+  levels = [2.6]
+  bays = { at = [4.3, 10.2, 16.0] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.22, projection = 0.08 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 2.4
+  height = 4.3
+  levels = [6.9]
+  bays = { at = [4.3, 10.2] }
+  mullions = 2
+  transoms = 1
+  depth = 0.35
+  frame = 0.09
+  surround = { width = 0.25, projection = 0.1, pediment = "triangle" }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "pointed"
+  width = 0.75
+  height = 3.3
+  levels = [7.2]
+  bays = { at = [7.25, 13.1] }
+  depth = 0.3
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.3
+  levels = [13.1]
+  bays = { at = [4.3, 10.2, 16.0] }
+  mullions = 1
+  depth = 0.3
+  surround = { width = 0.15, projection = 0.06 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { at = [4.3, 10.2, 16.0] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  hood = { size = 0.14 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 2.0
+  height = 2.7
+  levels = [2.6]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.22, projection = 0.08 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 2.4
+  height = 4.3
+  levels = [6.9]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 2
+  transoms = 1
+  depth = 0.35
+  frame = 0.09
+  surround = { width = 0.25, projection = 0.1, pediment = "triangle" }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.3
+  levels = [13.1]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  depth = 0.3
+  surround = { width = 0.15, projection = 0.06 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  hood = { size = 0.14 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 2.0
+  height = 2.7
+  levels = [2.6]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.22, projection = 0.08 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 2.4
+  height = 4.3
+  levels = [6.9]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 2
+  transoms = 1
+  depth = 0.35
+  frame = 0.09
+  surround = { width = 0.25, projection = 0.1, pediment = "triangle" }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 1.0
+  height = 1.3
+  levels = [13.1]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  depth = 0.3
+  surround = { width = 0.15, projection = 0.06 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  hood = { size = 0.14 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "flat"
+  width = 1.25
+  height = 2.5
+  levels = [15.5]
+  bays = { offsets = [-5.5, 0.0, 5.5] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  sill = true
+  material = "stone_fine"
+
+[[element]]
+type = "cornice"
+on = "torre_vella_shaft"
+y = 19.10
+profile = "band"
+size = 0.80
+projection = 0.12
+material = "stone_fine"
+
+[[element]]
+type = "cornice"
+on = "torre_vella_shaft"
+y = 19.90
+profile = "classical"
+size = 0.70
+projection = 0.55
+material = "stone_fine"
+
+[[element]]
+type = "mass"
+name = "torre_vella_attic"
+polygon = { ref = "part:2", inset = 0.40 }
+y0 = 20.60
+y1 = 26.00
+cornice = { profile = "classical", size = 0.60, projection = 0.45 }
+note = "attic set back 0.40 m (photo 05 corner lines); top cornice 26.0 m"
+
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { offsets = [-7.6, -3.8, 0.0, 3.8, 7.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+  [[element.openings]]
+  edges = "facing:n"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { offsets = [-2.6, 2.6] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+  [[element.openings]]
+  edges = "facing:e"
+  kind = "window"
+  arch = "flat"
+  width = 1.2
+  height = 2.3
+  levels = [21.7]
+  bays = { at = [4.3, 10.2, 16.0] }
+  mullions = 1
+  transoms = 1
+  depth = 0.25
+  surround = { width = 0.12, projection = 0.05 }
+
+[[element]]
+type = "slab"
+material = "stone_fine"
+polygon = { ref = "part:2", offset = 1.0, subtract = [{ ref = "part:2", inset = 0.2 }] }
+y = 20.65
+thickness = 0.12
+
+[[element]]
+type = "array"
+mode = "edges"
+polygon = { ref = "part:2", offset = 0.95 }
+spacing = 0.16
+y = 20.65
+material = "iron"
+  [[element.children]]
+  type = "box"
+  min = [-0.012, 0.0, -0.012]
+  max = [0.012, 1.0, 0.012]
+
+[[element]]
+type = "cornice"
+polygon = { ref = "part:2", offset = 0.95 }
+y = 21.65
+profile = "band"
+size = 0.05
+projection = 0.04
+material = "iron"
+
+[[element]]
+type = "balustrade"
+polygon = { ref = "part:2", inset = 0.20 }
+y = 26.00
+height = 1.10
+pedestals = 2.7
+finials = "ball"
+material = "stone_fine"
+
+[[element]]
+type = "array"
+mode = "points"
+name = "torre_vella_obelisks"
+points = [[19.89, 26.0, -4.98], [29.33, 26.0, -2.73], [25.25, 26.0, 15.08], [15.66, 26.0, 12.78]]
+  [[element.children]]
+  type = "box"
+  material = "stone_fine"
+  min = [-0.45, 0.0, -0.45]
+  max = [0.45, 1.25, 0.45]
+  [[element.children]]
+  type = "pinnacle"
+  material = "stone_fine"
+  at = [0.0, 1.25, 0.0]
+  width = 0.62
+  height = 2.70
+  sides = 4
+  [[element.children]]
+  type = "sphere"
+  material = "stone_fine"
+  center = [0.0, 4.05, 0.0]
+  radius = 0.16
+  segments = 8
+
+[[element]]
+type = "roof"
+polygon = { ref = "part:2", inset = 0.90 }
+y = 26.00
+shape = "hip"
+pitch = 24
+overhang = 0.0
+ridge_cap = true
+
+# ------------------------------------------------------------ Gothic palace
+[[element]]
+type = "mass"
+name = "palau"
+material = "stone_old"
+polygon = { ref = "outline:0", subtract = ["part:1", "part:2"] }
+y0 = 0
+y1 = 14.40
+plinth = { profile = "plinth", size = 1.10 }
+string_courses = [6.50, 12.00]
+note = "eaves 14.4 m: catastro photo solve (eave line 14.9-15.5 m at the tower) less the 1.3 m eave projection"
+
+  [[element.openings]]
+  edges = ["facing:n", "not:2", "not:12"]
+  kind = "door"
+  arch = "round"
+  width = 2.7
+  height = 4.7
+  levels = [0.0]
+  bays = { at = [6.0] }
+  infill = "door"
+  depth = 0.7
+  voussoirs = { count = 19, width = 1.45 }
+  material = "voussoir"
+
+  [[element.openings]]
+  edges = ["facing:n", "not:2", "not:12"]
+  kind = "window"
+  arch = "flat"
+  width = 1.7
+  height = 2.3
+  levels = [2.5]
+  bays = { at = [2.2, 10.3, 14.5, 18.7, 22.9, 27.1, 31.3] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  surround = { width = 0.18, projection = 0.07 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = ["facing:n", "not:2", "not:12"]
+  kind = "window"
+  arch = "flat"
+  width = 2.0
+  height = 3.8
+  levels = [6.6]
+  bays = { at = [2.2, 6.0, 10.3, 14.5, 18.7, 22.9, 27.1, 31.3] }
+  mullions = 2
+  transoms = 1
+  depth = 0.35
+  surround = { width = 0.2, projection = 0.06 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = ["facing:s", "not:4", "not:10"]
+  kind = "window"
+  arch = "flat"
+  width = 1.5
+  height = 2.2
+  levels = [2.5]
+  bays = { at = [2.3, 6.1, 9.9, 13.7, 17.0, 20.3, 24.1, 27.9, 31.7] }
+  mullions = 1
+  transoms = 1
+  depth = 0.3
+  hood = { size = 0.14 }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = ["facing:s", "not:4", "not:10"]
+  kind = "window"
+  arch = "flat"
+  width = 1.5
+  height = 4.2
+  levels = [6.6]
+  bays = { at = [2.3, 6.1, 9.9, 13.7, 17.0, 20.3, 24.1, 27.9, 31.7] }
+  mullions = 1
+  transoms = 1
+  depth = 0.35
+  hood = { size = 0.15, stops = true }
+  sill = true
+  material = "stone_fine"
+
+  [[element.openings]]
+  edges = ["facing:n", "not:2", "not:12"]
+  kind = "window"
+  arch = "round"
+  width = 0.82
+  height = 1.65
+  levels = [12.15]
+  bays = { spacing = 1.32, margin = 0.6 }
+  depth = 0.45
+  infill = "dark"
+  material = "stone_old"
+
+  [[element.openings]]
+  edges = ["facing:s", "not:4", "not:10"]
+  kind = "window"
+  arch = "round"
+  width = 0.82
+  height = 1.65
+  levels = [12.15]
+  bays = { spacing = 1.32, margin = 0.6 }
+  depth = 0.45
+  infill = "dark"
+  material = "stone_old"
+
+[[element]]
+type = "cornice"
+on = "palau"
+edges = ["facing:n", "facing:s", "not:2", "not:12", "not:4", "not:10"]
+y = 14.05
+profile = "eave"
+size = 0.35
+projection = 1.25
+modillions = { spacing = 1.32, width = 0.26, height = 0.6, style = "corbel" }
+material = "frames"
+
+[[element]]
+type = "roof"
+on = "palau"
+shape = "hip"
+pitch = 22
+overhang = 1.35
+ridge_cap = true
+
+[[element]]
+type = "roof"
+polygon = [[-15.74, -7.14], [-6.77, -5.16], [-7.65, 1.93], [-17.22, 0.27]]
+y = 13.40
+shape = "pyramid"
+pitch = 28
+overhang = 0.0
+material = "skylight"
+note = "glass pyramid over the west courtyard (PNOA orthophoto)"
+
+[[element]]
+type = "slab"
+polygon = [[8.53, -2.14], [18.19, 0.03], [16.66, 6.38], [7.94, 4.89]]
+y = 13.80
+thickness = 0.2
+material = "skylight"
+note = "flat glass roof over the east courtyard (PNOA orthophoto)"
+
+[component.crown]
+material = "iron"
+[[component.crown.children]]
+type = "cylinder"
+at = [0.0, 0.0, 0.0]
+height = 5.2
+radius = 0.035
+segments = 6
+[[component.crown.children]]
+type = "torus"
+center = [0.0, 0.25, 0.0]
+radius = 0.62
+tube = 0.03
+axis = [0.0, 1.0, 0.0]
+segments = 16
+[[component.crown.children]]
+type = "torus"
+center = [0.0, 0.95, 0.0]
+radius = 0.62
+tube = 0.03
+axis = [1.0, 0.0, 0.0]
+segments = 16
+[[component.crown.children]]
+type = "torus"
+center = [0.0, 0.95, 0.0]
+radius = 0.62
+tube = 0.03
+axis = [0.0, 0.0, 1.0]
+segments = 16
+[[component.crown.children]]
+type = "sphere"
+center = [0.0, 1.62, 0.0]
+radius = 0.12
+segments = 8
+
+[[element]]
+type = "array"
+mode = "points"
+note = "wrought-iron crowns with the flagpoles (photos 02, 03, 09, 12)"
+points = [[-22.52, 27.6, -0.28], [-21.66, 27.6, -4.7], [-20.8, 27.6, -9.12]]
+component = "crown"
+
+[[element]]
+type = "array"
+mode = "points"
+note = "wrought-iron crowns with the flagpoles (photos 02, 03, 09, 12)"
+points = [[23.54, 27.6, 0.65], [22.53, 27.6, 5.04], [21.52, 27.6, 9.43]]
+component = "crown"
+
+[[view]]
+name = "cat_nw"
+photo = "photos/catastro_5731601YJ2753B.jpg"
+match = [
+  { px = [1340, 3415], world = [-24.86, 0, -16.18] },  # WNW_g
+  { px = [1338, 895], world = [-24.9, 26.0, -16.24] },  # WNW_tc
+  { px = [1338, 1295], world = [-25.28, 20.6, -16.82] },  # WNW_sh
+  { px = [1345, 648], world = [-24.48, 30.2, -15.6] },  # WNW_ob
+  { px = [2435, 1195], world = [-28.28, 30.2, 4.19] },  # WSW_ob
+  { px = [2540, 1440], world = [-28.93, 26.0, 4.63] },  # WSW_tc
+  { px = [1021, 1100], world = [-15.0, 30.2, -13.38] },  # WNE_ob
+  { px = [940, 2150], world = [-14.14, 14.2, -15.1] },  # M_NW_eave
+]
+
+[[view]]
+name = "p11_sw"
+photo = "photos/11_Palau_de_la_Generalitat_del_Pais_Valencia_2.jpg"
+match = [
+  { px = [930, 183], world = [-28.93, 26.0, 4.63] },  # WSW_tc
+  { px = [904, 67.5], world = [-28.28, 30.2, 4.19] },  # WSW_ob
+  { px = [949, 389], world = [-29.51, 20.6, 5.03] },  # WSW_sh
+  { px = [227, 583], world = [-24.9, 26.0, -16.24] },  # WNW_tc
+  { px = [283, 454], world = [-24.48, 30.2, -15.6] },  # WNW_ob
+  { px = [185, 739], world = [-25.28, 20.6, -16.82] },  # WNW_sh
+  { px = [1144, 501], world = [-18.46, 26.0, 6.64] },  # WSE_tc
+  { px = [1087.5, 355], world = [-18.9, 30.2, 5.99] },  # WSE_ob
+  { px = [1181, 675], world = [-18.06, 20.6, 7.23] },  # WSE_sh
+  { px = [1010, 1735], world = [-28.87, 0, 4.59] },  # WSW_g
+]
+
+[[view]]
+name = "p05_w"
+photo = "photos/05_Torre_Nova_del_Palau_de_la_Generalitat_Valenciana.jpg"
+eye = [-50.5, 1.6, -9.9]
+target = [-22.8, 19.5, -5.3]
+fov_y = 42.1
+roll = 1.0
+# EXIF 20 mm on Nikon D3100; camera from the constrained solve
+
+[[view]]
+name = "p02_se"
+photo = "photos/02_Valencia_Palau_de_la_Generalitat_Valenciana_from_the_southea.jpg"
+eye = [64, 1.6, 28]
+target = [22, 14, 6]
+fov_y = 52
+# camera near the Commons geotag, aligned by eye
+
+[[view]]
+name = "p09_e"
+photo = "photos/09_326_Palau_de_la_Generalitat_Valencia_torre_antiga_des_de_la_.jpg"
+eye = [72, 1.6, 34]
+target = [22, 16.2, 6]
+fov_y = 40.3
+# EXIF 10.1 mm on Canon G15 (fov_y 40.3)
+
+[[view]]
+name = "p01_nw"
+photo = "photos/01_Palau_de_la_Generalitat_Valencia.jpg"
+match = [
+  { px = [951, 880], world = [-24.86, 0, -16.18] },  # WNW_g
+  { px = [568, 276], world = [-14.14, 14.2, -15.1] },  # M_NW_eave
+  { px = [560, 49], world = [-13.74, 20.6, -14.2] },  # WNE_sh
+  { px = [1180, 250], world = [-29.51, 20.6, 5.03] },  # WSW_sh
+  { px = [119, 205], world = [19.89, 30.2, -4.98] },  # ENW_ob
+  { px = [115, 250], world = [19.48, 26.0, -5.64] },  # ENW_tc
+  { px = [1250, 833], world = [-28.87, 0, 4.59] },  # WSW_g
+]
+
+[[view]]
+name = "p13_manises"
+photo = "photos/13_Palau_de_la_Generalitat_Valenciana_07.jpg"
+eye = [-17, 1.6, -38]
+target = [19, 12, -12]
+fov_y = 46.3
+# EXIF 18 mm on Nikon D3100 (fov_y 46.3)
+
+[[view]]
+name = "p08_cavallers"
+photo = "photos/08_Palau_del_la_Generalitat_P1390952.jpg"
+eye = [-66, 1.6, 11.5]
+target = [-20, 11, 6]
+fov_y = 63.5
+# EXIF 4.6 mm (28 mm-eq) Panasonic FX50
+
+[[view]]
+name = "p14_cavallers"
+photo = "photos/14_Palau_del_la_Generalitat_P1390956.jpg"
+eye = [-28, 1.6, 13.2]
+target = [40, 10.0, 21]
+fov_y = 49.8
+# EXIF 4.6 mm (28 mm-eq) Panasonic FX50
+
+[[view]]
+name = "p07_frontal"
+photo = "photos/07_Palacio_de_la_Generalidad_Valenciana_Torreon.jpg"
+match = [
+  { px = [651, 991], world = [-26.87, 0, -5.8] },  # W_door_b
+  { px = [651, 712], world = [-26.87, 4.6, -5.8] },  # W_door_t
+  { px = [212, 568], world = [-25.56, 7.0, -12.58] },  # W_gl_sill
+  { px = [1049, 568], world = [-28.18, 7.0, 0.98] },  # W_gr_sill
+  { px = [212, 216], world = [-25.56, 12.75, -12.58] },  # W_gl_ped
+  { px = [1049, 216], world = [-28.18, 12.75, 0.98] },  # W_gr_ped
+  { px = [221, 173], world = [-25.56, 13.4, -12.58] },  # W_ml_bot
+]
