@@ -38,7 +38,7 @@ pub use character::{CharacterConfig, CharacterController, CharacterState};
 pub use narrowphase::{ContactPoint, Manifold};
 pub use shape::{ConvexHull, HeightField, MassProperties, Shape, TriMesh};
 pub use vehicle::{Vehicle, VehicleConfig, VehicleControls, WheelConfig};
-pub use world::{CollisionEvent, PhysicsConfig, PhysicsWorld, QueryFilter, RayHit, StepStats};
+pub use world::{CollisionEvent, PhysicsConfig, PhysicsWorld, QueryFilter, RayHit, ShapeHit, StepStats};
 
 use forja_core::{App, Plugin, Stage, World};
 
