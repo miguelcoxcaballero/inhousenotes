@@ -25,6 +25,29 @@ catastro_use = { value = "1_residential", source = "https://www1.sedecatastro.go
 catastro_floor_area = { value = 2927.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=6928402&rc2=YJ2762H", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 4, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 8 parts" }
 
+# --- measured dimensions (palau_de_l_exposicio model; heights +-0.5-1.5 m) ---
+plan_hall_front = { value = 42.8, unit = "m", source = "OSM way 150277194 + Catastro 6928402YJ2762H part 7/8 (front from the octagon centre line to the SE tower west face), checked on IGN PNOA orthophoto (CC BY 4.0)", note = "azimuth 199 (faces SSW on Carrer de Galicia); hall range 12 m deep" }
+plan_se_tower = { value = [6.65, 6.7], unit = "m", source = "Catastro INSPIRE BuildingPart 8 (3 floors)" }
+plan_octagon = { value = 7.0, unit = "m", source = "Catastro part 4 area 40.6 m2 -> regular octagon across flats", note = "centre moved 1.4 m south-west of the Catastro part so three faces stand clear of the hall front, as photos 03 / 17 / 23 show" }
+plan_nw_tower = { value = [9.8, 9.4], unit = "m", source = "Catastro part 3 (3 floors)" }
+plan_entrance_wing = { value = 12.6, unit = "m", source = "Catastro part 7 SW front (azimuth 237) between the octagon and the rounded corner" }
+parcel_area = { value = 1762.54, unit = "m2", source = "PGOU Valencia catalogue ficha BRL 06.02.13 (plans/01)" }
+h_hall_string_course = { value = 8.0, unit = "m", source = "photo 10 camera fit (upright, 6 px RMS) + photo 17 overlay" }
+h_hall_cornice = { value = 15.3, unit = "m", source = "constrained bundle fit photos 01 (SX260 4.5 mm, 25 mm eq.) + Catastro photo (IXUS 80 6.2 mm, 35 mm eq.) + 10, eye 1.6 m prior: cresting top 15.0-16.75 m" }
+h_hall_cresting = { value = 16.3, unit = "m", source = "as h_hall_cornice; pierced cresting 1.0 m" }
+h_hall_pinnacles = { value = 19.6, unit = "m", source = "photos 10 / 17 / 18 overlays" }
+h_se_tower_cornice = { value = 20.4, unit = "m", source = "bundle fit photo 01 + Catastro photo (19.2-21.2 m) and ratio to the hall cresting in both (20.0-20.8 m)" }
+h_se_tower_merlons = { value = 22.6, unit = "m", source = "same fit (21.8-24.0 m); photo 01 overlay" }
+h_octagon_shaft = { value = 18.6, unit = "m", source = "photo 10 (upright, octagon 7.0 m wide): string courses 3.7 / 7.7 / 15.4 m, star roses 15.9-17.8 m, cornice 18.6 m" }
+h_octagon_balcony = { value = 25.4, unit = "m", source = "photo 10: upper stage with twin lancets 19.9-23.2 m, balcony 25.4 m" }
+h_octagon_spire_tip = { value = 32.6, unit = "m", source = "photos 10 / 17 / 01 / 23 / Catastro overlays (32.1-33.5 m)" }
+h_octagon_finial = { value = 35.4, unit = "m", source = "photos 10 / 17 / 23 / Catastro (34.6-36.4 m)" }
+h_entrance_wing = { value = [14.6, 16.4], unit = "m", source = "cornice / merlon tops: photos 10, 11, 17 overlays" }
+h_nw_tower = { value = [18.6, 20.6], unit = "m", source = "machicolation parapet / merlon tops: photos 02 / 11 (estimate, +-1.5 m)" }
+h_back_wings = { value = 13.4, unit = "m", source = "Catastro floors (2-4) - no street photos of the north side" }
+gate = { value = [3.4, 5.0], unit = "m", source = "photo 10 / 11 overlays (width, height of the round-arched gate)" }
+facades = { value = 5, source = "inventory of the Generalitat (inmuebles.edu.gva.es ficha 4898): five facades, two storeys around a courtyard, square towers at the ends and an octagonal tower on the chamfer; brick bearing walls, artificial-stone ornament" }
+
 [[photo]]
 file = "photos/01_Biblioteca_Municipal_Palau_de_l_Exposicio_panoramio.jpg"
 title = "File:Biblioteca Municipal Palau de l'Exposicio - panoramio.jpg"
@@ -35,8 +58,8 @@ width = 1280
 height = 960
 camera = [41.37, 44.14]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE (hall front + SE tower), view south_east_01"
 
 [[photo]]
 file = "photos/02_Torre_del_palau_de_l_Exposicio.jpg"
@@ -47,8 +70,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1776
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW (NW tower), view nw_tower_02"
 
 [[photo]]
 file = "photos/03_Micalet_en_miniatura_del_palau_de_l_Exposicio_de_Valencia.jpg"
@@ -59,8 +82,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1560
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW (octagon tower), view octagon_03"
 
 [[photo]]
 file = "photos/04_Macer_a_la_facana_del_palau_de_l_Exposicio_de_Valencia.jpg"
@@ -109,8 +132,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW (gate, macers, arms detail)"
 
 [[photo]]
 file = "photos/08_Facana_del_Palau_Reial_de_Valencia.jpg"
@@ -121,8 +144,8 @@ license = "Public domain"
 width = 960
 height = 401
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (historic 1909-10 stereo view of the hall)"
 
 [[photo]]
 file = "photos/09_Finestres_de_la_torre_del_palau_de_l_Exposicio_Valencia.jpg"
@@ -133,8 +156,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1767
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW (octagon upper stage detail)"
 
 [[photo]]
 file = "photos/10_Palau_exposicio.jpg"
@@ -144,9 +167,9 @@ author = "Felivet"
 license = "Public domain"
 width = 1280
 height = 908
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "SW (octagon, hall, entrance wing), view south_west_10"
 
 [[photo]]
 file = "photos/11_Museum_of_the_Exposition.jpg"
@@ -156,9 +179,9 @@ author = "Gustavo86"
 license = "CC BY-SA 2.5"
 width = 1280
 height = 960
-exterior = "unknown"
-selected = false
-side = ""
+exterior = true
+selected = true
+side = "W (entrance gate wing, rounded corner), view west_gate_11"
 
 [[photo]]
 file = "photos/12_Jardins_i_facana_del_Palau_Municipal_de_Valencia_edificat_am.jpg"
@@ -169,8 +192,8 @@ license = "Public domain"
 width = 960
 height = 405
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S (historic 1910 stereo view)"
 
 [[photo]]
 file = "photos/13_Palacio_de_la_Exposicion_431232351.jpg"
@@ -194,8 +217,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "NW (NW tower)"
 
 [[photo]]
 file = "photos/15_Macer_a_la_facana_del_palau_de_l_Exposicio_Valencia.jpg"
@@ -218,8 +241,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW (octagon crown detail)"
 
 [[photo]]
 file = "photos/catastro_6928402YJ2762H.jpg"
@@ -230,8 +253,104 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
+selected = true
+side = "E/SE (SE tower east face, hall), view catastro_east"
+
+[[photo]]
+file = "photos/17_Palau_exposicio2.jpg"
+title = "File:Palau exposicio2.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_exposicio2.jpg"
+author = "Felivet"
+license = "Public domain"
+width = 1920
+height = 1662
+exterior = true
+selected = true
+side = "SW (octagon, entrance wing, hall west end), view south_west_17"
+
+[[photo]]
+file = "photos/18_Palau_de_l_Exposicio_de_Valencia.jpg"
+title = "File:Palau de l'Exposició de València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Exposici%C3%B3_de_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1920
+height = 1412
+exterior = true
+selected = true
+side = "S (hall bays and SE tower from below), view hall_east_18"
+
+[[photo]]
+file = "photos/19_Valencia_palau_de_l_Exposicio.jpg"
+title = "File:València, palau de l'Exposició.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Val%C3%A8ncia,_palau_de_l%27Exposici%C3%B3.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1920
+height = 1455
+exterior = true
 selected = false
-side = ""
+side = "S (arcade vault and capitals detail)"
+
+[[photo]]
+file = "photos/20_Palau_de_l_Exposicio_Valencia.jpg"
+title = "File:Palau de l'Exposició (València).JPG"
+url = "https://commons.wikimedia.org/wiki/File:Palau_de_l%27Exposici%C3%B3_(Val%C3%A8ncia).JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1920
+height = 1484
+exterior = true
+selected = true
+side = "S (hall upper storey, cresting and pinnacles)"
+
+[[photo]]
+file = "photos/22_Palacio_de_la_Exposicion_431232346.jpg"
+title = "File:Palacio de la Exposición (431232346).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_la_Exposici%C3%B3n_(431232346).jpg"
+author = "Visentico / Sento"
+license = "CC BY-SA 2.0"
+width = 1920
+height = 1440
+exterior = true
+selected = true
+side = "S (hall looking east to the SE tower), view hall_east_22"
+
+[[photo]]
+file = "photos/23_Palacio_de_la_Exposicion_431232341.jpg"
+title = "File:Palacio de la Exposición (431232341).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_la_Exposici%C3%B3n_(431232341).jpg"
+author = "Visentico / Sento"
+license = "CC BY-SA 2.0"
+width = 1920
+height = 2560
+exterior = true
+selected = true
+side = "S/SW (octagon tower), view octagon_23"
+
+[[photo]]
+file = "photos/24_Palacio_de_la_Exposicion_431232326.jpg"
+title = "File:Palacio de la Exposición (431232326).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Palacio_de_la_Exposici%C3%B3n_(431232326).jpg"
+author = "Visentico / Sento"
+license = "CC BY-SA 2.0"
+width = 1920
+height = 1440
+exterior = true
+selected = true
+side = "S (hall west bays and octagon), view hall_west_24"
+
+[[photo]]
+file = "photos/25_Penell_de_la_torre.jpg"
+title = "File:Penell de la torre del palau de l'Exposició, València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Penell_de_la_torre_del_palau_de_l%27Exposici%C3%B3,_Val%C3%A8ncia.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1920
+height = 1479
+exterior = true
+selected = false
+side = "octagon weathervane detail"
 
 [[plan]]
 file = "plans/01_6_13_PALACIO_EXPOSICION_firmado.jpg"
@@ -250,6 +369,16 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [726820.31, 4372580.41, 726946.02, 4372702.84], 0.080 m/px, north up; roman numerals = floors above ground; parcels 6928402YJ2762H"
+
+[[reference]]
+url = "https://inmuebles.edu.gva.es/recursos/planeamientos/4024/20/1/4898.pdf"
+title = "Generalitat inventory ficha 4898"
+notes = "five facades, two storeys around a courtyard, square end towers, octagonal chamfer tower"
+
+[[reference]]
+url = "https://www.ign.es/wms-inspire/pnoa-ma"
+title = "IGN PNOA orthophoto (WMS, CC BY 4.0)"
+notes = "plan check: bbox EPSG:25830 726831.8,4372595.9,726921.8,4372685.9"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q48975834"
