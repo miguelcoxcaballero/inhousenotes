@@ -6,6 +6,7 @@ struct Material {
     emissive: vec4<f32>,   // w: normal scale
     params: vec4<f32>,     // x: metallic, y: roughness, z: alpha cutoff, w: unlit
     layers: vec4<f32>,     // x: clearcoat, y: clearcoat roughness, z: transmission
+    extra: vec4<f32>,      // x: specular factor (KHR_materials_specular: scales dielectric Fresnel)
 };
 
 @group(0) @binding(1) var shadow_map: texture_depth_2d_array;
@@ -393,16 +394,23 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let t = normalize(in.tangent.xyz - ng * dot(ng, in.tangent.xyz));
     let b = cross(ng, t) * in.tangent.w;
     var nm = textureSample(normal_tex, tex_sampler, in.uv).xyz * 2.0 - vec3<f32>(1.0);
+    let nm_len = length(nm);
     nm = vec3<f32>(nm.xy * material.emissive.w, nm.z);
     let n = normalize(mat3x3<f32>(t, b, ng) * nm);
 
     let mr = textureSample(mr_tex, tex_sampler, in.uv);
     let metallic = clamp(material.params.x * mr.b, 0.0, 1.0);
-    let rough = clamp(material.params.y * mr.g, 0.045, 1.0);
-    let a = rough * rough;
+    // Authored roughness widened by the normal variance in the pixel
+    // footprint (specular anti-aliasing); every specular term uses it.
+    let rough_in = clamp(material.params.y * mr.g, 0.045, 1.0);
+    let a = sqrt(specular_aa(n, rough_in * rough_in * rough_in * rough_in, nm_len, material.emissive.w));
+    let rough = sqrt(a);
     let ao = textureSample(occlusion_tex, tex_sampler, in.uv).r;
     let albedo = base.rgb;
     let f0 = mix(vec3<f32>(0.04), albedo, metallic);
+    // Dielectric Fresnel scale (porous masonry reflects less than its
+    // solid mineral: pores trap the specular, KHR_materials_specular).
+    let spec_k = select(mix(material.extra.x, 1.0, metallic), 1.0, legacy(16u));
     let diffuse_color = albedo * (1.0 - metallic);
 
     let v = normalize(frame.camera_pos.xyz - in.world_pos);
@@ -418,6 +426,8 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     let cc_a = max(material.layers.y, 0.02) * max(material.layers.y, 0.02);
     let ngc = ng;
     var color = vec3<f32>(0.0);
+    // Specular-only radiance for the `FORJA_DEBUG=spec` view.
+    var spec_dbg = vec3<f32>(0.0);
     var glass_sun = vec3<f32>(0.0);
     // Skin: light diffuses under the surface. Diffuse uses a softened
     // normal and per-channel wrap so red reaches further past the
@@ -433,6 +443,14 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
             shadow *= contact_shadow(in.world_pos, ng, in.view_depth, in.clip.xy);
         }
     }
+    // Micro-shadowing (Chan 2018, "Material Advances in Call of Duty:
+    // WWII"): the material AO acts as a visibility cone, so grazing sun is
+    // shadowed inside brick joints, render pores and stone tooling. Rough
+    // walls then show a broken, textured sheen instead of a smooth plastic
+    // gradient. Skin keeps its own soft terminator.
+    if (sss <= 0.0 && !legacy(8u)) {
+        shadow *= clamp(abs(nl) + 2.0 * ao * ao - 1.0, 0.0, 1.0);
+    }
     var dterm = vec3<f32>(nl * shadow);
     if (sss > 0.0) {
         // Measured skin scatters red light ~3x further than blue; keep the
@@ -443,7 +461,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         dterm = wrapv * shadow;
     }
     if (nl > 0.0) {
-        let f = f_schlick(f0, vh);
+        let f = f_schlick(f0, vh) * spec_k;
         glass_sun = d_ggx(nh, a) * v_smith(nv, nl, a) * frame.sun_color.rgb * nl * shadow;
         var spec = f * d_ggx(nh, a) * v_smith(nv, nl, a);
         if (sss > 0.0) {
@@ -451,7 +469,7 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
             let a2 = max(a * 0.35, 0.02);
             spec = f * (0.8 * d_ggx(nh, a) * v_smith(nv, nl, a) + 0.2 * d_ggx(nh, a2) * v_smith(nv, nl, a2));
         }
-        var lit = spec * nl * shadow;
+        var lit = spec * spec_energy(f0, rough, nv) * nl * shadow;
         if (cc > 0.0) {
             let fc = f_schlick(vec3<f32>(0.04), vh).x * cc;
             let ncl = max(dot(ngc, l), 0.0);
@@ -459,8 +477,9 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
             lit = lit * (1.0 - fc) + vec3<f32>(spec_c) * nl * shadow;
         }
         color += lit * frame.sun_color.rgb;
+        spec_dbg += lit * frame.sun_color.rgb;
     }
-    color += (vec3<f32>(1.0) - f_schlick(f0, max(dot(nd, normalize(v + l)), 0.0))) * diffuse_color / PI * dterm * frame.sun_color.rgb;
+    color += (vec3<f32>(1.0) - f_schlick(f0, max(dot(nd, normalize(v + l)), 0.0)) * spec_k) * diffuse_color / PI * dterm * frame.sun_color.rgb;
     // Point lights with smooth range falloff (Karis).
     let count = i32(frame.params.x);
     for (var i = 0; i < count; i++) {
@@ -484,12 +503,17 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
     // material AO and GTAO (with multi-bounce); reflections by specular
     // occlusion (Lagarde 2014) and horizon fading, so crevices, window
     // reveals and balcony undersides do not mirror the open sky.
-    let env = env_brdf(f0, rough, nv);
+    // Split-sum weights with multiple-scattering compensation: rough
+    // dielectrics keep their energy (no dark rims) and diffuse loses what
+    // the specular layer reflects (energy conservation).
+    let ibl = ibl_weights(f0, spec_k, rough, nv);
     let occ = min(ao, screen_ao(in.clip, on_surface));
     let spec_occ = mix(1.0, clamp(pow(nv + occ, exp2(-16.0 * rough - 1.0)) - 1.0 + occ, 0.0, 1.0), frame.ao_params.y);
     let r = reflect(-v, n);
     let horizon = clamp(1.0 + 1.2 * dot(r, ng), 0.0, 1.0);
-    color += diffuse_color * ambient_sky(nd) * ao_multibounce(occ, diffuse_color);
+    color += diffuse_color * ibl.diffuse * ambient_sky(nd) * ao_multibounce(occ, diffuse_color);
+    color += ibl.multi * ambient_sky(n) * (occ * spec_occ);
+    spec_dbg += ibl.multi * ambient_sky(n) * (occ * spec_occ);
     // One screen-space reflection ray per pixel, along the glossiest lobe
     // (clearcoat when there is one). Its hits replace the environment, which
     // only keeps its occlusion terms where the ray found nothing.
@@ -501,7 +525,9 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         ssr = ssr_trace(in.world_pos, n, v, rough, in.clip.xy);
     }
     let ssr_base = select(ssr, vec4<f32>(0.0), cc > 0.0);
-    color += mix(env_reflection(r, rough) * (spec_occ * horizon * horizon), ssr_base.rgb, ssr_base.a) * env;
+    let ibl_spec = mix(env_reflection(r, rough) * (spec_occ * horizon * horizon), ssr_base.rgb, ssr_base.a) * ibl.spec;
+    color += ibl_spec;
+    spec_dbg += ibl_spec;
     if (cc > 0.0) {
         let fcv = f_schlick(vec3<f32>(0.04), max(dot(ngc, v), 1e-4)).x * cc;
         let horizon_c = clamp(1.0 + 1.2 * dot(rc, ng), 0.0, 1.0);
@@ -512,6 +538,8 @@ fn fs_main(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) ve
         let dv = i32(frame.ao_params.w + 0.5);
         if (dv == 1) { return vec4<f32>(vec3<f32>(occ), 1.0); }
         if (dv == 2) { return vec4<f32>(vec3<f32>(shadow), 1.0); }
+        if (dv == 4) { return vec4<f32>(spec_dbg, 1.0); }
+        if (dv == 5) { return vec4<f32>(vec3<f32>(rough), 1.0); }
         // SSR reads last frame, which is this debug image: show where it
         // hits (confidence) rather than what it reflects.
         return vec4<f32>(ssr.a, ssr.a, ssr.a * 0.3, 1.0);
