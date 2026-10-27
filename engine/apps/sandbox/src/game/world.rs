@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use forja_assets::{MeshData, SceneData, TextureData};
 use forja_core::{App, Plugin};
 use forja_physics::PhysicsWorld;
 use forja_world::{KitCity, OsmWorld, SpanishCity, TerrainWorld, TestTrack, WorldDescription, WorldSource};
@@ -24,6 +25,41 @@ pub struct GameWorld {
     pub static_base: usize,
     /// Built with the night content (lit windows and lamps).
     pub night_content: bool,
+    /// The CPU copies of the world's meshes and textures were dropped
+    /// after the GPU upload (see [`strip`]).
+    pub released: bool,
+}
+
+/// A copy of `s` without its vertex, index and texture data, for scenes
+/// the renderer has uploaded: the city's scenes are only drawn, never read
+/// back (colliders, traffic and spawns live elsewhere), and keeping them
+/// doubled the game's memory. Bounds, nodes and materials stay, so the
+/// scene still describes itself. Also returns the mesh bytes dropped.
+pub fn strip(s: &SceneData) -> (SceneData, usize) {
+    let mut freed = 0;
+    let meshes = s
+        .meshes
+        .iter()
+        .map(|prims| {
+            prims
+                .iter()
+                .map(|m| {
+                    freed += m.positions.len() * 48 + m.indices.len() * 4 + m.lods.iter().map(|l| l.len() * 4).sum::<usize>();
+                    MeshData { material: m.material, aabb: m.aabb, lod_sync: m.lod_sync, ..Default::default() }
+                })
+                .collect()
+        })
+        .collect();
+    let textures = s
+        .textures
+        .iter()
+        .map(|t| {
+            // Shared buffers: freed once the last scene using them is
+            // stripped (not counted here).
+            TextureData { name: t.name.clone(), width: t.width, height: t.height, rgba8: Arc::from(Vec::new()), srgb: t.srgb }
+        })
+        .collect();
+    (SceneData { name: s.name.clone(), nodes: s.nodes.clone(), roots: s.roots.clone(), meshes, materials: s.materials.clone(), textures, skins: s.skins.clone(), clips: s.clips.clone() }, freed)
 }
 
 fn load(map: MapKind, paths: &Paths, hour: Option<f32>) -> Result<WorldDescription, forja_world::WorldError> {
@@ -86,6 +122,6 @@ impl Plugin for WorldPlugin {
         hud.map = kind.label().to_string();
         hud.attribution = desc.attribution.clone();
         log::info!("{}: {} placements, {} triangles", kind.label(), desc.placements.len(), desc.triangle_count());
-        app.insert_resource(GameWorld { desc, kind, scene_base, static_base, night_content: self.hour.is_some() });
+        app.insert_resource(GameWorld { desc, kind, scene_base, static_base, night_content: self.hour.is_some(), released: false });
     }
 }

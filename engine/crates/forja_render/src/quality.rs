@@ -156,7 +156,7 @@ impl GraphicsConfig {
         let (scale, min_scale, dynamic, shadow, pcss, far, sdist, ao_half, ssr, ssr_steps, contact, lights, tex, lod) = match p {
             Preset::Low => (0.75, 0.5, true, 1024, 0, 4, 0.6, true, false, 16, false, 512, 1024, 0.5),
             Preset::Medium => (0.9, 0.6, true, 1536, 1, 3, 0.8, true, true, 16, true, 2048, 2048, 0.75),
-            Preset::High => (1.0, 0.75, true, 2048, 2, 2, 1.0, true, true, 32, true, 4096, 4096, 1.0),
+            Preset::High => (1.0, 0.75, true, 2048, 2, 2, 1.0, true, true, 32, true, 4096, 2048, 1.0),
             Preset::Ultra => (1.0, 1.0, false, 4096, 4, 1, 1.0, false, true, 48, true, 65535, 4096, 1.5),
             Preset::Custom => return,
         };

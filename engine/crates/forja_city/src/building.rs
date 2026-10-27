@@ -71,6 +71,12 @@ pub struct PartyWall {
     pub seed: u64,
 }
 
+/// `x` rounded down to a multiple of 10 cm (opening sizes, so modules are
+/// shared).
+fn snap10(x: f32) -> f32 {
+    ((x * 10.0 + 1e-3).floor() / 10.0).max(0.1)
+}
+
 /// Minimum distance between two pharmacies.
 pub const PHARMACY_SPACING: f32 = 140.0;
 
@@ -812,7 +818,10 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
     let narrow = fr.clear < 6.0;
     // Thin lots and through-lots get shallow fake rooms.
     let interior = |s: u8| if fr.depth < 4.0 { s % 4 + 4 } else { s % 4 };
-    let ww = c.ww.min(bay_w - 0.75).max(0.7);
+    // Openings snap to 10 cm so the instanced window modules are shared
+    // across buildings (a free width per bay made ~8 k unique window
+    // meshes, half the city's mesh memory).
+    let ww = snap10(c.ww.min(bay_w - 0.75)).max(0.7);
     let mut ground_holes = Vec::new();
     let mut upper_holes = Vec::new();
     let center = |k: usize| eb.center(k);
@@ -823,8 +832,8 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
         let u = center(k);
         if e.portal == Some(k) {
             portal_u = Some(u);
-            let (w, h) = (fr.portal.min(1.9).min(bay_w - 0.6), (c.gh - 0.55).min(3.7));
-            let key = PortalKey { w_cm: (w * 100.0) as u16, h_cm: (h * 100.0) as u16, surround: if c.ground == c.wall { c.surround } else { c.ground }, door: door_color(rng) };
+            let (w, h) = (snap10(fr.portal.min(1.9).min(bay_w - 0.6)), snap10((c.gh - 0.55).min(3.7)));
+            let key = PortalKey { w_cm: (w * 100.0).round() as u16, h_cm: (h * 100.0).round() as u16, surround: if c.ground == c.wall { c.surround } else { c.ground }, door: door_color(rng) };
             ground_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: 0.0, v1: h });
             let m = lib.portal(out, key);
             out.placements.push((m, facade_frame(f.p(u, 0.0, 0.0), f.t, f.n)));
@@ -922,8 +931,8 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
         } else if narrow && bay_w >= 1.4 && rng.chance(0.4) {
             // The street door of a house: on narrow streets ground floors
             // are homes and workshops as often as shops.
-            let (w, h) = ((bay_w - 0.6).min(1.1), (c.gh - 0.75).clamp(2.2, 2.7));
-            let key = PortalKey { w_cm: (w * 100.0) as u16, h_cm: (h * 100.0) as u16, surround: if c.ground == c.wall { c.surround } else { c.ground }, door: door_color(rng) };
+            let (w, h) = (snap10((bay_w - 0.6).min(1.1)), snap10((c.gh - 0.75).clamp(2.2, 2.7)));
+            let key = PortalKey { w_cm: (w * 100.0).round() as u16, h_cm: (h * 100.0).round() as u16, surround: if c.ground == c.wall { c.surround } else { c.ground }, door: door_color(rng) };
             ground_holes.push(Hole { u0: u - w * 0.5, u1: u + w * 0.5, v0: 0.0, v1: h });
             let m = lib.portal(out, key);
             out.placements.push((m, facade_frame(f.p(u, 0.0, 0.0), f.t, f.n)));
@@ -933,8 +942,8 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             let (w, h, y) = (ww.min(1.1), 1.65, 0.95);
             let state = rng.below(4) as u8;
             let key = WindowKey {
-                w_cm: (w * 100.0) as u16,
-                h_cm: (h * 100.0) as u16,
+                w_cm: (w * 100.0).round() as u16,
+                h_cm: (h * 100.0f32).round() as u16,
                 door: false,
                 surround: c.surround,
                 surround_kind: SurroundKind::Plain,
@@ -984,7 +993,7 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
             let mirador = e.decor.mirador_bay == Some(kk) && !last && bays_have_room(bay_w) && fr.miradores && fr.reach + 0.15 >= 0.92;
             let has_balcony = has_balcony && (!terraces || (kk >= span.0 && kk <= span.1));
             let door = has_balcony || mirador;
-            let (w, h) = if door { (ww, c.door_h(fl)) } else { (ww, 1.55) };
+            let (w, h) = if door { (ww, snap10(c.door_h(fl))) } else { (ww, 1.55) };
             let wy = if door { y } else { y + 0.9 };
             let principal = first && c.floors >= 3 && !style.modern;
             let balcony = (has_balcony && !mirador).then(|| {
@@ -1019,15 +1028,15 @@ fn street_facade(lib: &mut ModuleLib, out: &mut CityOut, parts: &mut Parts<Mat>,
                 state = 0;
             }
             let key = WindowKey {
-                w_cm: (w * 100.0) as u16,
-                h_cm: (h * 100.0) as u16,
+                w_cm: (w * 100.0).round() as u16,
+                h_cm: (h * 100.0).round() as u16,
                 door,
                 surround: c.surround,
                 surround_kind: c.surround_on(fl),
                 frame,
                 shutter: if mirador { None } else { Some((shutter.0, shutter.1, state)) },
                 balcony,
-                mirador: mirador.then(|| ((fh - 0.35) * 100.0) as u16),
+                mirador: mirador.then(|| (snap10(fh - 0.35) * 100.0).round() as u16),
                 interior: interior(state),
                 light: window_light(&lib.kit.night, f.p(flat as f32 * 50.0, y, -40.0), f.p(u, wy, 0.0)),
                 grille: false,

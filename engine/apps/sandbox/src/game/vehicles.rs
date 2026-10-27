@@ -166,7 +166,11 @@ impl Plugin for VehiclesPlugin {
         car_spawns.truncate(CARS.len());
         let mut bike_spawns: Vec<Iso> = desc.spawns_of(SpawnKind::Bike).map(|s| s.iso).collect();
         if bike_spawns.is_empty() {
-            bike_spawns.push(Iso::new(player.pos + player.rot * Vec3::new(-3.0, 0.2, 2.0), player.rot));
+            // Beside the player, on open level ground (not in a raised
+            // flower bed or a facade, where it fell over).
+            let fwd = player.rot * Vec3::Z;
+            let at = super::props::open_ground(app.world.res::<PhysicsWorld>(), player.pos, 3.5, 3, 0.9, fwd).map_or(player.pos + player.rot * Vec3::new(-3.0, 0.2, 2.0), |g| g + fwd * 0.9 + Vec3::Y * 0.2);
+            bike_spawns.push(Iso::new(at, player.rot));
         }
         if car_spawns.is_empty() {
             car_spawns.push(Iso::new(player.pos + Vec3::new(4.0, 0.5, 0.0), player.rot));

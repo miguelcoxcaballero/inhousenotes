@@ -101,7 +101,9 @@ pub fn draw(ctx: &egui::Context, world: &mut World, ui: &mut UiState) {
                     ("Tab", "inventory"),
                     ("F1", "physics debug"),
                     ("F2", "next map"),
-                    ("F3", "time of day +3 h"),
+                    ("F3", "time of day +3 h (night at 21-6 h)"),
+                    ("F9", "graphics options (presets)"),
+                    ("F11", "frame profiler"),
                     ("F12", "screenshot"),
                     ("Esc", "release mouse / quit"),
                 ] {
