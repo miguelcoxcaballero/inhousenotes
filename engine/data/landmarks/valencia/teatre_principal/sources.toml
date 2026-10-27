@@ -24,6 +24,31 @@ catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatast
 catastro_floor_area = { value = 5944.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5925901&rc2=YJ2752F", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 6, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 6 parts" }
 
+# ---- measured dimensions used by landmark.toml (scratchpad tp/gen.py, tp/ba.py) ----
+front_width = { value = 26.62, unit = "m", source = "OSM way 23377878 / Catastro 5925901YJ2752F corners, checked on IGN PNOA orthophoto (CC BY 4.0)", note = "Carrer de les Barques front, facing azimuth 174 deg" }
+portico_projection = { value = 1.38, unit = "m", source = "OSM building:part 1284718677 step, PNOA" }
+portico_width = { value = 14.7, unit = "m", source = "photo 09 back-projection (BA camera) and OSM step 13.8 m", note = "s = 5.95..20.65 m from the west corner" }
+column_spacing = { value = 4.25, unit = "m", source = "photos 09, 08, 02, 12 (columns at portico centre +-2.125 / +-6.375 m)" }
+building_depth = { value = 70.2, unit = "m", source = "OSM / Catastro: Carrer de les Barques to Calle Moratin" }
+ground_floor_top = { value = 5.6, unit = "m", source = "bundle adjustment photos 09+03 (no EXIF: focal free, eye-height prior 1.6 m, facade width as scale)", note = "+-0.3 m; ground cornice top 6.1 m" }
+column_pedestal_top = { value = 7.7, unit = "m", source = "BA photos 09+03 (+-0.3 m)" }
+column_capital_top = { value = 15.5, unit = "m", source = "BA photos 09+03; views 08/02/12 solved to <10 px" }
+wing_band = { value = 15.1, unit = "m", source = "BA photos 09+03" }
+wing_cornice_top = { value = 17.0, unit = "m", source = "BA photos 09+03 (+-0.3 m)" }
+wing_balustrade_top = { value = 18.65, unit = "m", source = "BA photos 09+03" }
+portico_entablature_top = { value = 17.45, unit = "m", source = "BA photos 09+03" }
+portico_attic_top = { value = 19.15, unit = "m", source = "BA photos 09+03" }
+crest_pedestal_top = { value = 19.6, unit = "m", source = "BA photos 09+03" }
+crest_top = { value = 22.3, unit = "m", source = "photo 09 / 08 (sculpted arms of Valencia above the attic), approx." }
+lunette_springing = { value = 12.7, unit = "m", source = "views 08, 01, 16 (lunette windows of the wings and returns)" }
+east_side_cornice = { value = 16.0, unit = "m", source = "photo 16 / 07 (Poeta Querol front), solved views east_side and se_corner_2007" }
+east_side_attic_top = { value = 19.4, unit = "m", source = "photos 16, 07, 01: plain attic flush with the front-block return attic" }
+west_side_top = { value = 14.8, unit = "m", source = "Catastro facade photo back-projected on the west wall plane (view sw_catastro) and photo 02" }
+rear_block_top = { value = 19.6, unit = "m", source = "photo 06 back-projection on the north-east corner (view rear_ne_corner); cornice ~14.1 m" }
+stage_house_ridge = { value = 26.5, unit = "m", source = "photos 18 (from the Ateneu, camera solved with fixed fov) and 19; PNOA ridge N-S on x = -1.5" }
+stage_house_walls = { value = 19.4, unit = "m", source = "photo 18 (eaves at the side attic height)" }
+auditorium_ridge = { value = 21.5, unit = "m", source = "PNOA roof pattern (ridge on the axis x ~ 0.7, tiles west / metal east) and photo 18" }
+
 [[photo]]
 file = "photos/01_Teatro_Principal_en_la_calle_de_las_Barcas_numero_15_de_Vale.jpg"
 title = "File:Teatro Principal en la calle de las Barcas número 15 de Valencia.jpg"
@@ -33,8 +58,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 727
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/02_Teatro_Principal_panoramio.jpg"
@@ -46,8 +71,8 @@ width = 1280
 height = 960
 camera = [-20.33, 48.83]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/03_Teatro_Principal_de_Valencia.jpg"
@@ -59,8 +84,8 @@ width = 1280
 height = 1032
 camera = [1.52, 33.41]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/04_Teatro_Principal_panoramio_1.jpg"
@@ -72,8 +97,8 @@ width = 1280
 height = 960
 camera = [25.46, 48.16]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/05_Teatre_Principal_de_Valencia_entrada.jpg"
@@ -96,8 +121,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1989
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "ne"
 
 [[photo]]
 file = "photos/07_Teatre_Principal_Valencia.jpg"
@@ -108,8 +133,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/08_Teatre_principal.jpg"
@@ -120,8 +145,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/09_Teatre_Principal_Valencia_04_2025_1.jpg"
@@ -134,8 +159,8 @@ height = 1236
 camera = [3.63, 20.13]
 heading = 190.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/10_Columnes_de_la_facana_del_teatre_Principal_de_Valencia.jpg"
@@ -170,8 +195,8 @@ license = "CC0"
 width = 1280
 height = 1600
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
 
 [[photo]]
 file = "photos/13_Facana_del_teatre_Principal_de_Valencia.jpg"
@@ -182,8 +207,8 @@ license = "CC BY-SA 3.0"
 width = 1280
 height = 1925
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "se"
 
 [[photo]]
 file = "photos/14_Teatre_principal2.jpg"
@@ -218,8 +243,45 @@ license = "Catastro open data (attribution required)"
 width = 1600
 height = 1200
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "sw"
+
+
+[[photo]]
+file = "photos/16_Teatre_Principal_de_Valncia_lateraljpg.jpg"
+title = "File:Teatre Principal de València, lateral.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Teatre_Principal_de_Val%C3%A8ncia,_lateral.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 905
+exterior = true
+selected = true
+side = "e"
+
+[[photo]]
+file = "photos/18_Vista_del_teatre_Principal_des_de_lAteneu_Mercanti.jpg"
+title = "File:Vista del teatre Principal des de l'Ateneu Mercantil, València.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Vista_del_teatre_Principal_des_de_l%27Ateneu_Mercantil,_Val%C3%A8ncia.jpg"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 855
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "photos/19_hotel_reina_victoria.jpg"
+title = "File:Vista apartir do piso 3 do Hotel Reina Victoria - panoramio.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Vista_apartir_do_piso_3_do_Hotel_Reina_Victoria_-_panoramio.jpg"
+author = "Carlos Cunha"
+license = "CC BY-SA 3.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "sw"
 
 [[plan]]
 file = "plans/catastro_wms.png"
@@ -229,6 +291,16 @@ author = "Dirección General del Catastro"
 license = "Catastro open data (attribution required)"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [725802.44, 4372249.45, 725896.07, 4372380.4], 0.080 m/px, north up; roman numerals = floors above ground; parcels 5925901YJ2752F"
+
+
+[[plan]]
+file = "plans/pnoa_orthophoto.jpg"
+title = "IGN PNOA maximum-actuality orthophoto"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OI.OrthoimageCoverage&STYLES=&CRS=EPSG:25830&BBOX=725809.415,4372265.178,725889.415,4372365.178&WIDTH=1000&HEIGHT=1250&FORMAT=image/jpeg"
+author = "Instituto Geografico Nacional (scne.es)"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "0.08 m/px, north up; local frame x = E - 725849.415, z = 4372315.178 - N. Used for the front width, portico step and the roof pattern (auditorium ridge, stage-house gable)."
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q3329707"
