@@ -20,6 +20,22 @@ catastro_built = { value = 1926, source = "https://www1.sedecatastro.gob.es/CYCB
 catastro_use = { value = "4_3_publicServices", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=0304162&rc2=YJ3700G" }
 catastro_floor_area = { value = 2446.0, unit = "m2", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=0304162&rc2=YJ3700G", note = "Catastro officialArea (gross floor area)" }
 catastro_floors_max = { value = 3, source = "Catastro INSPIRE BU:BuildingPart", note = "max numberOfFloorsAboveGround over 4 parts" }
+architect = { value = "Federico Gomez de Membrillera (engineer)", source = "https://es.wikipedia.org/wiki/Edificio_del_Reloj" }
+storeys = { value = "ground floor + first floor + attic storey in the mansard", source = "https://es.wikipedia.org/wiki/Edificio_del_Reloj", note = "Catastro max 3 floors above ground agrees" }
+footprint_main_block = { value = [38.4, 26.3], unit = "m", source = "OSM relation 21033515 = Catastro 0304162YJ3700G (IoU 0.99), edges checked on the IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0)", note = "S facade 38.4 m incl. the SW pavilion (33.3 m main run + 5.0 m pavilion face), E facade 26.3 m, N facade 32.6 + 5.7 m, W facade 24.75 m between pavilion returns (28.1 m overall); footprint 931 m2 with two light wells" }
+corner_pavilions = { value = [5.0, 0.93], unit = "m", source = "OSM relation 21033515; photos 05, 12, dorieo_11/12", note = "SW pavilion 5.0 m wide projecting 0.93 m from the S facade (NW pavilion 5.7 m, 0.8 m); arched attic + coat of arms" }
+tower_plan = { value = 3.3, unit = "m", source = "OSM way 1532612427 / outline protrusion; width confirmed by the solved overlay on photo 01 (rms 4.1 px, shaft 110 px vs 3.2-3.3 m)", note = "square shaft, axes parallel to the block, west face 0.8 m west of the SE corner, straddling the S facade line and projecting 2.5 m east of the E facade" }
+facade_bays = { value = { south = "SW pavilion + 2 bays + oculus pier + 3 bays (continuous balcony) + oculus pier + 2 bays", west = 6, east = 6 }, source = "photos 01, 05, 10, 03, 09", note = "S bay centres from the W end of the main run 2.9, 7.0, 12.9, 17.0, 21.0, 26.9, 30.8 m (oculus piers 9.9, 24.0); W 2.0, 5.8, 9.8, 14.2, 18.4, 22.3 m from the N end of the main run; E 3.8, 7.7, 11.9, 15.3, 19.5, 23.4 m from the S end; scaled on photo 05 by the 37.6 m visible S facade" }
+plinth_height = { value = 0.6, unit = "m", source = "photo 05 (frontal, 38.6 mm/px at the facade)" }
+ground_arches = { value = [1.55, 3.5], unit = "m", source = "photo 05", note = "width x height to the crown of the round-arched ground-floor doors and windows" }
+string_course = { value = 4.9, unit = "m", source = "photo 05" }
+first_floor_windows = { value = [1.35, 5.45, 7.6], unit = "m", source = "photo 05", note = "width, sill (balcony floor) and lintel; segmental pediments; oculi on the piers centred at 6.9 m" }
+cornice_top = { value = 9.9, unit = "m", source = "photos 05 and 10 (frontal); bundle solve photos 01/12/06/Catastro gave 9.1-9.4 (entablature) and 10.7 (pavilion corner); overlays of 10 solved views agree within ~0.3 m" }
+balustrade_top = { value = 10.8, unit = "m", source = "photos 05, 10" }
+mansard = { value = [13.1, 13.9, 14.9], unit = "m", source = "photos 01, 05 (far, frontal) and 03, 09, 10 (near); compromise between views that differ by +-0.3 m", note = "steep slate face to 13.1 m, low upper slope to 13.9 m, iron cresting top 14.9 m; PNOA shows the slate ring" }
+dormers = { value = 11.35, unit = "m", source = "photos 01, 05", note = "oeil-de-boeuf centres; over every bay on S and W, over the 4 inner bays on E (photo 03)" }
+pavilion_attic = { value = [12.1, 14.4], unit = "m", source = "photo 05", note = "attic cornice and top of the coat of arms" }
+tower_heights = { value = { plinth = 1.6, shaft_top = 17.5, gallery_floor = 18.3, railing = 19.3, clock_centre = 20.1, clock_stage_top = 22.2, slate_cap_top = 23.4, lantern_top = 24.6, lantern_cap_top = 25.7, vane_top = 27.8 }, unit = "m", source = "photo 05 frontal; bundle solve on photos 01/12/06/Catastro (4 cameras, free focal, eye-height prior 1.6 m): vane 27.8 +- 0.3, clock centre 19.4-19.7 +- 0.3" }
 
 [[photo]]
 file = "photos/01_Sede_de_la_autoridad_portuaria_de_Valencia.jpg"
@@ -31,8 +47,8 @@ width = 1280
 height = 853
 camera = [425.9, -288.43]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S"
 
 [[photo]]
 file = "photos/02_Edificio_de_la_Autoridad_Portuaria_de_Valencia_09.jpg"
@@ -44,8 +60,8 @@ width = 1280
 height = 1920
 camera = [-13.14, -9.17]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower"
 
 [[photo]]
 file = "photos/03_Facana_de_l_edifici_del_rellotge_port_de_Valencia.jpg"
@@ -56,8 +72,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E"
 
 [[photo]]
 file = "photos/04_Torre_de_l_edifici_del_rellotge_des_de_baix.jpg"
@@ -69,7 +85,7 @@ width = 1280
 height = 1920
 exterior = true
 selected = false
-side = ""
+side = "tower"
 
 [[photo]]
 file = "photos/05_Valencia_Edificio_del_Reloj_2018_09_26.jpg"
@@ -80,8 +96,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 853
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "S"
 
 [[photo]]
 file = "photos/06_Port_Authority_Building_Valencia_P1430339_Flickr_ianpreston.jpg"
@@ -92,8 +108,8 @@ license = "CC BY 2.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE"
 
 [[photo]]
 file = "photos/07_Edifici_del_Rellotge_Valencia.jpg"
@@ -105,7 +121,7 @@ width = 1280
 height = 1707
 exterior = true
 selected = false
-side = ""
+side = "S"
 
 [[photo]]
 file = "photos/08_Valencia_Valencia_192.jpg"
@@ -117,7 +133,7 @@ width = 1280
 height = 1920
 exterior = true
 selected = false
-side = ""
+side = "SE"
 
 [[photo]]
 file = "photos/09_Edifici_del_Rellotge_Port_de_Valencia_04_2025_1.jpg"
@@ -130,8 +146,8 @@ height = 845
 camera = [-11.38, -7.67]
 heading = 17.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/10_Facana_de_la_seu_de_l_Autoritat_Portuaria_Valencia.jpg"
@@ -142,8 +158,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 856
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "W"
 
 [[photo]]
 file = "photos/11_Edifici_del_Rellotge_Valencia_1.jpg"
@@ -155,7 +171,7 @@ width = 1280
 height = 1707
 exterior = true
 selected = false
-side = ""
+side = "S"
 
 [[photo]]
 file = "photos/12_Edificio_del_Reloj_del_Puerto_de_Valencia_Spain.jpg"
@@ -166,8 +182,8 @@ license = "CC0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SW"
 
 [[photo]]
 file = "photos/13_Edificio_Reloj.jpg"
@@ -178,8 +194,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 871
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "SE"
 
 [[photo]]
 file = "photos/14_Torre_del_rellotge_port_de_Valencia.jpg"
@@ -190,8 +206,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1980
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower"
 
 [[photo]]
 file = "photos/15_Torre_de_l_antiga_estacio_maritima_port_de_Valencia.jpg"
@@ -202,8 +218,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1985
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "tower"
 
 [[photo]]
 file = "photos/16_Torre_i_lateral_de_l_edifici_del_rellotge_del_port_de_Valenc.jpg"
@@ -214,8 +230,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 2054
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "E"
 
 [[photo]]
 file = "photos/catastro_0304162YJ3700G.jpg"
@@ -226,17 +242,286 @@ license = "Catastro open data (attribution required)"
 width = 1024
 height = 768
 exterior = true
+selected = true
+side = "SE"
+
+[[photo]]
+file = "photos_extra/dorieo_01.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_01.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "E"
+notes = "fetched by hand (Special:FilePath, width 1280); E facade from the tower"
+
+[[photo]]
+file = "photos_extra/dorieo_02.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_02.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
 selected = false
-side = ""
+side = "E"
+notes = "fetched by hand (Special:FilePath, width 1280); inscription, balcony, dormers"
+
+[[photo]]
+file = "photos_extra/dorieo_03.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_03.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "E"
+notes = "fetched by hand (Special:FilePath, width 1280); dormers and inscription"
+
+[[photo]]
+file = "photos_extra/dorieo_04.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_04.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "S"
+notes = "fetched by hand (Special:FilePath, width 1280); S facade from SW"
+
+[[photo]]
+file = "photos_extra/dorieo_05.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 05.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_05.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "tower"
+notes = "fetched by hand (Special:FilePath, width 1280); clock stage"
+
+[[photo]]
+file = "photos_extra/dorieo_06.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 06.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_06.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "tower"
+notes = "fetched by hand (Special:FilePath, width 1280); tower top"
+
+[[photo]]
+file = "photos_extra/dorieo_07.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_07.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "S"
+notes = "fetched by hand (Special:FilePath, width 1280); S facade oblique"
+
+[[photo]]
+file = "photos_extra/dorieo_08.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 08.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_08.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "S"
+notes = "fetched by hand (Special:FilePath, width 1280); S facade frontal"
+
+[[photo]]
+file = "photos_extra/dorieo_10.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 10.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_10.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "S"
+notes = "fetched by hand (Special:FilePath, width 1280); S facade + tower"
+
+[[photo]]
+file = "photos_extra/dorieo_11.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 11.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_11.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "S"
+notes = "fetched by hand (Special:FilePath, width 1280); SW pavilion attic and coat of arms"
+
+[[photo]]
+file = "photos_extra/dorieo_12.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 12.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_12.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "S"
+notes = "fetched by hand (Special:FilePath, width 1280); SW pavilion front"
+
+[[photo]]
+file = "photos_extra/dorieo_13.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 13.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_13.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "W"
+notes = "fetched by hand (Special:FilePath, width 1280); pavilion pier reliefs"
+
+[[photo]]
+file = "photos_extra/dorieo_14.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 14.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_14.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "W"
+notes = "fetched by hand (Special:FilePath, width 1280); W facade oblique"
+
+[[photo]]
+file = "photos_extra/dorieo_15.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 15.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_15.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "W"
+notes = "fetched by hand (Special:FilePath, width 1280); W facade frontal"
+
+[[photo]]
+file = "photos_extra/dorieo_16.jpg"
+title = "File:Edificio de la Autoridad Portuaria de Valencia 16.jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edificio_de_la_Autoridad_Portuaria_de_Valencia_16.jpg"
+author = "Dorieo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "W"
+notes = "fetched by hand (Special:FilePath, width 1280); W facade centre, inscription"
+
+[[photo]]
+file = "photos_extra/joanbanjo_lateral.jpg"
+title = "File:Edifici del Rellotge del port de València, lateral.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_del_port_de_València,_lateral.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 2097
+exterior = true
+selected = true
+side = "N"
+notes = "fetched by hand (Special:FilePath, width 1280); the only N facade view: from the E end along the dock; confirms pavilion + 2 + oculus pier + 3 (continuous balcony) + oculus pier from the W, i.e. the S layout mirrored"
+
+[[photo]]
+file = "photos_extra/joanbanjo_cantonada.jpg"
+title = "File:Edifici del rellotge del port de València, cantonada.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_del_rellotge_del_port_de_València,_cantonada.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1959
+exterior = true
+selected = false
+side = "W"
+notes = "fetched by hand (Special:FilePath, width 1280); pavilion corner pier reliefs"
+
+[[photo]]
+file = "photos_extra/joanbanjo_seu.jpg"
+title = "File:Seu de l'Autoritat Portuària de València.JPG"
+url = "https://commons.wikimedia.org/wiki/File:Seu_de_l'Autoritat_Portuària_de_València.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 873
+exterior = true
+selected = true
+side = "W"
+notes = "fetched by hand (Special:FilePath, width 1280); W facade and tower behind, from the SW"
+
+[[photo]]
+file = "photos_extra/josu_2.jpg"
+title = "File:Edifici del Rellotge València (2).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_València_(2).jpg"
+author = "Josu PV"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "E"
+notes = "fetched by hand (Special:FilePath, width 1280); tower and E facade"
+
+[[photo]]
+file = "photos_extra/josu_3.jpg"
+title = "File:Edifici del Rellotge València (3).jpg"
+url = "https://commons.wikimedia.org/wiki/File:Edifici_del_Rellotge_València_(3).jpg"
+author = "Josu PV"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "E"
+notes = "fetched by hand (Special:FilePath, width 1280); E facade with the tower"
 
 [[plan]]
 file = "plans/catastro_wms.png"
 title = "Catastro WMS cadastral map"
 url = "http://ovc.catastro.meh.es/Cartografia/WMS/ServidorWMS.aspx?SERVICE=WMS&REQUEST=GetMap&LAYERS=Catastro&SRS=EPSG:25830&BBOX=729499.29,4371187.29,729604.46,4371288.39"
-author = "Dirección General del Catastro"
-license = "Catastro open data (attribution required)"
+author = "Josu PV"
+license = "CC BY-SA 4.0"
 kind = "catastro"
 notes = "Cadastral map, EPSG:25830 bbox [729499.29, 4371187.29, 729604.46, 4371288.39], 0.080 m/px, north up; roman numerals = floors above ground; parcels 0304162YJ3700G"
+
+[[plan]]
+file = "plans/pnoa_ortho.jpg"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 729507.2-729597.2, N 4371193.8-4371283.8"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=OI.OrthoimageCoverage&SRS=EPSG:25830&BBOX=729507.225,4371193.758,729597.225,4371283.758&WIDTH=1500&HEIGHT=1500&FORMAT=image/jpeg"
+author = "Josu PV"
+license = "CC BY-SA 4.0"
+kind = "orthophoto"
+notes = "0.06 m/px resampled, north up; used to check the OSM/Catastro outline, the slate mansard ring and the light wells (not committed; refetch with the URL)"
 
 [[reference]]
 url = "https://www.wikidata.org/wiki/Q50426705"
@@ -277,3 +562,8 @@ notes = "Wikidata P973"
 url = "https://eduwp.edu.gva.es/patrimonio-cultural/ficha-inmueble.php?id=1027"
 title = "Described at"
 notes = "Wikidata P973"
+
+[[reference]]
+url = "https://commons.wikimedia.org/wiki/Category:Edifici_del_Rellotge_%28Port_de_Val%C3%A8ncia%29"
+title = "Commons photo set (Dorieo series 01-16)"
+notes = "S, E, W, tower and pavilion details; the N facade is seen only obliquely in joanbanjo_lateral, so its bay positions mirror the measured S layout (sequence confirmed, positions not measured)"
