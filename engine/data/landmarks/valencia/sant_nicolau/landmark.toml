@@ -1,0 +1,840 @@
+# Església de Sant Nicolau de Bari i Sant Pere Màrtir (Iglesia de San Nicolás), València.
+# Valencian Gothic single-nave church (six bays, chapels between the buttresses, polygonal apse)
+# hidden inside the Ciutat Vella block between Carrer dels Cavallers (entrance through a narrow
+# passage, not modelled: it runs between neighbours) and Plaça de Sant Nicolau, which wraps the
+# west front (Gothic portal of the 15th c. and the neo-Gothic rose window) and the south front
+# (neo-Gothic ochre front by Timoteo Calvo, 1861-64, with cresting and small tiled pavilions).
+# Bell tower at the SW corner: stone base, brick shaft (1658), bell stage with one arch per face,
+# balustrade with corner pinnacles and the octagonal two-storey lantern (1755).
+#
+# Every dimension is in sources.toml [facts] with its source. Summary:
+# * plan: OSM way 514601809 + tower part 1485420318, Catastro 5531704YJ2753B parts, IGN PNOA;
+# * heights: constrained bundle adjustment of 4 photos (Catastro facade photo with f = 1167 px
+#   from EXIF, Commons 04, 07, 14) with shared unknown levels; facade details from photos 02,
+#   06, 12, 13 scaled on the measured levels.
+
+[landmark]
+name = "Església de Sant Nicolau"
+slug = "sant_nicolau"
+main_facade = "facing:s"
+notes = "Gothic single-nave church in Ciutat Vella: ashlar west front with Gothic portal and rose window, neo-Gothic ochre south front on Plaça de Sant Nicolau, brick bell tower (cross 46.9 m measured) with octagonal lantern."
+[landmark.info]
+built = "13th-15th c. (church), 1658 / 1755 (tower), 1861-64 neo-Gothic fronts (Timoteo Calvo)"
+style = "Valencian Gothic; neo-Gothic south front"
+heritage = "BIC RI-51-0004502"
+
+[defaults]
+material = "stone"
+roof_material = "roof"
+detail = 1.0
+
+[render]
+sun = [200, 55]
+paving = 60
+hide_context = [134]
+
+# ---------------------------------------------------------------- materials
+[material.stone]
+kind = "ashlar"
+tint = "#d9c6a8"
+block = [0.85, 0.36]
+weathering = 0.45
+seed = 5
+
+[material.stone_fine]
+kind = "limestone"
+tint = "#ddd2bd"
+weathering = 0.3
+
+[material.plinth]
+kind = "limestone"
+tint = "#d6cdb9"
+weathering = 0.4
+
+[material.ochre]
+kind = "ashlar"
+tint = "#d4a35e"
+block = [0.9, 0.42]
+weathering = 0.12
+seed = 9
+
+[material.ochre_trim]
+kind = "stucco"
+tint = "#d9ab68"
+weathering = 0.1
+
+[material.red_trim]
+kind = "stucco"
+tint = "#a5503a"
+weathering = 0.1
+
+[material.brick]
+kind = "sandstone"
+tint = "#efcdb8"
+weathering = 0.15
+
+[material.white]
+kind = "stucco"
+tint = "#efe6d3"
+weathering = 0.1
+
+[material.wing]
+kind = "stucco"
+tint = "#dcae66"
+weathering = 0.35
+
+[material.plaster]
+kind = "stucco"
+tint = "#d8c7a6"
+weathering = 0.3
+
+[material.roof]
+kind = "roof_tiles"
+tint = "#a88a76"
+weathering = 0.35
+
+[material.blue_tiles]
+kind = "glazed_tiles"
+pattern = "stripes"
+colors = ["#1d3f8f", "#f2eee2", "#2a58b0"]
+weights = [0.45, 0.3, 0.25]
+
+[material.green_tiles]
+kind = "glazed_tiles"
+pattern = "plain"
+colors = ["#3f8a6e", "#5aa486"]
+
+[material.azulejo]
+kind = "azulejo"
+pattern = "frieze"
+
+[material.iron]
+kind = "iron"
+
+[material.wood]
+kind = "wood"
+tint = "#5a3a26"
+
+# ---------------------------------------------------------------- church
+# Nave and polygonal apse (single tiled roof, low gable). North wall z -5.55 (x -16.5) to -2.2
+# (x 20), south wall 9.5 (x -11.35) to 12.0 (x 20.3): PNOA roof edges + Catastro parts 7/8;
+# west of the tower the nave reaches the tower's north face.
+[[element]]
+type = "mass"
+name = "nave"
+material = "plaster"
+polygon = [[-16.5, -5.55], [20.0, -2.2], [23.6, -1.0], [26.0, 1.5], [25.8, 5.3], [25.0, 8.5], [20.3, 12.0], [-10.66, 9.45], [-10.66, 6.15], [-17.17, 5.04], [-16.5, 4.95]]
+height = 13.8
+cornice = { profile = "eave", size = 0.35, material = "plaster" }
+note = "nave eave 13.8 m: just under the west front top (14.5 m, tower stone stage 14.0 m by bundle adjustment); ridge on PNOA at z ~ centre line"
+
+[[element]]
+type = "roof"
+on = "nave"
+shape = "hip"
+pitch = 16
+overhang = 0.3
+note = "low tiled roof: the west gable shows only ~1.5 m above the west parapet (photos 10, 13); hips of the apse on PNOA converge at (20.5, 4)"
+
+# West front: ashlar screen with a flat top and an iron railing (photos 03, 10, 13).
+[[element]]
+type = "mass"
+name = "west_front"
+polygon = [[-17.45, -5.6], [-17.45, -4.93], [-18.29, 1.9], [-18.55, 5.0], [-18.85, 8.2], [-17.7, 8.15], [-17.17, 5.04], [-16.5, 4.95], [-16.5, -5.55]]
+height = 14.0
+note = "top 14.0 m: level with the tower stone stage (photos 07, 09) and above the rose (photo 13); its south end projects ~0.9 m in front of the tower west face as a plain stone strip (photos 07, 09)"
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "portal"
+  arch = "pointed"
+  width = 2.7
+  height = 6.9
+  levels = [0.0]
+  bays = { at = [4.1] }
+  orders = 4
+  order_step = 0.3
+  colonnettes = true
+  tympanum = true
+  depth = 1.2
+  hood = { size = 0.2, gap = 0.05 }
+  material = "stone_fine"
+  note = "15th-c. Gothic portal: opening 2.7 x 6.9 m, outer archivolt apex ~8.6 m, 4.1 m from the wing corner (photo 12, 94 px/m on the door)"
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "rose"
+  width = 3.8
+  levels = [9.6]
+  bays = { at = [4.1] }
+  depth = 0.6
+  spokes = 6
+  rings = 1
+  orders = 2
+  tracery = "trefoil"
+  infill = "stained"
+  material = "stone_fine"
+  note = "neo-Gothic rose (six-pointed star), diameter 3.8 m with its ring, centre 11.5 m (photos 03, 10, 13)"
+  [[element.openings]]
+  edges = "facing:w"
+  kind = "niche"
+  arch = "round"
+  width = 1.6
+  height = 3.8
+  levels = [0.15]
+  bays = { at = [9.6] }
+  depth = 0.7
+  infill = "grille"
+  material = "stone_fine"
+  note = "Capella del Crist del Fossar, the only exterior chapel, closed by a grille (photos 03, 08, 15)"
+
+[[element]]
+type = "parapet"
+on = "west_front"
+edges = "facing:w"
+y = 14.0
+height = 1.0
+thickness = 0.05
+material = "iron"
+note = "iron railing on the west front top (photos 03, 10, 13)"
+
+[[element]]
+type = "roof"
+polygon = [[-19.75, 3.6], [-19.75, 5.6], [-18.5, 5.6], [-18.5, 3.6]]
+y = 4.4
+shape = "shed"
+ridge = "w"
+height = 0.55
+overhang = 0.1
+material = "roof"
+
+# South chapels between the buttresses, behind the neo-Gothic front (facade line from the tower
+# SE corner (-12.17, 12.7) to the neighbour at (11.16, 16.69): OSM; continues behind the
+# neighbour to x 20.5).
+[[element]]
+type = "mass"
+name = "chapels_s"
+material = "ochre"
+polygon = [[-12.17, 12.7], [11.16, 16.69], [11.63, 13.85], [20.5, 14.18], [20.6, 12.2], [20.3, 12.0], [-10.66, 9.45], [-10.66, 6.15], [-11.76, 12.56]]
+height = 9.2
+note = "front cornice 8.8-9.2 m (bundle adjustment: cornice top 8.77 +- 0.35, cornice line 9.17 +- 0.38); stone plinth 1.66 +- 0.07 m"
+
+# Stone plinth facing (1.66 m, bundle adjustment), interrupted by the portal.
+[[element]]
+type = "wall"
+path = [[-12.18, 12.76], [0.29, 14.89]]
+y0 = 0.0
+height = 1.66
+thickness = 0.12
+coping = true
+material = "plinth"
+
+[[element]]
+type = "wall"
+path = [[3.15, 15.38], [11.15, 16.75]]
+y0 = 0.0
+height = 1.66
+thickness = 0.12
+coping = true
+material = "plinth"
+
+[[element]]
+type = "cornice"
+on = "chapels_s"
+edges = "facing:190:6"
+y = 8.55
+profile = "gothic"
+size = 0.65
+projection = 0.45
+material = "ochre_trim"
+modillions = { spacing = 0.85, width = 0.14, height = 0.22, style = "corbel" }
+
+[[element]]
+type = "crenellations"
+on = "chapels_s"
+edges = "facing:190:6"
+y = 9.2
+shape = "rounded"
+width = 0.32
+gap = 0.3
+height = 0.55
+thickness = 0.12
+wall = 0.15
+material = "ochre_trim"
+note = "Gothic cresting along the south front (photos 02, 14)"
+
+[[element]]
+type = "roof"
+polygon = [[-12.0, 12.4], [11.0, 16.35], [11.4, 13.85], [20.5, 13.9], [20.3, 12.0], [-10.66, 9.45]]
+y = 9.1
+shape = "shed"
+ridge = "s"
+height = 2.0
+overhang = 0.0
+note = "tiled lean-to roof of the south chapels up to the nave wall (red strip on PNOA, z 10-14.5)"
+
+  # South front openings (u from the tower corner, measured along the front).
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:190:6"
+kind = "portal"
+arch = "pointed"
+width = 1.9
+height = 4.6
+levels = [0.0]
+bays = { at = [14.1] }
+orders = 2
+order_step = 0.18
+depth = 0.9
+tympanum = false
+hood = { size = 0.2, gap = 0.15, stops = true }
+material = "stone_fine"
+note = "neo-Gothic portal, centre 14.1 +- 0.3 m from the tower corner, opening apex 4.5 +- 0.15 m (bundle adjustment), width 1.9 m (photo 06 scaled on the plinth)"
+
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:190:6"
+kind = "lancet"
+arch = "pointed"
+width = 1.75
+height = 5.2
+levels = [3.1]
+bays = { at = [18.4] }
+mullions = 1
+tracery = "quatrefoil"
+infill = "glass"
+depth = 0.45
+hood = { size = 0.16, gap = 0.55, stops = true }
+material = "red_trim"
+note = "two-light window of the eastern chapel (photos 02, 06, 14)"
+
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:190:6"
+kind = "lancet"
+arch = "pointed"
+width = 0.85
+height = 3.7
+levels = [3.05]
+bays = { at = [8.5] }
+infill = "glass"
+depth = 0.35
+hood = { size = 0.16, gap = 0.5, stops = true }
+material = "red_trim"
+note = "narrow window west of the portal (photos 06, 14)"
+
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:190:6"
+kind = "oculus"
+width = 1.1
+levels = [1.8]
+bays = { at = [18.4] }
+depth = 0.3
+orders = 1
+infill = "dark"
+material = "red_trim"
+
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:190:6"
+kind = "oculus"
+width = 0.65
+levels = [2.05]
+bays = { at = [8.5] }
+depth = 0.25
+infill = "dark"
+material = "red_trim"
+
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:190:6"
+kind = "oculus"
+width = 0.8
+levels = [5.7, 6.3]
+bays = { at = [12.6, 15.2] }
+skip = [[0, 1], [1, 0]]
+depth = 0.15
+tracery = "quatrefoil"
+infill = "blind"
+material = "red_trim"
+note = "two red roundels in the panel above the portal (photos 02, 06)"
+
+[[element]]
+type = "openings"
+on = "chapels_s"
+edges = "facing:190:6"
+kind = "blind"
+arch = "flat"
+width = 1.0
+height = 1.25
+levels = [3.0]
+bays = { at = [12.2] }
+depth = 0.03
+material = "azulejo"
+note = "1957 ceramic panel left of the portal"
+
+# Small square pavilions with pyramidal tiled roofs on the south front (PNOA shadows x -3.5, 1.5,
+# 6.5 and the corner pavilion at the neighbour; photos 02, 14, Catastro).
+[component.pavilion]
+material = "ochre_trim"
+  [[component.pavilion.children]]
+  type = "box"
+  size = [1.3, 1.7, 1.3]
+  [[component.pavilion.children]]
+  type = "roof"
+  polygon = "square:1.3"
+  y = 1.7
+  shape = "pyramid"
+  height = 0.7
+  overhang = 0.22
+  material = "roof"
+
+[[element]]
+type = "array"
+mode = "points"
+points = [[-3.5, 9.1, 13.5], [1.5, 9.1, 14.35], [6.5, 9.1, 15.2], [10.4, 9.1, 15.85]]
+facings = [9.7, 9.7, 9.7, 9.7]
+component = "pavilion"
+note = "pavilions 1.3 m square, ridge ~11.5 m (photos 02, 14, Catastro)"
+
+# Small turret with a blue glazed-tile dome east of the tower (photos 06, 11, 14, Catastro; PNOA).
+[[element]]
+type = "mass"
+name = "turret"
+material = "red_trim"
+polygon = { shape = "octagon", center = [-9.55, 10.6], radius = 1.25 }
+y0 = 9.0
+height = 3.0
+cornice = { profile = "fillet", size = 0.15, material = "white" }
+  [[element.openings]]
+  kind = "window"
+  arch = "round"
+  width = 0.4
+  height = 1.1
+  levels = [10.2]
+  bays = 1
+  infill = "dark"
+
+[[element]]
+type = "dome"
+center = [-9.55, 10.6]
+y = 12.0
+radius = 1.2
+height = 1.25
+profile = "hemisphere"
+gores = 8
+material = "blue_tiles"
+finial = "spike"
+
+# North chapels and the parish annexes inside the block (Catastro parts 7, 9, 6, 3, 5).
+[[element]]
+type = "mass"
+name = "chapels_n"
+material = "plaster"
+polygon = [[-16.5, -5.55], [20.0, -2.2], [19.98, -6.6], [5.03, -8.54], [5.04, -11.13], [2.86, -11.17], [-6.69, -12.26], [-17.09, -13.55], [-16.6, -9.4]]
+height = 10.0
+roof = { shape = "shed", ridge = "n", height = 1.5, overhang = 0.2 }
+note = "north chapels lower than the nave (PNOA: nave wall shadow on their roofs, cross-wall shadows); height estimated"
+
+[[element]]
+type = "mass"
+name = "annex_n"
+material = "plaster"
+polygon = [[-6.69, -12.26], [2.86, -11.17], [2.88, -16.09], [-5.93, -16.52]]
+height = 11.0
+roof = { shape = "flat" }
+note = "3-storey annex (Catastro part 9)"
+
+[[element]]
+type = "mass"
+name = "annex_e"
+material = "plaster"
+polygon = [[20.0, -2.2], [19.98, -6.6], [20.14, -8.23], [22.98, -8.15], [23.05, -7.42], [23.96, -7.25], [24.21, -6.65], [24.04, -5.33], [23.09, -3.96], [26.15, 0.96], [23.6, -1.0]]
+height = 12.5
+roof = { shape = "flat" }
+note = "sacristy block NE of the apse (Catastro part 3, 4 storeys)"
+
+[[element]]
+type = "mass"
+name = "annex_se"
+material = "plaster"
+polygon = [[25.03, 8.5], [27.34, 9.24], [27.36, 8.98], [28.94, 9.29], [29.51, 5.95], [25.81, 5.32]]
+height = 9.0
+roof = { shape = "flat" }
+
+# West wing on the plaza (Baroque portal, ochre plaster with painted frames, ball finials).
+[[element]]
+type = "mass"
+name = "wing"
+material = "wing"
+polygon = [[-26.03, -5.88], [-17.45, -4.93], [-17.45, -5.6], [-16.6, -9.4], [-17.09, -13.55], [-16.5, -19.03], [-17.02, -19.01], [-16.98, -19.44], [-26.28, -18.36], [-26.16, -13.02]]
+height = 13.0
+cornice = { profile = "cyma", size = 0.45, material = "wing" }
+string_courses = [6.3, 8.9]
+note = "parish wing: top 13.0 m (photo 03: level with the west front's north end, minus the balls)"
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "door"
+  arch = "flat"
+  width = 1.8
+  height = 3.4
+  levels = [0.0]
+  bays = { at = [4.6] }
+  depth = 0.35
+  surround = { width = 0.35, projection = 0.15, ears = true, pediment = "segmental" }
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "window"
+  arch = "flat"
+  width = 0.95
+  height = 1.4
+  levels = [5.0]
+  bays = { at = [4.6] }
+  infill = "grille"
+  surround = { width = 0.22, projection = 0.1, pediment = "broken_segmental" }
+  material = "stone_fine"
+  [[element.openings]]
+  edges = "facing:s"
+  kind = "oculus"
+  width = 0.8
+  levels = [9.8]
+  bays = { at = [4.6] }
+  infill = "glass"
+
+[[element]]
+type = "array"
+mode = "points"
+points = [[-25.6, 13.0, -5.95], [-22.9, 13.0, -5.65], [-20.2, 13.0, -5.35], [-17.8, 13.0, -5.1]]
+children = [{ type = "finial", at = [0.0, 0.0, 0.0], style = "ball", size = 0.7, material = "stone_fine" }]
+
+# ---------------------------------------------------------------- tower
+# Plan: 6.6 x 6.5 m square on the front line (9.7 deg), centre (-14.47, 8.8): bundle adjustment of the
+# tower corners (centre -14.0/-13.4, 6.6 x 5.8-6.0 m) and the PNOA top, west of OSM part 1485420318
+# (7.2 x 6.9 m, drawn ~1 m too far west). Levels (sources [facts]): stone stage 14.0, plain brick
+# shaft to 21.9, bell cornice 30.7, pinnacles 35.2, lantern 43.4, cross 46.9 m.
+[[element]]
+type = "tower"
+name = "campanar"
+material = "stone"
+polygon = [[-18.27, 11.45], [-11.76, 12.56], [-10.66, 6.15], [-17.17, 5.04]]
+  [[element.stages]]
+  name = "stone_base"
+  height = 14.0
+  cornice = { profile = "string", size = 0.35, projection = 0.15 }
+    [[element.stages.openings]]
+    edges = "facing:s"
+    kind = "slit"
+    width = 0.25
+    height = 0.9
+    levels = [10.5]
+    bays = 1
+  [[element.stages]]
+  name = "shaft"
+  height = 7.9
+  inset = 0.2
+  material = "brick"
+    [[element.stages.openings]]
+    edges = "facing:e"
+    kind = "window"
+    arch = "flat"
+    width = 0.4
+    height = 0.7
+    levels = [15.2]
+    bays = 1
+    infill = "dark"
+  [[element.stages]]
+  name = "frieze"
+  height = 1.5
+  material = "white"
+  plinth = { profile = "fillet", size = 0.22, material = "red_trim" }
+  cornice = { profile = "classical", size = 0.35, projection = 0.3, material = "red_trim" }
+  [[element.stages]]
+  name = "belfry"
+  height = 6.6
+  inset = 0.15
+  material = "brick"
+  string_courses = [24.25]
+    [[element.stages.openings]]
+    kind = "arch"
+    arch = "round"
+    width = 1.5
+    height = 3.8
+    levels = [24.8]
+    bays = 1
+    depth = 0.8
+    infill = "void"
+    bells = true
+    surround = { width = 0.22, projection = 0.08 }
+    material = "red_trim"
+  [[element.stages]]
+  name = "cornice"
+  height = 0.7
+  material = "white"
+  cornice = { profile = "classical", size = 0.6, projection = 0.55, material = "stone_fine" }
+  [[element.stages]]
+  name = "terrace"
+  height = 0.15
+  inset = 0.1
+  material = "stone_fine"
+  balustrade = { height = 1.1, finials = "none", spacing = 0.4 }
+  [[element.top]]
+  type = "tower"
+  polygon = { shape = "octagon", center = [0.0, 0.0], radius = 2.05, rotation = 22.5 }
+  y = 0.0
+  material = "white"
+    [[element.top.stages]]
+    name = "lantern_1"
+    height = 5.8
+    cornice = { profile = "classical", size = 0.35, projection = 0.3, material = "red_trim" }
+      [[element.top.stages.openings]]
+      kind = "arch"
+      arch = "round"
+      width = 0.8
+      height = 2.0
+      levels = [1.3]
+      bays = 1
+      infill = "void"
+      material = "red_trim"
+    [[element.top.stages]]
+    name = "lantern_2"
+    height = 4.2
+    polygon = { shape = "octagon", center = [0.0, 0.0], radius = 1.45, rotation = 22.5 }
+    material = "white"
+    cornice = { profile = "cyma", size = 0.3, projection = 0.25, material = "red_trim" }
+      [[element.top.stages.openings]]
+      kind = "window"
+      arch = "round"
+      width = 0.45
+      height = 1.2
+      levels = [6.8]
+      bays = 1
+      infill = "dark"
+      material = "red_trim"
+    [[element.top.top]]
+    type = "dome"
+    center = [0.0, 0.0]
+    y = 0.0
+    radius = 1.35
+    height = 1.7
+    profile = "bell"
+    gores = 8
+    material = "red_trim"
+    [[element.top.top]]
+    type = "cylinder"
+    at = [0.0, 1.5, 0.0]
+    height = 1.05
+    radius = 0.25
+    radius_top = 0.14
+    segments = 10
+    material = "white"
+    [[element.top.top]]
+    type = "finial"
+    at = [0.0, 2.55, 0.0]
+    style = "weathervane"
+    size = 3.5
+    material = "iron"
+
+# Corner pinnacles on the tower terrace (green glazed tips; photos 04, 11, 14): tips 34.75 m.
+[component.tower_pinnacle]
+material = "white"
+  [[component.tower_pinnacle.children]]
+  type = "box"
+  size = [0.6, 1.3, 0.6]
+  [[component.tower_pinnacle.children]]
+  type = "cone"
+  at = [0.0, 1.3, 0.0]
+  height = 3.0
+  radius = 0.3
+  segments = 8
+  material = "green_tiles"
+
+[[element]]
+type = "array"
+mode = "points"
+points = [[-17.7, 30.85, 11.07], [-12.2, 30.85, 12.0], [-11.25, 30.85, 6.6], [-16.75, 30.85, 5.64]]
+component = "tower_pinnacle"
+note = "pinnacle tips 35.2 +- 1.3 m (bundle adjustment)"
+
+# ---------------------------------------------------------------- views
+# Cameras from the bundle adjustment (sources [facts]); refined with `match` where noted.
+[[view]]
+name = "catastro"
+photo = "photos/catastro_5531704YJ2753B.jpg"
+match = [
+  { px = [275, 800], world = [-11.52, 14.17, 12.32] },
+  { px = [308, 558], world = [-11.52, 22.22, 12.32] },
+  { px = [487, 612], world = [-10.12, 22.22, 6.51] },
+  { px = [424, 82], world = [-14.04, 47.46, 8.64] },
+  { px = [414, 157], world = [-14.04, 43.92, 8.64] },
+  { px = [523, 375], world = [-9.81, 31.16, 6.32] },
+  { px = [496, 289], world = [-10.71, 35.7, 6.83] },
+  { px = [473, 1483], world = [1.6, 0.1, 15.06] },
+  { px = [220, 993], world = [-11.36, 9.04, 12.84] },
+  { px = [1035, 565], world = [11.16, 9.04, 16.69] },
+  { px = [327, 1260], world = [-3.99, 3.08, 14.1] },
+  { px = [687, 1227], world = [5.93, 3.19, 15.8] },
+  { px = [487, 1127], world = [1.6, 4.58, 15.06] },
+  { px = [650, 1385], world = [5.31, 1.71, 15.69] },
+  { px = [1169, 1423], world = [11.23, 1.71, 16.7] },
+]
+
+[[view]]
+name = "plaza_14"
+photo = "photos/14_Plaza_de_San_Nicolas_Valencia_04.jpg"
+match = [
+  { px = [21, 1643], world = [-17.96, 0, 10.77] },
+  { px = [226, 774], world = [-11.52, 14.17, 12.32] },
+  { px = [250, 490], world = [-11.52, 22.22, 12.32] },
+  { px = [489, 547], world = [-10.12, 22.22, 6.51] },
+  { px = [505, 295], world = [-9.81, 31.16, 6.32] },
+  { px = [258, 195], world = [-11.33, 31.16, 12.64] },
+  { px = [471, 205], world = [-10.71, 35.7, 6.83] },
+  { px = [363, 68], world = [-14.04, 43.92, 8.64] },
+  { px = [366, 32], world = [-14.04, 47.46, 8.64] },
+  { px = [174, 1040], world = [-11.36, 9.04, 12.84] },
+  { px = [379, 1357], world = [-3.99, 3.08, 14.1] },
+  { px = [743, 1086], world = [1.6, 4.58, 15.06] },
+  { px = [143, 1521], world = [-10.39, 1.71, 13.01] },
+  { px = [914, 1479], world = [2.76, 1.71, 15.25] },
+  { px = [1279, 1464], world = [5.06, 1.71, 15.65] },
+  { px = [179, 1007], world = [-11.23, 9.43, 12.86] },
+  { px = [571, 686], world = [-0.21, 9.43, 14.75] },
+  { px = [1000, 357], world = [5.2, 9.43, 15.67] },
+]
+
+[[view]]
+name = "south_04"
+photo = "photos/04_Exterior_de_la_iglesia_de_San_Nicolas_Bari_y_San_Pedro_Marti.jpg"
+match = [
+  { px = [522, 655], world = [-11.52, 22.22, 12.32] },
+  { px = [733, 668], world = [-10.12, 22.22, 6.51] },
+  { px = [738, 408], world = [-9.81, 31.16, 6.32] },
+  { px = [508, 372], world = [-11.33, 31.16, 12.64] },
+  { px = [708, 315], world = [-10.71, 35.7, 6.83] },
+  { px = [610, 205], world = [-14.04, 43.92, 8.64] },
+  { px = [612, 118], world = [-14.04, 47.46, 8.64] },
+  { px = [522, 900], world = [-11.52, 14.17, 12.32] },
+  { px = [407, 1586], world = [-17.96, 0, 10.77] },
+  { px = [643, 1643], world = [1.6, 0.1, 15.06] },
+  { px = [471, 1100], world = [-11.36, 9.04, 12.84] },
+]
+
+[[view]]
+name = "tower_07"
+photo = "photos/07_Campanario_de_la_Iglesia_de_San_Nicolas_Valencia_01.jpg"
+match = [
+  { px = [583, 983], world = [-17.96, 14.17, 10.77] },
+  { px = [905, 1211], world = [-11.52, 14.17, 12.32] },
+  { px = [594, 556], world = [-17.96, 22.22, 10.77] },
+  { px = [900, 761], world = [-11.52, 22.22, 12.32] },
+  { px = [322, 717], world = [-16.56, 22.22, 4.96] },
+  { px = [617, 244], world = [-18.28, 31.16, 10.96] },
+  { px = [883, 461], world = [-11.33, 31.16, 12.64] },
+  { px = [378, 422], world = [-16.75, 31.16, 4.65] },
+  { px = [650, 89], world = [-14.04, 47.46, 8.64] },
+  { px = [644, 144], world = [-14.04, 43.92, 8.64] },
+  { px = [448, 317], world = [-16.18, 35.7, 5.51] },
+  { px = [817, 344], world = [-11.9, 35.7, 11.77] },
+]
+
+[[view]]
+name = "plaza_west_03"
+photo = "photos/03_At_Valencia_2025_508.jpg"
+eye_height = 1.6
+match = [
+  { px = [689, 1300], world = [-17.45, 0.0, -4.93] },
+  { px = [672, 656], world = [-17.45, 14.5, -4.93] },
+  { px = [272, 639], world = [-26.03, 13.0, -5.88] },
+  { px = [239, 1278], world = [-26.03, 0.0, -5.88] },
+  { px = [472, 1298], world = [-21.46, 0.0, -5.37] },
+  { px = [778, 1294], world = [-17.95, 0.0, -0.86] },
+  { px = [759, 667], world = [-17.95, 11.6, -0.86] },
+  { px = [1111, 1333], world = [-18.38, 0.0, 3.02] },
+  { px = [488, 791], world = [-21.46, 10.2, -5.37] },
+]
+
+[[view]]
+name = "portal_06"
+photo = "photos/06_Facana_neogotica_de_l_esglesia_de_Sant_Nicolau_de_Valencia.jpg"
+eye_height = 1.6
+match = [
+  { px = [510, 890], world = [1.73, 0.0, 15.08] },
+  { px = [175, 630], world = [-3.79, 3.05, 14.13] },
+  { px = [1000, 555], world = [5.97, 3.1, 15.8] },
+  { px = [1010, 668], world = [5.97, 2.65, 15.8] },
+  { px = [155, 700], world = [-3.79, 2.37, 14.13] },
+  { px = [385, 300], world = [0.25, 6.1, 14.82] },
+  { px = [600, 235], world = [2.81, 6.7, 15.26] },
+]
+
+[[view]]
+name = "east_end_02"
+photo = "photos/02_Iglesia_de_San_Nicolas_de_Valencia_01.jpg"
+eye_height = 1.6
+match = [
+  { px = [160, 350], world = [2.81, 6.7, 15.26] },
+  { px = [487, 765], world = [5.97, 3.1, 15.8] },
+  { px = [478, 845], world = [5.97, 2.65, 15.8] },
+  { px = [822, 919], world = [11.16, 1.66, 16.69] },
+  { px = [822, 395], world = [11.16, 8.55, 16.69] },
+]
+
+[[view]]
+name = "tower_11"
+photo = "photos/11_463_Esglesia_de_Sant_Nicolau_i_Sant_Pere_Martir_Valencia_fac.jpg"
+# camera from the constrained bundle adjustment (eye-height prior) of these matches:
+#   { px = [398, 705], world = [-11.92, 21.9, 12.33] },
+#   { px = [602, 1295], world = [0.25, 6.1, 14.82] },
+#   { px = [710, 1207], world = [2.81, 6.7, 15.26] },
+#   { px = [950, 1545], world = [5.97, 3.1, 15.8] },
+#   { px = [362, 1295], world = [-12.16, 8.55, 12.7] },
+#   { px = [645, 715], world = [-10.96, 21.9, 6.71] },
+#   { px = [395, 1035], world = [-11.76, 14.0, 12.56] },
+#   { px = [650, 425], world = [-10.6, 30.7, 6.6] },
+#   { px = [485, 180], world = [-14.5, 43.4, 9.0] },
+#   { px = [487, 95], world = [-14.5, 46.9, 9.0] },
+#   { px = [605, 325], world = [-11.3, 35.15, 6.92] },
+#   { px = [425, 260], world = [-12.2, 35.15, 12.0] },
+#   { px = [563, 925], world = [-9.55, 13.25, 10.6] },
+eye = [15.00, 2.96, 23.79]
+target = [-7.60, 16.25, 9.20]
+fov_y = 59.01
+roll = -3.35
+
+[[view]]
+name = "tower_west_09"
+photo = "photos/09_Church_of_Sant_Nicolau_Valencia_2019_1.jpg"
+# camera from the constrained bundle adjustment (eye-height prior) of these matches:
+#   { px = [838, 870], world = [-18.27, 14.0, 11.45] },
+#   { px = [805, 470], world = [-18.04, 21.9, 11.29] },
+#   { px = [1010, 605], world = [-11.92, 21.9, 12.33] },
+#   { px = [478, 520], world = [-17.08, 21.9, 5.67] },
+#   { px = [650, 850], world = [-18.85, 14.5, 8.2] },
+#   { px = [722, 68], world = [-14.5, 46.9, 9.0] },
+#   { px = [1095, 1050], world = [-11.76, 14.0, 12.56] },
+eye = [-30.68, 3.52, 14.72]
+target = [-8.48, 20.19, 3.35]
+fov_y = 71.17
+roll = -0.32
+
+[[view]]
+name = "street_05"
+photo = "photos/05_Tanques_antimiccio_Esglesia_de_Sant_Nicolau_4725.jpg"
+# camera from the constrained bundle adjustment (eye-height prior) of these matches:
+#   { px = [735, 965], world = [1.73, 0.0, 15.08] },
+#   { px = [1190, 620], world = [5.97, 2.35, 15.8] },
+#   { px = [515, 720], world = [-3.79, 2.37, 14.13] },
+#   { px = [515, 650], world = [-3.79, 3.05, 14.13] },
+#   { px = [620, 215], world = [0.25, 6.1, 14.82] },
+#   { px = [765, 50], world = [2.81, 6.7, 15.26] },
+#   { px = [395, 850], world = [-11.76, 0.0, 12.56] },
+eye = [9.32, 2.07, 21.24]
+target = [-15.39, -1.20, 4.54]
+fov_y = 70.49
+roll = -4.19
