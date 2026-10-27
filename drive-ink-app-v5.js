@@ -6,7 +6,7 @@
     let live=null,previewRaf=null;const incomingPreviews=new Map();
     let engine=null,session=null,account='',timer=null,applying=0,ackVersion=-1;
     let pages=new Set(),baseline=new Map(),metadataBaseline=new Map(),fieldBaseline=new Map(),contextBaseline=null,metadataDirty=false,baselineReady=false,capturing=null;
-    const announced=new Map();
+    const announced=new Map(),previewHeartbeats=new Map();
     const stamp=item=>`${item?.syncStamp?.clock||0}:${item?.syncStamp?.actor||''}`;
     const usable=()=>documentSessionActivated&&!driveOpenInProgress&&L.account()&&state.driveFileId&&!state.driveFileId.startsWith('local-');
     const current=journal=>journal===engine&&journal.account===L.account()
@@ -46,7 +46,7 @@
         baseline.set(page.pageId,new Map([...(page.strokes||[]),...(page.images||[])].map(item=>[item.id,stamp(item)])));
         metadataBaseline.set(page.pageId,metadataSnapshot(shell(page)));
     }
-    function stop(){live?.stop();live=null;if(previewRaf)cancelAnimationFrame(previewRaf);previewRaf=null;incomingPreviews.clear();capturing=null;clearTimeout(timer);timer=null;engine?.stop();engine=null;baseline.clear();metadataBaseline.clear();fieldBaseline.clear();contextBaseline=null;pages.clear();baselineReady=false;metadataDirty=false;ackVersion=-1;}
+    function stop(){live?.stop();live=null;if(previewRaf)cancelAnimationFrame(previewRaf);previewRaf=null;incomingPreviews.clear();previewHeartbeats.clear();capturing=null;clearTimeout(timer);timer=null;engine?.stop();engine=null;baseline.clear();metadataBaseline.clear();fieldBaseline.clear();contextBaseline=null;pages.clear();baselineReady=false;metadataDirty=false;ackVersion=-1;}
     function start(){
         if(!L.account())return null;
         if(engine&&current(engine))return engine;
@@ -273,8 +273,33 @@
             }
         });
     }
-    function hint(fileId,id,preview=false){if(fileId!==state.driveFileId)return;const journal=start();if(preview)live?.hint(id);else journal?.hint(id);}
-    function hints(fileId,props){for(const [key,id]of Object.entries(props||{}))if(key.startsWith('ihn_ink_')||key.startsWith('ihn_live_'))hint(fileId,id,key.startsWith('ihn_live_'));}
+    function hint(fileId,id,preview=false,active=true){if(fileId!==state.driveFileId)return;const journal=start();if(preview)live?.hint(id,active);else journal?.hint(id);}
+    function hints(fileId,props){
+        if(fileId!==state.driveFileId)return;
+        const journal=start();if(!journal?.docId||!current(journal))return;
+        const now=Date.now(),maxAge=PRESENCE_HEARTBEAT_INTERVAL*PRESENCE_HEARTBEAT_MISS_LIMIT+1200;
+        const freshDevices=new Map();
+        // Presence is refreshed from this same metadata response immediately
+        // before hints(). Only a new, recent heartbeat proves activity; an old
+        // property, identity timestamp or sticky online badge does not.
+        for(const user of latestPresenceUsers||[]){
+            const heartbeat=Number(user?.h),device=String(user?.c||'').replace(/[^a-zA-Z0-9]/g,'').slice(-24);
+            if(!device||!Number.isFinite(heartbeat)||heartbeat<=0||heartbeat>now+30000||now-heartbeat>maxAge)continue;
+            freshDevices.set(device,Math.max(freshDevices.get(device)||0,heartbeat));
+        }
+        for(const [id,previous]of previewHeartbeats)if(live?.previewSources.get(id)!==previous.source)previewHeartbeats.delete(id);
+        for(const [key,id]of Object.entries(props||{})){
+            if(key.startsWith('ihn_ink_')){journal.hint(id);continue;}
+            if(!key.startsWith('ihn_live_'))continue;
+            live?.hint(id,false);
+            const source=live?.previewSources.get(id),device=key.slice('ihn_live_'.length),heartbeat=freshDevices.get(device);
+            if(!source||!heartbeat||id===live.fileId)continue;
+            const previous=previewHeartbeats.get(id);
+            if(previous?.source===source&&previous.device===device&&heartbeat<=previous.heartbeat)continue;
+            previewHeartbeats.set(id,{source,device,heartbeat});
+            live.hint(id,true);
+        }
+    }
     function status(){return engine&&current(engine)?{...engine.status(),ackVersion,pendingCapture:!!capturing||!!pages.size||metadataDirty}:null;}
     root.InhouseDriveInk=Object.freeze({start,stop,page,stroke,preview,change,hint,hints,status,capture});
     // Home also drains journals committed before a process exit. It never

@@ -21541,6 +21541,21 @@
                 && driveContentVersion === driveUploadedContentVersion;
         }
 
+        function hasUnresolvedRemotePhotoCheckpoint() {
+            // A failed merge may promote a photo register before its body.
+            // Neither an ordinary save nor an exit checkpoint may publish the
+            // mismatched pair. A replay or correctly stamped local edit repairs it.
+            // PDF rendering caches are excluded by getCollabBackgroundValue;
+            // custom photo bytes remain available when stroke arrays unload.
+            return isDocumentPersistenceContextCurrent(remoteMergeCheckpointPending)
+                && state.pages.some(page => {
+                    const key = getCollabPageFieldKey(page?.pageId, 'background');
+                    const record = state.collabFields?.fields?.[key];
+                    return record && ihnStableStringify(getCollabBackgroundValue(page))
+                        !== ihnStableStringify(record.value);
+                });
+        }
+
         async function persistExitLocalCheckpoint(fileId = state.driveFileId) {
             const persistenceContext = captureDocumentPersistenceContext();
             const marker = hasPendingDriveSave() ? persistPendingExitUploadMarker(fileId) : null;
@@ -21557,6 +21572,10 @@
             if (!legacyPagesSaved || !operationsSaved || !pagesSaved || pageDirty.size > 0) {
                 noteLocalSaveFailure('checkpoint');
                 throw new Error('Could not save every changed page locally');
+            }
+            if (hasUnresolvedRemotePhotoCheckpoint()) {
+                noteLocalSaveFailure('checkpoint');
+                throw new Error('Could not checkpoint an incomplete collaborative photo');
             }
             const savedAt = Date.now();
             const payload = buildMetaPayload(savedAt);
@@ -23563,18 +23582,7 @@
                     cancelled: !isDocumentPersistenceContextCurrent(persistenceContext),
                     deferred: !!checkpointOutcome.deferred && !checkpointOutcome.failed };
             }
-            // An interrupted merge may have promoted a photo register before
-            // receiving its body. A local checkpoint must not publish that pair
-            // while replay (or a properly stamped local edit) can still repair it.
-            // PDF rendering caches are excluded by getCollabBackgroundValue;
-            // custom photo bytes stay available when stroke arrays unload.
-            if (isDocumentPersistenceContextCurrent(remoteMergeCheckpointPending)
-                && state.pages.some(page => {
-                    const key = getCollabPageFieldKey(page?.pageId, 'background');
-                    const record = state.collabFields?.fields?.[key];
-                    return record && ihnStableStringify(getCollabBackgroundValue(page))
-                        !== ihnStableStringify(record.value);
-                })) {
+            if (hasUnresolvedRemotePhotoCheckpoint()) {
                 return { ok: false, savedAt: null, cancelled: false, deferred: true };
             }
             const checkpointGeneration = pageMutationGeneration;

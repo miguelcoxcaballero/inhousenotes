@@ -368,3 +368,113 @@ test('stopping during a cached-source read releases memory and ignores its late 
   assert.equal(reader.frames.length,1);assert.equal(reader.live.readCache.size,0);assert.equal(reader.live.readCacheChars,0);
  }finally{gate.release();await reading;reader.live.stop();}
 });
+
+test('fresh preview activity preempts a sleeping timer and later polling cannot postpone it',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.live.nextList=Infinity;
+ reader.live.schedulePoll=LivePreview.prototype.schedulePoll;
+ const source={next:115000,retryAt:0,frame:0,activeUntil:0};reader.live.previewSources.set('sleeping',source);
+ api.files.set('sleeping',{id:'sleeping',raw:JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]})});
+ try{
+  reader.live.schedulePoll(15000);const oldTimer=reader.live.pollTimer;
+  reader.live.hint('sleeping',true);const wakeTimer=reader.live.pollTimer;
+  assert.notEqual(wakeTimer,oldTimer);assert.equal(reader.live.pollAt,100000);assert.equal(source.next,100000);
+  reader.live.schedulePoll(100);assert.equal(reader.live.pollTimer,wakeTimer);
+  t.mock.timers.tick(0);await nextPreviewTurn();
+  assert.equal(api.calls.filter(call=>call.url.includes('alt=media')).length,1);assert.equal(reader.frames.length,1);
+  assert.deepEqual(reader.frames[0].points.map(point=>point.x),[1,2]);assert.equal(reader.receipts.length,0);
+  console.log('DRIVE_PREVIEW_HINT_WAKE_MS',Date.now()-100000);
+ }finally{reader.live.stop();t.mock.timers.reset();}
+});
+
+test('passive discovery leaves existing deadlines alone and gives new sources a timely first probe',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader'),gate=previewGate();reader.live.nextList=Infinity;
+ const passive={next:115000,retryAt:0,frame:0,activeUntil:0};reader.live.previewSources.set('sleeping',passive);
+ api.files.set('sleeping',{id:'sleeping',appProperties:{ihnKind:'ink-preview-v1',ihnDoc:'doc'}});
+ const read=[];reader.live.host.fetch=async(url,options)=>{
+  if(!url.includes('alt=media'))return api.fetch(url,options);
+  read.push(new URL(url).pathname.split('/').at(-1));await gate.promise;return new Response('{}');
+ };
+ let polling;
+ try{
+  reader.live.hint('sleeping',false);await reader.live.discoverPreviews();
+  assert.equal(passive.next,115000);assert.equal(passive.activeUntil,0);
+  for(let i=0;i<4;i++)reader.live.previewSources.set('busy-'+i,{next:0,retryAt:0,frame:0,activeUntil:104999});
+  reader.live.hint('new-passive',false);const first=reader.live.previewSources.get('new-passive');
+  assert.equal(first.activeUntil,105000);assert.equal(first.next,0);
+  polling=reader.live.pollFrames();await nextPreviewTurn();
+  assert.equal(read.length,4);assert.equal(read[0],'new-passive');assert.equal(first.inFlight,true);
+  t.mock.timers.setTime(100100);reader.live.hint('new-passive',false);
+  assert.equal(first.activeUntil,105000,'a repeated listing cannot renew the first-probe priority');
+ }finally{reader.live.stop();gate.release();await polling;t.mock.timers.reset();}
+});
+
+test('active preview hints cannot bypass failed-read backoff and success restores normal cadence',async t=>{
+ t.mock.timers.enable({apis:['Date'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.live.nextList=Infinity;reader.live.hint('failed');
+ let calls=0,fail=true;reader.live.host.fetch=async()=>{
+  calls++;return fail?new Response('{}',{status:503}):new Response(JSON.stringify({v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]}));
+ };
+ const source=reader.live.previewSources.get('failed');
+ try{
+  await reader.live.pollFrames();assert.equal(calls,1);assert.equal(source.retryAt,103000);
+  for(const now of [100001,100100,101000,102999]){
+   t.mock.timers.setTime(now);reader.live.hint('failed',true);reader.live.hint('failed',false);
+   source.next=0;await reader.live.pollFrames();assert.equal(calls,1,'the independent cooldown survives earlier poll wakes');
+  }
+  fail=false;t.mock.timers.setTime(103000);reader.live.hint('failed',true);await reader.live.pollFrames();
+  assert.equal(calls,2);assert.equal(source.retryAt,0);assert.equal(source.next,103100);assert.equal(reader.frames.length,1);
+ }finally{reader.live.stop();t.mock.timers.reset();}
+});
+
+for(const invalid of ['document','version','packets','oversize'])test(`active hints retain the cooldown for an invalid ${invalid} preview response`,async t=>{
+ t.mock.timers.enable({apis:['Date'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.live.nextList=Infinity;reader.live.hint('invalid');
+ const frame={v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]};
+ if(invalid==='document')frame.docId='other';if(invalid==='version')frame.v=2;if(invalid==='packets')frame.packets={};
+ const raw=invalid==='oversize'?'x'.repeat(2*1024*1024+1):JSON.stringify(frame);let calls=0;
+ reader.live.host.fetch=async()=>{calls++;return new Response(raw);};
+ const source=reader.live.previewSources.get('invalid');
+ try{
+  await reader.live.pollFrames();assert.equal(source.retryAt,102000);assert.equal(source.frame,0);assert.equal(reader.live.readCache.size,0);
+  for(const now of [100001,101000,101999]){
+   t.mock.timers.setTime(now);reader.live.hint('invalid');source.next=0;await reader.live.pollFrames();assert.equal(calls,1);
+  }
+  t.mock.timers.setTime(102000);reader.live.hint('invalid');await reader.live.pollFrames();assert.equal(calls,2);
+  assert.equal(reader.frames.length,0);assert.equal(reader.receipts.length,0);
+ }finally{reader.live.stop();t.mock.timers.reset();}
+});
+
+for(const failed of [false,true])test(`a hint during an in-flight ${failed?'failed':'stale'} read preserves one safe follow-up`,async t=>{
+ t.mock.timers.enable({apis:['Date'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader'),gate=previewGate();reader.live.nextList=Infinity;reader.live.hint('remote');
+ const frame={v:1,docId:'doc',actor:'writer',frame:1,at:Date.now(),packets:[packet(1,0,[1,2])]};let calls=0;
+ reader.live.host.fetch=async()=>{
+  const attempt=++calls;
+  if(attempt===1){await gate.promise;return failed?new Response('{}',{status:503}):new Response(JSON.stringify({...frame,at:Date.now()-60000}));}
+  return new Response(JSON.stringify(frame));
+ };
+ const source=reader.live.previewSources.get('remote'),reading=reader.live.pollFrames();
+ try{
+  await nextPreviewTurn();assert.equal(source.inFlight,true);
+  reader.live.hint('remote');reader.live.hint('remote');await reader.live.pollFrames();assert.equal(calls,1);
+  gate.release();await reading;
+  assert.equal(source.next,failed?103000:100000);assert.equal(source.retryAt,failed?103000:0);
+  await reader.live.pollFrames();assert.equal(calls,failed?1:2);
+  if(failed){t.mock.timers.setTime(103000);await reader.live.pollFrames();assert.equal(calls,2);}
+  assert.equal(reader.frames.length,1);assert.equal(source.retryAt,0);assert.equal(reader.receipts.length,0);
+  await reader.live.pollFrames();assert.equal(calls,2,'the hints coalesce, rather than queue duplicate reads');
+ }finally{reader.live.stop();gate.release();await reading;t.mock.timers.reset();}
+});
+
+test('stopping removes an activity wake and later hints cannot restart it',async t=>{
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:100000});
+ const api=fakeInkDrive(),reader=replica(api,'reader');reader.live.nextList=Infinity;
+ reader.live.schedulePoll=LivePreview.prototype.schedulePoll;
+ try{
+  reader.live.hint('remote');assert.ok(reader.live.pollTimer);reader.live.stop();reader.live.hint('remote');
+  t.mock.timers.tick(20000);await nextPreviewTurn();
+  assert.equal(reader.live.pollTimer,null);assert.equal(reader.live.pollAt,0);assert.equal(reader.live.previewSources.size,0);assert.equal(api.calls.length,0);
+ }finally{reader.live.stop();t.mock.timers.reset();}
+});
