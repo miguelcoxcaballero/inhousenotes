@@ -12,6 +12,20 @@ commons_category = "Institut Valencià d'Art Modern"
 wikipedia = { es = "https://es.wikipedia.org/wiki/IVAM", ca = "https://ca.wikipedia.org/wiki/Institut_Valenci%C3%A0_d%27Art_Modern", en = "https://en.wikipedia.org/wiki/Institut_Valenci%C3%A0_d%27Art_Modern" }
 
 [facts]
+architects = { value = "Emilio Giménez, Carlos Salvadores; remodelling 2000 Emilio Giménez, Julián Esteban", source = "https://ivam.es/en/building/" }
+opened = { value = "1989-02-18", source = "https://ivam.es/en/building/" }
+official_area = { value = 18200, unit = "m2", source = "https://ivam.es/en/building/", note = "eight galleries" }
+plan = { value = "OSM outline way/291006854 and its 13 building:parts (IoU 0.995 with the model); facade on Guillem de Castro straight, 85.5 m, azimuth 285 deg; east side x 26.6-27.9", source = "OSM + Catastro 5234201YJ2753E (same outline within 0.3 m) + IGN PNOA orthophoto (WMS pnoa-ma, CC BY 4.0)" }
+esplanade_level = { value = 1.8, unit = "m", source = "bundle adjustment (scratchpad ivam/ba) of the Catastro photo (Canon SX270, f 4.5 mm = 2917 px) + photos 03 (EOS 90D 18 mm) and 08 (G15 6.1 mm): wall base 1.83 +- 0.3 m above the street", note = "raised esplanade 16 m deep with seat steps (2 x 0.45) + ordinary steps; 7-8 steps of ~0.22 m in front of the entrance (photos 26, 33)" }
+wall_top = { value = 16.85, unit = "m", source = "BA of 3 photos with EXIF focal lengths: 17.24 +- 0.41 m (joint), 16.9 (5 photos); stone-course count: 30 courses of 0.50 m above the esplanade on the long wall (catastro photo) and on the entrance pier (photo 23)", note = "15.05 m above the esplanade; flat roof" }
+stone_course = { value = 0.50, unit = "m", source = "30 courses between esplanade and coping (catastro photo, photo 23) over 15.0-15.4 m solved height" }
+ground_windows = { value = "3 glazed openings s 16.8-26.5, 28.6-36.2, 38.7-46.1 m from the NW corner, sill on the esplanade, top 6.85 m (10 courses)", source = "solved catastro and 03 cameras (window edges), photos 29/34 match within 15 px" }
+entrance_glazing = { value = "s 56.3-69.1 m (12.8 m), recessed ~1 m, 3 bays x 6 rows (door row 2.4 m + 5 rows of 2.5 m), full height to 16.85 m", source = "OSM gap between building:parts (56.4-69.3); width/height ratio 0.85 from photo 33 (EOS 90D 17 mm, f 1460 px); photos 23, 26", note = "photo 03 puts the north pier corner ~3 m further south; unresolved" }
+canopy = { value = "concrete slab s 53.0-70.8, projecting 5.0 m, soffit 16.85 (flush with the wall top), 0.5 m thick", source = "BA (tc 4.6 +- 0.1, s 55.7-72.8) and overlays of photos 03, 08, 26; PNOA suggests a projection up to 6 m", note = "uncertainty +- 1 m on the extent and projection" }
+south_block = { value = "west face s 71.6-85.5, top 16.3 m, three slot windows (3.6 x 0.6 m) at 6.4 m, ground-floor doors; full-height stone pier s 69.1-71.6 under the canopy", source = "BA HS 17.0 +- 0.4 (photo 03), photos 26, 01, 21 show it just below the canopy soffit" }
+roof_lanterns = { value = 3.0, unit = "m", source = "PNOA shadow widths: lantern shadows 0.6 m vs 2.7 m for the 15 m facade (same sun, same lean)" }
+east_band = { value = 19.85, unit = "m", source = "PNOA: shadow line along x 22.5 as wide as the lanterns' (~3 m above the roof); photo 10 shows a tall stone wall next to the box", note = "estimate" }
+dark_box = { value = "SE corner box of dark green-grey stone, top 20.5 m, cantilevered ~1.5 m over Carrer de la Beneficència from 8 m (OSM part 12 min_level 2)", source = "OSM parts 4/12, PNOA shadow (~3.7 m above the roof), photo 10", note = "estimate +- 1.5 m" }
 built = { value = "1986-12-30", source = "https://www.wikidata.org/wiki/Q1600831#P571" }
 address = { value = "Guillén de Castro, 118", source = "https://www.wikidata.org/wiki/Q1600831#P6375" }
 catastro_refcat = { value = "5234201YJ2753E", source = "https://www1.sedecatastro.gob.es/CYCBienInmueble/OVCListaBienes.aspx?rc1=5234201&rc2=YJ2753E" }
@@ -29,8 +43,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1007
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/02_IVAM_Fiat_500.jpg"
@@ -43,8 +57,8 @@ height = 960
 camera = [-129.64, -19.89]
 heading = 45.0
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/03_At_Valencia_2025_317.jpg"
@@ -56,8 +70,8 @@ width = 1280
 height = 1920
 camera = [-33.89, -54.11]
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/04_Fachada_IVAM_2018.jpg"
@@ -68,8 +82,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 966
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/05_Escif_a_l_IVAM_05.jpg"
@@ -80,8 +94,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 800
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/06_Ivam.jpg"
@@ -92,8 +106,8 @@ license = "Public domain"
 width = 1280
 height = 1707
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/07_IVAMa.jpg"
@@ -104,8 +118,8 @@ license = "Public domain"
 width = 1280
 height = 986
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/08_180_Institut_Valencia_d_Art_Modern_IVAM_c_Guillem_de_Castro_.jpg"
@@ -116,8 +130,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/09_Anell_ciclista_a_la_ciutat_de_Valencia_02.jpg"
@@ -128,8 +142,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 768
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "w"
 
 [[photo]]
 file = "photos/10_Ivam04.jpg"
@@ -140,8 +154,8 @@ license = "Public domain"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "s"
 
 [[photo]]
 file = "photos/11_Jardines_detras_del_Ivam_03.jpg"
@@ -152,8 +166,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 960
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/12_Escif_a_l_IVAM_04.jpg"
@@ -164,8 +178,8 @@ license = "CC BY-SA 4.0"
 width = 1280
 height = 1391
 exterior = true
-selected = false
-side = ""
+selected = true
+side = "e"
 
 [[photo]]
 file = "photos/catastro_5234201YJ2753E.jpg"
@@ -176,8 +190,185 @@ license = "Catastro open data (attribution required)"
 width = 4000
 height = 3000
 exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "extra/21.jpg"
+title = "File:Valencia - Institut Valencià d'Art Modern (IVAM) 01.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29_01.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 901
+exterior = true
+selected = true
+side = "sw"
+
+[[photo]]
+file = "extra/22.jpg"
+title = "File:Valencia - Institut Valencià d'Art Modern (IVAM) 02.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29_02.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
 selected = false
-side = ""
+side = "sw"
+
+[[photo]]
+file = "extra/23.jpg"
+title = "File:Valencia - Institut Valencià d'Art Modern (IVAM) 03.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29_03.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "extra/24.jpg"
+title = "File:Valencia - Institut Valencià d'Art Modern (IVAM) 04.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29_04.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 960
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "extra/25.jpg"
+title = "File:Valencia - Institut Valencià d'Art Modern (IVAM) 05.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29_05.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "w"
+
+[[photo]]
+file = "extra/26.jpg"
+title = "File:Valencia - Institut Valencià d'Art Modern (IVAM) 06.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29_06.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "extra/27.jpg"
+title = "File:Valencia - Institut Valencià d'Art Modern (IVAM) 07.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AValencia_-_Institut_Valenci%C3%A0_d%27Art_Modern_%28IVAM%29_07.jpg"
+author = "Zarateman"
+license = "CC0"
+width = 1280
+height = 1707
+exterior = true
+selected = false
+side = "w"
+
+[[photo]]
+file = "extra/28.jpg"
+title = "File:At Valencia 2025 318.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AAt_Valencia_2025_318.jpg"
+author = "Mike Peel (www.mikepeel.net)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "w"
+
+[[photo]]
+file = "extra/29.jpg"
+title = "File:At Valencia 2025 319.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AAt_Valencia_2025_319.jpg"
+author = "Mike Peel (www.mikepeel.net)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "extra/30.jpg"
+title = "File:At Valencia 2025 320.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AAt_Valencia_2025_320.jpg"
+author = "Mike Peel (www.mikepeel.net)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "extra/31.jpg"
+title = "File:At Valencia 2025 321.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AAt_Valencia_2025_321.jpg"
+author = "Mike Peel (www.mikepeel.net)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = false
+side = "w"
+
+[[photo]]
+file = "extra/32.jpg"
+title = "File:At Valencia 2025 322.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AAt_Valencia_2025_322.jpg"
+author = "Mike Peel (www.mikepeel.net)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 853
+exterior = true
+selected = false
+side = "w"
+
+[[photo]]
+file = "extra/33.jpg"
+title = "File:At Valencia 2025 323.jpg"
+url = "https://commons.wikimedia.org/wiki/File%3AAt_Valencia_2025_323.jpg"
+author = "Mike Peel (www.mikepeel.net)"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1920
+exterior = true
+selected = true
+side = "w"
+
+[[photo]]
+file = "extra/34.jpg"
+title = "File:Esplanada de l'Institut Valencià d'Art Modern.JPG"
+url = "https://commons.wikimedia.org/wiki/File%3AEsplanada_de_l%27Institut_Valenci%C3%A0_d%27Art_Modern.JPG"
+author = "Joanbanjo"
+license = "CC BY-SA 4.0"
+width = 1280
+height = 1937
+exterior = true
+selected = true
+side = "w"
+
+[[plan]]
+file = "(not stored)"
+title = "IGN PNOA orthophoto (WMS pnoa-ma), bbox E 725056.5-725196.5, N 4373202.8-4373362.8, 0.1 m/px"
+url = "https://www.ign.es/wms-inspire/pnoa-ma?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OI.OrthoimageCoverage&CRS=EPSG:25830&BBOX=725056.545,4373202.778,725196.545,4373362.778&WIDTH=1400&HEIGHT=1600&FORMAT=image/jpeg&STYLES="
+author = "Instituto Geográfico Nacional"
+license = "CC BY 4.0"
+kind = "orthophoto"
+notes = "roofs lean ~(-3.0, -2.8) m at 17 m; used for the canopy projection, lantern and east-band heights (shadow ratios)"
 
 [[plan]]
 file = "plans/catastro_wms.png"
