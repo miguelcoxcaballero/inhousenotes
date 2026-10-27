@@ -22275,6 +22275,14 @@
             pageDirty.add(pageIndex);
             pageDirtyMode.set(pageIndex, 'full');
             invalidatePageMutationCaches(pageIndex);
+            const mergeToken = remotePageMergeToken;
+            const cacheScope = mergeToken?.pageCacheInvalidation;
+            if (cacheScope && cacheScope.owner === mergeToken && !mergeToken.cancelled
+                && isDocumentPersistenceContextCurrent(cacheScope)) {
+                const pageId = state.pages[pageIndex]?.pageId;
+                if (typeof pageId === 'string' && pageId) cacheScope.pageIds.add(pageId);
+                else cacheScope.allPages = true;
+            }
             return {
                 ...captureDocumentPersistenceContext(), pageIndex,
                 page: state.pages[pageIndex],
@@ -28799,7 +28807,7 @@
         }
 
         async function applyRemotePages(remoteStrokeData, options = {}) {
-            if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false, pagesNeedingPdfBackground: [] };
+            if (!Array.isArray(remoteStrokeData)) return { changed: false, hasLocalMerges: false, pagesNeedingPdfBackground: [], invalidatedPageIds: [] };
             const mergeSessionToken = Number.isFinite(options.sessionToken)
                 ? options.sessionToken
                 : getDocumentSessionToken();
@@ -28810,7 +28818,8 @@
             const assertRemoteMergeContext = () => {
                 if (!isDocumentSessionTokenValid(mergeSessionToken)
                     || String(state.driveFileId || '') !== mergeFileId
-                    || mergeToken?.cancelled) {
+                    || mergeToken?.cancelled
+                    || remotePageMergeToken !== mergeToken) {
                     throw new Error('Collaborative merge document changed');
                 }
             };
@@ -28823,6 +28832,17 @@
             try {
             assertRemoteMergeContext();
             const recoveringCheckpoint = isDocumentPersistenceContextCurrent(remoteMergeCheckpointPending);
+            // The checkpoint helper records all body mutations, including
+            // duplicate removals and calendar changes on other pages. Scope is
+            // owned by this exact document/merge, never an unrelated PDF lock.
+            const cacheScope = {
+                owner: mergeToken, sessionToken: mergeSessionToken, fileId: mergeFileId,
+                pageIds: new Set(),
+                allPages: recoveringCheckpoint || collabPageStoreRewritePending
+                    || state.pages.some(page => typeof page?.pageId !== 'string' || !page.pageId)
+                    || remoteStrokeData.some(page => typeof page?.pageId !== 'string' || !page.pageId)
+            };
+            mergeToken.pageCacheInvalidation = cacheScope;
             const selectedPageAtStart = state.pages[state.selection?.pageIndex];
             const selectionIdentity = selectedPageAtStart?.pageId ? {
                 pageId: selectedPageAtStart.pageId,
@@ -28906,11 +28926,15 @@
                 state.calendarPageConfig || null
             );
             if (String(mergedExportName || '') !== String(state.exportName || '')) {
+                // Names can enable agenda behavior, so keep the conservative
+                // document-wide fallback for this rare metadata change.
+                cacheScope.allPages = true;
                 state.exportName = String(mergedExportName || 'Untitled');
                 updateDocTitle();
                 changed = true;
             }
             if (ihnStableStringify(mergedCalendarConfig) !== ihnStableStringify(state.calendarPageConfig || null)) {
+                cacheScope.allPages = true;
                 state.calendarPageConfig = cloneTimelineValue(mergedCalendarConfig || null, null);
                 changed = true;
             }
@@ -29854,6 +29878,7 @@
                     localPanelValue
                 );
                 if (ihnStableStringify(resolvedPanelValue) !== ihnStableStringify(localPanelValue)) {
+                    cacheScope.allPages = true;
                     const pageCheckpoint = markRemotePageBodyForCheckpoint(i);
                     if (resolvedPanelValue === null) {
                         currentPage.sidePanel = null;
@@ -29928,6 +29953,7 @@
                 structureToken: mergeToken,
                 assertContext: assertRemoteMergeContext
             })) {
+                cacheScope.allPages = true;
                 // Concurrent page additions may reserve the same agenda slot.
                 // Reallocate duplicates deterministically in merged page order
                 // and publish that reconciliation as normal causal metadata.
@@ -30026,8 +30052,19 @@
                 getCollabStructureSnapshot(), state.calendarPageConfig, state.exportName,
                 getCollabFieldSnapshot()
             ) : '';
+            assertRemoteMergeContext();
+            // This result describes completed invalidation, not work for the
+            // caller to repeat. Common-path ownership also covers direct P2P
+            // and Drive merges without the journal adapter. Structural/legacy
+            // and recovery paths deliberately retain the broad fallback.
+            const invalidatedPageIds = changed && (cacheScope.allPages || structureChanged)
+                ? null
+                : [...cacheScope.pageIds];
+            if (invalidatedPageIds === null) {
+                state.pages.forEach((_, index) => invalidatePageMutationCaches(index));
+            }
             mergeCompleted = true;
-            return { changed, hasLocalMerges, pagesNeedingPdfBackground, contentHash };
+            return { changed, hasLocalMerges, pagesNeedingPdfBackground, contentHash, invalidatedPageIds };
             } finally {
                 const sameDocument = () => isDocumentSessionTokenValid(mergeSessionToken)
                     && String(state.driveFileId || '') === mergeFileId;

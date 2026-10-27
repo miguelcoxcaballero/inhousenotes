@@ -98,8 +98,14 @@
                         clearRemoteLiveStrokePreviews('',Infinity,op.pages);
                         if(result.changed){
                             // A journal receipt is not a PDF receipt. Keep PDF dirty
-                            // and invalidate exports before its next checkpoint.
-                            for(let i=0;i<state.pages.length;i++)invalidatePageMutationCaches(i);
+                            // before its next checkpoint. The merge already
+                            // invalidated its exact pages (null means all); an
+                            // older/unknown result keeps the conservative fallback.
+                            const invalidation=result.invalidatedPageIds;
+                            const invalidated=invalidation===null||(Array.isArray(invalidation)
+                                &&invalidation.every(id=>typeof id==='string'&&id.length>0));
+                            if(!invalidated)
+                                for(let i=0;i<state.pages.length;i++)invalidatePageMutationCaches(i);
                             bumpDriveContentVersion();driveDirty=true;
                             scheduleDriveSync();L.scheduleCapture();
                         }
