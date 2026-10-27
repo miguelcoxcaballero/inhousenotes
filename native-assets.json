@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "assets": {
     "/app-v5.js": {
-      "sha256": "dc32bdc38390eb65a91a7c1b7bbb5ff0cf48d284522e6f39231113d76aa23bbe",
-      "size": 1938807,
+      "sha256": "4e6b27f741f6374c86a6859e8d0af5ecb06d652aad1e7de0885925d0b7c50b75",
+      "size": 1939029,
       "mime": "application/javascript"
     },
     "/boot-v5.js": {
@@ -37,8 +37,8 @@
       "mime": "application/javascript"
     },
     "/drive-ink-journal-v5.js": {
-      "sha256": "2d483f74c4fca10ebe85c7693a8ed8edb1d585b9efb2bee9ff4a157bd7ab5ac3",
-      "size": 23203,
+      "sha256": "b55c42df7a49b8f0ac07f1860cc2386149008ead0dcb3a9b1d1add265ca15f59",
+      "size": 24212,
       "mime": "application/javascript"
     },
     "/drive-live-preview-v5.js": {

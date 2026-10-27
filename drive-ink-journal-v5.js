@@ -19,7 +19,7 @@
             this.records=new Map();this.sources=new Map();this.seen=new Map();
             this.readTasks=new Map();this.applyChain=Promise.resolve();this.bootstrapWait=null;
             this.outboxReady=!!this.store.patchAndQueue;this.persistChain=Promise.resolve();this.stopped=false;this.writing=false;this.reading=false;
-            this.nextOutboxCheck=0;this.announcements=new Map();this.announcing=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.folder=null;this.lastError='';
+            this.nextOutboxCheck=0;this.outboxWakeVersion=0;this.announcements=new Map();this.announcing=false;this.controllers=new Set();this.latestParts=new Map();this.lastWrite=0;this.nextDiscovery=0;this.timer=null;this.folder=null;this.lastError='';
         }
         key(record){return `${PREFIX}${record.docId}:${record.actor}:${record.part}`;}
         async read(key){return this.store.read('settings',this.account,key);}
@@ -68,9 +68,9 @@
         }
         hint(id,active=true){
             if(typeof id!=='string'||!/^[\w-]{1,200}$/.test(id))return;
-            if(!this.sources.has(id)&&this.sources.size<4096)this.sources.set(id,{next:0,rev:0,hotUntil:0,idleReads:0});
+            if(!this.sources.has(id)&&this.sources.size<4096)this.sources.set(id,{next:0,retryAt:0,rev:0,hotUntil:0,idleReads:0});
             const source=this.sources.get(id);
-            if(source&&active){source.hotUntil=Date.now()+6000;if(source.next!==Infinity)source.next=Math.min(source.next,Date.now()+120);}
+            if(source&&active){source.hotUntil=Date.now()+6000;if(source.next!==Infinity)source.next=Math.max(source.retryAt||0,Math.min(source.next,Date.now()+120));}
         }
         async ensureFolder(){
             if(this.folder)return this.folder;
@@ -190,6 +190,7 @@
         async flush(){
             if(this.stopped||this.writing||Date.now()-this.lastWrite<120||Date.now()<this.nextOutboxCheck)return;
             this.writing=true;
+            const wakeVersion=this.outboxWakeVersion;
             try{
                 await this.persistChain;
                 await this.store.withLease(this.account,'ink-journal-write',async(assertLease)=>{
@@ -204,14 +205,15 @@
                     }
                     const index=await this.read(OUTBOX);
                     const keys=Object.keys(index?.pending||{}).sort((a,b)=>(a.startsWith(`${PREFIX}${this.docId}:`)?0:1)-(b.startsWith(`${PREFIX}${this.docId}:`)?0:1));
-                    if(!keys.length)this.nextOutboxCheck=Date.now()+2000;
+                    let earliestRetry=Infinity,attempted=false;
                     for(const key of keys){
                         const record=await this.read(key);
                         if(!record||record.rev<=(record.ack||0)){
                             await this.patch(OUTBOX,old=>{const pending={...old.pending};if(!record||(pending[key]||0)<=(record.ack||0))delete pending[key];return {...old,pending};});
                             continue;
                         }
-                        if(record.retryAt>Date.now())continue;
+                        if(record.retryAt>Date.now()){earliestRetry=Math.min(earliestRetry,record.retryAt);continue;}
+                        attempted=true;
                         await assertLease();this.lastWrite=Date.now();
                         try{await this.upload(record,key);}
                         catch(error){
@@ -222,6 +224,12 @@
                         }
                         break;
                     }
+                    // Backing-off records need no lease/read/indicator work on
+                    // every 120 ms network tick. Recheck cross-process work at
+                    // most two seconds later; a fresh local edit wakes at once.
+                    // Do not overwrite a wake that arrived during this scan.
+                    if(!attempted&&wakeVersion===this.outboxWakeVersion)
+                        this.nextOutboxCheck=Math.min(earliestRetry,Date.now()+2000);
                 });
             }catch(error){this.fail(error);}
             finally{this.writing=false;this.host.changed?.();}
@@ -250,6 +258,7 @@
                 const apply=this.applyChain.catch(()=>{}).then(async()=>{
                     if(this.stopped)return;
                     const receivedAt=Date.now();
+                    source.retryAt=0;
                     if(raw===source.raw){
                         source.idleReads++;
                         source.next=receivedAt+(source.hotUntil>receivedAt?120:Math.min(30000,1800*2**Math.floor(source.idleReads/3)));
@@ -278,7 +287,7 @@
                 });
                 this.applyChain=apply;
                 await apply;
-            }catch(error){source.next=Date.now()+5000;this.fail(error);}
+            }catch(error){source.retryAt=Date.now()+5000;source.next=source.retryAt;this.fail(error);}
         }
         async poll(){
             if(this.stopped||!this.docId||this.reading)return;
@@ -301,7 +310,7 @@
             try{
                 const now=Date.now();
                 const due=[...this.sources.entries()]
-                    .filter(([id,source])=>!this.readTasks.has(id)&&source.next<=now)
+                    .filter(([id,source])=>!this.readTasks.has(id)&&source.next<=now&&(source.retryAt||0)<=now)
                     .sort((a,b)=>(b[1].hotUntil>now?1:0)-(a[1].hotUntil>now?1:0)||a[1].next-b[1].next)
                     .slice(0,Math.max(0,4-this.readTasks.size));
                 started=due.map(([id,source])=>{
@@ -317,7 +326,7 @@
         fail(error){if(error?.name!=='AbortError'){this.lastError=String(error?.message||error);this.host.error?.(error);}}
         wake(){
             if(this.stopped)return;
-            this.nextOutboxCheck=0;
+            this.nextOutboxCheck=0;this.outboxWakeVersion++;
             clearTimeout(this.timer);
             this.timer=setTimeout(()=>{this.timer=null;this.tick();},Math.max(0,this.lastWrite+120-Date.now()));
         }
@@ -331,6 +340,10 @@
         }
         async retry(){
             this.lastWrite=0;
+            for(const source of this.sources.values())if(source.next!==Infinity){
+                source.retryAt=0;source.next=0;source.hotUntil=Date.now()+6000;
+            }
+            this.nextDiscovery=0;
             const index=await this.read(OUTBOX);
             for(const key of Object.keys(index?.pending||{}))await this.patch(key,old=>({...old,retryAt:0}));
             this.wake();

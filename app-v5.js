@@ -1493,10 +1493,11 @@
             (Array.isArray(pages) ? pages : []).forEach(page => {
                 if (!page?.pageId) return;
                 for (const field of ['background', 'template', 'size', 'sidePanel']) {
-                    seed(
-                        getCollabPageFieldKey(page.pageId, field),
-                        getCollabPageFieldValue(page, field)
-                    );
+                    const key = getCollabPageFieldKey(page.pageId, field);
+                    // seed() leaves existing registers untouched. Avoid
+                    // computing discarded values (notably full photo hashes)
+                    // on every pen/peer snapshot of an already-seeded page.
+                    if (!metadata.fields[key]) seed(key, getCollabPageFieldValue(page, field));
                 }
             });
             return ihnNormalizeFieldMeta(metadata);
