@@ -530,3 +530,51 @@ mod tests {
         assert!(front);
     }
 }
+
+impl Rng {
+    /// A generator keyed by a stable id instead of drawn from one
+    /// sequential stream: `seed` (the city), `stage` (what is being decided)
+    /// and `key` (a geometric id such as a quantized position), mixed with
+    /// SplitMix64. A local change then only changes local decisions.
+    pub fn keyed(seed: u64, stage: u64, key: u64) -> Self {
+        let mix = |mut z: u64| {
+            z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        };
+        let s = mix(mix(mix(seed) ^ stage.wrapping_mul(0xD6E8_FEB8_6659_FD93)) ^ key);
+        Rng(s | 1)
+    }
+}
+
+/// Stable key of a point quantized to 1 cm.
+pub fn point_key(p: Vec2) -> u64 {
+    let x = (p.x * 100.0).round() as i64 as u64;
+    let z = (p.y * 100.0).round() as i64 as u64;
+    x.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ z.rotate_left(32).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+}
+
+impl Prim {
+    /// Area-weighted smooth normals for the vertices from `first` on (a
+    /// height field laid flat with up normals, then lifted).
+    pub fn recompute_normals_from(&mut self, first: u32) {
+        let f = first as usize;
+        for n in &mut self.normals[f..] {
+            *n = Vec3::ZERO;
+        }
+        for t in self.indices.chunks_exact(3) {
+            if (t[0] as usize) < f {
+                continue;
+            }
+            let (a, b, c) = (self.positions[t[0] as usize], self.positions[t[1] as usize], self.positions[t[2] as usize]);
+            let n = (b - a).cross(c - a);
+            for &i in t {
+                self.normals[i as usize] += n;
+            }
+        }
+        for n in &mut self.normals[f..] {
+            *n = n.try_normalize().unwrap_or(Vec3::Y);
+        }
+    }
+}

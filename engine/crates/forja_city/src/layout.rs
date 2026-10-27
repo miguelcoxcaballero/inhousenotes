@@ -1,19 +1,30 @@
-//! City layout: a Madrid barrio and a Valencian Ensanche on either side of
-//! a tree-lined boulevard. Blocks are split into lots for the building
-//! generator; streets get raised sidewalks with granite curbs, painted
-//! markings, traffic lights, signs, lamps, trees, bollards and bins.
+//! City assembly: plan → draft → fabric → meshes.
+//!
+//! `build_city` runs the generators of a `CityPlan` (grids, organic old
+//! towns, or a given draft such as an OpenStreetMap import), turns the
+//! draft into a `Fabric` (lots, public space, ground classes) and realizes
+//! it: ground meshes and kerbs per 64 m tile, buildings per tile (every
+//! lot through `building::build_into`, medianeras once per block), road
+//! markings, then street furniture planned in 2D.
+
+use std::collections::BTreeMap;
 
 use forja_math::{Mat4, Quat, Vec2, Vec3};
 
-use crate::building::{self, CityOut, EdgeKind, Frontage, Lot, ModuleLib, inset};
+use crate::building::{self, CityOut, ModuleLib};
+use crate::dress::{self, Item, ItemKind};
+use crate::fabric::{Fabric, stage};
 use crate::furniture::{self, Aspect};
+use crate::street_waste::{self, BinModel};
+use crate::generators::{self, CityPlan};
 use crate::geom::{Parts, Rng};
-use crate::kit::{Kit, Mat, assemble, hex};
+use crate::ground;
+use crate::kit::{Kit, Mat, assemble};
 use crate::nightlight::{self, FloodOptions};
-use crate::street_waste::{self as sw, BinModel, ContainerModel};
-use crate::style::StyleLibrary;
-use crate::texgen::SignKind;
-use crate::traffic::{SignalPost, TrafficInfo, TrafficLane, TrafficSign, TrafficStreet, facing_of_yaw};
+use crate::plan::{Draft, End};
+use crate::profile::{Class, ProfileLibrary};
+use crate::style::{Style, StyleLibrary};
+use crate::traffic::{HeightGrid, SignalPost, TrafficEnd, TrafficInfo, TrafficLane, TrafficSign, TrafficStreet, facing_of_yaw};
 
 /// Library props placed by the caller (trees and benches are scanned
 /// models that live outside this crate).
@@ -56,6 +67,19 @@ pub struct Spawn {
     pub yaw: f32,
 }
 
+/// A street of the realized city.
+#[derive(Clone, Debug)]
+pub struct StreetInfo {
+    pub line: Vec<Vec2>,
+    /// Building line to building line (narrowest).
+    pub width: f32,
+    pub carriageway: f32,
+    pub profile: String,
+    pub class: Class,
+    pub zone: u16,
+    pub vehicles: bool,
+}
+
 #[derive(Default)]
 pub struct CityLayout {
     pub out: CityOut,
@@ -63,14 +87,14 @@ pub struct CityLayout {
     /// Where each prop stands (parallel to `props`).
     pub prop_sites: Vec<PropSite>,
     pub spawns: Vec<Spawn>,
-    /// Half size of the playable area.
+    /// Half size of the playable area (centred on the origin).
     pub extent: Vec2,
     pub stats: Vec<(String, usize)>,
-    /// Street centrelines: `(a, b, width between building lines, district, avenue)`.
-    pub streets: Vec<(Vec2, Vec2, f32, usize, bool)>,
-    /// Plazas: `(min, max)` corners and district.
-    pub plazas: Vec<(Vec2, Vec2, usize)>,
-    /// Lanes, signs and traffic lights for the traffic AI.
+    pub streets: Vec<StreetInfo>,
+    pub fabric: Fabric,
+    /// Planned furniture (for tests and tools).
+    pub items: Vec<Item>,
+    /// Lanes, junctions, signs and traffic lights for the traffic AI.
     pub traffic: TrafficInfo,
 }
 
@@ -82,1134 +106,629 @@ impl CityLayout {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct District {
-    pub name: &'static str,
-    pub cols: usize,
-    pub rows: usize,
-    pub block: [f32; 2],
-    /// Street width between building lines (roadway plus sidewalks).
-    pub street: f32,
-    pub sidewalk: f32,
-    pub chamfer: f32,
-    /// Chance that a corner is rounded instead of chamfered.
-    pub rounded: f32,
-    pub depth: f32,
-    pub lot_width: [f32; 2],
-    pub styles: Vec<(&'static str, f32)>,
-    pub avenue_styles: Vec<(&'static str, f32)>,
-    pub outer_styles: Vec<(&'static str, f32)>,
-    pub plaza_styles: Vec<(&'static str, f32)>,
-    pub traffic_lights: bool,
-    pub valencia: bool,
-    pub sidewalk_mat: Mat,
-    /// Block (col, row) turned into a plaza.
-    pub plaza: Option<(usize, usize)>,
-}
-
-impl District {
-    pub fn madrid() -> Self {
-        District {
-            name: "Madrid",
-            cols: 4,
-            rows: 5,
-            block: [46.0, 62.0],
-            street: 11.0,
-            sidewalk: 2.0,
-            chamfer: 0.0,
-            rounded: 0.0,
-            depth: 13.0,
-            lot_width: [8.0, 14.0],
-            styles: vec![("madrid_centro", 0.55), ("madrid_ladrillo", 0.35), ("desarrollismo", 0.1)],
-            avenue_styles: vec![("madrid_centro", 0.5), ("valencia_ensanche", 0.5)],
-            outer_styles: vec![("madrid_ladrillo", 0.5), ("madrid_centro", 0.35), ("desarrollismo", 0.15)],
-            plaza_styles: vec![("madrid_austrias", 1.0)],
-            traffic_lights: false,
-            valencia: false,
-            sidewalk_mat: Mat::SidewalkSlab,
-            plaza: Some((1, 2)),
-        }
-    }
-
-    pub fn valencia() -> Self {
-        District {
-            name: "Valencia",
-            cols: 3,
-            rows: 3,
-            block: [92.0, 104.0],
-            street: 20.0,
-            sidewalk: 4.5,
-            chamfer: 9.0,
-            rounded: 0.35,
-            depth: 19.0,
-            lot_width: [13.0, 21.0],
-            styles: vec![("valencia_ensanche", 0.4), ("valencia_ruzafa", 0.32), ("valencia_modernista", 0.16), ("desarrollismo", 0.12)],
-            avenue_styles: vec![("valencia_modernista", 0.55), ("valencia_ensanche", 0.45)],
-            outer_styles: vec![("cabanyal", 0.65), ("valencia_ruzafa", 0.23), ("desarrollismo", 0.12)],
-            plaza_styles: vec![("valencia_modernista", 0.6), ("valencia_ensanche", 0.4)],
-            traffic_lights: true,
-            valencia: true,
-            sidewalk_mat: Mat::SidewalkHex,
-            plaza: Some((1, 1)),
-        }
-    }
+/// The site of a prop at `p`: a plaza, an avenue's median, or the nearest
+/// street by its width.
+fn prop_site(f: &Fabric, plan: &CityPlan, p: Vec2) -> PropSite {
+    let near = f.graph.near(p, 40.0).into_iter().min_by(|a, b| a.2.abs().total_cmp(&b.2.abs()));
+    let Some((si, t, _)) = near else { return PropSite { setting: Setting::Park, valencia: false, street_width: 0.0 } };
+    let s = f.graph.street(si);
+    let valencia = plan.zone(s.zone).is_some_and(|z| z.valencia());
+    let width = s.width_at(t);
+    let setting = if f.ground.in_plaza(p) {
+        Setting::Plaza
+    } else if f.ground.median.contains(p) {
+        Setting::Avenue
+    } else if width >= 18.0 {
+        Setting::Boulevard
+    } else if width >= 12.0 {
+        Setting::Street
+    } else {
+        Setting::NarrowStreet
+    };
+    PropSite { setting, valencia, street_width: if setting == Setting::Plaza { 0.0 } else { width } }
 }
 
 #[derive(Clone, Debug)]
 pub struct CityConfig {
     pub seed: u64,
-    pub west: District,
-    pub east: District,
-    /// Boulevard width between the districts' building lines.
-    pub avenue: f32,
+    pub plan: CityPlan,
 }
 
 impl Default for CityConfig {
+    /// Grids, boulevard and the Austrias and Carmen old towns.
     fn default() -> Self {
-        Self { seed: 7, west: District::madrid(), east: District::valencia(), avenue: 46.0 }
+        Self::preset("default").expect("default plan")
     }
 }
 
 impl CityConfig {
+    /// Today's map: a Madrid barrio and a Valencian Ensanche on either side
+    /// of a boulevard.
+    pub fn classic() -> Self {
+        Self::preset("classic").expect("classic plan")
+    }
+
     /// A small city for tests and quick previews.
     pub fn small() -> Self {
-        let mut c = Self::default();
-        c.west.cols = 2;
-        c.west.rows = 2;
-        c.west.plaza = None;
-        c.east.cols = 1;
-        c.east.rows = 1;
-        c.east.plaza = None;
+        let mut c = Self::classic();
+        for z in &mut c.plan.zones {
+            if let Some(g) = &mut z.grid {
+                if z.city == "madrid" {
+                    g.cols = 2;
+                    g.rows = 2;
+                } else {
+                    g.cols = 1;
+                    g.rows = 1;
+                }
+                g.plaza = None;
+            }
+        }
         c
+    }
+
+    /// A built-in plan: `classic`, `default`, `small`, `carmen`,
+    /// `austrias`, `organic`.
+    pub fn preset(name: &str) -> Option<Self> {
+        if name == "small" {
+            return Some(Self::small());
+        }
+        CityPlan::builtin(name).map(|plan| CityConfig { seed: 7, plan })
+    }
+
+    /// A city from a given draft (OSM import, test fixture).
+    pub fn from_draft(d: Draft, city: &str) -> Self {
+        CityConfig { seed: 7, plan: CityPlan::from_draft(d, city) }
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Facing {
-    Street,
-    Avenue,
-    Outer,
-    Plaza,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum Corner {
-    Sharp,
-    Chamfer,
-    Round,
-}
-
-struct Block {
-    min: Vec2,
-    max: Vec2,
-    corners: [Corner; 4],
-    facing: [Facing; 4],
-    plaza: bool,
-}
-
-/// A street piece between two intersections, along its centreline.
-#[derive(Clone, Copy, Debug)]
-struct Segment {
-    a: Vec2,
-    b: Vec2,
-    /// Distance between the building lines.
-    width: f32,
-    sidewalk: f32,
-    /// +1: traffic a→b only, -1: b→a only, 0: both ways.
-    oneway: i8,
-    avenue: bool,
-    district: usize,
-}
-
-fn pick<'a>(rng: &mut Rng, w: &'a [(&'static str, f32)]) -> &'a str {
+/// Weighted pick from a style pool.
+fn pick<'a>(rng: &mut Rng, w: &'a [(String, f32)]) -> Option<&'a str> {
     let total: f32 = w.iter().map(|x| x.1).sum();
     let mut r = rng.f() * total;
     for (s, x) in w {
         if r < *x {
-            return s;
+            return Some(s);
         }
         r -= x;
     }
-    w[0].0
+    w.first().map(|x| x.0.as_str())
 }
 
 /// Builds the whole city.
 pub fn build_city(kit: &Kit, styles: &StyleLibrary, cfg: &CityConfig) -> CityLayout {
-    let mut rng = Rng::new(cfg.seed);
+    let lib = ProfileLibrary::builtin();
+    build_city_with(kit, styles, &lib, cfg)
+}
+
+pub fn build_city_with(kit: &Kit, styles: &StyleLibrary, lib: &ProfileLibrary, cfg: &CityConfig) -> CityLayout {
+    let draft = generators::draft(&cfg.plan, lib, cfg.seed);
+    let fabric = Fabric::build(&draft, &cfg.plan, lib, cfg.seed);
+    #[cfg(debug_assertions)]
+    if let Err(v) = fabric.validate() {
+        log::warn!("fabric: {} violations, first {:?}", v.len(), v.first());
+    }
+    realize(kit, styles, fabric, &cfg.plan, lib, cfg.seed)
+}
+
+/// Meshes a fabric.
+pub fn realize(kit: &Kit, styles: &StyleLibrary, fabric: Fabric, plan: &CityPlan, lib: &ProfileLibrary, seed: u64) -> CityLayout {
     let mut lay = CityLayout::default();
-    let mut lib = ModuleLib::new(kit);
-    let half_av = cfg.avenue * 0.5;
-    let mut blocks: Vec<(usize, Block)> = Vec::new();
-    let mut segments: Vec<Segment> = Vec::new();
-    let mut zmax: f32 = 0.0;
-    let mut xext = [0.0f32; 2];
-    for (di, d) in [&cfg.west, &cfg.east].into_iter().enumerate() {
-        let sign = if di == 0 { -1.0 } else { 1.0 };
-        // Column intervals moving away from the avenue.
-        let mut xs = Vec::new();
-        let mut cur = half_av;
-        for _ in 0..d.cols {
-            let w = rng.range(d.block[0], d.block[1]);
-            xs.push((cur, cur + w));
-            cur += w + d.street;
-        }
-        xext[di] = cur;
-        let heights: Vec<f32> = (0..d.rows).map(|_| rng.range(d.block[0], d.block[1])).collect();
-        let total_z = heights.iter().sum::<f32>() + d.street * (d.rows + 1) as f32;
-        zmax = zmax.max(total_z * 0.5);
-        let mut zs = Vec::new();
-        let mut z = -total_z * 0.5 + d.street;
-        for h in &heights {
-            zs.push((z, z + h));
-            z += h + d.street;
-        }
-        let to_x = |a: f32, b: f32| if sign > 0.0 { (a, b) } else { (-b, -a) };
-        for (ci, (xa, xb)) in xs.iter().enumerate() {
-            for (ri, (za, zb)) in zs.iter().enumerate() {
-                let (x0, x1) = to_x(*xa, *xb);
-                let near_avenue = ci == 0;
-                let far = ci + 1 == d.cols;
-                let is_plaza = d.plaza == Some((ci, ri));
-                // Sides: 0 bottom (-z), 1 right (+x), 2 top (+z), 3 left (-x).
-                let mut facing = [Facing::Street; 4];
-                let (avenue_side, far_side) = if sign > 0.0 { (3, 1) } else { (1, 3) };
-                if near_avenue {
-                    facing[avenue_side] = Facing::Avenue;
-                }
-                if far {
-                    facing[far_side] = Facing::Outer;
-                }
-                if ri == 0 {
-                    facing[0] = Facing::Outer;
-                }
-                if ri + 1 == d.rows {
-                    facing[2] = Facing::Outer;
-                }
-                // Sides facing the plaza.
-                if let Some((pc, pr)) = d.plaza {
-                    if !is_plaza {
-                        let (dc, dr) = (ci as i32 - pc as i32, ri as i32 - pr as i32);
-                        if dr == 0 && dc.abs() == 1 {
-                            let toward_plaza_x = -(dc as f32) * sign;
-                            facing[if toward_plaza_x > 0.0 { 1 } else { 3 }] = Facing::Plaza;
-                        }
-                        if dc == 0 && dr.abs() == 1 {
-                            facing[if dr > 0 { 0 } else { 2 }] = Facing::Plaza;
-                        }
-                    }
-                }
-                let corners = [0, 1, 2, 3].map(|_| {
-                    if d.chamfer <= 0.0 {
-                        Corner::Sharp
-                    } else if rng.chance(d.rounded) {
-                        Corner::Round
-                    } else {
-                        Corner::Chamfer
-                    }
-                });
-                let b = Block { min: Vec2::new(x0, *za), max: Vec2::new(x1, *zb), corners, facing, plaza: is_plaza };
-                if is_plaza {
-                    lay.plazas.push((b.min, b.max, di));
-                    plaza(&mut lib, &mut lay, &b, d, &mut rng);
-                    blocks.push((di, Block { corners: [Corner::Sharp; 4], ..b }));
-                    continue;
-                }
-                blocks.push((di, b));
-            }
-        }
-        // Street segments: vertical streets (along z) between columns and at
-        // the far edge, horizontal ones between rows and at both ends.
-        let mut vx: Vec<f32> = xs.windows(2).map(|w| (w[0].1 + w[1].0) * 0.5).collect();
-        vx.push(xs[xs.len() - 1].1 + d.street * 0.5);
-        for (k, x) in vx.iter().enumerate() {
-            for (ri, (za, zb)) in zs.iter().enumerate() {
-                let xc = x * sign;
-                let ow = if k % 2 == 0 { 1 } else { -1 };
-                let _ = ri;
-                segments.push(Segment { a: Vec2::new(xc, *za), b: Vec2::new(xc, *zb), width: d.street, sidewalk: d.sidewalk, oneway: ow, avenue: false, district: di });
-            }
-        }
-        let mut hz: Vec<f32> = vec![zs[0].0 - d.street * 0.5];
-        hz.extend(zs.windows(2).map(|w| (w[0].1 + w[1].0) * 0.5));
-        hz.push(zs[zs.len() - 1].1 + d.street * 0.5);
-        for (k, z) in hz.iter().enumerate() {
-            for (xa, xb) in &xs {
-                let (x0, x1) = to_x(*xa, *xb);
-                let ow = if k % 2 == 0 { 1 } else { -1 };
-                segments.push(Segment { a: Vec2::new(x0, *z), b: Vec2::new(x1, *z), width: d.street, sidewalk: d.sidewalk, oneway: ow, avenue: false, district: di });
-            }
-        }
-    }
-    // The boulevard.
-    segments.push(Segment { a: Vec2::new(0.0, -zmax), b: Vec2::new(0.0, zmax), width: cfg.avenue, sidewalk: 6.0, oneway: 0, avenue: true, district: 1 });
-
-    // Ground, sidewalks and curbs.
-    let ext = Vec2::new(xext[0].max(xext[1]) + 10.0, zmax + 10.0);
+    let mut mlib = ModuleLib::new(kit);
+    let [lo, hi] = fabric.extent;
+    let ext = Vec2::new(lo.x.abs().max(hi.x.abs()), lo.y.abs().max(hi.y.abs())) + Vec2::splat(10.0);
     lay.extent = ext;
-    let mut ground: Parts<Mat> = Parts::new();
-    ground.get(Mat::Asphalt).polygon(&[Vec2::new(-ext.x, -ext.y), Vec2::new(ext.x, -ext.y), Vec2::new(ext.x, ext.y), Vec2::new(-ext.x, ext.y)], 0.0, true, Mat::Asphalt.scale());
-    // Avenue median: palms or plane trees, a bike lane, benches; open
-    // where signalled side streets cross it, so traffic can turn across.
-    let openings: Vec<(f32, f32)> = segments
-        .iter()
-        .filter(|s| !s.avenue && (if s.district == 0 { &cfg.west } else { &cfg.east }).traffic_lights && (s.a.y - s.b.y).abs() < 0.1)
-        .filter(|s| (s.a.x.abs() - half_av).abs() < 0.5 || (s.b.x.abs() - half_av).abs() < 0.5)
-        .map(|s| (s.a.y - s.width * 0.5, s.a.y + s.width * 0.5))
-        .collect();
-    lay.traffic.median_openings = openings.iter().map(|o| Vec2::new(0.0, (o.0 + o.1) * 0.5)).collect();
-    let in_gap = |z: f32, margin: f32| openings.iter().any(|o| z > o.0 - margin && z < o.1 + margin);
-    {
-        let (mw, z0, z1) = (9.0, -zmax + 2.0, zmax - 2.0);
-        let mut cuts = vec![z0];
-        let mut sorted = openings.clone();
-        sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for (a, b) in &sorted {
-            cuts.push(a.max(z0));
-            cuts.push(b.min(z1));
-        }
-        cuts.push(z1);
-        for piece in cuts.chunks(2) {
-            let (a, b) = (piece[0], piece[1]);
-            if b - a < 6.0 {
-                continue;
-            }
-            let ring = [Vec2::new(-mw * 0.5, a), Vec2::new(mw * 0.5, a), Vec2::new(mw * 0.5, b), Vec2::new(-mw * 0.5, b)];
-            raised(&mut ground, &mut lay.out, &ring, Mat::SidewalkHex);
-            ground.get(Mat::Grass).polygon(&[Vec2::new(-1.8, a + 2.0), Vec2::new(1.8, a + 2.0), Vec2::new(1.8, b - 2.0), Vec2::new(-1.8, b - 2.0)], 0.165, true, Mat::Grass.scale());
-            ground.get(Mat::Paint(hex(0xa23b2c))).polygon(&[Vec2::new(2.2, a + 1.0), Vec2::new(4.2, a + 1.0), Vec2::new(4.2, b - 1.0), Vec2::new(2.2, b - 1.0)], 0.158, true, 2.0);
-        }
-        let mut z = z0 + 6.0;
-        while z < z1 - 4.0 {
-            let site = PropSite { setting: Setting::Avenue, valencia: true, street_width: cfg.avenue };
-            if !in_gap(z, 3.0) {
-                lay.add_prop(PropKind::Palm, Mat4::from_rotation_translation(Quat::from_rotation_y(z * 0.37), Vec3::new(0.0, 0.17, z)), site);
-                if (z as i32 / 9) % 3 == 0 && !in_gap(z + 4.0, 2.0) {
-                    lay.add_prop(PropKind::Bench, Mat4::from_rotation_translation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2), Vec3::new(-3.2, 0.15, z + 4.0)), site);
-                }
-            }
-            z += 11.0;
-        }
-        // Modern LED road lights (3000 K) on the median.
-        let led = nightlight::kelvin(3000.0);
-        let lamp = if kit.night.is_night() {
-            let g = nightlight::to_rgb(led);
-            lib.named(&mut lay.out, "road_light_lit", || furniture::road_light_lit(g))
-        } else {
-            lib.named(&mut lay.out, "road_light", furniture::road_light)
-        };
-        let mut z = z0 + 10.0;
-        while z < z1 - 5.0 {
-            if in_gap(z, 2.0) {
-                z += 30.0;
-                continue;
-            }
-            for side in [-1.0f32, 1.0] {
-                let yaw = if side < 0.0 { -std::f32::consts::FRAC_PI_2 } else { std::f32::consts::FRAC_PI_2 };
-                let m = Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(side * 0.9, 0.15, z));
-                lay.out.placements.push((lamp, m));
-                lay.out.lights.push((Vec3::new(side * 2.7, 9.4, z), Vec3::new(1.0, 0.92, 0.8)));
-                lay.out.city_lights.push(nightlight::road_light(m.transform_point3(furniture::ROAD_LIGHT_HEAD) - Vec3::Y * 0.05, led));
-            }
-            z += 30.0;
-        }
+    // 1. Ground: on flat ground a plane at roadway level under everything;
+    // on a slope the roadway and the land around the city are meshed on
+    // the relief. Then ground tiles, kerbs, gutters.
+    let map = [Vec2::new(-ext.x, -ext.y), Vec2::new(ext.x, -ext.y), Vec2::new(ext.x, ext.y), Vec2::new(-ext.x, ext.y)];
+    if fabric.ground.relief.is_flat() {
+        let mut plane: Parts<Mat> = Parts::new();
+        plane.get(Mat::Asphalt).polygon(&map, 0.0, true, Mat::Asphalt.scale());
+        let gi = lay.out.add_scene(assemble(kit, "ground_plane", plane, None));
+        lay.out.placements.push((gi, Mat4::IDENTITY));
     }
-    for (di, b) in &blocks {
-        let d = if *di == 0 { &cfg.west } else { &cfg.east };
-        let ring = block_ring(b, d.chamfer).0;
-        if b.plaza {
+    let outside = crate::plan::Region::ring(&map).minus(&fabric.domain);
+    let (tiles, col) = ground::mesh(&fabric.ground, &fabric.graph, lib, &fabric.courts, &outside);
+    for (_, parts) in tiles {
+        if parts.tri_count() == 0 {
             continue;
         }
-        let walk = inset(&ring, -d.sidewalk).unwrap_or(ring.clone());
-        raised(&mut ground, &mut lay.out, &walk, d.sidewalk_mat);
-    }
-    let gi = lay.out.add_scene(assemble(kit, "streets", ground, None));
-    lay.out.placements.push((gi, Mat4::IDENTITY));
-
-    // Buildings.
-    let mut lots = 0;
-    for (di, b) in &blocks {
-        let d = if *di == 0 { &cfg.west } else { &cfg.east };
-        if b.plaza {
-            continue;
-        }
-        // One scene per block for all the buildings' unique geometry.
-        let mut parts: Parts<Mat> = Parts::new();
-        let first_wall = lay.out.party_walls.len();
-        for (lot, facing) in split_block(b, d, &mut rng) {
-            let pool = match facing {
-                Facing::Avenue => &d.avenue_styles,
-                Facing::Outer => &d.outer_styles,
-                Facing::Plaza => &d.plaza_styles,
-                Facing::Street => &d.styles,
-            };
-            let id = pick(&mut rng, pool);
-            if let Some(style) = styles.get(id) {
-                let first = lay.out.frontages.len();
-                let top = building::build_into(&mut lib, &mut lay.out, &mut parts, &lot, style, rng.next_u32() as u64);
-                lots += 1;
-                // Civic and landmark fronts on the plaza are floodlit.
-                if facing == Facing::Plaza && kit.night.is_night() {
-                    floodlight_lot(&mut lay.out, &lot, top, b);
-                }
-                // Bars spill onto sidewalks wide enough for a terrace.
-                let fronts: Vec<Frontage> = lay.out.frontages[first..].to_vec();
-                for fr in fronts.iter().filter(|fr| fr.bar && !fr.closed) {
-                    if d.sidewalk >= 3.5 && rng.chance(0.85) {
-                        terrace(&mut lib, &mut lay, fr, d.sidewalk, &mut rng);
-                    }
-                }
-            }
-        }
-        // Medianeras once every neighbour in the block is known.
-        building::medianeras(&mut lib, &mut lay.out, &mut parts, first_wall);
-        let si = lay.out.add_scene(assemble(kit, "block", parts, None));
+        let si = lay.out.add_scene(assemble(kit, "streets", parts, None));
         lay.out.placements.push((si, Mat4::IDENTITY));
     }
-    // Markings, signals and furniture.
-    let mut marks: Parts<Mat> = Parts::new();
-    for s in &segments {
-        let d = if s.district == 0 { &cfg.west } else { &cfg.east };
-        street_markings(&mut marks, s);
-        street_furniture(&mut lib, &mut lay, s, d, &mut rng);
+    for t in col {
+        let b = lay.out.col_verts.len() as u32;
+        lay.out.col_verts.extend(t);
+        lay.out.col_tris.push([b, b + 1, b + 2]);
     }
-    intersections(&mut lib, &mut lay, &segments, cfg);
-    let mi = lay.out.add_scene(assemble(kit, "markings", marks, None));
-    lay.out.placements.push((mi, Mat4::IDENTITY));
-    // Spawns: the player on the boulevard sidewalk, cars parked in the
-    // parking strips (the lanes belong to the traffic).
-    lay.spawns.push(Spawn { vehicle: false, pos: Vec3::new(-half_av + 3.0, 1.2, 0.0), yaw: 0.0 });
-    for s in segments.iter().filter(|s| !s.avenue).step_by(3) {
-        let dir = (s.b - s.a).normalize();
-        let mid = (s.a + s.b) * 0.5;
-        let flip = if s.oneway < 0 { -1.0 } else { 1.0 };
-        let fwd = dir * flip;
-        let Some(&offset) = traffic_street(s).parking.iter().max_by(|a, b| (**a * -flip).total_cmp(&(**b * -flip))) else { continue };
-        let p = mid + Vec2::new(-dir.y, dir.x) * offset;
-        lay.spawns.push(Spawn { vehicle: true, pos: Vec3::new(p.x, 0.8, p.y), yaw: fwd.x.atan2(fwd.y) });
+    // 2. Buildings, grouped by the 64 m tile of their block.
+    let mut eaves = vec![0.0f32; fabric.lots.len()];
+    let mut by_tile: BTreeMap<(i32, i32), Vec<usize>> = BTreeMap::new();
+    for (bi, b) in fabric.blocks.iter().enumerate() {
+        if b.lots.is_empty() {
+            continue;
+        }
+        let c = b.shape.outer.iter().copied().sum::<Vec2>() / b.shape.outer.len().max(1) as f32;
+        by_tile.entry(((c.x / 64.0).floor() as i32, (c.y / 64.0).floor() as i32)).or_default().push(bi);
     }
-    for side in [-1.0f32, 1.0] {
-        let mut z = -zmax + 30.0;
-        while z < zmax - 30.0 {
-            let x = side * (4.5 + 5.5);
-            let yaw = if side > 0.0 { 0.0 } else { std::f32::consts::PI };
-            lay.spawns.push(Spawn { vehicle: true, pos: Vec3::new(x, 0.8, z), yaw });
-            z += 45.0;
+    let (mut built, mut plinths) = (0usize, 0usize);
+    for (_, blocks) in by_tile {
+        let mut parts: Parts<Mat> = Parts::new();
+        for bi in blocks {
+            let b = &fabric.blocks[bi];
+            let first_wall = lay.out.party_walls.len();
+            for li in b.lots.clone() {
+                let lot = &fabric.lots[li];
+                let info = &fabric.info[li];
+                let Some(style) = style_for(styles, plan, info.zone, &info.pool, info.key, seed) else { continue };
+                let mut rng = Rng::keyed(seed, stage::LOT ^ 0x99, info.key);
+                eaves[li] = building::build_into(&mut mlib, &mut lay.out, &mut parts, lot, style, rng.next_u32() as u64 | (rng.next_u32() as u64) << 32);
+                plinths += plinth(&mut parts, &mut lay.out, lot, &fabric.ground);
+                // Fronts on a plaza are floodlit at night.
+                if kit.night.is_night() {
+                    floodlight_lot(&mut lay.out, lot, eaves[li]);
+                }
+                built += 1;
+            }
+            building::medianeras(&mut mlib, &mut lay.out, &mut parts, first_wall);
+        }
+        if parts.tri_count() > 0 {
+            let si = lay.out.add_scene(assemble(kit, "block", parts, None));
+            lay.out.placements.push((si, Mat4::IDENTITY));
         }
     }
-    lay.streets = segments.iter().map(|s| (s.a, s.b, s.width, s.district, s.avenue)).collect();
-    lay.traffic.streets = segments.iter().map(traffic_street).collect();
-    lay.traffic.plazas = lay.plazas.iter().map(|p| (p.0, p.1)).collect();
-    lay.traffic.benches = lay.props.iter().filter(|p| p.0 == PropKind::Bench).map(|(_, m)| {
-        let (_, q, t) = m.to_scale_rotation_translation();
-        let f = q * Vec3::Z;
-        (Vec2::new(t.x, t.z), f.x.atan2(f.z))
-    }).collect();
+    // 3. Road markings.
+    let marks = ground::markings(&fabric.ground, &fabric.graph, lib);
+    if marks.tri_count() > 0 {
+        let mi = lay.out.add_scene(assemble(kit, "markings", marks, None));
+        lay.out.placements.push((mi, Mat4::IDENTITY));
+    }
+    // 4. Furniture.
+    let fronts = lay.out.frontages.clone();
+    let mut items = dress::street_items(&fabric, plan, lib, &fronts, seed);
+    items.extend(dress::after_buildings(&fabric, lib, &eaves, &fronts, seed));
+    place_items(&mut mlib, &mut lay, &items, seed, &|p| prop_site(&fabric, plan, p));
+    lay.items = items;
+    // 5. What the traffic AI drives by: the street graph's roadways with
+    // their lanes, and the signs and lights just placed.
+    traffic_info(&mut lay, &fabric, plan, lib);
+    // 6. Spawns: drivable cars in parking strips, the player on the start
+    // zone's main square or a sidewalk near the middle.
+    let start = plan.start.as_ref().and_then(|id| plan.zones.iter().position(|z| &z.id == id)).map(|i| (i + 1) as u16);
+    spawns(&mut lay, &fabric, start);
+    // 7. Streets and stats.
+    lay.streets = fabric
+        .graph
+        .streets
+        .iter()
+        .map(|s| {
+            let p = lib.get(s.profile);
+            StreetInfo { line: s.line.pts().to_vec(), width: s.min_width(), carriageway: s.carriageway, profile: p.id.clone(), class: p.class, zone: s.zone, vehicles: p.vehicles }
+        })
+        .collect();
+    lay.stats = fabric.stats.clone();
     lay.stats.push(("buildings".into(), lay.out.buildings));
-    lay.stats.push(("lots".into(), lots));
-    lay.stats.push(("streets".into(), segments.len()));
+    lay.stats.push(("built_lots".into(), built));
+    lay.stats.push(("plinth_m".into(), plinths));
     lay.stats.push(("modules".into(), lay.out.scenes.len()));
+    lay.stats.push(("lights".into(), lay.out.lights.len()));
+    lay.fabric = fabric;
     lay
 }
 
-/// A street lamp module (candelabra or fernandina) placed at `base`, with
-/// its night light recorded: by day the shared module, at night one tinted
-/// with the lamp's sodium or LED color.
-fn street_lamp_module(lib: &mut ModuleLib, out: &mut CityOut, candelabra: bool, base: Vec3, _y: f32) -> usize {
-    let bulb = base + Vec3::Y * furniture::street_lamp_bulb(candelabra);
-    let (color, _) = nightlight::street_lamp_color(bulb, !candelabra);
-    out.city_lights.push(nightlight::street_lamp(bulb, color, candelabra));
-    if lib.kit.night.is_night() {
-        let g = nightlight::to_rgb(color);
-        lib.named(out, &format!("street_lamp_{candelabra}_{g:?}"), || furniture::street_lamp_lit(candelabra, g))
-    } else {
-        lib.named(out, &format!("street_lamp_{candelabra}"), || furniture::street_lamp(candelabra))
+/// A stone plinth (zócalo) under the street and courtyard facades of a
+/// lot wherever the ground falls below the building's foundation
+/// (`base - SKIRT`): on a slope the facade stands level at its highest
+/// ground and the plinth grows downhill, as on Madrid's sloping streets.
+/// Returns the metres of plinth built.
+fn plinth(parts: &mut Parts<Mat>, out: &mut CityOut, lot: &crate::lot::Lot, ground: &ground::Ground) -> usize {
+    if ground.relief.is_flat() {
+        return 0;
     }
-}
-
-/// Floodlights for the street fronts of a lot facing a plaza (`top`: the
-/// absolute eave height), on the side toward the plaza block `b`.
-fn floodlight_lot(out: &mut CityOut, lot: &Lot, top: f32, b: &Block) {
-    let _ = b;
-    let n = lot.ring.len();
-    let opts = FloodOptions::default();
-    for i in 0..n {
-        if !lot.edges[i].is_street() {
+    let top = lot.base - crate::lot::SKIRT + 0.02;
+    let mut built = 0.0f32;
+    for k in 0..lot.ring.len() {
+        if lot.edges[k] == crate::lot::EdgeKind::Party {
             continue;
         }
-        let (a, bb) = (lot.ring[i], lot.ring[(i + 1) % n]);
-        let d = bb - a;
+        let (a, b) = lot.edge(k);
+        let d = (b - a).normalize_or(Vec2::X);
+        let o = Vec2::new(d.y, -d.x);
+        let n = (a.distance(b) / 2.0).ceil().max(1.0) as usize;
+        for i in 0..n {
+            let (p0, p1) = (a.lerp(b, i as f32 / n as f32), a.lerp(b, (i + 1) as f32 / n as f32));
+            let (g0, g1) = (ground.height_at(p0 + o * 0.15) - 0.05, ground.height_at(p1 + o * 0.15) - 0.05);
+            if top - g0.min(g1) < 0.03 {
+                continue;
+            }
+            let (b0, b1) = (Vec3::new(p0.x, g0.min(top), p0.y), Vec3::new(p1.x, g1.min(top), p1.y));
+            let (t0, t1) = (Vec3::new(p0.x, top, p0.y), Vec3::new(p1.x, top, p1.y));
+            // Facing out of the lot (right of a -> b).
+            parts.get(Mat::Granite).quad(b1, b0, t0, t1, Mat::Granite.scale());
+            let base = out.col_verts.len() as u32;
+            out.col_verts.extend([b1, b0, t0, t1]);
+            out.col_tris.extend([[base, base + 1, base + 2], [base, base + 2, base + 3]]);
+            built += p0.distance(p1);
+        }
+    }
+    built as usize
+}
+
+/// The style of a lot: from its zone's pool for its key, falling back to
+/// the zone's street pool, then any style of the zone's city.
+fn style_for<'a>(styles: &'a StyleLibrary, plan: &'a CityPlan, zone: u16, pool: &str, key: u64, seed: u64) -> Option<&'a Style> {
+    let mut rng = Rng::keyed(seed, stage::LOT, key);
+    let z = plan.zone(zone);
+    if let Some(z) = z {
+        for p in [pool, "street"] {
+            let list = z.pool(p);
+            if let Some(s) = pick(&mut rng, list).and_then(|id| styles.get(id)) {
+                return Some(s);
+            }
+            // Pools may name styles another team has not added yet.
+            let present: Vec<(String, f32)> = list.iter().filter(|(id, _)| styles.get(id).is_some()).cloned().collect();
+            if let Some(s) = pick(&mut rng, &present).and_then(|id| styles.get(id)) {
+                return Some(s);
+            }
+        }
+        let city: Vec<&Style> = styles.of_city(&z.city).collect();
+        if !city.is_empty() {
+            return Some(city[rng.below(city.len())]);
+        }
+    }
+    styles.styles.first()
+}
+
+/// Floodlights for the plaza fronts of a lot (`top`: the absolute eave
+/// height).
+fn floodlight_lot(out: &mut CityOut, lot: &crate::lot::Lot, top: f32) {
+    let opts = FloodOptions::default();
+    for i in 0..lot.ring.len() {
+        if !lot.edges[i].is_street() || !lot.front(i).open {
+            continue;
+        }
+        let (a, b) = lot.edge(i);
+        let d = b - a;
         if d.length() < 3.0 {
             continue;
         }
         let outn = Vec3::new(d.y, 0.0, -d.x).normalize_or(Vec3::Z);
-        let (pa, pb) = (Vec3::new(a.x, lot.base, a.y), Vec3::new(bb.x, lot.base, bb.y));
+        let (pa, pb) = (Vec3::new(a.x, lot.base, a.y), Vec3::new(b.x, lot.base, b.y));
         out.city_lights.extend(nightlight::facade_floodlights(pa, pb, outn, top - lot.base, &opts));
     }
 }
 
-/// Table sets (some under parasols) in front of an open bar, between the
-/// pedestrian strip along the facade and the trees at the kerb.
-fn terrace(lib: &mut ModuleLib, lay: &mut CityLayout, fr: &Frontage, sidewalk: f32, rng: &mut Rng) {
-    let parasols = rng.chance(0.5);
-    let pitch = if parasols { 2.1 } else { 1.75 };
-    let n = ((fr.width + 1.2) / pitch).floor().clamp(1.0, 3.0) as i32;
-    let dist = (sidewalk * 0.52).clamp(1.6, 2.5);
-    let yaw0 = fr.out.x.atan2(fr.out.z);
-    for k in 0..n {
-        let off = (k as f32 - (n - 1) as f32 * 0.5) * pitch;
-        let v = rng.below(3) as u8 * 2 + parasols as u8;
-        let m = lib.named(&mut lay.out, &format!("terrace_{v}"), || furniture::terrace_set(v));
-        let p = fr.pos + fr.right * off + fr.out * dist;
-        lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw0 + rng.range(-0.25, 0.25)), p)));
-    }
+fn frame(it: &Item) -> Mat4 {
+    Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), it.pos)
 }
 
-/// Raised paved area with a granite curb, plus its collider.
-fn raised(parts: &mut Parts<Mat>, out: &mut CityOut, ring: &[Vec2], top: Mat) {
-    let h = 0.15;
-    parts.get(top).polygon(ring, h, true, top.scale());
-    out.collider_polygon(ring, h);
-    let inner = inset(ring, 0.3);
-    let n = ring.len();
-    for i in 0..n {
-        let (a, b) = (ring[i], ring[(i + 1) % n]);
-        let (pa, pb) = (Vec3::new(a.x, 0.0, a.y), Vec3::new(b.x, 0.0, b.y));
-        // Outward-facing curb face (ring is CCW, so outward is to the right).
-        parts.get(Mat::Curb).quad(pb, pa, pa + Vec3::Y * (h + 0.003), pb + Vec3::Y * (h + 0.003), Mat::Curb.scale());
-        out.collider_quad([pb, pa, pa + Vec3::Y * h, pb + Vec3::Y * h]);
-        if let Some(inner) = &inner {
-            let (ia, ib) = (inner[i], inner[(i + 1) % n]);
-            let y = h + 0.003;
-            parts.get(Mat::Curb).quad_uv(
-                [Vec3::new(ia.x, y, ia.y), Vec3::new(ib.x, y, ib.y), Vec3::new(b.x, y, b.y), Vec3::new(a.x, y, a.y)],
-                [Vec2::new(0.0, 0.0), Vec2::new((b - a).length(), 0.0), Vec2::new((b - a).length(), 0.3), Vec2::new(0.0, 0.3)],
-            );
-        }
-    }
+fn place(lay: &mut CityLayout, m: usize, it: &Item) {
+    lay.out.placements.push((m, frame(it)));
 }
 
-/// Block outline (counter-clockwise) and the kind of every edge.
-fn block_ring(b: &Block, chamfer: f32) -> (Vec<Vec2>, Vec<bool>) {
-    let v = [b.min, Vec2::new(b.max.x, b.min.y), b.max, Vec2::new(b.min.x, b.max.y)];
-    let mut ring = Vec::new();
-    let mut corner_edge = Vec::new();
-    for k in 0..4 {
-        let vin = (v[k] - v[(k + 3) % 4]).normalize();
-        let vout = (v[(k + 1) % 4] - v[k]).normalize();
-        match b.corners[k] {
-            Corner::Sharp => {
-                ring.push(v[k]);
-                corner_edge.push(false);
-            }
-            Corner::Chamfer => {
-                ring.push(v[k] - vin * chamfer);
-                corner_edge.push(true);
-                ring.push(v[k] + vout * chamfer);
-                corner_edge.push(false);
-            }
-            Corner::Round => {
-                let c = v[k] - vin * chamfer + vout * chamfer;
-                let n = 6;
-                for i in 0..=n {
-                    let t = i as f32 / n as f32 * std::f32::consts::FRAC_PI_2;
-                    let p = c + (-vout * t.cos() + vin * t.sin()) * chamfer;
-                    ring.push(p);
-                    corner_edge.push(i < n);
-                }
-            }
-        }
-    }
-    (ring, corner_edge)
-}
-
-/// Splits a block into lots along its perimeter.
-fn split_block(b: &Block, d: &District, rng: &mut Rng) -> Vec<(Lot, Facing)> {
-    let v = [b.min, Vec2::new(b.max.x, b.min.y), b.max, Vec2::new(b.min.x, b.max.y)];
-    let depth = d.depth.min((b.max - b.min).min_element() * 0.42);
-    let inner = [b.min + Vec2::splat(depth), Vec2::new(b.max.x - depth, b.min.y + depth), b.max - Vec2::splat(depth), Vec2::new(b.min.x + depth, b.max.y - depth)];
-    let c = d.chamfer;
-    // Corner reach along each side from its starting corner and back from
-    // its end corner.
-    let side_len = |k: usize| (v[(k + 1) % 4] - v[k]).length();
-    let mut reach = [[0.0f32; 2]; 4];
-    for k in 0..4 {
-        let l = side_len(k);
-        for e in 0..2 {
-            reach[k][e] = (depth + rng.range(2.5, 6.0)).max(c + 2.0).min(l * 0.5);
-        }
-        let middle = l - reach[k][0] - reach[k][1];
-        if middle < d.lot_width[0] {
-            reach[k] = [l * 0.5, l * 0.5];
-        }
-    }
-    let corner_pts = |k: usize| -> Vec<Vec2> {
-        let vin = (v[k] - v[(k + 3) % 4]).normalize();
-        let vout = (v[(k + 1) % 4] - v[k]).normalize();
-        match b.corners[k] {
-            Corner::Sharp => vec![v[k]],
-            Corner::Chamfer => vec![v[k] - vin * c, v[k] + vout * c],
-            Corner::Round => {
-                let ctr = v[k] - vin * c + vout * c;
-                (0..=6)
-                    .map(|i| {
-                        let t = i as f32 / 6.0 * std::f32::consts::FRAC_PI_2;
-                        ctr + (-vout * t.cos() + vin * t.sin()) * c
-                    })
-                    .collect()
-            }
-        }
-    };
-    let mut lots = Vec::new();
-    for k in 0..4 {
-        let dir = (v[(k + 1) % 4] - v[k]).normalize();
-        let inward = Vec2::new(-dir.y, dir.x);
-        let kp = (k + 3) % 4;
-        let dir_p = (v[k] - v[kp]).normalize();
-        let inward_p = Vec2::new(-dir_p.y, dir_p.x);
-        // Corner lot at corner k.
-        {
-            let sa = v[k] - dir_p * reach[kp][1];
-            let sb = v[k] + dir * reach[k][0];
-            let pts = corner_pts(k);
-            let mut ring = vec![sa];
-            let mut edges = vec![EdgeKind::Street];
-            for (i, p) in pts.iter().enumerate() {
-                ring.push(*p);
-                edges.push(if i + 1 < pts.len() { EdgeKind::Corner } else { EdgeKind::Street });
-            }
-            ring.extend([sb, sb + inward * depth, inner[k], sa + inward_p * depth]);
-            edges.extend([EdgeKind::Party, EdgeKind::Courtyard, EdgeKind::Courtyard, EdgeKind::Party]);
-            // The corner lot faces whichever of its two sides matters more.
-            let f = if b.facing[k] == Facing::Avenue || b.facing[kp] == Facing::Avenue {
-                Facing::Avenue
-            } else if b.facing[k] == Facing::Plaza || b.facing[kp] == Facing::Plaza {
-                Facing::Plaza
-            } else if b.facing[k] == Facing::Outer && b.facing[kp] == Facing::Outer {
-                Facing::Outer
-            } else {
-                Facing::Street
-            };
-            lots.push((Lot { ring, edges, base: 0.15 }, f));
-        }
-        // Middle lots on side k.
-        let l = side_len(k);
-        let (t0, t1) = (reach[k][0], l - reach[k][1]);
-        let mut t = t0;
-        while t1 - t > 0.5 {
-            let mut w = rng.range(d.lot_width[0], d.lot_width[1]);
-            if t1 - (t + w) < d.lot_width[0] {
-                w = t1 - t;
-            }
-            let (p0, p1) = (v[k] + dir * t, v[k] + dir * (t + w));
-            let ring = vec![p0, p1, p1 + inward * depth, p0 + inward * depth];
-            lots.push((Lot { ring, edges: vec![EdgeKind::Street, EdgeKind::Party, EdgeKind::Courtyard, EdgeKind::Party], base: 0.15 }, b.facing[k]));
-            t += w;
-        }
-    }
-    lots
-}
-
-/// Open square in place of a block: granite setts, fountain or garden,
-/// benches and lamps.
-fn plaza(lib: &mut ModuleLib, lay: &mut CityLayout, b: &Block, d: &District, rng: &mut Rng) {
-    let mut p: Parts<Mat> = Parts::new();
-    let ring = [b.min, Vec2::new(b.max.x, b.min.y), b.max, Vec2::new(b.min.x, b.max.y)];
-    let walk = inset(&ring, -d.sidewalk).unwrap_or(ring.to_vec());
-    raised(&mut p, &mut lay.out, &walk, d.sidewalk_mat);
-    p.get(Mat::Cobble).polygon(&ring, 0.155, true, Mat::Cobble.scale());
-    let ctr = (b.min + b.max) * 0.5;
-    let size = b.max - b.min;
-    if d.valencia {
-        // Big round fountain ringed by red flower beds and palms.
-        let r = size.min_element() * 0.18;
-        let f = lib.named(&mut lay.out, &format!("fountain_{}", r as i32), || furniture::fountain(r));
-        lay.out.placements.push((f, Mat4::from_translation(Vec3::new(ctr.x, 0.15, ctr.y))));
-        if lib.kit.night.is_night() {
-            lay.out.city_lights.extend(nightlight::fountain_lights(Vec3::new(ctr.x, 0.55, ctr.y), r));
-        }
-        for k in 0..4 {
-            let a = std::f32::consts::FRAC_PI_2 * k as f32 + std::f32::consts::FRAC_PI_4;
-            let c = ctr + Vec2::from_angle(a) * (r + 8.0);
-            let bed: Vec<Vec2> = (0..16).map(|i| c + Vec2::from_angle(std::f32::consts::TAU * i as f32 / 16.0) * 3.2).collect();
-            p.get(Mat::Soil).polygon(&bed, 0.2, true, 2.0);
-            flower_bed(&mut p, c, 3.0, rng);
-            let site = PropSite { setting: Setting::Plaza, valencia: true, street_width: 0.0 };
-            lay.add_prop(PropKind::Palm, Mat4::from_translation(Vec3::new(c.x, 0.2, c.y)), site);
-            // Orange trees in tree pits between the palm beds.
-            let a2 = std::f32::consts::FRAC_PI_2 * k as f32;
-            let o = ctr + Vec2::from_angle(a2) * (r + 8.0);
-            let pit: Vec<Vec2> = (0..12).map(|i| o + Vec2::from_angle(std::f32::consts::TAU * i as f32 / 12.0) * 0.9).collect();
-            p.get(Mat::Soil).polygon(&pit, 0.18, true, 2.0);
-            lay.add_prop(PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(a2 * 1.7), Vec3::new(o.x, 0.18, o.y)), site);
-        }
-    } else {
-        // Austrias square: a formal garden parterre with a statue plinth.
-        let g = [ctr - size * 0.18, Vec2::new(ctr.x + size.x * 0.18, ctr.y - size.y * 0.18), ctr + size * 0.18, Vec2::new(ctr.x - size.x * 0.18, ctr.y + size.y * 0.18)];
-        p.get(Mat::Granite).aabox(Vec3::new(g[0].x - 0.3, 0.15, g[0].y - 0.3), Vec3::new(g[2].x + 0.3, 0.45, g[2].y + 0.3), 1.5);
-        p.get(Mat::Grass).polygon(&g, 0.46, true, 3.0);
-        for q in 0..4 {
-            let c = ctr + Vec2::new(if q & 1 == 0 { -1.0 } else { 1.0 }, if q & 2 == 0 { -1.0 } else { 1.0 }) * size * 0.09;
-            flower_bed(&mut p, c + Vec2::ZERO, 2.2, rng);
-        }
-        let plinth = Mat::Granite;
-        p.get(plinth).aabox(Vec3::new(ctr.x - 1.0, 0.45, ctr.y - 1.0), Vec3::new(ctr.x + 1.0, 2.6, ctr.y + 1.0), 1.5);
-        p.get(Mat::Galvanized).lathe(Vec3::new(ctr.x, 2.6, ctr.y), &[(0.0, 0.0), (0.55, 0.0), (0.35, 0.4), (0.3, 1.4), (0.42, 1.7), (0.25, 2.1), (0.2, 2.4), (0.0, 2.5)], 12);
-        if lib.kit.night.is_night() {
-            // The statue lit from the corners of its plinth.
-            for q in 0..4 {
-                let o = Vec2::new(if q & 1 == 0 { -1.6 } else { 1.6 }, if q & 2 == 0 { -1.6 } else { 1.6 });
-                lay.out.city_lights.push(nightlight::accent(Vec3::new(ctr.x + o.x, 0.5, ctr.y + o.y), Vec3::new(ctr.x, 3.8, ctr.y), 2800.0, 30.0));
-            }
-        }
-    }
-    // Benches and lamps around the edge.
-    for k in 0..4 {
-        let (a, bb) = (ring[k], ring[(k + 1) % 4]);
-        let dir = (bb - a).normalize();
-        let inward = Vec2::new(-dir.y, dir.x);
-        let len = (bb - a).length();
-        let mut t = 8.0;
-        while t < len - 6.0 {
-            let q = a + dir * t + inward * 2.5;
-            let lamp = street_lamp_module(lib, &mut lay.out, d.valencia, Vec3::new(q.x, 0.155, q.y), 0.155);
-            lay.out.placements.push((lamp, Mat4::from_translation(Vec3::new(q.x, 0.155, q.y))));
-            lay.out.lights.push((Vec3::new(q.x, 4.0, q.y), Vec3::new(1.0, 0.8, 0.55)));
-            let bq = a + dir * (t + 6.0) + inward * 3.5;
-            let yaw = (-inward).x.atan2(-inward.y) + std::f32::consts::PI;
-            lay.add_prop(PropKind::Bench, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(bq.x, 0.155, bq.y)), PropSite { setting: Setting::Plaza, valencia: d.valencia, street_width: 0.0 });
-            // A drum on its post at the end of every bench.
-            let bin = lib.named(&mut lay.out, "papelera_single", || sw::papelera(BinModel::PostSingle, 0));
-            let pq = bq + dir * 1.3;
-            lay.out.placements.push((bin, Mat4::from_rotation_translation(Quat::from_rotation_y(inward.x.atan2(inward.y)), Vec3::new(pq.x, 0.155, pq.y))));
-            t += 14.0;
-        }
-    }
-    // Underground container mouths at the plaza edge (old-town plazas
-    // have no kerbside containers): four fractions and a glass igloo,
-    // fronts toward the plaza.
-    if d.valencia {
-        let (a, bb) = (ring[0], ring[1]);
-        let dir = (bb - a).normalize();
-        let inward = Vec2::new(-dir.y, dir.x);
-        let mut t = (bb - a).length() * 0.5 - 4.0;
-        for f in [3u8, 0, 1, 4] {
-            let m = lib.named(&mut lay.out, &format!("underground_{f}"), || sw::underground_bin(f));
-            let q = a + dir * t + inward * 5.5;
-            lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(inward.x.atan2(inward.y)), Vec3::new(q.x, 0.155, q.y))));
-            t += 1.75;
-        }
-        let ig = lib.named(&mut lay.out, "igloo_1", || sw::glass_igloo(1));
-        let q = a + dir * (t + 0.6) + inward * 5.5;
-        lay.out.placements.push((ig, Mat4::from_rotation_translation(Quat::from_rotation_y(inward.x.atan2(inward.y)), Vec3::new(q.x, 0.155, q.y))));
-    }
-    let si = lay.out.add_scene(assemble(lib.kit, "plaza", p, None));
-    lay.out.placements.push((si, Mat4::IDENTITY));
-}
-
-/// Dense low planting with red and white flowers.
-fn flower_bed(p: &mut Parts<Mat>, c: Vec2, r: f32, rng: &mut Rng) {
-    let leaves = p.get(Mat::Leaves);
-    let n = (r * r * 5.0) as i32;
-    for _ in 0..n {
-        let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
-        let s = rng.range(0.14, 0.24);
-        leaves.lathe(Vec3::new(q.x, 0.2, q.y), &[(0.0, 0.0), (s, s * 0.4), (s * 0.8, s * 1.1), (0.0, s * 1.4)], 5);
-    }
-    let reds = p.get(Mat::Flowers(hex(0xd31f2a)));
-    for _ in 0..n * 3 {
-        let q = c + Vec2::from_angle(rng.range(0.0, std::f32::consts::TAU)) * r * rng.f().sqrt();
-        let y = 0.2 + rng.range(0.2, 0.34);
-        reds.aabox(Vec3::new(q.x - 0.035, y, q.y - 0.035), Vec3::new(q.x + 0.035, y + 0.05, q.y + 0.035), 1.0);
-    }
-}
-
-fn paint(p: &mut Parts<Mat>, a: Vec2, b: Vec2, w: f32, yellow: bool) {
-    let d = (b - a).normalize_or(Vec2::X);
-    let n = Vec2::new(-d.y, d.x) * (w * 0.5);
-    let m = Mat::Paint(if yellow { hex(0xe8b51c) } else { hex(0xf2f2ec) });
-    let y = 0.008;
-    let pts = [a - n, b - n, b + n, a + n];
-    p.get(m).polygon(&pts, y, true, 1.0);
-}
-
-/// Lanes and parking strips of a segment, matching [`street_markings`].
-fn traffic_street(s: &Segment) -> TrafficStreet {
-    let road = s.width * 0.5 - s.sidewalk;
-    let (lanes, parking, median) = if s.avenue {
-        let (inner, outer) = (4.5 + 0.3, road - 0.3);
-        let lane = (outer - inner) / 3.0;
-        let mut lanes = Vec::new();
-        for side in [-1.0f32, 1.0] {
-            for k in 0..3 {
-                lanes.push(TrafficLane { offset: side * (inner + lane * (k as f32 + 0.5)), forward: side < 0.0, width: lane });
-            }
-        }
-        (lanes, Vec::new(), 4.5)
-    } else if road > 4.5 {
-        let fwd = s.oneway >= 0;
-        (vec![TrafficLane { offset: -1.4, forward: fwd, width: 2.8 }, TrafficLane { offset: 1.4, forward: fwd, width: 2.8 }], vec![-(road - 1.1), road - 1.1], 0.0)
-    } else {
-        // One lane between the parking strip and the yellow kerb line.
-        let lo = -(road - 2.0);
-        let hi = road - 0.25;
-        (vec![TrafficLane { offset: (lo + hi) * 0.5, forward: s.oneway >= 0, width: (hi - lo).min(3.4) }], vec![-(road - 1.0)], 0.0)
-    };
-    TrafficStreet {
-        a: s.a,
-        b: s.b,
-        half_width: s.width * 0.5,
-        road_half: road,
-        sidewalk: s.sidewalk,
-        median_half: median,
-        lanes,
-        parking,
-        speed_kmh: if s.avenue || s.district == 1 { 50.0 } else { 30.0 },
-        // `street_markings`: zebra 1-5 m from the end, stop line at 6 m.
-        crosswalk: Some(3.0),
-        stop_line: 6.0,
-    }
-}
-
-/// Lane lines, parking bays, zebra crossings, stop lines and arrows.
-fn street_markings(p: &mut Parts<Mat>, s: &Segment) {
-    let len = (s.b - s.a).length();
-    let dir = (s.b - s.a) / len;
-    let left = Vec2::new(-dir.y, dir.x);
-    let road = s.width * 0.5 - s.sidewalk;
-    let at = |t: f32, o: f32| s.a + dir * t + left * o;
-    let cross0 = 1.0;
-    let cross_len = 4.0;
-    let stop = cross0 + cross_len + 1.0;
-    let (t0, t1) = (stop + 0.5, len - stop - 0.5);
-    let dashed = |p: &mut Parts<Mat>, o: f32, dash: f32, gap: f32| {
-        let mut t = t0;
-        while t < t1 {
-            paint(p, at(t, o), at((t + dash).min(t1), o), 0.12, false);
-            t += dash + gap;
-        }
-    };
-    if s.avenue {
-        // Median edge lines and three lanes each way.
-        for side in [-1.0f32, 1.0] {
-            let inner = 4.5 + 0.3;
-            let outer = road - 0.3;
-            paint(p, at(t0, side * inner), at(t1, side * inner), 0.15, false);
-            paint(p, at(t0, side * outer), at(t1, side * outer), 0.15, false);
-            let lane = (outer - inner) / 3.0;
-            for k in 1..3 {
-                dashed(p, side * (inner + lane * k as f32), 4.5, 7.5);
-            }
-            // Bus lane lettering band on the kerb lane.
-            let mut t = t0 + 20.0;
-            while t < t1 - 20.0 {
-                arrow(p, at(t, side * (inner + lane * 0.5)), dir * -side);
-                arrow(p, at(t + 2.0, side * (inner + lane * 1.5)), dir * -side);
-                arrow(p, at(t + 4.0, side * (inner + lane * 2.5)), dir * -side);
-                t += 60.0;
-            }
-        }
-    } else if road > 4.5 {
-        // Parking lanes on both sides and two one-way lanes.
-        for side in [-1.0f32, 1.0] {
-            let o = side * (road - 2.2);
-            paint(p, at(t0, o), at(t1, o), 0.1, false);
-            let mut t = t0 + 2.0;
-            while t < t1 {
-                paint(p, at(t, o), at(t, side * road), 0.1, false);
-                t += 4.8;
-            }
-        }
-        dashed(p, 0.0, 3.0, 4.5);
-        let fwd = dir * s.oneway.signum() as f32;
-        let mut t = t0 + 12.0;
-        while t < t1 - 8.0 {
-            for o in [-1.4, 1.4] {
-                arrow(p, at(t, o), fwd);
-            }
-            t += 35.0;
-        }
-    } else {
-        // Narrow Madrid street: one lane plus parking on one side, yellow
-        // zigzag-free kerb line on the other (no parking).
-        let o = -(road - 2.0);
-        paint(p, at(t0, o), at(t1, o), 0.1, false);
-        paint(p, at(t0, road - 0.25), at(t1, road - 0.25), 0.12, true);
-        let fwd = dir * s.oneway.signum() as f32;
-        let mut t = t0 + 10.0;
-        while t < t1 - 6.0 {
-            arrow(p, at(t, 1.0), fwd);
-            t += 30.0;
-        }
-    }
-    // Zebra crossings and stop lines at both ends.
-    for (end, inward) in [(0.0f32, 1.0f32), (len, -1.0)] {
-        let c0 = end + inward * cross0;
-        let c1 = end + inward * (cross0 + cross_len);
-        let mut o = -road + 0.3;
-        while o < road - 0.3 {
-            paint(p, at(c0, o + 0.25), at(c1, o + 0.25), 0.5, false);
-            o += 1.0;
-        }
-        // Stop line across the lanes arriving at this end.
-        let ts = end + inward * stop;
-        let arriving = match s.oneway {
-            1 => inward < 0.0,
-            -1 => inward > 0.0,
-            _ => true,
-        };
-        if arriving {
-            let (oa, ob) = if s.oneway == 0 { if inward < 0.0 { (-road, 0.0) } else { (0.0, road) } } else { (-road, road) };
-            paint(p, at(ts, oa + 0.2), at(ts, ob - 0.2), 0.4, false);
-        }
-    }
-}
-
-/// Straight-ahead lane arrow (5 m long) at `c` pointing along `fwd`.
-fn arrow(p: &mut Parts<Mat>, c: Vec2, fwd: Vec2) {
-    let side = Vec2::new(-fwd.y, fwd.x);
-    paint(p, c - fwd * 2.5, c + fwd * 1.0, 0.18, false);
-    let tip = c + fwd * 2.5;
-    let base = c + fwd * 0.9;
-    let m = Mat::Paint(hex(0xf2f2ec));
-    p.get(m).polygon(&[base - side * 0.45, base + side * 0.45, tip], 0.008, true, 1.0);
-}
-
-/// Lamps, trees, bins, containers and signs along a street.
-fn street_furniture(lib: &mut ModuleLib, lay: &mut CityLayout, s: &Segment, d: &District, rng: &mut Rng) {
-    if s.avenue {
-        return;
-    }
-    let len = (s.b - s.a).length();
-    let dir = (s.b - s.a) / len;
-    let left = Vec2::new(-dir.y, dir.x);
-    let road = s.width * 0.5 - s.sidewalk;
-    let at = |t: f32, o: f32| s.a + dir * t + left * o;
-    let yaw_of = |v: Vec2| v.x.atan2(v.y);
-    let place = |lay: &mut CityLayout, m: usize, p: Vec2, y: f32, face: Vec2| {
-        lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw_of(face)), Vec3::new(p.x, y, p.y))));
-    };
-    if d.valencia {
-        let grate = lib.named(&mut lay.out, "tree_grate", furniture::tree_grate);
-        for side in [-1.0f32, 1.0] {
-            let o = side * (road + 0.7);
-            let mut t = 12.0 + rng.range(0.0, 4.0);
-            let mut k = 0;
-            while t < len - 12.0 {
-                let q = at(t, o);
-                if k % 3 == 1 {
-                    let lamp = street_lamp_module(lib, &mut lay.out, true, Vec3::new(q.x, 0.15, q.y), 0.15);
-                    place(lay, lamp, q, 0.15, left * -side);
-                    lay.out.lights.push((Vec3::new(q.x, 4.4, q.y), Vec3::new(1.0, 0.82, 0.58)));
-                    if k % 6 == 1 {
-                        // Municipal drum clamped to the lamp column, on the
-                        // pavement side.
-                        let bin = lib.named(&mut lay.out, "papelera_clamp", || sw::papelera(BinModel::Clamp(9), 0));
-                        place(lay, bin, q, 0.15, left * side);
-                    }
+/// Turns planned items into module placements, lights and props.
+fn place_items(lib: &mut ModuleLib, lay: &mut CityLayout, items: &[Item], seed: u64, site: &dyn Fn(Vec2) -> PropSite) {
+    let night = lib.kit.night.is_night();
+    for it in items {
+        let p = it.pos;
+        match it.kind {
+            ItemKind::Lamp { candelabra } => {
+                // Sodium or LED by lamp; at night a module tinted with it.
+                let bulb = p + Vec3::Y * furniture::street_lamp_bulb(candelabra);
+                let (color, _) = nightlight::street_lamp_color(bulb, !candelabra);
+                lay.out.city_lights.push(nightlight::street_lamp(bulb, color, candelabra));
+                let m = if night {
+                    let g = nightlight::to_rgb(color);
+                    lib.named(&mut lay.out, &format!("street_lamp_{candelabra}_{g:?}"), || furniture::street_lamp_lit(candelabra, g))
                 } else {
-                    let qt = at(t, side * (road + 1.0));
-                    place(lay, grate, qt, 0.15, dir);
-                    let setting = if s.width >= 18.0 { Setting::Boulevard } else if s.width >= 12.0 { Setting::Street } else { Setting::NarrowStreet };
-                    let site = PropSite { setting, valencia: d.valencia, street_width: s.width };
-                    lay.add_prop(PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)), Vec3::new(qt.x, 0.14, qt.y)), site);
+                    lib.named(&mut lay.out, &format!("street_lamp_{candelabra}"), || furniture::street_lamp(candelabra))
+                };
+                place(lay, m, it);
+                let h = if candelabra { 4.4 } else { 3.6 };
+                lay.out.lights.push((p + Vec3::Y * h, Vec3::new(1.0, 0.82, 0.58)));
+            }
+            ItemKind::RoadLight => {
+                // Modern LED road lights (3000 K).
+                let led = nightlight::kelvin(3000.0);
+                let m = if night {
+                    let g = nightlight::to_rgb(led);
+                    lib.named(&mut lay.out, "road_light_lit", || furniture::road_light_lit(g))
+                } else {
+                    lib.named(&mut lay.out, "road_light", furniture::road_light)
+                };
+                place(lay, m, it);
+                let fwd = Vec3::new(it.yaw.sin(), 0.0, it.yaw.cos());
+                lay.out.lights.push((p + Vec3::Y * 9.4 + fwd * 1.8, Vec3::new(1.0, 0.92, 0.8)));
+                lay.out.city_lights.push(nightlight::road_light(frame(it).transform_point3(furniture::ROAD_LIGHT_HEAD) - Vec3::Y * 0.05, led));
+            }
+            ItemKind::TrafficLight { aspect, ped_walk, arm } => {
+                // Every state is registered, so the game can show the one
+                // the drivers obey. The pedestrian head faces across the
+                // road (+X local), towards the far kerb.
+                let ped_yaw = std::f32::consts::FRAC_PI_2;
+                let mut variants = [[0usize; 2]; 3];
+                for (i, a) in [Aspect::Red, Aspect::Amber, Aspect::Green].into_iter().enumerate() {
+                    for (k, walk) in [false, true].into_iter().enumerate() {
+                        variants[i][k] = lib.named(&mut lay.out, &format!("tl_{a:?}_{walk}_{arm}"), || furniture::traffic_light(a, walk, ped_yaw, arm));
+                    }
                 }
-                t += 9.0;
-                k += 1;
+                let idx = match aspect {
+                    Aspect::Red => 0,
+                    Aspect::Amber => 1,
+                    Aspect::Green => 2,
+                };
+                lay.traffic.signals.push(SignalPost { pos: Vec2::new(p.x, p.z), facing: facing_of_yaw(it.yaw), placement: lay.out.placements.len(), variants });
+                place(lay, variants[idx][ped_walk as usize], it);
+                if night {
+                    let at = frame(it);
+                    lay.out.city_lights.extend(furniture::signal_lights(aspect, ped_walk, ped_yaw, arm).into_iter().map(|mut l| {
+                        l.pos = at.transform_point3(l.pos);
+                        if let Some(s) = &mut l.spot {
+                            s.dir = at.transform_vector3(s.dir);
+                        }
+                        l
+                    }));
+                }
+            }
+            ItemKind::Sign(kind) => {
+                let h = if kind == crate::texgen::SignKind::Crossing { 2.6 } else { 2.3 };
+                let m = lib.named(&mut lay.out, &format!("sign_{kind:?}"), || furniture::sign(kind, h));
+                place(lay, m, it);
+                lay.traffic.signs.push(TrafficSign { kind, pos: Vec2::new(p.x, p.z), facing: facing_of_yaw(it.yaw) });
+            }
+            ItemKind::Plate(n) => {
+                let m = lib.named(&mut lay.out, &format!("plate_{n}"), || furniture::street_plate(n));
+                place(lay, m, it);
+            }
+            ItemKind::Bollard { valencia } => {
+                let m = lib.named(&mut lay.out, &format!("bollard_{valencia}"), || furniture::bollard(valencia));
+                place(lay, m, it);
+            }
+            ItemKind::Bin { valencia } => {
+                let (name, model) = if valencia { ("papelera_double", BinModel::PostDouble) } else { ("papelera_single", BinModel::PostSingle) };
+                let m = lib.named(&mut lay.out, name, || street_waste::papelera(model, 0));
+                place(lay, m, it);
+            }
+            ItemKind::Container(k) => {
+                let m = lib.named(&mut lay.out, &format!("container_{k}"), || furniture::container(k));
+                place(lay, m, it);
+            }
+            ItemKind::Tree => {
+                let m = lib.named(&mut lay.out, "tree_grate", furniture::tree_grate);
+                place(lay, m, it);
+                let mut rng = Rng::keyed(seed, stage::DRESS, crate::geom::point_key(Vec2::new(p.x, p.z)));
+                lay.add_prop(PropKind::Tree, Mat4::from_rotation_translation(Quat::from_rotation_y(rng.range(0.0, std::f32::consts::TAU)), p - Vec3::Y * 0.01), site(Vec2::new(p.x, p.z)));
+            }
+            ItemKind::Palm => lay.add_prop(PropKind::Palm, Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), p), site(Vec2::new(p.x, p.z))),
+            ItemKind::Bench => lay.add_prop(PropKind::Bench, Mat4::from_rotation_translation(Quat::from_rotation_y(it.yaw), p), site(Vec2::new(p.x, p.z))),
+            ItemKind::Fountain(r) => {
+                let r = (r * 2.0).round() * 0.5;
+                let m = lib.named(&mut lay.out, &format!("fountain_{r}"), || furniture::fountain(r));
+                place(lay, m, it);
+                if night {
+                    lay.out.city_lights.extend(nightlight::fountain_lights(p + Vec3::Y * 0.4, r));
+                }
+            }
+            ItemKind::Parterre(s) => {
+                let s = s.round();
+                let m = lib.named(&mut lay.out, &format!("parterre_{s}"), || furniture::parterre(s));
+                place(lay, m, it);
+                if night {
+                    // The centrepiece lit from four points of the bed.
+                    for q in 0..4 {
+                        let o = Vec2::from_angle(std::f32::consts::FRAC_PI_2 * q as f32 + 0.8) * 1.6;
+                        lay.out.city_lights.push(nightlight::accent(p + Vec3::new(o.x, 0.35, o.y), p + Vec3::Y * 2.0, 2800.0, 30.0));
+                    }
+                }
+            }
+            ItemKind::FlowerBed(r) => {
+                let m = lib.named(&mut lay.out, &format!("flower_bed_{r}"), || {
+                    let mut pp = Parts::new();
+                    let ring: Vec<Vec2> = (0..16).map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / 16.0) * (r + 0.2)).collect();
+                    pp.get(Mat::Soil).polygon(&ring, 0.05, true, 2.0);
+                    furniture::flower_bed(&mut pp, Vec2::ZERO, r, 0.05, 5);
+                    pp
+                });
+                place(lay, m, it);
+            }
+            ItemKind::Catenary { span, laundry } => {
+                let span = (span * 4.0).round() / 4.0;
+                let v = ((p.x * 7.0 + p.z * 3.0).abs() as u32 % 4) as u8;
+                let m = lib.named(&mut lay.out, &format!("catenary_{span}_{laundry}_{v}"), || furniture::catenary(span, laundry, v));
+                place(lay, m, it);
+                if !laundry {
+                    lay.out.lights.push((p - Vec3::Y * 0.7, Vec3::new(1.0, 0.78, 0.5)));
+                }
+            }
+            ItemKind::Terrace(v) => {
+                let m = lib.named(&mut lay.out, &format!("terrace_{v}"), || furniture::terrace_set(v));
+                place(lay, m, it);
             }
         }
-    } else {
-        // Madrid: rows of black bollards along the narrow sidewalks.
-        let bol = lib.named(&mut lay.out, "bollard_madrid", || furniture::bollard(false));
-        for side in [-1.0f32, 1.0] {
-            let o = side * (road + 0.3);
-            let mut t = 8.0;
-            while t < len - 8.0 {
-                place(lay, bol, at(t, o), 0.15, dir);
-                t += 2.2;
-            }
-        }
-    }
-    // Litter bins by the crossings at both ends (the municipal double bin
-    // in Valencia, a single drum in Madrid), on the kerb side of the
-    // pavement, clear of the crosswalk.
-    for (end, inward) in [(0.0f32, 1.0f32), (len, -1.0)] {
-        let side = if inward > 0.0 { 1.0 } else { -1.0 };
-        let (name, model) = if d.valencia { ("papelera_double", BinModel::PostDouble) } else { ("papelera_single", BinModel::PostSingle) };
-        let bin = lib.named(&mut lay.out, name, || sw::papelera(model, 0));
-        let q = at(end + inward * 8.5, side * (road + 0.55));
-        // Facing the pavement: a double bin's drums then run along the kerb.
-        place(lay, bin, q, 0.15, left * side);
-    }
-    if !d.valencia {
-        let bin = lib.named(&mut lay.out, "litter_bin", furniture::litter_bin);
-        let mut t = 30.0;
-        while t < len - 30.0 {
-            let side = if (t as i32 / 20) % 2 == 0 { 1.0 } else { -1.0 };
-            place(lay, bin, at(t + 4.0, side * (road + 0.5)), 0.15, left * side);
-            t += 40.0;
-        }
-    }
-    // Container islands ("illes") in the parking lane: 3-5 fractions side
-    // by side against the kerb, fronts toward the pavement, never on the
-    // footway of narrow streets (no parking lane: their residents use the
-    // underground mouths of the plazas).
-    if len > 40.0 && road > 4.5 {
-        let fleet = if rng.chance(0.55) { ContainerModel::Kerbside } else { ContainerModel::SideLoader };
-        let mut t = 16.0 + rng.range(0.0, 10.0);
-        let mut side = if rng.chance(0.5) { 1.0f32 } else { -1.0 };
-        while t < len - 26.0 {
-            let n = 3 + rng.below(3);
-            // Always general waste, then packaging, paper, glass, organic.
-            let fractions: Vec<u8> = [3u8, 0, 1, 2, 4].into_iter().take(n).collect();
-            let mut x = t;
-            for (i, f) in fractions.iter().enumerate() {
-                let model = if d.valencia { fleet } else { ContainerModel::Bin1100 };
-                let size = sw::container_size(model, *f);
-                let wear = rng.below(8) as u8;
-                x += size.x * 0.5;
-                let c = lib.named(&mut lay.out, &format!("container_{model:?}_{f}_{wear}"), || sw::container_model(model, *f, wear));
-                // Fronts (+Z) face the pavement: outward from the road axis.
-                place(lay, c, at(x, side * (road - 0.05 - size.y * 0.5)), 0.0, left * side);
-                x += size.x * 0.5 + if i + 1 < fractions.len() { 0.3 } else { 0.0 };
-            }
-            t = x + 45.0 + rng.range(0.0, 25.0);
-            side = -side;
-        }
-    }
-    // Signs at the street entrance and exit.
-    let one_way_entry = if s.oneway >= 0 { 0.0 } else { len };
-    let exit = len - one_way_entry;
-    let face_in = if s.oneway >= 0 { dir } else { -dir };
-    if s.oneway != 0 {
-        let no_entry = lib.named(&mut lay.out, "sign_NoEntry", || furniture::sign(SignKind::NoEntry, 2.3));
-        let q = at(exit + (if exit > 0.0 { -1.5 } else { 1.5 }), -face_in.perp_dot(left).signum() * (road + 0.4));
-        // Facing whoever would drive in against the one-way direction.
-        place(lay, no_entry, q, 0.15, face_in);
-        lay.traffic.signs.push(TrafficSign { kind: SignKind::NoEntry, pos: q, facing: face_in });
-    }
-    let speed = if d.valencia { SignKind::Speed50 } else { SignKind::Speed30 };
-    let sp = lib.named(&mut lay.out, &format!("sign_{speed:?}"), || furniture::sign(speed, 2.3));
-    let entry_t = if one_way_entry > 0.0 { len - 9.0 } else { 9.0 };
-    let right = Vec2::new(face_in.y, -face_in.x);
-    let q = s.a + dir * entry_t + right * (road + 0.4);
-    place(lay, sp, q, 0.15, -face_in);
-    lay.traffic.signs.push(TrafficSign { kind: speed, pos: q, facing: -face_in });
-    if rng.chance(0.4) {
-        let np = lib.named(&mut lay.out, "sign_NoParking", || furniture::sign(SignKind::NoParking, 2.3));
-        let q = s.a + dir * (len * 0.5) - right * (road + 0.4);
-        place(lay, np, q, 0.15, -face_in);
-        lay.traffic.signs.push(TrafficSign { kind: SignKind::NoParking, pos: q, facing: -face_in });
     }
 }
 
-/// Traffic lights (Valencia, boulevard) or STOP/crossing signs (Madrid) at
-/// each street end.
-fn intersections(lib: &mut ModuleLib, lay: &mut CityLayout, segments: &[Segment], cfg: &CityConfig) {
-    for s in segments {
-        let d = if s.district == 0 { &cfg.west } else { &cfg.east };
-        let len = (s.b - s.a).length();
-        let dir = (s.b - s.a) / len;
-        let road = s.width * 0.5 - s.sidewalk;
-        for (end, inward) in [(0.0f32, 1.0f32), (len, -1.0)] {
-            // Traffic travelling towards this end.
-            let arriving = match s.oneway {
-                1 => inward < 0.0,
-                -1 => inward > 0.0,
-                _ => true,
-            };
-            if !arriving {
-                continue;
-            }
-            let travel = dir * -inward;
-            let right = Vec2::new(travel.y, -travel.x);
-            let t = end + inward * 6.0;
-            let pos = s.a + dir * t + right * (road + 0.45);
-            let yaw = (-travel).x.atan2(-travel.y);
-            let along_z = dir.y.abs() > 0.5;
-            if d.traffic_lights || s.avenue {
-                // Streets along z get green, along x red; pedestrians opposite.
-                let state = if along_z { Aspect::Green } else { Aspect::Red };
-                let arm = if s.avenue { 5.0 } else { 0.0 };
-                signal_post(lib, lay, pos, yaw, state, arm);
-                if !s.avenue {
-                    let c = lib.named(&mut lay.out, "sign_Crossing", || furniture::sign(SignKind::Crossing, 2.6));
-                    let p2 = s.a + dir * (end + inward * 12.0) + right * (road + 0.4);
-                    lay.out.placements.push((c, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(p2.x, 0.15, p2.y))));
-                    lay.traffic.signs.push(TrafficSign { kind: SignKind::Crossing, pos: p2, facing: facing_of_yaw(yaw) });
-                }
-            } else {
-                let kind = if along_z { SignKind::Stop } else { SignKind::Yield };
-                let m = lib.named(&mut lay.out, &format!("sign_{kind:?}"), || furniture::sign(kind, 2.2));
-                lay.out.placements.push((m, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(pos.x, 0.15, pos.y))));
-                lay.traffic.signs.push(TrafficSign { kind, pos, facing: facing_of_yaw(yaw) });
-                let c = lib.named(&mut lay.out, "sign_Crossing", || furniture::sign(SignKind::Crossing, 2.6));
-                let p2 = s.a + dir * (end + inward * 9.0) - right * (road + 0.4);
-                lay.out.placements.push((c, Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(p2.x, 0.15, p2.y))));
-                lay.traffic.signs.push(TrafficSign { kind: SignKind::Crossing, pos: p2, facing: facing_of_yaw(yaw) });
+/// A clear spot on the largest square of zone `zi`: open paving, away
+/// from fountains, trees and benches.
+fn square_spot(lay: &CityLayout, f: &Fabric, zi: u16) -> Option<Vec2> {
+    let (lo, hi) = f.lots.iter().zip(&f.info).filter(|(_, i)| i.zone == zi).flat_map(|(l, _)| l.ring.iter()).fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(a, b), p| (a.min(*p), b.max(*p)));
+    let inside = |p: Vec2| p.x > lo.x && p.y > lo.y && p.x < hi.x && p.y < hi.y;
+    let (c, r) = f.plazas.components().into_iter().filter_map(|c| c.pole()).filter(|(p, _)| inside(*p)).max_by(|a, b| a.1.total_cmp(&b.1))?;
+    let clear = |q: Vec2| f.ground.in_plaza(q) && lay.items.iter().all(|it| Vec2::new(it.pos.x, it.pos.z).distance(q) > 2.5);
+    (0..24).map(|k| c + Vec2::from_angle(k as f32 * 0.9) * r * (0.45 + 0.02 * k as f32)).find(|q| clear(*q))
+}
+
+fn spawns(lay: &mut CityLayout, f: &Fabric, start: Option<u16>) {
+    let g = &f.graph;
+    // The player: on the start zone's main square, else on a sidewalk or
+    // plaza near the middle of the map.
+    let centre = (f.extent[0] + f.extent[1]) * 0.5;
+    let mut player = start.and_then(|zi| square_spot(lay, f, zi)).map(|q| Spawn { vehicle: false, pos: Vec3::new(q.x, f.ground.height_at(q) + 1.05, q.y), yaw: 0.0 });
+    for (si, _, _) in g.near(centre, 400.0) {
+        if player.is_some() {
+            break;
+        }
+        let s = g.street(si);
+        for k in 0..10 {
+            let t = s.len() * (0.3 + 0.04 * k as f32);
+            let n = s.line.normal(t);
+            let q = s.line.at(t) + n * (s.carriageway * 0.5 + 1.0).min(s.width_at(t) * 0.5 - 0.8).max(0.0);
+            if f.ground.surface_at(q).is_some_and(|x| x.h > 0.05) || (s.carriageway <= 0.0 && f.public.contains(q)) {
+                player = Some(Spawn { vehicle: false, pos: Vec3::new(q.x, f.ground.height_at(q) + 1.05, q.y), yaw: 0.0 });
+                break;
             }
         }
+        if player.is_some() {
+            break;
+        }
     }
-    // Where signalled side streets meet the boulevard, the boulevard gets
-    // lights too (cantilevered over its three lanes), both directions.
-    let Some(avenue) = segments.iter().find(|s| s.avenue) else { return };
-    let road = avenue.width * 0.5 - avenue.sidewalk;
-    let half_av = avenue.width * 0.5;
-    let mut junctions: Vec<(f32, f32)> = Vec::new();
-    for s in segments.iter().filter(|s| !s.avenue) {
-        let d = if s.district == 0 { &cfg.west } else { &cfg.east };
-        if !d.traffic_lights {
+    lay.spawns.push(player.unwrap_or(Spawn { vehicle: false, pos: Vec3::new(centre.x, 1.2, centre.y), yaw: 0.0 }));
+    // Cars: parked in the strip on the right of the traffic, halfway along
+    // every third street with parking (the lanes belong to the traffic AI).
+    let mut cars = Vec::new();
+    for st in lay.traffic.streets.iter().filter(|s| !s.parking.is_empty()).step_by(3) {
+        let line = crate::plan::Polyline::new(st.centreline());
+        let t = line.len() * 0.5;
+        let Some(lane) = st.lanes.first() else { continue };
+        // The strip on the right of the lane's travel.
+        let right_of = |o: f32| if lane.forward { -o } else { o };
+        let Some(&offset) = st.parking.iter().max_by(|a, b| right_of(**a).total_cmp(&right_of(**b))) else { continue };
+        let q = line.at(t) + line.normal(t) * offset;
+        let fwd = line.tangent(t) * if lane.forward { 1.0 } else { -1.0 };
+        if f.ground.in_carriage(q) {
+            cars.push(Spawn { vehicle: true, pos: Vec3::new(q.x, f.ground.height_at(q) + 0.8, q.y), yaw: fwd.x.atan2(fwd.y) });
+        }
+    }
+    lay.spawns.extend(cars);
+}
+
+/// The traffic description of the street graph: every roadway between
+/// its junction mouths with the lanes and parking strips its markings
+/// paint, the junctions themselves, plazas and benches for pedestrians,
+/// and the ground height for vehicles on slopes. Signs and lights were
+/// recorded as they were placed.
+fn traffic_info(lay: &mut CityLayout, f: &Fabric, plan: &CityPlan, lib: &ProfileLibrary) {
+    let g = &f.graph;
+    // One traffic node per junction (nodes joined by links are one), at
+    // the mean of its nodes.
+    let rep = g.junctions(lib);
+    let mut node_of: BTreeMap<crate::plan::NodeId, usize> = BTreeMap::new();
+    let mut node = |n: crate::plan::NodeId| {
+        let k = node_of.len();
+        *node_of.entry(rep[n as usize]).or_insert(k)
+    };
+    let mut streets = Vec::new();
+    for (si, s) in g.streets.iter().enumerate() {
+        let p = lib.get(s.profile);
+        let si = si as crate::plan::StreetId;
+        if !p.vehicles || s.carriageway <= 0.0 || p.class == Class::Limit || s.len() < 1.0 || rep[s.a as usize] == rep[s.b as usize] {
             continue;
         }
-        for p in [s.a, s.b] {
-            if (p.x.abs() - half_av).abs() < 0.5 && (p.y - s.a.y).abs() < 0.1 && (s.b.y - s.a.y).abs() < 0.1 && !junctions.iter().any(|j| (j.0 - p.y).abs() < 1.0) {
-                junctions.push((p.y, s.width * 0.5));
-            }
+        // From kerb corner to kerb corner (where turns end); the zebras
+        // and stop lines are painted from the junction mouths beyond. A
+        // link between two junctions too far apart to be one keeps a metre
+        // around its middle.
+        let (k0, k1) = (g.kerb_mouth(si, End::A, lib), s.len() - g.kerb_mouth(si, End::B, lib));
+        let (m0, m1) = if k1 - k0 >= 1.0 { (k0, k1) } else { (((k0 + k1) * 0.5 - 0.5).max(0.0), ((k0 + k1) * 0.5 + 0.5).min(s.len())) };
+        let end = |e: End, from: f32| {
+            // `ground::markings`: zebra 1-5 m past the mouth, stop line at 6 m;
+            // without them traffic waits at the mouth itself.
+            let extra = (g.mouth(si, e, lib) - from).max(0.0);
+            if ground::has_zebra(g, lib, si, e) { TrafficEnd { crosswalk: Some(extra + 3.0), stop_line: extra + 6.0 } } else { TrafficEnd { crosswalk: None, stop_line: extra + 1.0 } }
+        };
+        let ends = [end(End::A, m0), end(End::B, s.len() - m1)];
+        let points = s.line.sub(m0, m1).pts().to_vec();
+        let road = s.carriageway * 0.5;
+        let half = s.width_at((m0 + m1) * 0.5) * 0.5;
+        let valencia = plan.zone(s.zone).is_some_and(|z| z.valencia());
+        streets.push(TrafficStreet {
+            a: points[0],
+            b: *points.last().expect("points"),
+            half_width: half,
+            road_half: road,
+            // Kerbs too narrow to walk along carry no pedestrians.
+            sidewalk: Some(half - road).filter(|w| *w >= 1.2).unwrap_or(0.0),
+            median_half: p.median * 0.5,
+            lanes: lanes(p, road, s.oneway),
+            parking: parking(p).iter().map(|side| side * (road - PARK * 0.5)).collect(),
+            speed_kmh: p.speed.map(f32::from).unwrap_or(if valencia { 50.0 } else { 30.0 }),
+            crosswalk: p.crossings.then_some(3.0),
+            stop_line: 6.0,
+            ends: Some(ends),
+            nodes: Some([node(s.a), node(s.b)]),
+            points,
+        });
+    }
+    let mut sum = vec![(Vec2::ZERO, 0.0f32); node_of.len()];
+    for (n, nd) in g.nodes.iter().enumerate() {
+        if let Some(&i) = node_of.get(&rep[n]) {
+            sum[i].0 += nd.p;
+            sum[i].1 += 1.0;
         }
     }
-    for (z, side_half) in junctions {
-        for travel in [Vec2::Y, -Vec2::Y] {
-            let right = Vec2::new(travel.y, -travel.x);
-            let pos = Vec2::new(0.0, z) - travel * (side_half + 2.5) + right * (road + 0.45);
-            if pos.y.abs() > avenue.a.y.abs().max(avenue.b.y.abs()) - 3.0 {
-                continue;
-            }
-            let yaw = (-travel).x.atan2(-travel.y);
-            signal_post(lib, lay, pos, yaw, Aspect::Green, 5.0);
-        }
+    let t = &mut lay.traffic;
+    t.streets = streets;
+    t.nodes = sum.into_iter().map(|(p, k)| p / k).collect();
+    // Raised medians open wherever another roadway crosses them.
+    t.median_openings = g.nodes.iter().enumerate().filter(|(n, _)| {
+        let star = g.star(*n as crate::plan::NodeId);
+        star.iter().any(|a| lib.get(g.street(a.0).profile).median > 0.0) && star.iter().filter(|a| lib.get(g.street(a.0).profile).vehicles && g.street(a.0).carriageway > 0.0).count() >= 3
+    }).map(|(_, n)| n.p).collect();
+    // Squares as the box of their inscribed circle (the walkers' graph
+    // links its centre to the kerbs around).
+    t.plazas = f.ground.plaza.components().iter().filter_map(|c| c.pole()).filter(|p| p.1 > 4.0).map(|(c, r)| (c - Vec2::splat(r * 0.7), c + Vec2::splat(r * 0.7))).collect();
+    t.benches = lay.props.iter().filter(|p| p.0 == PropKind::Bench).map(|(_, m)| {
+        let (_, q, tr) = m.to_scale_rotation_translation();
+        let fwd = q * Vec3::Z;
+        (Vec2::new(tr.x, tr.z), fwd.x.atan2(fwd.z))
+    }).collect();
+    if !f.ground.relief.is_flat() {
+        let [lo, hi] = f.extent;
+        t.ground = Some(HeightGrid::sample(lo - Vec2::splat(4.0), hi + Vec2::splat(4.0), 2.0, |q| f.ground.relief.elev(q)));
     }
 }
 
-/// A traffic light facing `yaw` at `pos`, with the module variants of all
-/// its states registered for the game to switch between.
-fn signal_post(lib: &mut ModuleLib, lay: &mut CityLayout, pos: Vec2, yaw: f32, state: Aspect, arm: f32) {
-    // The pedestrian head faces across the road (+X local), where the
-    // people waiting on the far kerb look at it.
-    let ped_yaw = std::f32::consts::FRAC_PI_2;
-    let mut variants = [[0usize; 2]; 3];
-    for (i, a) in [Aspect::Red, Aspect::Amber, Aspect::Green].into_iter().enumerate() {
-        for (k, walk) in [false, true].into_iter().enumerate() {
-            variants[i][k] = lib.named(&mut lay.out, &format!("tl_{a:?}_{walk}_{arm}"), || furniture::traffic_light(a, walk, ped_yaw, arm));
-        }
+/// Width of a parking strip.
+const PARK: f32 = 2.2;
+
+/// Kerb sides with a parking strip (-1 right of the line, +1 left).
+fn parking(p: &crate::profile::Profile) -> &'static [f32] {
+    match p.parking {
+        crate::profile::Parking::None => &[],
+        crate::profile::Parking::One => &[-1.0],
+        crate::profile::Parking::Both => &[-1.0, 1.0],
     }
-    // The pedestrian head serves the zebra across this street: WALK while
-    // this traffic is held at red.
-    let walk = state == Aspect::Red;
-    let idx = match state {
-        Aspect::Red => 0,
-        Aspect::Amber => 1,
-        Aspect::Green => 2,
+}
+
+/// Driving lanes of a roadway `2 road` wide (offsets left of the line
+/// positive; forward lanes run along it and keep to the right): the
+/// profile's lanes each way beside a median, or between the parking
+/// strips, all one way on a one-way street.
+fn lanes(p: &crate::profile::Profile, road: f32, oneway: i8) -> Vec<TrafficLane> {
+    let n = p.lanes.max(1) as usize;
+    let band = |lo: f32, hi: f32, k: usize, forward: bool| -> Vec<TrafficLane> {
+        let w = (hi - lo) / k as f32;
+        (0..k).map(|i| TrafficLane { offset: lo + w * (i as f32 + 0.5), forward, width: w }).filter(|l| l.width >= 2.0).collect()
     };
-    let at = Mat4::from_rotation_translation(Quat::from_rotation_y(yaw), Vec3::new(pos.x, 0.15, pos.y));
-    lay.traffic.signals.push(SignalPost { pos, facing: facing_of_yaw(yaw), placement: lay.out.placements.len(), variants });
-    lay.out.placements.push((variants[idx][walk as usize], at));
-    if lib.kit.night.is_night() {
-        lay.out.city_lights.extend(furniture::signal_lights(state, walk, ped_yaw, arm).into_iter().map(|mut l| {
-            l.pos = at.transform_point3(l.pos);
-            if let Some(s) = &mut l.spot {
-                s.dir = at.transform_vector3(s.dir);
-            }
-            l
-        }));
+    if p.median > 0.0 {
+        // `ground::markings`, Avenue: lanes between the median edge line
+        // and the kerb line on each side.
+        let inner = p.median * 0.5 + 0.3;
+        let mut v = band(-(road - 0.3), -inner, n, true);
+        v.extend(band(inner, road - 0.3, n, false));
+        return v;
+    }
+    let sides = parking(p);
+    let lo = -road + if sides.contains(&-1.0) { PARK } else { 0.3 };
+    let hi = road - if sides.contains(&1.0) { PARK } else { 0.3 };
+    match oneway {
+        0 => {
+            let k = (n / 2).max(1);
+            let mut v = band(lo, (lo + hi) * 0.5, k, true);
+            v.extend(band((lo + hi) * 0.5, hi, k, false));
+            v
+        }
+        d => band(lo, hi, n, d > 0),
     }
 }
 
@@ -1217,52 +736,6 @@ fn signal_post(lib: &mut ModuleLib, lay: &mut CityLayout, pos: Vec2, yaw: f32, s
 mod tests {
     use super::*;
     use crate::nightlight::LightKind;
-
-    #[test]
-    fn block_rings_are_ccw_and_lots_tile_the_perimeter() {
-        let d = District::valencia();
-        let mut rng = Rng::new(3);
-        for corners in [[Corner::Chamfer; 4], [Corner::Round; 4], [Corner::Sharp; 4]] {
-            let b = Block { min: Vec2::new(0.0, 0.0), max: Vec2::new(100.0, 96.0), corners, facing: [Facing::Street; 4], plaza: false };
-            let (ring, _) = block_ring(&b, d.chamfer);
-            assert!(crate::geom::signed_area(&ring) > 0.0);
-            let lots = split_block(&b, &d, &mut rng);
-            assert!(lots.len() >= 12, "{} lots", lots.len());
-            let mut area = 0.0;
-            for (l, _) in &lots {
-                let a = crate::geom::signed_area(&l.ring);
-                assert!(a > 20.0, "lot area {a} ring {:?}", l.ring);
-                assert_eq!(l.ring.len(), l.edges.len());
-                area += a;
-            }
-            // Lots cover the ring between the outline and the courtyard.
-            let depth = d.depth;
-            let outline = crate::geom::signed_area(&ring);
-            let court = (100.0 - 2.0 * depth) * (96.0 - 2.0 * depth);
-            assert!((area - (outline - court)).abs() < 2.0, "area {area} expected {}", outline - court);
-        }
-    }
-
-    #[test]
-    fn terraces_stay_on_the_sidewalk() {
-        let kit = Kit::load(None);
-        let mut lib = ModuleLib::new(&kit);
-        let mut lay = CityLayout::default();
-        let fr = Frontage { pos: Vec3::new(0.0, 0.15, 0.0), right: Vec3::X, out: Vec3::Z, width: 3.0, bar: true, closed: false };
-        for seed in 0..8 {
-            terrace(&mut lib, &mut lay, &fr, 4.5, &mut Rng::new(seed));
-        }
-        assert!(lay.out.placements.len() >= 8);
-        for (s, m) in &lay.out.placements {
-            let b = lay.out.scenes[*s].bounds();
-            for c in [b.min, b.max, Vec3::new(b.min.x, 0.0, b.max.z), Vec3::new(b.max.x, 0.0, b.min.z)] {
-                let w = m.transform_point3(c);
-                // Clear of the facade and of the tree line 1 m from the kerb.
-                assert!(w.z > 0.5 && w.z < 3.5, "terrace piece at {w:?}");
-                assert!((w.y - 0.15).abs() < 3.0);
-            }
-        }
-    }
 
     #[test]
     fn night_lights_the_city_and_day_is_untouched() {
@@ -1286,8 +759,31 @@ mod tests {
         assert!(has(&night, "room_lit") && has(&night, "lantern_glass"));
         let count = |k: LightKind| night.out.city_lights.iter().filter(|l| l.kind == k).count();
         assert!(count(LightKind::Window) > 50, "{} lit windows", count(LightKind::Window));
-        assert!(count(LightKind::Road) > 0 && count(LightKind::Wall) > 0);
+        assert!(count(LightKind::Street) > 0 && count(LightKind::Wall) > 0);
         assert!(night.out.city_lights.len() > day.out.city_lights.len() * 3);
+    }
+
+    #[test]
+    fn terraces_stay_on_the_sidewalk() {
+        let fr = crate::building::Frontage { pos: Vec3::new(0.0, 0.15, 0.0), right: Vec3::X, out: Vec3::Z, width: 3.0, bar: true, closed: false };
+        let kit = Kit::load(None);
+        let mut lib = ModuleLib::new(&kit);
+        let mut lay = CityLayout::default();
+        for seed in 0..8 {
+            let mut items = Vec::new();
+            dress::terrace(&fr, 4.5, &mut Rng::new(seed), &mut items);
+            place_items(&mut lib, &mut lay, &items, seed, &|_| PropSite::default());
+        }
+        assert!(lay.out.placements.len() >= 8);
+        for (s, m) in &lay.out.placements {
+            let b = lay.out.scenes[*s].bounds();
+            for c in [b.min, b.max, Vec3::new(b.min.x, 0.0, b.max.z), Vec3::new(b.max.x, 0.0, b.min.z)] {
+                let w = m.transform_point3(c);
+                // Clear of the facade and of the tree line 1 m from the kerb.
+                assert!(w.z > 0.5 && w.z < 3.5, "terrace piece at {w:?}");
+                assert!((w.y - 0.15).abs() < 3.0);
+            }
+        }
     }
 
     #[test]

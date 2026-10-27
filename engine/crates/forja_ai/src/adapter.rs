@@ -8,7 +8,6 @@
 
 use forja_math::Vec2;
 
-use crate::geom::left;
 use crate::spec::{Control, EndSpec, KMH, LaneSpec, NodeSpec, ParkingSpec, RoadGraphSpec, StreetSpec};
 
 /// A straight street piece from one building line (or junction) to another.
@@ -260,8 +259,55 @@ pub fn build_graph(segs: &[SegmentIn], signs: &[SignIn]) -> (RoadGraphSpec, Vec<
         }
     }
     // 5. Signs.
-    let uses = signs.iter().map(|sg| apply_sign(&mut spec, sg)).collect();
+    let uses = apply_signs(&mut spec, signs);
     (spec, uses)
+}
+
+/// Binds every sign to the street end or street it governs (STOP and
+/// give-way plates set their end's control, speed and parking plates their
+/// street's limits, no-entry plates drop the lanes entering past them).
+pub fn apply_signs(spec: &mut RoadGraphSpec, signs: &[SignIn]) -> Vec<SignUse> {
+    signs.iter().map(|sg| apply_sign(spec, sg)).collect()
+}
+
+/// End point and outward direction (towards its junction) of a street's
+/// centreline at `end`: the last piece, so curved streets bind by the
+/// heading drivers actually have there.
+fn end_frame(s: &StreetSpec, end: usize) -> (Vec2, Vec2) {
+    let p = &s.points;
+    let n = p.len();
+    let (from, to) = if end == 0 { (p[1.min(n - 1)], p[0]) } else { (p[n.saturating_sub(2)], p[n - 1]) };
+    (to, (to - from).normalize_or(Vec2::X))
+}
+
+/// Nearest piece of a street's centreline to `pos`: its signed lateral
+/// offset (`perp_dot`, right of the piece positive) and direction.
+fn nearest_piece(s: &StreetSpec, pos: Vec2) -> Option<(f32, Vec2)> {
+    let mut best: Option<(f32, Vec2)> = None;
+    let n = s.points.len();
+    for (k, w) in s.points.windows(2).enumerate() {
+        let (a, b) = (w[0], w[1]);
+        let len = a.distance(b).max(1e-3);
+        let dir = (b - a) / len;
+        let rel = pos - a;
+        let u = rel.dot(dir);
+        // The first and last pieces reach 2 m past the street's ends.
+        let (lo, hi) = (if k == 0 { -2.0 } else { 0.0 }, if k + 2 == n { len + 2.0 } else { len });
+        if u < lo || u > hi {
+            continue;
+        }
+        let lat = rel.perp_dot(dir);
+        if best.is_none_or(|bb| lat.abs() < bb.0.abs()) {
+            best = Some((lat, dir));
+        }
+    }
+    best
+}
+
+/// How far from a street's centreline its plates may stand: across its
+/// sidewalk, or on the wall of a street without one.
+fn reach(s: &StreetSpec) -> f32 {
+    s.road_half + s.sidewalk.max(1.0) + 2.0
 }
 
 /// Travel direction of the lanes arriving at `end` (`None` if no lane does).
@@ -275,18 +321,15 @@ pub fn end_for(spec: &RoadGraphSpec, pos: Vec2, facing: Vec2, max_dist: f32) -> 
     let travel = -facing.normalize_or_zero();
     let mut best: Option<(f32, usize, usize)> = None;
     for (i, s) in spec.streets.iter().enumerate() {
-        let (a, b) = (s.points[0], *s.points.last().expect("points"));
-        let len = a.distance(b).max(1e-3);
-        let dir = (b - a) / len;
         for end in 0..2 {
-            let (e, d) = if end == 0 { (a, -dir) } else { (b, dir) };
+            let (e, d) = end_frame(s, end);
             if !arriving(s, end) || d.dot(travel) < 0.8 {
                 continue;
             }
             let rel = pos - e;
             let along = -rel.dot(d);
             let lat = rel.perp_dot(d).abs();
-            if along > -3.0 && along < max_dist && lat < s.road_half + s.sidewalk + 2.0 {
+            if along > -3.0 && along < max_dist && lat < reach(s) {
                 let score = along.abs() + lat * 0.5;
                 if best.is_none_or(|b| score < b.0) {
                     best = Some((score, i, end));
@@ -301,13 +344,8 @@ pub fn end_for(spec: &RoadGraphSpec, pos: Vec2, facing: Vec2, max_dist: f32) -> 
 fn street_for(spec: &RoadGraphSpec, pos: Vec2) -> Option<(usize, f32)> {
     let mut best: Option<(f32, usize, f32)> = None;
     for (i, s) in spec.streets.iter().enumerate() {
-        let (a, b) = (s.points[0], *s.points.last().expect("points"));
-        let len = a.distance(b).max(1e-3);
-        let dir = (b - a) / len;
-        let rel = pos - a;
-        let u = rel.dot(dir);
-        let lat = rel.perp_dot(dir);
-        if u > -2.0 && u < len + 2.0 && lat.abs() < s.road_half + s.sidewalk + 2.0 && best.is_none_or(|bb| lat.abs() < bb.0) {
+        let Some((lat, _)) = nearest_piece(s, pos) else { continue };
+        if lat.abs() < reach(s) && best.is_none_or(|bb| lat.abs() < bb.0) {
             best = Some((lat.abs(), i, lat));
         }
     }
@@ -338,8 +376,9 @@ fn apply_sign(spec: &mut RoadGraphSpec, sg: &SignIn) -> SignUse {
         SignRule::NoParking | SignRule::Parking => {
             let Some((i, _)) = street_for(spec, sg.pos) else { return SignUse::Unbound };
             let s = &mut spec.streets[i];
-            let (a, b) = (s.points[0], *s.points.last().expect("points"));
-            let lat = (sg.pos - a).dot(left((b - a).normalize_or(forja_math::Vec2::X)));
+            let Some((lat, _)) = nearest_piece(s, sg.pos) else { return SignUse::Unbound };
+            // Left of the street's direction positive.
+            let lat = -lat;
             // The strip on the sign's side of the street.
             if let Some(p) = s.parking.iter_mut().filter(|p| p.offset.signum() == lat.signum()).min_by(|x, y| (x.offset - lat).abs().total_cmp(&(y.offset - lat).abs())) {
                 p.allowed = sg.rule == SignRule::Parking;
@@ -351,8 +390,7 @@ fn apply_sign(spec: &mut RoadGraphSpec, sg: &SignIn) -> SignUse {
             // one-way direction: drop any lane that enters there.
             let Some((i, _)) = street_for(spec, sg.pos) else { return SignUse::Unbound };
             let s = &mut spec.streets[i];
-            let (a, b) = (s.points[0], *s.points.last().expect("points"));
-            let dir = (b - a).normalize_or(forja_math::Vec2::X);
+            let Some((_, dir)) = nearest_piece(s, sg.pos) else { return SignUse::Unbound };
             let wrong = -sg.facing.normalize_or_zero();
             s.lanes.retain(|l| {
                 let d = if l.forward { dir } else { -dir };

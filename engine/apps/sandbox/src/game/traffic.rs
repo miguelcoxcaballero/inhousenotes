@@ -61,6 +61,20 @@ pub struct TrafficAi {
     honk_msg: f32,
     /// The simulation's pedestrians get avatars from the crowd plugin.
     pub drives_peds: bool,
+    /// Roadway height on sloping maps (the AI drives in 2D).
+    ground: Option<forja_world::HeightGrid>,
+}
+
+/// Base height and rotation of a car `len` long at `pos` heading `fwd`:
+/// on the roadway, pitched with its grade.
+fn car_pose(ground: &Option<forja_world::HeightGrid>, pos: Vec2, fwd: Vec2, len: f32) -> (f32, Quat) {
+    let yaw = Quat::from_rotation_y(fwd.x.atan2(fwd.y));
+    let Some(g) = ground else { return (0.0, yaw) };
+    let half = fwd * (len * 0.5);
+    let (front, back) = (g.at(pos + half), g.at(pos - half));
+    // Rotating about X by -pitch lifts the nose (+Z) towards +Y.
+    let pitch = ((front - back) / len.max(0.5)).atan();
+    ((front + back) * 0.5, yaw * Quat::from_rotation_x(-pitch))
 }
 
 fn car_model(rs: &mut RenderScene, paths: &Paths, file: &str) -> Option<CarModel> {
@@ -147,7 +161,7 @@ impl Plugin for TrafficPlugin {
         let cars = [load(rs, &["hatchback-sports", "sedan-sports", "taxi"]), load(rs, &["sedan", "taxi", "suv", "police", "suv-luxury", "sedan"]), load(rs, &["van", "delivery", "truck"])];
         log::info!("traffic: {} car models", cars.iter().map(Vec::len).sum::<usize>());
         let shots = 0;
-        app.insert_resource(TrafficAi { sim, heads, cars, bodies: Vec::new(), shots_seen: shots, honk_msg: 0.0, drives_peds: crowd });
+        app.insert_resource(TrafficAi { sim, heads, cars, bodies: Vec::new(), shots_seen: shots, honk_msg: 0.0, drives_peds: crowd, ground: info.ground.clone() });
         app.add_system_at(Stage::Update, "traffic_update", -5, traffic_update);
         app.add_system_at(Stage::PostUpdate, "traffic_render", 12, traffic_render);
     }
@@ -205,7 +219,8 @@ fn traffic_update(w: &mut forja_core::World) {
             }
             let pos = v.prev_pos.lerp(v.pos, alpha);
             let fwd = v.prev_fwd.lerp(v.fwd, alpha).normalize_or(v.fwd);
-            let iso = forja_math::Iso::new(Vec3::new(pos.x, 0.75, pos.y), Quat::from_rotation_y(fwd.x.atan2(fwd.y)));
+            let (y, rot) = car_pose(&ai.ground, pos, fwd, v.len);
+            let iso = forja_math::Iso::new(Vec3::new(pos.x, y + 0.75, pos.y), rot);
             let vel = Vec3::new(v.fwd.x, 0.0, v.fwd.y) * v.v;
             let h = match ai.bodies.iter().find(|b| b.0 == v.id) {
                 Some(b) => b.1,
@@ -260,15 +275,16 @@ fn traffic_render(w: &mut forja_core::World) {
         }
         let Some(m) = pick(v.len, v.style) else { continue };
         let fwd = v.prev_fwd.lerp(v.fwd, alpha).normalize_or(v.fwd);
-        let body = Mat4::from_rotation_translation(Quat::from_rotation_y(fwd.x.atan2(fwd.y)), Vec3::new(pos.x, 0.0, pos.y));
+        let (y, rot) = car_pose(&ai.ground, pos, fwd, v.len);
+        let body = Mat4::from_rotation_translation(rot, Vec3::new(pos.x, y, pos.y));
         items.push(RenderItem::new(m.model, body * m.local(v.len)));
-        let f3 = Vec3::new(fwd.x, 0.0, fwd.y);
-        let back = Vec3::new(pos.x, 0.8, pos.y) - f3 * (v.len * 0.5 + 0.2);
+        let f3 = rot * Vec3::Z;
+        let back = Vec3::new(pos.x, y + 0.8, pos.y) - f3 * (v.len * 0.5 + 0.2);
         if v.braking && d < 70.0 {
             lights.push((d, PointLight { position: back, radius: 4.0, color: Vec3::new(1.0, 0.05, 0.02), intensity: 18.0 }));
         }
         if night > 0.2 && d < 90.0 {
-            let front = Vec3::new(pos.x, 0.8, pos.y) + f3 * (v.len * 0.5 + 3.0);
+            let front = Vec3::new(pos.x, y + 0.8, pos.y) + f3 * (v.len * 0.5 + 3.0);
             lights.push((d, PointLight { position: front, radius: 16.0, color: Vec3::new(1.0, 0.95, 0.85), intensity: 70.0 }));
         }
     }
@@ -278,7 +294,8 @@ fn traffic_render(w: &mut forja_core::World) {
             continue;
         }
         let Some(m) = pick(c.len, c.style) else { continue };
-        let body = Mat4::from_rotation_translation(Quat::from_rotation_y(c.fwd.x.atan2(c.fwd.y)), Vec3::new(c.pos.x, 0.0, c.pos.y));
+        let (y, rot) = car_pose(&ai.ground, c.pos, c.fwd, c.len);
+        let body = Mat4::from_rotation_translation(rot, Vec3::new(c.pos.x, y, c.pos.y));
         items.push(RenderItem::new(m.model, body * m.local(c.len)));
     }
     // Lights: what the drivers obey is what the heads show; the walking
@@ -314,7 +331,8 @@ fn traffic_render(w: &mut forja_core::World) {
                     Aspect::Green => Vec3::new(0.1, 1.0, 0.4),
                 };
                 let _ = item;
-                lights.push((d, PointLight { position: Vec3::new(ap.stop_pos.x, 3.0, ap.stop_pos.y), radius: 6.0, color, intensity: 8.0 }));
+                let y = ai.ground.as_ref().map_or(0.0, |g| g.at(ap.stop_pos));
+                lights.push((d, PointLight { position: Vec3::new(ap.stop_pos.x, y + 3.0, ap.stop_pos.y), radius: 6.0, color, intensity: 8.0 }));
             }
         }
     }

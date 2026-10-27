@@ -607,8 +607,37 @@ impl RoadNetwork {
             g.nodes[b as usize].edges.push(id);
         };
         for (si, s) in self.streets.iter().enumerate() {
-            for k in 0..2 {
-                add(&mut g, kerb[si][0][k], kerb[si][1][k], WalkKind::Sidewalk { street: si as u32 }, (s.sidewalk * 0.5 - 0.3).max(0.2));
+            if kerb[si][0][0] == u32::MAX {
+                continue;
+            }
+            // Along a curved or bent street the sidewalk follows its
+            // centreline: waypoints on its mitred offset at its bends (every
+            // 2.5 m or more), dropping those that fold back (the inside of a
+            // tight corner). Straight streets keep one edge.
+            let half = (s.sidewalk * 0.5 - 0.3).max(0.2);
+            let (s0, s1) = (s.center.project(g.nodes[kerb[si][0][0] as usize].pos).0, s.center.project(g.nodes[kerb[si][1][0] as usize].pos).0);
+            let c = &s.center;
+            for (k, side) in [1.0f32, -1.0].into_iter().enumerate() {
+                let off = c.offset(side * (s.road_half + s.sidewalk * 0.5));
+                let mut prev = kerb[si][0][k];
+                for i in 1..c.pts.len().saturating_sub(1) {
+                    let (t0, t1) = ((c.pts[i] - c.pts[i - 1]).normalize_or_zero(), (c.pts[i + 1] - c.pts[i]).normalize_or_zero());
+                    if c.cum[i] <= s0 + 0.5 || c.cum[i] >= s1 - 0.5 || t0.dot(t1) > 0.9999 {
+                        continue;
+                    }
+                    let q = off.pts[i];
+                    let tan = (t0 + t1).normalize_or(t1);
+                    let next = g.nodes[kerb[si][1][k] as usize].pos;
+                    // At least 2.5 m on from the last waypoint, never back.
+                    if (q - g.nodes[prev as usize].pos).dot(tan) < 2.5 || (next - q).dot(tan) < 0.0 {
+                        continue;
+                    }
+                    let id = g.nodes.len() as u32;
+                    g.nodes.push(WalkNode { pos: q, edges: Vec::new(), outward: crate::geom::left(tan) * side });
+                    add(&mut g, prev, id, WalkKind::Sidewalk { street: si as u32 }, half);
+                    prev = id;
+                }
+                add(&mut g, prev, kerb[si][1][k], WalkKind::Sidewalk { street: si as u32 }, half);
             }
         }
         for (ci, c) in self.crosswalks.iter().enumerate() {

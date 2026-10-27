@@ -926,7 +926,13 @@ impl TrafficSim {
     /// Priority key at a junction: higher goes first.
     fn key(&self, vi: usize, conn: u32, arrive: Option<f64>) -> (i32, i64, i64) {
         let v = &self.vehicles[vi];
-        let lane = &self.net.lanes[v.lane as usize];
+        // The approach the connector leaves from (the vehicle's lane, or a
+        // lane it has yet to reach).
+        let from = match self.net.lanes[conn as usize].kind {
+            LaneKind::Connector { from, .. } => from,
+            _ => v.lane,
+        };
+        let lane = &self.net.lanes[from as usize];
         let control = lane.approach.map_or(Control::None, |a| self.net.approaches[a as usize].control);
         let turn = self.net.lanes[conn as usize].turn();
         let rank = match control {
@@ -958,39 +964,48 @@ impl TrafficSim {
                 }
             }
             let LaneKind::Connector { from, .. } = self.net.lanes[cf.other as usize].kind else { continue };
-            let from_lane = &self.net.lanes[from as usize];
-            for &(so, oi) in &self.occ[from as usize] {
-                let o = &self.vehicles[oi as usize];
-                if o.route.front() != Some(&cf.other) {
-                    continue;
+            // Everyone heading for the conflicting connector within 60 m:
+            // on its lane, or further back on the lanes before it (short
+            // streets between junctions).
+            let mut frontier: Vec<(u32, f32, usize)> = vec![(from, 0.0, 0)];
+            while let Some((l, extra, depth)) = frontier.pop() {
+                let ll = &self.net.lanes[l as usize];
+                if depth < 4 && extra + ll.len() < 60.0 {
+                    frontier.extend(ll.prev.iter().map(|&p| (p, extra + ll.len(), depth + 1)));
                 }
-                if o.passed_line {
-                    d.why = Why::Committed;
-                    return false;
-                }
-                if !o.gate_open {
-                    continue;
-                }
-                let d_o = from_lane.len() - so + cf.o_in;
-                if d_o > 60.0 {
-                    continue;
-                }
-                if self.key(oi as usize, cf.other, None) <= my_key {
-                    continue;
-                }
-                // Gap acceptance: the other must not arrive before we clear.
-                let t_o = d_o / o.v.max(1.5);
-                let clear = dist.max(0.0) + cf.s_out + v.len;
-                let a = v.params.a_max.max(0.5);
-                let t_me = (-v.v + (v.v * v.v + 2.0 * a * clear).sqrt()) / a;
-                let critical: f32 = match c.turn() {
-                    Turn::Left => 5.0,
-                    Turn::Right => 3.5,
-                    Turn::Straight => 4.5,
-                };
-                if t_o < critical.max(t_me + 1.5) {
-                    d.why = Why::Priority;
-                    return false;
+                for &(so, oi) in &self.occ[l as usize] {
+                    let o = &self.vehicles[oi as usize];
+                    if o.route.get(depth) != Some(&cf.other) {
+                        continue;
+                    }
+                    if depth == 0 && o.passed_line {
+                        d.why = Why::Committed;
+                        return false;
+                    }
+                    if depth == 0 && !o.gate_open {
+                        continue;
+                    }
+                    let d_o = extra + ll.len() - so + cf.o_in;
+                    if d_o > 60.0 {
+                        continue;
+                    }
+                    if self.key(oi as usize, cf.other, None) <= my_key {
+                        continue;
+                    }
+                    // Gap acceptance: the other must not arrive before we clear.
+                    let t_o = d_o / o.v.max(1.5);
+                    let clear = dist.max(0.0) + cf.s_out + v.len;
+                    let a = v.params.a_max.max(0.5);
+                    let t_me = (-v.v + (v.v * v.v + 2.0 * a * clear).sqrt()) / a;
+                    let critical: f32 = match c.turn() {
+                        Turn::Left => 5.0,
+                        Turn::Right => 3.5,
+                        Turn::Straight => 4.5,
+                    };
+                    if t_o < critical.max(t_me + 1.5) {
+                        d.why = Why::Priority;
+                        return false;
+                    }
                 }
             }
         }
@@ -1370,7 +1385,9 @@ impl TrafficSim {
             };
             // Entering a connector: was its conflict zone free?
             if self.net.lanes[n as usize].is_connector() {
-                for cf in &self.net.lanes[n as usize].conflicts {
+                // (A sibling ahead, out of the same lane, is a leader to
+                // follow, not traffic blocking the box.)
+                for cf in self.net.lanes[n as usize].conflicts.iter().filter(|c| !c.sibling) {
                     for &(so, oi) in &self.occ[cf.other as usize] {
                         if oi as usize == vi {
                             continue;

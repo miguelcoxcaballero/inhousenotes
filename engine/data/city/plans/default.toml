@@ -1,0 +1,137 @@
+# The default forja_city map: from west to east, Madrid's old Austrias
+# quarter, a Madrid barrio grid, a tree-lined boulevard, a Valencian
+# Ensanche and Valencia's Barrio del Carmen inside its ronda. Planned grids
+# and organic old towns share one fabric: the same lots, streets,
+# sidewalks and furniture rules work on both. The old towns stand on
+# hills, each crossed by a large avenue, and the player starts on the
+# Austrias' main square.
+
+name = "default"
+start = "madrid_austrias"
+
+# The old towns stand on high ground: Austrias on a hill (down towards the
+# Manzanares to the west), the Carmen on a low rise. Alleys climb it and
+# turn into steps where they are too steep; avenues around grade at <= 5 %.
+[[hill]]
+zone = "madrid_austrias"
+radius = 1.25
+offset = [25.0, 10.0]
+height = 22.0
+noise = 4.0
+
+# The steep flank down to the river (Cuesta de la Vega, las Vistillas):
+# alleys there are too steep to ramp and become stair streets.
+[[hill]]
+zone = "madrid_austrias"
+radius = 0.45
+offset = [-40.0, -30.0]
+height = 13.0
+noise = 2.0
+
+[[hill]]
+zone = "valencia_carmen"
+radius = 1.1
+height = 7.0
+noise = 2.0
+
+[[zone]]
+id = "madrid"
+city = "madrid"
+plaza_kind = "parterre"
+lots = { width = [8.0, 14.0], depth = 13.0, min_width = 3.5, min_area = 30.0, court_min = 80.0, neck = 3.0, min_tip = 2.5 }
+[zone.styles]
+street = [["madrid_centro", 0.55], ["madrid_ladrillo", 0.35], ["desarrollismo", 0.1]]
+avenue = [["madrid_centro", 0.5], ["valencia_ensanche", 0.5]]
+outer = [["madrid_ladrillo", 0.5], ["madrid_centro", 0.35], ["desarrollismo", 0.15]]
+plaza = [["madrid_austrias", 1.0]]
+alley = [["madrid_popular", 0.6], ["madrid_ladrillo", 0.4]]
+[zone.grid]
+origin = [0.0, 0.0]
+dir = -1.0
+cols = 4
+rows = 5
+block = [46.0, 62.0]
+street = "madrid_calle"
+outer = "madrid_borde"
+near = 23.0
+plaza = [1, 2]
+
+[[zone]]
+id = "valencia_ensanche"
+city = "valencia"
+plaza_kind = "fountain"
+lots = { width = [13.0, 21.0], depth = 19.0, min_width = 4.0, min_area = 40.0, court_min = 120.0, neck = 4.0, min_tip = 3.0 }
+[zone.styles]
+street = [["valencia_ensanche", 0.4], ["valencia_ruzafa", 0.32], ["valencia_modernista", 0.16], ["desarrollismo", 0.12]]
+avenue = [["valencia_modernista", 0.55], ["valencia_ensanche", 0.45]]
+outer = [["cabanyal", 0.65], ["valencia_ruzafa", 0.23], ["desarrollismo", 0.12]]
+plaza = [["valencia_modernista", 0.6], ["valencia_ensanche", 0.4]]
+alley = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
+[zone.grid]
+origin = [0.0, 0.0]
+dir = 1.0
+cols = 3
+rows = 3
+block = [92.0, 104.0]
+street = "ensanche"
+outer = "ensanche_borde"
+near = 23.0
+plaza = [1, 1]
+
+# Madrid de los Austrias: crooked streets with narrow sidewalks and
+# bollards, callejuelas, a large porticoed main square.
+[[zone]]
+id = "madrid_austrias"
+city = "madrid"
+plaza_kind = "parterre"
+ronda = "calle_ancha"
+mask = { beside = "madrid", side = "west", size = [300.0, 330.0], wobble = 22.0 }
+lots = { width = [5.5, 10.0], depth = 13.0, min_width = 3.8, min_area = 32.0, court_min = 90.0, neck = 1.8, min_tip = 2.5, jitter = 0.2, wobble = 0.3 }
+[zone.styles]
+street = [["madrid_popular", 0.45], ["madrid_austrias", 0.3], ["madrid_centro", 0.25]]
+alley = [["madrid_popular", 0.7], ["madrid_austrias", 0.3]]
+avenue = [["madrid_centro", 0.6], ["madrid_austrias", 0.4]]
+outer = [["madrid_centro", 0.5], ["madrid_ladrillo", 0.5]]
+plaza = [["madrid_austrias", 1.0]]
+[zone.organic]
+plaza = { radius = [20.0, 28.0], vertices = [4, 5] }
+meander = 0.5
+lattice = 2.0
+# A broad avenue cut through the old town below the hilltop: it grades at
+# <= 5 %, so it runs in a cutting and the alleys climb or step down to it.
+avenue = [{ profile = "avenida", name = "Gran Vía", angle = 12.0, offset = -55.0, bend = 16.0 }]
+tiers = [
+  { profile = "calle_vieja", d_max = 46.0, adarve = 0.0, loops = 0.25, plazuelas = 0.0 },
+  { profile = "callejuela_aceras", d_max = 24.0, adarve = 0.1, loops = 0.15, plazuelas = 0.2 },
+  { profile = "callejuela", d_max = 15.0, adarve = 0.25, loops = 0.05, plazuelas = 0.1 },
+]
+
+# Valencia's Barrio del Carmen.
+[[zone]]
+id = "valencia_carmen"
+city = "valencia"
+plaza_kind = "fountain"
+ronda = "ronda"
+mask = { beside = "valencia_ensanche", side = "east", size = [320.0, 330.0], wobble = 25.0 }
+lots = { width = [4.0, 8.0], depth = 12.0, min_width = 3.5, min_area = 28.0, court_min = 80.0, neck = 1.6, min_tip = 2.5, jitter = 0.25, wobble = 0.3 }
+[zone.styles]
+street = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
+alley = [["valencia_carmen", 1.0]]
+avenue = [["valencia_modernista", 0.5], ["valencia_ensanche", 0.5]]
+plaza = [["valencia_carmen", 0.6], ["valencia_ruzafa", 0.4]]
+[zone.organic]
+plaza = { radius = [14.0, 22.0], vertices = [4, 6] }
+meander = 0.6
+lattice = 2.0
+avenue = [{ profile = "avenida", name = "Avenida del Oeste", angle = 94.0, offset = 75.0, bend = -10.0 }]
+tiers = [
+  { profile = "calle_vieja", d_max = 50.0, adarve = 0.0, loops = 0.2, plazuelas = 0.0 },
+  { profile = "callejuela", d_max = 24.0, adarve = 0.15, loops = 0.15, plazuelas = 0.25 },
+  { profile = "callejon", d_max = 14.0, adarve = 0.35, loops = 0.05, plazuelas = 0.15 },
+]
+
+[[way]]
+profile = "bulevar"
+name = "Paseo"
+line = [[0.0, -2000.0], [0.0, 2000.0]]
+clip_to_zones = true
