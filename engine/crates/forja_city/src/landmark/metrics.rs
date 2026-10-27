@@ -236,7 +236,16 @@ pub fn compute(model: &Model, fp: Option<&Footprint>, slug: &str, build_ms: f32)
         })
         .collect();
     if mn.y < -0.5 {
-        warnings.push(format!("geometry goes {:.1} m below the ground", -mn.y));
+        if model.ground_cuts.is_empty() {
+            warnings.push(format!("geometry goes {:.1} m below the ground", -mn.y));
+        } else {
+            // Sunken parts inside the ground cuts are intended.
+            let cuts: Vec<Shape> = model.ground_cuts.iter().map(|c| poly::offset(&c.outer, 0.5).map(|o| Shape { outer: o, holes: Vec::new() }).unwrap_or_else(|| c.clone())).collect();
+            let low = model.geo.prims.values().flat_map(|p| p.positions.iter()).filter(|q| q.y < -0.5 && !cuts.iter().any(|c| c.contains(Vec2::new(q.x, q.z)))).map(|q| q.y).fold(0.0f32, f32::min);
+            if low < -0.5 {
+                warnings.push(format!("geometry goes {:.1} m below the ground outside the ground cuts (sunken / [ground] cut)", -low));
+            }
+        }
     }
     if total > 400_000 {
         warnings.push(format!("{total} triangles: above the 400k budget"));
@@ -256,6 +265,13 @@ pub fn compute(model: &Model, fp: Option<&Footprint>, slug: &str, build_ms: f32)
         "elements": elements,
         "collider_triangles": model.collider.len(),
     });
+    if !model.ground_cuts.is_empty() {
+        out["ground_cuts"] = json!(model.ground_cuts.iter().map(|c| json!({ "area_m2": round2(c.area()), "plan_min": poly::bbox(&c.outer).0.to_array().map(round2), "plan_max": poly::bbox(&c.outer).1.to_array().map(round2) })).collect::<Vec<_>>());
+    }
+    // `[reference_heights]` keys used by footprint rows; the rest are
+    // element names (checked below).
+    let refs = &model.reference_heights;
+    let mut used = vec![false; refs.len()];
     if let Some(fp) = fp {
         // Plan grid over the model and the reference polygons.
         let mut pmin = Vec2::new(mn.x, mn.z);
@@ -287,11 +303,48 @@ pub fn compute(model: &Model, fp: Option<&Footprint>, slug: &str, build_ms: f32)
         }
         out["footprint"] = Value::Object(fpj);
         let hm = height_map(&grid, model);
-        let part_rows = |list: &[FpPoly], what: &str| -> Vec<Value> {
+        let mut part_rows = |list: &[FpPoly], what: &str| -> Vec<Value> {
             list.iter()
                 .enumerate()
                 .map(|(i, p)| {
                     let (med, p90, top, cov) = heights_in(&grid, &hm, &p.shape);
+                    let key = format!("{what}:{i}");
+                    let bare = p.id.strip_prefix("osm:").unwrap_or(&p.id).to_string();
+                    let hit = refs.iter().position(|(k, _)| {
+                        let k = k.trim();
+                        k == key || (!p.id.is_empty() && (k == p.id || k == bare || k.strip_prefix("osm:") == Some(bare.as_str()))) || (what == "catastro" && p.refcat.as_deref().is_some_and(|r| k == r || k == format!("catastro:{r}")))
+                    });
+                    if let Some(h) = hit {
+                        used[h] = true;
+                        let r = &refs[h].1;
+                        let tol = r.tolerance.unwrap_or(1.0);
+                        let mut v = json!({
+                            "ref": key, "id": p.id,
+                            "reference_height": r.height, "height_source": "reference",
+                            "tag_height": p.tag_height(),
+                            "model_median": med.map(round2), "model_p90": p90.map(round2), "model_max": top.map(round2),
+                            "covered": cov.map(round2),
+                        });
+                        if let Some(src) = &r.source {
+                            v["reference_source"] = json!(src);
+                        }
+                        if let (Some(mx), Some(hi)) = (top, p90) {
+                            // Too high when even the 90th percentile is above
+                            // (spires and chimneys may be), too low when even
+                            // the highest point is below.
+                            v["diff"] = json!(round2(hi - r.height));
+                            v["height_check"] = json!(if hi - r.height > tol { "model too high" } else if r.height - mx > tol { "model too low" } else { "ok" });
+                        }
+                        if let Some(f) = p.floors_above {
+                            v["floors_above"] = json!(f);
+                        }
+                        for k in ["building", "building:part", "roof:shape", "building:levels", "name"] {
+                            if let Some(t) = p.tag(k) {
+                                v[k] = json!(t);
+                            }
+                        }
+                        return v;
+                    }
                     let tag = p.tag_height();
                     let mut v = json!({
                         "ref": format!("{what}:{i}"), "id": p.id,
@@ -325,6 +378,16 @@ pub fn compute(model: &Model, fp: Option<&Footprint>, slug: &str, build_ms: f32)
             if let Some(c) = v.get("height_check").and_then(|d| d.as_str())
                 && c != "ok"
             {
+                if let Some(rh) = v.get("reference_height").and_then(|d| d.as_f64()) {
+                    warnings.push(format!(
+                        "{} ({}): {c}: p90 {:.1} m / highest point {:.1} m vs measured reference height {rh:.1} m",
+                        v["ref"].as_str().unwrap_or(""),
+                        v["id"].as_str().unwrap_or(""),
+                        v["model_p90"].as_f64().unwrap_or(0.0),
+                        v["model_max"].as_f64().unwrap_or(0.0),
+                    ));
+                    continue;
+                }
                 warnings.push(format!(
                     "{} ({}): {c}: median {:.1} m / p90 {:.1} m vs tagged height {:.1} m",
                     v["ref"].as_str().unwrap_or(""),
@@ -356,6 +419,34 @@ pub fn compute(model: &Model, fp: Option<&Footprint>, slug: &str, build_ms: f32)
         out["outline_edges"] = json!(edges);
     } else {
         warnings.push("no footprint.json: footprint metrics skipped".into());
+    }
+    // Reference heights of named elements (top of the element).
+    let mut checks = Vec::new();
+    for (k, (key, r)) in refs.iter().enumerate() {
+        if used[k] {
+            continue;
+        }
+        let name = key.strip_prefix("element:").unwrap_or(key).trim();
+        let hits: Vec<&super::build::ElemStat> = model.stats.iter().filter(|s| s.name == name).collect();
+        if hits.is_empty() {
+            let names: Vec<&str> = model.stats.iter().map(|s| s.name.as_str()).filter(|n| !n.is_empty()).collect();
+            warnings.push(format!("[reference_heights] `{key}` matches no outline:/part:/catastro: polygon, OSM id or element name{}", super::parse::did_you_mean(name, &names)));
+            continue;
+        }
+        let top = hits.iter().map(|s| s.max.y).fold(f32::MIN, f32::max);
+        let tol = r.tolerance.unwrap_or(0.5);
+        let check = if top - r.height > tol { "model too high" } else if r.height - top > tol { "model too low" } else { "ok" };
+        if check != "ok" {
+            warnings.push(format!("element `{name}`: {check}: top {top:.2} m vs measured reference height {:.2} m", r.height));
+        }
+        let mut v = json!({ "element": name, "reference_height": r.height, "model_top": round2(top), "diff": round2(top - r.height), "height_check": check });
+        if let Some(src) = &r.source {
+            v["reference_source"] = json!(src);
+        }
+        checks.push(v);
+    }
+    if !checks.is_empty() {
+        out["reference_checks"] = json!(checks);
     }
     out["warnings"] = json!(warnings);
     out
