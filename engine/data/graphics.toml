@@ -38,8 +38,10 @@ contact_shadows = true
 taa = true
 bloom = true
 
-# Point lights shaded per pixel (nearest first, at most 64).
-max_lights = 64
+# Local lights per frame after frustum culling (closest first; the light
+# clusters bound the per-pixel cost) and spot lights with a shadow map (0-4).
+max_lights = 4096
+spot_shadows = 4
 # Largest texture side uploaded (bigger textures start at a smaller mip;
 # applies on the next map load).
 max_texture_size = 4096

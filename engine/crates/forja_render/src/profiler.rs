@@ -142,6 +142,17 @@ impl GpuProfiler {
 
     /// Timestamp writes for a render pass named `name` (None when not timing).
     pub fn pass(&self, name: &'static str) -> Option<wgpu::RenderPassTimestampWrites<'_>> {
+        let (qs, i) = self.slot(name)?;
+        Some(wgpu::RenderPassTimestampWrites { query_set: qs, beginning_of_pass_write_index: Some(i * 2), end_of_pass_write_index: Some(i * 2 + 1) })
+    }
+
+    /// Timestamp writes for a compute pass named `name`.
+    pub fn compute_pass(&self, name: &'static str) -> Option<wgpu::ComputePassTimestampWrites<'_>> {
+        let (qs, i) = self.slot(name)?;
+        Some(wgpu::ComputePassTimestampWrites { query_set: qs, beginning_of_pass_write_index: Some(i * 2), end_of_pass_write_index: Some(i * 2 + 1) })
+    }
+
+    fn slot(&self, name: &'static str) -> Option<(&wgpu::QuerySet, u32)> {
         self.current?;
         let qs = self.query_set.as_ref()?;
         let i = self.next.get();
@@ -150,7 +161,7 @@ impl GpuProfiler {
         }
         self.next.set(i + 1);
         self.names.borrow_mut().push(name);
-        Some(wgpu::RenderPassTimestampWrites { query_set: qs, beginning_of_pass_write_index: Some(i * 2), end_of_pass_write_index: Some(i * 2 + 1) })
+        Some((qs, i))
     }
 
     /// Resolves this frame's queries into its readback slot (record before

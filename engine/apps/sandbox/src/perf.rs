@@ -178,13 +178,7 @@ impl PerfState {
 }
 
 pub fn parse_preset(s: &str) -> Option<Preset> {
-    Some(match s.to_lowercase().as_str() {
-        "low" => Preset::Low,
-        "medium" | "med" => Preset::Medium,
-        "high" => Preset::High,
-        "ultra" => Preset::Ultra,
-        _ => return None,
-    })
+    Preset::parse(s)
 }
 
 /// F11: frame profiler overlay.
@@ -334,8 +328,15 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
             g.label("Bloom");
             custom |= g.checkbox(&mut c.bloom, "").changed();
             g.end_row();
-            g.label("Point lights");
-            custom |= g.add(egui::Slider::new(&mut c.max_lights, 8..=64)).changed();
+            g.label("Lights per frame");
+            g.horizontal(|g| {
+                for (n, label) in [(512, "512"), (2048, "2k"), (4096, "4k"), (65535, "all")] {
+                    custom |= g.selectable_value(&mut c.max_lights, n, label).changed();
+                }
+            });
+            g.end_row();
+            g.label("Shadowed spot lights");
+            custom |= g.add(egui::Slider::new(&mut c.spot_shadows, 0..=4)).changed();
             g.end_row();
             g.label("LOD detail");
             custom |= g.add(egui::Slider::new(&mut c.lod_detail, 0.25..=2.0)).changed();
