@@ -120,7 +120,7 @@ struct Extract {
     handles: Vec<ModelHandle>,
     env_loaded: bool,
     /// Static items handed to the renderer's culling grid.
-    statics_uploaded: Option<usize>,
+    statics_uploaded: Option<(usize, usize)>,
     /// `FORJA_LEGACY_STATICS=1`: resubmit the whole world every frame as
     /// before the static grid (for before/after measurements).
     legacy: bool,
@@ -148,15 +148,36 @@ impl Extract {
         }
         // The world never moves: it is uploaded once into the renderer's
         // static culling grid; only dynamic items are resubmitted per frame.
-        if !self.legacy && self.statics_uploaded != Some(rs.statics.len()) {
-            let statics: Vec<DrawInstance> = rs.statics.iter().map(|item| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true }).collect();
+        // Items listed in `volatile_statics` (signal heads) change at run
+        // time and are submitted per frame instead.
+        let key = (rs.statics.len(), rs.volatile_statics.len());
+        if !self.legacy && self.statics_uploaded != Some(key) {
+            let statics: Vec<DrawInstance> = rs
+                .statics
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| rs.volatile_statics.binary_search(i).is_err())
+                .map(|(_, item)| DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: None, tint: item.tint, cast_shadows: true })
+                .collect();
             renderer.set_static_instances(&statics);
-            self.statics_uploaded = Some(rs.statics.len());
+            self.statics_uploaded = Some(key);
         }
-        let mut frame = FrameDesc { camera: rs.camera, env: rs.env.clone(), lights: rs.lights.clone(), lines: rs.lines.clone(), time: app.world.res::<forja_core::Time>().elapsed as f32, ..Default::default() };
+        let mut frame = FrameDesc { camera: rs.camera, env: rs.env.clone(), lights: rs.lights.clone(), local_lights: rs.local_lights.clone(), lines: rs.lines.clone(), time: app.world.res::<forja_core::Time>().elapsed as f32, ..Default::default() };
+        if frame.env.camera == forja_render::CameraModel::Night {
+            // Gameplay lights (headlights, brake lights, signals, muzzle
+            // flashes) are tuned in the legacy units of the old fixed night
+            // exposure (5.5); under the night pipeline's camera they become
+            // clustered lights with the same brightness relative to it.
+            let k = 5.5 / frame.env.exposure.max(1e-3);
+            frame.local_lights.extend(frame.lights.drain(..).map(|p| {
+                let l = forja_render::Light::from(p);
+                forja_render::Light { intensity: l.intensity * k, ..l }
+            }));
+        }
         let legacy_statics = if self.legacy { &rs.statics[..] } else { &[] };
-        frame.instances.reserve(rs.dynamic.len() + legacy_statics.len());
-        for item in legacy_statics.iter().chain(rs.dynamic.iter()) {
+        let volatile = if self.legacy { &[][..] } else { &rs.volatile_statics[..] };
+        frame.instances.reserve(rs.dynamic.len() + legacy_statics.len() + volatile.len());
+        for item in legacy_statics.iter().chain(volatile.iter().filter_map(|&i| rs.statics.get(i))).chain(rs.dynamic.iter()) {
             frame.instances.push(DrawInstance { model: self.handles[item.model], transform: item.transform, nodes: item.nodes.clone(), joints: item.joints.clone(), tint: item.tint, cast_shadows: true });
         }
         frame
@@ -298,7 +319,7 @@ fn run_headless(args: &Args) {
     let instance = forja_render::create_instance();
     let mut renderer = Renderer::new(&instance, None).expect("GPU");
     let t_build = Instant::now();
-    let mut app = game::build(args.map, paths());
+    let mut app = game::build_at(args.map, paths(), args.hours);
     log::info!("world built in {:.2?}", t_build.elapsed());
     if let Some(h) = args.hours {
         let t = app.world.res_mut::<game::env::TimeOfDay>();
@@ -429,7 +450,7 @@ impl Sandbox {
         let map_text = std::fs::read_to_string(paths.data.join("input.toml")).unwrap_or_default();
         let input = Input::new(ActionMap::from_toml(&map_text).unwrap_or_default());
         let map = args.map;
-        let mut app = game::build(map, paths);
+        let mut app = game::build_at(map, paths, args.hours);
         if let Some(h) = args.hours {
             app.world.res_mut::<game::env::TimeOfDay>().hours = h;
         }
@@ -449,7 +470,13 @@ impl Sandbox {
 
     fn switch_map(&mut self, map: MapKind) {
         self.map = map;
-        self.app = game::build(map, paths());
+        // Keep the clock (and build the city's night content for it).
+        let (hours, photo, speed) = {
+            let t = self.app.world.res::<game::env::TimeOfDay>();
+            (t.hours, t.photo_sky, t.speed)
+        };
+        self.app = game::build_at(map, paths(), (!photo).then_some(hours));
+        self.app.world.res_mut::<game::env::TimeOfDay>().speed = speed;
         self.extract = Extract::new();
         if let Some(gpu) = &mut self.gpu {
             // Fresh GPU resources for the new map.
@@ -523,6 +550,17 @@ impl Sandbox {
                 t.photo_sky = false;
             } else {
                 t.hours = (t.hours + 3.0) % 24.0;
+            }
+        }
+        // The procedural city bakes lit windows and lamps for the hour it was
+        // built at: crossing dusk or dawn rebuilds it for the new time.
+        if self.map == MapKind::Spain {
+            let want = self.app.world.res::<game::env::TimeOfDay>().night_content();
+            let built = self.app.world.res::<game::world::GameWorld>().night_content;
+            if want != built {
+                log::info!("time of day crossed {}: rebuilding the city", if want { "dusk" } else { "dawn" });
+                self.switch_map(self.map);
+                self.app.world.res_mut::<game::Hud>().message(if want { "Anochece en la ciudad" } else { "Amanece en la ciudad" });
             }
         }
         if self.input.pressed("screenshot") {

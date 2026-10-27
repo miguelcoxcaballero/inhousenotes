@@ -338,6 +338,9 @@ pub fn draw_options(ctx: &egui::Context, p: &mut PerfState) {
             g.label("Bloom");
             custom |= g.checkbox(&mut c.bloom, "").changed();
             g.end_row();
+            g.label("Depth of field (cutscenes)");
+            custom |= g.checkbox(&mut c.dof, "").changed();
+            g.end_row();
             g.label("Lights per frame");
             g.horizontal(|g| {
                 for (n, label) in [(512, "512"), (2048, "2k"), (4096, "4k"), (65535, "all")] {

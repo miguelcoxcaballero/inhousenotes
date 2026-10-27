@@ -83,6 +83,9 @@ pub struct GraphicsConfig {
     pub contact_shadows: bool,
     pub taa: bool,
     pub bloom: bool,
+    /// Depth of field of cutscenes / photo mode (one 64-tap gather pass
+    /// at full resolution when a shot asks for it).
+    pub dof: bool,
     /// Local lights per frame after frustum culling, closest first (the
     /// light clusters bound the per-pixel cost; far lights also lose their
     /// sprite when cut).
@@ -125,6 +128,7 @@ impl Default for GraphicsConfig {
             contact_shadows: true,
             taa: true,
             bloom: true,
+            dof: true,
             max_lights: 4096,
             spot_shadows: 4,
             max_texture_size: 4096,
@@ -170,6 +174,10 @@ impl GraphicsConfig {
         self.contact_shadows = contact;
         self.taa = true;
         self.bloom = true;
+        // The camera stage (grade LUT, grain, aberration) is one cheap
+        // full-screen pass and stays on everywhere; depth of field is a
+        // 64-tap gather and is kept for High and Ultra.
+        self.dof = matches!(p, Preset::High | Preset::Ultra);
         self.max_lights = lights;
         self.spot_shadows = match p {
             Preset::Low => 0,
